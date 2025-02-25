@@ -61,7 +61,7 @@ class TestGreedyCausalLM:
                 prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': f'"{prompt}"'}], tokenize=False, add_generation_prompt=True)
             tokenized = tokenizer(f'"{prompt}"', return_tensors='pt', add_special_tokens=False)
         
-            for beam in transformers.LlamaForCausalLM.from_pretrained(model['name']).generate(**tokenized, max_length=100, do_sample=False):
+            for beam in transformers.AutoModelForCausalLM.from_pretrained(model['name']).generate(**tokenized, max_length=100, do_sample=False):
                 ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
                 logger.info(f'Checking for "{ref=}"')
                 
