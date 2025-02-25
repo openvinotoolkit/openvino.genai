@@ -1,43 +1,52 @@
 # OpenVINO™ GenAI Node.js bindings (preview)
 
+Use OpenVINO GenAI to deploy most popular Generative AI model pipelines that run on top of highly performant OpenVINO Runtime.
+
 ## DISCLAIMER
 
 This is preview version, do not use it in production!
+In this version, only the LLM pipeline is implemented for NodeJS.
 
-## Install and Run
+## Quick Start
 
-### Requirements
-
-- Node.js v21+
-- Tested on Ubuntu, another OS didn't tested yet
-
-### Build Bindings
-
-Build OpenVINO™ GenAI JavaScript Bindings from sources following the [instructions](../js/BUILD.md).
-
-### Using the package from your project
-
-Since the OpenVINO GenAI NodeJS package depends on the OpenVINO NodeJS package, these packages must be of the same version.
-If you intend to use one of the released versions, please check and install the correct version of the `openvino-node` package in your project.
-If you want to use an unstable version of the OpenVINO GenAI NodeJS package, you will also need to build and use OpenVINO™ JavaScript Bindings from source
-following the [instructions](https://github.com/openvinotoolkit/openvino/blob/master/src/bindings/js/docs/README.md#build) to use it correctly.
-
-Then you can use OpenVINO™ GenAI JavaScript Bindings in one of the following ways:
-
-#### Option 1 - using npm:
-
-To use this package locally use `npm link` in `src/js/` directory
-and `npm link genai-node` in the folder where you want to add this package as a dependency
-
-#### Option 2 - using package.json:
-
-Add the `genai-node` package manually by specifying the path to the `src/js/` directory in your `package.json`:
-
-```
-"genai-node": "file:*path-to-current-directory*"
+Install the **genai-node** package:
+```bash
+npm install genai-node
 ```
 
-### Verify the installation:
-```sh
-node -e "const { Pipeline } = require('genai-node'); console.log(Pipeline);"
+Use the **genai-node** package:
+```js
+import { LLMPipeline } from 'genai-node';
+
+const pipe = await LLMPipeline(MODEL_PATH, device);
+
+const input = 'What is the meaning of life?';
+const config = { 'max_new_tokens': 100 };
+
+await pipe.startChat();
+const result = await pipe.generate(input, config, streamer);
+await pipe.finishChat();
+
+// Output all generation result
+console.log(result);
+
+function streamer(subword) {
+  process.stdout.write(subword);
+}
 ```
+
+## Supported Platforms
+
+- Windows x86
+- Linux x86/ARM
+- MacOS x86/ARM
+
+## Build From Sources
+
+Build OpenVINO™ GenAI JavaScript Bindings from sources following the [instructions](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/js/BUILD.md#build-openvino-genai-nodejs-bindings-preview).
+
+## License
+
+The OpenVINO™ GenAI repository is licensed under [Apache License Version 2.0](LICENSE).
+By contributing to the project, you agree to the license and copyright terms therein and release
+your contribution under these terms.

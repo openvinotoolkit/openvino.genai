@@ -54,7 +54,7 @@ class MemConsumption:
                     self.g_event.clear()
                     self.g_end_collect_mem = False
                     break
-                time.sleep(500 / 1000)
+                time.sleep(0.0001)
 
     def start_collect_memory_consumption(self):
         """Start collect."""

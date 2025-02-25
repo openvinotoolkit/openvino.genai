@@ -1,5 +1,5 @@
 import readline from 'readline';
-import { Pipeline } from 'genai-node';
+import { LLMPipeline } from 'openvino-genai-node';
 
 main();
 
@@ -24,7 +24,7 @@ async function main() {
     output: process.stdout,
   });
 
-  const pipe = await Pipeline.LLMPipeline(MODEL_PATH, device);
+  const pipe = await LLMPipeline(MODEL_PATH, device);
   const config = { 'max_new_tokens': 100 };
 
   await pipe.startChat();

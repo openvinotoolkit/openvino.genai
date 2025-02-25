@@ -86,6 +86,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     ContinuousBatchingPipeline,
     GenerationResult,
+    GenerationStatus,
     SchedulerConfig,
     CacheEvictionConfig,
     AggregationMode

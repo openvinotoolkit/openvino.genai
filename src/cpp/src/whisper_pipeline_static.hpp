@@ -35,7 +35,7 @@ public:
 
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config,
-                                   ChunkStreamerVariant streamer) override;
+                                   const std::shared_ptr<StreamerBase> streamer) override;
 
 private:
     WhisperInitializedModels m_models;

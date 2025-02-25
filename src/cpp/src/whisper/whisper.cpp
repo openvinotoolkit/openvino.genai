@@ -12,6 +12,7 @@
 #include "logit_processor.hpp"
 #include "models/decoder.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "sampler.hpp"
@@ -21,7 +22,6 @@
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
 #include "whisper_utils.hpp"
-#include "openvino/genai/streamer_base.hpp"
 
 using ov::genai::MicroSeconds;
 
@@ -66,12 +66,10 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         }
 
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
-        for (const auto& gen_token : token.begin()->second.generated_ids) {
-            auto streaming_status = streamer_ptr->write(gen_token);
-            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-                streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
-                break;
-            }
+
+        auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
+        if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+            streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
         }
     };
 
@@ -104,7 +102,8 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     stream_generated_tokens();
 
     // "Generation" phase
-    while (!sequence_group->has_finished() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
+    while (!sequence_group->has_finished() && !sequence_group->handle_stopped() &&
+           !sequence_group->handle_cancelled()) {
         std::map<size_t, std::vector<int64_t>> batch_to_generated_ids{};
 
         sequence_group->schedule_tokens(1);
@@ -268,7 +267,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        ov::InferRequest& encoder,
                                        std::shared_ptr<WhisperDecoder> decoder,
                                        WhisperFeatureExtractor& feature_extractor,
-                                       const std::shared_ptr<ChunkStreamerBase> streamer,
+                                       const std::shared_ptr<StreamerBase> streamer,
                                        Sampler& sampler) {
     size_t max_new_tokens = config.get_max_new_tokens();
 
@@ -342,7 +341,8 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                  extracted_segments.non_timestamp_tokens.begin(),
                                  extracted_segments.non_timestamp_tokens.end());
 
-            if (streamer && streamer->write_chunk(extracted_segments.non_timestamp_tokens) != ov::genai::StreamingStatus::RUNNING) {
+            if (streamer &&
+                streamer->write(extracted_segments.non_timestamp_tokens) != ov::genai::StreamingStatus::RUNNING) {
                 cancelled = true;
                 break;
             }

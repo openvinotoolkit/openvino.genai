@@ -16,7 +16,7 @@ namespace {
 
 ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model) {
     const std::vector<std::string> kv_cache_precision_path = { "runtime_options", ov::hint::kv_cache_precision.name() };
-    ov::element::Type ir_kv_cache_precision = ov::element::undefined;
+    ov::element::Type ir_kv_cache_precision = ov::element::dynamic;
 
     if (model->has_rt_info(kv_cache_precision_path)) {
         ir_kv_cache_precision = model->get_rt_info<ov::element::Type>(kv_cache_precision_path);
@@ -26,7 +26,7 @@ ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model)
 }
 
 void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& plugin_config) {
-    ov::element::Type m_kv_cache_type = ov::element::undefined, ir_kv_cache_precision = get_model_kv_cache_precision(model);
+    ov::element::Type m_kv_cache_type = ov::element::dynamic, ir_kv_cache_precision = get_model_kv_cache_precision(model);
     ov::Core core = ov::genai::utils::singleton_core();
 
     auto inference_precision = core.get_property(device, ov::hint::inference_precision);
@@ -44,7 +44,7 @@ void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std
         } else if (accuracy_mode) {
             // ACCURACY mode will use f32 KV cache type
             m_kv_cache_type = ov::element::f32;
-        } else if (ir_kv_cache_precision != ov::element::undefined) {
+        } else if (ir_kv_cache_precision != ov::element::dynamic) {
             // check that kv_cache_precision is set in runtime_info section of OpenVINO IR
             // but in case it's set to FP16, we need to patch it to be BF16 for Xeon platforms
             m_kv_cache_type = ir_kv_cache_precision == ov::element::f16 && inference_precision == ov::element::bf16 ?
@@ -119,6 +119,20 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     utils::apply_gather_before_matmul_transformation(model);
 
     initialize_pipeline(model, scheduler_config, device, properties, kv_cache_config);
+}
+
+ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
+    const std::shared_ptr<ov::Model>& model,
+    std::shared_ptr<InputsEmbedder> inputs_embedder,
+    const Tokenizer& tokenizer,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config,
+    bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
+    m_inputs_embedder = inputs_embedder;
+    m_model_runner->set_embedding_model(inputs_embedder->get_embedding_model());
+    m_model_input_type = ModelInputType::EMBEDDINGS;
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
@@ -255,6 +269,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
+        if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+            OPENVINO_THROW("Prefix caching is not supported for VLM models.");
+        }
         m_scheduler->restore_cached_blocks(sequence_group);
     }
 
@@ -270,12 +287,21 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                 const std::string& prompt,
                                                                 ov::genai::GenerationConfig sampling_params) {
-    static ManualTimer timer("tokenize");
-    timer.start();
-    ov::Tensor input_ids = m_tokenizer.encode(prompt).input_ids;
-    timer.end();
+    ov::Tensor inputs;
+    ov::genai::VLMPerfMetrics metrics;
+    if (m_model_input_type == ModelInputType::TOKENS) {
+        static ManualTimer timer("tokenize");
+        timer.start();
+        inputs = m_tokenizer.encode(prompt).input_ids;
+        timer.end();
+        return add_request(request_id, inputs, sampling_params);
+    } else if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+    } else {
+        OPENVINO_THROW("Unknown model input type.");
+    }
 
-    return add_request(request_id, input_ids, sampling_params);
+    return add_request(request_id, inputs, sampling_params);
 }
 
 bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_requests() {

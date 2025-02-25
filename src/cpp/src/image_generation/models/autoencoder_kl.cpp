@@ -69,7 +69,7 @@ private:
 // for BW compatibility with 2024.6.0
 ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::string& device, ov::AnyMap properties) {
     auto it = properties.find("WA_INFERENCE_PRECISION_HINT");
-    ov::element::Type wa_inference_precision = it != properties.end() ? it->second.as<ov::element::Type>() : ov::element::undefined;
+    ov::element::Type wa_inference_precision = it != properties.end() ? it->second.as<ov::element::Type>() : ov::element::dynamic;
     if (it != properties.end()) {
         properties.erase(it);
     }
@@ -78,7 +78,7 @@ ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::stri
     const bool activation_scale_factor_defined = model->has_rt_info(activation_scale_factor_path);
 
     // convert WA inference precision to actual inference precision if activation_scale_factor is not defined in IR
-    if (device.find("GPU") != std::string::npos && !activation_scale_factor_defined && wa_inference_precision != ov::element::undefined) {
+    if (device.find("GPU") != std::string::npos && !activation_scale_factor_defined && wa_inference_precision != ov::element::dynamic) {
         properties[ov::hint::inference_precision.name()] = wa_inference_precision;
     }
 

@@ -518,7 +518,7 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
             for idx, input_text in enumerate(text_list):
                 p_idx = prompt_idx_list[idx]
                 if num == 0:
-                    log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
+                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text')
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             p_idx, bench_hook, tokens_len, streaming, model_precision, proc_id, mem_consumption)
@@ -530,7 +530,7 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
                 if num == 0:
-                    log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
+                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text')
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)

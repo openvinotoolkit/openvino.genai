@@ -16,6 +16,7 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 
 namespace py = pybind11;
 namespace ov::genai::pybind::utils {
@@ -269,6 +270,14 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     OPENVINO_THROW("Property \"", property_name, "\" has unsupported type. Please, add type support to 'py_object_to_any' function");
 }
 
+void add_deprecation_warning_for_chunk_streamer(std::shared_ptr<StreamerBase> streamer) {
+    OPENVINO_SUPPRESS_DEPRECATED_START
+    if (auto chunk_streamer = std::dynamic_pointer_cast<ov::genai::ChunkStreamerBase>(streamer)) {
+        PyErr_WarnEx(PyExc_DeprecationWarning, "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.", 1);
+    }
+    OPENVINO_SUPPRESS_DEPRECATED_END
+}
+
 } // namespace
 
 ov::AnyMap properties_to_any_map(const std::map<std::string, py::object>& properties) {
@@ -334,6 +343,7 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
             streamer = callback_wrapped;
         },
         [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
+            add_deprecation_warning_for_chunk_streamer(streamer_cls);
             streamer = streamer_cls;
         },
         [](std::monostate none){ /*streamer is already a monostate */ }

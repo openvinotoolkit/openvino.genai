@@ -347,7 +347,7 @@ class CacheEvictionConfig:
         ...
     def get_start_size(self) -> int:
         ...
-class ChunkStreamerBase:
+class ChunkStreamerBase(StreamerBase):
     """
     
         Base class for chunk streamers. In order to use inherit from from this class.
@@ -366,14 +366,6 @@ class ChunkStreamerBase:
         """
         put_chunk is called every time new token chunk is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def write(self, token: int) -> StreamingStatus:
-        """
-        Write is called every time new token is generated. Returns a StreamingStatus flag to indicate whether generation should be stopped
-        """
-    def write_chunk(self, tokens: list[int]) -> StreamingStatus:
-        """
-        write_chunk is called every time new token chunk is generated. Returns a StreamingStatus flag to indicate whether generation should be stopped
-        """
 class ContinuousBatchingPipeline:
     """
     This class is used for generation with LLMs with continuous batchig
@@ -391,6 +383,9 @@ class ContinuousBatchingPipeline:
     def add_request(self, request_id: int, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
+    def add_request(self, request_id: int, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
+        ...
+    @typing.overload
     def generate(self, input_ids: list[openvino._pyopenvino.Tensor], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
         ...
     @typing.overload
@@ -398,6 +393,9 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, prompts: list[str], images: list[list[openvino._pyopenvino.Tensor]], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -1175,6 +1173,17 @@ class LLMPipeline:
                     Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
                     kwargs: Device properties.
         """
+    @typing.overload
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer, device: str, generation_config: GenerationConfig = ..., **kwargs) -> None:
+        """
+                    LLMPipeline class constructor.
+                    model (str): Pre-read model.
+                    weights (ov.Tensor): Pre-read model weights.
+                    tokenizer (str): Genai Tokenizers.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
+                    generation_config {ov_genai.GenerationConfig} Genai GenerationConfig. Default is an empty config.
+                    kwargs: Device properties.
+        """
     def finish_chat(self) -> None:
         ...
     def generate(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
@@ -1663,7 +1672,7 @@ class StopCriteria:
 class StreamerBase:
     """
     
-        Base class for streamers. In order to use inherit from from this class and implement put, and methods.
+        Base class for streamers. In order to use inherit from from this class and implement write and end methods.
     """
     def __init__(self) -> None:
         ...
@@ -1675,9 +1684,9 @@ class StreamerBase:
         """
         Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def write(self, token: int) -> StreamingStatus:
+    def write(self, token: int | list[int]) -> StreamingStatus:
         """
-        Write is called every time new token is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
+        Write is called every time new token or vector of tokens is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
         """
 class StreamingStatus:
     """
@@ -1861,7 +1870,7 @@ class TextStreamer(StreamerBase):
         ...
     def end(self) -> None:
         ...
-    def write(self, token: int) -> StreamingStatus:
+    def write(self, token: int | list[int]) -> StreamingStatus:
         ...
 class TokenizedInputs:
     attention_mask: openvino._pyopenvino.Tensor
@@ -1889,7 +1898,11 @@ class Tokenizer:
             openvino.Model if the entry exists.
     """
     chat_template: str
+    @typing.overload
     def __init__(self, tokenizer_path: os.PathLike, properties: dict[str, typing.Any] = {}, **kwargs) -> None:
+        ...
+    @typing.overload
+    def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
     def apply_chat_template(self, history: list[dict[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
         """
@@ -2358,7 +2371,7 @@ class WhisperPipeline:
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | ChunkStreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
+    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         

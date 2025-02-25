@@ -1,4 +1,4 @@
-import { addon } from '../lib/module.js';
+import addon from '../dist/addon.js';
 
 import assert from 'node:assert';
 import { describe, it, before, after } from 'node:test';
@@ -53,6 +53,7 @@ describe('bindings', () => {
 
       assert.ok(output.length > 0);
       done();
+    // eslint-disable-next-line camelcase
     }, { temperature: '0', max_new_tokens: '4' });
   });
 });
