@@ -60,12 +60,21 @@ MODELS = {
     "LCM_Dreamshaper_v7-int8-ov": {
         "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
         "convert_args": []
-    }   
+    },   
+    "llava-1.5-7b-hf": {
+        "name": "lava-hf/llava-1.5-7b-hf",
+        "convert_args": ['']
+    },    
+    "llava-v1.6-mistral-7b-hf": {
+        "name": "llava-hf/llava-v1.6-mistral-7b-hf",
+        "convert_args": ['']
+    }
 }
 
 TEST_FILES = {
     "how_are_you_doing_today.wav": "https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav",
     "adapter_model.safetensors": "https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors",
+    "monalisa.jpg": "https://llava-vl.github.io/static/images/monalisa.jpg",
     "soulcard.safetensors": "https://civitai.com/api/download/models/72591",
     "image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png",
     "mask_image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png"
