@@ -419,7 +419,7 @@ void init_image_generation_pipelines(py::module_& m) {
             [](ov::genai::Text2ImagePipeline& pipe,
                 const std::string& text_encode_device,
                 const std::string& denoise_device,
-                const std::string& vae_decode_device,
+                const std::string& vae_device,
                 const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
