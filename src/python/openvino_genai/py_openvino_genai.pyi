@@ -1176,12 +1176,14 @@ class LLMPipeline:
                     kwargs: Device properties.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer : Tokenizer, device: str, generation_config: GenerationConfig = GenerationConfig(), **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer, device: str, generation_config: GenerationConfig = ..., **kwargs) -> None:
         """
                     LLMPipeline class constructor.
-                    models_path (os.PathLike): Path to the model file.
-                    device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
-                    Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
+                    model (str): Pre-read model.
+                    weights (ov.Tensor): Pre-read model weights.
+                    tokenizer (str): Genai Tokenizers.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
+                    generation_config {ov_genai.GenerationConfig} Genai GenerationConfig. Default is an empty config.
                     kwargs: Device properties.
         """
     def finish_chat(self) -> None:
@@ -1902,8 +1904,7 @@ class Tokenizer:
     def __init__(self, tokenizer_path: os.PathLike, properties: dict[str, typing.Any] = {}, **kwargs) -> None:
         ...
     @typing.overload
-    def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor,
-                 detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
+    def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
     def apply_chat_template(self, history: list[dict[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
         """
