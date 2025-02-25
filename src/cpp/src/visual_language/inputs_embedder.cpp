@@ -187,7 +187,7 @@ protected:
     ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
         const auto new_chat_tokens = apply_chat_template_tokenize(prompt, metrics);
         auto new_input_ids = update_history(new_chat_tokens);
-        m_kv_cache_state.add_inputs(new_input_ids);
+        m_kv_cache_state.add_inputs(new_input_ids);// !!!!!!!!!!!!!!
 
         return new_input_ids;
     }
@@ -623,18 +623,38 @@ protected:
         size_t hidden_size = text_embeds_shape[2];
 
         const int64_t* input_ids_data = input_ids.data<const int64_t>();
-        const int64_t* idx = input_ids_data;
-        const int64_t* end = input_ids_data + text_embeds_seq_length;
+        int token_offset = text_embeds_seq_length - 1;
         float* text_embeds_data = text_embeds.data<float>();
+        const float* text_embeds_end = text_embeds_data + text_embeds_seq_length * hidden_size;
 
-        for (const ov::Tensor& image_embed : image_embeds) {
-            idx = std::find(idx, end, image_token_id);
-            OPENVINO_ASSERT(end != idx);
+        // Copy in reversed order because a tokenizer may truncate the input removing the preffix.
+        for (auto image_embed_it = image_embeds.rbegin(); image_embed_it != image_embeds.rend(); ++image_embed_it) {
+            for (; token_offset != -1; --token_offset) {
+                if (input_ids_data[token_offset] == image_token_id) {
+                    break;
+                }
+            }
+            if (token_offset == -1) {
+                break;
+            }
+            int changed_token_offset = token_offset;
+            for (; changed_token_offset != -1; --changed_token_offset) {
+                if (input_ids_data[changed_token_offset] != image_token_id) {
+                    break;
+                }
+            }
+            size_t n_tokens = std::min(image_embed_it->get_shape().at(1), size_t(token_offset - changed_token_offset));
+            size_t n_floats = n_tokens * hidden_size;
+            float* text_embeds_idx = text_embeds_data + (changed_token_offset + 1) * hidden_size;
+            std::cout << text_embeds.get_shape() << '\n';
+            std::cout << (text_embeds_idx - text_embeds_data) << ' ' << n_floats << ' ' << (text_embeds_end - text_embeds_data) << '\n';
+            OPENVINO_ASSERT(text_embeds_idx + n_floats <= text_embeds_end);
             std::copy_n(
-                image_embed.data<const float>(),
-                image_embed.get_size(),
-                text_embeds_data + std::distance(input_ids_data, idx) * hidden_size);
-            idx += image_embed.get_shape().at(1) + 1;
+                image_embed_it->data<const float>() + image_embed_it->get_size() - n_floats,
+                n_floats,
+                text_embeds_idx
+            );
+            token_offset -= n_tokens + 1;
         }
         return text_embeds;
     }

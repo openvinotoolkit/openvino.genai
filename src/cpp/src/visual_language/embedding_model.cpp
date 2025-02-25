@@ -71,7 +71,9 @@ ov::Tensor EmbeddingsModel::infer(const ov::Tensor& input_idx, bool return_remot
         m_request.set_output_tensor(m_cpu_tensor);
     }
     m_request.infer();
-    return m_request.get_output_tensor();
+    ov::Tensor out = m_request.get_output_tensor();
+    OPENVINO_ASSERT(input_idx.get_shape().at(1) == out.get_shape().at(1));
+    return out;
 }
 
 void EmbeddingsModel::merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const {
