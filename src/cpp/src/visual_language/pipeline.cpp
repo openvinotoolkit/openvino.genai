@@ -42,8 +42,6 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     // Axis num in kv cache from m_language model, which contains information about history len
     size_t m_kv_cache_seq_length_axis = 2;
-    // Load pipeline time
-    float m_load_time_ms = 0;
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
 public:
@@ -143,7 +141,7 @@ public:
         m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        ov::Tensor inputs_embeds = m_inputs_embedder->get_input_embeddings(prompt, rgbs, perf_metrics);
+        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
         KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();

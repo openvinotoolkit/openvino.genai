@@ -35,9 +35,6 @@ public:
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
-    // computes input embedding for prompt and multiple images and saves input_embeddings size
-    ov::Tensor get_input_embeddings(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
-
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
 
@@ -49,9 +46,6 @@ public:
 
     // get reflection of tokens contained in the kv cache
     KVCacheState& get_kv_cache_state();
-
-    // returns true, if we need to remove full kv cache, in that case it's needed to reset it instead of manually updating
-    bool should_reset_kv_cache() const;
 
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);

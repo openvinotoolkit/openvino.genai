@@ -11,6 +11,9 @@ namespace genai {
 class KVCacheState {
     std::vector<int64_t> state;
 public:
+    size_t num_tokens_to_trim = 0;
+    size_t seq_length_axis = 2;
+
     std::vector<int64_t>& get_state() {
         return state;
     }
@@ -20,18 +23,8 @@ public:
     }
 
     void reset_state() {
-        return state.clear();
-    }
-};
-
-
-struct KVCacheTrimManager
-{
-    size_t num_tokens_to_trim = 0;
-    size_t kv_cache_seq_length_axis = 2;
-
-    void reset() {
         num_tokens_to_trim = 0;
+        state.clear();
     }
 };
 
@@ -42,7 +35,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(ov::InferRequest& 
                                                               std::optional<int64_t> rope_delta = std::nullopt, const size_t max_kv_cache_size = std::numeric_limits<size_t>::max());
 
 
-void align_kv_cache_and_history(ov::genai::KVCacheTrimManager& kv_history_manager, const ov::Tensor& new_chat_tokens, KVCacheState& kv_cache_state);
+void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, KVCacheState& kv_cache_state);
 
 
 TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, KVCacheState& kv_cache_state);
