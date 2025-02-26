@@ -192,11 +192,34 @@ public:
      */
     void compile(const std::string& device, const ov::AnyMap& properties = {});
 
+    /**
+     * Compiles image generation pipeline for given devices for text encoding, denoising, and vae decoding.
+     * @param text_encode_device A device to compile text encoder(s) with
+     * @param denoise_device A device to compile denoiser (e.g. UNet, SD3 Transformer, etc.) with
+     * @param vae_device A device to compile VAE decoder(s) with
+     * @param properties A map of properties which affect models compilation
+     * @note If pipeline was compiled before, an exception is thrown.
+     */
+    void compile(const std::string& text_encode_device,
+                 const std::string& denoise_device,
+                 const std::string& vae_device,
+                 const ov::AnyMap& properties = {});
+
     template <typename... Properties>
     ov::util::EnableIfAllStringAny<void, Properties...> compile(
             const std::string& device,
             Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<void, Properties...> compile(const std::string& text_encode_device,
+                                                                const std::string& denoise_device,
+                                                                const std::string& vae_device,
+                                                                Properties&&... properties) {
+        return compile(text_encode_device,
+                       denoise_device,
+                       vae_device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
     /**
