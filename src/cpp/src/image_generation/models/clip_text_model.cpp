@@ -124,8 +124,7 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
         }
     };
 
-    ov::PartialShape compiled_input_partial_shape =
-        m_request.get_compiled_model().get_runtime_model()->input(0).get_partial_shape();
+    ov::PartialShape compiled_input_partial_shape = m_request.get_compiled_model().inputs()[0].get_partial_shape();
 
     ov::Tensor input_ids = m_request.get_input_tensor();
 
