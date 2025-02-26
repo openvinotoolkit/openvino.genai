@@ -67,7 +67,6 @@ public:
 private:
     class IInputsEmbedder;
     std::shared_ptr<IInputsEmbedder> m_impl;
-    std::mutex m_inputs_embedder_mutex;
 
     friend class InputsEmbedderMiniCPM;
     friend class InputsEmbedderLLaVA;

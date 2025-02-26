@@ -176,7 +176,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
                                         GenerationConfig sampling_params) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
-    auto inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
+    ov::Tensor inputs;
+    {
+        const std::lock_guard<std::mutex> lock(m_inputs_embedder_mutex);
+        inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
+    }
     return add_request(request_id, inputs, sampling_params);
 }
 
