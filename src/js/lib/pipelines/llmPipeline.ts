@@ -1,14 +1,17 @@
 import util from 'node:util';
 import addon from '../addon.js';
 
+export type ResolveFunction = (arg: { value: string, done: boolean }) => void;
+export type Options = {[key: string]: string};
+
 export class LLMPipeline {
-  modelPath = null;
-  device = null;
-  pipeline = null;
+  modelPath: string | null = null;
+  device: string | null = null;
+  pipeline: any | null = null;
   isInitialized = false;
   isChatStarted = false;
 
-  constructor(modelPath, device) {
+  constructor(modelPath: string, device: string) {
     this.modelPath = modelPath;
     this.device = device;
   }
@@ -54,8 +57,8 @@ export class LLMPipeline {
     return result;
   }
 
-  static castOptionsToString(options) {
-    const castedOptions = {};
+  static castOptionsToString(options: Options) {
+    const castedOptions: Options = {};
 
     for (const key in options)
       castedOptions[key] = String(options[key]);
@@ -63,7 +66,7 @@ export class LLMPipeline {
     return castedOptions;
   }
 
-  getAsyncGenerator(prompt, generationOptions = {}) {
+  getAsyncGenerator(prompt: string, generationOptions: Options = {}) {
     if (!this.isInitialized)
       throw new Error('Pipeline is not initialized');
 
@@ -74,11 +77,11 @@ export class LLMPipeline {
 
     const castedOptions = LLMPipeline.castOptionsToString(generationOptions);
 
-    const queue = [];
-    let resolvePromise;
+    const queue: { isDone: boolean; subword: string; }[] = [];
+    let resolvePromise: ResolveFunction | null;
 
     // Callback function that C++ will call when a chunk is ready
-    function chunkOutput(isDone, subword) {
+    function chunkOutput(isDone: boolean, subword: string) {
       if (resolvePromise) {
         // Fulfill pending request
         resolvePromise({ value: subword, done: isDone });
@@ -95,19 +98,27 @@ export class LLMPipeline {
       async next() {
         // If there is data in the queue, return it
         // Otherwise, return a promise that will resolve when data is available
-        if (queue.length > 0) {
-          const { isDone, subword } = queue.shift();
+        const data = queue.shift();
+
+        if (data !== undefined) {
+          const { isDone, subword } = data;
 
           return { value: subword, done: isDone };
         }
 
-        return new Promise((resolve) => (resolvePromise = resolve));
+        return new Promise(
+          (resolve: ResolveFunction) => (resolvePromise = resolve),
+        );
       },
       [Symbol.asyncIterator]() { return this; },
     };
   }
 
-  async generate(prompt, generationOptions, generationCallback) {
+  async generate(
+    prompt: string,
+    generationOptions: Options,
+    generationCallback: (chunk: string)=>void | undefined,
+  ) {
 
     if (generationCallback !== undefined
       && typeof generationCallback !== 'function')
