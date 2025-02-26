@@ -217,10 +217,6 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
     return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
-ov::Tensor InputsEmbedder::get_input_embeddings(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
-    return m_impl->get_input_embeddings(prompt, images, metrics);
-}
-
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
 }
@@ -231,10 +227,6 @@ EmbeddingsModel InputsEmbedder::get_embedding_model() const {
 
 KVCacheState& InputsEmbedder::get_kv_cache_state() {
     return  m_impl->get_kv_cache_state();
-}
-
-bool InputsEmbedder::should_reset_kv_cache() const {
-    return m_impl->should_reset_kv_cache();
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
