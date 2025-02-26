@@ -27,6 +27,10 @@ MODELS = {
     "SmolLM2-135M": {
         "name": "HuggingFaceTB/SmolLM2-135M",
         "convert_args": ['--trust-remote-code']
+    },
+    "SmolLM2-360M": {
+        "name": "HuggingFaceTB/SmolLM2-360M",
+        "convert_args": ['--trust-remote-code']
     },  
     "WhisperTiny": {
         "name": "openai/whisper-tiny",
@@ -82,6 +86,7 @@ def setup_and_teardown(request, tmp_path_factory):
             shutil.rmtree(ov_cache)
         else:
             logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
+
 
 @pytest.fixture(scope="session")
 def convert_model(request):
