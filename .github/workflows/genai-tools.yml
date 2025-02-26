@@ -51,7 +51,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     strategy:
       fail-fast: false
       matrix:
@@ -151,7 +151,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     strategy:
       fail-fast: false
       matrix:

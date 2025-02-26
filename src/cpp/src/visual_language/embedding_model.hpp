@@ -17,7 +17,6 @@
 
 #include <openvino/openvino.hpp>
 #include "visual_language/processor_config.hpp"
-#include "visual_language/vlm_model_type.hpp"
 
 namespace ov {
 namespace genai {

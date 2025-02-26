@@ -99,12 +99,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             std::unordered_map<uint64_t, GenerationOutput> generation_outputs = handle->read();
             OPENVINO_ASSERT(generation_outputs.size() <= 1);
             if (!generation_outputs.empty()) {
-                for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
-                    auto streaming_status = streamer_ptr->write(generated_token_id);
-                    if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-                        streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
-                        break;
-                    }
+                auto streaming_status = streamer_ptr->write(generation_outputs.begin()->second.generated_ids);
+                if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                    streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
                 }
             }
         }

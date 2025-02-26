@@ -62,8 +62,5 @@ public:
     /// Keys in the file must match the ProcessorConfig's members.
     /// @param json_path A path to a file to extract the values from.
     explicit ProcessorConfig(const std::filesystem::path& json_path);
-    /// @brief Default copy constructor.
-    /// @param A config to copy from.
-    ProcessorConfig(const ProcessorConfig&) = default;
 };
 }  // namespace ov::genai
