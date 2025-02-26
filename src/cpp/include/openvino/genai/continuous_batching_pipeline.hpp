@@ -119,9 +119,10 @@ public:
         const ov::genai::GenerationConfig& generation_config = {}
     );
 
-    ov::genai::Tokenizer get_tokenizer();
+    ov::genai::Tokenizer get_tokenizer() const;
 
     ov::genai::GenerationConfig get_config() const;
+    void set_config(const ov::genai::GenerationConfig& config);
 
     /**
      * Allows to get the current pipeline metrics.
@@ -131,6 +132,7 @@ public:
 
     GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
+    GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params);
 
     void step();
 
@@ -139,7 +141,11 @@ public:
     // more high level interface, which can process multiple prompts in continuous batching manner
     std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
     std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
-
+    std::vector<GenerationResult> generate(
+             const std::vector<std::string>& prompts,
+             const std::vector<std::vector<ov::Tensor>>& images,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer=std::monostate{});
     /**
     * @brief start chat with keeping history in kv cache.
     * @param system_message optional system message.

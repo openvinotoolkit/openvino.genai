@@ -71,12 +71,9 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
                              ov::genai::GenerationHandle& handle) {
     if (streamer_ptr && handle->can_read()) {
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
-        for (const auto& gen_token : token.begin()->second.generated_ids) {
-            auto streaming_status = streamer_ptr->write(gen_token);
-            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-                streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
-                break;
-            }
+        auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
+        if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+            streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
         }
     }
 }

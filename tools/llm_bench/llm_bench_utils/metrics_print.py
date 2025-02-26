@@ -81,14 +81,19 @@ def print_generated(iter_num, warm_up=False, generated=None, prompt_idx=-1):
         iter_str = 'warm-up'
     prefix = f'[{iter_str}][P{prompt_idx}]'
     if generated is not None:
+        print_unicode(f'{prefix} Generated: {generated}', '{prefix} Unable print generated')
+
+
+def print_unicode(text, on_error="Unable print", loglevel="info"):
+    log_fn = getattr(log, loglevel)
+    try:
+        log_fn(text)
+    except (UnicodeError, UnicodeEncodeError, UnicodeDecodeError):
         try:
-            log.info(f'{prefix} Generated: {generated}')
-        except (UnicodeError, UnicodeEncodeError, UnicodeDecodeError):
-            try:
-                utf8_generated = generated.encode(encoding="utf-8", errors="replace").decode()
-                log.info(f'{prefix} Generated: {utf8_generated}')
-            except Exception:
-                log.warning(f'{prefix} Unable print generated')
+            utf8_text = text.encode(encoding="utf-8", errors="replace").decode()
+            log_fn(utf8_text)
+        except Exception:
+            log.warning(on_error)
 
 
 def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx=-1):
