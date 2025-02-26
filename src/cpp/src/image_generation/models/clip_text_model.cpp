@@ -134,9 +134,11 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
         auto compiled_input_shape = input_ids.get_shape();
         OPENVINO_ASSERT(compiled_input_shape.size() == 2, "CLIP text encoder model input must have rank of 2");
         OPENVINO_ASSERT(text_embedding_batch_size <= compiled_input_shape[0],
-                        "text_embedding_batch_size > CLIP text encoder model batch size");
+                        "text_embedding_batch_size (", text_embedding_batch_size,
+                        ") > CLIP text encoder model batch size (",compiled_input_shape[0], ").");
         OPENVINO_ASSERT(m_config.max_position_embeddings == compiled_input_shape[1],
-                        "max_position_embeddings != what CLIP text encoder model was compiled for.");
+                        "max_position_embeddings (", m_config.max_position_embeddings,
+                        ") != what CLIP text encoder model was compiled for (", compiled_input_shape[1], ").");
     }
 
     size_t current_batch_idx = 0;
