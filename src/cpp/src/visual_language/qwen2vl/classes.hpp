@@ -12,9 +12,9 @@
 
 namespace ov::genai {
 
-class VisionEncoderQwen2VL : public VisionEncoder::IVisionEncoder {
+class VisionEncoderQwen2VL : public VisionEncoder {
 public:
-    using IVisionEncoder::IVisionEncoder;
+    using VisionEncoder::VisionEncoder;
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 };

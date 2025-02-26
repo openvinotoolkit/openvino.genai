@@ -279,7 +279,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     images_grid_thw.reserve(single_images.size());
     
     for (const auto& image : single_images) {
-        EncodedImage encoded_image = m_vision_encoder.encode(image);
+        EncodedImage encoded_image = m_vision_encoder->encode(image);
         ov::Tensor single_image_embeds = encoded_image.resized_source;
         image_embeds.push_back(std::move(single_image_embeds));
 
@@ -288,7 +288,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
         size_t grid_w = encoded_image.resized_source_size.width;
         images_grid_thw.push_back({grid_t, grid_h, grid_w});
 
-        size_t merge_length = std::pow(m_vision_encoder.get_processor_config().merge_size, 2);
+        size_t merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
         size_t num_image_pad_tokens = grid_t * grid_h * grid_w / merge_length;
 
         formatted_prompt += m_vlm_config.vision_start_token;
@@ -442,7 +442,7 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
 }
 
 ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {  
-    const size_t spatial_merge_size = m_vision_encoder.get_processor_config().merge_size;
+    const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
 
     std::vector<std::vector<size_t>> all_pos_ids;
     size_t total_positions = 0;
@@ -547,7 +547,7 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
     const ov::Tensor& input_ids_tensor,
     const std::vector<std::array<size_t, 3>>& images_grid_thw,
     const int64_t vision_start_token_id) {
-    const size_t spatial_merge_size = m_vision_encoder.get_processor_config().merge_size;
+    const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
     
     const int64_t* input_ids = input_ids_tensor.data<int64_t>();
     size_t batch_size = input_ids_tensor.get_shape().at(0);

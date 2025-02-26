@@ -345,7 +345,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt,
 
     for (const auto& image : single_images) {
         ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
-        EncodedImage encoded_image = m_vision_encoder.encode(image, vision_config);
+        EncodedImage encoded_image = m_vision_encoder->encode(image, vision_config);
 
         if (!image_newline) {
             size_t embed_dim = encoded_image.resized_source.get_shape().at(2);

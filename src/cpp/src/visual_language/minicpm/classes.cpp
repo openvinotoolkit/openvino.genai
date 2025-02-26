@@ -576,7 +576,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
     for (const ov::Tensor& image : single_images) {
-        EncodedImage encoded_image = m_vision_encoder.encode(image);
+        EncodedImage encoded_image = m_vision_encoder->encode(image);
         if (m_vlm_config.use_image_id) {
             images_prompt += m_vlm_config.im_id_start + std::to_string(m_image_id) + m_vlm_config.im_id_end;
             ++m_image_id;

@@ -61,7 +61,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const std::string& device,
         const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
-    m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config),
+    m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, device_config)),
     m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
     m_tokenizer{model_dir, device_config} { }
 
@@ -73,14 +73,14 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const std::string& device,
         const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
-    m_vision_encoder(
+    m_vision_encoder(VisionEncoder::create(
         utils::get_model_weights_pair(models_map, "vision_embeddings").first,
         utils::get_model_weights_pair(models_map, "vision_embeddings").second,
         config_dir_path,
         m_vlm_config.model_type,
         device,
         device_config
-    ),
+    )),
     m_embedding(
         utils::get_model_weights_pair(models_map, "text_embeddings").first,
         utils::get_model_weights_pair(models_map, "text_embeddings").second,

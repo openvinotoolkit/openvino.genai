@@ -237,7 +237,7 @@ ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prom
     image_embeds.reserve(single_images.size());
     
     for (const auto& image : single_images) {
-        EncodedImage encoded_image = m_vision_encoder.encode(image);
+        EncodedImage encoded_image = m_vision_encoder->encode(image);
         ov::Tensor single_image_embeds = encoded_image.resized_source;
 
         const size_t num_patches = single_image_embeds.get_shape().at(0);

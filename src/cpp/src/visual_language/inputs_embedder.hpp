@@ -68,7 +68,7 @@ private:
         // VLM config
         VLMConfig m_vlm_config;
         // An encoder to infer embeddings of an image.
-        VisionEncoder m_vision_encoder;
+        VisionEncoder::Ptr m_vision_encoder;
         // A model to compute token embeddings.
         // Input shape: [N, conversation length].
         // Output shape: [1, conversation length, hidden_size].

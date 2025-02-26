@@ -47,21 +47,22 @@ struct EncodedImage {
 /// ov::InferRequest and configured by ProcessorConfig.
 class VisionEncoder {
 public:
-    /// @brief Construct the encoder from model_dir.
+    using Ptr = std::shared_ptr<VisionEncoder>;
+
+    /// @brief Constructs the encoder from model_dir.
     /// @param model_dir A folder containing openvino_vision_embeddings_model.xml and
     /// preprocessor_config.json.
     /// @param model_type A type of VLM model.
     /// @param device A device to compile the encoder for.
     /// @param properties A config to be passed to
     /// ov::Core::compile_model().
-    VisionEncoder(
+    static VisionEncoder::Ptr create(
         const std::filesystem::path& model_dir,
         const VLMModelType model_type,
         const std::string& device,
-        const ov::AnyMap properties = {}
-    );
+        const ov::AnyMap properties = {});
 
-    /// @brief Construct the encoder from models map.
+    /// @brief Constructs the encoder from models map.
     /// @param model Model IR as string (openvino_vision_embeddings_model.xml)
     /// @param weights Model weights as tensor (openvino_vision_embeddings_model.bin)
     /// @param config_dir_path A path to directory containing preprocessor_config.json.
@@ -69,14 +70,13 @@ public:
     /// @param device A device to compile the encoder for.
     /// @param properties A config to be passed to
     /// ov::Core::compile_model().
-    VisionEncoder(
+    static VisionEncoder::Ptr create(
         const std::string& model,
         const ov::Tensor& weights,
         const std::filesystem::path& config_dir_path,
         const VLMModelType model_type,
         const std::string& device,
-        const ov::AnyMap properties = {}
-    );
+        const ov::AnyMap properties = {});
 
     /// @brief Compute embeddings of an image given
     /// ProcessorConfig members.
@@ -86,42 +86,30 @@ public:
     /// instead of the config obtained in constructors.
     /// @return Resulting embeddings for the resized source image and
     /// its slices.
-    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {});
+    virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
 
+    /// @brief Gets processor config
+    /// @return Processor config
     ProcessorConfig get_processor_config() const;
 
-private:
-    // base class for model-specific vision encoders
-    class IVisionEncoder {
-    public:
-        IVisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
+protected:
+    /// @brief A model for image encoding.
+    ov::InferRequest m_vision_encoder;
+    /// @brief A config to follow.
+    ProcessorConfig m_processor_config;
 
-        IVisionEncoder(
-            const std::string& model,
-            const ov::Tensor& weights,
-            const std::filesystem::path& config_dir_path,
-            const std::string& device,
-            const ov::AnyMap device_config);
+public:
+    VisionEncoder(
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap properties);
 
-        virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& properties) = 0;
-
-        ProcessorConfig get_processor_config() const;
-
-    protected:
-        /// @brief A model for image encoding.
-        ov::InferRequest m_vision_encoder;
-        /// @brief A config to follow.
-        ProcessorConfig m_processor_config;
-    };
-
-    std::shared_ptr<IVisionEncoder> m_impl;
-
-    friend class VisionEncoderMiniCPM;
-    friend class VisionEncoderLLaVA;
-    friend class VisionEncoderLLaVANext;
-    friend class VisionEncoderInternVLChat;
-    friend class VisionEncoderPhi3V;
-    friend class VisionEncoderQwen2VL;
+    VisionEncoder(
+        const std::string& model,
+        const ov::Tensor& weights,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap properties);
 };
 
 } // namespace ov::genai
