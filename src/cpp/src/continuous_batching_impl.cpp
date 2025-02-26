@@ -121,6 +121,20 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     initialize_pipeline(model, scheduler_config, device, properties, kv_cache_config);
 }
 
+ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
+    const std::shared_ptr<ov::Model>& model,
+    std::shared_ptr<InputsEmbedder> inputs_embedder,
+    const Tokenizer& tokenizer,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config,
+    bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
+    m_inputs_embedder = inputs_embedder;
+    m_model_runner->set_embedding_model(inputs_embedder->get_embedding_model());
+    m_model_input_type = ModelInputType::EMBEDDINGS;
+}
+
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     if (m_scheduler) {
         m_scheduler->release();
@@ -255,6 +269,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
+        if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+            OPENVINO_THROW("Prefix caching is not supported for VLM models.");
+        }
         m_scheduler->restore_cached_blocks(sequence_group);
     }
 
@@ -270,12 +287,21 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                 const std::string& prompt,
                                                                 ov::genai::GenerationConfig sampling_params) {
-    static ManualTimer timer("tokenize");
-    timer.start();
-    ov::Tensor input_ids = m_tokenizer.encode(prompt).input_ids;
-    timer.end();
+    ov::Tensor inputs;
+    ov::genai::VLMPerfMetrics metrics;
+    if (m_model_input_type == ModelInputType::TOKENS) {
+        static ManualTimer timer("tokenize");
+        timer.start();
+        inputs = m_tokenizer.encode(prompt).input_ids;
+        timer.end();
+        return add_request(request_id, inputs, sampling_params);
+    } else if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+    } else {
+        OPENVINO_THROW("Unknown model input type.");
+    }
 
-    return add_request(request_id, input_ids, sampling_params);
+    return add_request(request_id, inputs, sampling_params);
 }
 
 bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_requests() {

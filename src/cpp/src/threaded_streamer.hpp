@@ -32,9 +32,7 @@ public:
             return;
         }
 
-        for (const auto token : tokens) {
-            m_squeue.push(token);
-        }
+        m_squeue.push(tokens);
     }
 
     void write(const int64_t token) {
@@ -71,18 +69,20 @@ public:
 private:
     std::shared_ptr<StreamerBase> m_streamer_ptr = nullptr;
     std::shared_ptr<std::thread> m_worker_thread = nullptr;
-    SynchronizedQueue<std::variant<int64_t, std::monostate>> m_squeue;
+    SynchronizedQueue<std::variant<int64_t, std::vector<int64_t>, std::monostate>> m_squeue;
 
     std::atomic<StreamingStatus> m_status = StreamingStatus::RUNNING;
 
     void _worker() {
         while (m_status == StreamingStatus::RUNNING) {
             // wait for queue pull
-            std::variant<int64_t, std::monostate> token_variant = m_squeue.pull();
+            std::variant<int64_t, std::vector<int64_t>, std::monostate> token_variant = m_squeue.pull();
 
             // wait for streamer_ptr result
             if (auto token = std::get_if<int64_t>(&token_variant)) {
                 m_status = _get_streaming_status(m_streamer_ptr->write(*token));
+            } else if (auto tokens = std::get_if<std::vector<int64_t>>(&token_variant)) {
+                m_status = _get_streaming_status(m_streamer_ptr->write(*tokens));
             } else if (auto stop_token = std::get_if<std::monostate>(&token_variant)) {
                 break;
             } else {
