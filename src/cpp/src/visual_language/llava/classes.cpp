@@ -169,8 +169,6 @@ ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(
         size_t n_tokens = std::min(image_embed_it->get_shape().at(1), size_t(token_offset - changed_token_offset));
         size_t n_floats = n_tokens * hidden_size;
         float* text_embeds_idx = text_embeds_data + (changed_token_offset + 1) * hidden_size;
-        std::cout << text_embeds.get_shape() << '\n';
-        std::cout << (text_embeds_idx - text_embeds_data) << ' ' << n_floats << ' ' << (text_embeds_end - text_embeds_data) << '\n';
         OPENVINO_ASSERT(text_embeds_idx + n_floats <= text_embeds_end);
         std::copy_n(
             image_embed_it->data<const float>() + image_embed_it->get_size() - n_floats,
