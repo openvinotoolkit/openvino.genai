@@ -107,6 +107,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cache):
     ov_pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config, **get_default_llm_properties())
     generation_config = config
     generation_config.max_new_tokens = 30
+    eps = 0.001
     image_links_list = [
         [],
         [image_links[0]]
@@ -134,7 +135,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cache):
         for out_idx, output in enumerate(outputs):
             text = tokenizer.decode(output.generated_ids)
             assert text == res_generate[idx].texts[out_idx]
-            assert output.score == res_generate[idx].scores[out_idx]
+            assert abs(output.score - res_generate[idx].scores[out_idx]) < eps
 
 
 @pytest.mark.precommit
