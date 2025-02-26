@@ -42,7 +42,7 @@ def main():
     #
     # Step 2: Reshape the pipeline given number of images, width, height, and guidance scale.
     #
-    pipe.reshape(1, width, height, pipe.get_generation_config().guidance_scale);
+    pipe.reshape(1, width, height, pipe.get_generation_config().guidance_scale)
 
     #
     # Step 3: Compile the pipeline given the specified devices, and properties (like cache dir)
@@ -60,7 +60,7 @@ def main():
     #    }
     #}
 
-    pipe.compile(args.text_encoder_device, args.unet_device, args.vae_decoder_device, config=properties );
+    pipe.compile(args.text_encoder_device, args.unet_device, args.vae_decoder_device, config=properties)
 
     #
     # Step 4: Use the Text2ImagePipeline to generate 'number_of_images_to_generate' images.
