@@ -277,6 +277,7 @@ def test_perf_metrics(cache):
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6", cache)
 
     images = [get_image_by_link(image_links[0])]
+    image_tokens_num = 54 # the number of tokens into which this test image is encoded
     max_new_tokens = 30
 
     start_time = perf_counter_ns()
@@ -291,22 +292,33 @@ def test_perf_metrics(cache):
     assert perf_metrics is not None
 
     assert 0 < perf_metrics.get_load_time() < load_time
-    assert 0 < perf_metrics.get_num_generated_tokens() < generate_time
-    assert 0 < perf_metrics.get_num_input_tokens() < generate_time
+    assert 0 < perf_metrics.get_num_generated_tokens() <= max_new_tokens
+    assert 0 < perf_metrics.get_num_input_tokens() < len(prompts[0]) + image_tokens_num
     assert 0 < perf_metrics.get_ttft().mean < generate_time
     assert 0 < perf_metrics.get_tpot().mean < generate_time
     assert 0 < perf_metrics.get_ipot().mean < generate_time
-    assert 0 < perf_metrics.get_throughput().mean < max_new_tokens / ((generate_time - perf_metrics.get_ttft().mean) / 1000)
+    assert 0 < perf_metrics.get_throughput().mean < max_new_tokens / ((generate_time - perf_metrics.get_ttft().mean) / 1000.0)
     assert 0 < perf_metrics.get_inference_duration().mean < generate_time
     assert 0 < perf_metrics.get_generate_duration().mean < generate_time
     assert 0 < perf_metrics.get_tokenization_duration().mean < generate_time
     assert 0 < perf_metrics.get_detokenization_duration().mean < generate_time
     assert 0 < perf_metrics.get_prepare_embeddings_duration().mean < generate_time
 
+    double_generate_time = generate_time * generate_time
+    assert 0 <= perf_metrics.get_ttft().std < double_generate_time
+    assert 0 <= perf_metrics.get_tpot().std < double_generate_time
+    assert 0 <= perf_metrics.get_ipot().std < double_generate_time
+    assert 0 <= perf_metrics.get_throughput().std < double_generate_time
+    assert 0 <= perf_metrics.get_inference_duration().std < double_generate_time
+    assert 0 <= perf_metrics.get_generate_duration().std < double_generate_time
+    assert 0 <= perf_metrics.get_tokenization_duration().std < double_generate_time
+    assert 0 <= perf_metrics.get_detokenization_duration().std < double_generate_time
+    assert 0 <= perf_metrics.get_prepare_embeddings_duration().std < double_generate_time
+
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     vlm_raw_metrics = perf_metrics.vlm_raw_metrics
 
-    raw_dur = np.array(vlm_raw_metrics.prepare_embeddings_durations) / 1000
+    raw_dur = np.array(vlm_raw_metrics.prepare_embeddings_durations) / 1000.0
     mean_dur, std_dur = perf_metrics.get_prepare_embeddings_duration()
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
