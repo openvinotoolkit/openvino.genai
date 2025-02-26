@@ -6,6 +6,25 @@
 #include "clip.hpp"
 #include <cmath>
 
+clip_image_u8 tensor_to_clip_image_u8(const ov::Tensor& image_tensor) {
+    clip_image_u8 image{
+        int(image_tensor.get_shape().at(2)),
+        int(image_tensor.get_shape().at(1)),
+        {image_tensor.data<uint8_t>(), image_tensor.data<uint8_t>() + image_tensor.get_size()}
+    };
+    return image;
+}
+
+ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image) {
+    ov::Tensor image_tensor{
+        ov::element::f32,
+        {1, 3, static_cast<size_t>(image.ny), static_cast<size_t>(image.nx)}
+    };
+    std::memcpy(image_tensor.data<float>(), image.buf.data(), image.buf.size() * sizeof(float));
+    return image_tensor;
+}
+
+
 // Linear interpolation between two points
 static float clip_lerp(float s, float e, float t) {
     return s + (e - s) * t;
