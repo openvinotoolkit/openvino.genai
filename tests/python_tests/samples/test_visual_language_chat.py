@@ -23,13 +23,13 @@ class TestVisualLanguageChat:
     def test_sample_visual_language_chat(self, convert_model, download_test_content, sample_args):
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
-        py_command = [sys.executable, py_script, convert_model, download_test_content, '<<<', f'"${sample_args}"']
-        py_result = run_sample(py_command)
+        py_command = [sys.executable, py_script, convert_model, download_test_content]
+        py_result = run_sample(py_command, sample_args)
 
         # Test CPP sample
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'visual_language_chat')
-        cpp_command =[cpp_sample, convert_model, download_test_content, '<<<', f'"${sample_args}"']
-        cpp_result = run_sample(cpp_command)
+        cpp_command =[cpp_sample, convert_model, download_test_content]
+        cpp_result = run_sample(cpp_command, sample_args)
 
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
