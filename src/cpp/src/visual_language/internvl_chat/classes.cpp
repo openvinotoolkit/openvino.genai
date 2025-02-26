@@ -129,7 +129,6 @@ ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorCon
 } // namespace
 
 EncodedImage VisionEncoderInternVLChat::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    // TODO
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Tensor pixel_values = get_pixel_values_internvl(image, config);

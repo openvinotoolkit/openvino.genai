@@ -402,7 +402,6 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
 } // namespace
 
 EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    // TODO
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     clip_ctx ctx_clip;

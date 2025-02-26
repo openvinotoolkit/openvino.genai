@@ -69,7 +69,6 @@ ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig
 } // namespace
 
 EncodedImage VisionEncoderLLaVA::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    // TODO
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Tensor pixel_values = get_pixel_values_llava(image, config);

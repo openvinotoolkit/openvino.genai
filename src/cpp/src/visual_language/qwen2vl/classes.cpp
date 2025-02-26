@@ -167,7 +167,6 @@ ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
 } // namespace
 
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    // TODO
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Shape image_shape = image.get_shape();
