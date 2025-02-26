@@ -282,10 +282,9 @@ def test_perf_metrics(cache):
     start_time = perf_counter_ns()
     pipe = VLMPipeline(models_path, "CPU")
     start_generate = perf_counter_ns()
-    load_time = (start_generate - start_time) / 1000000
-
     result = pipe.generate(prompts[0], images=images, generation_config=GenerationConfig(max_new_tokens=max_new_tokens))
-    generate_time = (perf_counter_ns() - start_generate) / 1000000
+    generate_time = (perf_counter_ns() - start_generate) / 1_000_000.0
+    load_time = (start_generate - start_time) / 1_000_000.0
 
     perf_metrics = result.perf_metrics
 
