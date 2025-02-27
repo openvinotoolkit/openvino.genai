@@ -100,7 +100,15 @@ public:
 
     virtual void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) = 0;
 
-    virtual void compile(const std::string& device, const ov::AnyMap& properties) = 0;
+    virtual void compile(const std::string& device, const ov::AnyMap& properties)
+    {
+        compile(device, device, device, properties);
+    }
+
+    virtual void compile(const std::string& text_encode_device,
+                         const std::string& denoise_device,
+                         const std::string& vae_device,
+                         const ov::AnyMap& properties) = 0;
 
     virtual std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) = 0;
 
