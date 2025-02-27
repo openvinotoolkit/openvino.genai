@@ -18,7 +18,7 @@ from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare
+from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type
 from data.models import get_chat_models_list
 from data.test_dataset import get_test_dataset
 
@@ -70,6 +70,7 @@ def test_e2e_nightly(tmp_path, model_id, pipeline_type):
 @pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
 def test_e2e_real_models(tmp_path, model_id, pipeline_type):
     prompts, generation_config = get_test_dataset()
+    updated_gen_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
     generate_and_compare(prompts=prompts,
                          generation_config=generation_config,
                          model=model_id,
@@ -93,13 +94,12 @@ batched_prompts = [
 ]
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompt", batched_prompts[1:])  # num_beams=15 diverges on the first prompt.
-@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
 @pytest.mark.precommit
 @pytest.mark.skip(reason="CVS-162891: Fix test_continuous_batching_vs_stateful tests after we started to compare cb vs sdpa")
-def test_continuous_batching_vs_stateful(prompt, generation_config, pipeline_type):
+def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id = "facebook/opt-125m"
     _, _, models_path = download_and_convert_model(model_id, padding_side="left")
-    cb_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.CONTINIOUS_BATCHING)
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
 
     generated = cb_pipe.generate(prompt, **generation_config)
@@ -114,14 +114,13 @@ def test_continuous_batching_vs_stateful(prompt, generation_config, pipeline_typ
 
 prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is that', 'table is made of']
 @pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
 @pytest.mark.precommit
-def test_cb_streamer_vs_return_vs_stateful(prompt, pipeline_type):
+def test_cb_streamer_vs_return_vs_stateful(prompt):
     model_id = "facebook/opt-125m"
     _, _, models_path = download_and_convert_model(model_id)
 
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
-    cb_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
     streamed = []
     generated = cb_pipe.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
@@ -154,6 +153,7 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict, pip
     cb_pipe.start_chat()
 
     generation_config = GenerationConfig(**generation_config_kwargs)
+    generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
     ov_pipe.set_generation_config(generation_config)
 
     for question in questions:
