@@ -15,14 +15,15 @@ from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
-from common import TESTS_ROOT, run_cb_pipeline_with_ref
-
+from utils.ov_genai_pipelines import PipelineType, generate_and_compare
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 from utils.constants import get_default_llm_properties
 from utils.network import retry_request
+from data.test_dataset import get_test_dataset
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
+    TESTS_ROOT = Path(__file__).parent
     file_path = TESTS_ROOT / 'data' / file_name
     with open(file_path, 'r') as f:
         return {"prompts": [s for s in f]}
@@ -194,7 +195,13 @@ scheduler_params_list = [
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_dynamic_memory_allocation(tmp_path, params):
-    run_cb_pipeline_with_ref(tmp_path, "facebook/opt-125m", scheduler_params=params[0], generation_config=params[1])
+    prompts, _ = get_test_dataset()
+    generate_and_compare(prompts=prompts,
+                         tmp_path=tmp_path,
+                         model="facebook/opt-125m",
+                         scheduler_config=params[0],
+                         generation_config=params[1],
+                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
 
 @pytest.fixture(scope='module')
