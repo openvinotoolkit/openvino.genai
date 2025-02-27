@@ -4,6 +4,7 @@ import pytest
 import shutil
 import logging
 import gc
+import requests
 
 from utils.network import retry_request
 
@@ -132,11 +133,11 @@ def download_test_content(request):
     file_path = os.path.join(test_data, file_name)
     if not os.path.exists(file_path):
         logger.info(f"Downloading test content from {file_url}...")
-        result = subprocess.run(
-            ["wget", file_url, "-O", file_path],
-            check=True
-        )
-        assert result.returncode == 0, "Failed to download test content"
+        response = requests.get(file_url, stream=True)
+        response.raise_for_status()
+        with open(file_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
         logger.info(f"Downloaded test content to {file_path}")
     else:
         logger.info(f"Test content already exists at {file_path}")
