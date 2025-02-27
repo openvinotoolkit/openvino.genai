@@ -78,6 +78,25 @@ OPENVINO_EXTERN_C {
                                                     int max_size,
                                                     GenerationConfigHandle* config);
 
+    /*@brief Generate text by LLMPipelineHandle with Streamer.
+     * @param pipe A pointer to the LLMPipelineHandle.
+     * @param inputs A pointer to the input string.
+     * @param output A pointer to the output string buffer.
+     * @param max_size The maximum size of the output buffer.
+     * @param config A pointer to the GenerationConfigHandle, the pointer can be NULL.
+     * @param buffer A pointer to the stream buffer.
+     * @param buffer_size The size of the stream buffer.
+     * @param buffer_pos A pointer to the stream buffer position.
+     */
+    OPENVINO_GENAI_EXPORTS void LLMPipelineGenerateStream(LLMPipelineHandle * pipe,
+                                                          const char* inputs,
+                                                          char* output,
+                                                          int max_size,
+                                                          GenerationConfigHandle* config,
+                                                          char* buffer,
+                                                          const int buffer_size,
+                                                          int* buffer_pos);
+
     /**
      * @brief Generate text by LLMPipelineHandle and return DecodedResultsHandle.
      * @param pipe A pointer to the LLMPipelineHandle.

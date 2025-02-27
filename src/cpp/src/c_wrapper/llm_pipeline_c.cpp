@@ -64,6 +64,30 @@ OPENVINO_EXTERN_C {
             output[max_size - 1] = '\0';
         }
     }
+    void LLMPipelineGenerateStream(LLMPipelineHandle * pipe,
+                                   const char* inputs,
+                                   char* output,
+                                   int max_size,
+                                   GenerationConfigHandle* config,
+                                   char* buffer,
+                                   const int buffer_size,
+                                   int* buffer_pos) {
+        if (pipe && pipe->object && output) {
+            std::string input_str(inputs);
+            ov::genai::StringInputs input = {input_str};
+            auto stream = [&](const std::string& word) -> bool {
+                if ((*buffer_pos) + word.size() + 1 < buffer_size) {
+                    std::strcpy(buffer + (*buffer_pos), word.c_str());
+                    (*buffer_pos) += word.size();
+                }
+                return false;
+            };
+            std::string results = (config && config->object) ? pipe->object->generate(input, *(config->object), stream)
+                                                             : pipe->object->generate(input, {}, stream);
+            strncpy(output, results.c_str(), max_size - 1);
+            output[max_size - 1] = '\0';
+        }
+    }
     DecodedResultsHandle* LLMPipelineGenerateDecodeResults(LLMPipelineHandle * pipe,
                                                            const char* inputs,
                                                            GenerationConfigHandle* config) {
