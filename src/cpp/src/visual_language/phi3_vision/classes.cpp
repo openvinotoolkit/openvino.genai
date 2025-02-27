@@ -562,6 +562,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
     if (tokens.size() > images_features_proj.size()) {
         features_length += tokens.back().get_shape().at(1);
     }
+    OPENVINO_ASSERT(features_length == new_tokens.get_shape().at(1));
     ov::Tensor inputs_embeds{ov::element::f32, {1, features_length, m_vlm_config.hidden_size}};
     size_t offset = 0;
     if (tokens.size() > images_features_proj.size()) {

@@ -95,6 +95,8 @@ private:
     std::shared_ptr<ov::Model> m_model;
 
     Tokenizer m_clip_tokenizer;
+
+    bool m_slice_batch1_output = false;
 };
 
 } // namespace genai

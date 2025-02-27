@@ -415,6 +415,30 @@ void init_image_generation_pipelines(py::module_& m) {
                 kwargs: Device properties.
             )")
         .def(
+            "compile",
+            [](ov::genai::Text2ImagePipeline& pipe,
+                const std::string& text_encode_device,
+                const std::string& denoise_device,
+                const std::string& vae_device,
+                const py::kwargs& kwargs
+            ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(text_encode_device, denoise_device, vae_device, map);
+                }
+            },
+            py::arg("text_encode_device"), "device to run the text encoder(s) on",
+            py::arg("denoise_device"), "device to run denoise steps on",
+            py::arg("vae_device"), "device to run vae decoder on",
+            R"(
+                Compiles the model.
+                text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                denoise_device (str): Device to run denoise steps on.
+                vae_device (str): Device to run vae decoder on.
+                kwargs: Device properties.
+            )")
+        .def(
             "generate",
             [](ov::genai::Text2ImagePipeline& pipe,
                 const std::string& prompt,

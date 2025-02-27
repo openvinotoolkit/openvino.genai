@@ -113,8 +113,11 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
     for (const auto& image : single_images) {
         ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
         EncodedImage encoded_image = m_vision_encoder->encode(image, vision_config);
+        for (size_t idx = 0; idx < encoded_image.resized_source.get_shape().at(1); ++idx) {
+            formatted_prompt += image_token;
+        }
+        formatted_prompt += "\n";
         image_embeds.push_back(std::move(encoded_image.resized_source));
-        formatted_prompt += image_token + "\n";
     }
     formatted_prompt += prompt;
 
@@ -143,54 +146,38 @@ ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(
     size_t hidden_size = text_embeds_shape[2];
 
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
-    const float* text_embeds_data = text_embeds.data<const float>();
+    int token_offset = text_embeds_seq_length - 1;
+    float* text_embeds_data = text_embeds.data<float>();
+    const float* text_embeds_end = text_embeds_data + text_embeds_seq_length * hidden_size;
 
-    size_t num_image_tokens = 0;
-    for (size_t s = 0; s < text_embeds_seq_length; ++s) {
-        if (input_ids_data[s] == image_token_id) {
-            num_image_tokens++;
+    // Copy in reversed order because a tokenizer may truncate the input removing the preffix.
+    for (auto image_embed_it = image_embeds.rbegin(); image_embed_it != image_embeds.rend(); ++image_embed_it) {
+        for (; token_offset != -1; --token_offset) {
+            if (input_ids_data[token_offset] == image_token_id) {
+                break;
+            }
         }
-    }
-    auto num_images = image_embeds.size();
-    OPENVINO_ASSERT(
-        num_image_tokens == num_images,
-        "Number of image tokens in input_ids different from num_images."
-    );
-
-    size_t total_image_seq_length = 0;
-    for (const auto& single_image_embeds : image_embeds) {
-        OPENVINO_ASSERT(
-            text_embeds_shape[2] == single_image_embeds.get_shape().at(2),
-            "Incompatible shapes between text_embeds and image_embeds"
+        if (token_offset == -1) {
+            break;
+        }
+        int changed_token_offset = token_offset;
+        for (; changed_token_offset != -1; --changed_token_offset) {
+            if (input_ids_data[changed_token_offset] != image_token_id) {
+                break;
+            }
+        }
+        size_t n_tokens = std::min(image_embed_it->get_shape().at(1), size_t(token_offset - changed_token_offset));
+        size_t n_floats = n_tokens * hidden_size;
+        float* text_embeds_idx = text_embeds_data + (changed_token_offset + 1) * hidden_size;
+        OPENVINO_ASSERT(text_embeds_idx + n_floats <= text_embeds_end);
+        std::copy_n(
+            image_embed_it->data<const float>() + image_embed_it->get_size() - n_floats,
+            n_floats,
+            text_embeds_idx
         );
-        total_image_seq_length += single_image_embeds.get_shape().at(1);
+        token_offset -= n_tokens + 1;
     }
-    size_t merged_seq_length = text_embeds_seq_length + total_image_seq_length - num_image_tokens;
-
-    constexpr size_t BATCH_SIZE = 1;
-    ov::Tensor merged_embeds(text_embeds.get_element_type(), {BATCH_SIZE, merged_seq_length, hidden_size});
-    float* merged_data = merged_embeds.data<float>();
-
-    size_t merged_idx = 0;
-    size_t image_idx = 0;
-    for (size_t s = 0; s < text_embeds_seq_length; ++s) {
-        if (input_ids_data[s] == image_token_id) {
-            const float* image_embeds_data = image_embeds[image_idx].data<const float>();
-            size_t image_seq_length = image_embeds[image_idx].get_shape()[1];
-
-            std::copy_n(image_embeds_data,
-                        image_seq_length * hidden_size,
-                        merged_data + merged_idx * hidden_size);
-            merged_idx += image_seq_length;
-            image_idx++;
-        } else {
-            std::copy_n(text_embeds_data + s * hidden_size,
-                        hidden_size,
-                        merged_data + merged_idx * hidden_size);
-            merged_idx++;
-        }
-    }
-    return merged_embeds;
+    return text_embeds;
 }
 
 } // namespace ov::genai

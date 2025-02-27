@@ -16,7 +16,12 @@ def get_ov_model(model_id, cache):
     model_dir = cache.mkdir(model_id.split('/')[-1])
     if (model_dir / "openvino_language_model.xml").exists():
         return model_dir
-    processor = retry_request(lambda: transformers.AutoProcessor.from_pretrained(model_id, trust_remote_code=True))
+    align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
+    processor = retry_request(lambda: transformers.AutoProcessor.from_pretrained(
+        model_id,
+        trust_remote_code=True,
+        **align_with_optimum_cli,
+    ))
     processor.tokenizer.save_pretrained(model_dir)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
