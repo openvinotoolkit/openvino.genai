@@ -356,9 +356,11 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt,
         ImageSize original_image_size{image.get_shape().at(1), image.get_shape().at(2)}; // [height, width]
 
         ov::Tensor packed_features = pack_image_features_llava_next(encoded_image, original_image_size, image_newline);
-
+        for (size_t idx = 0; idx < packed_features.get_shape().at(1); ++idx) {
+            formatted_prompt += image_token;
+        }
+        formatted_prompt += "\n";
         image_embeds.push_back(std::move(packed_features));
-        formatted_prompt += image_token + "\n";
     }
     formatted_prompt += prompt;
 
