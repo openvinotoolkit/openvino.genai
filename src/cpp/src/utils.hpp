@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/core.hpp"
 
 #include "openvino/genai/generation_handle.hpp"
@@ -200,6 +201,10 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
     }
     return default_value;
 }
+
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
+
+std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
 
 }  // namespace utils
 }  // namespace genai
