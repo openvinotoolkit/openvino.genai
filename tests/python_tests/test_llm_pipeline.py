@@ -16,7 +16,7 @@ import openvino_genai as ov_genai
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model
 from utils.tokenizers import delete_rt_info, model_tmp_path
-from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare
+from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_all_pipeline_types
 from data.models import get_models_list, get_chat_models_list
 
 #
@@ -707,3 +707,34 @@ def test_perf_metrics(generation_config, prompt):
     assert len(raw_metrics.m_times_to_first_token) > 0
     assert len(raw_metrics.m_batch_sizes) > 0
     assert len(raw_metrics.m_durations) > 0
+
+
+@pytest.mark.parametrize("pipeline_type", get_all_pipeline_types())
+@pytest.mark.parametrize("stop_str", {True, False})
+@pytest.mark.precommit
+def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
+    # streamer
+    it_cnt = 0
+    def py_streamer(py_str: str):
+        nonlocal it_cnt
+        it_cnt += 1
+        return False
+    
+    prompt = "Prompt example is"
+    model_id : str = "facebook/opt-125m"
+
+    generation_config = ov_genai.GenerationConfig()
+    generation_config.max_new_tokens = 10
+    if stop_str:    
+        generation_config.stop_strings = {" the"}
+        generation_config.include_stop_str_in_output = False
+
+    _ = generate_and_compare(model=model_id,
+                             prompts=prompt,
+                             generation_config=generation_config,
+                             pipeline_type=pipeline_type,
+                             streamer=py_streamer)
+    if stop_str:
+        assert it_cnt == 0
+    else:
+        assert it_cnt > 0

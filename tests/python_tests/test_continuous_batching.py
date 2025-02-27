@@ -37,36 +37,43 @@ def read_models_list(file_name: str):
             models.append(model_name)
     return models
 
+
+def get_all_cb_based_pipelines():
+    return [PipelineType.CONTINIOUS_BATCHING, PipelineType.PAGED_ATTENTION, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING]
+
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
-def test_e2e_precommit(tmp_path, model_id):
+@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
+def test_e2e_precommit(tmp_path, model_id, pipeline_type):
     prompts, generation_configs = get_test_dataset()
     generate_and_compare(prompts=prompts,
                          generation_config=generation_configs,
                          tmp_path=tmp_path,
                          model=model_id,
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
+                         pipeline_type=pipeline_type)
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
-def test_e2e_nightly(tmp_path, model_id):
+@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
+def test_e2e_nightly(tmp_path, model_id, pipeline_type):
     prompts, generation_config = get_test_dataset()
     generate_and_compare(prompts=prompts,
                          generation_config=generation_config,
                          tmp_path=tmp_path,
-                         model=model_id, 
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
+                         model=model_id,
+                         pipeline_type=pipeline_type)
 
 
 @pytest.mark.real_models
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
-def test_e2e_real_models(tmp_path, model_id):
+@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
+def test_e2e_real_models(tmp_path, model_id, pipeline_type):
     prompts, generation_config = get_test_dataset()
     generate_and_compare(prompts=prompts,
                          generation_config=generation_config,
                          model=model_id,
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
+                         pipeline_type=pipeline_type)
 
 #
 # Comparison with stateful
@@ -86,12 +93,13 @@ batched_prompts = [
 ]
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompt", batched_prompts[1:])  # num_beams=15 diverges on the first prompt.
+@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
 @pytest.mark.precommit
 @pytest.mark.skip(reason="CVS-162891: Fix test_continuous_batching_vs_stateful tests after we started to compare cb vs sdpa")
-def test_continuous_batching_vs_stateful(prompt, generation_config):
+def test_continuous_batching_vs_stateful(prompt, generation_config, pipeline_type):
     model_id = "facebook/opt-125m"
     _, _, models_path = download_and_convert_model(model_id, padding_side="left")
-    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
 
     generated = cb_pipe.generate(prompt, **generation_config)
@@ -106,13 +114,14 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
 
 prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is that', 'table is made of']
 @pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
 @pytest.mark.precommit
-def test_cb_streamer_vs_return_vs_stateful(prompt):
+def test_cb_streamer_vs_return_vs_stateful(prompt, pipeline_type):
     model_id = "facebook/opt-125m"
     _, _, models_path = download_and_convert_model(model_id)
 
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
-    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
 
     streamed = []
     generated = cb_pipe.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
@@ -133,12 +142,13 @@ questions = [
 ]
 @pytest.mark.parametrize("generation_config_kwargs", generation_configs[1:])
 @pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
 @pytest.mark.precommit
-def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict):
+def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict, pipeline_type):
     _, _, models_path = download_and_convert_model(model_id)
 
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
-    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
 
     ov_pipe.start_chat()
     cb_pipe.start_chat()
@@ -395,49 +405,3 @@ def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_c
         raise RuntimeError(f"{pipeline_type} is unknown pipeline type!")
     return pipe, prompt, generation_config
 
-@pytest.mark.parametrize("pipeline_type", ["continuous_batching", "speculative_decoding", "prompt_lookup_decoding", "llm_pipeline"])
-@pytest.mark.precommit
-def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
-    model_id : str = "facebook/opt-125m"
-    _, _, models_path = download_and_convert_model(model_id, tmp_path)
-
-    generation_config = GenerationConfig()
-    pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
-
-    it_cnt = 0
-    def py_streamer(py_str: str):
-        nonlocal it_cnt
-        it_cnt += 1
-        return False
-
-    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
-
-    del pipe
-    rmtree(models_path)
-
-    assert it_cnt > 0
-
-@pytest.mark.parametrize("pipeline_type", ["continuous_batching", "speculative_decoding", "prompt_lookup_decoding", "llm_pipeline"])
-@pytest.mark.precommit
-def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type):
-    model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    
-    generation_config = GenerationConfig()
-    generation_config.stop_strings = {" the"}
-    generation_config.include_stop_str_in_output = False
-
-    pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
-
-    it_cnt = 0
-    def py_streamer(py_str: str):
-        nonlocal it_cnt
-        it_cnt += 1
-        return False
-
-    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
-
-    del pipe
-    rmtree(models_path)
-
-    assert it_cnt == 0
