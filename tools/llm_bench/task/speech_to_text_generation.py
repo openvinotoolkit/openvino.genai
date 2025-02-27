@@ -21,12 +21,15 @@ whisper_hook = WhisperHook()
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 1000
 
+
 def print_perf_pair(name: str, pair) -> None:
     print(f"{name}: {pair.mean:.2f} +- {pair.std:.2f}")
+
 
 def print_raw_metrics(name: str, values: list) -> None:
     values = [float(f"{v:.2f}") for v in values]
     print(f"{name} [{len(values)}]: {values}")
+
 
 def print_genai_whisper_metrics(metrics: WhisperPerfMetrics):
     print("=== WhisperPerfMetrics ===")
@@ -51,6 +54,7 @@ def print_genai_whisper_metrics(metrics: WhisperPerfMetrics):
     print_raw_metrics("token_infer_durations", raw_metrics.token_infer_durations)
     print_raw_metrics("tokenization_durations", raw_metrics.tokenization_durations)
     print("=== RawPerfMetrics ===")
+
 
 def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     result_md5_list = []
