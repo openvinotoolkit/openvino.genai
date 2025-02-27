@@ -360,6 +360,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt,
             formatted_prompt += image_token;
         }
         formatted_prompt += "\n";
+        image_embeds.push_back(std::move(packed_features));
     }
     formatted_prompt += prompt;
 
