@@ -931,7 +931,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     int64_t input_ids_data = -1;
     int64_t position_ids_data = prompt_len - 1;
-    std::vector<int64_t> attention_mask_data(prompt_len - 1, 1);
+    std::vector<int64_t> attention_mask_data(prompt_len, 1);
     m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1},  reinterpret_cast<void*>(&input_ids_data)));
     m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&position_ids_data)));
 
