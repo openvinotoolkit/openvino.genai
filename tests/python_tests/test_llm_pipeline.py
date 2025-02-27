@@ -33,7 +33,6 @@ test_cases = [
 @pytest.mark.nightly
 def test_string_inputs(model_id, generation_config_dict, prompt):
     generate_and_compare(model=model_id, prompts=[prompt], generation_config=generation_config_dict)
-    generate_and_compare(model=model_id, prompts=[prompt], generation_config=generation_config_dict)
 
 
 input_tensors_list = [
@@ -86,7 +85,6 @@ batched_prompts = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_string_inputs(model_id, generation_config_dict, prompts):
-    generate_and_compare(model=model_id, prompts=prompts, generation_config=generation_config_dict)
     generate_and_compare(model=model_id, prompts=prompts, generation_config=generation_config_dict)
 
 
