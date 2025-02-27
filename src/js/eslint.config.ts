@@ -1,9 +1,18 @@
 import globals from 'globals';
+import pluginJs from '@eslint/js';
+import tseslint from 'typescript-eslint';
 
-/** @type {import('eslint').Linter.Config[]} */
 export default [
+  pluginJs.configs.recommended,
   {
-    languageOptions: { globals: globals.node },
+    ignores: [ 'types/', 'dist/' ],
+  },
+  {
+    files: ['**/*.{js,mjs,cjs,ts}'],
+    languageOptions: {
+      globals: globals.node,
+      parser: tseslint.parser,
+    },
     rules: {
       'semi': ['error'],
       'no-var': ['error'],
@@ -29,7 +38,8 @@ export default [
       'no-multiple-empty-lines': ['error', { max: 1, maxBOF: 0, maxEOF: 0 }],
       'keyword-spacing': ['error', { overrides: { catch: { after: false } } }],
       'prefer-destructuring': ['error', { object: true, array: false }],
-      '@typescript-eslint/no-var-requires': 0,
+      'no-explicit-any': 0,
+      'no-unused-vars': ['error', { args: 'none' } ],
     },
   },
-];
+] satisfies tseslint.ConfigArray;

@@ -7,6 +7,7 @@ from typing import List, Callable
 from shutil import rmtree
 
 from optimum.intel.openvino.utils import TemporaryDirectory
+from optimum.intel.openvino.utils import TemporaryDirectory
 from openvino_genai import SchedulerConfig, draft_model, ContinuousBatchingPipeline, \
     LLMPipeline, GenerationConfig, GenerationResult, StreamerBase, DecodedResults
 
@@ -70,6 +71,7 @@ class StreamerWithResults:
 
 def create_ov_pipeline(models_path: Path,
                        pipeline_type: PipelineType = PipelineType.AUTO,
+                       pipeline_type: PipelineType = PipelineType.AUTO,
                        device: str = "CPU",
                        ov_config: dict = get_default_llm_properties(),
                        scheduler_config: SchedulerConfig = SchedulerConfig(),
@@ -79,6 +81,7 @@ def create_ov_pipeline(models_path: Path,
     elif pipeline_type == PipelineType.STATEFUL:
         return LLMPipeline(models_path, device, ov_config, ATTENTION_BACKEND="SDPA")
     elif pipeline_type == PipelineType.PAGED_ATTENTION:
+        return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
     elif pipeline_type == PipelineType.CONTINIOUS_BATCHING:
         return ContinuousBatchingPipeline(models_path, scheduler_config, device, ov_config)
