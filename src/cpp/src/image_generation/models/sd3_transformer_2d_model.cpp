@@ -88,9 +88,7 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size,
             name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
         } else if (input_name == "encoder_hidden_states") {
             name_to_shape[input_name][0] = batch_size;
-            name_to_shape[input_name][1] =
-                tokenizer_model_max_length *
-                2;  // x2 is necessary because of the concatenation of prompt_embeds and t5_prompt_embeds
+            name_to_shape[input_name][1] = tokenizer_model_max_length;
         } else if (input_name == "pooled_projections") {
             name_to_shape[input_name][0] = batch_size;
         }
