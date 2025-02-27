@@ -15,7 +15,7 @@ class TestMultinomialCausalLM:
         "convert_model, sample_args",
         [
             pytest.param("SmolLM-135M", "return 0"),
-            pytest.param("LaMini-GPT-124M", "0"),
+            pytest.param("TinyLlama-1.1B-Chat-v1.0", "0"),
         ],
         indirect=["convert_model"],
     )
