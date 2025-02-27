@@ -32,6 +32,8 @@ classifiers = [
 dependencies = [
     "openvino_tokenizers~=2025.1.0.0.dev"
 ]
+[project.optional-dependencies]
+testing = ["pytest>=6.0"]
 
 [tool.py-build-cmake.module]
 directory = "src/python"
@@ -51,9 +53,9 @@ options = {"BUILD_TOKENIZERS" = "OFF", "ENABLE_SAMPLES" = "OFF"}
 
 [build-system]
 requires = [
-    "py-build-cmake==0.4.1",
+    "py-build-cmake==0.4.2",
     "openvino~=2025.1.0.0.dev",
-    "pybind11-stubgen==2.5.1",
+    "pybind11-stubgen==2.5.3",
     "cmake~=3.23.0; platform_system != 'Darwin' or platform_machine == 'x86_64'",
     "cmake~=3.24.0; platform_system == 'Darwin' and platform_machine == 'arm64'",
 ]

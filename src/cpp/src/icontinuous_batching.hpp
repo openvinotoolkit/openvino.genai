@@ -4,13 +4,21 @@
 #pragma once
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "visual_language/inputs_embedder.hpp"
 
 #include "cache_manager.hpp"
 #include "sampler.hpp"
 #include "model_runner.hpp"
 #include "scheduler.hpp"
+#include "threaded_streamer.hpp"
 
 namespace ov::genai {
+
+enum class ModelInputType {
+    TOKENS,
+    EMBEDDINGS
+};
+
 
 /**
  * Base interface for all continuous batching based pipelines
@@ -48,10 +56,15 @@ protected:
     // to access m_load_time_ms
     friend class ContinuousBatchingPipeline;
 
+    ModelInputType m_model_input_type = ModelInputType::TOKENS;
+    std::shared_ptr<InputsEmbedder> m_inputs_embedder;
+
+    void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 public:
     virtual ~IContinuousBatchingPipeline();
 
     GenerationConfig get_config() const;
+    void set_config(const GenerationConfig& config);
     PipelineMetrics get_metrics() const;
     Tokenizer get_tokenizer();
 
@@ -69,7 +82,16 @@ public:
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
                                          GenerationConfig sampling_params) = 0;
-    
+
+    /**
+     * Adds request to running queue based on string input and vector of images
+     * This step also performs tokenization's encode
+     */
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& rgbs,
+                                 GenerationConfig sampling_params);
+
     /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
      */
@@ -94,6 +116,13 @@ public:
     std::vector<GenerationResult>
     generate(const std::vector<std::string>& prompts,
              std::vector<GenerationConfig> sampling_params,
+             const StreamerVariant& streamer);
+
+    virtual std::vector<GenerationResult>
+    generate(
+             const std::vector<std::string>& prompts,
+             const std::vector<std::vector<ov::Tensor>>& rgbs,
+             const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer);
 
     /**

@@ -18,16 +18,16 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.9'
-  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-17911-83c047443de/l_openvino_toolkit_ubuntu22_2025.1.0.dev20250116_x86_64.tgz
-  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-17911-83c047443de/w_openvino_toolkit_windows_2025.1.0.dev20250116_x86_64.zip
+  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18141-b0a120c9684/openvino_toolkit_ubuntu22_2025.1.0.dev20250211_x86_64.tgz
+  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18141-b0a120c9684/openvino_toolkit_windows_2025.1.0.dev20250211_x86_64.zip
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
 jobs:
   lcm_dreamshaper_v7_cpp-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash
     env:
       build_dir: ${{ github.workspace }}//build
     steps:
@@ -51,7 +51,7 @@ jobs:
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ env.build_dir }}
-          cmake --build ${{ env.build_dir }} --config Release --target text2image image2image inpainting heterogeneous_stable_diffusion lora_text2image py_openvino_genai --parallel
+          cmake --build ${{ env.build_dir }} --config Release --target text2image image2image inpainting heterogeneous_stable_diffusion lora_text2image benchmark_image_gen py_openvino_genai --parallel
 
       - name: Create virtual environment
         run: python3 -m venv openvino_lcm_cpp
@@ -92,6 +92,21 @@ jobs:
           source ./ov/setupvars.sh
           ${{ env.build_dir }}/samples/cpp/image_generation/inpainting ./models/lcm_dreamshaper_v7 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png ./mask_image.png
 
+      - name: Run benchmark for text2image pipeline
+        run: |
+          source ./ov/setupvars.sh
+          ${{ env.build_dir }}/samples/cpp/image_generation/benchmark_image_gen -t text2image -m ./models/lcm_dreamshaper_v7 -p "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+
+      - name: Run benchmark for image2image pipeline
+        run: |
+          source ./ov/setupvars.sh
+          ${{ env.build_dir }}/samples/cpp/image_generation/benchmark_image_gen -t image2image -m ./models/lcm_dreamshaper_v7 -p "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" -i ./image.png
+
+      - name: Run benchmark for inpainting
+        run: |
+          source ./ov/setupvars.sh
+          ${{ env.build_dir }}/samples/cpp/image_generation/benchmark_image_gen -t inpainting -m ./models/lcm_dreamshaper_v7 -p "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" -i ./image.png --mi ./mask_image.png
+
   lcm_dreamshaper_v7_cpp-windows:
     runs-on: windows-2022
     defaults:
@@ -126,7 +141,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ env.build_dir }}
-          cmake --build ${{ env.build_dir }} --config Release --target text2image image2image inpainting heterogeneous_stable_diffusion lora_text2image py_openvino_genai --parallel
+          cmake --build ${{ env.build_dir }} --config Release --target text2image image2image inpainting heterogeneous_stable_diffusion lora_text2image benchmark_image_gen py_openvino_genai --parallel
         env:
           CMAKE_TLS_VERIFY: 0
 
@@ -172,6 +187,33 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           $env:Path += "${{ env.build_dir }}\openvino_genai"
           python .\samples\python\image_generation\inpainting.py .\models\lcm_dreamshaper_v7 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" .\image.png .\mask_image.png
+        env:
+          PYTHONPATH: ${{ env.build_dir }}
+
+      - name: Run benchmark_image_gen.py for text2image pipeline
+        run: |
+          . "./openvino_lcm_cpp/Scripts/Activate.ps1"
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          $env:Path += "${{ env.build_dir }}\openvino_genai"
+          python .\samples\python\image_generation\benchmark_image_gen.py -t text2image -m .\models\lcm_dreamshaper_v7 -p"cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+        env:
+          PYTHONPATH: ${{ env.build_dir }}
+
+      - name: Run benchmark_image_gen.py for image2image pipeline
+        run: |
+          . "./openvino_lcm_cpp/Scripts/Activate.ps1"
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          $env:Path += "${{ env.build_dir }}\openvino_genai"
+          python .\samples\python\image_generation\benchmark_image_gen.py -t image2image -m .\models\lcm_dreamshaper_v7 -p"cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" -i .\image.png
+        env:
+          PYTHONPATH: ${{ env.build_dir }}
+
+      - name: Run benchmark_image_gen.py for inpainting pipeline
+        run: |
+          . "./openvino_lcm_cpp/Scripts/Activate.ps1"
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          $env:Path += "${{ env.build_dir }}\openvino_genai"
+          python .\samples\python\image_generation\benchmark_image_gen.py -t inpainting -m .\models\lcm_dreamshaper_v7 -p"cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" -i .\image.png -mi .\mask_image.png
         env:
           PYTHONPATH: ${{ env.build_dir }}
 

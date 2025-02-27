@@ -10,7 +10,6 @@
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "utils.hpp"
 #include "whisper/logit_processor.hpp"
-#include "whisper/streamer.hpp"
 #include "whisper/timestamps.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
@@ -295,11 +294,11 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
                                                   const size_t max_new_tokens,
                                                   const bool return_timestamps,
                                                   ov::genai::RawPerfMetrics& raw_metrics,
-                                                  const std::shared_ptr<ov::genai::ChunkStreamerBase> streamer) {
+                                                  const std::shared_ptr<ov::genai::StreamerBase> streamer) {
     int64_t output_token = decode(encoder_hidden_state, models.decoder, init_ids, config, raw_metrics, true, return_timestamps);
     std::vector<int64_t> output_tokens{output_token};
 
-    if (!return_timestamps && streamer && streamer->put(output_token)) {
+    if (!return_timestamps && streamer && streamer->write(output_token) != ov::genai::StreamingStatus::RUNNING) {
         return {true, output_tokens};
     }
 
@@ -325,7 +324,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 
         output_tokens.push_back(output_token);
 
-        if (!return_timestamps && streamer && streamer->put(output_token)) {
+        if (!return_timestamps && streamer && streamer->write(output_token) != ov::genai::StreamingStatus::RUNNING) {
             return {true, output_tokens};
         }
     }
@@ -564,7 +563,7 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
 WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     const RawSpeechInput& raw_speech_input,
     OptionalWhisperGenerationConfig generation_config,
-    ChunkStreamerVariant streamer) {
+    const std::shared_ptr<StreamerBase> streamer_ptr) {
     auto start_time = std::chrono::steady_clock::now();
     WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     
@@ -578,17 +577,6 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
 
     OPENVINO_ASSERT(!config.initial_prompt.has_value(), "'initial_prompt' parameter is not supported on NPU device.");
     OPENVINO_ASSERT(!config.hotwords.has_value(), "'hotwords' parameter is not supported on NPU device.");
-
-    std::shared_ptr<ChunkStreamerBase> streamer_ptr;
-    if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
-        streamer_ptr = nullptr;
-    } else if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&streamer)) {
-        streamer_ptr = *streamer_obj;
-    } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-        streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
-    } else if (auto callback = std::get_if<std::function<StreamingStatus(std::string)>>(&streamer)) {
-        streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
-    }
 
     size_t max_new_tokens = config.get_max_new_tokens();
 
@@ -663,7 +651,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                  extracted_segments.non_timestamp_tokens.begin(),
                                  extracted_segments.non_timestamp_tokens.end());
 
-            if (streamer_ptr && streamer_ptr->write_chunk(extracted_segments.non_timestamp_tokens) != StreamingStatus::RUNNING) {
+            if (streamer_ptr && streamer_ptr->write(extracted_segments.non_timestamp_tokens) != StreamingStatus::RUNNING) {
                 cancelled = true;
                 break;
             }

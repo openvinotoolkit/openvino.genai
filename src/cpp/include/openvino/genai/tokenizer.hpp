@@ -23,7 +23,22 @@ struct TokenizedInputs {
 };
 
 /**
-* @brief class is used to encode prompts and decode resulting tokens
+ * @brief The class is used to encode prompts and decode resulting tokens
+ *
+ * Chat tempalte is initialized from sources in the following order
+ * overriding the previos value:
+ * 1. chat_template entry from tokenizer_config.json
+ * 2. chat_template entry from processor_config.json
+ * 3. chat_template entry from chat_template.json
+ * 4. chat_tempalte entry from rt_info section of ov::Model
+ * 5. If the tempalte is known to be not supported by GenAI, it's
+ *     replaced with a simplified supported version.
+ * 6. Patch chat_tempalte replacing not supported instructions with
+ *     eqvivalents.
+ * 7. If the template was not in the list of not supported GenAI
+ *     templates from (5), it's blindly replaced with
+ *     simplified_chat_template entry from rt_info section of
+ *     ov::Model if the entry exists.
 */
 class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
@@ -48,9 +63,9 @@ public:
      */
     Tokenizer(
         const std::string& tokenizer_model_str,
-        ov::Tensor& tokenizer_weights_tensor,
-        std::string& detokenizer_model_str,
-        ov::Tensor& detokenizer_weights_tensor,
+        const ov::Tensor& tokenizer_weights_tensor,
+        const std::string& detokenizer_model_str,
+        const ov::Tensor& detokenizer_weights_tensor,
         const ov::AnyMap& properties = {}
     );
 

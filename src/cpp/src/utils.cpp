@@ -15,8 +15,8 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
-#include "text_callback_streamer.hpp"
 
 #include "sampler.hpp"
 
@@ -160,10 +160,10 @@ std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenize
             return streamer;
         },
         [&tokenizer = tokenizer](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextCallbackStreamer>(tokenizer, streamer);
+            return std::make_unique<TextStreamer>(tokenizer, streamer);
         },
         [&tokenizer = tokenizer](const std::function<ov::genai::StreamingStatus(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextCallbackStreamer>(tokenizer, streamer);
+            return std::make_unique<TextStreamer>(tokenizer, streamer);
         }
     }, streamer);
 
@@ -283,23 +283,6 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
     }
 }
 
-template <typename T>
-void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value) {
-    if (!model)
-        return;
-    if (model->get_rt_info().count(name) == 0)
-        return;
-    auto str_value = model->get_rt_info().at(name).as<std::string>();
-    if constexpr (std::is_same<T, int64_t>::value) {
-        value = std::stoll(str_value);
-    } else if constexpr (std::is_same<T, std::string>::value) {
-        value = str_value;
-    }
-}
-
-template void read_rt_info<int64_t>(std::shared_ptr<ov::Model>&,  const char*, int64_t&);
-template void read_rt_info<std::string>(std::shared_ptr<ov::Model>&,  const char*, std::string&);
-
 ov::Core singleton_core() {
     static ov::Core core;
     return core;
@@ -314,7 +297,7 @@ void release_core_plugin(const std::string& device) {
     }
 }
 
-size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens) {
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history) {
     size_t idx = 0;
     auto encoded_history_data = encoded_history.data<int64_t>();
     while(idx < encoded_history.get_size() && idx < tokenized_history.size()) {
@@ -323,18 +306,13 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
         idx++;
     }
 
-    // encoded_history after decode of tokenizer could lose one last token (eos/stop token)
-    if ((idx == tokenized_history.size() && idx == encoded_history.get_size()) ||
-        (encoded_history.get_size() < tokenized_history.size() && idx == tokenized_history.size() - 1 && stop_tokens.find(tokenized_history.back()) != stop_tokens.end()))
-        return SIZE_MAX;
-    else
-        return idx;
+    return idx;
 }
 
-size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model) {
+KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
-    // therefore usually seq_length_axis = 2
-    size_t seq_length_axis = 2;
+    // therefore usually seq_length_axis = 2 and batch = 0
+    KVAxesPosition kv_pos { 0u, 2u };
 
     // "ReadValue" node is KV cache representation in stateful model
     std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
@@ -351,13 +329,16 @@ size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model) {
         for (size_t i = 0; i < shape.rank().get_length(); i++) {
             // Find axis = 0. This would be sequence length axis.
             if (shape[i] == 0) {
-                seq_length_axis = i;
+                kv_pos.seq_len = i;
+            } else if (shape[i].is_dynamic()) {
+                // Dynamic axis is a batch
+                kv_pos.batch = i;
             }
         }
         break;
     }
 
-    return seq_length_axis;
+    return kv_pos;
 }
 
 void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller) {
@@ -366,6 +347,9 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
         return;
 
     auto states = request.query_state();
+    
+    OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");
+
     for (auto& state : states) {
         if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
             continue;
@@ -431,6 +415,28 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
     }
 }
+
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
+    auto it = models_map.find(key);
+    if (it != models_map.end()) {
+        return it->second;
+    }
+    OPENVINO_THROW("Model with key '", key, "' not found in models map.");
+}
+
+std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
+    ov::AnyMap plugin_config = properties;
+    auto it = plugin_config.find(ov::genai::scheduler_config.name());
+    SchedulerConfig scheduler_config;
+    if (it != plugin_config.end()) {
+        scheduler_config = it->second.as<SchedulerConfig>();
+        plugin_config.erase(it);
+    } else if (default_config.has_value()) {
+        scheduler_config = *default_config;
+    }
+    return {plugin_config, scheduler_config};
+};
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

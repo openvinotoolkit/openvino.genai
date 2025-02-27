@@ -1,7 +1,7 @@
 # How to Build OpenVINO™ GenAI
 
 > **NOTE**: There is a known Python API issue with `ov::Tensor`. The issue is reproduced when building OpenVINO GenAI from sources while using OpenVINO from archives. Using `ov::Tensor` with OpenVINO GenAI fails. Possible errors: `TypeError: generate(): incompatible function arguments.`, `TypeError: __init__(): incompatible constructor arguments.`, `TypeError: Unregistered type : ov::Tensor`.
-The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources using the same build environment. Or to install prebuilt OpenVINO GenAI from [distribution channels](https://docs.openvino.ai/2024/get-started/install-openvino.html).
+The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources using the same build environment. Or to install prebuilt OpenVINO GenAI from [distribution channels](https://docs.openvino.ai/2025/get-started/install-openvino.html).
 
 ## Software Requirements
 
@@ -164,6 +164,30 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
 To optimize the package size, you can reduce the ICU (International Components for Unicode) data size when OpenVINO Tokenizers are built as a submodule of OpenVINO GenAI.
 For more information please refer to the [OpenVINO Tokenizers instructions](https://github.com/openvinotoolkit/openvino_tokenizers?tab=readme-ov-file#reducing-the-icu-data-size).
 
+### Build OpenVINO GenAI samples Using Archive
+
+1. Download and extract OpenVINO GenAI Archive
+Visit the [OpenVINO Download Page](https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/download.html?PACKAGE=OPENVINO_GENAI&VERSION=NIGHTLY&OP_SYSTEM=WINDOWS&DISTRIBUTION=ARCHIVE) and select the latest release or Nightly Build and click “Download Archives with GenAI”
+2. Set up the environment and build the samples
+    Linux and macOS:
+    ```sh
+    source <INSTALL_DIR>/setupvars.sh
+    <INSTALL_DIR>/samples/cpp/build_samples.sh
+    ```
+
+    Windows Command Prompt:
+    ```cmd
+    <INSTALL_DIR>\setupvars.bat
+    <INSTALL_DIR>\samples\cpp\build_samples_msvc.bat
+    ```
+
+    Windows PowerShell:
+    ```cmd
+    .<INSTALL_DIR>\setupvars.ps1
+    .<INSTALL_DIR>\samples\cpp\build_samples.ps1
+    ```
+GenAI samples are also built along with the entire OpenVINO GenAI using the standard building process 
+
 
 ### Build OpenVINO GenAI Wheel
 
@@ -196,6 +220,10 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
 
 > **NOTE**: You'd need to build ABI compatible OpenVINO and OpenVINO Tokenizers for Ubuntu instead of downloading them from PyPI. See [OpenVINO™ GenAI Dependencies](../README.md#openvino-genai-dependencies) for the explanation.
 
+### Build OpenVINO GenAI JavaScript Bindings
+
+Build OpenVINO GenAI JavaScript Bindings from sources following the [instructions](../js/BUILD.md).
+
 ### Install OpenVINO GenAI From Source
 
 1. Clone OpenVINO GenAI repository and init submodules:
@@ -222,8 +250,7 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```sh
     python -m pip install .
     ```
-5. To verify the installation, run a simple Python script:
-    ```python
-    import openvino_genai
-    print(openvino_genai.__version__)
+5. Verify the installation:
+    ```sh
+    python -c "import openvino_genai; print(openvino_genai.__version__)"
     ```

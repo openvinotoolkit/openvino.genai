@@ -5,7 +5,6 @@ numpy
 openvino
 openvino-tokenizers
 openvino_genai
-auto-gptq>=0.5.1 # for gptq
 pillow
 torch
 transformers>=4.40.0
@@ -17,8 +16,4 @@ packaging
 psutil
 timm
 tiktoken
-onnx<=1.17.0
-einops
-transformers_stream_generator
-bitsandbytes
 librosa # For Whisper

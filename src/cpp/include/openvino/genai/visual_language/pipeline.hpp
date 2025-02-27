@@ -190,8 +190,10 @@ public:
     void set_generation_config(const GenerationConfig& new_config);
 
 private:
+    class VLMPipelineBase;
     class VLMPipelineImpl;
-    std::unique_ptr<VLMPipelineImpl> m_pimpl;
+    class VLMContinuousBatchingAdapter;
+    std::unique_ptr<VLMPipelineBase> m_pimpl;
 };
 
 /*

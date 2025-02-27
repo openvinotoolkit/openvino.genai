@@ -4,7 +4,7 @@
 #include <atomic>
 #include <thread>
 
-#include "text_callback_streamer.hpp"
+#include "openvino/genai/text_streamer.hpp"
 #include "continuous_batching_impl.hpp"
 #include "utils.hpp"
 #include "paged_attention_transformations.hpp"
@@ -16,7 +16,7 @@ namespace {
 
 ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model) {
     const std::vector<std::string> kv_cache_precision_path = { "runtime_options", ov::hint::kv_cache_precision.name() };
-    ov::element::Type ir_kv_cache_precision = ov::element::undefined;
+    ov::element::Type ir_kv_cache_precision = ov::element::dynamic;
 
     if (model->has_rt_info(kv_cache_precision_path)) {
         ir_kv_cache_precision = model->get_rt_info<ov::element::Type>(kv_cache_precision_path);
@@ -26,7 +26,7 @@ ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model)
 }
 
 void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& plugin_config) {
-    ov::element::Type m_kv_cache_type = ov::element::undefined, ir_kv_cache_precision = get_model_kv_cache_precision(model);
+    ov::element::Type m_kv_cache_type = ov::element::dynamic, ir_kv_cache_precision = get_model_kv_cache_precision(model);
     ov::Core core = ov::genai::utils::singleton_core();
 
     auto inference_precision = core.get_property(device, ov::hint::inference_precision);
@@ -44,7 +44,7 @@ void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std
         } else if (accuracy_mode) {
             // ACCURACY mode will use f32 KV cache type
             m_kv_cache_type = ov::element::f32;
-        } else if (ir_kv_cache_precision != ov::element::undefined) {
+        } else if (ir_kv_cache_precision != ov::element::dynamic) {
             // check that kv_cache_precision is set in runtime_info section of OpenVINO IR
             // but in case it's set to FP16, we need to patch it to be BF16 for Xeon platforms
             m_kv_cache_type = ir_kv_cache_precision == ov::element::f16 && inference_precision == ov::element::bf16 ?
@@ -121,6 +121,20 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     initialize_pipeline(model, scheduler_config, device, properties, kv_cache_config);
 }
 
+ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
+    const std::shared_ptr<ov::Model>& model,
+    std::shared_ptr<InputsEmbedder> inputs_embedder,
+    const Tokenizer& tokenizer,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config,
+    bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
+    m_inputs_embedder = inputs_embedder;
+    m_model_runner->set_embedding_model(inputs_embedder->get_embedding_model());
+    m_model_input_type = ModelInputType::EMBEDDINGS;
+}
+
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
     m_sampler.reset();
@@ -149,29 +163,26 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const ov::AnyMap& properties,
     const std::vector<KVHeadConfig>& kv_cache_config) {
     m_device = device;
-    ov::AnyMap mutable_properties = properties;
+
+    // apply LoRA
+    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    if (m_generation_config.adapters) {
+        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
+        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
+    }
+
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
-    auto sampler_num_threads_it = mutable_properties.find("sampler_num_threads");
-    if (sampler_num_threads_it != mutable_properties.end()) {
+    auto sampler_num_threads_it = filtered_properties->find("sampler_num_threads");
+    if (sampler_num_threads_it != filtered_properties->end()) {
         sampler_num_threads = sampler_num_threads_it->second.as<size_t>();
-        mutable_properties.erase(sampler_num_threads_it);
+        filtered_properties.fork().erase("sampler_num_threads");   // do not use iterator sampler_num_threads_it because a forked container may not be the same container
     }
 
     // TODO: remove once plugin automatically set KV cache precisions
-    apply_kv_cache_precision(model, device, mutable_properties);
+    apply_kv_cache_precision(model, device, *filtered_properties);
 
-    // apply LoRA
-    ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model;
-    if (auto filtered_properties = extract_adapters_from_properties(mutable_properties, &m_generation_config.adapters)) {
-        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
-        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
-        compiled_model = core.compile_model(model, device, *filtered_properties);
-    } else {
-        compiled_model = core.compile_model(model, device, mutable_properties);
-    }
-
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
@@ -268,6 +279,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
+        if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+            OPENVINO_THROW("Prefix caching is not supported for VLM models.");
+        }
         m_scheduler->restore_cached_blocks(sequence_group);
     }
 
@@ -283,12 +297,21 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                 const std::string& prompt,
                                                                 ov::genai::GenerationConfig sampling_params) {
-    static ManualTimer timer("tokenize");
-    timer.start();
-    ov::Tensor input_ids = m_tokenizer.encode(prompt).input_ids;
-    timer.end();
+    ov::Tensor inputs;
+    ov::genai::VLMPerfMetrics metrics;
+    if (m_model_input_type == ModelInputType::TOKENS) {
+        static ManualTimer timer("tokenize");
+        timer.start();
+        inputs = m_tokenizer.encode(prompt).input_ids;
+        timer.end();
+        return add_request(request_id, inputs, sampling_params);
+    } else if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+    } else {
+        OPENVINO_THROW("Unknown model input type.");
+    }
 
-    return add_request(request_id, input_ids, sampling_params);
+    return add_request(request_id, inputs, sampling_params);
 }
 
 bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_requests() {
@@ -428,7 +451,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
-    
+
     auto start_time =  std::chrono::steady_clock::now();
     PerfMetrics perf_metrics;
     auto& raw_perf_counters = perf_metrics.raw_metrics;
@@ -441,9 +464,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
     set_adapters(sampling_params[0].adapters);
 
-    const std::shared_ptr<StreamerBase>& streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
+    const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
 
-    OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && sampling_params[0].num_return_sequences == 1 &&
+    OPENVINO_ASSERT(!streamer_ptr->has_callback() || input_ids.size() == 1 && sampling_params[0].num_return_sequences == 1 &&
         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
@@ -454,50 +477,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
     auto all_requests = m_awaiting_requests; // we need to store all requests to get results from them once generation has finished
 
-    std::atomic<bool> has_active_requests = has_non_finished_requests();
     GenerationHandle& generation = generations.at(0);
 
-    // create variables to make optimal thread-safe streaming
-    std::mutex mutex;
-    std::unique_lock lock(mutex);
-    std::condition_variable cv;
+    streamer_ptr->start();
 
-    // to define streaming thread
-    std::shared_ptr<std::thread> t_stream_ptr = nullptr;
-    if (streamer_ptr) {
-        // define stream token lambda to use in `t_stream_ptr`
-        auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
-            while (has_active_requests || generation->can_read()) {
-                // waiting for any tokens or request finishing
-                cv.wait(lock, [&generation, &has_active_requests]{
-                    return generation->can_read() || !has_active_requests;
-                });
-
-                if (generation->can_read()) {
-                    std::unordered_map<uint64_t, GenerationOutput> generation_outputs = generation->read();
-                    OPENVINO_ASSERT(generation_outputs.size() <= 1);
-                    if (!generation_outputs.empty()) {
-                        for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
-                            auto streaming_status = streamer_ptr->write(generated_token_id);
-                            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-                                streaming_status == ov::genai::StreamingStatus::CANCEL ? generation->cancel() : generation->stop();
-                                break;
-                            }
-                        }
-                    }
-                }
-            };
-            streamer_ptr->end();
-        };
-
-        // to define streaming thread
-        t_stream_ptr = std::make_shared<std::thread>([&stream_tokens] {
-            stream_tokens();
-        });
-    }
-
-    std::exception_ptr thrown_exception = nullptr;
-    while (has_active_requests) {
+    while (has_non_finished_requests()) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
@@ -511,19 +495,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
-            thrown_exception = std::current_exception();
+            streamer_ptr->end();
+            std::rethrow_exception(std::current_exception());
         }
-        has_active_requests = has_non_finished_requests();
-        cv.notify_one();
-        if (thrown_exception) {
-            throw thrown_exception;
-        }
+        stream_tokens(streamer_ptr, generation);
     }
 
     // waiting for competion of streaming
-    if (t_stream_ptr && t_stream_ptr->joinable()) {
-        t_stream_ptr->join();
-    }
+    streamer_ptr->end();
 
     OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
