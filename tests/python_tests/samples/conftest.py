@@ -62,7 +62,7 @@ MODELS = {
         "convert_args": []
     },   
     "llava-1.5-7b-hf": {
-        "name": "lava-hf/llava-1.5-7b-hf",
+        "name": "llava-hf/llava-1.5-7b-hf",
         "convert_args": ['--trust-remote-code']
     },    
     "llava-v1.6-mistral-7b-hf": {
