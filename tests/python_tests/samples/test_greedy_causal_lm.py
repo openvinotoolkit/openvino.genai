@@ -36,18 +36,18 @@ class TestGreedyCausalLM:
     
     @pytest.mark.llm
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["phi-1_5", "Qwen2-0.5B-Instruct"], indirect=True)
-    @pytest.mark.parametrize("sample_args", [["Alan Turing was a"]])
+    @pytest.mark.parametrize("convert_model", ["phi-1_5", "TinyLlama-1.1B-Chat-v1.0"], indirect=True)
+    @pytest.mark.parametrize("sample_args", ["Alan Turing was a"])
     def test_sample_greedy_causal_lm_refs(self, request, convert_model, sample_args):
         # Python test
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
-        py_command = [sys.executable, py_script, convert_model] + [f'"{arg}"' for arg in sample_args]
+        py_command = [sys.executable, py_script, convert_model, sample_args]
         py_result = run_sample(py_command)
         py_predictions = py_result.stdout
 
         # C++ test
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
-        cpp_command = [cpp_sample, convert_model] + [f'"{arg}"' for arg in sample_args]
+        cpp_command = [cpp_sample, convert_model, sample_args]
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
         
@@ -59,15 +59,16 @@ class TestGreedyCausalLM:
         
         import transformers
         tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'])
-        for prompt in sample_args:
-            if tokenizer.chat_template:
-                prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': f'"{prompt}"'}], tokenize=False, add_generation_prompt=True)
-            tokenized = tokenizer(f'"{prompt}"', return_tensors='pt', add_special_tokens=False)
+        prompt = sample_args
         
-            for output in transformers.AutoModelForCausalLM.from_pretrained(model['name']).generate(**tokenized, max_length=100, do_sample=False):
-                ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
-                logger.info(f'Checking for "{ref=}"')
+        if tokenizer.chat_template:
+            prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+        tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
+    
+        for output in transformers.AutoModelForCausalLM.from_pretrained(model['name']).generate(**tokenized, max_length=100, do_sample=False):
+            ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
+            logger.info(f'Checking for "{ref=}"')
 
-                idx = cpp_predictions.find(ref)
-                assert -1 != idx, f'Missing "{ref=}" from predictions'
-                cpp_predictions = cpp_predictions[:idx] + cpp_predictions[idx + len(ref):]
+            idx = cpp_predictions.find(ref)
+            assert -1 != idx, f'Missing "{ref=}" from predictions'
+            cpp_predictions = cpp_predictions[:idx] + cpp_predictions[idx + len(ref):]

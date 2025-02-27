@@ -53,6 +53,10 @@ MODELS = {
         "name": "roneneldan/TinyStories-1M",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
+    "TinyLlama-1.1B-Chat-v1.0": {
+        "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    },    
 }
 
 TEST_FILES = {
