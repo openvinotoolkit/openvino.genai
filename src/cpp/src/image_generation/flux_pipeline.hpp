@@ -471,10 +471,6 @@ public:
 
         // Prepare timesteps
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
-        OPENVINO_ASSERT(!timesteps.empty(),
-                        "After adjusting the num_inference_steps by strength parameter: ", m_custom_generation_config.strength,
-                        " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
-
         m_latent_timestep = timesteps[0];
 
         // Prepare latent variables
