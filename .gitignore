@@ -40,7 +40,4 @@ CMakeUserPresets.json
 __pycache__
 .py-build-cmake_cache
 *.egg-info
-/samples/cpp/text_generation/greedy_causal_lm - Copy.cpp
-/samples/cpp/text_generation/greedy_causal_lm_read_buffer.cpp
-/samples/cpp/text_generation/greedy_causal_lm_stream.cpp
-/samples/c/text_generation/chat_sample_c - Copy.c
+
