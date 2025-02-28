@@ -538,7 +538,7 @@ public:
         return m_perf_metrics;
     }
 
-private:
+protected:
     void compute_dim(int64_t & generation_config_value, ov::Tensor initial_image, int dim_idx) {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
@@ -569,6 +569,10 @@ private:
                 m_generation_config.num_inference_steps = 28;
                 m_generation_config.strength = 0.6f;
             }
+            m_generation_config.max_sequence_length = 512;
+        } else if (class_name == "FluxFillPipeline" && m_pipeline_type == PipelineType::INPAINTING) {
+            m_generation_config.guidance_scale = 30.f;
+            m_generation_config.num_inference_steps = 50;
             m_generation_config.max_sequence_length = 512;
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
