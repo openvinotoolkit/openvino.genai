@@ -87,7 +87,7 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size,
 SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
 
-    if (device == "NPU") {
+    if (device.find("NPU") != std::string::npos) {
         m_impl = std::make_shared<SD3Transformer2DModel::InferenceStaticBS1>();
     }
     else {
