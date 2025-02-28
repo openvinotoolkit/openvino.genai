@@ -39,6 +39,7 @@ int main(int argc, char* argv[]) try {
     // Since the streamer is set, the results will
     // be printed each time a new token is generated.
     pipe.generate(prompt, config, streamer);
+    std::cout << std::endl;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

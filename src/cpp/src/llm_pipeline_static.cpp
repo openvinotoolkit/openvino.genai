@@ -628,12 +628,9 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
                              ov::genai::GenerationHandle& handle) {
     if (streamer_ptr && handle->can_read()) {
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
-        for (const auto& gen_token : token.begin()->second.generated_ids) {
-            auto streaming_status = streamer_ptr->write(gen_token);
-            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-                streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
-                break;
-            }
+        auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
+        if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+            streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
         }
     }
 }
@@ -934,7 +931,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     int64_t input_ids_data = -1;
     int64_t position_ids_data = prompt_len - 1;
-    std::vector<int64_t> attention_mask_data(prompt_len - 1, 1);
+    std::vector<int64_t> attention_mask_data(prompt_len, 1);
     m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1},  reinterpret_cast<void*>(&input_ids_data)));
     m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&position_ids_data)));
 

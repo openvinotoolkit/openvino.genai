@@ -18,6 +18,7 @@ concurrency:
 env:
   PYTHON_VERSION: '3.11'
   TARGET_BRANCH: 'master'
+  PYTHONIOENCODING: "utf8"
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
@@ -48,7 +49,7 @@ jobs:
       with:
         platform: 'windows'
         commit_packages_to_provide: wheels,openvino_js_package.zip
-        revision: '1643337771eec0816aada5a6245a93fbff4b976a'
+        revision: 'latest_available_commit'
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build_type }})
@@ -415,11 +416,18 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
 
   genai_samples_tests:
-    name: Samples Tests - ${{ matrix.build-type }}
+    name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
     strategy:
       fail-fast: false
       matrix:
         build-type: [Release]
+        test:
+          - name: 'LLM'
+            marker: 'llm'
+            cmd: 'tests/python_tests/samples'
+          - name: 'Whisper'
+            marker: 'whisper'
+            cmd: 'tests/python_tests/samples'
     needs: [ openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples ]
     timeout-minutes: 45
     defaults:
@@ -430,7 +438,6 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      MODELS_DIR: ${{ github.workspace }}/models
 
     steps:
       - name: Clone openvino.genai
@@ -450,47 +457,24 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
+          
+      - name: Install OpenVINO wheel
+        run: python -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
+        working-directory: ${{ env.INSTALL_DIR }}
 
-      - name: Install Wheels
+      - name: Install GenAI wheels
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
+          packages: "openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
-      - name: Download & convert Models and data
-        run: |
-          New-Item -ItemType Directory -Force -Path ${{ env.MODELS_DIR }}
-          optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 ${{ env.MODELS_DIR }}/TinyLlama-1.1B-Chat-v1.0
-          optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny ${{ env.MODELS_DIR }}/whisper-tiny
-          Invoke-WebRequest -Uri https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav -OutFile ${{ env.MODELS_DIR }}/how_are_you_doing_today.wav
-
-      - name: Test multinomial_causal_lm.py
-        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
-        timeout-minutes: 1
-        run: python ${{ env.SRC_DIR }}/samples/python/text_generation/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0 0
-        working-directory: ${{ env.MODELS_DIR }}
-
-      - name: Test whisper_speech_recognition.py
-        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
-        timeout-minutes: 1
-        run: python ${{ env.SRC_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
-        working-directory: ${{ env.MODELS_DIR }}
-
-      - name: C++ Tests Prerequisites
-        run: python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
-
-      - name: Test greedy_causal_lm
-        run: |
-          . "${{ env.INSTALL_DIR }}/setupvars.ps1"
-          & "${{ env.INSTALL_DIR }}/samples_bin/greedy_causal_lm.exe" "TinyLlama-1.1B-Chat-v1.0" ""
-        working-directory: ${{ env.MODELS_DIR }}
-
-      - name: Test whisper_speech_recognition
-        run: |
-          . "${{ env.INSTALL_DIR }}/setupvars.ps1"
-          & "${{ env.INSTALL_DIR }}/samples_bin/whisper_speech_recognition.exe" "whisper-tiny" "how_are_you_doing_today.wav"
-        working-directory: ${{ env.MODELS_DIR }}
+      - name: Test Samples (Python and C++)
+        run: python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        env:
+          PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
+          SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
+          SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
   genai_nodejs_tests:
     name: Node.js bindings tests

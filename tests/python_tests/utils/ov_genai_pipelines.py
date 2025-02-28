@@ -6,11 +6,13 @@ from pathlib import Path
 from typing import List, Callable
 from shutil import rmtree
 
+from optimum.intel.openvino.utils import TemporaryDirectory
 from openvino_genai import SchedulerConfig, draft_model, ContinuousBatchingPipeline, \
     LLMPipeline, GenerationConfig, GenerationResult, StreamerBase, DecodedResults
 
 from utils.constants import get_default_llm_properties
 from utils.comparation import compare_generation_results
+from utils.hugging_face import download_and_convert_model, run_hugging_face
 
 def dict_to_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
@@ -40,6 +42,7 @@ class PipelineType(Enum):
     CONTINIOUS_BATCHING = 3
     SPECULATIVE_DECODING = 4
     PROMPT_LOOKUP_DECODING = 5
+    AUTO = 6
 
 
 class StreamerWithResults:
@@ -62,15 +65,17 @@ class StreamerWithResults:
 
 
 def create_ov_pipeline(models_path: Path,
-                       pipeline_type: PipelineType = PipelineType.PAGED_ATTENTION,
+                       pipeline_type: PipelineType = PipelineType.AUTO,
                        device: str = "CPU",
                        ov_config: dict = get_default_llm_properties(),
                        scheduler_config: SchedulerConfig = SchedulerConfig(),
                        draft_model: draft_model = None):
-    if pipeline_type == PipelineType.STATEFUL:
+    if pipeline_type == PipelineType.AUTO:
+        return LLMPipeline(models_path, device, ov_config)
+    elif pipeline_type == PipelineType.STATEFUL:
         return LLMPipeline(models_path, device, ov_config, ATTENTION_BACKEND="SDPA")
     elif pipeline_type == PipelineType.PAGED_ATTENTION:
-        return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config)
+        return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
     elif pipeline_type == PipelineType.CONTINIOUS_BATCHING:
         return ContinuousBatchingPipeline(models_path, scheduler_config, device, ov_config)
     elif pipeline_type == PipelineType.SPECULATIVE_DECODING:
@@ -173,3 +178,56 @@ def run_ov_pipeline(models_path: Path,
 
     return generation_results
 
+
+# TODO: remove `ref` after Generator property is supported by LLMPipeline / VLMPipeline
+def generate_and_compare(model: Path | str,
+                         prompts : List[str],
+                         generation_config: List[GenerationConfig] | GenerationConfig | dict,
+                         pipeline_type: PipelineType = PipelineType.AUTO,
+                         scheduler_config: SchedulerConfig | dict = SchedulerConfig(),
+                         ref : List[List[str]] = None,
+                         streamer: StreamerWithResults | Callable | StreamerBase = None,
+                         tmp_path: Path | TemporaryDirectory = TemporaryDirectory()) :
+    ov_gen_config = None
+    hf_gen_config = None
+    if type(generation_config) is dict:
+        ov_gen_config = GenerationConfig(**generation_config)
+        hf_gen_config = ov_gen_config
+    elif isinstance(generation_config, GenerationConfig):
+        ov_gen_config = [generation_config] * len(prompts)
+        hf_gen_config = generation_config
+    else:
+        ov_gen_config = generation_config
+        hf_gen_config = generation_config
+
+    ov_scheduler_config = None
+    if isinstance(scheduler_config, SchedulerConfig):
+        ov_scheduler_config = scheduler_config
+    else:
+        ov_scheduler_config= dict_to_scheduler_config(scheduler_config)
+
+    if isinstance(model, Path):
+        models_path = model
+    else:
+        opt_model, hf_tokenizer, models_path = download_and_convert_model(model, Path(tmp_path.name))
+
+    ov_results = run_ov_pipeline(models_path=models_path,
+                                 prompt=prompts,
+                                 generation_config=ov_gen_config,
+                                 pipeline_type=pipeline_type,
+                                 streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer,
+                                 scheduler_config=ov_scheduler_config,
+                                 ov_config=get_default_llm_properties())
+    if ref is None:
+        ref_results = run_hugging_face(opt_model, hf_tokenizer, prompts, hf_gen_config)
+        compare_generation_results(prompts, ref_results, ov_results, ov_gen_config)
+    else:
+        assert len(prompts) == len(ref)
+        assert len(prompts) == len(ov_results)
+
+        for prompt, ref_texts_for_this_prompt, ov_result in zip(prompts, ref, ov_results):
+            print(f"Prompt = {prompt}\nref text = {ref_texts_for_this_prompt}\nOV result = {ov_result.m_generation_ids}")
+
+            assert len(ref_texts_for_this_prompt) == len(ov_result.m_generation_ids)
+            for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
+                assert ref_text == ov_text
