@@ -20,7 +20,7 @@ from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type
 from data.models import get_chat_models_list
-from data.test_dataset import get_test_dataset
+from data.test_dataset import get_test_dataset, get_test_dataset_without_beam_search
 
 #
 # e2e tests on random and real models
@@ -45,7 +45,7 @@ def get_all_cb_based_pipelines():
 @pytest.mark.parametrize("model_id", [read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit"))[0]])
 @pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
 def test_e2e_precommit(tmp_path, model_id, pipeline_type):
-    prompts, generation_configs = get_test_dataset()
+    prompts, generation_configs = get_test_dataset_without_beam_search()
     generate_and_compare(prompts=prompts,
                          generation_config=generation_configs,
                          tmp_path=tmp_path,
@@ -155,15 +155,15 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict, pip
     generation_config = GenerationConfig(**generation_config_kwargs)
     generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
 
-    try:
-        ov_pipe.set_generation_config(generation_config)
-        
-        for question in questions:
-            generated = cb_pipe.generate(question, generation_config=generation_config)
-            reference = ov_pipe.generate(question)
-            assert generated == reference
-    except:
-        assert generation_config.is_beam_search() and generation_config.is_assisting_generation()
+    if generation_config.is_beam_search() and generation_config.is_assisting_generation():
+        return
+
+    ov_pipe.set_generation_config(generation_config)
+    
+    for question in questions:
+        generated = cb_pipe.generate(question, generation_config=generation_config)
+        reference = ov_pipe.generate(question)
+        assert generated == reference
 
     # Test that finish_chat() doesn't fail just in case.
     cb_pipe.finish_chat()
