@@ -95,8 +95,10 @@ def create_ov_pipeline(models_path: Path,
 def prepare_generation_config_by_pipe_type(generation_config : GenerationConfig,
                                            pipeline_type: PipelineType = PipelineType.AUTO):
     if pipeline_type == PipelineType.SPECULATIVE_DECODING:
+        assert not generation_config.is_beam_search()
         generation_config.assistant_confidence_threshold = 0.9
     elif pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING:
+        assert not generation_config.is_beam_search()
         generation_config.num_assistant_tokens = 5
         generation_config.max_ngram_size = 3
     return generation_config
@@ -130,7 +132,7 @@ def convert_decoded_results_to_generation_result(generate_outputs: DecodedResult
 def run_ov_pipeline(models_path: Path,
                     prompt : str | List[str],
                     generation_config : GenerationConfig | List[GenerationConfig],
-                    pipeline_type : PipelineType = PipelineType.PAGED_ATTENTION,
+                    pipeline_type : PipelineType = PipelineType.AUTO,
                     streamer: StreamerWithResults | Callable | StreamerBase = None,
                     scheduler_config: SchedulerConfig = SchedulerConfig(),
                     draft_model_path: Path = None,
@@ -150,7 +152,7 @@ def run_ov_pipeline(models_path: Path,
 
     # checking streamer
     if isinstance(prompt, str):
-        if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
+        if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompt) == 1:
             # We can use streamer only if we have a single prompt and not beam search.
             streamer = StreamerWithResults()
         if isinstance(streamer, StreamerWithResults):
@@ -197,34 +199,33 @@ def generate_and_compare(model: str,
 
     ov_gen_config = GenerationConfig(**generation_config) if type(generation_config) is dict else generation_config
     hf_gen_config = ov_gen_config
-    
-    # w/a to make several runs in case of several generation config with LLM pipeline
-    run_cnt = len(prompts) if type(prompts) is list and type(ov_gen_config) is list and pipeline_type != PipelineType.CONTINIOUS_BATCHING else 1
 
     if type(ov_gen_config) is list:
         assert len(ov_gen_config) == len(ov_prompts)
-    else:
-        ov_gen_config = [ov_gen_config]
-    if pipeline_type == PipelineType.CONTINIOUS_BATCHING:
-        ov_gen_config = [ov_gen_config * len(ov_prompts)]
-    
+    elif pipeline_type == PipelineType.CONTINIOUS_BATCHING:
+        ov_gen_config = [ov_gen_config] * len(ov_prompts)
 
     ov_scheduler_config = scheduler_config if isinstance(scheduler_config, SchedulerConfig) else dict_to_scheduler_config(scheduler_config)
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model, Path(tmp_path.name))
 
+    # w/a to align different API between CB and LLM
+    run_cnt = len(ov_gen_config) if pipeline_type != PipelineType.CONTINIOUS_BATCHING and type(ov_gen_config) is list else 1
 
     for i in range(run_cnt):
-        it_gen_config = ov_gen_config[i]
+        current_it_prompts = [ov_prompts[i]] if run_cnt > 1 else ov_prompts
+        current_it_gen_config = ov_gen_config[i] if run_cnt > 1 else ov_gen_config
+
         ov_results = run_ov_pipeline(models_path=models_path,
-                                    prompt=ov_prompts,
-                                    generation_config=it_gen_config,
-                                    pipeline_type=pipeline_type,
-                                    streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer,
-                                    scheduler_config=ov_scheduler_config,
-                                    ov_config=get_default_llm_properties())
+                                     prompt=current_it_prompts,
+                                     generation_config=current_it_gen_config,
+                                     pipeline_type=pipeline_type,
+                                     streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer,
+                                     scheduler_config=ov_scheduler_config,
+                                     ov_config=get_default_llm_properties())
 
         if ref is None:
-            ref_results = run_hugging_face(opt_model, hf_tokenizer, ov_prompts, hf_gen_config)
-            compare_generation_results(ov_prompts, ref_results, ov_results, it_gen_config)
+            current_it_hf_config = [hf_gen_config[i]] if run_cnt > 1 else hf_gen_config
+            ref_results = run_hugging_face(opt_model, hf_tokenizer, current_it_prompts, current_it_hf_config)
+            compare_generation_results(current_it_prompts, ref_results, ov_results, current_it_gen_config)
         else:
-            compare_generation_results_vs_ref(ov_prompts, ref, ov_results)
+            compare_generation_results_vs_ref(ov_prompts[i], ref[i], ov_results)
