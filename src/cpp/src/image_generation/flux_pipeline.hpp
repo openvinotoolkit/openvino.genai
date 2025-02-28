@@ -471,6 +471,10 @@ public:
 
         // Prepare timesteps
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        OPENVINO_ASSERT(!timesteps.empty(),
+                        "After adjusting the num_inference_steps by strength parameter: ", m_custom_generation_config.strength,
+                        " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
+
         m_latent_timestep = timesteps[0];
 
         // Prepare latent variables
@@ -618,7 +622,7 @@ private:
                        size_t inference_step) override {
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
         OPENVINO_ASSERT(image_latent.get_shape() == latents.get_shape(),
-                        "Shapes for current", latents.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
+                        "Shapes for current ", latents.get_shape(), " and initial image latents ", image_latent.get_shape(), " must match");
 
         ov::Tensor init_latents_proper(image_latent.get_element_type(), image_latent.get_shape());
         image_latent.copy_to(init_latents_proper);
