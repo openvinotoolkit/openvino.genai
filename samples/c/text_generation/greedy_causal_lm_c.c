@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "openvino/genai/c_wrapper/llm_pipeline_c.h"
+#include "openvino/genai/c/llm_pipeline_c.h"
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
