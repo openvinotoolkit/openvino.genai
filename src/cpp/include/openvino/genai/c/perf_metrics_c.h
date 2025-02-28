@@ -8,10 +8,7 @@
  * @file perf_metrics_c.h
  */
 #pragma once
-#include <stddef.h>
-#include <stdint.h>
-
-#include "openvino/genai/visibility.hpp"
+#include "common_c.h"
 
 /**
  * @brief Structure to store mean and standard deviation values.

@@ -10,10 +10,8 @@
 
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "common_c.h"
 
-#include "openvino/genai/visibility.hpp"
 
 /**
  * @brief controls the stopping condition for grouped beam search. The following values are possible:

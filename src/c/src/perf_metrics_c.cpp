@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "common_c.hpp"
+#include "types_c.h"
 #include "openvino/genai/perf_metrics.hpp"
 
 MeanStdPair_C convert_to_c(const ov::genai::MeanStdPair& cpp_pair) {

@@ -3,7 +3,7 @@
 
 #include "openvino/genai/c/llm_pipeline_c.h"
 
-#include "common_c.hpp"
+#include "types_c.h"
 #include "openvino/genai/c/generation_config_c.h"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"

@@ -3,7 +3,7 @@
 
 #include "openvino/genai/c/generation_config_c.h"
 
-#include "common_c.hpp"
+#include "types_c.h"
 #include "openvino/genai/generation_config.hpp"
 
 GenerationConfigHandle* CreateGenerationConfig() {
