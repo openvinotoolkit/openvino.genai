@@ -75,7 +75,7 @@ def test_greedy(tmp_path, generation_config, prompt, pipeline_type):
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
     generate_and_compare(model=model_id, 
-                         prompts=[prompt], 
+                         prompts=prompt, 
                          generation_config=generation_config, 
                          tmp_path=tmp_path,
                          pipeline_type=pipeline_type)

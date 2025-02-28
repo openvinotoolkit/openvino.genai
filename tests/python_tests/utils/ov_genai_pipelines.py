@@ -203,11 +203,11 @@ def generate_and_compare(model: str,
 
     if type(ov_gen_config) is list:
         assert len(ov_gen_config) == len(ov_prompts)
-    elif pipeline_type == PipelineType.CONTINIOUS_BATCHING:
-        ov_gen_config = [ov_gen_config] * len(ov_prompts)
-    
-    if pipeline_type == PipelineType.CONTINIOUS_BATCHING:
+    else:
         ov_gen_config = [ov_gen_config]
+    if pipeline_type == PipelineType.CONTINIOUS_BATCHING:
+        ov_gen_config = [ov_gen_config * len(ov_prompts)]
+    
 
     ov_scheduler_config = scheduler_config if isinstance(scheduler_config, SchedulerConfig) else dict_to_scheduler_config(scheduler_config)
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model, Path(tmp_path.name))
