@@ -16,78 +16,78 @@ MeanStdPair_C convert_to_c(const ov::genai::MeanStdPair& cpp_pair) {
     return c_pair;
 }
 
-PerfMetricsHandle* CreatePerfMetrics() {
-    PerfMetricsHandle* metrics = new PerfMetricsHandle;
+ov_genai_perf_metrics* ov_genai_perf_metrics_create() {
+    ov_genai_perf_metrics* metrics = new ov_genai_perf_metrics;
     metrics->object = std::make_shared<ov::genai::PerfMetrics>();
     return metrics;
 }
-void DestroyPerfMetics(PerfMetricsHandle* metrics) {
+void ov_genai_perf_metrics_free(ov_genai_perf_metrics* metrics) {
     if (metrics)
         delete metrics;
 }
 
-float PerfMetricsGetLoadTime(const PerfMetricsHandle* metrics) {
+float ov_genai_perf_metrics_get_load_time(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object)
         return metrics->object->get_load_time();
     return 0.0f;
 }
-size_t PerfMetricsGetNumGeneratedTokens(const PerfMetricsHandle* metrics) {
+size_t ov_genai_perf_metrics_get_num_generation_tokens(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object)
         return metrics->object->get_num_generated_tokens();
     return 0;
 }
-size_t PerfMetricsGetNumInputTokens(const PerfMetricsHandle* metrics) {
+size_t ov_genai_perf_metrics_get_num_input_tokens(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object) {
         return metrics->object->get_num_input_tokens();
     }
     return 0;
 }
-MeanStdPair_C PerfMetricsGetTtft(const PerfMetricsHandle* metrics) {
+MeanStdPair_C ov_genai_perf_metrics_get_ttft(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object) {
         return convert_to_c(metrics->object->get_ttft());
     }
     return {0.0f, 0.0f};
 }
-MeanStdPair_C PerfMetricsGetTpot(const PerfMetricsHandle* metrics) {
+MeanStdPair_C ov_genai_perf_metrics_get_tpot(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object) {
         return convert_to_c(metrics->object->get_tpot());
     }
     return {0.0f, 0.0f};
 }
 
-MeanStdPair_C PerfMetricsGetIpot(const PerfMetricsHandle* metrics) {
+MeanStdPair_C ov_genai_perf_metrics_get_ipot(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object) {
         return convert_to_c(metrics->object->get_ipot());
     }
     return {0.0f, 0.0f};
 }
-MeanStdPair_C PerfMetricsGetThroughput(const PerfMetricsHandle* metrics) {
+MeanStdPair_C ov_genai_perf_metrics_get_throughput(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object) {
         return convert_to_c(metrics->object->get_throughput());
     }
     return {0.0f, 0.0f};
 }
 
-MeanStdPair_C PerfMetricsGetInferenceDuration(const PerfMetricsHandle* metrics) {
+MeanStdPair_C ov_genai_perf_metrics_get_inference_duration(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object) {
         return convert_to_c(metrics->object->get_inference_duration());
     }
     return {0.0f, 0.0f};
 }
 
-MeanStdPair_C PerfMetricsGetGenerateDuration(const PerfMetricsHandle* metrics) {
+MeanStdPair_C ov_genai_perf_metrics_get_generate_duration(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object) {
         return convert_to_c(metrics->object->get_generate_duration());
     }
     return {0.0f, 0.0f};
 }
-MeanStdPair_C PerfMetricsGetTokenizationDuration(const PerfMetricsHandle* metrics) {
+MeanStdPair_C ov_genai_perf_metrics_get_tokenization_duration(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object) {
         return convert_to_c(metrics->object->get_tokenization_duration());
     }
     return {0.0f, 0.0f};
 }
-MeanStdPair_C PerfMetricsGetDetokenizationDuration(const PerfMetricsHandle* metrics) {
+MeanStdPair_C ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_perf_metrics* metrics) {
     if (metrics && metrics->object) {
         return convert_to_c(metrics->object->get_detokenization_duration());
     }
@@ -95,7 +95,7 @@ MeanStdPair_C PerfMetricsGetDetokenizationDuration(const PerfMetricsHandle* metr
 }
 
 // PerfMetrics& operator+=(const PerfMetrics& right);
-void AddPerfMetricsInPlace(PerfMetricsHandle* left, const PerfMetricsHandle* right) {
+void ov_genai_perf_metrics_add_in_place(ov_genai_perf_metrics* left, const ov_genai_perf_metrics* right) {
     if (left && right && left->object && right->object) {
         *(left->object) += *(right->object);
     }

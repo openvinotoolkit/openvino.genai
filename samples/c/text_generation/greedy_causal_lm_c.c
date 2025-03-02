@@ -13,21 +13,21 @@ int main(int argc, char* argv[]) {
     const char* model_dir = argv[1];
     const char* prompt = argv[2];
 
-    LLMPipelineHandle* pipeline = CreateLLMPipeline(model_dir, "CPU");
+    ov_genai_llm_pipeline* pipeline = ov_genai_llm_pipeline_create(model_dir, "CPU");
     if (pipeline == NULL) {
         fprintf(stderr, "Failed to create LLM pipeline\n");
         return EXIT_FAILURE;
     }
-    GenerationConfigHandle* config = CreateGenerationConfig();
-    GenerationConfigSetMaxNewTokens(config, 100);
+    ov_genai_generation_config* config = ov_genai_generation_config_create();
+    ov_genai_generation_config_set_max_new_tokens(config, 100);
 
     char output[1024];
-    LLMPipelineGenerate(pipeline, prompt, output, sizeof(output), config);
+    ov_genai_llm_pipeline_generate(pipeline, prompt, output, sizeof(output), config);
 
     printf("Generated text: %s\n", output);
 
-    DestroyLLMPipeline(pipeline);
-    DestroyGenerationConfig(config);
+    ov_genai_llm_pipeline_free(pipeline);
+    ov_genai_generation_config_free(config);
 
     return EXIT_SUCCESS;
 }

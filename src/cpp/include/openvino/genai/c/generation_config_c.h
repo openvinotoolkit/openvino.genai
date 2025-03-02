@@ -12,7 +12,6 @@
 
 #include "common_c.h"
 
-
 /**
  * @brief controls the stopping condition for grouped beam search. The following values are possible:
  *        "EARLY" stops as soon as there are `num_beams` complete candidates.
@@ -22,291 +21,312 @@
 typedef enum { EARLY, HEURISTIC, NEVER } StopCriteria;
 
 /**
- * @struct GenerationConfigHandle
- * @brief type define GenerationConfigHandle from OpaqueGenerationConfig
+ * @struct ov_genai_generation_config
+ * @brief type define ov_genai_generation_config from ov_genai_generation_config_opaque
  */
-typedef struct OpaqueGenerationConfig GenerationConfigHandle;
+typedef struct ov_genai_generation_config_opaque ov_genai_generation_config;
 
 /**
- * @brief Create GenerationConfigHandle.
+ * @brief Create ov_genai_generation_config.
  */
-OPENVINO_GENAI_C_EXPORTS GenerationConfigHandle* CreateGenerationConfig();
+OPENVINO_GENAI_C_EXPORTS ov_genai_generation_config* ov_genai_generation_config_create();
 
 /**
- * @brief Create GenerationConfigHandle from JSON file.
+ * @brief Create ov_genai_generation_config from JSON file.
  * @param json_path A path to the JSON file with generation config.
  */
-OPENVINO_GENAI_C_EXPORTS GenerationConfigHandle* CreateGenerationConfigFromJson(const char* json_path);
+OPENVINO_GENAI_C_EXPORTS ov_genai_generation_config* ov_genai_generation_config_create_from_json(const char* json_path);
 
 /**
- * @brief Release the memory allocated by GenerationConfigHandle.
- * @param handle A pointer to the GenerationConfigHandle to free memory.
+ * @brief Release the memory allocated by ov_genai_generation_config.
+ * @param handle A pointer to the ov_genai_generation_config to free memory.
  */
-OPENVINO_GENAI_C_EXPORTS void DestroyGenerationConfig(GenerationConfigHandle* handle);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_free(ov_genai_generation_config* handle);
 
 /**
  * @brief Set the maximum number of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens
  * has priority over max_length.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The maximum number of tokens to generate.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetMaxNewTokens(GenerationConfigHandle* handle, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_max_new_tokens(ov_genai_generation_config* handle,
+                                                                            size_t value);
 
 /**
  * @brief Set the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
  * `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The maximum length the generated tokens can have.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetMaxLength(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_max_length(ov_genai_generation_config* config,
+                                                                        size_t value);
 
 /**
  * @brief Set whether or not to ignore <eos> token
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value If set to true, then generation will not stop even if <eos> token is met.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetIgnoreEOS(GenerationConfigHandle* config, bool value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_ignore_eos(ov_genai_generation_config* config, bool value);
 
 /**
  * @brief Set the minimum number of tokens to generate.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The minimum number of tokens to generate.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetMinNewTokens(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_min_new_tokens(ov_genai_generation_config* config,
+                                                                            size_t value);
 
 /**
  * @brief Set whether or not to include user prompt in the output.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value If set to true, output will include user prompt.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetEcho(GenerationConfigHandle* config, bool value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_echo(ov_genai_generation_config* config, bool value);
 
 /**
  * @brief Set the number of top logprobs computed for each position,
           if set to 0, logprobs are not computed and value 0.0 is returned.
           Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs
  == 1.(default: 0).
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The number of top logprobs computed for each position.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetLogProbs(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_logprobs(ov_genai_generation_config* config, size_t value);
 
 /**
  * @brief Set the set of strings that will cause pipeline to stop generating further tokens.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param strings An array of strings
  * @param count The number of strings in the array
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetStopStrings(GenerationConfigHandle* config,
-                                                           const char* strings[],
-                                                           size_t count);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_stop_strings(ov_genai_generation_config* config,
+                                                                          const char* strings[],
+                                                                          size_t count);
 /**
  * @brief Set whether or not to include stop string that matched generation in the output.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value If set to true stop string that matched generation will be included in generation output (default:
  * false).
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetIncludeStopStrInOutput(GenerationConfigHandle* config, bool value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_include_stop_str_in_output(
+    ov_genai_generation_config* config,
+    bool value);
 
 /**
  * @brief Set the set of tokens that will cause pipeline to stop generating further tokens.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param token_ids An array of token ids
  * @param token_ids_num The number of token ids in the array
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetStopTokenIds(GenerationConfigHandle* config,
-                                                            int64_t* token_ids,
-                                                            size_t token_ids_num);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_stop_token_ids(ov_genai_generation_config* config,
+                                                                            int64_t* token_ids,
+                                                                            size_t token_ids_num);
 
 /**
  * @brief Set the number of groups to divide `num_beams` into in order to ensure diversity among different groups of
  * beams.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The number of beam groups.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetNumBeamGroups(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_num_beam_groups(ov_genai_generation_config* config,
+                                                                             size_t value);
 
 /**
  * @brief Set the number of beams for beam search. 1 disables beam search.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The number of beams for beam search.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetNumBeams(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_num_beam_groups(ov_genai_generation_config* config,
+                                                                             size_t value);
 
 /**
  * @brief Set the diversity penalty, this value is subtracted from a beam's score if it generates the same token as
  * any beam from other group at a particular time.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The parameter for diversity penalty
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetDiversityPenalty(GenerationConfigHandle* config, float value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_diversity_penalty(ov_genai_generation_config* config,
+                                                                               float value);
 
 /**
  * @brief Set the length penalty, exponential penalty to the length that is used with beam-based generation. It is
  * applied as an exponent to the sequence length, which in turn is used to divide the score of the sequence. Since
  * the score is the log likelihood of the sequence (i.e. negative), `length_penalty` > 0.0 promotes longer
  * sequences, while `length_penalty` < 0.0 encourages shorter sequences.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The exponential penalty.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetLengthPenalty(GenerationConfigHandle* config, float value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_length_penalty(ov_genai_generation_config* config,
+                                                                            float value);
 
 /**
  * @brief Set the number of sequences to return for grouped beam search decoding per batch element.
  * num_return_sequences must be less or equal to num_beams.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The number of sequences to return.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetNumReturnSequences(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_num_return_sequences(ov_genai_generation_config* config,
+                                                                              size_t value);
 
 /**
  * @brief Set the no_repeat_ngram_size
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value If set to int > 0, all ngrams of that size can only occur once.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetNoRepeatNgramSize(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_no_repeat_ngram_size(ov_genai_generation_config* config,
+                                                                                  size_t value);
 
 /**
  * @brief Set the stopping condition for grouped beam search. It accepts the following values:
  * "EARLY", where the generation stops as soon as there are `num_beams` complete candidates; "HEURISTIC", where an
  * "HEURISTIC" is applied when it is unlikely to find better candidates;
  * "NEVER", where the generation stops when there cannot be better candidates.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The stopping condition for grouped beam search.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetStopCriteria(GenerationConfigHandle* config, StopCriteria value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_stop_criteria(ov_genai_generation_config* config,
+                                                                           StopCriteria value);
 
 /**
  * @brief Set the temperature value used to modulate token probabilities for random sampling.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The value of temperature
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetTemperature(GenerationConfigHandle* config, float value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_temperature(ov_genai_generation_config* config,
+                                                                         float value);
 
 /**
  * @brief Set the top_p value. If set to float < 1, only the smallest set of most probable tokens with probabilities
  * that add up to top_p or higher are kept for generation.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The value of top_p
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetTopP(GenerationConfigHandle* config, float value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_top_p(ov_genai_generation_config* config, float value);
 
 /**
  * @brief Set the top_k value. The number of highest probability vocabulary tokens to keep for top-k-filtering.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The value of top_k
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetTopK(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_top_k(ov_genai_generation_config* config, size_t value);
 
 /**
  * @brief Set whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value If set to true, multinomial random sampling will be used.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetDoSample(GenerationConfigHandle* config, bool value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_do_sample(ov_genai_generation_config* config, bool value);
 
 /**
  * @brief Set the parameter for repetition penalty. 1.0 means no penalty.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The value of parameter for repetition penalty
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetRepetitionPenalty(GenerationConfigHandle* config, float value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_repetition_penaltyy(ov_genai_generation_config* config,
+                                                                                 float value);
 
 /**
- * @brief Set the presence penalty, which reduces absolute log prob if the token was generated at least once.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @brief Set the presence penalty, which reduces absolute log prob if the
+ * tokeov_genai_generation_config_set_presence_penaltyn was generated at least once.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The value of parameter for presence penalty
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetPresencePenalty(GenerationConfigHandle* config, float value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_presence_penalty(ov_genai_generation_config* config,
+                                                                              float value);
 
 /**
  * @brief Set the frequency penalty, which reduces absolute log prob as many times as the token was generated.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The value of parameter for frequency penalty
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetFrequencyPenalty(GenerationConfigHandle* config, float value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_frequency_penalty(ov_genai_generation_config* config,
+                                                                               float value);
 
 /**
  * @brief Set the seed to initialize random number generator.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The value of seed for random number generator
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetRngSeed(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_rng_seed(ov_genai_generation_config* config, size_t value);
 
 /**
  * @brief Set the lower token probability of candidate to be validated by main model in case of dynamic strategy
  * candidates number update.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The lower token probability of candidate to be validated by main model.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetAssistantConfidenceThreshold(GenerationConfigHandle* config,
-                                                                            float value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_assistant_confidence_threshold(
+    ov_genai_generation_config* config,
+    float value);
 /**
  * @brief Set the defined candidates number to be generated by draft model/prompt lookup in case of static strategy
  * candidates number update.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The number of assistant tokens.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetNumAssistantTokens(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_num_assistant_tokens(ov_genai_generation_config* config,
+                                                                                size_t value);
 
 /**
  * @brief Set the maximum ngram to use when looking for matches in the prompt.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param value The maximum ngram size.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetMaxNgramSize(GenerationConfigHandle* config, size_t value);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_max_ngram_size(ov_genai_generation_config* config,
+                                                                          size_t value);
 
 /**
  * @brief Set the token_id of <eos> (end of sentence)
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @param id The eos token id.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigSetEOSTokenID(GenerationConfigHandle* config, int64_t id);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_set_eos_token_id(ov_genai_generation_config* config,
+                                                                          int64_t id);
 
 /**
  * @brief Get the maximum number of tokens to generate, excluding the number of tokens in the prompt.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @return The maximum number of tokens to generate.
  */
-OPENVINO_GENAI_C_EXPORTS size_t GenerationConfigGetMaxNewTokens(GenerationConfigHandle* config);
+OPENVINO_GENAI_C_EXPORTS size_t ov_genai_generation_config_get_max_new_tokens(ov_genai_generation_config* config);
 
 /**
  * @brief Determine whether greedy decoding is enabled.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @return A boolean indicating if greedy decoding is enabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool GenerationConfigIsGreedyDecoding(GenerationConfigHandle* config);
+OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_greedy_decoding(ov_genai_generation_config* config);
 
 /**
  * @brief Determine whether beam search is enabled.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @return A boolean indicating if beam search is enabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool GenerationConfigIsBeamSearch(GenerationConfigHandle* config);
+OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_beam_search(ov_genai_generation_config* config);
 
 /**
  * @brief Determine whether multinomial random sampling is enabled.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @return A boolean indicating if multinomial random sampling is enabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool GenerationConfigIsMultinomial(GenerationConfigHandle* config);
+OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_multinomial(ov_genai_generation_config* config);
 
 /**
  * @brief Determine whether assisting generation is enabled.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @return A boolean indicating if assisting generation is enabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool GenerationConfigIsAssistingGeneration(GenerationConfigHandle* config);
+OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_assisting_generation(ov_genai_generation_config* config);
 
 /**
  * @brief Determine whether prompt lookup is enabled.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  * @return A boolean indicating if prompt lookup is enabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool GenerationConfigIsPromptLookup(GenerationConfigHandle* config);
+OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_prompt_lookup(ov_genai_generation_config* config);
 
 /**
  * @brief Checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.
- * @param handle A pointer to the GenerationConfigHandle.
+ * @param handle A pointer to the ov_genai_generation_config.
  */
-OPENVINO_GENAI_C_EXPORTS void GenerationConfigValidate(GenerationConfigHandle* config);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_generation_config_validate(ov_genai_generation_config* config);

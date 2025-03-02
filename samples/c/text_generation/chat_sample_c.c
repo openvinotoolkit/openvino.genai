@@ -72,16 +72,16 @@ int main(int argc, char* argv[]) {
     char prompt[MAX_PROMPT_LENGTH], output[MAX_OUTPUT_LENGTH];
     const char* models_path = argv[1];
     const char* device = "CPU";  // GPU, NPU can be used as well
-    LLMPipelineHandle* pipeline = CreateLLMPipeline(models_path, "CPU");
+    ov_genai_llm_pipeline* pipeline = ov_genai_llm_pipeline_create(models_path, "CPU");
     if (pipeline == NULL) {
         fprintf(stderr, "Failed to create LLM pipeline\n");
         return EXIT_FAILURE;
     }
 
-    GenerationConfigHandle* config = CreateGenerationConfig();
-    GenerationConfigSetMaxNewTokens(config, BUFFER_SIZE);
+    ov_genai_generation_config* config = ov_genai_generation_config_create();
+    ov_genai_generation_config_set_max_new_tokens(config, BUFFER_SIZE);
 
-    LLMPipelineStartChat(pipeline);
+    ov_genai_llm_pipeline_start_chat(pipeline);
     INIT_MUTEX(buffer_lock);
     THREAD_HANDLE listener_thread;
     CREATE_THREAD(listener_thread, listen_buffer, NULL);
@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
     while (fgets(prompt, MAX_PROMPT_LENGTH, stdin)) {
         prompt[strcspn(prompt, "\n")] = 0;
 
-        LLMPipelineGenerateStream(pipeline, prompt, output, sizeof(output), config, buffer, BUFFER_SIZE, &buffer_pos);
+        ov_genai_llm_pipeline_generate_stream(pipeline, prompt, output, sizeof(output), config, buffer, BUFFER_SIZE, &buffer_pos);
         SLEEP(3000); // Sleep to allow the listener thread to flush the buffer.
 
         LOCK_MUTEX(buffer_lock);
@@ -100,9 +100,9 @@ int main(int argc, char* argv[]) {
         UNLOCK_MUTEX(buffer_lock);
         printf("\n----------\nquestion:\n");
     }
-    LLMPipelineFinishChat(pipeline);
-    DestroyLLMPipeline(pipeline);
-    DestroyGenerationConfig(config);
+    ov_genai_llm_pipeline_finish_chat(pipeline);
+    ov_genai_llm_pipeline_free(pipeline);
+    ov_genai_generation_config_free(config);
     running = 0;
     JOIN_THREAD(listener_thread);
 

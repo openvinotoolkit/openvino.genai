@@ -115,52 +115,52 @@ int main(int argc, char* argv[]) {
 
     char output[MAX_OUTPUT_LENGTH];
 
-    LLMPipelineHandle* pipe = CreateLLMPipeline(options.model, options.device);
+    ov_genai_llm_pipeline* pipe = ov_genai_llm_pipeline_create(options.model, options.device);
 
-    GenerationConfigHandle* config = CreateGenerationConfig();
-    GenerationConfigSetMaxNewTokens(config, options.max_new_tokens);
+    ov_genai_generation_config* config = ov_genai_generation_config_create();
+    ov_genai_generation_config_set_max_new_tokens(config, options.max_new_tokens);
 
     for (size_t i = 0; i < options.num_warmup; i++)
-        LLMPipelineGenerate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config);
+        ov_genai_llm_pipeline_generate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config);
 
-    LLMPipelineGenerate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config);
+    ov_genai_llm_pipeline_generate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config);
 
-    DecodedResultsHandle* results = LLMPipelineGenerateDecodeResults(pipe, options.prompt, config);
+    ov_genai_decoded_results* results = ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config);
 
-    DecodeResultsGetString(results, output, MAX_OUTPUT_LENGTH);
+    ov_genai_decoded_results_get_string(results, output, MAX_OUTPUT_LENGTH);
     printf("%s\n", output);
 
-    PerfMetricsHandle* metrics = NULL;
-    DecodedeResultsGetPerfMetrics(results, &metrics);
+    ov_genai_perf_metrics* metrics = NULL;
+    ov_genai_decoded_results_get_perf_metrics(results, &metrics);
 
     for (size_t i = 0; i < options.num_iter - 1; i++) {
-        results = LLMPipelineGenerateDecodeResults(pipe, options.prompt, config);
-        PerfMetricsHandle* _metrics = NULL;
-        DecodedeResultsGetPerfMetrics(results, &_metrics);
-        AddPerfMetricsInPlace(metrics, _metrics);
-        DestroyPerfMetics(_metrics);
-        DestroyDecodedResults(results);
+        results = ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config);
+        ov_genai_perf_metrics* _metrics = NULL;
+        ov_genai_decoded_results_get_perf_metrics(results, &_metrics);
+        ov_genai_perf_metrics_add_in_place(metrics, _metrics);
+        ov_genai_perf_metrics_free(_metrics);
+        ov_genai_decoded_results_free(results);
     }
 
-    printf("%.2f ms\n", PerfMetricsGetLoadTime(metrics));
+    printf("%.2f ms\n", ov_genai_perf_metrics_get_load_time(metrics));
     printf("Generate time: %.2f ± %.2f ms\n",
-           PerfMetricsGetGenerateDuration(metrics).mean,
-           PerfMetricsGetGenerateDuration(metrics).std);
+           ov_genai_perf_metrics_get_generate_duration(metrics).mean,
+           ov_genai_perf_metrics_get_generate_duration(metrics).std);
     printf("Tokenization time: %.2f ± %.2f ms\n",
-           PerfMetricsGetTokenizationDuration(metrics).mean,
-           PerfMetricsGetTokenizationDuration(metrics).std);
+           ov_genai_perf_metrics_get_tokenization_duration(metrics).mean,
+           ov_genai_perf_metrics_get_tokenization_duration(metrics).std);
     printf("Detokenization time: %.2f ± %.2f ms\n",
-           PerfMetricsGetDetokenizationDuration(metrics).mean,
-           PerfMetricsGetDetokenizationDuration(metrics).std);
-    printf("TTFT: %.2f ± %.2f ms\n", PerfMetricsGetTtft(metrics).mean, PerfMetricsGetTtft(metrics).std);
-    printf("TPOT: %.2f ± %.2f ms/token\n", PerfMetricsGetTpot(metrics).mean, PerfMetricsGetTpot(metrics).std);
+           ov_genai_perf_metrics_get_detokenization_duration(metrics).mean,
+           ov_genai_perf_metrics_get_detokenization_duration(metrics).std);
+    printf("TTFT: %.2f ± %.2f ms\n", ov_genai_perf_metrics_get_ttft(metrics).mean, ov_genai_perf_metrics_get_ttft(metrics).std);
+    printf("TPOT: %.2f ± %.2f ms/token\n", ov_genai_perf_metrics_get_tpot(metrics).mean, ov_genai_perf_metrics_get_tpot(metrics).std);
     printf("Throughput: %.2f ± %.2f tokens/s\n",
-           PerfMetricsGetThroughput(metrics).mean,
-           PerfMetricsGetThroughput(metrics).std);
+           ov_genai_perf_metrics_get_throughput(metrics).mean,
+           ov_genai_perf_metrics_get_throughput(metrics).std);
 
     // Release Resources
-    DestroyLLMPipeline(pipe);
-    DestroyGenerationConfig(config);
-    DestroyPerfMetics(metrics);
+    ov_genai_llm_pipeline_free(pipe);
+    ov_genai_generation_config_free(config);
+    ov_genai_perf_metrics_free(metrics);
     return EXIT_SUCCESS;
 }

@@ -19,105 +19,110 @@ typedef struct {
 } MeanStdPair_C;
 
 /**
- * @struct PerfMetricsHandle
- * @brief type define PerfMetricsHandle from OpaquePerfMetrics
+ * @struct ov_genai_perf_metrics
+ * @brief type define ov_genai_perf_metrics from ov_genai_perf_metrics_opaque
  */
-typedef struct OpaquePerfMetrics PerfMetricsHandle;
+typedef struct ov_genai_perf_metrics_opaque ov_genai_perf_metrics;
 
 /**
- * @brief Create PerfMetricsHandle.
+ * @brief Create ov_genai_perf_metrics.
  */
-OPENVINO_GENAI_C_EXPORTS PerfMetricsHandle* CreatePerfMetrics();
+OPENVINO_GENAI_C_EXPORTS ov_genai_perf_metrics* ov_genai_perf_metrics_create();
 
 /**
- * @brief Release the memory allocated by PerfMetricsHandle.
- * @param model A pointer to the PerfMetricsHandle to free memory.
+ * @brief Release the memory allocated by ov_genai_perf_metrics.
+ * @param model A pointer to the ov_genai_perf_metrics to free memory.
  */
-OPENVINO_GENAI_C_EXPORTS void DestroyPerfMetics(PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_perf_metrics_free(ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get load time from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get load time from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return Load time in ms.
  */
-OPENVINO_GENAI_C_EXPORTS float PerfMetricsGetLoadTime(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS float ov_genai_perf_metrics_get_load_time(const ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get the number of generated tokens from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get the number of generated tokens from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return The number of generated tokens.
  */
-OPENVINO_GENAI_C_EXPORTS size_t PerfMetricsGetNumGeneratedTokens(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS size_t ov_genai_perf_metrics_get_num_generation_tokens(const ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get the number of input tokens from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get the number of input tokens from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return The number of input tokens.
  */
-OPENVINO_GENAI_C_EXPORTS size_t PerfMetricsGetNumInputTokens(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS size_t ov_genai_perf_metrics_get_num_input_tokens(const ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get the time to first token (in ms) from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get the time to first token (in ms) from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return Mean and standard deviation of time to first token.
  */
-OPENVINO_GENAI_C_EXPORTS MeanStdPair_C PerfMetricsGetTtft(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS MeanStdPair_C ov_genai_perf_metrics_get_ttft(const ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get the time per output token (TPOT in ms) from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get the time per output token (TPOT in ms) from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return Mean and standard deviation of time per output token.
  */
-OPENVINO_GENAI_C_EXPORTS MeanStdPair_C PerfMetricsGetTpot(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS MeanStdPair_C ov_genai_perf_metrics_get_tpot(const ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get the inference time (in ms) per output token from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get the inference time (in ms) per output token from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return Mean and standard deviation of inference time per input token.
  */
-OPENVINO_GENAI_C_EXPORTS MeanStdPair_C PerfMetricsGetIpot(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS MeanStdPair_C ov_genai_perf_metrics_get_ipot(const ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get tokens per second from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get tokens per second from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return Mean and standard deviation of throughput.
  */
-OPENVINO_GENAI_C_EXPORTS MeanStdPair_C PerfMetricsGetThroughput(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS MeanStdPair_C ov_genai_perf_metrics_get_throughput(const ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get inference duration (in ms) from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get inference duration (in ms) from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return Mean and standard deviation of inference duration.
  */
-OPENVINO_GENAI_C_EXPORTS MeanStdPair_C PerfMetricsGetInferenceDuration(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS MeanStdPair_C
+ov_genai_perf_metrics_get_inference_duration(const ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get generate duration (in ms) from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get generate duration (in ms) from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return Mean and standard deviation of generate duration.
  */
-OPENVINO_GENAI_C_EXPORTS MeanStdPair_C PerfMetricsGetGenerateDuration(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS MeanStdPair_C
+ov_genai_perf_metrics_get_generate_duration(const ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get tokenization duration (in ms) from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get tokenization duration (in ms) from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return Mean and standard deviation of tokenization duration.
  */
-OPENVINO_GENAI_C_EXPORTS MeanStdPair_C PerfMetricsGetTokenizationDuration(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS MeanStdPair_C
+ov_genai_perf_metrics_get_tokenization_duration(const ov_genai_perf_metrics* metrics);
 
 /**
- * @brief Get detokenization duration (in ms) from PerfMetricsHandle.
- * @param metrics A pointer to the PerfMetricsHandle.
+ * @brief Get detokenization duration (in ms) from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics.
  * @return Mean and standard deviation of detokenization duration.
  */
-OPENVINO_GENAI_C_EXPORTS MeanStdPair_C PerfMetricsGetDetokenizationDuration(const PerfMetricsHandle* metrics);
+OPENVINO_GENAI_C_EXPORTS MeanStdPair_C
+ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_perf_metrics* metrics);
 
 /**
  * @brief C interface for PerfMetrics& operator+=(const PerfMetrics& right)
  *
  * This function adds the PerfMetrics from 'right' to 'left' in place.
  *
- * @param left A pointer to the PerfMetricsHandle that will be updated.
- * @param right A pointer to the PerfMetricsHandle whose metrics will be added to 'left'.
+ * @param left A pointer to the ov_genai_perf_metrics that will be updated.
+ * @param right A pointer to the ov_genai_perf_metrics whose metrics will be added to 'left'.
  */
-OPENVINO_GENAI_C_EXPORTS void AddPerfMetricsInPlace(PerfMetricsHandle* left, const PerfMetricsHandle* right);
+OPENVINO_GENAI_C_EXPORTS void ov_genai_perf_metrics_add_in_place(ov_genai_perf_metrics* left,
+                                                                 const ov_genai_perf_metrics* right);
