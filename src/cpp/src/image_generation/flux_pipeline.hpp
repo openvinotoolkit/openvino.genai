@@ -247,20 +247,16 @@ public:
         m_vae->reshape(num_images_per_prompt, height, width);
     }
 
-    void compile(const std::string& device, const ov::AnyMap& properties) override {
-        update_adapters_from_properties(properties, m_generation_config.adapters);
-        auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
-        m_clip_text_encoder->compile(device, *updated_properties);
-        m_t5_text_encoder->compile(device, *updated_properties);
-        m_vae->compile(device, *updated_properties);
-        m_transformer->compile(device, *updated_properties);
-    }
-
     void compile(const std::string& text_encode_device,
                  const std::string& denoise_device,
                  const std::string& vae_device,
                  const ov::AnyMap& properties) override {
-        OPENVINO_THROW("not supported yet.");
+        update_adapters_from_properties(properties, m_generation_config.adapters);
+        auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
+        m_clip_text_encoder->compile(text_encode_device, *updated_properties);
+        m_t5_text_encoder->compile(text_encode_device, *updated_properties);
+        m_vae->compile(vae_device, *updated_properties);
+        m_transformer->compile(denoise_device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
