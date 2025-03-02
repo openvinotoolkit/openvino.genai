@@ -7,7 +7,7 @@
 
 #define CHECK_STATUS(return_status)                                                      \
     if (return_status != OK) {                                                           \
-        printf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__);  \
+        fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__);  \
         return return_status;                                                            \
     }
 

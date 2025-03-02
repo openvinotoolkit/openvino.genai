@@ -93,9 +93,9 @@ int parse_arguments(int argc, char* argv[], Options* options) {
 
 #define CHECK_STATUS(return_status)                                                     \
     if (return_status == OUT_OF_BOUNDS) {                                  \
-        printf(stderr, "[ERROR] output buffer is too small, line %d\n", __LINE__);      \
+        fprintf(stderr, "[WARNING] output buffer is too small, line %d\n", __LINE__);      \
     } else if (return_status != OK) {                                      \
-        printf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
+        fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
         return return_status;                                                           \
     }                                                                                   \
 
@@ -142,7 +142,6 @@ int main(int argc, char* argv[]) {
     CHECK_STATUS(ov_genai_decoded_results_get_string(results, output, MAX_OUTPUT_LENGTH));
     printf("%s\n", output);
 
-    ov_genai_decoded_results_free(results);
 
     ov_genai_perf_metrics* metrics = NULL;
     CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));

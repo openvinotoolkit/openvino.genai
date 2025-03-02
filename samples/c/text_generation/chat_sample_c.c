@@ -70,9 +70,9 @@ THREAD_RETURN listen_buffer(void* param) {
 }
 #define CHECK_STATUS(return_status)                                                     \
     if (return_status == OUT_OF_BOUNDS) {                                               \
-        printf(stderr, "[ERROR] output buffer is too small, line %d\n", __LINE__);      \
+        fprintf(stderr, "[WARNING] output buffer is too small, line %d\n", __LINE__);      \
     } else if (return_status != OK) {                                                   \
-        printf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
+        fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
         return return_status;                                                           \
     }
 
@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
 
     ov_genai_generation_config* config = NULL;
     CHECK_STATUS(ov_genai_generation_config_create(&config));
-    CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, BUFFER_SIZE));
+    CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, 100));
 
     CHECK_STATUS(ov_genai_llm_pipeline_start_chat(pipeline));
     INIT_MUTEX(buffer_lock);
