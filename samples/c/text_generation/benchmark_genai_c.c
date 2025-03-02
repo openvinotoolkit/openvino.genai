@@ -91,6 +91,14 @@ int parse_arguments(int argc, char* argv[], Options* options) {
     return 1;
 }
 
+#define CHECK_STATUS(return_status)                                                     \
+    if (return_status == OUT_OF_BOUNDS) {                                  \
+        printf(stderr, "[ERROR] output buffer is too small, line %d\n", __LINE__);      \
+    } else if (return_status != OK) {                                      \
+        printf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
+        return return_status;                                                           \
+    }                                                                                   \
+
 int main(int argc, char* argv[]) {
     Options options = {.model = NULL,
                        .prompt = DEFAULT_PROMPT,
@@ -115,52 +123,59 @@ int main(int argc, char* argv[]) {
 
     char output[MAX_OUTPUT_LENGTH];
 
-    ov_genai_llm_pipeline* pipe = ov_genai_llm_pipeline_create(options.model, options.device);
+    ov_genai_llm_pipeline* pipe = NULL;
+    CHECK_STATUS(ov_genai_llm_pipeline_create(options.model, options.device, &pipe));
 
-    ov_genai_generation_config* config = ov_genai_generation_config_create();
-    ov_genai_generation_config_set_max_new_tokens(config, options.max_new_tokens);
+    ov_genai_generation_config* config = NULL;
+    CHECK_STATUS(ov_genai_generation_config_create(&config));
+    CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, options.max_new_tokens));
 
-    for (size_t i = 0; i < options.num_warmup; i++)
-        ov_genai_llm_pipeline_generate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config);
-
-    ov_genai_llm_pipeline_generate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config);
-
-    ov_genai_decoded_results* results = ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config);
-
-    ov_genai_decoded_results_get_string(results, output, MAX_OUTPUT_LENGTH);
-    printf("%s\n", output);
-
-    ov_genai_perf_metrics* metrics = NULL;
-    ov_genai_decoded_results_get_perf_metrics(results, &metrics);
-
-    for (size_t i = 0; i < options.num_iter - 1; i++) {
-        results = ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config);
-        ov_genai_perf_metrics* _metrics = NULL;
-        ov_genai_decoded_results_get_perf_metrics(results, &_metrics);
-        ov_genai_perf_metrics_add_in_place(metrics, _metrics);
-        ov_genai_perf_metrics_free(_metrics);
-        ov_genai_decoded_results_free(results);
+    for (size_t i = 0; i < options.num_warmup; i++) {
+        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config));
     }
 
-    printf("%.2f ms\n", ov_genai_perf_metrics_get_load_time(metrics));
-    printf("Generate time: %.2f ± %.2f ms\n",
-           ov_genai_perf_metrics_get_generate_duration(metrics).mean,
-           ov_genai_perf_metrics_get_generate_duration(metrics).std);
-    printf("Tokenization time: %.2f ± %.2f ms\n",
-           ov_genai_perf_metrics_get_tokenization_duration(metrics).mean,
-           ov_genai_perf_metrics_get_tokenization_duration(metrics).std);
-    printf("Detokenization time: %.2f ± %.2f ms\n",
-           ov_genai_perf_metrics_get_detokenization_duration(metrics).mean,
-           ov_genai_perf_metrics_get_detokenization_duration(metrics).std);
-    printf("TTFT: %.2f ± %.2f ms\n", ov_genai_perf_metrics_get_ttft(metrics).mean, ov_genai_perf_metrics_get_ttft(metrics).std);
-    printf("TPOT: %.2f ± %.2f ms/token\n", ov_genai_perf_metrics_get_tpot(metrics).mean, ov_genai_perf_metrics_get_tpot(metrics).std);
-    printf("Throughput: %.2f ± %.2f tokens/s\n",
-           ov_genai_perf_metrics_get_throughput(metrics).mean,
-           ov_genai_perf_metrics_get_throughput(metrics).std);
+    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config));
+
+    ov_genai_decoded_results* results = NULL;
+    CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, &results));
+
+    CHECK_STATUS(ov_genai_decoded_results_get_string(results, output, MAX_OUTPUT_LENGTH));
+    printf("%s\n", output);
+
+    ov_genai_decoded_results_free(results);
+
+    ov_genai_perf_metrics* metrics = NULL;
+    CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));
+
+    for (size_t i = 0; i < options.num_iter - 1; i++) {
+        CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, &results));
+        ov_genai_perf_metrics* _metrics = NULL;
+        CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &_metrics));
+        CHECK_STATUS(ov_genai_perf_metrics_add_in_place(metrics, _metrics));  // metrics += _metrics
+        ov_genai_decoded_results_perf_metrics_free(_metrics);
+        ov_genai_decoded_results_free(results);
+    }
+    float mean = 0.0f;
+    float std = 0.0f;
+    float load_time = 0.0f;
+    CHECK_STATUS(ov_genai_perf_metrics_get_load_time(metrics, &load_time));
+    printf("%.2f ms\n", load_time);
+    CHECK_STATUS(ov_genai_perf_metrics_get_generate_duration(metrics, &mean, &std));
+    printf("Generate time: %.2f ± %.2f ms\n", mean, std);
+    CHECK_STATUS(ov_genai_perf_metrics_get_tokenization_duration(metrics, &mean, &std));
+    printf("Tokenization time: %.2f ± %.2f ms\n", mean, std);
+    CHECK_STATUS(ov_genai_perf_metrics_get_detokenization_duration(metrics, &mean, &std));
+    printf("Detokenization time: %.2f ± %.2f ms\n", mean, std);
+    CHECK_STATUS(ov_genai_perf_metrics_get_ttft(metrics, &mean, &std));
+    printf("TTFT: %.2f ± %.2f ms\n", mean, std);
+    CHECK_STATUS(ov_genai_perf_metrics_get_tpot(metrics, &mean, &std));
+    printf("TPOT: %.2f ± %.2f ms/token\n", mean, std);
+    CHECK_STATUS(ov_genai_perf_metrics_get_throughput(metrics, &mean, &std));
+    printf("Throughput: %.2f ± %.2f tokens/s\n", mean, std);
 
     // Release Resources
     ov_genai_llm_pipeline_free(pipe);
+    ov_genai_decoded_results_perf_metrics_free(metrics);
     ov_genai_generation_config_free(config);
-    ov_genai_perf_metrics_free(metrics);
     return EXIT_SUCCESS;
 }

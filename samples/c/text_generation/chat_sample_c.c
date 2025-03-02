@@ -5,7 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * here is a special workaround for BOOLEAN in ov_common.h due to a conflict with the symbol in windows.h. Since BOOLEAN
+ * is not directly used in the openvino genai c interface, we apply a workaround and redefine it here.
+ */
+#define BOOLEAN WINDOWS_BOOLEAN
 #include "openvino/genai/c/llm_pipeline_c.h"
+#undef BOOLEAN
 
 #define MAX_PROMPT_LENGTH 64
 #define MAX_OUTPUT_LENGTH 1024
@@ -62,6 +68,13 @@ THREAD_RETURN listen_buffer(void* param) {
     }
     return 0;
 }
+#define CHECK_STATUS(return_status)                                                     \
+    if (return_status == OUT_OF_BOUNDS) {                                               \
+        printf(stderr, "[ERROR] output buffer is too small, line %d\n", __LINE__);      \
+    } else if (return_status != OK) {                                                   \
+        printf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
+        return return_status;                                                           \
+    }
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
@@ -72,16 +85,18 @@ int main(int argc, char* argv[]) {
     char prompt[MAX_PROMPT_LENGTH], output[MAX_OUTPUT_LENGTH];
     const char* models_path = argv[1];
     const char* device = "CPU";  // GPU, NPU can be used as well
-    ov_genai_llm_pipeline* pipeline = ov_genai_llm_pipeline_create(models_path, "CPU");
+    ov_genai_llm_pipeline* pipeline = NULL;
+    CHECK_STATUS(ov_genai_llm_pipeline_create(models_path, "CPU", &pipeline));
     if (pipeline == NULL) {
         fprintf(stderr, "Failed to create LLM pipeline\n");
         return EXIT_FAILURE;
     }
 
-    ov_genai_generation_config* config = ov_genai_generation_config_create();
-    ov_genai_generation_config_set_max_new_tokens(config, BUFFER_SIZE);
+    ov_genai_generation_config* config = NULL;
+    CHECK_STATUS(ov_genai_generation_config_create(&config));
+    CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, BUFFER_SIZE));
 
-    ov_genai_llm_pipeline_start_chat(pipeline);
+    CHECK_STATUS(ov_genai_llm_pipeline_start_chat(pipeline));
     INIT_MUTEX(buffer_lock);
     THREAD_HANDLE listener_thread;
     CREATE_THREAD(listener_thread, listen_buffer, NULL);
@@ -89,8 +104,15 @@ int main(int argc, char* argv[]) {
     while (fgets(prompt, MAX_PROMPT_LENGTH, stdin)) {
         prompt[strcspn(prompt, "\n")] = 0;
 
-        ov_genai_llm_pipeline_generate_stream(pipeline, prompt, output, sizeof(output), config, buffer, BUFFER_SIZE, &buffer_pos);
-        SLEEP(3000); // Sleep to allow the listener thread to flush the buffer.
+        CHECK_STATUS(ov_genai_llm_pipeline_generate_stream(pipeline,
+                                                           prompt,
+                                                           output,
+                                                           sizeof(output),
+                                                           config,
+                                                           buffer,
+                                                           BUFFER_SIZE,
+                                                           &buffer_pos));
+        SLEEP(3000);  // Sleep to allow the listener thread to flush the buffer.
 
         LOCK_MUTEX(buffer_lock);
         memset(buffer, 0, BUFFER_SIZE);
@@ -100,7 +122,7 @@ int main(int argc, char* argv[]) {
         UNLOCK_MUTEX(buffer_lock);
         printf("\n----------\nquestion:\n");
     }
-    ov_genai_llm_pipeline_finish_chat(pipeline);
+    CHECK_STATUS(ov_genai_llm_pipeline_finish_chat(pipeline));
     ov_genai_llm_pipeline_free(pipeline);
     ov_genai_generation_config_free(config);
     running = 0;
