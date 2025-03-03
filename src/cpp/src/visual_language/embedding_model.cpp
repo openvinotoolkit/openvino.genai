@@ -20,8 +20,8 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::genai::EmbeddingsRequest>> in
         compiled.get_property(ov::optimal_number_of_infer_requests),
         [&compiled]() -> ov::genai::EmbeddingsRequest {
             ov::genai::EmbeddingsRequest req;
-            req.request = compiled.create_infer_request();
-            req.cpu_tensor = req.request.get_output_tensor();
+            req.ireq = compiled.create_infer_request();
+            req.cpu_tensor = req.ireq.get_output_tensor();
             ov::RemoteContext context;
             try {
                 context = compiled.get_context();
@@ -72,15 +72,15 @@ ov::Tensor EmbeddingsModel::infer(const ov::Tensor& input_idx, bool return_remot
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(this->m_embeddings_requests_queue.get());
     // OPENVINO_ASSERT(m_request, "Text embeddings decoder model must be compiled first. Cannot infer non-compiled model");
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    req.request.set_input_tensor(input_idx);
+    req.ireq.set_input_tensor(input_idx);
     if (return_remote_tensor) {
-        req.request.set_output_tensor(req.remote_tensor);
+        req.ireq.set_output_tensor(req.remote_tensor);
     } else {
-        req.request.set_output_tensor(req.cpu_tensor);
+        req.ireq.set_output_tensor(req.cpu_tensor);
     }
-    req.request.start_async();
-    req.request.wait();
-    return req.request.get_output_tensor();
+    req.ireq.start_async();
+    req.ireq.wait();
+    return req.ireq.get_output_tensor();
 }
 
 void EmbeddingsModel::merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const {
