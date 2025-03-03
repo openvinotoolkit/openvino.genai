@@ -76,7 +76,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         mem_consumption.start_collect_memory_consumption()
     if use_genai:
         start = time.perf_counter()
-        result_text = pipe.generate(
+        result = pipe.generate(
             raw_speech,
             max_new_tokens=max_gen_tokens,
             # 'task' and 'language' parameters are supported for multilingual models only
@@ -85,7 +85,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             return_timestamps=ret_timestamps
         )
         end = time.perf_counter()
-        perf_metrics: WhisperPerfMetrics = result_text.perf_metrics
+        perf_metrics: WhisperPerfMetrics = result.perf_metrics
         print_genai_whisper_metrics(perf_metrics)
         first_token_time = perf_metrics.get_ttft().mean
         second_tokens_durations = (
@@ -94,7 +94,10 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         ).tolist()
         tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
         tm_infer_list = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
-        result_text = result_text.texts[0]
+        result_text = result.texts[0]
+        if result.chunks:
+            for chunk in result.chunks:
+                print(f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}")
     else:
         start = time.perf_counter()
         result_text = pipe(
