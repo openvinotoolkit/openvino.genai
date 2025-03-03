@@ -49,7 +49,7 @@ jobs:
       with:
         platform: 'windows'
         commit_packages_to_provide: wheels,openvino_js_package.zip
-        revision: 'a8aba4e104f027c2ba8a21fd6c4c861110c57ed9'
+        revision: 'latest_available_commit'
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build_type }})
@@ -216,7 +216,7 @@ jobs:
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
-          toolset: 14.40 # v2022
+          toolset: 14.40 # v2022  
         
       - name: Build Tokenizers Wheel
         run: |
