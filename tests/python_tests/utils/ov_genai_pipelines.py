@@ -196,7 +196,7 @@ def is_generation_available(generation_config: GenerationConfig | List[Generatio
                 return False
     else:
         for gen_config in generation_config:
-            if generation_config.is_beam_search():
+            if gen_config.is_beam_search():
                 if pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING or pipeline_type == PipelineType.SPECULATIVE_DECODING:
                     return False
     return True
