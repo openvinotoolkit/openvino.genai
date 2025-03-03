@@ -62,7 +62,7 @@ TEST_FILES = {
 
 SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python")))
 SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
-SAMPLES_C_DIR = os.environ.get("SAMPLES_C_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/c")))
+SAMPLES_C_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_teardown(request, tmp_path_factory):

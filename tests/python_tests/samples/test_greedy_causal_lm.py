@@ -32,7 +32,7 @@ class TestGreedyCausalLM:
         cpp_result = run_sample(cpp_command)
 
         # Test C sample
-        c_sample = os.path.join(SAMPLES_C_DIR, "text_generation/greedy_causal_lm_c")
+        c_sample = os.path.join(SAMPLES_C_DIR, "greedy_causal_lm_c")
         c_command =[c_sample, convert_model, sample_args]
         c_result = run_sample(c_command)
 

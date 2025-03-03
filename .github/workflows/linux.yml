@@ -380,7 +380,7 @@ jobs:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
-          SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples/c"
+          SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
   genai_build_nodejs_bindings:
     name: Build Node.js bindings

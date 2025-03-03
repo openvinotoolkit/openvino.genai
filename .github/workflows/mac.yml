@@ -396,7 +396,7 @@ jobs:
         env:
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
-          SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples/c"
+          SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
   Overall_Status:
     name: ci/gha_overall_status_macos
