@@ -11,7 +11,7 @@ import openvino
 import pytest
 import pathlib
 
-# This test suite is designed specifically to validate the functionality 
+# This test suite is designed specifically to validate the functionality
 # and robustness of the WhisperStaticPipeline on NPUW:CPU.
 config = {"NPU_USE_NPUW" : "YES",
           "NPUW_DEVICES" : "CPU",
@@ -52,7 +52,7 @@ def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
         opt_model.config.save_pretrained(path)
         opt_model.save_pretrained(path)
         processor.save_pretrained(path)
-    
+
     return model_id, path
 
 def get_results_cpu_npu(model_path, audio_sample, **config_kwargs):

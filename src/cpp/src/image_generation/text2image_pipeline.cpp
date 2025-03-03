@@ -21,7 +21,7 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) {
     const std::string class_name = get_class_name(root_dir);
 
     auto start_time = std::chrono::steady_clock::now();
-    if (class_name == "StableDiffusionPipeline" || 
+    if (class_name == "StableDiffusionPipeline" ||
         class_name == "LatentConsistencyModelPipeline")   {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::TEXT_2_IMAGE, root_dir);
     } else if (class_name == "StableDiffusionXLPipeline") {

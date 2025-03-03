@@ -150,7 +150,7 @@ public:
             // block_indices are handled in a special fashion below
             block_indices_begins(ov::element::i32, {batch_size_in_sequences + 1}),
             max_context_len(ov::element::i32, {});
-        
+
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
 
@@ -159,7 +159,7 @@ public:
         // get raw pointers to copy to
         float *inputs_embeds_data = nullptr;
         int64_t *input_ids_data = nullptr;
-        
+
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             OPENVINO_ASSERT(m_embedding.get_request(), "Got sequence group with embeddings, but embeddings model wasn't set.");
             inputs_embeds_data = inputs_embeds.data<float>();
@@ -191,7 +191,7 @@ public:
         int64_t
             * position_ids_data = position_ids.data<int64_t>();
 
-        int32_t 
+        int32_t
             * past_lens_data = past_lens.data<int32_t>(),
             * subsequence_begins_data = subsequence_begins.data<int32_t>(),
             * block_indices_begins_data = block_indices_begins.data<int32_t>();

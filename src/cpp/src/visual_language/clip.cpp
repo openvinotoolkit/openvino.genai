@@ -277,7 +277,7 @@ clip_image_f32 clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
 }
 
 std::vector<clip_image_u8> get_image_patches(
-    const clip_image_u8& image, 
+    const clip_image_u8& image,
     const std::vector<std::pair<int, int>>& image_grid_pinpoints,
     const std::pair<int, int>& size,
     int patch_size
@@ -293,7 +293,7 @@ std::vector<clip_image_u8> get_image_patches(
     int base_patch_height = size.second;
     clip_image_u8 base_patch;
     bicubic_resize(image, base_patch, base_patch_width, base_patch_height);
-    
+
     patches.push_back(base_patch);
 
     // Select best resolution for patching

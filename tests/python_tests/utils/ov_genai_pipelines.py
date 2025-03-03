@@ -54,12 +54,12 @@ class StreamerWithResults:
     def accumulate(self, subword) -> bool:
         self.results.append(subword)
         return False
-    
+
     def get_results(self) -> List[GenerationResult]:
         streaming_result = GenerationResult()
         streaming_result.m_generation_ids = [''.join(self.results)]
         return [streaming_result]
-    
+
     def reset(self):
         self.results = []
 
@@ -166,7 +166,7 @@ def run_ov_pipeline(models_path: Path,
         assert isinstance(generation_config, GenerationConfig)
         num_prompts = 1 if isinstance(prompt, str) else len(prompt)
         generation_results = convert_decoded_results_to_generation_result(generation_results, num_prompts, generation_config.num_return_sequences, generation_config.is_beam_search())
-    
+
     # cleanup test artifacts
     del ov_pipe
     rmtree(models_path)

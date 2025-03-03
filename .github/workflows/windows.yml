@@ -98,7 +98,7 @@ jobs:
           Expand-Archive -Force ninja-win.zip
           # Add it to the GitHub Path so it would be available in the subsequent steps
           Add-Content -Path $env:GITHUB_PATH -Value "${{ github.workspace }}/ninja-win"
-          
+
       - name: Download and install ccache
         run: |
           Invoke-WebRequest -Uri 'https://github.com/ccache/ccache/releases/download/v4.9.1/ccache-4.9.1-windows-x86_64.zip' -OutFile 'ccache.zip'
@@ -114,7 +114,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build_type }}
           path: ${{ env.CCACHE_DIR }}
-            
+
       - name: Clean ccache stats
         run: ccache --zero-stats --show-config
 
@@ -132,14 +132,14 @@ jobs:
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build_type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
         env:
           CMAKE_TLS_VERIFY: 0
-                          
+
       - name: Show ccache stats
         run: ccache --show-stats
 
       #
       # Upload build artifacts
       #
-      
+
       - name: Save ccache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
         uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
@@ -154,7 +154,7 @@ jobs:
           name: genai_cpack_${{ matrix.build_type }}
           path: ${{ env.GENAI_INSTALL_DIR }}
           if-no-files-found: 'error'
-  
+
   genai_build_wheel:
     name: genai wheel
     needs: [ openvino_download ]
@@ -212,19 +212,19 @@ jobs:
       #
       - name: Clean ccache stats
         run: ccache --zero-stats --show-config
-      
+
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           toolset: 14.40 # v2022
-        
+
       - name: Build Tokenizers Wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
-        
+
       - name: Build genai wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
@@ -233,7 +233,7 @@ jobs:
         env:
           CMAKE_BUILD_DIR: 'D:\a\b' # w/a for long path issue
         working-directory: ${{ env.OV_INSTALL_DIR }}
-        
+
       - name: Build WWB Wheel
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
@@ -251,7 +251,7 @@ jobs:
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
           path: ${{ env.CCACHE_DIR }}
-      
+
       - name: Upload wheels
         if: ${{ always() }}
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
@@ -340,7 +340,7 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
-          
+
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
@@ -403,13 +403,13 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
-          
+
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-          
+
       - name: Install GenAI Wheels
         uses: ./src/.github/actions/install_wheel
         with:
@@ -420,7 +420,7 @@ jobs:
       - name: Tests
         run: python -m pytest -v ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
-          
+
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
     strategy:
@@ -457,13 +457,13 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_cpack_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
-          
+
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-          
+
       - name: Install OpenVINO wheel
         run: python -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
         working-directory: ${{ env.INSTALL_DIR }}

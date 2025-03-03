@@ -16,7 +16,7 @@ Solution: update `tokenization_chatglm.py` as following: <br />
           self.special_tokens = {
               "<bos>": self.tokenizer.bos_id,
               "<eos>": self.tokenizer.eos_id,
-```              
+```
 
 > The solution works for chatglm3-6b as well.
 

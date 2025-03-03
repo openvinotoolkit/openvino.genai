@@ -190,7 +190,7 @@ ov::Tensor merge_text_and_image_embeddings_internvl(
                 std::copy_n(image_embeds_data + image_context_token_idx * embed_dim,
                             embed_dim,
                             merged_embeds_data + offset);
-                
+
                 ++image_context_token_idx;
 
                 if (image_context_token_idx == num_all_image_tokens) {
@@ -228,20 +228,20 @@ ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prom
     std::string image_start_token = m_vlm_config.image_start_token;
     std::string image_context_token = m_vlm_config.image_context_token;
     std::string image_end_token = m_vlm_config.image_end_token;
-    
+
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
     std::string formatted_prompt;
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(single_images.size());
-    
+
     for (const auto& image : single_images) {
         EncodedImage encoded_image = m_vision_encoder->encode(image);
         ov::Tensor single_image_embeds = encoded_image.resized_source;
 
         const size_t num_patches = single_image_embeds.get_shape().at(0);
         const size_t num_image_tokens = single_image_embeds.get_shape().at(1);
-        
+
         formatted_prompt += image_start_token;
         for (int i = 0; i < num_patches * num_image_tokens; ++i) {
             formatted_prompt += image_context_token;

@@ -64,8 +64,8 @@ def test_stop_strings(tmp_path, generation_config, model_id):
                          ids=["basic", "repetition_penalty", "long_max_new_tokens"])
 @pytest.mark.parametrize("prompt", [
     'What is OpenVINO?',
-    'table is made of', 
-    'The Sun is yellow because', 
+    'table is made of',
+    'The Sun is yellow because',
     '你好！ 你好嗎？'.encode('unicode_escape'),  # to escape Win limitation on Unicode tmp path
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
@@ -74,9 +74,9 @@ def test_greedy(tmp_path, generation_config, prompt, pipeline_type):
     model_id : str = "katuni4ka/tiny-random-phi3"
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
-    generate_and_compare(model=model_id, 
-                         prompts=[prompt], 
-                         generation_config=generation_config, 
+    generate_and_compare(model=model_id,
+                         prompts=[prompt],
+                         generation_config=generation_config,
                          tmp_path=tmp_path,
                          pipeline_type=pipeline_type)
 

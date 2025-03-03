@@ -47,7 +47,7 @@ auto decoded_results_docstring = R"(
     Structure to store resulting batched text outputs and scores for each batch.
     The first num_return_sequences elements correspond to the first batch element.
 
-    Parameters: 
+    Parameters:
     texts:      vector of resulting sequences.
     scores:     scores for each sequence.
     metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
@@ -60,7 +60,7 @@ auto encoded_results_docstring = R"(
     sum of logarithmic probabilities for each token in the sequence. In the case
     of greedy decoding scores are filled with zeros.
 
-    Parameters: 
+    Parameters:
     tokens: sequence of resulting tokens.
     scores: sum of logarithmic probabilities of all tokens in the sequence.
     metrics: performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
@@ -88,7 +88,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
             py::str res;
             if (valid_utf8_strings.size() == 1)
                 return valid_utf8_strings[0];
-            
+
             for (size_t i = 0; i < valid_utf8_strings.size() - 1; i++) {
                 res += py::str(std::to_string(dr.scores[i])) + py::str(": ") + valid_utf8_strings[i] + py::str("\n");
             }
@@ -100,7 +100,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def_readonly("tokens", &EncodedResults::tokens)
         .def_readonly("scores", &EncodedResults::scores)
         .def_readonly("perf_metrics", &EncodedResults::perf_metrics);
-    
+
     init_tokenizer(m);
     init_streamers(m);
     init_lora_adapter(m);

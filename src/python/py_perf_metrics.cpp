@@ -111,8 +111,8 @@ std::vector<double> timestamp_to_ms(const T& instance, U T::*member) {
     const auto& timestamps = instance.*member;
     res.reserve(timestamps.size());
     std::transform(timestamps.begin(), timestamps.end(), std::back_inserter(res),
-                   [](const auto& timestamp) { 
-                        return std::chrono::duration<double, std::milli>(timestamp.time_since_epoch()).count(); 
+                   [](const auto& timestamp) {
+                        return std::chrono::duration<double, std::milli>(timestamp.time_since_epoch()).count();
                     });
     return res;
 }
@@ -125,11 +125,11 @@ void init_perf_metrics(py::module_& m) {
         .def_property_readonly("generate_durations", [](const RawPerfMetrics &rw) {
             return pyutils::get_ms(rw, &RawPerfMetrics::generate_durations);
         })
-        .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
+        .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) {
             return pyutils::get_ms(rw, &RawPerfMetrics::tokenization_durations);
         })
-        .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
-            return pyutils::get_ms(rw, &RawPerfMetrics::detokenization_durations); 
+        .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) {
+            return pyutils::get_ms(rw, &RawPerfMetrics::detokenization_durations);
         })
         .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) {
             return pyutils::get_ms(rw, &RawPerfMetrics::m_times_to_first_token);

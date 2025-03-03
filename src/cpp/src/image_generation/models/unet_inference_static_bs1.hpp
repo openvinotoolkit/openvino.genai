@@ -17,7 +17,7 @@ public:
                          const std::string& device,
                          const ov::AnyMap& properties) override {
 
-        // All shapes for input/output tensors should be static. 
+        // All shapes for input/output tensors should be static.
         // Double check this and throw runtime error if it's not the case.
         for (auto& input : model->inputs()) {
             OPENVINO_ASSERT(!input.get_partial_shape().is_dynamic(),

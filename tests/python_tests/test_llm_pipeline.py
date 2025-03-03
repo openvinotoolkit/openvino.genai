@@ -191,11 +191,11 @@ def test_chat_scenario_several_chats_in_series():
             chat_prompt = hf_tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
             tokenized = hf_tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
             prompt_len = tokenized['input_ids'].numel()
-    
+
             answer = opt_model.generate(**tokenized, generation_config=hf_generation_config).sequences[0]
             answer_str = hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
             chat_history_hf.append({'role': 'assistant', 'content': answer_str})
-    
+
             answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
             chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
 
@@ -365,7 +365,7 @@ def test_chat_scenario_callback_cancel(model_id):
 
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
-    
+
     current_iter = 0
     num_iters = 3
     def callback(subword):

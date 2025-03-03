@@ -68,7 +68,7 @@ const std::pair<std::string, std::string> chat_template_fallback_map[] = {
         "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}",
         "{% for message in messages %}{{ message['content'] }}{% endfor %}"
     }
-};    
+};
 
 std::optional<std::string> remap_template(const std::string& chat_template) {
     for (const auto& [known, fallback] : chat_template_fallback_map) {
@@ -160,15 +160,15 @@ public:
         bool skip_special_tokens_flag = true;
         std::optional<int32_t> max_length_val;
         bool pad_to_max_length_val = false;
-        
+
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
         ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
 
-        // If requested add[skip]_special_tokens, max_length or pading mode 
+        // If requested add[skip]_special_tokens, max_length or pading mode
         // is different from the stored state, need to set state variable.
-        if (add_special_tokens_flag == m_add_special_tokens 
+        if (add_special_tokens_flag == m_add_special_tokens
             && skip_special_tokens_flag == m_skip_special_tokens
             && max_length_val == m_max_length
             && pad_to_max_length_val == m_pad_to_max_length) {
@@ -193,7 +193,7 @@ public:
         // Exact value will bet set below depending whether optional max_length is defined.
         ov::Tensor pad_to_max_length_tensor = ov::Tensor(ov::element::boolean, {1});
         *pad_to_max_length_tensor.data<bool>() = pad_to_max_length_val;
-        
+
         for (auto& state: infer_request_guard.get().query_state()) {
             auto name = state.get_name();
             if (state.get_name() == add_special_tokens.name()) {

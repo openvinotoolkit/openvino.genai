@@ -25,7 +25,7 @@ public:
         OptionalGenerationConfig generation_config
         ): LLMPipelineImplBase{dont_construct(), GenerationConfig{}},
         m_impl{std::make_unique<ContinuousBatchingPipeline>(std::filesystem::path{}, SchedulerConfig{}, std::string{})} { }
-        
+
     ContinuousBatchingAdapter(
         const std::filesystem::path& models_path,
         const Tokenizer& tokenizer,
@@ -72,7 +72,7 @@ public:
     ) override {
         // Get the currrent timestamp in order to evaluate total generate duration.
         auto start_time =  std::chrono::steady_clock::now();
-        
+
         std::vector<std::string> prompts = std::visit(overloaded{
             [](const std::string& prompt) {
                 return std::vector{prompt};
@@ -174,11 +174,11 @@ public:
 
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
-        std::vector<EncodedGenerationResult> generated = m_impl->generate(input_ids, 
-            std::vector<GenerationConfig>{input_ids.size(), config}, 
+        std::vector<EncodedGenerationResult> generated = m_impl->generate(input_ids,
+            std::vector<GenerationConfig>{input_ids.size(), config},
             streamer
         );
-               
+
         std::vector<std::vector<int64_t>> plain_tokens;
         std::vector<float> plain_scores;
         for (EncodedGenerationResult& res : generated) {
@@ -186,7 +186,7 @@ public:
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }
-        
+
         PerfMetrics perf_metrics;
         // For EncodedGenerationResults, all perf_metrics are the same.
         if (generated.size() > 0) {

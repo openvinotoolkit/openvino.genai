@@ -19,7 +19,7 @@ int main(int argc, char* argv[]) try {
 
     std::string model_path = argv[1];
     std::string prompt = argv[2];
-    
+
     std::string device = "CPU";
 
     ov::genai::LLMPipeline pipe(

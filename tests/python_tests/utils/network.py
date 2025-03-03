@@ -28,7 +28,7 @@ def retry_request(func, retries=5):
         "ServiceUnavailable",
         "InternalServerError"
     ]
-    
+
     for attempt in range(retries):
         try:
             return func()

@@ -20,7 +20,7 @@ size_t Sequence::_make_hash(size_t content_length) {
         // hash of current block depends on prefix hashes
         std::vector<int64_t> content;
         size_t prefix_hashes_needed_count = block_start_idx / block_size;
-        OPENVINO_ASSERT(prefix_hashes_needed_count <= m_prefix_hashes.size()); 
+        OPENVINO_ASSERT(prefix_hashes_needed_count <= m_prefix_hashes.size());
         content.insert(content.end(), m_prefix_hashes.begin(), m_prefix_hashes.begin() + prefix_hashes_needed_count);
 
         // get tokens corresponding to current block
@@ -38,7 +38,7 @@ size_t Sequence::_make_hash(size_t content_length) {
         return std::hash<std::string_view>{}(std::string_view(data, size));
 }
 
-// Each KV block can be uniquely identified by 
+// Each KV block can be uniquely identified by
 // the tokens within the block and the tokens in the prefix before the block.
 // hash(prefix tokens + block tokens) <--> KV Block
 size_t Sequence::get_hash(size_t content_length) {
@@ -56,7 +56,7 @@ size_t Sequence::get_hash(size_t content_length) {
     if (content_len % block_size == 0) {
         return m_prefix_hashes[content_len / block_size - 1];
     }
-    
+
     return _make_hash(content_len);
 }
 }  // namespace genai

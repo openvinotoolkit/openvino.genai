@@ -92,7 +92,7 @@ def test_vlm_pipeline(model_id, cache):
         images = []
         for link in links:
             images.append(get_image_by_link(link))
-        
+
         result_from_streamer = []
         res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
         assert res.texts[0] == ''.join(result_from_streamer)

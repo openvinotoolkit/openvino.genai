@@ -375,7 +375,7 @@ public:
             ov::Tensor negative_pooled_prompt_2_embed_out = get_tensor_batch(text_encoder_2_output, 0);
             ov::Tensor negative_prompt_2_embed_out = get_tensor_batch(text_encoder_2_hidden_state, 0);
             ov::Tensor negative_t5_prompt_embed_out = get_tensor_batch(text_encoder_3_output, 0);
-            
+
             ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed,
                 negative_prompt_2_embed, negative_t5_prompt_embed;
             if (generation_config.num_images_per_prompt == 1) {

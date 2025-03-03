@@ -85,7 +85,7 @@ get_prefix_len(
 
         const size_t candidate_sequence_gen_len = candidate_token_ids.size(),
                      running_sequence_gen_len = running_sequence->get_generated_len();
-        
+
         // to find the len of prefix
         size_t sequence_prefix_len = std::min(candidate_sequence_gen_len, running_sequence_gen_len);
         for (size_t i = 0; i < sequence_prefix_len; ++i) {
@@ -105,7 +105,7 @@ size_t
 remove_tokens_from_sequence(Sequence::Ptr& sequence,
                             size_t min_generated_tokens,
                             LogitProcessor& logit_proccessor) {
-    const auto generated_token_ids = sequence->get_generated_ids(); 
+    const auto generated_token_ids = sequence->get_generated_ids();
     const auto sequence_generated_len = generated_token_ids.size();
     OPENVINO_ASSERT(sequence_generated_len >= min_generated_tokens);
 
@@ -191,7 +191,7 @@ init_request(
     return min_candidate_len;
 }
 
-UpdateRequestResult 
+UpdateRequestResult
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::init_request_by_candidate(
     uint64_t request_id,
     const GeneratedSequences& candidates) {
@@ -199,7 +199,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::init_r
         if (request->get_request_id() != request_id) {
             continue;
         }
-        
+
         UpdateRequestResult result;
         m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
         auto& logit_processor = m_sampler->get_logit_processor(request_id);

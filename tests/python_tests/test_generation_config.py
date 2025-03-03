@@ -79,7 +79,7 @@ invalid_configs = [
     # stop conditions
     dict(), # no stop conditions at all
     dict(ignore_eos=True),  # no 'max_new_tokens', no 'max_length' with 'ignore_eos'
-    dict(stop_token_ids={-1}), # value in 'stop_token_ids' must be non-negative 
+    dict(stop_token_ids={-1}), # value in 'stop_token_ids' must be non-negative
     dict(max_new_tokens=0), # max new tokens cannot be empty (only when 'echo' is True)
     dict(max_new_tokens=10, min_new_tokens=20), # 'max_new_tokens' must be >= 'min_new_tokens'
     # penalties

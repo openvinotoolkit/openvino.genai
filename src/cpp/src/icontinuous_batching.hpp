@@ -124,7 +124,7 @@ public:
 
     /**
      * Starts chat with a given system prompt
-     * 
+     *
      * In chat scenario prompts passed to `generate` method are accumulated inside the pipeline until `finish_chat` is called
      */
     void start_chat(const std::string& system_message);

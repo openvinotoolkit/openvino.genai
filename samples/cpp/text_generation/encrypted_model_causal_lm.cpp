@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) try {
 
     auto [model_str, model_weights] = decrypt_model(models_path + "/openvino_model.xml", models_path + "/openvino_model.bin");
     ov::genai::Tokenizer tokenizer = decrypt_tokenizer(models_path);
-    
+
     ov::genai::LLMPipeline pipe(model_str, model_weights, tokenizer, device);
 
     std::string result = pipe.generate(prompt, ov::genai::max_new_tokens(100));

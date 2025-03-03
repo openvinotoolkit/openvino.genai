@@ -27,7 +27,7 @@ public:
                             properties,
                             generation_config,
                             true } {};
-                            
+
     void generate_candidates();
 
     // { generated_len, validation_len }

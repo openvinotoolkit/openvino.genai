@@ -55,8 +55,8 @@ void init_tokenizer(py::module_& m) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             auto kwargs_properties = pyutils::kwargs_to_any_map(kwargs);
             if (properties.size()) {
-                PyErr_WarnEx(PyExc_DeprecationWarning, 
-                         "'properties' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "'properties' parameters is deprecated, please use kwargs to pass config properties instead.",
                          1);
                 auto map_properties = pyutils::properties_to_any_map(properties);
                 kwargs_properties.insert(map_properties.begin(), map_properties.end());
@@ -74,8 +74,8 @@ void init_tokenizer(py::module_& m) {
             return std::make_unique<ov::genai::Tokenizer>(tokenizer_model, tokenizer_weights, detokenizer_model, detokenizer_weights, kwargs_properties);
         }), py::arg("tokenizer_model"), py::arg("tokenizer_weights"), py::arg("detokenizer_model"), py::arg("detokenizer_weights"))
 
-        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, 
-                          bool add_special_tokens, 
+        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts,
+                          bool add_special_tokens,
                           bool pad_to_max_length,
                           std::optional<size_t> max_length) {
                 ov::AnyMap tokenization_params;
@@ -92,8 +92,8 @@ void init_tokenizer(py::module_& m) {
             py::arg("max_length") = std::nullopt,
             R"(Encodes a list of prompts into tokenized inputs.)")
 
-        .def("encode", [](Tokenizer& tok, const std::string prompt, 
-                          bool add_special_tokens, 
+        .def("encode", [](Tokenizer& tok, const std::string prompt,
+                          bool add_special_tokens,
                           bool pad_to_max_length,
                           std::optional<size_t> max_length) {
                 ov::AnyMap tokenization_params;
@@ -104,8 +104,8 @@ void init_tokenizer(py::module_& m) {
                 }
                 return tok.encode(prompt, tokenization_params);
             },
-            py::arg("prompt"), 
-            py::arg("add_special_tokens") = true, 
+            py::arg("prompt"),
+            py::arg("add_special_tokens") = true,
             py::arg("pad_to_max_length") = false,
             py::arg("max_length") = std::nullopt,
             R"(Encodes a single prompt into tokenized input.)")

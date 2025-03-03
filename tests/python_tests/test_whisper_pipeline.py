@@ -705,7 +705,7 @@ def streamer_for_test(request):
     if request.param == 'DeprecatedChunkWriteStreamer':
         streamer = DeprecatedChunkWriteStreamer()
         return streamer, ResultHandler(streamer.tokens)
-    
+
     class Streamer(ov_genai.StreamerBase):
         def __init__(self) -> None:
             super().__init__()
@@ -775,4 +775,3 @@ def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
-        

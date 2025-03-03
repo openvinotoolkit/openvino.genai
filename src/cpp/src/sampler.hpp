@@ -44,7 +44,7 @@ struct SamplerOutput {
 };
 
 struct AssistingPipelineInfo {
-    size_t max_removed_tokens_per_request = 0; 
+    size_t max_removed_tokens_per_request = 0;
     size_t min_generated_len = std::numeric_limits<size_t>::max();
     size_t updated_validation_len = 0;
 };

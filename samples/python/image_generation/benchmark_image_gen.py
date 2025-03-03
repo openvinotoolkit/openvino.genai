@@ -31,7 +31,7 @@ def print_one_generate(metrics, prefix, idx):
         print(f"{prefix_idx} unet iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time:.2f} ms, other iteration avg time: {other_iter_avg_time:.2f} ms")
         print(f"{prefix_idx} unet inference num: {len(metrics.raw_metrics.unet_inference_durations)}, first inference time: {first_infer_time:.2f} ms, other inference avg time: {other_infer_avg_time:.2f} ms")
     print(f"{prefix_idx} vae encoder infer time: {metrics.get_vae_encoder_infer_duration():.2f} ms, vae decoder infer time: {metrics.get_vae_decoder_infer_duration():.2f} ms")
-    
+
 def print_statistic(warmup_metrics, iter_metrics):
     generate_durations = []
     inference_durations = []
@@ -54,15 +54,15 @@ def print_statistic(warmup_metrics, iter_metrics):
         vae_encoder_durations.append(metrics.get_vae_encoder_infer_duration())
         vae_decoder_durations.append(metrics.get_vae_decoder_infer_duration())
         load_time = metrics.get_load_time()
-        
+
     generate_mean = sum(generate_durations)
     if (len(generate_durations) > 0):
         generate_mean = generate_mean / len(generate_durations)
-        
+
     inference_mean = sum(inference_durations)
     if (len(inference_durations) > 0):
         inference_mean = inference_mean / len(inference_durations)
-        
+
     text_encoder_mean = sum(text_encoder_durations)
     if (len(text_encoder_durations) > 0):
         text_encoder_mean = text_encoder_mean / len(text_encoder_durations)
@@ -70,11 +70,11 @@ def print_statistic(warmup_metrics, iter_metrics):
     vae_encoder_mean = sum(vae_encoder_durations)
     if (len(vae_encoder_durations) > 0):
         vae_encoder_mean = vae_encoder_mean / len(vae_encoder_durations)
-        
+
     vae_decoder_mean = sum(vae_decoder_durations)
     if (len(vae_decoder_durations) > 0):
         vae_decoder_mean = vae_decoder_mean / len(vae_decoder_durations)
-        
+
     print(f"\nTest finish, load time: {load_time:.2f} ms")
     print(f"Warmup number: {warmup_num}, first generate warmup time: {generate_warmup:.2f} ms, infer warmup time: {inference_warmup:.2f} ms")
     print(f"Generate iteration number: {iter_num}, for one iteration, generate avg time: {generate_mean:.2f} ms, "
@@ -88,7 +88,7 @@ def text2image(args):
     num_warmup = args.num_warmup
     num_iter = args.num_iter
     output_dir = args.output_dir
-    
+
     pipe = ov_genai.Text2ImagePipeline(models_path, device)
     config = pipe.get_generation_config()
     config.width = args.width
@@ -96,14 +96,14 @@ def text2image(args):
     config.num_inference_steps = args.num_inference_steps
     config.num_images_per_prompt = args.num_images_per_prompt
     pipe.set_generation_config(config)
-    
+
     warmup_metrics = []
     for i in range(num_warmup):
         pipe.generate(prompt)
         metrics = pipe.get_performance_metrics()
         warmup_metrics.append(metrics)
         print_one_generate(metrics, "warmup", i)
-    
+
     iter_metrics = []
     for i in range(num_iter):
         image_tensor = pipe.generate(prompt)
@@ -113,7 +113,7 @@ def text2image(args):
         image_name = output_dir + "/image_" + str(i) + ".bmp"
         image.save(image_name)
         print_one_generate(perf_metrics, "iter", i)
-        
+
     print_statistic(warmup_metrics, iter_metrics)
 
 def read_image(path: str) -> openvino.Tensor:
@@ -130,7 +130,7 @@ def image2image(args):
     output_dir = args.output_dir
     image_path = args.image
     strength = args.strength
-    
+
     pipe = ov_genai.Image2ImagePipeline(models_path, device)
 
     image_input = read_image(image_path)
@@ -141,7 +141,7 @@ def image2image(args):
         metrics = pipe.get_performance_metrics()
         warmup_metrics.append(metrics)
         print_one_generate(metrics, "warmup", i)
-    
+
     iter_metrics = []
     for i in range(num_iter):
         image_tensor = pipe.generate(prompt, image_input, strength=strength)
@@ -151,7 +151,7 @@ def image2image(args):
         image_name = output_dir + "/image_" + str(i) + ".bmp"
         image.save(image_name)
         print_one_generate(perf_metrics, "iter", i)
-        
+
     print_statistic(warmup_metrics, iter_metrics)
 
 def inpainting(args):
@@ -164,7 +164,7 @@ def inpainting(args):
     image_path = args.image
     strength = args.strength
     mask_image_path = args.mask_image
-    
+
     pipe = ov_genai.InpaintingPipeline(models_path, device)
 
     image_input = read_image(image_path)
@@ -176,7 +176,7 @@ def inpainting(args):
         metrics = pipe.get_performance_metrics()
         warmup_metrics.append(metrics)
         print_one_generate(metrics, "warmup", i)
-    
+
     iter_metrics = []
     for i in range(num_iter):
         image_tensor = pipe.generate(prompt, image_input, mask_image)
@@ -186,9 +186,9 @@ def inpainting(args):
         image_name = output_dir + "/image_" + str(i) + ".bmp"
         image.save(image_name)
         print_one_generate(perf_metrics, "iter", i)
-        
+
     print_statistic(warmup_metrics, iter_metrics)
-    
+
 
 def main():
     parser = argparse.ArgumentParser(description="Help command")
@@ -209,11 +209,11 @@ def main():
     parser.add_argument("-s", "--strength", type=float, default=0.8, help="Indicates extent to transform the reference `image`. Must be between 0 and 1")
     # special parameters of inpainting pipeline
     parser.add_argument("-mi", "--mask_image", type=str, help="Mask image path")
-    
+
     args = parser.parse_args()
-    
+
     type = args.pipeline_type
-    
+
     if type == "text2image":
         text2image(args)
     elif type == "image2image":

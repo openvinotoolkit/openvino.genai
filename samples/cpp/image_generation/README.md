@@ -110,7 +110,7 @@ The sample will create a stable diffusion pipeline such that the text encoder is
 ## Run image to image pipeline
 
 The `image2mage.cpp` sample demonstrates basic image to image generation pipeline. The difference with text to image pipeline is that final image is denoised from initial image converted to latent space and noised with image noise according to `strength` parameter. `strength` should be in range of `[0., 1.]` where `1.` means initial image is fully noised and it is an equivalent to text to image generation.
-Also, `strength` parameter linearly affects a number of inferenece steps, because lower `strength` values means initial latent already has some structure and it requires less steps to denoise it. 
+Also, `strength` parameter linearly affects a number of inferenece steps, because lower `strength` values means initial latent already has some structure and it requires less steps to denoise it.
 
 To run the sample, download initial image first:
 
@@ -128,7 +128,7 @@ Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeli
 
 ## Run inpainting pipeline
 
-The `inpainting.cpp` sample demonstrates usage of inpainting pipeline, which can inpaint initial image by a given mask. Inpainting pipeline can work on typical text to image models as well as on specialized models which are oftenly named `space/model-inpainting`, e.g. `stabilityai/stable-diffusion-2-inpainting`. 
+The `inpainting.cpp` sample demonstrates usage of inpainting pipeline, which can inpaint initial image by a given mask. Inpainting pipeline can work on typical text to image models as well as on specialized models which are oftenly named `space/model-inpainting`, e.g. `stabilityai/stable-diffusion-2-inpainting`.
 
 Such models can be converted in the same way as regular ones via `optimum-cli`:
 

@@ -8,10 +8,10 @@
 namespace ov {
 namespace genai {
 
-/** 
+/**
  * @brief This pass modifies tokenizer ov::Model so that special tokens adding will be
  *  enabled or disabled depending on stateful value.
- * 
+ *
  *  +--------------+
  *  |  DefaultMode |
  *  +--------------+
@@ -39,8 +39,8 @@ public:
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
-/** 
- * @brief This pass modifies tokenizer ov::Model so that inputs to RaggedToDense, CombineSegments 
+/**
+ * @brief This pass modifies tokenizer ov::Model so that inputs to RaggedToDense, CombineSegments
  * become modifiable during runtime so that padding can be controlled.
  */
 class MakePaddingSatateful : public ov::pass::ModelPass {
@@ -49,10 +49,10 @@ public:
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
-/** 
+/**
  * @brief This pass modifies tokenizer ov::Model so that special tokens adding will be
  *  enabled or disabled depending on stateful value.
- *                                          
+ *
  *                                  +--------------+
  *                                  |  DefaultMode |
  *                                  +--------------+

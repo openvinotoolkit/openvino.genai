@@ -80,7 +80,7 @@ public:
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
-    
+
     VLMPipelineImpl(
         const ModelsMap& models_map,
         const Tokenizer& tokenizer,
@@ -208,7 +208,7 @@ public:
         res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
         res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
-        
+
         // VLM specific perf metrics
         decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
 
@@ -276,8 +276,8 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
-    if (properties.find(scheduler_config.name()) != properties.end() || 
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+    if (properties.find(scheduler_config.name()) != properties.end() ||
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
         properties.find(prompt_lookup.name()) != properties.end()) {
         auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_config);
@@ -298,8 +298,8 @@ VLMPipeline::VLMPipeline(
     const GenerationConfig& generation_config
 ) {
     auto start_time = std::chrono::steady_clock::now();
-    if (properties.find(scheduler_config.name()) != properties.end() || 
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+    if (properties.find(scheduler_config.name()) != properties.end() ||
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
         properties.find(prompt_lookup.name()) != properties.end()) {
         auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_config, generation_config);

@@ -198,7 +198,7 @@ void zero_past_key_values(ov::InferRequest& request) {
 
 void prepare_decoder_with_past(ov::InferRequest& decoder_with_past, ov::InferRequest& decoder, const size_t init_ids_size) {
     // NB: Prepare attetion mask to be in a format [0, 0, 0, 1, 1, 1, 1, ..., 0, 1]
-    // Mask should be inverted for decoder_with_past 
+    // Mask should be inverted for decoder_with_past
     auto attention_mask = decoder_with_past.get_tensor("attention_mask");
     auto* attention_mask_ptr = attention_mask.data<ov::float16>();
     std::fill(attention_mask_ptr, attention_mask_ptr + init_ids_size, 0);
@@ -547,7 +547,7 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper encoder model");
     m_models.encoder = compiled_model.create_infer_request();
 
-    // Will compile decoder model when it's needed 
+    // Will compile decoder model when it's needed
     m_decoder_cache = DecoderCache(decoder_model, properties);
 
     compiled_model = core.compile_model(decoder_with_past_model, "NPU", properties);
@@ -566,7 +566,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     const std::shared_ptr<StreamerBase> streamer_ptr) {
     auto start_time = std::chrono::steady_clock::now();
     WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-    
+
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (config.stop_token_ids.empty())
         config.stop_token_ids = m_generation_config.stop_token_ids;
