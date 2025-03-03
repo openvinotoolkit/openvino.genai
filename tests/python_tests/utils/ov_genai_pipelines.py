@@ -7,7 +7,6 @@ from typing import List, Callable
 from shutil import rmtree
 
 from optimum.intel.openvino.utils import TemporaryDirectory
-from optimum.intel.openvino.utils import TemporaryDirectory
 from openvino_genai import SchedulerConfig, draft_model, ContinuousBatchingPipeline, \
     LLMPipeline, GenerationConfig, GenerationResult, StreamerBase, DecodedResults
 

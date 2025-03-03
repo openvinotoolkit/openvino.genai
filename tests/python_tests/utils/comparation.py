@@ -39,7 +39,7 @@ def compare_generation_results(prompts: List[str],
 
 
 # TODO: remove this function after Generator property is supported by LLMPipeline / VLMPipeline
-def compare_generation_results_vs_ref(prompts: List[str],
+def compare_generation_results_vs_ref(prompts: List[str],  
                                       ref: List[List[str]],
                                       ov_results: List[GenerationResult]):
     assert len(prompts) == len(ref)
