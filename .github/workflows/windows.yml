@@ -61,7 +61,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-8-cores-16gb-staging
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       GENAI_INSTALL_DIR: ${{ github.workspace }}\install\genai
@@ -162,7 +162,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-8-cores-16gb-staging
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       SRC_DIR: ${{ github.workspace }}\src\genai
@@ -271,7 +271,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb-staging
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -319,7 +319,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb-staging
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -340,6 +340,12 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
+          
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
 
       - name: Build GenAI Node.js bindings
         run: |
@@ -483,7 +489,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
