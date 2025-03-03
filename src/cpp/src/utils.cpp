@@ -20,6 +20,72 @@
 
 #include "sampler.hpp"
 
+namespace {
+
+void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
+    if (config.count(pair.first) == 0) {
+        config.insert(pair);
+    }
+}
+
+void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
+    if (config.count(old_key) != 0) {
+        auto opt_value = ov::genai::utils::pop_option(config, old_key);
+        config[new_key] = opt_value.value();
+    }
+}
+
+template <typename T>
+std::optional<T> get_option(const ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        return std::make_optional(it->second.as<T>());
+    }
+    return std::nullopt;
+}
+
+std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& key) {
+    auto anyopt = ov::genai::utils::pop_option(config, key);
+    if (anyopt.has_value()) {
+        const auto any = anyopt.value();
+        int64_t value;
+        // NB: Integer value coming from python has int64_t datatype
+        if (any.is<int64_t>()) {
+            value = any.as<int64_t>();
+        } else if (any.is<int>()) {
+            value = any.as<int>();
+        } else {
+            OPENVINO_THROW("Failed to extract " + key + ". Type mismatch: expected types: int or int64_t");
+        }
+        if (value < 0) {
+            OPENVINO_THROW(key + " cannot be negative!");
+        }
+        return std::make_optional(static_cast<uint32_t>(value));
+    }
+    return std::nullopt;
+}
+
+void update_npu_config(ov::AnyMap& config,
+                       const std::shared_ptr<ov::Model>& model,
+                       const ov::genai::utils::KVAxesPosition& kv_pos,
+                       const ov::genai::utils::KVDesc& kv_desc) {
+    update_config(config, {"NPU_USE_NPUW", "YES"});
+    update_config(config, {"NPUW_LLM", "YES"});
+
+    update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
+    update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
+
+    update_config(config, {"NPUW_LLM_MAX_PROMPT_LEN", kv_desc.max_prompt_len});
+    update_config(config, {"NPUW_LLM_MIN_RESPONSE_LEN", kv_desc.min_response_len});
+
+    rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
+    rename_key(config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
+    rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
+}
+
+} // anonymous
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -387,6 +453,77 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
             std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
         }
     }
+}
+
+std::pair<ov::CompiledModel, KVDesc>
+compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
+                        const ov::AnyMap& config,
+                        const KVAxesPosition& kv_pos,
+                        const std::filesystem::path& model_path) {
+    ov::CompiledModel compiled;
+    ov::AnyMap properties = config;
+    KVDesc kv_desc;
+
+    auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+    const auto export_blob = pop_or_default(properties, "EXPORT_BLOB", false);
+    const bool do_import = (!blob_path.empty() && !export_blob);
+
+    if (do_import) {
+        if (!std::filesystem::exists(blob_path)) {
+            OPENVINO_THROW("Blob file is not found at: " + blob_path);
+        }
+        std::ifstream fin(blob_path, std::ios::in | std::ios::binary);
+        if (!fin.is_open()) {
+            OPENVINO_THROW("Blob file can't be opened: " + blob_path);
+        }
+        compiled = ov::genai::utils::singleton_core().import_model(fin, "NPU", config);
+        kv_desc.max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+        kv_desc.min_response_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
+    } else {
+        kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
+        kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+        update_npu_config(properties, model, kv_pos, kv_desc);
+        auto cache_mode = get_option<CacheMode>(config, ov::cache_mode.name());
+        // NB: Select OPTIMIZE_SPEED with model_path isn't provided
+        if ((cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SPEED)) {
+            compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
+        } else if (model_path.empty()) {
+            // Set config to OPTIMIZE_SPEED
+            properties[ov::cache_mode.name()] = CacheMode::OPTIMIZE_SPEED;
+            compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
+        } else {
+            compiled = ov::genai::utils::singleton_core().compile_model(model_path / "openvino_model.xml", "NPU", properties);
+        }
+        // Also export compiled model if required
+        if (export_blob) {
+            if (blob_path.empty()) {
+                blob_path = "openvino_model.blob";
+            }
+            // Check the path is full
+            const int EXT_SIZE = 5; // ".blob"
+            if (blob_path.size() < EXT_SIZE) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            if (strncmp(".blob", &blob_path[blob_path.size() - EXT_SIZE], EXT_SIZE) != 0) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            std::ofstream fout(blob_path, std::ios::out | std::ios::binary);
+            if (!fout.is_open()) {
+                OPENVINO_THROW("Blob file can't be exported to: " + blob_path);
+            }
+            compiled.export_model(fout);
+        }
+    }
+    return { compiled, kv_desc };
+}
+
+std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        std::optional<ov::Any> found = std::make_optional(it->second);
+        config.erase(it);
+        return found;
+    }
+    return std::nullopt;
 }
 
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
