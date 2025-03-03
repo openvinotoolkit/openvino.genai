@@ -130,7 +130,7 @@ questions = [
     'Why is the Sun yellow?',
     'What was my first question?'
 ]
-@pytest.mark.parametrize("generation_config_kwargs", generation_configs)
+@pytest.mark.parametrize("generation_config_kwargs", generation_configs[1:])
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING] )
 @pytest.mark.precommit

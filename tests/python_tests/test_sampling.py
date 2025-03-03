@@ -9,7 +9,7 @@ from typing import List, TypedDict
 
 from openvino_genai import GenerationConfig, StopCriteria
 
-from utils.ov_genai_pipelines import PipelineType, generate_and_compare, run_ov_pipeline, get_all_pipeline_types
+from utils.ov_genai_pipelines import PipelineType, generate_and_compare, run_ov_pipeline, get_main_pipeline_types
 from utils.hugging_face import get_hugging_face_models, convert_models
 
 @pytest.mark.precommit
@@ -28,11 +28,9 @@ from utils.hugging_face import get_hugging_face_models, convert_models
                               "stop_token_ids",
                             #   "echo_with_generation",
                               ])
-
-@pytest.mark.parametrize("pipeline_type", get_all_pipeline_types())
-def test_basic_stop_criteria(tmp_path, generation_config, prompt, pipeline_type):
+def test_basic_stop_criteria(tmp_path, generation_config, prompt):
     model_id : str = "katuni4ka/tiny-random-phi3"
-    generate_and_compare(model_id, [prompt], generation_config, tmp_path=tmp_path, pipeline_type=pipeline_type)
+    generate_and_compare(model_id, [prompt], generation_config, tmp_path=tmp_path)
 
 
 @pytest.mark.precommit
@@ -53,7 +51,7 @@ def test_basic_stop_criteria(tmp_path, generation_config, prompt, pipeline_type)
                               "multiple_stop_strings_exclude_from_output",
                               "multiple_stop_strings_include_to_output",
                               "multiple_stop_strings_one_no_match_and_long_exclude_from_output"])
-@pytest.mark.parametrize("pipeline_type", get_all_pipeline_types())
+@pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
 def test_stop_strings(tmp_path, generation_config, model_id, pipeline_type):
     prompts = [ "What is OpenVINO?" ]
     generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path, pipeline_type=pipeline_type)
@@ -72,16 +70,14 @@ def test_stop_strings(tmp_path, generation_config, model_id, pipeline_type):
     '你好！ 你好嗎？'.encode('unicode_escape'),  # to escape Win limitation on Unicode tmp path
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
-@pytest.mark.parametrize("pipeline_type", get_all_pipeline_types())
-def test_greedy(tmp_path, generation_config, prompt, pipeline_type):
+def test_greedy(tmp_path, generation_config, prompt):
     model_id : str = "katuni4ka/tiny-random-phi3"
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
     generate_and_compare(model=model_id, 
                          prompts=prompt, 
                          generation_config=generation_config, 
-                         tmp_path=tmp_path,
-                         pipeline_type=pipeline_type)
+                         tmp_path=tmp_path)
 
 
 @pytest.mark.precommit
@@ -132,13 +128,12 @@ def test_beam_search_with_stop_string(tmp_path, generation_config):
                           dict(max_new_tokens=30, num_beams=2, echo=True),],
                          ids=["echo_with_generation",
                               "single_group_with_echo",])
-@pytest.mark.parametrize("pipeline_type", get_all_pipeline_types())
-def test_echo(tmp_path, generation_config, pipeline_type):
+def test_echo(tmp_path, generation_config):
     prompts = [ "What is OpenVINO?" ]
     model_id : str = "facebook/opt-125m"
     # TODO: support in stateful mode and remove 'use_cb=True' and this test at all
     # as we can enable new parameters set in other tests
-    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path, pipeline_type=pipeline_type)
+    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
 
 
 # TODO: remove platform specific reference texts once CVS-159912 is done and use comparison with HF

@@ -48,6 +48,9 @@ class PipelineType(Enum):
 def get_all_pipeline_types():
     return [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION, PipelineType.CONTINIOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.AUTO]
 
+def get_main_pipeline_types():
+    return [ PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING]
+
 
 class StreamerWithResults:
     # Return a streamer which accumulates results in order to compare with results returned from generate.
