@@ -24,7 +24,7 @@ namespace ov {
 namespace genai {
 
 struct EmbeddingsRequest {
-    ov::InferRequest request;
+    ov::InferRequest ireq;
     ov::Tensor cpu_tensor;
     ov::Tensor remote_tensor;
 };
