@@ -25,7 +25,6 @@ DEFAULT_INFERENCE_STEPS = 20
 LCM_DEFAULT_INFERENCE_STEPS = 4
 DEFAULT_IMAGE_WIDTH = 512
 DEFAULT_IMAGE_HEIGHT = 512
-DEFAULT_STRENGTH = 1.0
 
 stable_diffusion_hook = StableDiffusionHook()
 
@@ -77,7 +76,8 @@ def collects_input_args(image_param, model_type, model_name, infer_count=None, h
     if image_param.get('mask_image', None):
         input_args["mask_image"] = read_image(image_param.get('mask_image'), image_as_ov_tensor)
 
-    input_args["strength"] = image_param.get('strength', DEFAULT_STRENGTH)
+    if image_param.get('strength'):
+        input_args["strength"] = image_param['strength']
 
     return input_args
 

@@ -251,9 +251,13 @@ def convert_ov_tokenizer(tokenizer_path):
 
 
 def create_image_gen_model(model_path, device, **kwargs):
-    model_class = IMAGE_GEN_CLS
+    model_index_data = {}
+    with open(str(model_path / "model_index.json"), 'r') as f:
+        model_index_data = json.load(f)
 
-    if (kwargs.get("task", "") == TASK["inpainting"] or ((kwargs.get("media") or kwargs.get("images")) and kwargs.get("mask_image"))):
+    model_class = IMAGE_GEN_CLS
+    if (kwargs.get("task", "") == TASK["inpainting"] or ((kwargs.get("media") or kwargs.get("images")) and kwargs.get("mask_image"))
+            or "Inpaint" in model_index_data.get("_class_name", "")):
         model_class = INPAINTING_IMAGE_GEN_CLS
     elif (kwargs.get("task") == TASK["img2img"] or kwargs.get("media") or kwargs.get("images")):
         model_class = IMAGE_TO_IMAGE_GEN_CLS
@@ -265,7 +269,7 @@ def create_image_gen_model(model_path, device, **kwargs):
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             log.info("Selected OpenVINO GenAI for benchmarking")
-            return create_genai_image_gen_model(model_path, device, ov_config, **kwargs)
+            return create_genai_image_gen_model(model_path, device, ov_config, model_index_data, **kwargs)
 
         log.info("Selected Optimum Intel for benchmarking")
         start = time.perf_counter()
@@ -309,7 +313,7 @@ def get_genai_unet_model(model_index_data, model_path, device, ov_config):
     return unet
 
 
-def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
+def create_genai_image_gen_model(model_path, device, ov_config, model_index_data, **kwargs):
     import openvino_genai
 
     class PerfCollector:
@@ -357,7 +361,8 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
             return 1
 
     image_gen_pipeline_class = openvino_genai.Text2ImagePipeline
-    if kwargs.get("task") == TASK["inpainting"] or ((kwargs.get("media") or kwargs.get("images")) and kwargs.get("mask_image")):
+    if (kwargs.get("task") == TASK["inpainting"] or ((kwargs.get("media") or kwargs.get("images")) and kwargs.get("mask_image"))
+            or "Inpaint" in model_index_data.get("_class_name", "")):
         log.info("Selected Inpainting image generation pipeline")
         image_gen_pipeline_class = openvino_genai.InpaintingPipeline
     elif kwargs.get("task") == TASK["img2img"] or kwargs.get("media") or kwargs.get("images"):
@@ -372,12 +377,8 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
     if adapter_config:
         ov_config['adapters'] = adapter_config
 
-    data = {}
-    with open(str(model_path / "model_index.json"), 'r') as f:
-        data = json.load(f)
-
-    model_class_name = data.get("_class_name", "")
-    main_model_name = "unet" if "unet" in data else "transformer"
+    model_class_name = model_index_data.get("_class_name", "")
+    main_model_name = "unet" if "unet" in model_index_data else "transformer"
     callback = PerfCollector(main_model_name)
 
     orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder="tokenizer")
@@ -385,30 +386,30 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
 
     start = time.perf_counter()
 
-    scheduler_type = data.get("scheduler", ["", ""])[1]
+    scheduler_type = model_index_data.get("scheduler", ["", ""])[1]
     if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "PNDMScheduler", "LMSDiscreteScheduler", "EulerDiscreteScheduler",
                                "FlowMatchEulerDiscreteScheduler", "EulerAncestralDiscreteScheduler"]):
         scheduler = openvino_genai.Scheduler.from_config(model_path / "scheduler/scheduler_config.json", openvino_genai.Scheduler.Type.DDIM)
         log.warning(f'Type of scheduler {scheduler_type} is unsupported. Please, be aware that it will be replaced to DDIMScheduler')
 
-        vae_type = data.get("vae", [])
+        vae_type = model_index_data.get("vae", [])
         if ("AutoencoderKL" in vae_type):
             vae = openvino_genai.AutoencoderKL(model_path / "vae_decoder", device.upper(), **ov_config)
         else:
             raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported vae decoder type {vae_type}')
 
         if model_class_name == "StableDiffusionPipeline":
-            text_encoder = get_genai_clip_text_encoder(data, model_path, device, ov_config)
-            unet = get_genai_unet_model(data, model_path, device, ov_config)
+            text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config)
+            unet = get_genai_unet_model(model_index_data, model_path, device, ov_config)
             image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
         elif model_class_name == "LatentConsistencyModelPipeline":
-            text_encoder = get_genai_clip_text_encoder(data, model_path, device, ov_config)
-            unet = get_genai_unet_model(data, model_path, device, ov_config)
+            text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config)
+            unet = get_genai_unet_model(model_index_data, model_path, device, ov_config)
             image_gen_pipe = image_gen_pipeline_class.latent_consistency_model(scheduler, text_encoder, unet, vae)
         elif model_class_name == "StableDiffusionXLPipeline":
-            clip_text_encoder = get_genai_clip_text_encoder(data, model_path, device, ov_config)
-            clip_text_encoder_2 = get_genai_clip_text_encoder_with_projection(data, model_path, "text_encoder_2", device, ov_config)
-            unet = get_genai_unet_model(data, model_path, device, ov_config)
+            clip_text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config)
+            clip_text_encoder_2 = get_genai_clip_text_encoder_with_projection(model_index_data, model_path, "text_encoder_2", device, ov_config)
+            unet = get_genai_unet_model(model_index_data, model_path, device, ov_config)
             image_gen_pipe = image_gen_pipeline_class.stable_diffusion_xl(scheduler, clip_text_encoder, clip_text_encoder_2, unet, vae)
         else:
             raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported _class_name {model_class_name}')
