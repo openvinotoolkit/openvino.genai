@@ -605,7 +605,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
 
     ov::Tensor encoded_input = get_encoded_input_ids(images_prompt, metrics);
 
-    ov::Tensor inputs_embeds = m_embedding.infer(encoded_input);
+    ov::Tensor inputs_embeds = m_embedding->infer(encoded_input);
     OPENVINO_ASSERT(
         m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
         "Unexpected embedding size"

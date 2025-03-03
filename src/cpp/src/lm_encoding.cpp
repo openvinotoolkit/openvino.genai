@@ -83,7 +83,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
     KVCacheState& kv_cache_state,
-    std::optional<EmbeddingsModel> m_embedding,
+    std::optional<EmbeddingsModel::Ptr> m_embedding,
     std::optional<int64_t> rope_delta,
     const size_t max_kv_cache_size
 ) {
@@ -226,7 +226,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
         if (m_embedding.has_value()) {
             constexpr bool return_remote_tensor = true;
-            const ov::Tensor& embed_prompt_tensor = (*m_embedding).infer(new_input_ids, return_remote_tensor);
+            const ov::Tensor& embed_prompt_tensor = (*m_embedding)->infer(new_input_ids, return_remote_tensor);
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
         } else {
             m_llm.set_tensor("input_ids", new_input_ids);
