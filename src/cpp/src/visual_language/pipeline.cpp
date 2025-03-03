@@ -29,7 +29,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
-    EmbeddingsModel m_embedding;
+    EmbeddingsModel::Ptr m_embedding;
     // A language model used to generate a response.
     // Input shapes: inputs_embeds[N, conversation length, hidden_size],
     // position_ids[N, conversation length], beam_idx[N].
