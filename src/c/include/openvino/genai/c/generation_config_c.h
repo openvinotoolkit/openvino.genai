@@ -114,7 +114,7 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_logprobs(ov_
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_stop_strings(ov_genai_generation_config* config,
-                                                                                 const char* strings[],
+                                                                                 const char** strings,
                                                                                  const size_t count);
 /**
  * @brief Set whether or not to include stop string that matched generation in the output.
@@ -326,43 +326,44 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_eos_token_id
  * @param The maximum number of tokens to generate.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_get_max_new_tokens(ov_genai_generation_config* config,
-                                                                                   size_t* max_new_tokens);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_generation_config_get_max_new_tokens(const ov_genai_generation_config* config, size_t* max_new_tokens);
 
 /**
  * @brief Determine whether greedy decoding is enabled.
  * @param handle A pointer to the ov_genai_generation_config.
  * @return A boolean indicating if greedy decoding is enabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_greedy_decoding(ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_greedy_decoding(const ov_genai_generation_config* config);
 
 /**
  * @brief Determine whether beam search is enabled.
  * @param handle A pointer to the ov_genai_generation_config.
  * @return A boolean indicating if beam search is enabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_beam_search(ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_beam_search(const ov_genai_generation_config* config);
 
 /**
  * @brief Determine whether multinomial random sampling is enabled.
  * @param handle A pointer to the ov_genai_generation_config.
  * @return A boolean indicating if multinomial random sampling is enabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_multinomial(ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_multinomial(const ov_genai_generation_config* config);
 
 /**
  * @brief Determine whether assisting generation is enabled.
  * @param handle A pointer to the ov_genai_generation_config.
  * @return A boolean indicating if assisting generation is enabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_assisting_generation(ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_assisting_generation(
+    const ov_genai_generation_config* config);
 
 /**
  * @brief Determine whether prompt lookup is enabled.
  * @param handle A pointer to the ov_genai_generation_config.
  * @return A boolean indicating if prompt lookup is enabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_prompt_lookup(ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_prompt_lookup(const ov_genai_generation_config* config);
 
 /**
  * @brief Checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.

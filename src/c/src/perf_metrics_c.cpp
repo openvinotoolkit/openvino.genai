@@ -6,9 +6,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "types_c.h"
 #include "openvino/genai/perf_metrics.hpp"
-
+#include "types_c.h"
 
 ov_genai_perf_metrics* ov_genai_perf_metrics_create() {
     ov_genai_perf_metrics* metrics = new ov_genai_perf_metrics;
@@ -20,7 +19,7 @@ void ov_genai_perf_metrics_free(ov_genai_perf_metrics* metrics) {
         delete metrics;
 }
 
-ov_status_e ov_genai_perf_metrics_get_load_time(const ov_genai_perf_metrics* metrics, float* load_time ) {
+ov_status_e ov_genai_perf_metrics_get_load_time(const ov_genai_perf_metrics* metrics, float* load_time) {
     if (!metrics || !(metrics->object) || !load_time) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -31,7 +30,8 @@ ov_status_e ov_genai_perf_metrics_get_load_time(const ov_genai_perf_metrics* met
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_perf_metrics_get_num_generation_tokens(const ov_genai_perf_metrics* metrics, size_t* num_generated_tokens) {
+ov_status_e ov_genai_perf_metrics_get_num_generation_tokens(const ov_genai_perf_metrics* metrics,
+                                                            size_t* num_generated_tokens) {
     if (!metrics || !(metrics->object) || !num_generated_tokens) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -169,7 +169,7 @@ ov_status_e ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_per
 
 // PerfMetrics& operator+=(const PerfMetrics& right);
 ov_status_e ov_genai_perf_metrics_add_in_place(ov_genai_perf_metrics* left, const ov_genai_perf_metrics* right) {
-    if (!left || !(left->object) ||!right ||!(right->object)) {
+    if (!left || !(left->object) || !right || !(right->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {

@@ -26,7 +26,7 @@ void ov_genai_decoded_results_free(ov_genai_decoded_results* results) {
         delete results;
     }
 }
-ov_status_e ov_genai_decoded_results_get_perf_metrics(ov_genai_decoded_results* results,
+ov_status_e ov_genai_decoded_results_get_perf_metrics(const ov_genai_decoded_results* results,
                                                       ov_genai_perf_metrics** metrics) {
     if (!results || !(results->object) || !metrics) {
         return ov_status_e::INVALID_C_PARAM;
@@ -45,7 +45,9 @@ void ov_genai_decoded_results_perf_metrics_free(ov_genai_perf_metrics* metrics) 
         delete metrics;
     }
 }
-ov_status_e ov_genai_decoded_results_get_string(ov_genai_decoded_results* results, char* output, int max_size) {
+ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* results,
+                                                char* output,
+                                                size_t max_size) {
     if (!results || !(results->object) || !output) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -83,9 +85,10 @@ void ov_genai_llm_pipeline_free(ov_genai_llm_pipeline* pipe) {
 }
 ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                            const char* inputs,
+                                           const ov_genai_generation_config* config,
+                                           const stream_callback* streamer,
                                            char* output,
-                                           int max_size,
-                                           ov_genai_generation_config* config) {
+                                           size_t output_max_size) {
     if (!pipe || !(pipe->object) || !inputs || !output) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -93,45 +96,20 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
         std::string input_str(inputs);
         ov::genai::StringInputs input = {input_str};
         std::string results;
-        results = (config && config->object) ? pipe->object->generate(input, *(config->object))
-                                             : pipe->object->generate(input);
-        strncpy(output, results.c_str(), max_size - 1);
-        output[max_size - 1] = '\0';
-        if (results.length() + 1 > max_size) {
-            return ov_status_e::OUT_OF_BOUNDS;
+        if (streamer) {
+            auto callback = [streamer](std::string word) -> bool {
+                streamer->callback_func(word.c_str());
+                return false;
+            };
+            results = (config && config->object) ? pipe->object->generate(input, *(config->object), callback)
+                                                 : pipe->object->generate(input, {}, callback);
+        } else {
+            results = (config && config->object) ? pipe->object->generate(input, *(config->object))
+                                                 : pipe->object->generate(input);
         }
-
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
-}
-ov_status_e ov_genai_llm_pipeline_generate_stream(ov_genai_llm_pipeline* pipe,
-                                                  const char* inputs,
-                                                  char* output,
-                                                  int max_size,
-                                                  ov_genai_generation_config* config,
-                                                  char* buffer,
-                                                  const int buffer_size,
-                                                  int* buffer_pos) {
-    if (!pipe || !(pipe->object) || !inputs || !output || !buffer || !buffer_pos) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
-    try {
-        std::string input_str(inputs);
-        ov::genai::StringInputs input = {input_str};
-        auto stream = [&](const std::string& word) -> bool {
-            if ((*buffer_pos) + word.size() + 1 < buffer_size) {
-                std::strcpy(buffer + (*buffer_pos), word.c_str());
-                (*buffer_pos) += word.size();
-            }
-            return false;
-        };
-        std::string results = (config && config->object) ? pipe->object->generate(input, *(config->object), stream)
-                                                         : pipe->object->generate(input, {}, stream);
-        strncpy(output, results.c_str(), max_size - 1);
-        output[max_size - 1] = '\0';
-        if (results.length() + 1 > max_size) {
+        strncpy(output, results.c_str(), output_max_size - 1);
+        output[output_max_size - 1] = '\0';
+        if (results.length() + 1 > output_max_size) {
             return ov_status_e::OUT_OF_BOUNDS;
         }
     } catch (...) {
@@ -141,7 +119,8 @@ ov_status_e ov_genai_llm_pipeline_generate_stream(ov_genai_llm_pipeline* pipe,
 }
 ov_status_e ov_genai_llm_pipeline_generate_decode_results(ov_genai_llm_pipeline* pipe,
                                                           const char* inputs,
-                                                          ov_genai_generation_config* config,
+                                                          const ov_genai_generation_config* config,
+                                                          const stream_callback* streamer,
                                                           ov_genai_decoded_results** results) {
     if (!pipe || !(pipe->object) || !inputs || !results) {
         return ov_status_e::INVALID_C_PARAM;
@@ -151,8 +130,18 @@ ov_status_e ov_genai_llm_pipeline_generate_decode_results(ov_genai_llm_pipeline*
         _results->object = std::make_shared<ov::genai::DecodedResults>();
         std::string input_str(inputs);
         ov::genai::StringInputs input = {input_str};
-        *(_results->object) =
-            (config->object) ? pipe->object->generate(input, *(config->object)) : pipe->object->generate(input);
+        if (streamer) {
+            auto callback = [streamer](std::string word) -> bool {
+                streamer->callback_func(word.c_str());
+                return false;
+            };
+            *(_results->object) = (config && config->object)
+                                      ? pipe->object->generate(input, *(config->object), callback)
+                                      : pipe->object->generate(input, {}, callback);
+        } else {
+            *(_results->object) = (config && config->object) ? pipe->object->generate(input, *(config->object))
+                                                             : pipe->object->generate(input);
+        }
         *results = _results.release();
 
     } catch (...) {
@@ -182,7 +171,7 @@ ov_status_e ov_genai_llm_pipeline_finish_chat(ov_genai_llm_pipeline* pipe) {
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_llm_pipeline_get_generation_config(ov_genai_llm_pipeline* pipe,
+ov_status_e ov_genai_llm_pipeline_get_generation_config(const ov_genai_llm_pipeline* pipe,
                                                         ov_genai_generation_config** config) {
     if (!pipe || !(pipe->object) || !config) {
         return ov_status_e::INVALID_C_PARAM;

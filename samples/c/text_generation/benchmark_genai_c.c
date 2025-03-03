@@ -91,13 +91,13 @@ int parse_arguments(int argc, char* argv[], Options* options) {
     return 1;
 }
 
-#define CHECK_STATUS(return_status)                                                     \
-    if (return_status == OUT_OF_BOUNDS) {                                  \
-        fprintf(stderr, "[WARNING] output buffer is too small, line %d\n", __LINE__);      \
-    } else if (return_status != OK) {                                      \
+#define CHECK_STATUS(return_status)                                                      \
+    if (return_status == OUT_OF_BOUNDS) {                                                \
+        fprintf(stderr, "[WARNING] output buffer is too small, line %d\n", __LINE__);    \
+    } else if (return_status != OK) {                                                    \
         fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
-        return return_status;                                                           \
-    }                                                                                   \
+        return return_status;                                                            \
+    }
 
 int main(int argc, char* argv[]) {
     Options options = {.model = NULL,
@@ -131,23 +131,22 @@ int main(int argc, char* argv[]) {
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, options.max_new_tokens));
 
     for (size_t i = 0; i < options.num_warmup; i++) {
-        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config));
+        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, output, MAX_OUTPUT_LENGTH));
     }
 
-    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config));
+    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, output, MAX_OUTPUT_LENGTH));
 
     ov_genai_decoded_results* results = NULL;
-    CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, &results));
+    CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, NULL, &results));
 
     CHECK_STATUS(ov_genai_decoded_results_get_string(results, output, MAX_OUTPUT_LENGTH));
     printf("%s\n", output);
-
 
     ov_genai_perf_metrics* metrics = NULL;
     CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));
 
     for (size_t i = 0; i < options.num_iter - 1; i++) {
-        CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, &results));
+        CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, NULL, &results));
         ov_genai_perf_metrics* _metrics = NULL;
         CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &_metrics));
         CHECK_STATUS(ov_genai_perf_metrics_add_in_place(metrics, _metrics));  // metrics += _metrics

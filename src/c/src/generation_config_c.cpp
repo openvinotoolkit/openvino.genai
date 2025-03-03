@@ -20,8 +20,7 @@ ov_status_e ov_genai_generation_config_create(ov_genai_generation_config** confi
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_generation_config_create_from_json(const char* json_path,
-                                                              ov_genai_generation_config** config) {
+ov_status_e ov_genai_generation_config_create_from_json(const char* json_path, ov_genai_generation_config** config) {
     if (!config || !json_path) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -43,7 +42,7 @@ void ov_genai_generation_config_free(ov_genai_generation_config* config) {
 ov_status_e ov_genai_generation_config_set_max_new_tokens(ov_genai_generation_config* config, const size_t value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
-    } 
+    }
     try {
         config->object->max_new_tokens = value;
     } catch (...) {
@@ -107,7 +106,8 @@ ov_status_e ov_genai_generation_config_set_logprobs(ov_genai_generation_config* 
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_generation_config_set_include_stop_str_in_output(ov_genai_generation_config* config, const bool value) {
+ov_status_e ov_genai_generation_config_set_include_stop_str_in_output(ov_genai_generation_config* config,
+                                                                      const bool value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -119,15 +119,16 @@ ov_status_e ov_genai_generation_config_set_include_stop_str_in_output(ov_genai_g
     return ov_status_e::OK;
 }
 ov_status_e ov_genai_generation_config_set_stop_strings(ov_genai_generation_config* config,
-                                                 const char* strings[],
-                                                 const size_t count) {
-    if (!config || !(config->object)) {
+                                                        const char** strings,
+                                                        const size_t count) {
+    if (!config || !(config->object) || !strings) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
         std::set<std::string> stopStrings;
         for (size_t i = 0; i < count; i++) {
-            stopStrings.insert(strings[i]);
+            if (strings[i])
+                stopStrings.insert(strings[i]);
         }
         config->object->stop_strings = stopStrings;
     } catch (...) {
@@ -136,8 +137,8 @@ ov_status_e ov_genai_generation_config_set_stop_strings(ov_genai_generation_conf
     return ov_status_e::OK;
 }
 ov_status_e ov_genai_generation_config_set_stop_token_ids(ov_genai_generation_config* config,
-                                                   const int64_t* token_ids,
-                                                   const size_t token_ids_num) {
+                                                          const int64_t* token_ids,
+                                                          const size_t token_ids_num) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -196,7 +197,8 @@ ov_status_e ov_genai_generation_config_set_length_penalty(ov_genai_generation_co
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_generation_config_set_num_return_sequences(ov_genai_generation_config* config, const size_t value) {
+ov_status_e ov_genai_generation_config_set_num_return_sequences(ov_genai_generation_config* config,
+                                                                const size_t value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -207,7 +209,8 @@ ov_status_e ov_genai_generation_config_set_num_return_sequences(ov_genai_generat
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_generation_config_set_no_repeat_ngram_size(ov_genai_generation_config* config, const size_t value) {
+ov_status_e ov_genai_generation_config_set_no_repeat_ngram_size(ov_genai_generation_config* config,
+                                                                const size_t value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -332,7 +335,8 @@ ov_status_e ov_genai_generation_config_set_assistant_confidence_threshold(ov_gen
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_generation_config_set_num_assistant_tokens(ov_genai_generation_config* config, const size_t value) {
+ov_status_e ov_genai_generation_config_set_num_assistant_tokens(ov_genai_generation_config* config,
+                                                                const size_t value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -367,7 +371,8 @@ ov_status_e ov_genai_generation_config_set_eos_token_id(ov_genai_generation_conf
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_generation_config_get_max_new_tokens(ov_genai_generation_config* config, size_t* max_new_tokens) {
+ov_status_e ov_genai_generation_config_get_max_new_tokens(const ov_genai_generation_config* config,
+                                                          size_t* max_new_tokens) {
     if (!config || !(config->object) || !max_new_tokens) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -378,35 +383,35 @@ ov_status_e ov_genai_generation_config_get_max_new_tokens(ov_genai_generation_co
     }
     return ov_status_e::OK;
 }
-bool ov_genai_generation_config_is_greedy_decoding(ov_genai_generation_config* config) {
+bool ov_genai_generation_config_is_greedy_decoding(const ov_genai_generation_config* config) {
     if (!config || !(config->object)) {
         printf("[ERROR] The config or config->object is NULL!!!\n");
         return false;
     }
     return config->object->is_greedy_decoding();
 }
-bool ov_genai_generation_config_is_beam_search(ov_genai_generation_config* config) {
+bool ov_genai_generation_config_is_beam_search(const ov_genai_generation_config* config) {
     if (!config || !(config->object)) {
         printf("[ERROR] The config or config->object is NULL!!!\n");
         return false;
     }
     return config->object->is_beam_search();
 }
-bool ov_genai_generation_config_is_multinomial(ov_genai_generation_config* config) {
+bool ov_genai_generation_config_is_multinomial(const ov_genai_generation_config* config) {
     if (!config || !(config->object)) {
         printf("[ERROR] The config or config->object is NULL!!!\n");
         return false;
     }
     return config->object->is_multinomial();
 }
-bool ov_genai_generation_config_is_assisting_generation(ov_genai_generation_config* config) {
+bool ov_genai_generation_config_is_assisting_generation(const ov_genai_generation_config* config) {
     if (!config || !(config->object)) {
         printf("[ERROR] The config or config->object is NULL!!!\n");
         return false;
     }
     return config->object->is_assisting_generation();
 }
-bool ov_genai_generation_config_is_prompt_lookup(ov_genai_generation_config* config) {
+bool ov_genai_generation_config_is_prompt_lookup(const ov_genai_generation_config* config) {
     if (!config || !(config->object)) {
         printf("[ERROR] The config or config->object is NULL!!!\n");
         return false;

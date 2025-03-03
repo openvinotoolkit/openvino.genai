@@ -7,7 +7,7 @@
 
 #define CHECK_STATUS(return_status)                                                      \
     if (return_status != OK) {                                                           \
-        fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__);  \
+        fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
         return return_status;                                                            \
     }
 
@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, 100));
 
     char output[1024];
-    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipeline, prompt, output, sizeof(output), config));
+    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipeline, prompt, config, NULL, output, sizeof(output)));
 
     printf("Generated text: %s\n", output);
 
