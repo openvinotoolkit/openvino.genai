@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
-
+#include <memory>
 #include "openvino/runtime/infer_request.hpp"
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
+#include "../circular_buffer_queue.hpp"
 
 namespace ov::genai {
 /// @brief A pair describing image size.
@@ -86,7 +87,8 @@ public:
     /// instead of the config obtained in constructors.
     /// @return Resulting embeddings for the resized source image and
     /// its slices.
-    virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
+    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {});
+    virtual EncodedImage encode(ov::InferRequest& encoder, const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
 
     /// @brief Gets processor config
     /// @return Processor config
@@ -95,6 +97,10 @@ public:
 protected:
     /// @brief A model for image encoding.
     ov::InferRequest m_vision_encoder;
+    
+    /// @brief  Infer requests queue for image encoding model.
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_encoder;
+
     /// @brief A config to follow.
     ProcessorConfig m_processor_config;
 
