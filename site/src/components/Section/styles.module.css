@@ -1,8 +1,8 @@
 .sectionContainer {
   display: flex;
   align-items: center;
-  gap: 80px;
-  padding: 80px;
+  gap: 3rem;
+  padding: 3rem;
   background-color: var(--genai-color-section-bg);
   width: 100%;
 }
@@ -32,6 +32,11 @@
   flex: 1;
   min-width: 0;
   align-self: start;
+
+  &:first-child {
+    flex-grow: 0;
+    flex-basis: 40%;
+  }
 
   :global(.theme-code-block) {
     border: 1px solid #e9e9e9;

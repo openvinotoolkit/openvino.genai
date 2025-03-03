@@ -54,17 +54,6 @@ export const ImageProcessing = () => {
   return (
     <Section.Container>
       <Section.Column>
-        <Section.Features features={FEATURES} />
-        <hr />
-        <LanguageTabs>
-          <TabItemPython>{pythonCodeBlock}</TabItemPython>
-          <TabItemCpp>{cppCodeBlock}</TabItemCpp>
-        </LanguageTabs>
-        <hr />
-        <ExploreCodeSamples link={'docs/category/samples'} />
-        <GoToDocumentation link={'docs/how-to-guides/vlm'} />
-      </Section.Column>
-      <Section.Column>
         <Section.Title>Image processing with Visual Language Models</Section.Title>
         <Section.Description>
           An easy-to-use API for vision language models can power chatbots, AI assistants like
@@ -74,6 +63,17 @@ export const ImageProcessing = () => {
           url={ImagePlaceholder}
           alt={'Image processing with Visual Language Models'}
         />
+      </Section.Column>
+      <Section.Column>
+        <Section.Features features={FEATURES} />
+        <hr />
+        <LanguageTabs>
+          <TabItemPython>{pythonCodeBlock}</TabItemPython>
+          <TabItemCpp>{cppCodeBlock}</TabItemCpp>
+        </LanguageTabs>
+        <hr />
+        <ExploreCodeSamples link={'docs/category/samples'} />
+        <GoToDocumentation link={'docs/how-to-guides/vlm'} />
       </Section.Column>
     </Section.Container>
   );

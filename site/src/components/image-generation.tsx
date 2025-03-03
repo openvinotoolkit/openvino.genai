@@ -63,6 +63,15 @@ export const ImageGeneration = () => {
   return (
     <Section.Container>
       <Section.Column>
+        <Section.Title>Image generation API</Section.Title>
+        <Section.Description>
+          A user-friendly image generation API can be used with generative models to improve
+          creative tools and increase productivity. For instance, it can be utilized in furniture
+          design tools to create various design concepts.
+        </Section.Description>
+        <SectionImage url={ImagePlaceholder} alt={'Image generation API'} />
+      </Section.Column>
+      <Section.Column>
         <Section.Features features={FEATURES} />
         <hr />
         <LanguageTabs>
@@ -72,15 +81,6 @@ export const ImageGeneration = () => {
         <hr />
         <ExploreCodeSamples link={'docs/category/samples'} />
         <GoToDocumentation link={'docs/how-to-guides/image-generation'} />
-      </Section.Column>
-      <Section.Column>
-        <Section.Title>Image generation API</Section.Title>
-        <Section.Description>
-          A user-friendly image generation API can be used with generative models to improve
-          creative tools and increase productivity. For instance, it can be utilized in furniture
-          design tools to create various design concepts.
-        </Section.Description>
-        <SectionImage url={ImagePlaceholder} alt={'Image generation API'} />
       </Section.Column>
     </Section.Container>
   );
