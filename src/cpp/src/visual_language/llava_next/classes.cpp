@@ -49,15 +49,15 @@ ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorC
 
 } // namespace
 
-EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderLLaVANext::encode(ov::InferRequest& encoder, const ov::Tensor& image, const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Tensor pixel_values = get_pixel_values_llava_next(image, config);
 
-    m_vision_encoder.set_tensor("pixel_values", pixel_values);
-    m_vision_encoder.infer();
+    encoder.set_tensor("pixel_values", pixel_values);
+    encoder.infer();
 
-    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+    const ov::Tensor& infer_output = encoder.get_output_tensor();
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 

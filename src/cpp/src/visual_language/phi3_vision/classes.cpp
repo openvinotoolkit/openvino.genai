@@ -211,13 +211,13 @@ std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& imag
 
 } // namespace
 
-EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderPhi3V::encode(ov::InferRequest& encoder, const ov::Tensor& image, const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     const auto& [pixel_values, image_size] = get_pixel_values_phi3_v(image, config);
-    m_vision_encoder.set_input_tensor(pixel_values);
-    m_vision_encoder.infer();
-    return {m_vision_encoder.get_output_tensor(), image_size};
+    encoder.set_input_tensor(pixel_values);
+    encoder.infer();
+    return {encoder.get_output_tensor(), image_size};
 }
 
 namespace {

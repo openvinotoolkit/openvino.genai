@@ -16,7 +16,7 @@ class VisionEncoderInternVLChat : public VisionEncoder {
 public:
     using VisionEncoder::VisionEncoder;
 
-    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+    EncodedImage encode(ov::InferRequest& encoder, const ov::Tensor& image, const ov::AnyMap& config_map) override;
 };
 
 class InputsEmbedderInternVLChat : public InputsEmbedder::IInputsEmbedder {
