@@ -19,7 +19,7 @@ from utils.generation_config import get_greedy, get_beam_search, \
 from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type
 from data.models import get_chat_models_list
-from data.test_dataset import get_test_dataset, get_test_dataset_without_beam_search
+from data.test_dataset import get_test_dataset
 
 #
 # e2e tests on random and real models
@@ -36,44 +36,36 @@ def read_models_list(file_name: str):
             models.append(model_name)
     return models
 
-
-def get_all_cb_based_pipelines():
-    return [PipelineType.CONTINIOUS_BATCHING, PipelineType.PAGED_ATTENTION, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING]
-
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
-@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
-def test_e2e_precommit(tmp_path, model_id, pipeline_type):
-    prompts, generation_configs = get_test_dataset_without_beam_search()
+def test_e2e_precommit(tmp_path, model_id):
+    prompts, generation_configs = get_test_dataset()
     generate_and_compare(prompts=prompts,
                          generation_config=generation_configs,
                          tmp_path=tmp_path,
                          model=model_id,
-                         pipeline_type=pipeline_type)
+                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
-@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
-def test_e2e_nightly(tmp_path, model_id, pipeline_type):
+def test_e2e_nightly(tmp_path, model_id):
     prompts, generation_config = get_test_dataset()
     generate_and_compare(prompts=prompts,
                          generation_config=generation_config,
                          tmp_path=tmp_path,
-                         model=model_id,
-                         pipeline_type=pipeline_type)
+                         model=model_id, 
+                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
 
 @pytest.mark.real_models
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
-@pytest.mark.parametrize("pipeline_type", get_all_cb_based_pipelines())
-def test_e2e_real_models(tmp_path, model_id, pipeline_type):
+def test_e2e_real_models(tmp_path, model_id):
     prompts, generation_config = get_test_dataset()
-    updated_gen_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
     generate_and_compare(prompts=prompts,
                          generation_config=generation_config,
                          model=model_id,
-                         pipeline_type=pipeline_type)
+                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
 #
 # Comparison with stateful
@@ -138,7 +130,7 @@ questions = [
     'Why is the Sun yellow?',
     'What was my first question?'
 ]
-@pytest.mark.parametrize("generation_config_kwargs", generation_configs[1:])
+@pytest.mark.parametrize("generation_config_kwargs", generation_configs)
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING] )
 @pytest.mark.precommit
@@ -153,8 +145,6 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict, pip
 
     generation_config = GenerationConfig(**generation_config_kwargs)
 
-    if generation_config.is_beam_search() and generation_config.is_assisting_generation():
-        return
 
     generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
 

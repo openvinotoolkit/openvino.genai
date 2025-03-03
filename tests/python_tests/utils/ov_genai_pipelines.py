@@ -185,6 +185,20 @@ def run_ov_pipeline(models_path: Path,
     return generation_results
 
 
+def is_generation_available(generation_config: GenerationConfig | List[GenerationConfig],
+                            pipeline_type: PipelineType):
+    if type(generation_config) is GenerationConfig:
+        if generation_config.is_beam_search():
+            if pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING or pipeline_type == PipelineType.SPECULATIVE_DECODING:
+                return False
+    else:
+        for gen_config in generation_config:
+            if generation_config.is_beam_search():
+                if pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING or pipeline_type == PipelineType.SPECULATIVE_DECODING:
+                    return False
+    return True
+
+
 # TODO: remove `ref` after Generator property is supported by LLMPipeline / VLMPipeline
 def generate_and_compare(model: str,
                          prompts : str | List[str],
@@ -198,6 +212,9 @@ def generate_and_compare(model: str,
 
     ov_gen_config = GenerationConfig(**generation_config) if type(generation_config) is dict else generation_config
     hf_gen_config = ov_gen_config
+
+    if not is_generation_available(ov_gen_config, pipeline_type):
+        return
 
     if type(ov_gen_config) is list:
         assert len(ov_gen_config) == len(ov_prompts)

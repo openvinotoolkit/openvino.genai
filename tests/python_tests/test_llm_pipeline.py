@@ -16,8 +16,12 @@ import openvino_genai as ov_genai
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model
 from utils.tokenizers import delete_rt_info, model_tmp_path
-from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_all_pipeline_types
+from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_all_pipeline_types, PipelineType
 from data.models import get_models_list, get_chat_models_list
+
+
+def get_pipeline_types():
+    return [ PipelineType.AUTO, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING ]
 
 #
 # e2e work
@@ -29,10 +33,11 @@ test_cases = [
 ]
 @pytest.mark.parametrize("generation_config_dict,prompt", test_cases)
 @pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.parametrize("pipeline_type", get_pipeline_types())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_string_inputs(model_id, generation_config_dict, prompt):
-    generate_and_compare(model=model_id, prompts=[prompt], generation_config=generation_config_dict)
+def test_string_inputs(model_id, generation_config_dict, prompt, pipeline_type):
+    generate_and_compare(model=model_id, prompts=[prompt], generation_config=generation_config_dict, pipeline_type=pipeline_type)
 
 
 input_tensors_list = [

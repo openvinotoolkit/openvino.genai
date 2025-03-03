@@ -19,18 +19,3 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
         get_beam_search(),
     ]
     return (prompts, generation_configs)
-
-def get_test_dataset_without_beam_search() -> Tuple[List[str], List[GenerationConfig]]:
-    prompts = [
-        "What is OpenVINO?",
-        "How are you?",
-        "What is your name?",
-        "Tell me something about Canada"
-    ]
-    generation_configs = [
-        get_greedy(),
-        get_multinomial_temperature(),
-        get_greedy(),
-        get_multinomial_temperature(),
-    ]
-    return (prompts, generation_configs)
