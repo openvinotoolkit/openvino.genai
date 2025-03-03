@@ -15,7 +15,11 @@ class TestMultinomialCausalLM:
         "convert_model, sample_args",
         [
             pytest.param("SmolLM-135M", "return 0"),
-            pytest.param("TinyLlama-1.1B-Chat-v1.0", "0"),
+            pytest.param(
+                "TinyLlama-1.1B-Chat-v1.0", 
+                "0", 
+                marks=pytest.mark.skipif(sys.platform == "darwin", reason="CVS-163463")
+            ),
         ],
         indirect=["convert_model"],
     )
