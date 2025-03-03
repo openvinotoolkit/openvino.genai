@@ -44,7 +44,7 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels
-        revision: a8aba4e104f027c2ba8a21fd6c4c861110c57ed9
+        revision: latest_available_commit
 
   llm_bench:
     name: 'LLM bench tests'

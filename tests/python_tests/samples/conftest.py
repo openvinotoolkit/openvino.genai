@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 # - "name": the model's name or path
 # - "convert_args": a list of arguments for the conversion command
 MODELS = {
-    "LaMini-GPT-124M": { 
-        "name": "MBZUAI/LaMini-GPT-124M",
+    "TinyLlama-1.1B-Chat-v1.0": { 
+        "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         "convert_args": []
     },
     "SmolLM-135M": {

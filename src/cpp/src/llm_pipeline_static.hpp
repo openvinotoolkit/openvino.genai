@@ -13,20 +13,18 @@ namespace genai {
 namespace static_llm {
 
 struct LLMPipelineFactory {
-    static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& path,
+    static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& models_path,
                                                        const ov::genai::Tokenizer& tokenizer,
-                                                       const std::string& device,
                                                        const ov::AnyMap& config);
 
-    static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& path,
-                                                       const std::string& device,
+    static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& models_path,
                                                        const ov::AnyMap& config);
 
     static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Model>& model,
                                                        const ov::genai::Tokenizer& tokenizer,
-                                                       const std::string& device,
                                                        const ov::AnyMap& properties,
-                                                       const ov::genai::GenerationConfig& generation_config = {});
+                                                       const ov::genai::GenerationConfig& generation_config,
+                                                       const std::filesystem::path& models_path = {});
 };
 
 class StatefulLLMPipeline : public LLMPipelineImplBase {
@@ -34,31 +32,15 @@ public:
     StatefulLLMPipeline(
         const std::filesystem::path& path,
         const ov::genai::Tokenizer& tokenizer,
-        const std::string& device,
         const ov::AnyMap& config
     );
 
     StatefulLLMPipeline(
         const std::shared_ptr<ov::Model>& model,
         const ov::genai::Tokenizer& tokenizer,
-        const std::string& device,
         const ov::AnyMap& properties,
-        const ov::genai::GenerationConfig& generation_config = {}
-    );
-
-    void updateStatefulConfig(
-        ov::AnyMap& pipeline_config,
-        const ov::genai::utils::KVAxesPosition& kv_pos
-    );
-
-    std::shared_ptr<ov::CompiledModel> setupAndCompileModel(
-        const std::shared_ptr<ov::Model>& model,
-        ov::AnyMap& pipeline_config
-    );
-
-    std::shared_ptr<ov::CompiledModel> setupAndCompileModel(
-        const std::filesystem::path& model_path,
-        ov::AnyMap& pipeline_config
+        const ov::genai::GenerationConfig& generation_config,
+        const std::filesystem::path& path = {}
     );
 
     DecodedResults generate(
