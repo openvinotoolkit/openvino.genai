@@ -618,7 +618,7 @@ private:
                        size_t inference_step) override {
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
         OPENVINO_ASSERT(image_latent.get_shape() == latents.get_shape(),
-                        "Shapes for current", latents.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
+                        "Shapes for current ", latents.get_shape(), " and initial image latents ", image_latent.get_shape(), " must match");
 
         ov::Tensor init_latents_proper(image_latent.get_element_type(), image_latent.get_shape());
         image_latent.copy_to(init_latents_proper);
