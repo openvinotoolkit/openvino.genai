@@ -13,6 +13,7 @@
 #include "llm_pipeline_stateful.hpp"
 #include "continuous_batching_adapter.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -55,19 +56,6 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
     return {properties, attention_backend};
 };
 
-std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt) {
-    ov::AnyMap plugin_config = properties;
-    auto it = plugin_config.find(ov::genai::scheduler_config.name());
-    SchedulerConfig scheduler_config;
-    if (it != plugin_config.end()) {
-        scheduler_config = it->second.as<SchedulerConfig>();
-        plugin_config.erase(it);
-    } else if (default_config.has_value()) {
-        scheduler_config = *default_config;
-    }
-    return {plugin_config, scheduler_config};
-};
-
 
 } // namespace
 
@@ -91,7 +79,7 @@ std::pair<std::string, Any> draft_model(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& properties) {
-    auto [plugin_config, scheduler_config] = extract_scheduler_config(properties);
+    auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
@@ -107,7 +95,7 @@ std::pair<std::string, Any> draft_model(
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config) {
-    auto [plugin_config, scheduler_config] = extract_scheduler_config(properties);
+    auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
@@ -135,12 +123,14 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (explicitly_requires_paged_attention(properties)) {
-        auto [device_properties, scheduler_config] = extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
+        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, tokenizer, device, properties);
+        m_pimpl = properties.count("STATIC_PIPELINE")
+            ? static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties)
+            : std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
@@ -173,12 +163,14 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (explicitly_requires_paged_attention(properties)) {
-        auto [device_properties, scheduler_config] = extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
+        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, device, properties);
+        m_pimpl = properties.count("STATIC_PIPELINE")
+            ? static_llm::LLMPipelineFactory::create(models_path, properties)
+            : std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
@@ -214,19 +206,24 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (explicitly_requires_paged_attention(properties)) {
-        auto [device_properties, scheduler_config] = extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
+        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
                                                               tokenizer, scheduler_config, device, device_properties, generation_config);
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(
-            utils::singleton_core().read_model(model_str, weights_tensor),
-            tokenizer,
-            device,
-            properties,
-            generation_config
-        );
+        m_pimpl = properties.count("STATIC_PIPELINE")
+            ? static_llm::LLMPipelineFactory::create(
+                  utils::singleton_core().read_model(model_str, weights_tensor),
+                  tokenizer,
+                  properties,
+                  generation_config)
+            : std::make_unique<StatefulLLMPipeline>(
+                utils::singleton_core().read_model(model_str, weights_tensor),
+                tokenizer,
+                device,
+                properties,
+                generation_config);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception

@@ -84,7 +84,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::optional<ov::Tensor> position_ids,
     KVCacheState& kv_cache_state,
     std::optional<EmbeddingsModel> m_embedding,
-    std::optional<int64_t> rope_delta
+    std::optional<int64_t> rope_delta,
+    const size_t max_kv_cache_size
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -99,18 +100,22 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             std::unordered_map<uint64_t, GenerationOutput> generation_outputs = handle->read();
             OPENVINO_ASSERT(generation_outputs.size() <= 1);
             if (!generation_outputs.empty()) {
-                for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
-                    auto streaming_status = streamer_ptr->write(generated_token_id);
-                    if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-                        streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
-                        break;
-                    }
+                auto streaming_status = streamer_ptr->write(generation_outputs.begin()->second.generated_ids);
+                if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                    streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
                 }
             }
         }
     };
 
-    auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups]() {
+    auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups, &max_kv_cache_size]() {
+        for (auto& sg : active_sequence_groups) {
+            for (auto& seq : sg->get_sequences()) {
+                if (sg->get_prompt_len() + seq->get_generated_len() - 1 == max_kv_cache_size) {
+                    seq->set_status(SequenceStatus::OUT_OF_MEMORY);
+                }
+            }
+        }
         auto removed_it = std::remove_if(active_sequence_groups.begin(), active_sequence_groups.end(),
             [](SequenceGroup::Ptr sg) -> bool {
                 return sg->has_finished() || sg->handle_stopped() || sg->handle_cancelled();

@@ -44,14 +44,14 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels
-        revision: latest_available_commit
+        revision: a8aba4e104f027c2ba8a21fd6c4c861110c57ed9
 
   llm_bench:
     name: 'LLM bench tests'
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     strategy:
       fail-fast: false
       matrix:
@@ -151,7 +151,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     strategy:
       fail-fast: false
       matrix:

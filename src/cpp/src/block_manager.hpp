@@ -677,11 +677,10 @@ public:
      * Allocates a given number of KV cache blocks to a given sequence.
      * @param sequence The sequence for the blocks to be allocated to.
      * @param num_blocks The number of KV cache blocks to be allocated.
-     * @param prompt_ids Raw token values of the prompt for this sequence. Required if prefix caching is enabled.
+     * @param prompt_size Prompt size for this sequence.
      */
-    void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, const ov::genai::TokenIds& prompt_ids = {}) {
+    void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, size_t prompt_size = 0) {
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
-        OPENVINO_ASSERT(!m_enable_prefix_caching || prompt_ids.size() > 0, "prompt_ids should be set for hash calculation.");
 
         auto sequence_id = sequence->get_id();
         if (m_block_table.find(sequence_id) == m_block_table.end()) {
@@ -689,7 +688,7 @@ public:
         }
 
         auto& block_table = m_block_table[sequence_id][0];
-        auto content_length = sequence->get_generated_len() + prompt_ids.size();
+        auto content_length = sequence->get_generated_len() + prompt_size;
         size_t allocated_blocks = block_table.size(); // assuming all layers have the same number of allocated blocks
         size_t num_hashed_tokens = allocated_blocks * m_block_size;
 
@@ -1016,7 +1015,7 @@ public:
 
             if (num_logical_blocks > num_physical_blocks) {
                 OPENVINO_ASSERT(can_allocate_blocks(num_logical_blocks - num_physical_blocks));
-                allocate(sequence, num_logical_blocks - num_physical_blocks, seq_group->get_prompt_ids());
+                allocate(sequence, num_logical_blocks - num_physical_blocks, seq_group->get_prompt_len());
             } else {
                 OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks, "A number of physical and logic blocks must be the same in this code path");
 

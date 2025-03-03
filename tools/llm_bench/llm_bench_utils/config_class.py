@@ -53,7 +53,7 @@ PT_MODEL_CLASSES_MAPPING = {
 
 USE_CASES = {
     'image_gen': ['stable-diffusion-', 'ssd-', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl', 'dreamlike', "flux"],
-    "vlm": ["llava", "llava-next", "qwen2-vl", "llava-qwen2", "internvl-chat", "minicpmv", "phi3-v", "minicpm-v"],
+    "vlm": ["llava", "llava-next", "qwen2-vl", "llava-qwen2", "internvl-chat", "minicpmv", "phi3-v", "minicpm-v", "maira2", "qwen2-5-vl"],
     'speech2text': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5', "stable-code"],
@@ -62,6 +62,7 @@ USE_CASES = {
         't5',
         'falcon',
         "glm",
+        "gpt",
         'gpt-',
         'gpt2',
         'aquila',
@@ -72,6 +73,7 @@ USE_CASES = {
         'llama',
         'tiny-llama',
         'tinyllama',
+        "opt",
         'opt-',
         'pythia-',
         'stablelm-',
@@ -93,6 +95,7 @@ USE_CASES = {
         'mistral',
         'mixtral',
         'yi-',
+        "phi",
         'phi-',
         'phi2-',
         'minicpm',
