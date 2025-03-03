@@ -44,6 +44,8 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     size_t m_kv_cache_seq_length_axis = 2;
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
+    size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
+    bool m_is_npu = false;
 public:
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -54,22 +56,52 @@ public:
             utils::from_config_json_if_exists<GenerationConfig>(
                 models_dir, "generation_config.json"
             )
-        } {
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, device, properties);
+        },
+        m_is_chat_conversation{false} {
+        m_is_npu = device.find("NPU") != std::string::npos;
+        auto properties_copy = properties;
+        auto language_model_path = models_dir / "openvino_language_model.xml";
+        auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
+        auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
+        m_kv_cache_seq_length_axis = kv_pos.seq_len;
 
-        m_tokenizer = m_inputs_embedder->get_tokenizer();
-        m_embedding = m_inputs_embedder->get_embedding_model();
-
-        auto compiled_language_model = utils::singleton_core().compile_model(
-            models_dir / "openvino_language_model.xml", device, properties
+        // User provided properties in the following format:
+        // {
+        //     ov::device::properties("NPU", ...),
+        //     ov::device::properties("CPU", ...)
+        // }
+        auto device_propertes = utils::pop_or_default<ov::AnyMap>(
+            properties_copy, ov::device::properties.name(), { }
         );
-        utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
-        auto language_model = compiled_language_model.get_runtime_model();
-        m_kv_cache_seq_length_axis = utils::get_kv_axes_pos(language_model).seq_len;
+        // Otherwise, the same properties are used for all models
+        auto lm_properties = device_propertes.empty()
+            ? properties_copy
+            : utils::pop_or_default<ov::AnyMap>(device_propertes, device, {});
+
+        ov::CompiledModel compiled_language_model;
+        auto embedder_device = device;
+        if (m_is_npu) {
+            embedder_device = "CPU";
+            utils::KVDesc kv_desc;
+            std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
+                language_model, lm_properties, kv_pos, language_model_path
+            );
+            m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
+        } else {
+            compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
+        }
+        ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
 
         m_language = compiled_language_model.create_infer_request();
-
+        m_kv_cache_seq_length_axis = utils::get_kv_axes_pos(language_model).seq_len;
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+
+        auto embedder_properties = device_propertes.empty()
+            ? properties_copy
+            : utils::pop_or_default<ov::AnyMap>(device_propertes, embedder_device, {});
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
+        m_tokenizer = m_inputs_embedder->get_tokenizer();
+        m_embedding = m_inputs_embedder->get_embedding_model();
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -80,7 +112,7 @@ public:
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
-    
+
     VLMPipelineImpl(
         const ModelsMap& models_map,
         const Tokenizer& tokenizer,
@@ -90,6 +122,10 @@ public:
         const GenerationConfig& generation_config
     ) :
         m_generation_config{generation_config} {
+        m_is_npu = device.find("NPU") != std::string::npos;
+        OPENVINO_ASSERT(m_is_npu &&
+            "VLMPipeline initialization from string isn't supported for NPU device");
+
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();
@@ -179,9 +215,8 @@ public:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
-                                                                                               position_ids, kv_cache_state, m_embedding, rope_delta);
-
+        ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
+                                                                                               position_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size);
         EncodedResults& encoded_result = finish_info.results;
 
         auto decode_start_time = std::chrono::steady_clock::now();
@@ -208,7 +243,7 @@ public:
         res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
         res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
-        
+
         // VLM specific perf metrics
         decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
 
@@ -220,6 +255,7 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
+        OPENVINO_ASSERT(!m_is_npu && "start_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = true;
         bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
         if (have_state) {
@@ -232,6 +268,7 @@ public:
     }
 
     void finish_chat() override {
+        OPENVINO_ASSERT(!m_is_npu && "finish_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = false;
         // Resetting state may be slow.
         m_language.reset_state();
@@ -276,8 +313,8 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
-    if (properties.find(scheduler_config.name()) != properties.end() || 
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+    if (properties.find(scheduler_config.name()) != properties.end() ||
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
         properties.find(prompt_lookup.name()) != properties.end()) {
         auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_config);
@@ -298,8 +335,8 @@ VLMPipeline::VLMPipeline(
     const GenerationConfig& generation_config
 ) {
     auto start_time = std::chrono::steady_clock::now();
-    if (properties.find(scheduler_config.name()) != properties.end() || 
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+    if (properties.find(scheduler_config.name()) != properties.end() ||
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
         properties.find(prompt_lookup.name()) != properties.end()) {
         auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_config, generation_config);
