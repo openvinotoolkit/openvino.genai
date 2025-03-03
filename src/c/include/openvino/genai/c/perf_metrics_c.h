@@ -8,7 +8,12 @@
  * @file perf_metrics_c.h
  */
 #pragma once
-#include "ov_genai_common_c.h"
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "openvino/c/ov_common.h"
+#include "openvino/genai/visibility.hpp"
 
 /**
  * @struct ov_genai_perf_metrics

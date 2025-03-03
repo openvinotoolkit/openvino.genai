@@ -10,7 +10,12 @@
 
 #pragma once
 
-#include "ov_genai_common_c.h"
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "openvino/c/ov_common.h"
+#include "openvino/genai/visibility.hpp"
 
 /**
  * @brief controls the stopping condition for grouped beam search. The following values are possible:

@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
     char output[1024];
     CHECK_STATUS(ov_genai_llm_pipeline_generate(pipeline, prompt, config, NULL, output, sizeof(output)));
 
-    printf("Generated text: %s\n", output);
+    printf("%s\n", output);
 
     ov_genai_llm_pipeline_free(pipeline);
     ov_genai_generation_config_free(config);

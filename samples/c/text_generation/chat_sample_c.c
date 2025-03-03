@@ -50,10 +50,8 @@ int main(int argc, char* argv[]) {
     printf("question:\n");
     while (fgets(prompt, MAX_PROMPT_LENGTH, stdin)) {
         prompt[strcspn(prompt, "\n")] = 0;
-
-        stream_callback callback;
-        callback.callback_func = print_callback;
-        ov_genai_llm_pipeline_generate(pipeline, prompt, config, &callback, output, sizeof(output));
+        stream_callback streamer = &print_callback;
+        ov_genai_llm_pipeline_generate(pipeline, prompt, config, &streamer, output, sizeof(output));
 
         printf("\n----------\nquestion:\n");
     }

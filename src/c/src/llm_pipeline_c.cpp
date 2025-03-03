@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/llm_pipeline_c.h"
-
-#include "openvino/genai/c/generation_config_c.h"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "types_c.h"
@@ -97,9 +95,9 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
         ov::genai::StringInputs input = {input_str};
         std::string results;
         if (streamer) {
-            auto callback = [streamer](std::string word) -> bool {
-                streamer->callback_func(word.c_str());
-                return false;
+            auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
+                (*streamer)(word.c_str());
+                return ov::genai::StreamingStatus::RUNNING;
             };
             results = (config && config->object) ? pipe->object->generate(input, *(config->object), callback)
                                                  : pipe->object->generate(input, {}, callback);
@@ -131,9 +129,9 @@ ov_status_e ov_genai_llm_pipeline_generate_decode_results(ov_genai_llm_pipeline*
         std::string input_str(inputs);
         ov::genai::StringInputs input = {input_str};
         if (streamer) {
-            auto callback = [streamer](std::string word) -> bool {
-                streamer->callback_func(word.c_str());
-                return false;
+            auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
+                (*streamer)(word.c_str());
+                return ov::genai::StreamingStatus::RUNNING;
             };
             *(_results->object) = (config && config->object)
                                       ? pipe->object->generate(input, *(config->object), callback)

@@ -84,13 +84,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_create(const char* mo
 OPENVINO_GENAI_C_EXPORTS void ov_genai_llm_pipeline_free(ov_genai_llm_pipeline* pipe);
 
 /**
- * @struct stream_callback
- * @brief Completion callback definition about the function
+ * @brief Callback function for streaming output.
  */
-typedef struct {
-    void(OPENVINO_C_API_CALLBACK* callback_func)(const char*);  //!< The callback func
-} stream_callback;
-
+typedef void(OPENVINO_C_API_CALLBACK* stream_callback)(const char*);
 /**
  * @brief Generate text by ov_genai_llm_pipeline.
  * @param pipe A pointer to the ov_genai_llm_pipeline.
