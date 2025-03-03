@@ -27,6 +27,7 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::genai::EmbeddingsRequest>> in
                 context = compiled.get_context();
             } catch (const ov::Exception&) {
                 req.remote_tensor = req.cpu_tensor;
+                return req;
             }
             req.remote_tensor = context.create_tensor(ov::element::f32, req.cpu_tensor.get_shape());
             return req;
