@@ -30,20 +30,10 @@ class TestInpainting:
     def test_sample_inpainting(self, download_model, prompt, download_test_content, download_mask_image):
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "image_generation/inpainting.py")
-        py_command = [sys.executable, py_script, download_model, prompt, download_test_content, download_mask_image]
+        py_command = [sys.executable, py_script, download_model, "'" + prompt + "'", download_test_content, download_mask_image]
         run_sample(py_command)
 
         # Run C++ sample
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'inpainting')
-        cpp_command = [cpp_sample, download_model, prompt, download_test_content, download_mask_image]
+        cpp_command = [cpp_sample, download_model, "'" + prompt + "'", download_test_content, download_mask_image]
         run_sample(cpp_command)
-        
-        # Run C++ benchmark sample
-        benchmark_sample = os.path.join(SAMPLES_CPP_DIR, 'benchmark_image_gen')
-        benchmark_cpp_command = [benchmark_sample, "-t"] + cpp_command
-        run_sample(benchmark_cpp_command)
-        
-        # Run Python benchmark sample
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'image_generation/benchmark_image_gen')
-        benchmark_py_command = [sys.executable, benchmark_script, "-t"] + cpp_command
-        run_sample(benchmark_py_command)

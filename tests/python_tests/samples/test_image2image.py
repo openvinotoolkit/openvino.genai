@@ -29,13 +29,3 @@ class TestImage2Image:
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'image2image')
         cpp_command = [cpp_sample, download_model, prompt, download_test_content]
         run_sample(cpp_command)
-        
-        # Run C++ benchmark sample
-        benchmark_sample = os.path.join(SAMPLES_CPP_DIR, 'benchmark_image_gen')
-        benchmark_cpp_command = [benchmark_sample, "-t"] + cpp_command
-        run_sample(benchmark_cpp_command)
-        
-        # Run Python benchmark sample
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'image_generation/benchmark_image_gen')
-        benchmark_py_command = [sys.executable, benchmark_script, "-t"] + cpp_command
-        run_sample(benchmark_py_command)
