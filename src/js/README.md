@@ -1,56 +1,52 @@
 # OpenVINO™ GenAI Node.js bindings (preview)
 
+Use OpenVINO GenAI to deploy most popular Generative AI model pipelines that run on top of highly performant OpenVINO Runtime.
+
 ## DISCLAIMER
 
 This is preview version, do not use it in production!
+In this version, only the LLM pipeline is implemented for NodeJS.
 
-## Install and Run
+## Quick Start
 
-### Requirements
+Install the **genai-node** package:
+```bash
+npm install genai-node
+```
 
-- Node.js v21+
-- Tested on Ubuntu, another OS didn't tested yet
+Use the **genai-node** package:
+```js
+import { LLMPipeline } from 'genai-node';
 
-### Build Bindings
+const pipe = await LLMPipeline(MODEL_PATH, device);
 
-#### Build OpenVINO GenAI as OpenVINO Extra Module
+const input = 'What is the meaning of life?';
+const config = { 'max_new_tokens': 100 };
 
-OpenVINO GenAI Node.js bindings can be built as an extra module during the OpenVINO build process. This method simplifies the build process by integrating OpenVINO GenAI directly into the OpenVINO build.
+await pipe.startChat();
+const result = await pipe.generate(input, config, streamer);
+await pipe.finishChat();
 
-1. Clone OpenVINO repository:
-   ```sh
-   git clone --recursive https://github.com/openvinotoolkit/openvino.git
-   ```
-1. Configure CMake with OpenVINO extra modules:
-   ```sh
-   cmake -DOPENVINO_EXTRA_MODULES=*path to genai repository directory* -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
-         -DCPACK_GENERATOR=NPM \
-         -DENABLE_PYTHON=OFF \
-         -DENABLE_WHEEL=OFF \
-         -DCPACK_PACKAGE_FILE_NAME=genai_nodejs_bindings \
-         -S ./openvino -B ./build
-   ```
-1. Build OpenVINO archive with GenAI:
-   ```sh
-   cmake --build ./build --target package -j
-   ```
+// Output all generation result
+console.log(result);
 
-1. Put Node.js bindings into npm package `bin` directory and install dependencies:
-   ```sh
-   mkdir ./src/js/bin/
-   tar -xvf ./build/genai_nodejs_bindings.tar.gz --directory ./src/js/bin/
-   cd ./src/js/
-   npm install
-   ```
-1. Run tests to be sure that everything works:
-   ```sh
-   npm test
-   ```
+function streamer(subword) {
+  process.stdout.write(subword);
+}
+```
 
-### Using as npm Dependency
+## Supported Platforms
 
-To use this package locally use `npm link` in `src/js/` directory
-and `npm link genai-node` in the folder where you want to add this package as a dependency
+- Windows x86
+- Linux x86/ARM
+- MacOS x86/ARM
 
-To extract this package and use it as distributed npm package run `npm package`.
-This command creates archive that you may use in your projects.
+## Build From Sources
+
+Build OpenVINO™ GenAI JavaScript Bindings from sources following the [instructions](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/js/BUILD.md#build-openvino-genai-nodejs-bindings-preview).
+
+## License
+
+The OpenVINO™ GenAI repository is licensed under [Apache License Version 2.0](LICENSE).
+By contributing to the project, you agree to the license and copyright terms therein and release
+your contribution under these terms.

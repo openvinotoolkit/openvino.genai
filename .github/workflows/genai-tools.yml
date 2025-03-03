@@ -44,14 +44,14 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels
-        revision: latest_available_commit
+        revision: a8aba4e104f027c2ba8a21fd6c4c861110c57ed9
 
   llm_bench:
     name: 'LLM bench tests'
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     strategy:
       fail-fast: false
       matrix:
@@ -90,13 +90,18 @@ jobs:
         working-directory: ${{ env.OV_INSTALL_DIR }}
       - name: Test native pytorch model
         run: |
-          huggingface-cli download katuni4ka/tiny-random-qwen --local-dir ./tiny-random-qwen
-          python ./tools/llm_bench/benchmark.py -m ./tiny-random-qwen -d cpu -n 1 -f pt -ic 20
-          rm -rf ./tiny-random-qwen
-      - name: Test katuni4ka/tiny-random-baichuan2 Optimum Intel
+          huggingface-cli download fxmarty/tiny-dummy-qwen2 --local-dir ./tiny-random-qwen2
+          python ./tools/llm_bench/benchmark.py -m ./tiny-random-qwen2 -d cpu -n 1 -f pt -ic 20
+      - name: Test Optimum Intel LLM
         run: |
-          optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-baichuan2/ -d cpu -n 1 --optimum -ic 10
+          optimum-cli export openvino --model ./tiny-random-qwen2 --task text-generation-with-past --weight-format fp16 ./ov_models/tiny-random-qwen2
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-qwen2/ -d cpu -n 1 --optimum -ic 10
+      - name: Test Speculative Decoding via GenAI
+        run: |
+          optimum-cli export openvino --model ./tiny-random-qwen2 --task text-generation-with-past --weight-format int8 ./ov_models/tiny-random-qwen2-int8
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-qwen2 --draft_model ./ov_models/tiny-random-qwen2-int8 -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --assistant_confidence_threshold 0.4 -ic 20
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-qwen2 --draft_model ./ov_models/tiny-random-qwen2-int8 -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --num_assistant_tokens 5 -ic 20
+          rm -rf ./tiny-random-qwen2
           rm -rf ./ov_models/
       - name: Create prompt file for for image generation
         run: |
@@ -115,13 +120,6 @@ jobs:
           huggingface-cli download katuni4ka/tiny-random-latent-consistency-lora --local-dir ./lora
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1  --num_steps 4 --lora ./lora/tiny-random-latent-consistency-lora.safetensors --lora_alphas 0.7
           rm -rf ./ov_models/ ./lora ./image_generation.jsonl
-      - name: Test TinyLlama-1.1B-Chat-v1.0 in Speculative Decoding via GenAI
-        run: |
-          optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --trust-remote-code --weight-format fp16 ov_models/TinyLlama-1.1B-Chat-v1.0/FP16
-          optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --trust-remote-code --weight-format int8 ov_models/TinyLlama-1.1B-Chat-v1.0/INT8
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/TinyLlama-1.1B-Chat-v1.0/FP16/ --draft_model ./ov_models/TinyLlama-1.1B-Chat-v1.0/INT8/ -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --assistant_confidence_threshold 0.4 -ic 20
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/TinyLlama-1.1B-Chat-v1.0/FP16/ --draft_model ./ov_models/TinyLlama-1.1B-Chat-v1.0/INT8/ -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --num_assistant_tokens 5 -ic 20
-          rm -rf ov_models/TinyLlama-1.1B-Chat-v1.0
       - name: Test openai/whisper-tiny via Optimum
         run: |
           GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch main --single-branch https://huggingface.co/datasets/facebook/multilingual_librispeech
@@ -141,9 +139,11 @@ jobs:
         run: |
           optimum-cli export openvino --model katuni4ka/tiny-random-llava ./ov_models/tiny-random-llava --task image-text-to-text --trust-remote-code
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-llava --media https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --prompt "What is unusual on this image?" -ic 20 --optimum
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-llava  -pf ./tools/llm_bench/prompts/llava-1.5-7b.jsonl -ic 4 --optimum
       - name: Test katuni4ka/tiny-random-llava via GenAI
         run: |
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-llava --media https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --prompt "What is unusual on this image?" -ic 20
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-llava  -pf ./tools/llm_bench/prompts/llava-1.5-7b.jsonl -ic 4
           rm -rf ./ov_models
 
   wwb:
@@ -151,7 +151,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     strategy:
       fail-fast: false
       matrix:
@@ -187,7 +187,7 @@ jobs:
           python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install -r ${{ env.WWB_PATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
-          python -m pip install git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel
+          python -m pip install git+https://github.com/huggingface/optimum-intel.git@main
         working-directory: ${{ env.OV_INSTALL_DIR }}
       - name: WWB Tests
         run: |

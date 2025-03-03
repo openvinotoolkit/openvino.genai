@@ -24,6 +24,7 @@
       <td>
         <ul>
           <li><a href="https://huggingface.co/google/gemma-2b-it"><code>google/gemma-2b-it</code></a></li>
+          <li><a href="https://huggingface.co/google/gemma-7b-it"><code>google/gemma-7b-it</code></a></li>
         </ul>
       </td>
     </tr>
@@ -260,8 +261,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
     <tr>
       <td><code>Stable Diffusion 3</code></td>
       <td>Supported</td>
-      <td>Not supported</td>
-      <td>Not supported</td>
+      <td>Supported</td>
+      <td>Supported</td>
       <td>Not supported</td>
       <td>
         <ul>
@@ -275,8 +276,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <td><code>Flux</code></td>
       <td>Supported</td>
       <td>Supported</td>
-      <td>Not supported</td>
-      <td>Not supported</td>
+      <td>Supported</td>
+      <td>Partially Supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/black-forest-labs/FLUX.1-schnell"><code>black-forest-labs/FLUX.1-schnell</code></a></li>

@@ -195,6 +195,7 @@ class BlockAllocator {
     size_t m_num_layers;
     bool m_enable_prefix_caching;
     ov::genai::OverwritableBlocksHashStore m_overwriteable_blocks;
+
 public:
     /**
      * Constructs the BlockAllocator.
@@ -215,15 +216,17 @@ public:
                     per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
                 }
             }
-        }
-        else {
+        } else {
             m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
         }
     }
 
     ~BlockAllocator() {
         // sanity check to validate that all blocks are freed
-        // OPENVINO_ASSERT(m_total_num_blocks == m_free_blocks.size());
+        for (auto& free_block : m_free_blocks_num) {
+            size_t free_and_overwritable_block_cnt = free_block + num_overwriteable_blocks();
+            OPENVINO_ASSERT(m_total_num_blocks == free_and_overwritable_block_cnt, "Expected num free blocks: ", m_total_num_blocks, ", actual: ", free_and_overwritable_block_cnt);
+        }
     }
 
     void increase_kv_blocks_number(size_t new_kv_blocks_count) {
@@ -527,7 +530,7 @@ public:
 
     ~BlockManager() {
         // sanity check that all sequences are freed
-        // OPENVINO_ASSERT(m_block_table.empty());
+        OPENVINO_ASSERT(m_block_table.empty());
     }
 
     /**
@@ -674,11 +677,10 @@ public:
      * Allocates a given number of KV cache blocks to a given sequence.
      * @param sequence The sequence for the blocks to be allocated to.
      * @param num_blocks The number of KV cache blocks to be allocated.
-     * @param prompt_ids Raw token values of the prompt for this sequence. Required if prefix caching is enabled.
+     * @param prompt_size Prompt size for this sequence.
      */
-    void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, const ov::genai::TokenIds& prompt_ids = {}) {
+    void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, size_t prompt_size = 0) {
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
-        OPENVINO_ASSERT(!m_enable_prefix_caching || prompt_ids.size() > 0, "prompt_ids should be set for hash calculation.");
 
         auto sequence_id = sequence->get_id();
         if (m_block_table.find(sequence_id) == m_block_table.end()) {
@@ -686,7 +688,7 @@ public:
         }
 
         auto& block_table = m_block_table[sequence_id][0];
-        auto content_length = sequence->get_generated_len() + prompt_ids.size();
+        auto content_length = sequence->get_generated_len() + prompt_size;
         size_t allocated_blocks = block_table.size(); // assuming all layers have the same number of allocated blocks
         size_t num_hashed_tokens = allocated_blocks * m_block_size;
 
@@ -1013,7 +1015,7 @@ public:
 
             if (num_logical_blocks > num_physical_blocks) {
                 OPENVINO_ASSERT(can_allocate_blocks(num_logical_blocks - num_physical_blocks));
-                allocate(sequence, num_logical_blocks - num_physical_blocks, seq_group->get_prompt_ids());
+                allocate(sequence, num_logical_blocks - num_physical_blocks, seq_group->get_prompt_len());
             } else {
                 OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks, "A number of physical and logic blocks must be the same in this code path");
 

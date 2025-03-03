@@ -3,14 +3,14 @@
 
 import sys
 import pytest
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from openvino_genai import GenerationConfig, StopCriteria
 from typing import List, TypedDict
 
-from common import get_hugging_face_models, convert_models, run_llm_pipeline_with_ref, run_llm_pipeline, compare_generation_results, StreamerWithResults
+from openvino_genai import GenerationConfig, StopCriteria
 
+from utils.ov_genai_pipelines import PipelineType, generate_and_compare, run_ov_pipeline
+from utils.hugging_face import get_hugging_face_models, convert_models
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("generation_config,prompt",
@@ -30,29 +30,30 @@ from common import get_hugging_face_models, convert_models, run_llm_pipeline_wit
                               ])
 def test_basic_stop_criteria(tmp_path, generation_config, prompt):
     model_id : str = "katuni4ka/tiny-random-phi3"
-    run_llm_pipeline_with_ref(model_id, [prompt], generation_config, tmp_path)
+    generate_and_compare(model_id, [prompt], generation_config, tmp_path=tmp_path)
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("generation_config",
-                         [dict(max_new_tokens=50, min_new_tokens=15, stop_strings={"anag"}, include_stop_str_in_output=True), # expected match on "manage"
-                          dict(max_new_tokens=50, min_new_tokens=1, stop_strings={".", "software", "Intel"}, include_stop_str_in_output=True),
-                          dict(max_new_tokens=50, min_new_tokens=1, stop_strings={"Einstein", "sunny", "geothermal"}, include_stop_str_in_output=True), # expected no match
-                          dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=False),
-                          dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=True),
-                          dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=False),
-                          dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=True),],
+@pytest.mark.parametrize("generation_config,model_id",
+                         [(dict(max_new_tokens=50, min_new_tokens=15, stop_strings={"anag"}, include_stop_str_in_output=True), 'facebook/opt-125m'), # expected match on "manage"
+                          (dict(max_new_tokens=50, min_new_tokens=1, stop_strings={".", "software", "Intel"}, include_stop_str_in_output=True), 'facebook/opt-125m'),
+                          (dict(max_new_tokens=50, min_new_tokens=1, stop_strings={"Einstein", "sunny", "geothermal"}, include_stop_str_in_output=True), 'facebook/opt-125m'), # expected no match
+                          (dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=False),'facebook/opt-125m'),
+                          (dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=True), 'facebook/opt-125m'),
+                          (dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=False), 'facebook/opt-125m'),
+                          (dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=True), 'facebook/opt-125m'),
+                          (dict(max_new_tokens=30, stop_strings={ "software toolkit developed 1 by", "Intel" }, include_stop_str_in_output=False), 'TinyLlama/TinyLlama-1.1B-Chat-v1.0')],
                          ids=["single_stop_string",
                               "multiple_stop_strings_match",
                               "multiple_stop_strings_no_match",
                               "single_stop_string_exclude_from_output",
                               "single_stop_string_include_to_output",
                               "multiple_stop_strings_exclude_from_output",
-                              "multiple_stop_strings_include_to_output"])
-def test_stop_strings(tmp_path, generation_config):
+                              "multiple_stop_strings_include_to_output",
+                              "multiple_stop_strings_one_no_match_and_long_exclude_from_output"])
+def test_stop_strings(tmp_path, generation_config, model_id):
     prompts = [ "What is OpenVINO?" ]
-    model_id : str = "facebook/opt-125m"
-    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
+    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
 
 
 @pytest.mark.precommit
@@ -65,20 +66,19 @@ def test_stop_strings(tmp_path, generation_config):
     'What is OpenVINO?',
     'table is made of', 
     'The Sun is yellow because', 
-    '你好！ 你好嗎？',
+    '你好！ 你好嗎？'.encode('unicode_escape'),  # to escape Win limitation on Unicode tmp path
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
-@pytest.mark.parametrize("use_cb", [True, False])
-def test_greedy(tmp_path, generation_config, prompt, use_cb):
+@pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION])
+def test_greedy(tmp_path, generation_config, prompt, pipeline_type):
     model_id : str = "katuni4ka/tiny-random-phi3"
-    if sys.platform.startswith('win') and prompt.startswith('你'):
-        pytest.skip("For unknown reason this prompt fails on Win")
+    prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
-    run_llm_pipeline_with_ref(model_id=model_id, 
-                            prompts=[prompt], 
-                            generation_config=generation_config, 
-                            tmp_path=tmp_path,
-                            use_cb=use_cb)
+    generate_and_compare(model=model_id, 
+                         prompts=[prompt], 
+                         generation_config=generation_config, 
+                         tmp_path=tmp_path,
+                         pipeline_type=pipeline_type)
 
 
 @pytest.mark.precommit
@@ -104,7 +104,7 @@ def test_greedy(tmp_path, generation_config, prompt, use_cb):
 def test_beam_search(tmp_path, generation_config):
     prompts = [ "What is OpenVINO?" ]
     model_id : str = "facebook/opt-125m"
-    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
+    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
 
 
 @pytest.mark.precommit
@@ -120,7 +120,7 @@ def test_beam_search(tmp_path, generation_config):
 def test_beam_search_with_stop_string(tmp_path, generation_config):
     prompts = [ "What is OpenVINO?" ]
     model_id : str = "facebook/opt-125m"
-    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
+    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
 
 
 @pytest.mark.precommit
@@ -134,7 +134,7 @@ def test_echo(tmp_path, generation_config):
     model_id : str = "facebook/opt-125m"
     # TODO: support in stateful mode and remove 'use_cb=True' and this test at all
     # as we can enable new parameters set in other tests
-    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path, use_cb=True)
+    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
 
 
 # TODO: remove platform specific reference texts once CVS-159912 is done and use comparison with HF
@@ -164,7 +164,7 @@ class RandomSamplingTestStruct:
     prompts: List[str]
     ref_texts: List[List[str]]
 
-from common import get_multinomial_temperature, get_greedy_with_penalties, \
+from utils.generation_config import get_multinomial_temperature, get_greedy_with_penalties, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
     get_multinomial_temperature_top_p_and_top_k, get_multinomial_all_parameters, \
     get_multinomial_temperature_and_num_return_sequence, get_multinomial_max_and_min_token, \
@@ -341,7 +341,9 @@ def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSam
     convert_models(model, hf_tokenizer, models_path)
 
     # Run multinomial without comparison with HF reference.
-    _ = run_llm_pipeline(models_path, prompts, generation_configs)
+    _ = run_ov_pipeline(models_path=models_path,
+                        prompt=prompts,
+                        generation_config=generation_config)
 
     # Reference comparison is not performed as sampling results are non-deterministic.
     # Discrete_distribution impl depends on platform, model inference results may depend on CPU.

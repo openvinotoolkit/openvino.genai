@@ -17,7 +17,7 @@ pip install -r tests/python_tests/requirements.txt
 python -m pytest tests/python_tests/ -m precommit
 ```
 
-During the test downloaded HuggingFace (HF) models will be saved into the current directory. If you wish to place them somewhere else you can specify `GENAI_MODELS_PATH_PREFIX` environenment variable, e.g.
+During the test downloaded HuggingFace (HF) models will be saved into the current directory. If you wish to place them somewhere else you can specify `GENAI_MODELS_PATH_PREFIX` environment variable, e.g.
 ```sh
 GENAI_MODELS_PATH_PREFIX=$HOME/test_models python -m pytest tests/python_tests/ -m precommit
 ```
@@ -29,7 +29,7 @@ PYTHONPATH=$PYTHONPATH:.../openvino.genai/build-Release/ python -m pytest tests/
 
 ## Customise tests run
 
-Tests have `precommit` and `nightly` set of models. `precommit` contains lightweight models which can be quickly inferred, `nightly` models are heavier and required more time for interence. If you wish to run specific tests only for nightly models, you can use `-k` option, for example to run only multibatch and chat tests:
+Tests have `precommit` and `nightly` set of models. `precommit` contains lightweight models which can be quickly inferred, `nightly` models are heavier and required more time for inference. If you wish to run specific tests only for nightly models, you can use `-k` option, for example to run only multibatch and chat tests:
 ```sh
 python -m pytest tests/python_tests/ -m nightly -k "test_multibatch and test_chat"
 ```
@@ -45,3 +45,29 @@ python -m pytest tests/python_tests/ -m nightly -k "test_multibatch" --model_ids
 ```
 
 List of currently supported `nightly` and `precommit` models can be found in tests/python_tests/ov_genai_test_utils.py:get_models_list
+
+## Test Samples
+To test samples, set the `SAMPLES_PY_DIR` and `SAMPLES_CPP_DIR` environment variables to the directories containing your Python samples and built C++ samples respectively. The `SAMPLES_CPP_DIR` should point to the folder with built C++ samples, which can be installed using `cmake --component samples_bin`. For example:
+```sh
+SAMPLES_PY_DIR=openvino.genai/samples/python SAMPLES_CPP_DIR=openvino.genai/samples_bin python -m pytest tests/python_tests -m samples
+```
+
+You can also use markers such as `llm` and `whisper` to run specific sets of tests. For example, to run only the `llm` tests:
+```sh
+python -m pytest tests/python_tests/samples -m llm
+```
+
+Or to run only the `whisper` tests:
+```sh
+python -m pytest tests/python_tests/samples -m whisper
+```
+
+If the `OV_CACHE` environment variable is set, all downloaded and converted models will be saved to the specified directory. This allows the models to be reused between runs, saving time and resources. For example:
+```sh
+OV_CACHE=$HOME/ov_cache python -m pytest tests/python_tests -m samples
+```
+
+If the `CLEANUP_CACHE` environment variable is set, all downloaded and converted models will be removed right after the tests have stopped using them. Note that this does not affect the HuggingFace (HF) cache. For example:
+```sh
+CLEANUP_CACHE=1 python -m pytest tests/python_tests -m samples
+```

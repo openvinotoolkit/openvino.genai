@@ -13,6 +13,8 @@
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "openvino/genai/image_generation/image2image_pipeline.hpp"
 #include "openvino/genai/image_generation/inpainting_pipeline.hpp"
+#include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
+#include "utils.hpp"
 
 #include "tokenizers_path.hpp"
 #include "py_utils.hpp"
@@ -21,6 +23,8 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using namespace pybind11::literals;
+using ov::genai::ImageGenerationPerfMetrics;
+using ov::genai::RawImageGenerationPerfMetrics;
 
 namespace {
 
@@ -52,6 +56,77 @@ auto text2image_generate_docstring = R"(
 
     :return: ov.Tensor with resulting images
     :rtype: ov.Tensor
+)";
+
+auto raw_image_generation_perf_metrics_docstring = R"(
+    Structure with raw performance metrics for each generation before any statistics are calculated.
+
+    :param unet_inference_durations: Durations for each unet inference in microseconds.
+    :type unet_inference_durations: List[float]
+
+    :param transformer_inference_durations: Durations for each transformer inference in microseconds.
+    :type transformer_inference_durations: List[float]
+
+    :param iteration_durations: Durations for each step iteration in microseconds.
+    :type iteration_durations: List[float]
+)";
+
+auto image_generation_perf_metrics_docstring = R"(
+    Holds performance metrics for each generate call.
+
+    PerfMetrics holds fields with mean and standard deviations for the following metrics:
+    - Generate iteration duration, ms
+    - Inference duration for unet model, ms
+    - Inference duration for transformer model, ms
+
+    Additional fields include:
+    - Load time, ms
+    - Generate total duration, ms
+    - inference durations for each encoder, ms
+    - inference duration of vae_encoder model, ms
+    - inference duration of vae_decoder model, ms
+
+    Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+    If mean and std were already calculated, getters return cached values.
+
+    :param get_text_encoder_infer_duration: Returns the inference duration of every text encoder in milliseconds.
+    :type get_text_encoder_infer_duration: Dict[str, float]
+
+    :param get_vae_encoder_infer_duration: Returns the inference duration of vae encoder in milliseconds.
+    :type get_vae_encoder_infer_duration: float
+
+    :param get_vae_decoder_infer_duration: Returns the inference duration of vae decoder in milliseconds.
+    :type get_vae_decoder_infer_duration: float
+
+    :param get_load_time: Returns the load time in milliseconds.
+    :type get_load_time: float
+
+    :param get_generate_duration: Returns the generate duration in milliseconds.
+    :type get_generate_duration: float
+
+    :param get_inference_duration: Returns the total inference durations (including encoder, unet/transformer and decoder inference) in milliseconds.
+    :type get_inference_duration: float
+
+    :param get_first_and_other_iter_duration: Returns the first iteration duration and the average duration of other iterations in one generation in milliseconds.
+    :type get_first_and_other_iter_duration: tuple
+
+    :param get_iteration_duration: Returns the mean and standard deviation of one generation iteration in milliseconds.
+    :type get_iteration_duration: MeanStdPair
+
+    :param get_first_and_second_unet_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
+    :type get_first_and_second_unet_infer_duration: tuple
+
+    :param get_unet_infer_duration: Returns the mean and standard deviation of one unet inference in milliseconds.
+    :type get_unet_infer_duration: MeanStdPair
+
+    :param get_first_and_other_trans_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
+    :type get_first_and_other_trans_infer_duration: tuple
+
+    :param get_transformer_infer_duration: Returns the mean and standard deviation of one transformer inference in milliseconds.
+    :type get_transformer_infer_duration: MeanStdPair
+
+    :param raw_metrics: A structure of RawImageGenerationPerfMetrics type that holds raw metrics.
+    :type raw_metrics: RawImageGenerationPerfMetrics
 )";
 
 // Trampoline class to support inheritance from Generator in Python
@@ -151,6 +226,16 @@ public:
     }
 };
 
+bool params_have_torch_generator(ov::AnyMap params) {
+    std::shared_ptr<ov::genai::Generator> generator = nullptr;
+    ov::genai::utils::read_anymap_param(params, "generator", generator);
+    if (std::dynamic_pointer_cast<::TorchGenerator>(generator)) {
+        return true;
+    }
+    return false;
+}
+
+
 } // namespace
 
 void init_clip_text_model(py::module_& m);
@@ -229,6 +314,48 @@ void init_image_generation_pipelines(py::module_& m) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
 
+    py::class_<RawImageGenerationPerfMetrics>(m, "RawImageGenerationPerfMetrics", raw_image_generation_perf_metrics_docstring)
+        .def(py::init<>())
+        .def_property_readonly("unet_inference_durations", [](const RawImageGenerationPerfMetrics &rw) {
+            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::unet_inference_durations);
+        })
+        .def_property_readonly("transformer_inference_durations", [](const RawImageGenerationPerfMetrics &rw) { 
+            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::transformer_inference_durations);
+        })
+        .def_property_readonly("iteration_durations", [](const RawImageGenerationPerfMetrics &rw) { 
+            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::iteration_durations); 
+        });
+
+    py::class_<ImageGenerationPerfMetrics>(m, "ImageGenerationPerfMetrics", image_generation_perf_metrics_docstring)
+        .def(py::init<>())
+        .def("get_inference_duration", &ImageGenerationPerfMetrics::get_inference_duration)
+        .def("get_text_encoder_infer_duration", &ImageGenerationPerfMetrics::get_text_encoder_infer_duration)
+        .def("get_vae_encoder_infer_duration", &ImageGenerationPerfMetrics::get_vae_encoder_infer_duration)
+        .def("get_vae_decoder_infer_duration", &ImageGenerationPerfMetrics::get_vae_decoder_infer_duration)
+        .def("get_load_time", &ImageGenerationPerfMetrics::get_load_time)
+        .def("get_generate_duration", &ImageGenerationPerfMetrics::get_generate_duration)
+        .def("get_first_and_other_iter_duration",
+             [](ImageGenerationPerfMetrics& self) -> py::tuple {
+                 float first_iter_time, other_iter_avg_time;
+                 self.get_first_and_other_iter_duration(first_iter_time, other_iter_avg_time);
+                 return py::make_tuple(first_iter_time, other_iter_avg_time);
+             })
+        .def("get_iteration_duration", &ImageGenerationPerfMetrics::get_iteration_duration)
+        .def("get_first_and_other_trans_infer_duration",
+             [](ImageGenerationPerfMetrics& self) -> py::tuple {
+                 float first_infer_time, other_infer_avg_time;
+                 self.get_first_and_other_trans_infer_duration(first_infer_time, other_infer_avg_time);
+                 return py::make_tuple(first_infer_time, other_infer_avg_time);
+             })
+        .def("get_transformer_infer_duration", &ImageGenerationPerfMetrics::get_transformer_infer_duration)
+        .def("get_first_and_other_unet_infer_duration", [](ImageGenerationPerfMetrics& self) -> py::tuple {
+            float first_infer_time, other_infer_avg_time;
+            self.get_first_and_other_unet_infer_duration(first_infer_time, other_infer_avg_time);
+            return py::make_tuple(first_infer_time, other_infer_avg_time);
+        })
+        .def("get_unet_infer_duration", &ImageGenerationPerfMetrics::get_unet_infer_duration)
+        .def_readonly("raw_metrics", &ImageGenerationPerfMetrics::raw_metrics);
+
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")
         .def(py::init([](const std::filesystem::path& models_path) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
@@ -275,12 +402,40 @@ void init_image_generation_pipelines(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
+            )")
+        .def(
+            "compile",
+            [](ov::genai::Text2ImagePipeline& pipe,
+                const std::string& text_encode_device,
+                const std::string& denoise_device,
+                const std::string& vae_device,
+                const py::kwargs& kwargs
+            ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(text_encode_device, denoise_device, vae_device, map);
+                }
+            },
+            py::arg("text_encode_device"), "device to run the text encoder(s) on",
+            py::arg("denoise_device"), "device to run denoise steps on",
+            py::arg("vae_device"), "device to run vae decoder on",
+            R"(
+                Compiles the model.
+                text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                denoise_device (str): Device to run denoise steps on.
+                vae_device (str): Device to run vae decoder on.
                 kwargs: Device properties.
             )")
         .def(
@@ -290,11 +445,22 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                return py::cast(pipe.generate(prompt, params));
+                ov::Tensor res;
+                if (params_have_torch_generator(params)) {
+                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
+                    // so if it was passed, we don't release GIL
+                    res = pipe.generate(prompt, params);
+                }
+                else {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, params);
+                }
+                return py::cast(res);
             },
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
-        .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"));
+        .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"))
+        .def("get_performance_metrics", &ov::genai::Text2ImagePipeline::get_performance_metrics);
 
 
     auto image2image_pipeline = py::class_<ov::genai::Image2ImagePipeline>(m, "Image2ImagePipeline", "This class is used for generation with image-to-image models.")
@@ -331,13 +497,23 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_static("latent_consistency_model", &ov::genai::Image2ImagePipeline::latent_consistency_model, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
         .def_static("stable_diffusion_xl", &ov::genai::Image2ImagePipeline::stable_diffusion_xl, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("clip_text_model_with_projection"), py::arg("unet"), py::arg("vae"))
         .def_static("flux", &ov::genai::Image2ImagePipeline::flux, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
+        .def_static("stable_diffusion_3", py::overload_cast<const std::shared_ptr<ov::genai::Scheduler>&, const ov::genai::CLIPTextModelWithProjection&, const ov::genai::CLIPTextModelWithProjection&, const ov::genai::T5EncoderModel&,
+                                                            const ov::genai::SD3Transformer2DModel&, const ov::genai::AutoencoderKL&>(&ov::genai::Image2ImagePipeline::stable_diffusion_3),
+            py::arg("scheduler"), py::arg("clip_text_model_1"), py::arg("clip_text_model_2"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
+        .def_static("stable_diffusion_3", py::overload_cast<const std::shared_ptr<ov::genai::Scheduler>&, const ov::genai::CLIPTextModelWithProjection&, const ov::genai::CLIPTextModelWithProjection&,
+                                                            const ov::genai::SD3Transformer2DModel&, const ov::genai::AutoencoderKL&>(&ov::genai::Image2ImagePipeline::stable_diffusion_3),
+            py::arg("scheduler"), py::arg("clip_text_model_1"), py::arg("clip_text_model_2"), py::arg("transformer"), py::arg("vae"))
         .def(
             "compile",
             [](ov::genai::Image2ImagePipeline& pipe,
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -353,12 +529,23 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                return py::cast(pipe.generate(prompt, image, params));
+                ov::Tensor res;
+                if (params_have_torch_generator(params)) {
+                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
+                    // so if it was passed, we don't release GIL
+                    res = pipe.generate(prompt, image, params);
+                }
+                else {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, image, params);
+                }
+                return py::cast(res);
             },
             py::arg("prompt"), "Input string",
             py::arg("image"), "Initial image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
-        .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"));
+        .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"))
+        .def("get_performance_metrics", &ov::genai::Image2ImagePipeline::get_performance_metrics);
 
 
     auto inpainting_pipeline = py::class_<ov::genai::InpaintingPipeline>(m, "InpaintingPipeline", "This class is used for generation with inpainting models.")
@@ -394,13 +581,24 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_static("stable_diffusion", &ov::genai::InpaintingPipeline::stable_diffusion, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
         .def_static("latent_consistency_model", &ov::genai::InpaintingPipeline::latent_consistency_model, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
         .def_static("stable_diffusion_xl", &ov::genai::InpaintingPipeline::stable_diffusion_xl, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("clip_text_model_with_projection"), py::arg("unet"), py::arg("vae"))
+        .def_static("flux", &ov::genai::InpaintingPipeline::flux, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
+        .def_static("stable_diffusion_3", py::overload_cast<const std::shared_ptr<ov::genai::Scheduler>&, const ov::genai::CLIPTextModelWithProjection&, const ov::genai::CLIPTextModelWithProjection&, const ov::genai::T5EncoderModel&,
+                                                            const ov::genai::SD3Transformer2DModel&, const ov::genai::AutoencoderKL&>(&ov::genai::InpaintingPipeline::stable_diffusion_3),
+            py::arg("scheduler"), py::arg("clip_text_model_1"), py::arg("clip_text_model_2"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
+        .def_static("stable_diffusion_3", py::overload_cast<const std::shared_ptr<ov::genai::Scheduler>&, const ov::genai::CLIPTextModelWithProjection&, const ov::genai::CLIPTextModelWithProjection&,
+                                                            const ov::genai::SD3Transformer2DModel&, const ov::genai::AutoencoderKL&>(&ov::genai::InpaintingPipeline::stable_diffusion_3),
+            py::arg("scheduler"), py::arg("clip_text_model_1"), py::arg("clip_text_model_2"), py::arg("transformer"), py::arg("vae"))
         .def(
             "compile",
             [](ov::genai::InpaintingPipeline& pipe,
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -417,13 +615,24 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                return py::cast(pipe.generate(prompt, image, mask_image, params));
+                ov::Tensor res;
+                if (params_have_torch_generator(params)) {
+                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
+                    // so if it was passed, we don't release GIL
+                    res = pipe.generate(prompt, image, mask_image, params);
+                }
+                else {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, image, mask_image, params);
+                }
+                return py::cast(res);
             },
             py::arg("prompt"), "Input string",
             py::arg("image"), "Initial image",
             py::arg("mask_image"), "Mask image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
-        .def("decode", &ov::genai::InpaintingPipeline::decode, py::arg("latent"));
+        .def("decode", &ov::genai::InpaintingPipeline::decode, py::arg("latent"))
+        .def("get_performance_metrics", &ov::genai::InpaintingPipeline::get_performance_metrics);
 
     // define constructors to create one pipeline from another
     // NOTE: needs to be defined once all pipelines are created

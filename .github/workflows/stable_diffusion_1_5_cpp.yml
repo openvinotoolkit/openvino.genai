@@ -78,7 +78,7 @@ jobs:
     needs: [ openvino_download_linux ]
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash
     env:
       build_dir: ${{ github.workspace }}//build
       SRC_DIR: ${{ github.workspace }}
@@ -153,7 +153,7 @@ jobs:
 
   stable_diffusion_1_5_cpp-windows:
     needs: [ openvino_download_windows ]
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb-staging
     defaults:
       run:
         shell: pwsh
@@ -184,6 +184,8 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ env.build_dir }}
           cmake --build ${{ env.build_dir }} --config Release --target text2image image2image inpainting heterogeneous_stable_diffusion lora_text2image py_openvino_genai --parallel
+        env:
+          CMAKE_TLS_VERIFY: 0
 
       - name: Create virtual environment
         run: python -m venv openvino_sd_cpp

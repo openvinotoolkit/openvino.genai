@@ -1,15 +1,15 @@
-.vscode
-bin.*
-build
+bin
 include
+lib
 src
 tests
+thirdparty
 
-.eslintrc.js
 CMakeLists.txt
+eslint.config.jt
 tsconfig.json
-TODO.md
-build.sh
+*.md
+!README.md
 
 **/*.tsbuildinfo
 *.tgz

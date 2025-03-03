@@ -13,6 +13,7 @@
 
 #include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
@@ -71,6 +72,31 @@ public:
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae);
 
+    // creates Flux pipeline from building blocks
+    static InpaintingPipeline flux(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const CLIPTextModel& clip_text_model,
+        const T5EncoderModel& t5_text_encoder,
+        const FluxTransformer2DModel& transformer,
+        const AutoencoderKL& vae);
+
+    // creates SD3 pipeline from building blocks
+    static InpaintingPipeline stable_diffusion_3(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const CLIPTextModelWithProjection& clip_text_model_1,
+        const CLIPTextModelWithProjection& clip_text_model_2,
+        const T5EncoderModel& t5_encoder_model,
+        const SD3Transformer2DModel& transformer,
+        const AutoencoderKL& vae);
+
+    // creates SD3 pipeline from building blocks
+    static InpaintingPipeline stable_diffusion_3(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const CLIPTextModelWithProjection& clip_text_model_1,
+        const CLIPTextModelWithProjection& clip_text_model_2,
+        const SD3Transformer2DModel& transformer,
+        const AutoencoderKL& vae);
+
     ImageGenerationConfig get_generation_config() const;
     void set_generation_config(const ImageGenerationConfig& generation_config);
 
@@ -109,6 +135,8 @@ public:
     }
 
     ov::Tensor decode(const ov::Tensor latent);
+
+    ImageGenerationPerfMetrics get_performance_metrics();
 
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;

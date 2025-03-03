@@ -28,11 +28,6 @@ public:
         m_output_queue.push(std::move(outputs));
     }
 
-    // Retrieving vector of pairs <sequence_id, token_ids> as we can generate multiple outputs for a single prompt
-    GenerationOutputs back() {
-        return m_output_queue.back();
-    }
-
     GenerationOutputs read() {
         return m_output_queue.pull();
     }
@@ -51,9 +46,14 @@ public:
         return m_status;
     }
 
-    void drop() {
+    void stop() {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_status = GenerationStatus::DROPPED_BY_HANDLE;
+        m_status = GenerationStatus::STOP;
+    }
+
+    void cancel() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_status = GenerationStatus::CANCEL;
     }
 };
 }
