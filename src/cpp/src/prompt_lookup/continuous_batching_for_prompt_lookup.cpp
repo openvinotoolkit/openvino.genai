@@ -67,7 +67,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
             const auto sampling_params = request->get_sampling_parameters();
             {
                 const auto generated_len = running_sequence->get_generated_len();
-                const auto left_generated_len = std::min(sampling_params.get_max_new_tokens(request->get_prompt_len()), sampling_params.max_length) - generated_len - 1;
+                const auto left_generated_len = std::min(request->get_max_new_tokens(), sampling_params.max_length) - generated_len - 1;
                 min_num_assistant_tokens = std::min(sampling_params.num_assistant_tokens, left_generated_len);
             }
             TokenIds candidates = generate_candidates(full_input_ids, min_num_assistant_tokens, sampling_params.max_ngram_size);
