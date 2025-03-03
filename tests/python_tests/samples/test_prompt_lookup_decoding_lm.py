@@ -25,7 +25,7 @@ class TestPromptLookupDecodingLM:
         ],
         indirect=["convert_model"],
     )
-    def test_prompt_lookup_decoding_lm(self, convert_model, sample_args):      
+    def test_prompt_lookup_decoding_lm(self, convert_model, sample_args):
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/prompt_lookup_decoding_lm.py")
         py_command = [sys.executable, py_script, convert_model, sample_args]
@@ -35,7 +35,7 @@ class TestPromptLookupDecodingLM:
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'prompt_lookup_decoding_lm')
         cpp_command =[cpp_sample, convert_model, sample_args]
         cpp_result = run_sample(cpp_command)
-        
+
         # Greedy decoding
         cpp_sample_ref = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
         cpp_command_ref = [cpp_sample_ref, convert_model, sample_args]
@@ -44,4 +44,3 @@ class TestPromptLookupDecodingLM:
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and CPP results should match"
         assert cpp_result_ref.stdout == cpp_result.stdout, "Greedy and speculative decoding results should match"
-

@@ -60,7 +60,7 @@ Tokenization time: 1.26 ± 0.09 ms
 Detokenization time: 0.33 ± 0.05 ms
 Embeddings preparation time: 5733.85 ± 26.34 ms
 TTFT: 11246.98 ± 80.55 ms
-TPOT: 135.45 ± 4.73 ms/token 
+TPOT: 135.45 ± 4.73 ms/token
 Throughput: 7.38 ± 0.26 tokens/s
 ```
 

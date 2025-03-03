@@ -41,14 +41,14 @@ def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
 
 
 def get_chat_templates():
-    # Returns chat templates saved in tokenizer_configs.py, 
+    # Returns chat templates saved in tokenizer_configs.py,
     # but skips some models that currently are not processed correctly.
 
     skipped_models = {
         # TODO: openchat/openchat_3.5 and berkeley-nest/Starling-LM-7B-alpha have the same template.
         # Need to enable and unskip, since it's preset in continuous batching and has >100 000 downloads.
         "openchat/openchat-3.5-0106",
-        
+
         # These models fail even on HF so no need to check if applying chat matches.
         "vibhorag101/llama-2-13b-chat-hf-phr_mental_therapy",
         "codellama/CodeLlama-34b-Instruct-hf",
@@ -87,7 +87,7 @@ def get_chat_templates():
         "shenzhi-wang/Llama3-8B-Chinese-Chat", # AssertionError
         "nlpai-lab/KULLM3",
         "HuggingFaceH4/zephyr-7b-gemma-sft-v0.1",
-        "MediaTek-Research/Breeze-7B-Instruct-v0_1", 
+        "MediaTek-Research/Breeze-7B-Instruct-v0_1",
         "shanchen/llama3-8B-slerp-biomed-chat-chinese", # AssertionError
         "MLP-KTLim/llama-3-Korean-Bllossom-8B",
         "aloobun/CosmicBun-8B", # Chat template is not supported by Jinja2Cpp
@@ -263,7 +263,7 @@ def test_special_tokens(tmp_path, prompt, model_id):
     hf_res_no_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=False)["input_ids"]
     assert np.all(ov_res_add_spec == hf_res_add_spec)
     assert np.all(ov_res_no_spec == hf_res_no_spec)
-    
+
     # Check that add_special_tokens flag indeed made any difference
     assert ov_res_add_spec.size != ov_res_no_spec.size
     assert hf_res_add_spec.size != hf_res_no_spec.size
@@ -325,11 +325,11 @@ prompts = [
 ])
 def test_padding(hf_ov_genai_models, add_special_tokens, max_length, pad_to_max_length, prompt, model_id):
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
-    
+
     hf_tokenizer, genai_tokenzier = hf_ov_genai_models(model_id, subfolder=hf_tok_load_params.get("subfolder", None))
 
-    # In openvino_tokenizers if sequences are of different length by default padding is applied 
-    # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor 
+    # In openvino_tokenizers if sequences are of different length by default padding is applied
+    # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor
     # which cannot store irregular/ragged array.
     # Therefore, for default mode truncation=True.
     # For the same reason runcation is always applied.
@@ -345,7 +345,7 @@ def test_padding(hf_ov_genai_models, add_special_tokens, max_length, pad_to_max_
     if max_length is None:
         hf_params.pop("max_length")
         ov_params.pop("max_length")
-        
+
     ov_res = genai_tokenzier.encode(prompt, **ov_params)
     hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
     assert np.all(ov_res.input_ids.data == hf_res["input_ids"])

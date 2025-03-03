@@ -4,7 +4,7 @@ This script provides a unified approach to estimate performance for Large Langua
 
 
 ### 1. Prepare Python Virtual Environment for LLM Benchmarking
-   
+
 ``` bash
 python3 -m venv ov-llm-bench-env
 source ov-llm-bench-env/bin/activate
@@ -12,11 +12,11 @@ pip install --upgrade pip
 
 git clone  https://github.com/openvinotoolkit/openvino.genai.git
 cd openvino.genai/tools/llm_bench
-pip install -r requirements.txt  
+pip install -r requirements.txt
 ```
 
 > Note:
-> For existing Python environments, run the following command to ensure that all dependencies are installed with the latest versions:  
+> For existing Python environments, run the following command to ensure that all dependencies are installed with the latest versions:
 > `pip install -U --upgrade-strategy eager -r requirements.txt`
 
 #### (Optional) Hugging Face Login :
@@ -28,9 +28,9 @@ huggingface-cli login
 ```
 
 ### 2. Convert Model to OpenVINO IR Format
-   
-The `optimum-cli` tool simplifies converting Hugging Face models to OpenVINO IR format. 
-- Detailed documentation can be found in the [Optimum-Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export). 
+
+The `optimum-cli` tool simplifies converting Hugging Face models to OpenVINO IR format.
+- Detailed documentation can be found in the [Optimum-Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export).
 - To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2025/openvino-workflow/model-optimization-guide/weight-compression.html).
 - For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html).
 
@@ -42,11 +42,11 @@ optimum-cli export openvino --model <MODEL_ID> --weight-format <PRECISION> <OUTP
 optimum-cli export openvino -h # For detailed information
 ```
 
-* `--model <MODEL_ID>` : model_id for downloading from [huggingface_hub](https://huggingface.co/models) or path with directory where pytorch model located. 
+* `--model <MODEL_ID>` : model_id for downloading from [huggingface_hub](https://huggingface.co/models) or path with directory where pytorch model located.
 * `--weight-format <PRECISION>` : precision for model conversion. Available options: `fp32, fp16, int8, int4, mxfp4`
 * `<OUTPUT_DIR>`: output directory for saving generated OpenVINO model.
 
-**NOTE:** 
+**NOTE:**
 - Models larger than 1 billion parameters are exported to the OpenVINO format with 8-bit weights by default. You can disable it with `--weight-format fp32`.
 
 **Example:**
@@ -111,10 +111,10 @@ python benchmark.py -m models/llama-2-7b-chat/pytorch -n 2 -f pt
 
 > **Note:** If needed, You can install a specific OpenVINO version using pip:
 > ``` bash
-> # e.g. 
+> # e.g.
 > pip install openvino==2024.4.0
 > # Optional, install the openvino nightly package if needed.
-> # OpenVINO nightly is pre-release software and has not undergone full release validation or qualification. 
+> # OpenVINO nightly is pre-release software and has not undergone full release validation or qualification.
 > pip uninstall openvino
 > pip install --upgrade --pre openvino openvino-tokenizers --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 > ```
@@ -155,8 +155,8 @@ For example, `--load_config config.json` as following will result in streams.num
 ```json
 {
   "INFERENCE_NUM_THREADS": <NUMBER>
-} 
-``` 
+}
+```
 `<NUMBER>` is the number of total physical cores in 2 sockets.
 
 ## 6. Execution on CPU device

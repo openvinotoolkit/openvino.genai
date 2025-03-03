@@ -55,7 +55,7 @@ def test_e2e_nightly(tmp_path, model_id):
     generate_and_compare(prompts=prompts,
                          generation_config=generation_config,
                          tmp_path=tmp_path,
-                         model=model_id, 
+                         model=model_id,
                          pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
 
@@ -422,7 +422,7 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
 def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type):
     model_id : str = "facebook/opt-125m"
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    
+
     generation_config = GenerationConfig()
     generation_config.stop_strings = {" the"}
     generation_config.include_stop_str_in_output = False

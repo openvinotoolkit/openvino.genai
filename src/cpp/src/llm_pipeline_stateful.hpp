@@ -19,7 +19,7 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     std::vector<int64_t> m_tokenized_chat_history;
     ov::genai::utils::GenerationChatInputsType m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
     // If sequence contains some symbols, which could be ambiguously encoded by tokenizer, we need to trim kv cache
-    // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
+    // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history
     // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
     ov::genai::KVCacheTrimManager m_kv_history_trim_manager = {0, 2};
     // Finish reason of last generation for chat scenario

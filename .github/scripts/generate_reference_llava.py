@@ -9,7 +9,7 @@ IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".bmp"]
 
 def main(model_path: str, images_path: str):
     print(f"Selected model: {model_path}\n")
-    
+
     if Path(images_path).is_file():
         image_files = [Path(images_path)]
     else:
@@ -17,7 +17,7 @@ def main(model_path: str, images_path: str):
             [f for f in Path(images_path).glob("*") if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS],
             key=lambda x: x.name
         )
-    
+
     if not image_files:
         raise FileNotFoundError(f"No images found in '{images_path}' directory. Supported formats: {IMAGE_EXTENSIONS}")
 
@@ -26,7 +26,7 @@ def main(model_path: str, images_path: str):
         images.append(
             Image.open(file).convert("RGB")
         )
-    
+
     print("Images:", image_files)
 
     model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)

@@ -40,7 +40,7 @@ clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const Pro
         for (int y = 0; y < crop_height; ++y) {
             for (int x = 0; x < crop_width; ++x) {
                 for (int c = 0; c < 3; ++c) {
-                    cropped_image.buf[(y * crop_width + x) * 3 + c] = 
+                    cropped_image.buf[(y * crop_width + x) * 3 + c] =
                         resized_image.buf[((start_y + y) * resized_image.nx + (start_x + x)) * 3 + c];
                 }
             }
@@ -103,7 +103,7 @@ InputsEmbedderLLaVA::InputsEmbedderLLaVA(
 
 ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
     std::string image_token = m_vlm_config.im_start;
-    
+
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
     std::string formatted_prompt;

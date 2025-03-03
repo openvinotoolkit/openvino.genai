@@ -14,7 +14,7 @@ namespace ov::genai {
 class CacheManager {
     size_t m_num_decoder_layers = 0;
     std::string m_device;
-    size_t m_block_size = 0; // block size is per inference device 
+    size_t m_block_size = 0; // block size is per inference device
     std::vector<ov::element::Type> m_key_precisions, m_value_precisions;
     std::vector<ov::PartialShape> m_key_shapes, m_value_shapes;
     std::vector<ov::Tensor> m_key_cache, m_value_cache;
@@ -90,7 +90,7 @@ public:
         std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
         OPENVINO_ASSERT(execution_devices.size() == 1, "Contituous batching: execution device is expected to be CPU or GPU, but got ", execution_devices.size(), " devices");
         m_device = execution_devices[0];
-        
+
         // set block_size depending on device
         const size_t cpu_block_size = 32, gpu_block_size = 16;
         const bool is_gpu = m_device.find("GPU") != std::string::npos;
@@ -184,7 +184,7 @@ public:
                     value_roi_size_byte = m_value_cache[decoder_layer_id].get_byte_size();
                     key_cache_roi_end = static_cast<unsigned char*>(key_cache.data()) + key_roi_size_byte;
                     value_cache_roi_end = static_cast<unsigned char*>(value_cache.data()) + value_roi_size_byte;
-                    
+
                     // copy current cache data
                     ov::Tensor dst_key_roi(key_cache, start_key, end_key);
                     ov::Tensor dst_value_roi(value_cache, start_value, end_value);
@@ -263,7 +263,7 @@ public:
                     ov::Coordinate key_src_end_roi = key_shape;
                     ov::Coordinate key_dst_start_roi(key_shape.size(), 0);
                     ov::Coordinate key_dst_end_roi = key_shape;
-            
+
                     ov::Coordinate value_src_start_roi(value_shape.size(), 0);
                     ov::Coordinate value_src_end_roi = value_shape;
                     ov::Coordinate value_dst_start_roi(value_shape.size(), 0);

@@ -45,7 +45,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<ov::genai::GenerationConfig> sampling_params,
     const StreamerVariant& streamer) {
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        // TODO: remove this code and within model runner add check: if sequence group type is tokens, 
+        // TODO: remove this code and within model runner add check: if sequence group type is tokens,
         // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(prompts.size());
         return generate(prompts, images, sampling_params, streamer);
@@ -169,7 +169,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return results;
 }
 
-GenerationHandle 
+GenerationHandle
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t request_id,
                                         const std::string& prompt,
                                         const std::vector<ov::Tensor>& rgbs,

@@ -13,7 +13,7 @@ class TestWhisperSpeechRecognition:
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
     @pytest.mark.parametrize("download_test_content", [TEST_FILES["how_are_you_doing_today.wav"]], indirect=True)
-    def test_sample_whisper_speech_recognition(self, convert_model, download_test_content):           
+    def test_sample_whisper_speech_recognition(self, convert_model, download_test_content):
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "whisper_speech_recognition/whisper_speech_recognition.py")
         py_command = [sys.executable, py_script, convert_model, download_test_content]

@@ -13,7 +13,7 @@ void print_cb_generation_result(const ov::genai::GenerationResult& generation_re
 }
 
 std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_examples() {
-    
+
     // sampling param for speulative decoding
     ov::genai::GenerationConfig generation_config_greedy_constant = ov::genai::greedy();
     {
@@ -105,7 +105,7 @@ int main(int argc, char* argv[]) try {
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     // vLLM specific params
     scheduler_config.max_num_seqs = 2;
-    
+
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device)});
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, generation_config);
 
@@ -131,7 +131,7 @@ int main(int argc, char* argv[]) try {
                 std::cout << "Partial result:" << std::endl;
                 print_cb_generation_result(generation_result);
             }
-            break;   
+            break;
         default:
             break;
         }

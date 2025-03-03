@@ -114,7 +114,7 @@ public:
                            const ov::AnyMap& properties,
                            const ov::genai::GenerationConfig& generation_config,
                            bool is_validation_mode_enabled = false);
-    
+
     virtual ~ContinuousBatchingImpl();
 
     GenerationHandle add_request(uint64_t request_id,

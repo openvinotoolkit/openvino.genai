@@ -97,7 +97,7 @@ Recommended models: meta-llama/Llama-2-7b-hf, etc
   ```
 
 ### 5. Prompt Lookup Decoding LM (`prompt_lookup_decoding_lm`)
-- **Description:** 
+- **Description:**
 [Prompt Lookup decoding](https://github.com/apoorvumang/prompt-lookup-decoding) is [assested-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) technique where the draft model is replaced with simple string matching the prompt to generate candidate token sequences. This method highly effective for input grounded generation (summarization, document QA, multi-turn chat, code editing), where there is high n-gram overlap between LLM input (prompt) and LLM output. This could be entity names, phrases, or code chunks that the LLM directly copies from the input while generating the output. Prompt lookup exploits this pattern to speed up autoregressive decoding in LLMs. This results in significant speedups with no effect on output quality.
 Recommended models: meta-llama/Llama-2-7b-hf, etc
 - **Main Feature:** Specialized prompt-based inference.
@@ -107,7 +107,7 @@ Recommended models: meta-llama/Llama-2-7b-hf, etc
   ```
 
 ### 6. Speculative Decoding LM (`speculative_decoding_lm`)
-- **Description:** 
+- **Description:**
 Speculative decoding (or [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) in HF terminology) is a recent technique, that allows to speed up token generation when an additional smaller draft model is used alongside with the main model.
 
 Speculative decoding works the following way. The draft model predicts the next K tokens one by one in an autoregressive manner, while the main model validates these predictions and corrects them if necessary. We go through each predicted token, and if a difference is detected between the draft and main model, we stop and keep the last token predicted by the main model. Then the draft model gets the latest main prediction and again tries to predict the next K tokens, repeating the cycle.
@@ -133,8 +133,8 @@ This sample demonstrates greedy decoding using Low-Rank Adaptation (LoRA) fine-t
   ```
 
 ### 8. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
-- **Description:** 
-LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly. 
+- **Description:**
+LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly.
 The following code snippet demonstrates how to load the model from the memory buffer:
 ```cpp
 auto [model_str, weights_tensor] = decrypt_model(models_path + "/openvino_model.xml", models_path + "/openvino_model.bin");
@@ -149,7 +149,7 @@ For the sake of brevity the code above does not include Tokenizer decryption. Fo
   ```
 
 ### 9. LLMs benchmarking sample (`benchmark_genai`)
-- **Description:** 
+- **Description:**
 This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
 For more information how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).

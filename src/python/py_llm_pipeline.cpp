@@ -109,7 +109,7 @@ extern char generation_config_docstring[];
 
 void init_llm_pipeline(py::module_& m) {
     py::class_<LLMPipeline>(m, "LLMPipeline", "This class is used for generation with LLMs")
-        // init(model_path, tokenizer, device, config, kwargs) should be defined before init(model_path, device, config, kwargs) 
+        // init(model_path, tokenizer, device, config, kwargs) should be defined before init(model_path, device, config, kwargs)
         // to prevent tokenizer treated as kwargs argument
         .def(py::init([](
             const std::filesystem::path& models_path,
@@ -121,8 +121,8 @@ void init_llm_pipeline(py::module_& m) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
             if (config.size()) {
-                PyErr_WarnEx(PyExc_DeprecationWarning, 
-                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.",
                          1);
                 auto config_properties = pyutils::properties_to_any_map(config);
                 properties.insert(config_properties.begin(), config_properties.end());
@@ -151,8 +151,8 @@ void init_llm_pipeline(py::module_& m) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
             if (config.size()) {
-                PyErr_WarnEx(PyExc_DeprecationWarning, 
-                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.",
                          1);
                 auto config_properties = pyutils::properties_to_any_map(config);
                 properties.insert(config_properties.begin(), config_properties.end());

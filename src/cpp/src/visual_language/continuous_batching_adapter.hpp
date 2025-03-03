@@ -18,9 +18,9 @@ public:
         const std::string& device,
         const ov::AnyMap& properties
     ): m_impl{
-        models_dir, 
-        scheduler_config, 
-        device, 
+        models_dir,
+        scheduler_config,
+        device,
         properties} { }
 
     VLMContinuousBatchingAdapter(
@@ -32,9 +32,9 @@ public:
         const ov::AnyMap& properties,
         const ov::genai::GenerationConfig& generation_config
     ): m_impl{
-        "./", 
-        scheduler_config, 
-        device, 
+        "./",
+        scheduler_config,
+        device,
         properties} {
         // TODO: Implement the constructor of ContinuousBatchingPipeline from ModelsMap
         OPENVINO_THROW("Not implemented.");

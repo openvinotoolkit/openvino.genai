@@ -75,7 +75,7 @@ auto whisper_decoded_result_chunk = R"(
 
 auto whisper_generation_config_docstring = R"(
     WhisperGenerationConfig
-    
+
     Whisper specific parameters:
     :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
     :type decoder_start_token_id: int

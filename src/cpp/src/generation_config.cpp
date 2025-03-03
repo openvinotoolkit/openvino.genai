@@ -207,7 +207,7 @@ void GenerationConfig::validate() const {
 
     // Sampling strategies
 
-    OPENVINO_ASSERT(num_return_sequences == 1 || (is_multinomial() || is_beam_search()), 
+    OPENVINO_ASSERT(num_return_sequences == 1 || (is_multinomial() || is_beam_search()),
         "'num_return_sequences' can be more than 1 only in case of beam search or multinomial sampling, but got ", num_return_sequences);
 
     // generic penalties, but not supported by beam search currently

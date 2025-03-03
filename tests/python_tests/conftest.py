@@ -25,4 +25,3 @@ def pytest_configure(config: pytest.Config):
     marker = 'precommit' if config.getoption('-m') == 'precommit' else 'nightly'
     pytest.run_marker = marker
     pytest.selected_model_ids = config.getoption('--model_ids', default=None)
-

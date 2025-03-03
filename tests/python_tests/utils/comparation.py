@@ -21,7 +21,7 @@ def compare_generation_result(hf_result: GenerationResult,
         assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
         for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
             assert hf_text == ov_text
-            
+
 
 def compare_generation_results(prompts: List[str],
                                hf_results: List[GenerationResult],

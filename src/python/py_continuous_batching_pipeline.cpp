@@ -53,7 +53,7 @@ auto cache_eviction_config_docstring = R"(
 auto scheduler_config_docstring = R"(
     SchedulerConfig to construct ContinuousBatchingPipeline
 
-    Parameters: 
+    Parameters:
     max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
         independent sequences, we consider total amount of tokens in a batch).
     num_kv_blocks:              total number of KV blocks available to scheduler logic.
@@ -74,7 +74,7 @@ auto scheduler_config_docstring = R"(
 auto generation_result_docstring = R"(
     GenerationResult stores resulting batched tokens and scores.
 
-    Parameters: 
+    Parameters:
     request_id:         obsolete when handle API is approved as handle will connect results with prompts.
     generation_ids:     in a generic case we have multiple generation results per initial prompt
         depending on sampling parameters (e.g. beam search or parallel sampling).
@@ -137,7 +137,7 @@ py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
         {
             py::gil_scoped_release rel;
             encoded_results = pipe.generate(input_ids, sampling_params, streamer);
-        }  
+        }
         results = py::cast(encoded_results);
     },
     [&](std::vector<std::string> prompts) {
@@ -145,7 +145,7 @@ py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
         {
             py::gil_scoped_release rel;
             generated_results = pipe.generate(prompts, sampling_params, streamer);
-        }  
+        }
         results = py::cast(generated_results);
     }},
     inputs);
@@ -312,7 +312,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}
         )
-        
+
         .def(
             "generate",
             [](ContinuousBatchingPipeline& pipe,
@@ -342,7 +342,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 {
                     py::gil_scoped_release rel;
                     generated_results = pipe.generate(prompts, images, generation_config, streamer);
-                }  
+                }
                 return py::cast(generated_results);
             },
             py::arg("prompts"),

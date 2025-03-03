@@ -108,7 +108,7 @@ LMSDiscreteScheduler::Config::Config(const std::filesystem::path& scheduler_conf
     read_json_param(data, "steps_offset", steps_offset);
 }
 
-LMSDiscreteScheduler::LMSDiscreteScheduler(const std::filesystem::path& scheduler_config_path) 
+LMSDiscreteScheduler::LMSDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
     : LMSDiscreteScheduler(Config(scheduler_config_path)) {
 }
 
@@ -146,7 +146,7 @@ float LMSDiscreteScheduler::get_init_noise_sigma() const {
         m_config.timestep_spacing == TimestepSpacing::TRAILING) {
         return max_sigma;
     }
- 
+
     return std::sqrt(max_sigma * max_sigma + 1);
 }
 
@@ -175,7 +175,7 @@ void LMSDiscreteScheduler::set_timesteps(size_t num_inference_steps, float stren
     }
 
     m_sigmas.push_back(0.f);
- 
+
     // initialize timesteps
     for (size_t i = 0; i < num_inference_steps; ++i) {
         int64_t timestep = _sigma_to_t(m_sigmas[i]);
@@ -208,7 +208,7 @@ std::map<std::string, ov::Tensor> LMSDiscreteScheduler::step(ov::Tensor noise_pr
                 break;
             case PredictionType::V_PREDICTION:
                 // pred_original_sample = model_output * (-sigma / (sigma**2 + 1) ** 0.5) + (sample / (sigma**2 + 1))
-                pred_latent = noise_pred.data<float>()[j] * (-sigma / std::sqrt(sigma * sigma + 1.0f) + 
+                pred_latent = noise_pred.data<float>()[j] * (-sigma / std::sqrt(sigma * sigma + 1.0f) +
                     latents.data<float>()[j] / (sigma * sigma + 1.0f));
                 break;
             default:

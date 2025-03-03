@@ -20,7 +20,7 @@ class TestSpeculativeDecodingLM:
         ],
         indirect=["convert_model", "convert_draft_model"],
     )
-    def test_sample_speculative_decoding_lm(self, convert_model, convert_draft_model, sample_args):      
+    def test_sample_speculative_decoding_lm(self, convert_model, convert_draft_model, sample_args):
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/speculative_decoding_lm.py")
         py_command = [sys.executable, py_script, convert_model, convert_draft_model, sample_args]
@@ -30,7 +30,7 @@ class TestSpeculativeDecodingLM:
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'speculative_decoding_lm')
         cpp_command =[cpp_sample, convert_model, convert_draft_model, sample_args]
         cpp_result = run_sample(cpp_command)
-        
+
         # Greedy decoding
         cpp_sample_ref = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
         cpp_command_ref = [cpp_sample_ref, convert_model, sample_args]
@@ -39,4 +39,3 @@ class TestSpeculativeDecodingLM:
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and CPP results should match"
         assert cpp_result_ref.stdout.strip() == cpp_result.stdout.strip(), "Greedy and speculative decoding results should match"
-

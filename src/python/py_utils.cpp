@@ -69,7 +69,7 @@ ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
 }
 
 ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
-    // These properties should be casted to ov::AnyMap, instead of std::map. 
+    // These properties should be casted to ov::AnyMap, instead of std::map.
     std::set<std::string> any_map_properties = {
         "GENERATE_CONFIG",
         "PREFILL_CONFIG",

@@ -55,7 +55,7 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
     # (Optional) Install (TBD) to be able to download models from Model Scope
 ```
 
-## Performing text generation 
+## Performing text generation
 <details>
 
 For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html)
@@ -331,7 +331,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Text+to+
 For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html)
 
 NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling rate and normalize)
- 
+
  ### Converting and quantizing speech-to-text model from Hugging Face library
 ```sh
 #Download and convert to OpenVINO whisper-base model
@@ -360,7 +360,7 @@ raw_speech = read_wav("sample.wav")
 print(pipe.generate(raw_speech))
 ```
 
- 
+
 ### Run generation using Whisper Pipeline API in C++
 
 NOTE: This sample is a simplified version of the full sample that is available [here](./samples/cpp/whisper_speech_recognition/whisper_speech_recognition.cpp)

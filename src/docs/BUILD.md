@@ -59,7 +59,7 @@ Follow the OpenVINO [build instructions](https://github.com/openvinotoolkit/open
 
 ### Build OpenVINO, OpenVINO Tokenizers, and OpenVINO GenAI From Source
 
-1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build).  
+1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build).
 The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throughout the document.
 2. Clone OpenVINO GenAI repository and init submodules:
     ```sh
@@ -108,7 +108,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     set OPENVINO_LIB_PATHS=<INSTALL_DIR>\bin\intel64\Release;%OPENVINO_LIB_PATHS%
     set PATH=%OPENVINO_LIB_PATHS%;%PATH%
     ```
-    
+
     Windows PowerShell:
     ```sh
     $env:OpenVINO_DIR = "<INSTALL_DIR>\runtime"
@@ -126,7 +126,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
 5. Install OpenVINO GenAI:
 
     #### Option 1 - using cmake:
-    
+
     The following command will store built OpenVINO GenAI artifacts along with OpenVINO in `<INSTALL_DIR>`:
 
     ```sh
@@ -186,12 +186,12 @@ Visit the [OpenVINO Download Page](https://www.intel.com/content/www/us/en/devel
     .<INSTALL_DIR>\setupvars.ps1
     .<INSTALL_DIR>\samples\cpp\build_samples.ps1
     ```
-GenAI samples are also built along with the entire OpenVINO GenAI using the standard building process 
+GenAI samples are also built along with the entire OpenVINO GenAI using the standard building process
 
 
 ### Build OpenVINO GenAI Wheel
 
-1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build)  
+1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build)
 The path to the openvino install directory is referred as <INSTALL_DIR> throughout the document.
 2. Clone OpenVINO GenAI repository and init submodules:
     ```sh

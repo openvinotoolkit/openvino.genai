@@ -319,11 +319,11 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_property_readonly("unet_inference_durations", [](const RawImageGenerationPerfMetrics &rw) {
             return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::unet_inference_durations);
         })
-        .def_property_readonly("transformer_inference_durations", [](const RawImageGenerationPerfMetrics &rw) { 
+        .def_property_readonly("transformer_inference_durations", [](const RawImageGenerationPerfMetrics &rw) {
             return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::transformer_inference_durations);
         })
-        .def_property_readonly("iteration_durations", [](const RawImageGenerationPerfMetrics &rw) { 
-            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::iteration_durations); 
+        .def_property_readonly("iteration_durations", [](const RawImageGenerationPerfMetrics &rw) {
+            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::iteration_durations);
         });
 
     py::class_<ImageGenerationPerfMetrics>(m, "ImageGenerationPerfMetrics", image_generation_perf_metrics_docstring)

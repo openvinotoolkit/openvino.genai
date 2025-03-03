@@ -20,7 +20,7 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     if (parsed.contains("norm_std")) {
         norm_std = parsed.at("norm_std").get<std::array<float, 3>>();
     }
-    
+
     // Setting llava config params
     if (parsed.contains("image_mean")) {
         image_mean = parsed.at("image_mean").get<std::array<float, 3>>();

@@ -339,7 +339,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt,
     std::string formatted_prompt;
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(single_images.size());
-    
+
     ov::Tensor image_newline;
 
     for (const auto& image : single_images) {

@@ -1,7 +1,7 @@
 ## Build OpenVINO™ GenAI Node.js bindings (preview)
 
 1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build).
-In this step, we need to build the OpenVINO Runtime that is required for OpenVINO GenAI. We don't need to configure any environment variables to create JS buildings here. 
+In this step, we need to build the OpenVINO Runtime that is required for OpenVINO GenAI. We don't need to configure any environment variables to create JS buildings here.
 The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throughout the document.
 
 2. Clone OpenVINO GenAI repository and init submodules:
@@ -27,7 +27,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     ```cmd
     . <INSTALL_DIR>/setupvars.ps1
     ```
-    
+
     #### Option 2 - setting environment variables manually:
 
     Linux:
@@ -51,7 +51,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     set OPENVINO_LIB_PATHS=<INSTALL_DIR>\bin\intel64\Release;%OPENVINO_LIB_PATHS%
     set PATH=%OPENVINO_LIB_PATHS%;%PATH%
     ```
-    
+
     Windows PowerShell:
     ```sh
     $env:OpenVINO_DIR = "<INSTALL_DIR>\runtime"
@@ -59,7 +59,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     $env:OPENVINO_LIB_PATHS = "<INSTALL_DIR>\bin\intel64\Release;$env:OPENVINO_LIB_PATHS"
     $env:PATH = "$env:OPENVINO_LIB_PATHS;$env:PATH"
     ```
-    
+
 
 4. Build OpenVINO GenAI Node.js bindings
     ```sh

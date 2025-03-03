@@ -200,7 +200,7 @@ EncodedResults StatefulLLMPipeline::generate(
         attention_mask = data->attention_mask;
     }
 
-    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) 
+    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
         std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(m_tokenized_chat_history));
 
     size_t real_input_ids_size = input_ids.get_shape().at(1);

@@ -33,7 +33,7 @@ jobs:
     runs-on: aks-linux-2-cores-8gb
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
-      volumes: 
+      volumes:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
 

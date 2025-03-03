@@ -41,7 +41,7 @@ public:
     InputsEmbedderQwen2VL(
         const VLMConfig& vlm_config,
         const ModelsMap& models_map,
-        const Tokenizer& tokenizer, 
+        const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap device_config);

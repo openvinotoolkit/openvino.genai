@@ -453,7 +453,7 @@ tokens = tokenizer.encode({"The Sun is yellow because", "The"}, ov::genai::pad_t
 
 // Resulting tokens tensor will be padded to 1024.
 // Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="max_length", truncation=True, max_length=1024)
-tokens = tokenizer.encode({"The Sun is yellow because", 
+tokens = tokenizer.encode({"The Sun is yellow because",
                            "The",
                            std::string(2000, 'n')}, ov::genai::pad_to_max_length(True), ov::genai::max_length(1024))
 // out_shape: [3, 1024]
@@ -481,7 +481,7 @@ print(tokens.input_ids.shape)
 
 # Resulting tokens tensor will be padded to 1024, sequences which exceed this length will be truncated.
 # Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="max_length", truncation=True, max_length=1024)
-tokens = tokenizer.encode(["The Sun is yellow because", 
+tokens = tokenizer.encode(["The Sun is yellow because",
                            "The"
                            "The longest string ever" * 2000], pad_to_max_length=True, max_length=1024)
 print(tokens.input_ids.shape)

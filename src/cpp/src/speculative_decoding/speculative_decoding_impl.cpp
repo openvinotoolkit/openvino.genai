@@ -17,7 +17,7 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
     std::string test_string = "Could you please tell me something about OpenVINO.GenAI?";
     ov::Tensor encoded_string_lhs = lhs.encode(test_string).input_ids,
                encoded_string_rhs = rhs.encode(test_string).input_ids;
-    
+
     ov::Shape shape_lhs = encoded_string_lhs.get_shape(),
               shape_rhs = encoded_string_rhs.get_shape();
 
@@ -25,7 +25,7 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
            lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
-ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, 
+ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                                              const ov::genai::ModelDesc& draft_model_desc) {
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
@@ -79,7 +79,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
     // todo: remove this condition after support of CVS-154103
     OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
-    
+
     m_tokenizer = main_model_tokenizer;
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
@@ -202,7 +202,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     const auto num_generated_tokens = m_main_pipeline->get_processed_tokens_per_iteration();
     if (num_generated_tokens > 0) {
         auto infer_duration = step_timer.get_duration_microsec();
-    
+
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_duration);
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_duration);
         raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());

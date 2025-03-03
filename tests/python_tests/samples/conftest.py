@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # - "name": the model's name or path
 # - "convert_args": a list of arguments for the conversion command
 MODELS = {
-    "LaMini-GPT-124M": { 
+    "LaMini-GPT-124M": {
         "name": "MBZUAI/LaMini-GPT-124M",
         "convert_args": []
     },
@@ -32,7 +32,7 @@ MODELS = {
     "SmolLM2-360M": {
         "name": "HuggingFaceTB/SmolLM2-360M",
         "convert_args": ['--trust-remote-code']
-    },  
+    },
     "WhisperTiny": {
         "name": "openai/whisper-tiny",
         "convert_args": ['--trust-remote-code']
@@ -66,21 +66,21 @@ SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_teardown(request, tmp_path_factory):
     """Fixture to set up and tear down the temporary directories."""
-    
+
     ov_cache = os.environ.get("OV_CACHE", tmp_path_factory.mktemp("ov_cache"))
     models_dir = os.path.join(ov_cache, "test_models")
     test_data = os.path.join(ov_cache, "test_data")
-    
+
     logger.info(f"Creating directories: {models_dir} and {test_data}")
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(test_data, exist_ok=True)
-    
+
     request.config.cache.set("OV_CACHE", str(ov_cache))
     request.config.cache.set("MODELS_DIR", str(models_dir))
     request.config.cache.set("TEST_DATA", str(test_data))
-    
+
     yield
-    
+
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(ov_cache):
             logger.info(f"Removing temporary directory: {ov_cache}")
@@ -105,17 +105,17 @@ def convert_model(request):
         logger.info(f"Converting model: {model_name}")
         command = [
             "optimum-cli", "export", "openvino",
-            "--model", model_name, 
-            "--cache_dir", model_hf_cache, 
+            "--model", model_name,
+            "--cache_dir", model_hf_cache,
             model_path
         ]
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
-            
+
     yield model_path
-    
+
     # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(model_cache):
@@ -125,9 +125,9 @@ def convert_model(request):
 @pytest.fixture(scope="session")
 def download_test_content(request):
     """Download the test content from the given URL and return the file path."""
-    
+
     test_data = request.config.cache.get("TEST_DATA", None)
-    
+
     file_url = request.param
     file_name = os.path.basename(file_url)
     file_path = os.path.join(test_data, file_name)

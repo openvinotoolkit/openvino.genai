@@ -59,7 +59,7 @@ public:
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
 
-    // finishes chat and clears a chat history 
+    // finishes chat and clears a chat history
     void finish_chat();
 
 private:
@@ -81,7 +81,7 @@ private:
         // Chat history
         ChatHistory m_history;
         // If sequence contains some symbols, which could be ambiguous encoded by tokenizer, we need to trim kv cache
-        // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
+        // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history
         // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
         ov::genai::KVCacheTrimManager m_kv_history_trim_manager = {0, 2};
         // True if chat template should be applied for non-chat scenario
@@ -92,42 +92,42 @@ private:
         KVCacheState m_kv_cache_state;
     public:
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
-    
+
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
-    
+
         EmbeddingsModel get_embedding_model() const {
             return m_embedding;
         }
-    
+
         Tokenizer get_tokenizer() const {
             return m_tokenizer;
         }
-    
+
         KVCacheState& get_kv_cache_state() {
             return m_kv_cache_state;
         }
-    
+
         size_t get_num_tokens_to_remove_from_hist() const {
             return m_kv_history_trim_manager.num_tokens_to_trim;
         }
-    
+
         void set_apply_chat_template_status(bool apply_chat_template) {
             m_apply_chat_template = apply_chat_template;
         }
-    
+
         virtual void start_chat(const std::string& system_message);
-    
+
         void update_chat_history(const std::string& decoded_results);
-    
+
         virtual void finish_chat();
-    
+
     protected:
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,
             const std::string& device,
             const ov::AnyMap device_config);
-        
+
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const ModelsMap& models_map,
@@ -135,9 +135,9 @@ private:
             const std::filesystem::path& config_dir_path,
             const std::string& device,
             const ov::AnyMap device_config);
-    
+
         ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
-    
+
         ov::Tensor update_history(const ov::Tensor& new_chat_tokens);
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);

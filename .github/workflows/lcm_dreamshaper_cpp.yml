@@ -46,7 +46,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-  
+
       - name: Build apps
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
@@ -133,10 +133,10 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-  
+
       - name: Create virtual environment
         run: python -m venv openvino_lcm_cpp
-  
+
       - name: Build apps
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
