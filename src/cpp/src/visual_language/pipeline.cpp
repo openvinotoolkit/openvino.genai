@@ -40,8 +40,6 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     bool m_is_chat_conversation = false;
     // InputsEmbedder
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
-    // Axis num in kv cache from m_language model, which contains information about history len
-    size_t m_kv_cache_seq_length_axis = 2;
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
@@ -63,7 +61,6 @@ public:
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
-        m_kv_cache_seq_length_axis = kv_pos.seq_len;
 
         // In case user provided properties per-device
         // {
@@ -93,7 +90,9 @@ public:
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
 
         m_language = compiled_language_model.create_infer_request();
-        m_kv_cache_seq_length_axis = kv_pos.seq_len;
+
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        kv_cache_state.seq_length_axis = kv_pos.seq_len;
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
         auto embedder_properties = device_propertes.empty()
@@ -186,12 +185,9 @@ public:
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         if (m_is_chat_conversation)
-            if (kv_cache_state.get_state().empty())
-                m_language.reset_state();
-            else
-                ov::genai::utils::trim_kv_cache(m_language, kv_cache_state.num_tokens_to_trim, kv_cache_state.seq_length_axis, std::nullopt);
+            utils::trim_kv_cache(m_language, kv_cache_state, std::nullopt);
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
@@ -199,7 +195,6 @@ public:
 
         size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - kv_cache_state.num_tokens_to_trim;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
-
 
         std::vector<int64_t> tokenized_history = kv_cache_state.get_state();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });

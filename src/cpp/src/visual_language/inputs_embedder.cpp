@@ -29,7 +29,6 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
     m_is_chat_conversation = true;
-    m_kv_history_trim_manager.reset();
     if (!m_kv_cache_state.get_state().empty()) {
         m_history.clear();
         m_kv_cache_state.reset_state();
@@ -40,17 +39,20 @@ void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_messa
     m_history = {{{"role", "system"}, {"content", system_message}}};
 }
 
-void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results) {
-    // Tail of chat template is missing in KV cache.
-    // Find the tail to concatenate it with the next input prompt.
-    m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
-    m_kv_history_trim_manager.reset();
+void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
+    m_kv_cache_state.num_tokens_to_trim = 0;
+    if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
+        // If chat generation process was cancelled by user, let's rollback to previous state of history
+        m_history.pop_back();
+    } else {
+        // Tail of chat template is missing in KV cache.
+        // Find the tail to concatenate it with the next input prompt.
+        m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
+    }
 }
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_is_chat_conversation = false;
-    m_kv_history_trim_manager.reset();
-
     m_history.clear();
     m_kv_cache_state.reset_state();
 }
@@ -123,7 +125,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
 ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new_chat_tokens) {
     ov::Tensor encoded_inputs;
     if (m_is_chat_conversation) {
-        ov::genai::align_kv_cache_and_history(m_kv_history_trim_manager, new_chat_tokens, m_kv_cache_state);
+        ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
         encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state).input_ids;
     } else {
         encoded_inputs = new_chat_tokens;
@@ -225,7 +227,7 @@ EmbeddingsModel InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
 }
 
-KVCacheState& InputsEmbedder::get_kv_cache_state() {
+ov::genai::utils::KVCacheState& InputsEmbedder::get_kv_cache_state() {
     return  m_impl->get_kv_cache_state();
 }
 

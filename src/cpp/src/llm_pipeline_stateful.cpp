@@ -281,11 +281,10 @@ EncodedResults StatefulLLMPipeline::generate(
                     "but you have '" + std::to_string(num_inputs) + "' inputs");
 
     if (is_chat_conversation) {
-        if (m_kv_cache_state.get_state().empty() || m_use_full_chat_history)
+        if (m_use_full_chat_history)
             reset_kv_state();
         else
-            ov::genai::utils::trim_kv_cache(m_model_runner, m_kv_cache_state.num_tokens_to_trim,
-                                            m_kv_cache_state.seq_length_axis, m_adapter_controller);
+            ov::genai::utils::trim_kv_cache(m_model_runner, m_kv_cache_state, m_adapter_controller);
     }
 
     size_t kv_cache_len = 0;
