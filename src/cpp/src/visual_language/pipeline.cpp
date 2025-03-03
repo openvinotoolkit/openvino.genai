@@ -66,8 +66,8 @@ public:
         utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
         auto language_model = compiled_language_model.get_runtime_model();
 
-        KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
-        kv_cache_state.seq_length_axis = ov::genai::utils::get_kv_axes_pos(language_model).seq_len;
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        kv_cache_state.seq_length_axis = utils::get_kv_axes_pos(language_model).seq_len;
 
         m_language = compiled_language_model.create_infer_request();
 
@@ -144,12 +144,9 @@ public:
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         if (m_is_chat_conversation)
-            if (kv_cache_state.get_state().empty())
-                m_language.reset_state();
-            else
-                ov::genai::utils::trim_kv_cache(m_language, kv_cache_state.num_tokens_to_trim, kv_cache_state.seq_length_axis, std::nullopt);
+            utils::trim_kv_cache(m_language, kv_cache_state, std::nullopt);
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
@@ -157,7 +154,6 @@ public:
 
         size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - kv_cache_state.num_tokens_to_trim;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
-
 
         std::vector<int64_t> tokenized_history = kv_cache_state.get_state();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });

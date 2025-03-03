@@ -27,7 +27,7 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
     // include reflection of tokens contained in the kv cache and amount of tokens, which are needed to trim from kv cache on the next step of chat
-    KVCacheState m_kv_cache_state;
+    utils::KVCacheState m_kv_cache_state;
 
     void reset_kv_state();
 public:
