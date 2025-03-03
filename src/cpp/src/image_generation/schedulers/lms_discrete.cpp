@@ -184,6 +184,8 @@ void LMSDiscreteScheduler::set_timesteps(size_t num_inference_steps, float stren
 }
 
 std::vector<int64_t> LMSDiscreteScheduler::get_timesteps() const {
+    OPENVINO_ASSERT(!m_timesteps.empty(), "'timesteps' have not yet been set.");
+
     return m_timesteps;
 }
 
