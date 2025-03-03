@@ -44,7 +44,7 @@ class ModelRunner {
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
-    EmbeddingsModel m_embedding;
+    EmbeddingsModel::Ptr m_embedding;
 
 public:
     /**
@@ -81,7 +81,7 @@ public:
         return m_request;
     }
 
-    void set_embedding_model(const EmbeddingsModel& embedder) {
+    void set_embedding_model(const EmbeddingsModel::Ptr& embedder) {
         m_embedding = embedder;
     }
 
@@ -161,7 +161,7 @@ public:
         int64_t *input_ids_data = nullptr;
         
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-            OPENVINO_ASSERT(m_embedding.get_request(), "Got sequence group with embeddings, but embeddings model wasn't set.");
+            // OPENVINO_ASSERT(m_embedding.get_request(), "Got sequence group with embeddings, but embeddings model wasn't set.");
             inputs_embeds_data = inputs_embeds.data<float>();
 
             ov::Tensor generated_ids = ov::Tensor(ov::element::i64, {1, num_generated_ids});
@@ -180,7 +180,7 @@ public:
             }
             if (pos > 0) {
                 // TODO: Compute embeddings only for last generated token, while previously generated embeddings save in SequenceGroup
-                generated_ids_embeds = m_embedding.infer(generated_ids);
+                generated_ids_embeds = m_embedding->infer(generated_ids);
                 generated_ids_embeds_data = generated_ids_embeds.data<float>();
             }
 

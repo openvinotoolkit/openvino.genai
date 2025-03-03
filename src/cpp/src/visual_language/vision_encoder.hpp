@@ -95,9 +95,6 @@ public:
     ProcessorConfig get_processor_config() const;
 
 protected:
-    /// @brief A model for image encoding.
-    ov::InferRequest m_vision_encoder;
-    
     /// @brief  Infer requests queue for image encoding model.
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_encoder;
 
