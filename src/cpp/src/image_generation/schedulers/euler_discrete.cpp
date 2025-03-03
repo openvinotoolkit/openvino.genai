@@ -204,6 +204,10 @@ void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float str
         // while return patched ones by 'strength' parameter
         m_timesteps = std::vector<int64_t>(m_timesteps.begin() + t_start, m_timesteps.end());
         m_begin_index = t_start;
+
+        OPENVINO_ASSERT(!m_timesteps.empty(),
+                        "After adjusting the num_inference_steps by strength parameter: ", strength,
+                        " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
     }
 }
 
@@ -266,6 +270,8 @@ std::map<std::string, ov::Tensor> EulerDiscreteScheduler::step(ov::Tensor noise_
 }
 
 std::vector<int64_t> EulerDiscreteScheduler::get_timesteps() const {
+    OPENVINO_ASSERT(!m_timesteps.empty(), "'timesteps' have not yet been set.");
+
     return m_timesteps;
 }
 

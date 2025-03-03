@@ -309,11 +309,11 @@ public:
 
             // Unset/-1 token causes exception in SentencePiece detokenization.
             if (m_pad_token_id != -1 && m_pad_token.empty())
-                m_pad_token = decode(std::vector{m_pad_token_id}, {ov::genai::add_special_tokens(true)});
+                m_pad_token = decode(std::vector{m_pad_token_id}, {ov::genai::skip_special_tokens(false)});
             if (m_bos_token_id != -1 && m_bos_token.empty())
-                m_bos_token = decode(std::vector{m_bos_token_id}, {ov::genai::add_special_tokens(true)});
+                m_bos_token = decode(std::vector{m_bos_token_id}, {ov::genai::skip_special_tokens(false)});
             if (m_eos_token_id != -1 && m_eos_token.empty())
-                m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::add_special_tokens(true)});
+                m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::skip_special_tokens(false)});
             // Initialize detokenizer's cache to save time later.
             decode({1, 33, 199, 42, 42});
         }

@@ -109,6 +109,10 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
         m_timesteps.push_back(lcm_origin_timesteps[i]);
     }
 
+    OPENVINO_ASSERT(!m_timesteps.empty(),
+                    "After adjusting the num_inference_steps by strength parameter: ", strength,
+                    " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
+
     // // v2. based on diffusers==0.23.1
     // std::vector<float> temp;
     // for(size_t i = 0; i < lcm_origin_timesteps.size(); i+=skipping_step)
@@ -202,6 +206,8 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
 }
 
 std::vector<int64_t> LCMScheduler::get_timesteps() const {
+    OPENVINO_ASSERT(!m_timesteps.empty(), "'timesteps' have not yet been set.");
+
     return m_timesteps;
 }
 

@@ -131,7 +131,7 @@ std::vector<float> FlowMatchEulerDiscreteScheduler::get_float_timesteps() {
                     "Parameter 'strength' was not yes passed to Scheduler.");
     OPENVINO_ASSERT(m_num_inference_steps != -1,
                     "Parameter 'num_inference_steps' was not yes passed to Scheduler.");
-
+    OPENVINO_ASSERT(!m_timesteps.empty(), "'timesteps' have not yet been set.");
     // For Text2Image strength is always 1.0 (guaranteed by pipeline)
     float init_timestep = std::min(static_cast<float>(m_num_inference_steps) * m_strength, static_cast<float>(m_num_inference_steps));
     size_t t_start = static_cast<size_t>(std::max(static_cast<float>(m_num_inference_steps) - init_timestep, 0.0f));
@@ -140,6 +140,10 @@ std::vector<float> FlowMatchEulerDiscreteScheduler::get_float_timesteps() {
     for (size_t i = t_start; i < m_timesteps.size(); ++i) {
         timesteps.push_back(m_timesteps[i]);
     }
+
+    OPENVINO_ASSERT(!timesteps.empty(),
+                    "After adjusting the num_inference_steps by strength parameter: ", m_strength,
+                    " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
 
     set_begin_index(t_start);
     return timesteps;

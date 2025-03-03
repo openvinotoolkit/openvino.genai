@@ -153,7 +153,7 @@ jobs:
 
   stable_diffusion_1_5_cpp-windows:
     needs: [ openvino_download_windows ]
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb-staging
     defaults:
       run:
         shell: pwsh

@@ -31,24 +31,6 @@ Tensor init_attention_mask(const Tensor& input_ids) {
     return attention_mask;
 }
 
-void print_tensor(const ov::Tensor& tensor) {
-    std::vector<int64_t> res;
-
-    auto t_shape = tensor.get_shape();
-    std::cout << "[";
-    for (size_t i = 0; i < t_shape[0]; ++i) {
-        std::cout << "|";
-        for (size_t j = 0; j < t_shape[1]; ++j) {
-            if (tensor.get_element_type() == ov::element::i64) {
-                res.emplace_back(tensor.data<int64_t>()[t_shape[1] * i + j]);
-                std::cout << tensor.data<int64_t>()[t_shape[1] * i + j] << " ";
-            }
-        }
-        std::cout << "|";
-    }
-    std::cout << "]" << std::endl;
-}
-
 /**
  * Initializes position ids based on attention mask and starting position
  */
