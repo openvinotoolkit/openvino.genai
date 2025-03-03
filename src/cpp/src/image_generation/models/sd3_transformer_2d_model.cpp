@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
-#include "image_generation/models/sd3transformer_2d_inference_dynamic.hpp"
-#include "image_generation/models/sd3transformer_2d_inference_static_bs1.hpp"
 
 #include <fstream>
 
@@ -79,23 +77,35 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size,
     height /= m_vae_scale_factor;
     width /= m_vae_scale_factor;
 
-    SD3Transformer2DModel::Inference::reshape(m_model, batch_size, height, width, tokenizer_model_max_length);
+    std::map<std::string, ov::PartialShape> name_to_shape;
+
+    for (auto&& input : m_model->inputs()) {
+        std::string input_name = input.get_any_name();
+        name_to_shape[input_name] = input.get_partial_shape();
+        if (input_name == "timestep") {
+            name_to_shape[input_name][0] = 1;
+        } else if (input_name == "hidden_states") {
+            name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
+        } else if (input_name == "encoder_hidden_states") {
+            name_to_shape[input_name][0] = batch_size;
+            name_to_shape[input_name][1] =
+                tokenizer_model_max_length *
+                2;  // x2 is necessary because of the concatenation of prompt_embeds and t5_prompt_embeds
+        } else if (input_name == "pooled_projections") {
+            name_to_shape[input_name][0] = batch_size;
+        }
+    }
+
+    m_model->reshape(name_to_shape);
 
     return *this;
 }
 
 SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-
-    if (device.find("NPU") != std::string::npos) {
-        m_impl = std::make_shared<SD3Transformer2DModel::InferenceStaticBS1>();
-    }
-    else {
-        m_impl = std::make_shared<SD3Transformer2DModel::InferenceDynamic>();
-    }
-
-    m_impl->compile(m_model, device, properties);
-
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "SD3 Transformer 2D model");
+    m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
 
@@ -103,13 +113,18 @@ SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device,
 }
 
 void SD3Transformer2DModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
-    OPENVINO_ASSERT(m_impl, "Transformer model must be compiled first");
-    m_impl->set_hidden_states(tensor_name, encoder_hidden_states);
+    OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
+    m_request.set_tensor(tensor_name, encoder_hidden_states);
 }
 
 ov::Tensor SD3Transformer2DModel::infer(const ov::Tensor latent_model_input, const ov::Tensor timestep) {
-    OPENVINO_ASSERT(m_impl, "Transformer model must be compiled first. Cannot infer non-compiled model");
-    return m_impl->infer(latent_model_input, timestep);
+    OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot infer non-compiled model");
+
+    m_request.set_tensor("hidden_states", latent_model_input);
+    m_request.set_tensor("timestep", timestep);
+    m_request.infer();
+
+    return m_request.get_output_tensor();
 }
 
 }  // namespace genai

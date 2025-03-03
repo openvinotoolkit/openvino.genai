@@ -80,16 +80,10 @@ public:
     ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep);
 
 private:
-    class Inference;
-    std::shared_ptr<Inference> m_impl;
-
     Config m_config;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
     size_t m_vae_scale_factor;
-
-    class InferenceDynamic;
-    class InferenceStaticBS1;
 };
 
 }  // namespace genai
