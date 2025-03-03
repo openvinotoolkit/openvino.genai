@@ -75,6 +75,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_create(const char* mo
                                                                   const char* device,
                                                                   ov_genai_llm_pipeline** pipe);
 
+// TODO: Add 'const ov::AnyMap& properties' as an input argument when creating ov_genai_llm_pipeline.
+
 /**
  * @brief Release the memory allocated by ov_genai_llm_pipeline.
  * @param model A pointer to the ov_genai_llm_pipeline.

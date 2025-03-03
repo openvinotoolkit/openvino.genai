@@ -132,7 +132,8 @@ ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_perf_metrics* m
 /**
  * @brief C interface for PerfMetrics& operator+=(const PerfMetrics& right)
  *
- * This function adds the PerfMetrics from 'right' to 'left' in place.
+ * This function adds the PerfMetrics from 'right' to 'left' in place. Equivalent to ov::genai::PerfMetrics&
+ * operator+=(const ov::genai::PerfMetrics&);
  *
  * @param left A pointer to the ov_genai_perf_metrics that will be updated.
  * @param right A pointer to the ov_genai_perf_metrics whose metrics will be added to 'left'.

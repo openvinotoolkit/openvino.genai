@@ -166,8 +166,6 @@ ov_status_e ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_per
     }
     return ov_status_e::OK;
 }
-
-// PerfMetrics& operator+=(const PerfMetrics& right);
 ov_status_e ov_genai_perf_metrics_add_in_place(ov_genai_perf_metrics* left, const ov_genai_perf_metrics* right) {
     if (!left || !(left->object) || !right || !(right->object)) {
         return ov_status_e::INVALID_C_PARAM;

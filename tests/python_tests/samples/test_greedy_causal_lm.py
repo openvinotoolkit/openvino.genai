@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR
 from test_utils import run_sample
 
 class TestGreedyCausalLM:
@@ -31,5 +31,11 @@ class TestGreedyCausalLM:
         cpp_command =[cpp_sample, convert_model, sample_args]
         cpp_result = run_sample(cpp_command)
 
+        # Test C sample
+        c_sample = os.path.join(SAMPLES_C_DIR, "text_generation/greedy_causal_lm_c")
+        c_command =[c_sample, convert_model, sample_args]
+        c_result = run_sample(c_command)
+
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
+        assert cpp_result.stdout == c_result.stdout, f"Results should match"
