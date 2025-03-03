@@ -144,7 +144,9 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict, pip
     cb_pipe.start_chat()
 
     generation_config = GenerationConfig(**generation_config_kwargs)
-
+    # assisted generation is not supported for beam search
+    if generation_config.is_beam_search() and pipeline_type != PipelineType.PAGED_ATTENTION:
+        return
 
     generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
 
