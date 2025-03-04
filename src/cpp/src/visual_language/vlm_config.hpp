@@ -4,11 +4,20 @@
 #pragma once
 
 #include "openvino/genai/visibility.hpp"
-#include "visual_language/vlm_model_type.hpp"
 #include <openvino/runtime/properties.hpp>
 #include <filesystem>
 
 namespace ov::genai {
+
+enum class VLMModelType {
+    MINICPM,
+    LLAVA,
+    LLAVA_NEXT,
+    INTERNVL_CHAT,
+    PHI3_V,
+    QWEN2_VL,
+};
+
 /// @brief A Configuration class passed to VLMPipeline and used to
 /// change VLMPipeline's behavior. Corresponds to config.json.
 class VLMConfig {
@@ -65,7 +74,7 @@ public:
     std::string image_pad_token = "<|image_pad|>";
     /// @brief A string token denoting end of vision embeddings for Qwen2VL model.
     std::string vision_end_token = "<|vision_end|>";
-    
+
     /// @brief Default constructor.
     VLMConfig() = default;
     /// @brief Construct VLMConfig from values in json_path.

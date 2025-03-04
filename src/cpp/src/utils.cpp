@@ -20,6 +20,72 @@
 
 #include "sampler.hpp"
 
+namespace {
+
+void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
+    if (config.count(pair.first) == 0) {
+        config.insert(pair);
+    }
+}
+
+void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
+    if (config.count(old_key) != 0) {
+        auto opt_value = ov::genai::utils::pop_option(config, old_key);
+        config[new_key] = opt_value.value();
+    }
+}
+
+template <typename T>
+std::optional<T> get_option(const ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        return std::make_optional(it->second.as<T>());
+    }
+    return std::nullopt;
+}
+
+std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& key) {
+    auto anyopt = ov::genai::utils::pop_option(config, key);
+    if (anyopt.has_value()) {
+        const auto any = anyopt.value();
+        int64_t value;
+        // NB: Integer value coming from python has int64_t datatype
+        if (any.is<int64_t>()) {
+            value = any.as<int64_t>();
+        } else if (any.is<int>()) {
+            value = any.as<int>();
+        } else {
+            OPENVINO_THROW("Failed to extract " + key + ". Type mismatch: expected types: int or int64_t");
+        }
+        if (value < 0) {
+            OPENVINO_THROW(key + " cannot be negative!");
+        }
+        return std::make_optional(static_cast<uint32_t>(value));
+    }
+    return std::nullopt;
+}
+
+void update_npu_config(ov::AnyMap& config,
+                       const std::shared_ptr<ov::Model>& model,
+                       const ov::genai::utils::KVAxesPosition& kv_pos,
+                       const ov::genai::utils::KVDesc& kv_desc) {
+    update_config(config, {"NPU_USE_NPUW", "YES"});
+    update_config(config, {"NPUW_LLM", "YES"});
+
+    update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
+    update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
+
+    update_config(config, {"NPUW_LLM_MAX_PROMPT_LEN", kv_desc.max_prompt_len});
+    update_config(config, {"NPUW_LLM_MIN_RESPONSE_LEN", kv_desc.min_response_len});
+
+    rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
+    rename_key(config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
+    rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
+}
+
+} // anonymous
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -29,24 +95,6 @@ Tensor init_attention_mask(const Tensor& input_ids) {
     auto attention_mask = ov::Tensor{input_ids.get_element_type(), shape};
     std::fill_n(attention_mask.data<int64_t>(), shape[0] * shape[1], 1);
     return attention_mask;
-}
-
-void print_tensor(const ov::Tensor& tensor) {
-    std::vector<int64_t> res;
-
-    auto t_shape = tensor.get_shape();
-    std::cout << "[";
-    for (size_t i = 0; i < t_shape[0]; ++i) {
-        std::cout << "|";
-        for (size_t j = 0; j < t_shape[1]; ++j) {
-            if (tensor.get_element_type() == ov::element::i64) {
-                res.emplace_back(tensor.data<int64_t>()[t_shape[1] * i + j]);
-                std::cout << tensor.data<int64_t>()[t_shape[1] * i + j] << " ";
-            }
-        }
-        std::cout << "|";
-    }
-    std::cout << "]" << std::endl;
 }
 
 /**
@@ -288,7 +336,7 @@ ov::Core singleton_core() {
     return core;
 }
 
-size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens) {
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history) {
     size_t idx = 0;
     auto encoded_history_data = encoded_history.data<int64_t>();
     while(idx < encoded_history.get_size() && idx < tokenized_history.size()) {
@@ -297,12 +345,7 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
         idx++;
     }
 
-    // encoded_history after decode of tokenizer could lose one last token (eos/stop token)
-    if ((idx == tokenized_history.size() && idx == encoded_history.get_size()) ||
-        (encoded_history.get_size() < tokenized_history.size() && idx == tokenized_history.size() - 1 && stop_tokens.find(tokenized_history.back()) != stop_tokens.end()))
-        return SIZE_MAX;
-    else
-        return idx;
+    return idx;
 }
 
 KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
@@ -343,6 +386,9 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
         return;
 
     auto states = request.query_state();
+    
+    OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");
+
     for (auto& state : states) {
         if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
             continue;
@@ -408,6 +454,99 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
     }
 }
+
+std::pair<ov::CompiledModel, KVDesc>
+compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
+                        const ov::AnyMap& config,
+                        const KVAxesPosition& kv_pos,
+                        const std::filesystem::path& model_path) {
+    ov::CompiledModel compiled;
+    ov::AnyMap properties = config;
+    KVDesc kv_desc;
+
+    auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+    const auto export_blob = pop_or_default(properties, "EXPORT_BLOB", false);
+    const bool do_import = (!blob_path.empty() && !export_blob);
+
+    if (do_import) {
+        if (!std::filesystem::exists(blob_path)) {
+            OPENVINO_THROW("Blob file is not found at: " + blob_path);
+        }
+        std::ifstream fin(blob_path, std::ios::in | std::ios::binary);
+        if (!fin.is_open()) {
+            OPENVINO_THROW("Blob file can't be opened: " + blob_path);
+        }
+        compiled = ov::genai::utils::singleton_core().import_model(fin, "NPU", config);
+        kv_desc.max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+        kv_desc.min_response_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
+    } else {
+        kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
+        kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+        update_npu_config(properties, model, kv_pos, kv_desc);
+        auto cache_mode = get_option<CacheMode>(config, ov::cache_mode.name());
+        // NB: Select OPTIMIZE_SPEED with model_path isn't provided
+        if ((cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SPEED)) {
+            compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
+        } else if (model_path.empty()) {
+            // Set config to OPTIMIZE_SPEED
+            properties[ov::cache_mode.name()] = CacheMode::OPTIMIZE_SPEED;
+            compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
+        } else {
+            compiled = ov::genai::utils::singleton_core().compile_model(model_path / "openvino_model.xml", "NPU", properties);
+        }
+        // Also export compiled model if required
+        if (export_blob) {
+            if (blob_path.empty()) {
+                blob_path = "openvino_model.blob";
+            }
+            // Check the path is full
+            const int EXT_SIZE = 5; // ".blob"
+            if (blob_path.size() < EXT_SIZE) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            if (strncmp(".blob", &blob_path[blob_path.size() - EXT_SIZE], EXT_SIZE) != 0) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            std::ofstream fout(blob_path, std::ios::out | std::ios::binary);
+            if (!fout.is_open()) {
+                OPENVINO_THROW("Blob file can't be exported to: " + blob_path);
+            }
+            compiled.export_model(fout);
+        }
+    }
+    return { compiled, kv_desc };
+}
+
+std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        std::optional<ov::Any> found = std::make_optional(it->second);
+        config.erase(it);
+        return found;
+    }
+    return std::nullopt;
+}
+
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
+    auto it = models_map.find(key);
+    if (it != models_map.end()) {
+        return it->second;
+    }
+    OPENVINO_THROW("Model with key '", key, "' not found in models map.");
+}
+
+std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
+    ov::AnyMap plugin_config = properties;
+    auto it = plugin_config.find(ov::genai::scheduler_config.name());
+    SchedulerConfig scheduler_config;
+    if (it != plugin_config.end()) {
+        scheduler_config = it->second.as<SchedulerConfig>();
+        plugin_config.erase(it);
+    } else if (default_config.has_value()) {
+        scheduler_config = *default_config;
+    }
+    return {plugin_config, scheduler_config};
+};
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

@@ -309,11 +309,11 @@ public:
 
             // Unset/-1 token causes exception in SentencePiece detokenization.
             if (m_pad_token_id != -1 && m_pad_token.empty())
-                m_pad_token = decode(std::vector{m_pad_token_id}, {ov::genai::add_special_tokens(true)});
+                m_pad_token = decode(std::vector{m_pad_token_id}, {ov::genai::skip_special_tokens(false)});
             if (m_bos_token_id != -1 && m_bos_token.empty())
-                m_bos_token = decode(std::vector{m_bos_token_id}, {ov::genai::add_special_tokens(true)});
+                m_bos_token = decode(std::vector{m_bos_token_id}, {ov::genai::skip_special_tokens(false)});
             if (m_eos_token_id != -1 && m_eos_token.empty())
-                m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::add_special_tokens(true)});
+                m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::skip_special_tokens(false)});
             // Initialize detokenizer's cache to save time later.
             decode({1, 33, 199, 42, 42});
         }
@@ -618,9 +618,9 @@ Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyM
 
 Tokenizer::Tokenizer(
     const std::string& tokenizer_model_str,
-    ov::Tensor& tokenizer_weights_tensor,
-    std::string& detokenizer_model_str,
-    ov::Tensor&  detokenizer_weights_tensor,
+    const ov::Tensor& tokenizer_weights_tensor,
+    const std::string& detokenizer_model_str,
+    const ov::Tensor&  detokenizer_weights_tensor,
     const ov::AnyMap& properties
 ) {
     ScopedVar env_manager(tokenizers_relative_to_genai());

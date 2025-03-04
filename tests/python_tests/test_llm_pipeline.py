@@ -13,12 +13,10 @@ from typing import Tuple, List, Dict
 import openvino as ov
 import openvino_genai as ov_genai
 
-from common import run_llm_pipeline_with_ref
-
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model
 from utils.tokenizers import delete_rt_info, model_tmp_path
-from utils.ov_genai_pipelines import create_ov_pipeline
+from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare
 from data.models import get_models_list, get_chat_models_list
 
 #
@@ -34,7 +32,7 @@ test_cases = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_string_inputs(model_id, generation_config_dict, prompt):
-    run_llm_pipeline_with_ref(model_id=model_id, prompts=[prompt], generation_config=generation_config_dict)
+    generate_and_compare(model=model_id, prompts=[prompt], generation_config=generation_config_dict)
 
 
 input_tensors_list = [
@@ -87,7 +85,7 @@ batched_prompts = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_string_inputs(model_id, generation_config_dict, prompts):
-    run_llm_pipeline_with_ref(model_id=model_id, prompts=prompts, generation_config=generation_config_dict)
+    generate_and_compare(model=model_id, prompts=prompts, generation_config=generation_config_dict)
 
 
 @pytest.mark.precommit

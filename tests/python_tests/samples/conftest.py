@@ -4,6 +4,7 @@ import pytest
 import shutil
 import logging
 import gc
+import requests
 
 from utils.network import retry_request
 
@@ -16,8 +17,8 @@ logger = logging.getLogger(__name__)
 # - "name": the model's name or path
 # - "convert_args": a list of arguments for the conversion command
 MODELS = {
-    "LaMini-GPT-124M": { 
-        "name": "MBZUAI/LaMini-GPT-124M",
+    "TinyLlama-1.1B-Chat-v1.0": { 
+        "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         "convert_args": []
     },
     "SmolLM-135M": {
@@ -26,6 +27,10 @@ MODELS = {
     },
     "SmolLM2-135M": {
         "name": "HuggingFaceTB/SmolLM2-135M",
+        "convert_args": ['--trust-remote-code']
+    },
+    "SmolLM2-360M": {
+        "name": "HuggingFaceTB/SmolLM2-360M",
         "convert_args": ['--trust-remote-code']
     },  
     "WhisperTiny": {
@@ -83,6 +88,7 @@ def setup_and_teardown(request, tmp_path_factory):
         else:
             logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
 
+
 @pytest.fixture(scope="session")
 def convert_model(request):
     """Fixture to convert the model once for the session."""
@@ -127,11 +133,11 @@ def download_test_content(request):
     file_path = os.path.join(test_data, file_name)
     if not os.path.exists(file_path):
         logger.info(f"Downloading test content from {file_url}...")
-        result = subprocess.run(
-            ["wget", file_url, "-O", file_path],
-            check=True
-        )
-        assert result.returncode == 0, "Failed to download test content"
+        response = requests.get(file_url, stream=True)
+        response.raise_for_status()
+        with open(file_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
         logger.info(f"Downloaded test content to {file_path}")
     else:
         logger.info(f"Test content already exists at {file_path}")
