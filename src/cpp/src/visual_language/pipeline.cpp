@@ -56,16 +56,16 @@ public:
             utils::from_config_json_if_exists<GenerationConfig>(
                 models_dir, "generation_config.json"
             )
-        },
-        m_is_chat_conversation{false} {
+        } {
         m_is_npu = device.find("NPU") != std::string::npos;
+
         auto properties_copy = properties;
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
         m_kv_cache_seq_length_axis = kv_pos.seq_len;
 
-        // User provided properties in the following format:
+        // In case user provided properties per-device
         // {
         //     ov::device::properties("NPU", ...),
         //     ov::device::properties("CPU", ...)
@@ -73,7 +73,7 @@ public:
         auto device_propertes = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
         );
-        // Otherwise, the same properties are used for all models
+        // Otherwise, the same properties are used for all models and devices
         auto lm_properties = device_propertes.empty()
             ? properties_copy
             : utils::pop_or_default<ov::AnyMap>(device_propertes, device, {});
@@ -171,6 +171,14 @@ public:
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
+
+        if (m_is_npu) {
+            OPENVINO_ASSERT(rgbs.size() == 1u, "Currently only batch size equal to 1 is supported for NPU device!");
+            OPENVINO_ASSERT(generation_config.is_greedy_decoding() || generation_config.is_multinomial(),
+                "Currently only greedy and multinomial decoding are supported for NPU device!");
+            OPENVINO_ASSERT(generation_config.num_return_sequences == 1u,
+                "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
+        }
 
         m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
 
