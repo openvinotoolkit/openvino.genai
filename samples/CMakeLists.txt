@@ -6,6 +6,7 @@ add_subdirectory(cpp/text_generation)
 add_subdirectory(cpp/image_generation)
 add_subdirectory(cpp/visual_language_chat)
 add_subdirectory(cpp/whisper_speech_recognition)
+add_subdirectory(c/text_generation)
 
 install(FILES
         deployment-requirements.txt
@@ -28,3 +29,7 @@ install(DIRECTORY
             python/whisper_speech_recognition
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
+
+install(DIRECTORY
+        c/text_generation
+        DESTINATION samples/c COMPONENT cpp_samples_genai)
