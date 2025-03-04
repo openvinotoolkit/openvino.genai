@@ -163,8 +163,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         filtered_properties.fork().erase("sampler_num_threads");   // do not use iterator sampler_num_threads_it because a forked container may not be the same container
     }
 
-    // TODO: remove once plugin automatically set KV cache precisions
-    apply_kv_cache_precision(model, device, *filtered_properties);
+    // TODO: remove once GPU plugin automatically set KV cache precisions
+    if (device.find("GPU") != std::string::npos) {
+        apply_kv_cache_precision(model, device, *filtered_properties);
+    }
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
 
