@@ -263,7 +263,7 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
-        OPENVINO_ASSERT(!m_is_npu && "start_chat() isn't supported in VLMPipeline for NPU device");
+        OPENVINO_ASSERT(!m_is_npu, "start_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = true;
         bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
         if (have_state) {
