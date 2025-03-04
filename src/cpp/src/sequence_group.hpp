@@ -699,7 +699,7 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
-    size_t get_max_new_tokens() {
+    size_t get_max_new_tokens() const {
         return m_sampling_params.get_max_new_tokens(get_prompt_len());
     }
 };

@@ -260,7 +260,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         const size_t num_processed_tokens = request->get_num_processed_tokens(),
                      prompt_len = request->get_prompt_len(),
                      updated_context_len = min_candidate_len + prompt_len,
-                     max_new_tokens = request->get_max_new_tokens();;
+                     max_new_tokens = request->get_max_new_tokens();
         size_t generated_len = request->get_context_len() >= request->get_prompt_len() ? request->get_context_len() - request->get_prompt_len() + 1 : 0;
         if (generated_len > 0 && result.removed_tokens_cnt > 0) {
             request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1);
