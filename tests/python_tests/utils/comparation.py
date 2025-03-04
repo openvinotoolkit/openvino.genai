@@ -36,3 +36,18 @@ def compare_generation_results(prompts: List[str],
     for prompt, ref_result, ov_result, generation_config in zip(prompts, hf_results, ov_results, generation_configs):
         print(f"Prompt = {prompt}\nReference result = {ref_result}\nOpenVINO result = {ov_result.m_generation_ids}")
         compare_generation_result(ref_result, ov_result, generation_config)
+
+
+# TODO: remove this function after Generator property is supported by LLMPipeline / VLMPipeline
+def compare_generation_results_vs_ref(prompts: List[str],  
+                                      ref: List[List[str]],
+                                      ov_results: List[GenerationResult]):
+    assert len(prompts) == len(ref)
+    assert len(prompts) == len(ov_results)
+
+    for prompt, ref_texts_for_this_prompt, ov_result in zip(prompts, ref, ov_results):
+        print(f"Prompt = {prompt}\nref text = {ref_texts_for_this_prompt}\nOV result = {ov_result.m_generation_ids}")
+
+        assert len(ref_texts_for_this_prompt) == len(ov_result.m_generation_ids)
+        for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
+            assert ref_text == ov_text

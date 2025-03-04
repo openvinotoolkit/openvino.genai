@@ -194,10 +194,9 @@ scheduler_params_list = [
                          ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy_seq_len_300())]
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
-def test_dynamic_memory_allocation(tmp_path, params):
+def test_dynamic_memory_allocation(params):
     prompts, _ = get_test_dataset()
     generate_and_compare(prompts=prompts,
-                         tmp_path=tmp_path,
                          model="facebook/opt-125m",
                          scheduler_config=params[0],
                          generation_config=params[1],
