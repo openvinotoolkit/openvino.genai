@@ -27,6 +27,14 @@ using ov::genai::MicroSeconds;
 
 namespace {
 
+void print_stat(std::string name, std::vector<float> values) {
+    std::cout << name << " [" << values.size() << "] [";
+    for (auto value : values) {
+        std::cout << value << ", ";
+    }
+    std::cout << "]" << std::endl;
+}
+
 void process_whisper_logits(ov::Tensor logits,
                             const ov::genai::WhisperGenerationConfig& config,
                             const bool return_timestamps,
@@ -101,9 +109,20 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     sampler.sample({sequence_group}, logits);
     stream_generated_tokens();
 
+    std::vector<float> full_cycle_durations;
+    std::vector<float> process_whisper_logits_durations;
+    std::vector<float> sampler_durations;
+    std::vector<float> infer_durations;
+    std::vector<float> request_preparation_durations;
     // "Generation" phase
     while (!sequence_group->has_finished() && !sequence_group->handle_stopped() &&
            !sequence_group->handle_cancelled()) {
+        ManualTimer cycle_t("[generation cycle]: cycle duration");
+        cycle_t.start();
+
+        ManualTimer request_t("[generation cycle]: request preparation duration");
+        request_t.start();
+
         std::map<size_t, std::vector<int64_t>> batch_to_generated_ids{};
 
         sequence_group->schedule_tokens(1);
@@ -142,6 +161,12 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
             batch_to_generated_ids[next_beams.size() - 1] = sequence->get_generated_ids();
         }
 
+        request_t.end();
+        request_preparation_durations.push_back(request_t.get_duration_microsec());
+
+        ManualTimer infer_t("[generation cycle]: infer duration");
+        infer_t.start();
+
         const auto infer_start = std::chrono::steady_clock::now();
 
         decoder->start_async(encoder_hidden_state,
@@ -159,10 +184,31 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         raw_metrics.m_new_token_times.emplace_back(infer_end);
         raw_metrics.m_batch_sizes.emplace_back(batch_size);
 
-        process_whisper_logits(logits, config, return_timestamps, batch_to_generated_ids);
+        infer_t.end();
+        infer_durations.push_back(infer_t.get_duration_microsec());
 
+        ManualTimer process_whisper_logits_t("[generation cycle]: process_whisper_logits duration");
+        process_whisper_logits_t.start();
+        process_whisper_logits(logits, config, return_timestamps, batch_to_generated_ids);
+        process_whisper_logits_t.end();
+        process_whisper_logits_durations.push_back(process_whisper_logits_t.get_duration_microsec());
+
+        ManualTimer sampler_t("[generation cycle]: sampler.sample duration");
+        sampler_t.start();
         sampler.sample({sequence_group}, logits);
+        sampler_t.end();
+        sampler_durations.push_back(sampler_t.get_duration_microsec());
+
+        cycle_t.end();
+        full_cycle_durations.push_back(cycle_t.get_duration_microsec());
     }
+
+    std::cout << "Whisper generation cycle stats: " << std::endl;
+    print_stat("[generation cycle]: cycle duration", full_cycle_durations);
+    print_stat("[generation cycle]: request preparation duration", request_preparation_durations);
+    print_stat("[generation cycle]: infer duration", infer_durations);
+    print_stat("[generation cycle]: process_whisper_logits duration", process_whisper_logits_durations);
+    print_stat("[generation cycle]: sampler.sample duration", sampler_durations);
 
     stream_generated_tokens();
 
