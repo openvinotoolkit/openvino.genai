@@ -492,7 +492,7 @@ compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
             properties[ov::cache_mode.name()] = CacheMode::OPTIMIZE_SPEED;
             compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
         } else {
-            compiled = ov::genai::utils::singleton_core().compile_model(model_path / "openvino_model.xml", "NPU", properties);
+            compiled = ov::genai::utils::singleton_core().compile_model(model_path, "NPU", properties);
         }
         // Also export compiled model if required
         if (export_blob) {

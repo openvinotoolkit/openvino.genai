@@ -116,7 +116,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
 ) : LLMPipelineImplBase(tokenizer, generation_config),
     m_sampler(m_tokenizer) {
     auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
-    auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model, properties, kv_pos, models_path);
+    auto [compiled, kv_desc] = utils::compile_decoder_for_npu(
+        model, properties, kv_pos, models_path / "openvino_model.xml"
+    );
     m_max_prompt_len = kv_desc.max_prompt_len;
     m_kvcache_total = kv_desc.max_prompt_len + kv_desc.min_response_len;
     m_request = compiled.create_infer_request();

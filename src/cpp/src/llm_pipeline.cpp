@@ -118,7 +118,6 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& user_properties) {
     auto start_time = std::chrono::steady_clock::now();
-
     auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues

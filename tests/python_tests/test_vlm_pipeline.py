@@ -92,7 +92,7 @@ def test_vlm_pipeline(model_id, cache):
         images = []
         for link in links:
             images.append(get_image_by_link(link))
-        
+
         result_from_streamer = []
         res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
         assert res.texts[0] == ''.join(result_from_streamer)
@@ -328,3 +328,30 @@ def test_perf_metrics(cache):
     mean_dur, std_dur = perf_metrics.get_prepare_embeddings_duration()
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", model_ids)
+def test_vlm_cpu_vs_npuw_cpu(model_id, cache):
+    models_path = get_ov_model(model_ids[0], cache)
+    npu_properties = {
+       "DEVICE_PROPERTIES":
+       {
+           "NPU": { "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE" }
+       }
+    }
+    npu_pipe = VLMPipeline(models_path, "NPU", config=npu_properties)
+    cpu_pipe = VLMPipeline(models_path, "CPU")
+
+    generation_config = cpu_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(cpu_pipe.get_tokenizer().get_eos_token_id())
+
+    for link in image_links_for_testing[2]:
+        image = get_image_by_link(link)
+
+        ref_out = cpu_pipe.generate(prompts[0], images=[image], generation_config=generation_config)
+        actual_out = npu_pipe.generate(prompts[0], images=[image], generation_config=generation_config)
+
+        assert ref_out.texts[0] == actual_out.texts[0]

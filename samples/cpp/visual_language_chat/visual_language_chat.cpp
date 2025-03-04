@@ -16,7 +16,9 @@ int main(int argc, char* argv[]) try {
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
-    std::string device = "CPU";  // GPU can be used as well
+    // GPU and NPU can be used as well.
+    // Note: If NPU selected, only language model will be run on NPU
+    std::string device = "CPU";
     ov::AnyMap enable_compile_cache;
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
