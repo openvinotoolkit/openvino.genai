@@ -1073,7 +1073,7 @@ public:
         // When add_request() is executed in multiple threads accessing to cached_blocks causes segfault.
         // The mutex is needed to prevent such segfaults.
         const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
-        auto prompt_ids = group->get_prompt_ids();
+        auto prompt_len = group->get_prompt_len();
         auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
         auto sequence = sequences[0];
@@ -1085,11 +1085,11 @@ public:
         auto& block_table = m_block_table[seq_id];
 
         size_t content_len = 0;
-        while (content_len < prompt_ids.size()) {
+        while (content_len < prompt_len) {
             size_t prev_iteration_content_len = content_len;
             content_len += m_block_size;
-            if (content_len > prompt_ids.size()) {
-                content_len = prompt_ids.size();
+            if (content_len > prompt_len) {
+                content_len = prompt_len;
             }
             // restore fully filled blocks
             auto full_block_hash = sequence->get_hash(content_len);
@@ -1101,11 +1101,11 @@ public:
                     block->set_timestamp(timestamp);
                     block_table[layer_idx].push_back(block);
                 }
-                group->update_processed_tokens_num(content_len == prompt_ids.size() ? content_len - 1 : content_len);
+                group->update_processed_tokens_num(content_len == prompt_len ? content_len - 1 : content_len);
             } else {
             // restore partially filled block
                 for (size_t i = 1; i < m_block_size; i++) {
-                    if (prev_iteration_content_len + i > prompt_ids.size()) {
+                    if (prev_iteration_content_len + i > prompt_len) {
                         break;
                     }
                     auto hash = sequence->get_hash(prev_iteration_content_len + i);
@@ -1118,8 +1118,7 @@ public:
                             block->set_timestamp(timestamp);
                             block_table[layer_idx].push_back(block);
                         }
-
-                        group->update_processed_tokens_num(prev_iteration_content_len + i == prompt_ids.size() ? prev_iteration_content_len + i - 1 : prev_iteration_content_len + i);
+                        group->update_processed_tokens_num(prev_iteration_content_len + i == prompt_len ? prev_iteration_content_len + i - 1 : prev_iteration_content_len + i);
 
                         break;
                     }
