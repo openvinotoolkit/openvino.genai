@@ -435,22 +435,26 @@ jobs:
           - name: 'LLM'
             marker: 'llm'
             cmd: 'tests/python_tests/samples'
+            runner: 'aks-win-4-cores-8gb'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
+            runner: 'aks-win-4-cores-8gb'
           - name: 'Image generation'
             marker: 'image_generation'
             cmd: 'tests/python_tests/samples'
+            runner: 'aks-win-8-cores-16gb'
     needs: [ openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples ]
     timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: ${{ matrix.test.runner }}
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      HF_HOME: /mount/caches/huggingface
 
     steps:
       - name: Clone openvino.genai
