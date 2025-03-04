@@ -123,7 +123,7 @@ public:
     ) :
         m_generation_config{generation_config} {
         m_is_npu = device.find("NPU") != std::string::npos;
-        OPENVINO_ASSERT(m_is_npu &&
+        OPENVINO_ASSERT(m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
@@ -263,7 +263,7 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
-        OPENVINO_ASSERT(!m_is_npu && "start_chat() isn't supported in VLMPipeline for NPU device");
+        OPENVINO_ASSERT(!m_is_npu, "start_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = true;
         bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
         if (have_state) {
@@ -276,7 +276,7 @@ public:
     }
 
     void finish_chat() override {
-        OPENVINO_ASSERT(!m_is_npu && "finish_chat() isn't supported in VLMPipeline for NPU device");
+        OPENVINO_ASSERT(!m_is_npu, "finish_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = false;
         // Resetting state may be slow.
         m_language.reset_state();
