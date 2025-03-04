@@ -276,7 +276,7 @@ public:
     }
 
     void finish_chat() override {
-        OPENVINO_ASSERT(!m_is_npu && "finish_chat() isn't supported in VLMPipeline for NPU device");
+        OPENVINO_ASSERT(!m_is_npu, "finish_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = false;
         // Resetting state may be slow.
         m_language.reset_state();
