@@ -7,7 +7,7 @@
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
-#include "../circular_buffer_queue.hpp"
+#include "circular_buffer_queue.hpp"
 
 namespace ov::genai {
 /// @brief A pair describing image size.
