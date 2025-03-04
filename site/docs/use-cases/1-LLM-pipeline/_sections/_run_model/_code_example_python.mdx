@@ -1,0 +1,9 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import openvino_genai as ov_genai
+
+pipe = ov_genai.LLMPipeline(model_path, "${props.device || 'CPU'}")
+print(pipe.generate("What is OpenVINO?", max_new_tokens=100))
+`}
+</CodeBlock>

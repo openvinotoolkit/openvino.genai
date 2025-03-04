@@ -1,0 +1,76 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+@import './typography.css';
+@import './navbar.css';
+@import './menu.css';
+@import './footer.css';
+@import './toc.css';
+
+:root {
+  --black: #000000;
+  --intel-blue: #0095ca;
+  --ifm-color-primary: #2e8555;
+  --ifm-color-primary-dark: #29784c;
+  --ifm-color-primary-darker: #277148;
+  --ifm-color-primary-darkest: #205d3b;
+  --ifm-color-primary-light: #33925d;
+  --ifm-color-primary-lighter: #359962;
+  --ifm-color-primary-lightest: #3cad6e;
+
+  --ifm-code-font-size: 95%;
+
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+
+  --genai-color-blue-energy: #6ddcff;
+  --genai-color-classic-blue: #0054ae;
+  --genai-color-darker-classic-blue: #034891ff;
+  --genai-color-text-primary: #2b2c30;
+  --genai-color-text-secondary: #6a6d75;
+  --genai-color-text-white: #fff;
+  --genai-color-text-black: #000;
+  --genai-text-color-white-hover: rgba(255, 255, 255, 0.7);
+  --genai-text-color-active: #fff;
+
+  --ifm-menu-color-active: var(--genai-color-text-primary);
+
+  --ifm-color-primary: var(--genai-color-classic-blue);
+  --ifm-color-primary-dark: var(--genai-color-darker-classic-blue);
+  --ifm-color-primary-darker: var(--genai-color-darker-classic-blue);
+
+  --ifm-menu-color-background-active: #f5f5f5;
+  --ifm-breadcrumb-item-background-active: transparent;
+  --ifm-breadcrumb-color-active: var(--genai-color-classic-blue);
+  --ifm-footer-link-hover-color: var(--genai-text-color-white-hover);
+  --ifm-tabs-color-active: var(--genai-color-classic-blue);
+
+  --genai-color-white: #fff;
+  --genai-color-section-bg: #f8f8f8;
+
+  --ifm-link-color: var(--genai-color-classic-blue);
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #25c2a0;
+  --ifm-color-primary-dark: #21af90;
+  --ifm-color-primary-darker: #1fa588;
+  --ifm-color-primary-darkest: #1a8870;
+  --ifm-color-primary-light: #29d5b0;
+  --ifm-color-primary-lighter: #32d8b4;
+  --ifm-color-primary-lightest: #4fddbf;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+body {
+  background-color: var(--genai-color-white);
+  font-family: var(--genai-font-family);
+}
+
+.theme-back-to-top-button {
+  background-color: var(--genai-color-blue-energy) !important;
+}
