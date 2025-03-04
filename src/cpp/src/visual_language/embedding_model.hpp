@@ -61,6 +61,10 @@ public:
         return std::make_shared<EmbeddingsModel>(model, weights, scale_emb, device, properties);
     }
 
+    bool is_initialized() const {
+        return m_embeddings_requests_queue != nullptr;
+    }
+
     ov::Tensor infer(const ov::Tensor& input_idx, bool return_remote_tensor=false);
 private:
     void merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const;

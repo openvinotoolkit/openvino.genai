@@ -51,7 +51,7 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
 
     ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
-    m_embeddings_requests_queue = std::move(init(compiled_model));
+    m_embeddings_requests_queue = init(compiled_model);
 }
 
 EmbeddingsModel::EmbeddingsModel(const std::string& model,
@@ -65,13 +65,14 @@ EmbeddingsModel::EmbeddingsModel(const std::string& model,
     merge_postprocess(m_model, scale_emb);
 
     ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
-    m_embeddings_requests_queue = std::move(init(compiled_model));
+    m_embeddings_requests_queue = init(compiled_model);
 }
 
 ov::Tensor EmbeddingsModel::infer(const ov::Tensor& input_idx, bool return_remote_tensor) {
+    OPENVINO_ASSERT(is_initialized(), "Embeddings model wasn't set yet");
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(this->m_embeddings_requests_queue.get());
-    // OPENVINO_ASSERT(m_request, "Text embeddings decoder model must be compiled first. Cannot infer non-compiled model");
     EmbeddingsRequest& req = embeddings_request_guard.get();
+    OPENVINO_ASSERT(req.ireq, "Text embeddings decoder model must be compiled first. Cannot infer non-compiled model");
     req.ireq.set_input_tensor(input_idx);
     if (return_remote_tensor) {
         req.ireq.set_output_tensor(req.remote_tensor);
