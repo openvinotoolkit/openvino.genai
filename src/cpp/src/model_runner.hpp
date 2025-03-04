@@ -323,6 +323,7 @@ public:
         {
             static ManualTimer timer("pure generate inference");
             timer.start();
+            // nop
             m_request.infer();
             timer.end();
         }
