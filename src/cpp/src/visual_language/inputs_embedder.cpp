@@ -39,11 +39,12 @@ void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_messa
     m_history = {{{"role", "system"}, {"content", system_message}}};
 }
 
-void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
+void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status, size_t processed_tokens_amount) {
     m_kv_cache_state.num_tokens_to_trim = 0;
     if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
         // If chat generation process was cancelled by user, let's rollback to previous state of history
         m_history.pop_back();
+        m_kv_cache_state.num_tokens_to_trim = processed_tokens_amount;
     } else {
         // Tail of chat template is missing in KV cache.
         // Find the tail to concatenate it with the next input prompt.
@@ -239,8 +240,8 @@ void InputsEmbedder::start_chat(const std::string& system_message) {
     return m_impl->start_chat(system_message);
 }
 
-void InputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
-    return m_impl->update_chat_history(decoded_results, generation_finish_status);
+void InputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status, size_t processed_tokens_amount) {
+    return m_impl->update_chat_history(decoded_results, generation_finish_status, processed_tokens_amount);
 }
 
 void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {

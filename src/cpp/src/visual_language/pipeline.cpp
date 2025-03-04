@@ -236,7 +236,7 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation)
-            m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
+            m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status, m_language.get_tensor("attention_mask").get_shape().at(1) - history_size);
         else
             kv_cache_state.reset_state();
 
