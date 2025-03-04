@@ -9,7 +9,9 @@ from optimum.intel.openvino import (
     OVModelForSeq2SeqLM,
     OVDiffusionPipeline,
     OVModelForSpeechSeq2Seq,
-    OVModelForVisualCausalLM
+    OVModelForVisualCausalLM,
+    OVPipelineForInpainting,
+    OVPipelineForImage2Image
 )
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 
@@ -22,6 +24,10 @@ TOKENIZE_CLASSES_MAPPING = {
 }
 
 IMAGE_GEN_CLS = OVDiffusionPipeline
+
+INPAINTING_IMAGE_GEN_CLS = OVPipelineForInpainting
+
+IMAGE_TO_IMAGE_GEN_CLS = OVPipelineForImage2Image
 
 OV_MODEL_CLASSES_MAPPING = {
     'decoder': OVModelForCausalLM,
@@ -121,4 +127,10 @@ DEFAULT_MODEL_CLASSES = {
     'code_gen': 'decoder',
     'ldm_super_resolution': 'ldm_super_resolution',
     "vlm": "vlm"
+}
+
+TASK = {
+    "img2img": "image-to-image",
+    "text2img": "text-to-image",
+    "inpainting": "inpainting"
 }
