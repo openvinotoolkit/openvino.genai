@@ -1,0 +1,2 @@
+{"steps":"30", "width":"256", "height":"256", "guidance_scale":"0.8", "prompt": "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k", "media": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png"}
+{"prompt": "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k", "media": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png"}

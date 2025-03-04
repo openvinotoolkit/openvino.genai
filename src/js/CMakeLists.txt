@@ -85,6 +85,10 @@ if(LINUX)
 elseif(APPLE)
     # to find libopenvino_genai.dylib in the same folder
     set(rpaths "@loader_path")
+    # to find libopenvino.dylib when installing from npm
+    list(APPEND rpaths "@loader_path/../../openvino-node/bin")
+    # to find libopenvino.dylib when installing from source
+    list(APPEND rpaths "@loader_path/../node_modules/openvino-node/bin")
 endif()
 
 if(rpaths)

@@ -29,6 +29,7 @@ jobs:
       ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
       ov_wheel_source: ${{ steps.openvino_download.outputs.ov_wheel_source }}
       ov_version: ${{ steps.openvino_download.outputs.ov_version }}
+      ov_latest_artifact_name: ${{ steps.openvino_latest_download.outputs.ov_artifact_name }}
     timeout-minutes: 10
     defaults:
       run:
@@ -47,6 +48,13 @@ jobs:
         platform: macos_12_6
         commit_packages_to_provide: wheels
         revision: latest_nightly
+    
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
+      id: openvino_latest_download
+      with:
+        platform: macos_12_6
+        commit_packages_to_provide: openvino_js_package.tar.gz
+        revision: latest_available_commit
         
   genai_build_cmake:
     name: Build cpack - ${{ matrix.build-type }}
@@ -268,7 +276,61 @@ jobs:
           name: genai_samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
-        
+
+  genai_build_nodejs:
+    name: Build Node.js bindings
+    strategy:
+      fail-fast: false
+      matrix:
+        build-type: [Release]
+    needs: [ openvino_download ]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    runs-on: macos-13
+
+    env:
+      SRC_DIR: ${{ github.workspace }}/openvino.genai
+      BUILD_DIR: ${{ github.workspace }}/build
+      INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+          path: ${{ env.SRC_DIR }}
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_latest_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Install build dependencies
+        run: brew install coreutils
+
+      - name: Build GenAI Node.js bindings
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
+            -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
+            -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel --verbose
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+
+      - name: Upload Node.js bindings Build Package
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: genai_nodejs_bindings
+          path: ${{ env.INSTALL_DIR }}
+          if-no-files-found: 'error'
+ 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ openvino_download, genai_build_wheel ]
@@ -396,6 +458,74 @@ jobs:
         env:
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
+
+  genai_nodejs_tests:
+    name: Node.js bindings tests
+    needs: [ openvino_download, genai_build_nodejs ]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    runs-on: macos-13
+
+    env:
+      SRC_DIR: ${{ github.workspace }}/openvino.genai
+      INSTALL_DIR: ${{ github.workspace }}/install
+      NODE_VERSION: 21
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+      
+      - name: Download OpenVINO Artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_latest_artifact_name }}
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Download GenAI JS Bildings Artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: genai_nodejs_bindings
+          path: ${{ env.SRC_DIR }}/src/js/bin
+          merge-multiple: true
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # JS pacakges uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
+      # Here we emulate the installation of the openvino-node package from NPM. The latest
+      # release of the openvino-node package is installed, and we need to update the binaries
+      # in the node_modules/openvino-node/bin directory to work correctly with GenAI
+      - name: Install npm package tests dependencies
+        working-directory: ${{ env.SRC_DIR }}/src/js
+        run: |
+          npm install --verbose
+          rm -rf node_modules/openvino-node/bin
+          cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+
+      - name: Run npm package tests
+        working-directory: ${{ env.SRC_DIR }}/src/js
+        run: npm test
+
+      - name: Install openvino-genai-node samples dependencies
+        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        run: |
+          npm install --verbose
+          rm -rf node_modules/openvino-node/bin
+          cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+
+      - name: Run samples tests
+        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        run: npm test
+        env:
+          MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
 
   Overall_Status:
     name: ci/gha_overall_status_macos

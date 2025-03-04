@@ -14,6 +14,10 @@ import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
 import llm_bench_utils.parse_json_data as parse_json_data
+from llm_bench_utils.config_class import TASK
+from transformers.image_utils import load_image
+import openvino as ov
+import numpy as np
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
@@ -25,7 +29,15 @@ DEFAULT_IMAGE_HEIGHT = 512
 stable_diffusion_hook = StableDiffusionHook()
 
 
-def collects_input_args(image_param, model_type, model_name, infer_count=None, height=None, width=None, callback=None):
+def read_image(image_path: str, ov_tensor=True):
+    pil_image = load_image(image_path).convert("RGB")
+    if ov_tensor:
+        image_data = np.array(pil_image)[None]
+        return ov.Tensor(image_data)
+    return pil_image
+
+
+def collects_input_args(image_param, model_type, model_name, infer_count=None, height=None, width=None, callback=None, image_as_ov_tensor=True):
     input_args = {}
     input_args["width"] = image_param.get('width', width or DEFAULT_IMAGE_WIDTH)
     input_args["height"] = image_param.get('height', height or DEFAULT_IMAGE_HEIGHT)
@@ -54,13 +66,27 @@ def collects_input_args(image_param, model_type, model_name, infer_count=None, h
         if is_callback_supported:
             input_args["callback"] = callback
 
+    if image_param.get('media'):
+        images = image_param['media'] if isinstance(image_param['media'], (list, tuple)) else [image_param['media']]
+        initial_images_list = []
+        for img in images:
+            initial_images_list.append(read_image(img, image_as_ov_tensor))
+        input_args["image"] = initial_images_list[0]
+
+    if image_param.get('mask_image', None):
+        input_args["mask_image"] = read_image(image_param.get('mask_image'), image_as_ov_tensor)
+
+    if image_param.get('strength'):
+        input_args["strength"] = image_param['strength']
+
     return input_args
 
 
 def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
-    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["num_steps"], args.get("height"), args.get("width"))
+    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["num_steps"],
+                                     args.get("height"), args.get("width"), image_as_ov_tensor=False)
     out_str = f"Input params: Batch_size={args['batch_size']}, " \
               f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
     if 'guidance_scale' in input_args:
@@ -143,6 +169,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         for bs_idx, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
     callback.reset()
+
     start = time.perf_counter()
     res = pipe.generate(input_text, **input_args).data
     end = time.perf_counter()
@@ -238,12 +265,19 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
 def get_image_prompt(args):
     input_image_list = []
-    output_data_list, is_json_data = model_utils.get_param_from_file(args, 'prompt')
+
+    input_key = 'prompt'
+    if args.get("task") == TASK["inpainting"] or ((args.get("media") or args.get("images")) and args.get("mask_image")):
+        input_key = ['media', "mask_image", "prompt"]
+    elif args.get("task") == TASK["img2img"] or args.get("media") or args.get("images"):
+        input_key = ['media', "prompt"]
+
+    output_data_list, is_json_data = model_utils.get_param_from_file(args, input_key)
     if is_json_data is True:
         image_param_list = parse_json_data.parse_image_json_data(output_data_list)
         if len(image_param_list) > 0:
             for image_data in image_param_list:
                 input_image_list.append(image_data)
     else:
-        input_image_list.append({'prompt': output_data_list[0]})
+        input_image_list.append(output_data_list[0])
     return input_image_list
