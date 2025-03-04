@@ -119,7 +119,6 @@ public:
         size_t total_num_tokens = 0, total_num_blocks = 0;
         size_t max_context_len_val = 0;
         size_t hidden_size = 0;
-        size_t num_generated_ids = 0;
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
@@ -135,9 +134,6 @@ public:
             total_num_tokens += sequence_group->get_num_scheduled_tokens() * num_sequences;
             total_num_blocks += sequence_group->get_num_blocks() * num_sequences;
             max_context_len_val = std::max(max_context_len_val, sequence_group->get_context_len());
-            for (auto seq: sequence_group->get_running_sequences()) {
-                num_generated_ids += seq->get_generated_len();
-            }
         }
 
         ov::Tensor
@@ -163,27 +159,6 @@ public:
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             OPENVINO_ASSERT(m_embedding.get_request(), "Got sequence group with embeddings, but embeddings model wasn't set.");
             inputs_embeds_data = inputs_embeds.data<float>();
-
-            ov::Tensor generated_ids = ov::Tensor(ov::element::i64, {1, num_generated_ids});
-            int64_t *generated_ids_data = generated_ids.data<int64_t>();
-            size_t pos = 0;
-            for (size_t i = 0; i < num_sequence_groups; ++i) {
-                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-                SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
-                for (auto seq: sequence_group->get_running_sequences()) {
-                    auto generated_ids = seq->get_generated_ids();
-                    for (size_t token_idx = 0; token_idx < generated_ids.size(); token_idx++) {
-                        generated_ids_data[pos] = generated_ids[token_idx];
-                        pos++;
-                    }
-                }
-            }
-            if (pos > 0) {
-                // TODO: Compute embeddings only for last generated token, while previously generated embeddings save in SequenceGroup
-                generated_ids_embeds = m_embedding.infer(generated_ids);
-                generated_ids_embeds_data = generated_ids_embeds.data<float>();
-            }
-
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
         }
@@ -234,8 +209,8 @@ public:
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-                        auto embeds_pos = position_id < prompt_len ? 0 : hidden_size * (position_id - prompt_len);
-                        const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_ids_embeds_data + embeds_pos;
+                        auto generated_embeds = sequence->get_generated_ids_embeds();
+                        const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
                     } else {
                         OPENVINO_THROW("Unknown model inputs type.");
@@ -271,7 +246,6 @@ public:
                     input_ids_data += num_scheduled_tokens;
                 } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                     inputs_embeds_data += num_scheduled_tokens * hidden_size;
-                    generated_ids_embeds_data += sequence->get_generated_len() * hidden_size;
                 }
 
                 position_ids_data += num_scheduled_tokens;
@@ -335,6 +309,63 @@ public:
 
         // return logits
         return m_request.get_tensor("logits");
+    }
+
+    void append_embeddings(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+        size_t num_generated_ids_without_embeddings = 0;
+        OPENVINO_ASSERT(sequence_groups.size() > 0);
+
+        // compute aggregated values
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            size_t num_sequences = sequence_group->num_running_seqs();
+            OPENVINO_ASSERT(sequence_group->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS);
+            for (auto seq: sequence_group->get_running_sequences()) {
+                num_generated_ids_without_embeddings += seq->get_generated_len() - seq->get_generated_ids_embeds().size();
+            }
+        }
+        size_t hidden_size = sequence_groups[0]->get_hidden_size();
+
+        ov::Tensor generated_ids_embeds;
+        float *generated_ids_embeds_data = nullptr;
+        
+        OPENVINO_ASSERT(m_embedding.get_request(), "Got sequence group with embeddings, but embeddings model wasn't set.");
+
+        ov::Tensor generated_ids = ov::Tensor(ov::element::i64, {1, num_generated_ids_without_embeddings});
+        int64_t *generated_ids_data = generated_ids.data<int64_t>();
+        size_t pos = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            for (auto seq: sequence_group->get_running_sequences()) {
+                auto generated_ids = seq->get_generated_ids();
+                for (size_t token_idx = seq->get_generated_ids_embeds().size(); token_idx < generated_ids.size(); token_idx++) {
+                    generated_ids_data[pos] = generated_ids[token_idx];
+                    pos++;
+                }
+            }
+        }
+        if (pos > 0) {
+            generated_ids_embeds = m_embedding.infer(generated_ids);
+            generated_ids_embeds_data = generated_ids_embeds.data<float>();
+
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                size_t embeds_pos = 0;
+                SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
+                for (auto seq: sequence_group->get_running_sequences()) {
+                    auto generated_ids = seq->get_generated_ids();
+                    size_t new_embeds_count = seq->get_generated_len() - seq->get_generated_ids_embeds().size();
+                    ov::Coordinate start{0, embeds_pos, 0};
+                    ov::Coordinate end{1, embeds_pos + new_embeds_count, hidden_size};
+                    ov::Tensor embedding(generated_ids_embeds, start, end);
+                    seq->append_generated_ids_embeds(embedding);
+                    embeds_pos += new_embeds_count;
+                }
+            }
+        }
     }
 
 private:

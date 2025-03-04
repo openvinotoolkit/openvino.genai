@@ -269,9 +269,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
-        if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-            OPENVINO_THROW("Prefix caching is not supported for VLM models.");
-        }
         m_scheduler->restore_cached_blocks(sequence_group);
     }
 
@@ -405,6 +402,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
         free_fork_timer.end();
     }
+    
+    // append embeddings for generated tokens
+    if (m_model_input_type == ModelInputType::EMBEDDINGS)
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
 
     // notify requests dropped by handle
     {

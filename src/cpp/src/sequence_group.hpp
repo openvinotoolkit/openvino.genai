@@ -49,17 +49,28 @@ class Sequence {
     std::vector<int64_t> m_prefix_hashes;
     SequenceGroup* m_sequence_group = nullptr;
     static std::mutex m_counter_mutex;
+    std::vector<std::vector<float>> m_generated_ids_embeds;
+    SequenceGroupType m_type;
+    size_t m_hidden_size;
+
+    // Embeddings hash calculation params
+    const size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
+    const size_t m_embeddings_hash_calculation_stride = 50; // the stride with which values are taken from embeddings vector
 
     size_t _make_hash(size_t content_length);
 
-    explicit Sequence(const uint64_t id) : m_grouped_id(id) {}
+    std::vector<float> _reduce_embedding(const std::vector<float>& embedding);
+
+    explicit Sequence(const uint64_t id, const SequenceGroupType type, const size_t hidden_size) : m_grouped_id(id), m_type(type), m_hidden_size(hidden_size) {}
 
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
         m_grouped_id(id),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
-        m_sequence_group(seq.m_sequence_group) {
+        m_sequence_group(seq.m_sequence_group),
+        m_type(seq.m_type),
+        m_hidden_size(seq.m_hidden_size) {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
@@ -67,8 +78,8 @@ public:
     using Ptr = std::shared_ptr<Sequence>;
     using CPtr = std::shared_ptr<const Sequence>;
 
-    static Sequence::Ptr create(const uint64_t id) {
-        return Sequence::Ptr(new Sequence(id));
+    static Sequence::Ptr create(const uint64_t id, const SequenceGroupType type = SequenceGroupType::TOKENS, const size_t hidden_size = 0) {
+        return Sequence::Ptr(new Sequence(id, type, hidden_size));
     }
 
     static Sequence::Ptr fork(Sequence::CPtr sequence, const uint64_t id) {
@@ -191,6 +202,25 @@ public:
         m_sequence_group = sequence_group;
     }
 
+    std::vector<std::vector<float>> get_generated_ids_embeds() const{
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_generated_ids_embeds;
+    }
+
+    void append_generated_ids_embeds(ov::Tensor generated_ids_embeds) {
+        OPENVINO_ASSERT(m_type == SequenceGroupType::EMBEDDINGS);
+        auto embeds_count = generated_ids_embeds.get_shape()[1];
+        OPENVINO_ASSERT(m_hidden_size == generated_ids_embeds.get_shape()[2]);
+
+        auto current_embeds_size = m_generated_ids_embeds.size();
+        for (size_t i = current_embeds_size, idx = 0; i < current_embeds_size + embeds_count; i++, idx++) {
+            m_generated_ids_embeds.emplace_back(std::vector<float>());
+            m_generated_ids_embeds[i].resize(m_hidden_size);
+            std::copy_n(generated_ids_embeds.data<float>() + idx * m_hidden_size, m_hidden_size, m_generated_ids_embeds[i].begin());
+
+        }
+    }
+
     std::shared_ptr<SequenceGroup> get_sequence_group_ptr() const;
 
     // Each KV block can be uniquely identified by
@@ -261,6 +291,7 @@ public:
         : SequenceGroup(request_id, sampling_params, block_size) {
         
         size_t prompt_len;
+        size_t hidden_size = 0;
         if (input_ids.get_shape().size() > 1) {
             prompt_len = input_ids.get_shape()[1];
         } else {
@@ -273,11 +304,11 @@ public:
             std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
             m_sequence_group_type = SequenceGroupType::TOKENS;
         } else if (input_ids.get_element_type() == ov::element::f32) {
-            auto embeds_len = input_ids.get_shape()[2];
+            hidden_size = input_ids.get_shape()[2];
             m_input_embeds.resize(prompt_len);
             for (size_t i = 0; i < prompt_len; i++) {
-                m_input_embeds[i].resize(embeds_len);
-              std::copy_n(input_ids.data<float>() + i * embeds_len, embeds_len, m_input_embeds[i].begin());
+                m_input_embeds[i].resize(hidden_size);
+              std::copy_n(input_ids.data<float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
             }
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
         }
@@ -287,7 +318,7 @@ public:
         m_prompt_log_probs.reserve(prompt_len);
 
         // create a single sequence
-        add_sequence(Sequence::create(m_next_sequence_id++));
+        add_sequence(Sequence::create(m_next_sequence_id++, m_sequence_group_type, hidden_size));
     }
 
     void add_sequence(const Sequence::Ptr & sequence) {

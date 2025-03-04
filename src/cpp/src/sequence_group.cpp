@@ -22,20 +22,76 @@ size_t Sequence::_make_hash(size_t content_length) {
         size_t prefix_hashes_needed_count = block_start_idx / block_size;
         OPENVINO_ASSERT(prefix_hashes_needed_count <= m_prefix_hashes.size()); 
         content.insert(content.end(), m_prefix_hashes.begin(), m_prefix_hashes.begin() + prefix_hashes_needed_count);
+        char* data;
+        std::size_t size;
 
         // get tokens corresponding to current block
-        const auto prompt_ids = sequence_group->get_prompt_ids();
-        OPENVINO_ASSERT(content_length <= prompt_ids.size() + m_generated_ids.size());
-        if (block_start_idx < prompt_ids.size()) {
-            content.insert(content.end(), prompt_ids.begin() + block_start_idx, prompt_ids.begin() + std::min(prompt_ids.size(), content_length));
+        if (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS) {
+            const auto prompt_ids = sequence_group->get_prompt_ids();
+            OPENVINO_ASSERT(content_length <= prompt_ids.size() + m_generated_ids.size());
+            if (block_start_idx < prompt_ids.size()) {
+                content.insert(content.end(), prompt_ids.begin() + block_start_idx, prompt_ids.begin() + std::min(prompt_ids.size(), content_length));
+            }
+            if (content_length > prompt_ids.size()) {
+                size_t start = block_start_idx < prompt_ids.size() ? 0 : block_start_idx - prompt_ids.size();
+                content.insert(content.end(), m_generated_ids.begin() + start, m_generated_ids.begin() + content_length - prompt_ids.size());
+            }
+            data = reinterpret_cast<char*>(content.data());
+            size = content.size() * sizeof(content[0]);
         }
-        if (content_length > prompt_ids.size()) {
-            size_t start = block_start_idx < prompt_ids.size() ? 0 : block_start_idx - prompt_ids.size();
-            content.insert(content.end(), m_generated_ids.begin() + start, m_generated_ids.begin() + content_length - prompt_ids.size());
+        else if (sequence_group->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS) {
+            const auto input_embeds = sequence_group->get_input_embeds();
+            const auto generated_embeds = m_generated_ids_embeds;
+            OPENVINO_ASSERT(content_length <= input_embeds.size() + generated_embeds.size());
+            std::vector<float> content_float;
+
+            // get inputs embeddings
+            if (block_start_idx < input_embeds.size()) {
+                for (size_t idx = block_start_idx; idx < std::min(input_embeds.size(), content_length); idx++) {
+                    auto embed = _reduce_embedding(input_embeds[idx]);
+                    const char* embed_char = reinterpret_cast<const char*>(embed.data());
+                    content_float.insert(content_float.end(), embed.begin(), embed.end());
+                }
+            }
+
+            // get generated ids embeddings
+            if (content_length > input_embeds.size()) {
+                size_t start = block_start_idx < input_embeds.size() ? 0 : block_start_idx - input_embeds.size();
+                for (size_t idx = start; idx < content_length - input_embeds.size(); idx++) {
+                    auto embed = _reduce_embedding(generated_embeds[idx]);
+                    content_float.insert(content_float.end(), embed.begin(), embed.end());
+                }
+            }
+
+            size_t prev_hashes_size = content.size() == 0 ? 0 : content.size() * sizeof(content[0]);
+            size_t content_float_size = content_float.size() * sizeof(content_float[0]);
+            size = prev_hashes_size + content_float_size;
+            data = new char[size];
+            
+            // append previously calculated prefix hashes if they are available
+            if (prev_hashes_size) {
+                auto prev_hashes = reinterpret_cast<const char*>(content.data());
+                std::copy_n(prev_hashes, prev_hashes_size, data);
+            }
+
+            auto content_char = reinterpret_cast<const char*>(content_float.data());
+            std::copy_n(content_char, content_float_size, data + prev_hashes_size);
         }
-        const char* data = reinterpret_cast<const char*>(content.data());
-        std::size_t size = content.size() * sizeof(content[0]);
+        else {
+            OPENVINO_THROW("Hash calculation is not supported for this sequence type.");
+        }
+        auto hash = std::hash<std::string_view>{}(std::string_view(data, size));
         return std::hash<std::string_view>{}(std::string_view(data, size));
+}
+
+std::vector<float> Sequence::_reduce_embedding(const std::vector<float>& embedding) {
+    size_t s = embedding.size();
+    size_t res_size = std::min((size_t)ceil(float(embedding.size()) / m_embeddings_hash_calculation_stride), m_embeddings_hash_max_num_values);
+    std::vector<float> res(res_size);
+    for (size_t i = 0, idx=0; idx < res_size; i+= m_embeddings_hash_calculation_stride, idx++) {
+        res[idx] = embedding[i];
+    }
+    return res;
 }
 
 // Each KV block can be uniquely identified by 
