@@ -18,6 +18,7 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::genai::height(512),
         ov::genai::num_inference_steps(20),
         ov::genai::num_images_per_prompt(1),
+        ov::genai::max_sequence_length(10),
         ov::genai::callback(progress_bar));
 
     // writes `num_images_per_prompt` images by pattern name
