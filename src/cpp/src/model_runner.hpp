@@ -161,7 +161,7 @@ public:
         int64_t *input_ids_data = nullptr;
         
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-            // OPENVINO_ASSERT(m_embedding.get_request(), "Got sequence group with embeddings, but embeddings model wasn't set.");
+            OPENVINO_ASSERT(m_embedding->is_initialized(), "Got sequence group with embeddings, but embeddings model wasn't set.");
             inputs_embeds_data = inputs_embeds.data<float>();
 
             ov::Tensor generated_ids = ov::Tensor(ov::element::i64, {1, num_generated_ids});
