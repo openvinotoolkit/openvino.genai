@@ -26,13 +26,14 @@ class TestBenchmarkImageGen:
             pytest.param("image.png", "mask_image.png"),
         ], indirect=["download_test_content", "download_mask_image"],
     )
-    def test_sample_benchmark_image_gen(self, download_model, pipeline_type, prompt, download_test_content, download_mask_image):   
+    def test_sample_benchmark_image_gen(self, download_model, pipeline_type, prompt, download_test_content, download_mask_image):
+        inference_steps = "3"
         # Run C++ benchmark sample
         benchmark_sample = os.path.join(SAMPLES_CPP_DIR, 'benchmark_image_gen')
-        benchmark_cpp_command = [benchmark_sample, "-t", pipeline_type, "-m" , download_model, "-p", "'" + prompt + "'", "-i", download_test_content, "--mi", download_mask_image]
+        benchmark_cpp_command = [benchmark_sample, "-t", pipeline_type, "-m" , download_model, "-p", "'" + prompt + "'", "-i", download_test_content, "--mi", download_mask_image, "--is", inference_steps]
         run_sample(benchmark_cpp_command)
         
         # Run Python benchmark sample
         benchmark_script = os.path.join(SAMPLES_PY_DIR, 'image_generation/benchmark_image_gen.py')
-        benchmark_py_command = [sys.executable, benchmark_script, "-t", pipeline_type, "-m" , download_model, "-p", "'" + prompt + "'", "-i", download_test_content, "-mi", download_mask_image]
+        benchmark_py_command = [sys.executable, benchmark_script, "-t", pipeline_type, "-m" , download_model, "-p", "'" + prompt + "'", "-i", download_test_content, "-mi", download_mask_image, "-is", inference_steps]
         run_sample(benchmark_py_command)
