@@ -54,12 +54,13 @@ class Sequence {
     size_t m_hidden_size;
 
     // Embeddings hash calculation params
-    const size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
-    const size_t m_embeddings_hash_calculation_stride = 50; // the stride with which values are taken from embeddings vector
+    static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
+    static constexpr size_t m_embeddings_hash_calculation_stride = 50; // the stride with which values are taken from embeddings vector
+    static constexpr size_t m_multiplier = 10000; // multiplier by which float values are multiplied before conversion to size_t
 
     size_t _make_hash(size_t content_length);
 
-    std::vector<float> _reduce_embedding(const std::vector<float>& embedding);
+    static std::vector<size_t> _reduce_embedding(const std::vector<float>& embedding);
 
     explicit Sequence(const uint64_t id, const SequenceGroupType type, const size_t hidden_size) : m_grouped_id(id), m_type(type), m_hidden_size(hidden_size) {}
 
