@@ -202,7 +202,7 @@ public:
         m_sequence_group = sequence_group;
     }
 
-    std::vector<std::vector<float>> get_generated_ids_embeds() const{
+    const std::vector<std::vector<float>>& get_generated_ids_embeds() const {
         OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
         return m_generated_ids_embeds;
     }

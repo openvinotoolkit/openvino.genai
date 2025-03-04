@@ -209,7 +209,7 @@ public:
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-                        auto generated_embeds = sequence->get_generated_ids_embeds();
+                        const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
                     } else {
@@ -340,7 +340,7 @@ public:
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
             SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
             for (auto seq: sequence_group->get_running_sequences()) {
-                auto generated_ids = seq->get_generated_ids();
+                const auto& generated_ids = seq->get_generated_ids();
                 for (size_t token_idx = seq->get_generated_ids_embeds().size(); token_idx < generated_ids.size(); token_idx++) {
                     generated_ids_data[pos] = generated_ids[token_idx];
                     pos++;

@@ -40,7 +40,7 @@ size_t Sequence::_make_hash(size_t content_length) {
             size = content.size() * sizeof(content[0]);
         }
         else if (sequence_group->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS) {
-            const auto input_embeds = sequence_group->get_input_embeds();
+            const auto& input_embeds = sequence_group->get_input_embeds();
             const auto generated_embeds = m_generated_ids_embeds;
             OPENVINO_ASSERT(content_length <= input_embeds.size() + generated_embeds.size());
             std::vector<float> content_float;
@@ -49,7 +49,6 @@ size_t Sequence::_make_hash(size_t content_length) {
             if (block_start_idx < input_embeds.size()) {
                 for (size_t idx = block_start_idx; idx < std::min(input_embeds.size(), content_length); idx++) {
                     auto embed = _reduce_embedding(input_embeds[idx]);
-                    const char* embed_char = reinterpret_cast<const char*>(embed.data());
                     content_float.insert(content_float.end(), embed.begin(), embed.end());
                 }
             }
