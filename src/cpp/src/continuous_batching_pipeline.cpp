@@ -48,7 +48,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
                                                         const ov::AnyMap& properties,
-                                                        const ov::AnyMap& tokenizer_properties) {
+                                                        const ov::AnyMap& tokenizer_properties,
+                                                        const ov::AnyMap& inputs_embedder_properties) {
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
@@ -78,7 +79,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
     } else if (std::filesystem::exists(directory / "openvino_text_embeddings_model.xml") ) {
-        auto inputs_embedder = std::make_shared<InputsEmbedder>(directory, device, properties);
+        auto inputs_embedder = std::make_shared<InputsEmbedder>(directory, device, inputs_embedder_properties.empty() ? properties : inputs_embedder_properties);
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, inputs_embedder, tokenizer, scheduler_config, device, properties, generation_config);
     }
     else {
