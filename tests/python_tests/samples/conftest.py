@@ -52,12 +52,21 @@ MODELS = {
     "TinyStories-1M": {
         "name": "roneneldan/TinyStories-1M",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    },
+    "llava-1.5-7b-hf": {
+        "name": "llava-hf/llava-1.5-7b-hf",
+        "convert_args": ['--trust-remote-code']
+    },    
+    "llava-v1.6-mistral-7b-hf": {
+        "name": "llava-hf/llava-v1.6-mistral-7b-hf",
+        "convert_args": ['--trust-remote-code']
     }
 }
 
 TEST_FILES = {
     "how_are_you_doing_today.wav": "https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav",
-    "adapter_model.safetensors": "https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors"
+    "adapter_model.safetensors": "https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors",
+    "monalisa.jpg": "https://llava-vl.github.io/static/images/monalisa.jpg",
 }
 
 SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python")))
