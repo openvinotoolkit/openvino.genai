@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18325-df6161d0525/openvino_toolkit_ubuntu20_2025.1.0.dev20250303_x86_64.tgz
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18325-df6161d0525/openvino_toolkit_ubuntu22_2025.1.0.dev20250303_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18325-df6161d0525/openvino_toolkit_macos_12_6_2025.1.0.dev20250303_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18325-df6161d0525/openvino_toolkit_windows_2025.1.0.dev20250303_x86_64.zip
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18343-5e16b688156/openvino_toolkit_ubuntu20_2025.1.0.dev20250304_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18343-5e16b688156/openvino_toolkit_ubuntu22_2025.1.0.dev20250304_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18343-5e16b688156/openvino_toolkit_macos_12_6_2025.1.0.dev20250304_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18343-5e16b688156/openvino_toolkit_windows_2025.1.0.dev20250304_x86_64.zip
 
 jobs:
   cpp-greedy_causal_lm-windows:

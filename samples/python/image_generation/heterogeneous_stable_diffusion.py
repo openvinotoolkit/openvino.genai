@@ -47,7 +47,7 @@ def main():
     #
     # Step 3: Compile the pipeline given the specified devices, and properties (like cache dir)
     #
-    properties = {"CACHE_DIR": "cache"}
+    properties = {"CACHE_DIR": ov_cache_dir}
 
     # Note that if there are device-specific properties that are needed, they can
     # be added using a "DEVICE_PROPERTIES" entry, like this:
