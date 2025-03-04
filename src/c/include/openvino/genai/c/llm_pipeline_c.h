@@ -20,7 +20,7 @@ typedef struct ov_genai_decoded_results_opaque ov_genai_decoded_results;
 
 /**
  * @brief Create DecodedResults
- * @param results A pointer to the ov_genai_decoded_results.
+ * @param results A pointer to the newly created ov_genai_decoded_results.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_decoded_results_create(ov_genai_decoded_results** results);
@@ -33,8 +33,8 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_decoded_results_free(ov_genai_decoded_res
 
 /**
  * @brief Get performance metrics from ov_genai_decoded_results.
- * @param results A pointer to the ov_genai_decoded_results.
- * @param metrics A pointer to the ov_genai_perf_metrics.
+ * @param results A pointer to the ov_genai_decoded_results instance.
+ * @param metrics A pointer to the newly created ov_genai_perf_metrics.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_decoded_results_get_perf_metrics(const ov_genai_decoded_results* results,
@@ -48,8 +48,8 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_decoded_results_perf_metrics_free(ov_gena
 
 /**
  * @brief Get string result from ov_genai_decoded_results.
- * @param results A pointer to the ov_genai_decoded_results.
- * @param output A pointer to the output string buffer.
+ * @param results A pointer to the ov_genai_decoded_results instance.
+ * @param output A pointer to the pre-allocated output string buffer.
  * @param max_size The maximum size of the output buffer.
  * @return ov_status_e A status code, return OK(0) if successful. Returns OUT_OF_BOUNDS if output_size is insufficient
  * to store the result.
@@ -67,8 +67,9 @@ typedef struct ov_genai_llm_pipeline_opaque ov_genai_llm_pipeline;
 
 /**
  * @brief Construct ov_genai_llm_pipeline.
- * @param models_path A path to the directory containing the model files.
- * @param device A device name.
+ * @param models_path Path to the directory containing the model files.
+ * @param device Name of a device to load a model to.
+ * @param ov_genai_llm_pipeline A pointer to the newly created ov_genai_llm_pipeline.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_create(const char* models_path,
@@ -79,7 +80,7 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_create(const char* mo
 
 /**
  * @brief Release the memory allocated by ov_genai_llm_pipeline.
- * @param model A pointer to the ov_genai_llm_pipeline.
+ * @param model A pointer to the ov_genai_llm_pipeline to free memory.
  */
 OPENVINO_GENAI_C_EXPORTS void ov_genai_llm_pipeline_free(ov_genai_llm_pipeline* pipe);
 
@@ -89,11 +90,11 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_llm_pipeline_free(ov_genai_llm_pipeline* 
 typedef void(OPENVINO_C_API_CALLBACK* stream_callback)(const char*);
 /**
  * @brief Generate text by ov_genai_llm_pipeline.
- * @param pipe A pointer to the ov_genai_llm_pipeline.
+ * @param pipe A pointer to the ov_genai_llm_pipeline instance.
  * @param inputs A pointer to the input string.
  * @param config A pointer to the ov_genai_generation_config, This is optional, the pointer can be NULL.
  * @param streamer A pointer to the stream callback. This is optional; set to NULL if no callback is needed.
- * @param output A pointer to the output string buffer.
+ * @param output A pointer to the pre-allocated output string buffer.
  * @param output_max_size The maximum size of the output buffer.
  * @return ov_status_e A status code, return OK(0) if successful. Returns OUT_OF_BOUNDS if output_size is insufficient
  * to store the result.
@@ -106,7 +107,7 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm
                                                                     size_t output_max_size);
 /**
  * @brief Generate text by ov_genai_llm_pipeline and return ov_genai_decoded_results.
- * @param pipe A pointer to the ov_genai_llm_pipeline.
+ * @param pipe A pointer to the ov_genai_llm_pipeline instance.
  * @param inputs A pointer to the input string.
  * @param config A pointer to the ov_genai_generation_config, the pointer can be NULL.
  * @param streamer A pointer to the stream callback. This is optional; set to NULL if no callback is needed.
@@ -121,22 +122,22 @@ ov_genai_llm_pipeline_generate_decode_results(ov_genai_llm_pipeline* pipe,
                                               ov_genai_decoded_results** results);
 /**
  * @brief Start chat with keeping history in kv cache.
- * @param pipe A pointer to the ov_genai_llm_pipeline.
+ * @param pipe A pointer to the ov_genai_llm_pipeline instance.
  * @return Status code of the operation: OK(0) for success.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_start_chat(ov_genai_llm_pipeline* pipe);
 
 /**
  * @brief Finish chat and clear kv cache.
- * @param pipe A pointer to the ov_genai_llm_pipeline.
+ * @param pipe A pointer to the ov_genai_llm_pipeline instance.
  * @return Status code of the operation: OK(0) for success.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_finish_chat(ov_genai_llm_pipeline* pipe);
 
 /**
  * @brief Get the GenerationConfig from ov_genai_llm_pipeline.
- * @param pipe A pointer to the ov_genai_llm_pipeline.
- * @param ov_genai_generation_config A pointer to the ov_genai_generation_config.
+ * @param pipe A pointer to the ov_genai_llm_pipeline instance.
+ * @param ov_genai_generation_config A pointer to the newly created ov_genai_generation_config.
  * @return Status code of the operation: OK(0) for success.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_get_generation_config(const ov_genai_llm_pipeline* pipe,
@@ -144,8 +145,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_get_generation_config
 
 /**
  * @brief Set the GenerationConfig to ov_genai_llm_pipeline.
- * @param pipe A pointer to the ov_genai_llm_pipeline.
- * @param config A pointer to the ov_genai_generation_config.
+ * @param pipe A pointer to the ov_genai_llm_pipeline instance.
+ * @param config A pointer to the ov_genai_generation_config instance.
  * @return Status code of the operation: OK(0) for success.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_set_generation_config(ov_genai_llm_pipeline* pipe,
