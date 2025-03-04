@@ -17,12 +17,12 @@
 #define DEFAULT_DEVICE         "CPU"
 
 typedef struct {
-    char* model;
-    char* prompt;
+    const char* model;
+    const char* prompt;
     size_t num_warmup;
     size_t num_iter;
     size_t max_new_tokens;
-    char* device;
+    const char* device;
 } Options;
 
 void print_usage() {
@@ -92,11 +92,9 @@ int parse_arguments(int argc, char* argv[], Options* options) {
 }
 
 #define CHECK_STATUS(return_status)                                                      \
-    if (return_status == OUT_OF_BOUNDS) {                                                \
-        fprintf(stderr, "[WARNING] output buffer is too small, line %d\n", __LINE__);    \
-    } else if (return_status != OK) {                                                    \
+    if (return_status != OK) {                                                           \
         fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
-        return return_status;                                                            \
+        goto err;                                                                        \
     }
 
 int main(int argc, char* argv[]) {
@@ -121,12 +119,15 @@ int main(int argc, char* argv[]) {
     printf("Max New Tokens: %zu\n", options.max_new_tokens);
     printf("Device: %s\n", options.device);
 
+    ov_genai_llm_pipeline* pipe = NULL;
+    ov_genai_generation_config* config = NULL;
+    ov_genai_decoded_results* results = NULL;
+    ov_genai_perf_metrics* metrics = NULL;
+    ov_genai_perf_metrics* _metrics = NULL;
     char output[MAX_OUTPUT_LENGTH];
 
-    ov_genai_llm_pipeline* pipe = NULL;
     CHECK_STATUS(ov_genai_llm_pipeline_create(options.model, options.device, &pipe));
 
-    ov_genai_generation_config* config = NULL;
     CHECK_STATUS(ov_genai_generation_config_create(&config));
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, options.max_new_tokens));
 
@@ -134,24 +135,31 @@ int main(int argc, char* argv[]) {
         CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, output, MAX_OUTPUT_LENGTH));
     }
 
-    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, output, MAX_OUTPUT_LENGTH));
-
-    ov_genai_decoded_results* results = NULL;
     CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, NULL, &results));
 
     CHECK_STATUS(ov_genai_decoded_results_get_string(results, output, MAX_OUTPUT_LENGTH));
     printf("%s\n", output);
 
-    ov_genai_perf_metrics* metrics = NULL;
     CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));
 
+    if (results) {
+        ov_genai_decoded_results_free(results);
+        results = NULL;  // Because the results pointer might need to be used repeatedly, set it to NULL manually after
+                         // freeing the memory.
+    }
     for (size_t i = 0; i < options.num_iter - 1; i++) {
         CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, NULL, &results));
-        ov_genai_perf_metrics* _metrics = NULL;
         CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &_metrics));
         CHECK_STATUS(ov_genai_perf_metrics_add_in_place(metrics, _metrics));  // metrics += _metrics
-        ov_genai_decoded_results_perf_metrics_free(_metrics);
-        ov_genai_decoded_results_free(results);
+        if (_metrics) {
+            ov_genai_decoded_results_perf_metrics_free(_metrics);
+            _metrics = NULL;  //  Because the _metrics pointer might need to be used repeatedly, set it to NULL manually
+                              //  after freeing the memory.
+        }
+        if (results) {
+            ov_genai_decoded_results_free(results);
+            results = NULL;
+        }
     }
     float mean = 0.0f;
     float std = 0.0f;
@@ -171,9 +179,16 @@ int main(int argc, char* argv[]) {
     CHECK_STATUS(ov_genai_perf_metrics_get_throughput(metrics, &mean, &std));
     printf("Throughput: %.2f ± %.2f tokens/s\n", mean, std);
 
-    // Release Resources
-    ov_genai_llm_pipeline_free(pipe);
-    ov_genai_decoded_results_perf_metrics_free(metrics);
-    ov_genai_generation_config_free(config);
+err:
+    if (pipe)
+        ov_genai_llm_pipeline_free(pipe);
+    if (config)
+        ov_genai_generation_config_free(config);
+    if (metrics)
+        ov_genai_decoded_results_perf_metrics_free(metrics);
+    if (_metrics)
+        ov_genai_decoded_results_perf_metrics_free(_metrics);
+    if (results)
+        ov_genai_decoded_results_free(results);
     return EXIT_SUCCESS;
 }
