@@ -151,6 +151,13 @@ def get_argprser():
     parser.add_argument("--num_steps", type=int, required=False, help="Number of inference steps for image generation")
     parser.add_argument("--height", type=int, required=False, help="Generated image height. Applicable only for Image Generation.")
     parser.add_argument("--width", type=int, required=False, help="Generated image width. Applicable only for Image Generation.")
+    parser.add_argument('-mi', '--mask_image', default=None,
+                        help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
+    parser.add_argument('-t', '--task', default=None,
+                        help='The task to setup the pipeline/config for. Applicable for Text to Image/Image to imaage/Inpainting pipelines.')
+    parser.add_argument(
+        '--strength', type=float, default=None,
+        help='Applicable for Image to imaage/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
     parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
     return parser.parse_args()
 
