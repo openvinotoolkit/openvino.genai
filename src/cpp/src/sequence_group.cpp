@@ -60,9 +60,8 @@ size_t Sequence::_make_hash(size_t content_length) {
         else {
             OPENVINO_THROW("Hash calculation is not supported for this sequence type.");
         }
-        char* data = reinterpret_cast<char*>(content.data());
+        const char* data = reinterpret_cast<char*>(content.data());
         std::size_t size = content.size() * sizeof(content[0]);
-        auto hash = std::hash<std::string_view>{}(std::string_view(data, size));
         return std::hash<std::string_view>{}(std::string_view(data, size));
 }
 
