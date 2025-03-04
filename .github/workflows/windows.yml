@@ -49,7 +49,7 @@ jobs:
       with:
         platform: 'windows'
         commit_packages_to_provide: wheels,openvino_js_package.zip
-        revision: 'a8aba4e104f027c2ba8a21fd6c4c861110c57ed9'
+        revision: 'latest_available_commit'
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build_type }})
@@ -61,7 +61,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-8-cores-16gb-staging
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       GENAI_INSTALL_DIR: ${{ github.workspace }}\install\genai
@@ -162,7 +162,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-8-cores-16gb-staging
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       SRC_DIR: ${{ github.workspace }}\src\genai
@@ -216,7 +216,7 @@ jobs:
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
-          toolset: 14.40 # v2022
+          toolset: 14.40 # v2022  
         
       - name: Build Tokenizers Wheel
         run: |
@@ -271,7 +271,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb-staging
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -319,7 +319,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb-staging
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -340,6 +340,12 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
+          
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
 
       - name: Build GenAI Node.js bindings
         run: |
@@ -483,7 +489,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
