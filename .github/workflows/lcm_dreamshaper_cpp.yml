@@ -19,7 +19,7 @@ concurrency:
 env:
   PYTHON_VERSION: '3.9'
   LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2025.0.0rc1/l_openvino_toolkit_ubuntu22_2025.0.0.dev20250116_x86_64.tgz
-  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2025.0.0rc1/w_openvino_toolkit_windows_2025.0.0.dev20250116_x86_64.zip
+  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.0.1/windows/openvino_toolkit_windows_2025.0.1.17971.1ba1ed4f524_x86_64.zip
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
 jobs:
