@@ -24,6 +24,7 @@ env:
   SCCACHE_SERVER_PORT: 35555
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
+  HF_HOME: /mount/caches/huggingface
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
 
@@ -326,16 +327,22 @@ jobs:
           - name: 'LLM'
             marker: 'llm'
             cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-4-cores-16gb'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-4-cores-16gb'
+          - name: 'Image generation'
+            marker: 'image_generation'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-8-cores-64gb'
             
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples ] 
     timeout-minutes: 45
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: ${{ matrix.test.runner }}
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
