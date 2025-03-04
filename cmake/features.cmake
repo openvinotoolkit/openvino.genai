@@ -9,4 +9,8 @@ option(ENABLE_SAMPLES "Enable samples build" ON)
 # Disable building samples for NPM package
 if(CPACK_GENERATOR STREQUAL "NPM")
     set(ENABLE_SAMPLES OFF)
+    set(ENABLE_PYTHON OFF)
+    set(ENABLE_JS ON)
+else()
+    set(ENABLE_JS OFF)
 endif()
