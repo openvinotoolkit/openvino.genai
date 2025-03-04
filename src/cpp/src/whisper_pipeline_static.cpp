@@ -289,11 +289,10 @@ void stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase> stre
     }
 
     std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
-    for (const auto& gen_token : token.begin()->second.generated_ids) {
-        if (streamer_ptr->put(gen_token)) {
-            handle->drop();
-            break;
-        }
+
+    auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
+    if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+        streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
     }
 }
 
@@ -303,7 +302,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
                                                        std::vector<int32_t> init_ids,
                                                        const bool return_timestamps,
                                                        ov::genai::RawPerfMetrics& raw_metrics,
-                                                       const std::shared_ptr<ov::genai::ChunkStreamerBase> streamer,
+                                                       const std::shared_ptr<ov::genai::StreamerBase> streamer,
                                                        ov::genai::Sampler& sampler,
                                                        ov::genai::SequenceGroup::Ptr sequence_group) {
     auto handle = std::make_shared<ov::genai::GenerationHandleImpl>(sequence_group->get_generation_stream(),
@@ -322,7 +321,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
 
     prepare_decoder_with_past(models.decoder_with_past, models.decoder, init_ids.size());
 
-    while (!sequence_group->has_finished() && !sequence_group->handle_dropped()) {
+    while (!sequence_group->has_finished() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
         sequence_group->schedule_tokens(1);
         const auto running_sequences = sequence_group->get_running_sequences();
         OPENVINO_ASSERT(running_sequences.size() == 1u);
@@ -355,7 +354,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
 
     results.perf_metrics.raw_metrics = raw_metrics;
 
-    return {results, sequence_group->handle_dropped()};
+    return {results, (sequence_group->handle_stopped() || sequence_group->handle_cancelled())};
 }
 
 bool check_decoder_model_compatibility(const std::shared_ptr<ov::Model>& decoder) {
