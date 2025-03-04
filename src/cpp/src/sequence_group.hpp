@@ -60,7 +60,7 @@ class Sequence {
 
     size_t _make_hash(size_t content_length);
 
-    static std::vector<size_t> _reduce_embedding(const std::vector<float>& embedding);
+    static std::vector<int64_t> _reduce_embedding(const std::vector<float>& embedding);
 
     explicit Sequence(const uint64_t id, const SequenceGroupType type, const size_t hidden_size) : m_grouped_id(id), m_type(type), m_hidden_size(hidden_size) {}
 
