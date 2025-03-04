@@ -5,14 +5,14 @@ import os
 import pytest
 import sys
 
-from conftest import TEST_FILES, SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
 
 class TestWhisperSpeechRecognition:
     @pytest.mark.whisper
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
-    @pytest.mark.parametrize("download_test_content", [TEST_FILES["how_are_you_doing_today.wav"]], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
     def test_sample_whisper_speech_recognition(self, convert_model, download_test_content):           
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "whisper_speech_recognition/whisper_speech_recognition.py")
