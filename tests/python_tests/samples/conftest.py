@@ -68,7 +68,15 @@ MODELS = {
     "llava-v1.6-mistral-7b-hf": {
         "name": "llava-hf/llava-v1.6-mistral-7b-hf",
         "convert_args": ['--trust-remote-code']
-    }
+    },
+    "dreamlike-anime-1.0": {
+        "name": "dreamlike-art/dreamlike-anime-1.0",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16', "--task", "stable-diffusion"]
+    },
+    "LCM_Dreamshaper_v7-int8-ov": {
+        "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
+        "convert_args": []
+    }   
 }
 
 TEST_FILES = {
