@@ -222,7 +222,6 @@ Sampler::GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group,
         // to avoid selecting the same tokens for beams within group, let's just initialize score
         // for the front one
         group.ongoing.front().m_score = 0.0f;
-        group.prompt_len = this->m_sequence_group->get_prompt_len();
     }
 }
 
