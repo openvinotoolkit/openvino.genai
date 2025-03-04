@@ -65,7 +65,9 @@ public:
         );
         utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
         auto language_model = compiled_language_model.get_runtime_model();
-        m_kv_cache_seq_length_axis = utils::get_kv_axes_pos(language_model).seq_len;
+
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        kv_cache_state.seq_length_axis = utils::get_kv_axes_pos(language_model).seq_len;
 
         m_language = compiled_language_model.create_infer_request();
 
@@ -142,17 +144,17 @@ public:
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        auto to_remove_from_hist = m_inputs_embedder->get_num_tokens_to_remove_from_hist();
-        utils::trim_kv_cache(m_language, to_remove_from_hist, m_kv_cache_seq_length_axis, std::nullopt);
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        if (m_is_chat_conversation)
+            utils::trim_kv_cache(m_language, kv_cache_state, std::nullopt);
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
         size_t block_size = 1; // not used
 
-        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - to_remove_from_hist;
+        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - kv_cache_state.num_tokens_to_trim;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
-        KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         std::vector<int64_t> tokenized_history = kv_cache_state.get_state();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
@@ -194,7 +196,7 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation)
-            m_inputs_embedder->update_chat_history(decoded_results);
+            m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
         else
             kv_cache_state.reset_state();
 
