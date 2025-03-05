@@ -277,6 +277,9 @@ def get_image_prompt(args):
         image_param_list = parse_json_data.parse_image_json_data(output_data_list)
         if len(image_param_list) > 0:
             for image_data in image_param_list:
+                if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
+                    image_data['media'] = model_utils.resolve_media_file_path(image_data.get("media"), args['prompt_file'][0])
+                    image_data['mask_image'] = model_utils.resolve_media_file_path(image_data.get("mask_image"), args['prompt_file'][0])
                 input_image_list.append(image_data)
     else:
         input_image_list.append(output_data_list[0])
