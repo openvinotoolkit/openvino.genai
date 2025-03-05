@@ -274,6 +274,18 @@ public:
     * Turns off keeping KV cache between generate calls.
     */
     void finish_chat();
+
+    /**
+     * @brief remove LoRA adapters.
+     * @param properties optional plugin properties, ov::genai::adapters property for LoRA adapters.
+     */
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    util::StringAny<Properties...> remove_adapters(Properties&&... properties) {
+        remove_adapters(AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    void remove_adapters(const ov::AnyMap& config_map);
 private:
     std::unique_ptr<LLMPipelineImplBase> m_pimpl;
 };
