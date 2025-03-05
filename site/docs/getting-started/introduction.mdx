@@ -27,7 +27,9 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 
 Using OpenVINO GenAI typically involves three main steps:
 
-1. **Model Preparation:** Convert models from other frameworks to the OpenVINO IR format (e.g. using `optimum-intel`), optionally applying weights compression.
+1. **Model Preparation:**
+    - Convert model from other frameworks to the OpenVINO IR format (e.g. using `optimum-intel`), optionally applying weights compression.
+    - Download pre-converted model in OpenVINO IR format (e.g. from [OpenVINO Toolkit](https://huggingface.co/OpenVINO) organization on Hugging Face).
 2. **Pipeline Setup:** Initialize the appropriate pipeline for your task (LLM, Text to Image, Whisper, VLM, etc.) with the converted model.
 3. **Inference:** Run the model with your inputs using the pipeline's simple API.
 
