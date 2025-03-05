@@ -128,7 +128,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, tokenizer, device, properties);
+        m_pimpl = properties.count("STATIC_PIPELINE")
+            ? static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties)
+            : std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
@@ -166,7 +168,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, device, properties);
+        m_pimpl = properties.count("STATIC_PIPELINE")
+            ? static_llm::LLMPipelineFactory::create(models_path, properties)
+            : std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
@@ -208,13 +212,18 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(
-            utils::singleton_core().read_model(model_str, weights_tensor),
-            tokenizer,
-            device,
-            properties,
-            generation_config
-        );
+        m_pimpl = properties.count("STATIC_PIPELINE")
+            ? static_llm::LLMPipelineFactory::create(
+                  utils::singleton_core().read_model(model_str, weights_tensor),
+                  tokenizer,
+                  properties,
+                  generation_config)
+            : std::make_unique<StatefulLLMPipeline>(
+                utils::singleton_core().read_model(model_str, weights_tensor),
+                tokenizer,
+                device,
+                properties,
+                generation_config);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
