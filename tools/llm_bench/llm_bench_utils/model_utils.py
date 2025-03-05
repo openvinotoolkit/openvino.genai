@@ -312,3 +312,11 @@ def init_timestamp(num_iters, prompt_list, prompt_idx_list):
             p_idx = prompt_idx_list[idx]
             iter_timestamp[num][p_idx] = {}
     return iter_timestamp
+
+
+def resolve_media_file_path(file_path, prompt_file_path):
+    if not file_path:
+        return file_path
+    if not (file_path.startswith("http://") or file_path.startswith("https://")):
+        return os.path.join(os.path.dirname(prompt_file_path), file_path.replace("./", ""))
+    return file_path
