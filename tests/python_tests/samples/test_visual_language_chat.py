@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import TEST_FILES, SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
 
 class TestVisualLanguageChat:
@@ -19,7 +19,7 @@ class TestVisualLanguageChat:
         ],
         indirect=["convert_model"],
     )
-    @pytest.mark.parametrize("download_test_content", [TEST_FILES["monalisa.jpg"]], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["monalisa.jpg"], indirect=True)
     def test_sample_visual_language_chat(self, convert_model, download_test_content, sample_args):
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
