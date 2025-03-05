@@ -5,6 +5,7 @@
 option(ENABLE_PYTHON "Enable Python API build" ON)
 option(ENABLE_JS "Enable JS API build" OFF)
 option(ENABLE_SAMPLES "Enable samples build" ON)
+option(ENABLE_GGUF "Enable support for GGUF format" ON)
 
 # Disable building samples for NPM package
 if(CPACK_GENERATOR STREQUAL "NPM")

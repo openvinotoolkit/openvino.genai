@@ -386,6 +386,10 @@ def create_evaluator(base_model, args):
         elif task == "visual-text":
             tokenizer = load_tokenizer(args)
             processor = load_processor(args)
+            if "internvl" in base_model.config.model_type and args.hf:
+                crop_question = False
+            else:
+                crop_question = True
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -395,6 +399,7 @@ def create_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
+                crop_question=crop_question,
             )
         elif task == "image-to-image":
             return EvaluatorCLS(

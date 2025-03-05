@@ -4,3 +4,6 @@
 [submodule "gguf-tools"]
 	path = gguf-tools
 	url = https://github.com/antirez/gguf-tools.git
+[submodule "thirdparty/gguf-tools"]
+	path = thirdparty/gguf-tools
+	url = https://github.com/antirez/gguf-tools.git
