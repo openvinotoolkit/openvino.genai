@@ -211,13 +211,13 @@ std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& imag
 
 } // namespace
 
-EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderPhi3V::encode(ov::InferRequest& encoder, const ov::Tensor& image, const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     const auto& [pixel_values, image_size] = get_pixel_values_phi3_v(image, config);
-    m_vision_encoder.set_input_tensor(pixel_values);
-    m_vision_encoder.infer();
-    return {m_vision_encoder.get_output_tensor(), image_size};
+    encoder.set_input_tensor(pixel_values);
+    encoder.infer();
+    return {encoder.get_output_tensor(), image_size};
 }
 
 namespace {
@@ -566,7 +566,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
     ov::Tensor inputs_embeds{ov::element::f32, {1, features_length, m_vlm_config.hidden_size}};
     size_t offset = 0;
     if (tokens.size() > images_features_proj.size()) {
-        const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(0));
+        const ov::Tensor& text_embeds = m_embedding->infer(tokens.at(0));
         size_t text_length = text_embeds.get_shape().at(1);
         std::copy_n(
             text_embeds.data<float>(),
@@ -585,7 +585,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
             inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
         );
         offset += im_length;
-        const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(im_id));
+        const ov::Tensor& text_embeds = m_embedding->infer(tokens.at(im_id));
         size_t text_length = text_embeds.get_shape().at(1);
         std::copy_n(
             text_embeds.data<float>(),

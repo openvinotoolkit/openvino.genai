@@ -166,7 +166,7 @@ ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
 
 } // namespace
 
-EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderQwen2VL::encode(ov::InferRequest& encoder, const ov::Tensor& image, const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Shape image_shape = image.get_shape();
@@ -227,10 +227,10 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     ov::Tensor flattened_patches(transposed_patches.get_element_type(), flattened_patches_shape);
     std::memcpy(flattened_patches.data(), transposed_patches.data(), transposed_patches.get_byte_size());
 
-    m_vision_encoder.set_tensor("hidden_states", flattened_patches);
-    m_vision_encoder.infer();
+    encoder.set_tensor("hidden_states", flattened_patches);
+    encoder.infer();
 
-    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+    const ov::Tensor& infer_output = encoder.get_output_tensor();
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
@@ -299,7 +299,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     formatted_prompt += prompt;
 
     ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
-    ov::Tensor text_embeds = m_embedding.infer(input_ids);
+    ov::Tensor text_embeds = m_embedding->infer(input_ids);
 
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_vision_start_token = m_tokenizer.encode(m_vlm_config.vision_start_token, ov::genai::add_special_tokens(false)).input_ids;
