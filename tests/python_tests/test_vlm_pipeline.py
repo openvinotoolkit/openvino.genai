@@ -298,28 +298,29 @@ def test_perf_metrics(cache):
     assert perf_metrics is not None
 
     assert 0 < perf_metrics.get_load_time() < load_time
-    assert 0 < perf_metrics.get_num_generated_tokens() <= max_new_tokens
+    num_tokens = perf_metrics.get_num_generated_tokens()
+    assert 0 < num_tokens <= max_new_tokens
     assert 0 < perf_metrics.get_num_input_tokens() < len(prompts[0]) + image_tokens_num
     assert 0 < perf_metrics.get_ttft().mean < generate_time
-    assert 0 < perf_metrics.get_tpot().mean < generate_time
-    assert 0 < perf_metrics.get_ipot().mean < generate_time
-    assert 0 < perf_metrics.get_throughput().mean < max_new_tokens / ((generate_time - perf_metrics.get_ttft().mean) / 1000.0)
+    assert 0 < perf_metrics.get_tpot().mean < generate_time / num_tokens
+    assert 0 < perf_metrics.get_ipot().mean < generate_time / num_tokens
+    assert num_tokens / (generate_time / 1000.0) < perf_metrics.get_throughput().mean < num_tokens / ((generate_time - perf_metrics.get_ttft().mean) / 1000.0)
     assert 0 < perf_metrics.get_inference_duration().mean < generate_time
     assert 0 < perf_metrics.get_generate_duration().mean < generate_time
     assert 0 < perf_metrics.get_tokenization_duration().mean < generate_time
     assert 0 < perf_metrics.get_detokenization_duration().mean < generate_time
     assert 0 < perf_metrics.get_prepare_embeddings_duration().mean < generate_time
 
-    double_generate_time = generate_time * generate_time
-    assert 0 <= perf_metrics.get_ttft().std < double_generate_time
-    assert 0 <= perf_metrics.get_tpot().std < double_generate_time
-    assert 0 <= perf_metrics.get_ipot().std < double_generate_time
-    assert 0 <= perf_metrics.get_throughput().std < double_generate_time
-    assert 0 <= perf_metrics.get_inference_duration().std < double_generate_time
-    assert 0 <= perf_metrics.get_generate_duration().std < double_generate_time
-    assert 0 <= perf_metrics.get_tokenization_duration().std < double_generate_time
-    assert 0 <= perf_metrics.get_detokenization_duration().std < double_generate_time
-    assert 0 <= perf_metrics.get_prepare_embeddings_duration().std < double_generate_time
+    squared_generate_time = generate_time * generate_time
+    assert 0 <= perf_metrics.get_ttft().std < squared_generate_time
+    assert 0 <= perf_metrics.get_tpot().std < squared_generate_time
+    assert 0 <= perf_metrics.get_ipot().std < squared_generate_time
+    assert 0 <= perf_metrics.get_throughput().std < squared_generate_time
+    assert 0 <= perf_metrics.get_inference_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_generate_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_tokenization_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_detokenization_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     vlm_raw_metrics = perf_metrics.vlm_raw_metrics
