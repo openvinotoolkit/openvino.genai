@@ -398,7 +398,7 @@ jobs:
         with:
           name: test-results-samples
           path: |
-            ${{ env.INSTALL_TEST_DIR }}/samples_tests.log
+            ${{ env.INSTALL_DIR }}/samples_tests.log
           if-no-files-found: 'warn'
 
   genai_build_nodejs_bindings:
