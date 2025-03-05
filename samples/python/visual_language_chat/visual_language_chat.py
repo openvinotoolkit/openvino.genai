@@ -55,7 +55,9 @@ def main():
 
     rgbs = read_images(args.image_dir)
 
-    device = 'CPU'  # GPU can be used as well
+    # GPU and NPU can be used as well.
+    # Note: If NPU selected, only language model will be run on NPU
+    device = 'CPU'
     enable_compile_cache = dict()
     if "GPU" == device:
         # Cache compiled models on disk for GPU to save time on the
