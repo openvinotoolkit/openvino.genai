@@ -339,38 +339,48 @@ ov_genai_generation_config_get_max_new_tokens(const ov_genai_generation_config* 
 /**
  * @brief Determine whether greedy decoding is enabled.
  * @param handle A pointer to the ov_genai_generation_config instance.
- * @return A boolean indicating if greedy decoding is enabled.
+ * @param is_greedy_decoding A boolean indicating if greedy decoding is enabled.
+ * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_greedy_decoding(const ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_generation_config_is_greedy_decoding(const ov_genai_generation_config* config, bool* is_greedy_decoding);
 
 /**
  * @brief Determine whether beam search is enabled.
  * @param handle A pointer to the ov_genai_generation_config instance.
- * @return A boolean indicating if beam search is enabled.
+ * @param is_beam_search A boolean indicating if beam search is enabled.
+ * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_beam_search(const ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_is_beam_search(const ov_genai_generation_config* config,
+                                                                               bool* is_beam_search);
 
 /**
  * @brief Determine whether multinomial random sampling is enabled.
  * @param handle A pointer to the ov_genai_generation_config instance.
- * @return A boolean indicating if multinomial random sampling is enabled.
+ * @param is_multinomial A boolean indicating if multinomial random sampling is enabled.
+ * @return ov_status_e A status code, return OK(0) if successful.nabled.
  */
-OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_multinomial(const ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_is_multinomial(const ov_genai_generation_config* config,
+                                                                               bool* is_multinomial);
 
 /**
  * @brief Determine whether assisting generation is enabled.
  * @param handle A pointer to the ov_genai_generation_config instance.
- * @return A boolean indicating if assisting generation is enabled.
+ * @param is_assisting_generation A boolean indicating if assisting generation is enabled.
+ * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_assisting_generation(
-    const ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_generation_config_is_assisting_generation(const ov_genai_generation_config* config,
+                                                   bool* is_assisting_generation);
 
 /**
  * @brief Determine whether prompt lookup is enabled.
  * @param handle A pointer to the ov_genai_generation_config instance.
- * @return A boolean indicating if prompt lookup is enabled.
+ * @param is_prompt_lookup A boolean indicating if prompt lookup is enabled.
+ * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS bool ov_genai_generation_config_is_prompt_lookup(const ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_generation_config_is_prompt_lookup(const ov_genai_generation_config* config, bool* is_prompt_lookup);
 
 /**
  * @brief Checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.

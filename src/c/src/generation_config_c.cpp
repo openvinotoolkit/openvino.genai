@@ -11,7 +11,7 @@ ov_status_e ov_genai_generation_config_create(ov_genai_generation_config** confi
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        std::unique_ptr<ov_genai_generation_config> _config(new ov_genai_generation_config);
+        std::unique_ptr<ov_genai_generation_config> _config = std::make_unique<ov_genai_generation_config>();
         _config->object = std::make_shared<ov::genai::GenerationConfig>();
         *config = _config.release();
 
@@ -25,7 +25,7 @@ ov_status_e ov_genai_generation_config_create_from_json(const char* json_path, o
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        std::unique_ptr<ov_genai_generation_config> _config(new ov_genai_generation_config);
+        std::unique_ptr<ov_genai_generation_config> _config = std::make_unique<ov_genai_generation_config>();
         _config->object = std::make_shared<ov::genai::GenerationConfig>(std::filesystem::path(json_path));
         *config = _config.release();
     } catch (...) {
@@ -383,40 +383,63 @@ ov_status_e ov_genai_generation_config_get_max_new_tokens(const ov_genai_generat
     }
     return ov_status_e::OK;
 }
-bool ov_genai_generation_config_is_greedy_decoding(const ov_genai_generation_config* config) {
-    if (!config || !(config->object)) {
-        printf("[ERROR] The config or config->object is NULL!!!\n");
-        return false;
+ov_status_e ov_genai_generation_config_is_greedy_decoding(const ov_genai_generation_config* config,
+                                                          bool* is_greedy_decoding) {
+    if (!config || !(config->object) || !is_greedy_decoding) {
+        return ov_status_e::INVALID_C_PARAM;
     }
-    return config->object->is_greedy_decoding();
+    try {
+        *is_greedy_decoding = config->object->is_greedy_decoding();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
 }
-bool ov_genai_generation_config_is_beam_search(const ov_genai_generation_config* config) {
-    if (!config || !(config->object)) {
-        printf("[ERROR] The config or config->object is NULL!!!\n");
-        return false;
+ov_status_e ov_genai_generation_config_is_beam_search(const ov_genai_generation_config* config, bool* is_beam_search) {
+    if (!config || !(config->object) || !is_beam_search) {
+        return ov_status_e::INVALID_C_PARAM;
     }
-    return config->object->is_beam_search();
+    try {
+        *is_beam_search = config->object->is_beam_search();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
 }
-bool ov_genai_generation_config_is_multinomial(const ov_genai_generation_config* config) {
-    if (!config || !(config->object)) {
-        printf("[ERROR] The config or config->object is NULL!!!\n");
-        return false;
+ov_status_e ov_genai_generation_config_is_multinomial(const ov_genai_generation_config* config, bool* is_multinomial) {
+    if (!config || !(config->object) || !is_multinomial) {
+        return ov_status_e::INVALID_C_PARAM;
     }
-    return config->object->is_multinomial();
+    try {
+        *is_multinomial = config->object->is_multinomial();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
 }
-bool ov_genai_generation_config_is_assisting_generation(const ov_genai_generation_config* config) {
-    if (!config || !(config->object)) {
-        printf("[ERROR] The config or config->object is NULL!!!\n");
-        return false;
+ov_status_e ov_genai_generation_config_is_assisting_generation(const ov_genai_generation_config* config,
+                                                               bool* is_assisting_generation) {
+    if (!config || !(config->object) || !is_assisting_generation) {
+        return ov_status_e::INVALID_C_PARAM;
     }
-    return config->object->is_assisting_generation();
+    try {
+        *is_assisting_generation = config->object->is_assisting_generation();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
 }
-bool ov_genai_generation_config_is_prompt_lookup(const ov_genai_generation_config* config) {
-    if (!config || !(config->object)) {
-        printf("[ERROR] The config or config->object is NULL!!!\n");
-        return false;
+ov_status_e ov_genai_generation_config_is_prompt_lookup(const ov_genai_generation_config* config,
+                                                        bool* is_prompt_lookup) {
+    if (!config || !(config->object) || !is_prompt_lookup) {
+        return ov_status_e::INVALID_C_PARAM;
     }
-    return config->object->is_prompt_lookup();
+    try {
+        *is_prompt_lookup = config->object->is_prompt_lookup();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
 }
 ov_status_e ov_genai_generation_config_validate(ov_genai_generation_config* config) {
     if (!config || !(config->object)) {

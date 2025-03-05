@@ -84,10 +84,18 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_create(const char* mo
  */
 OPENVINO_GENAI_C_EXPORTS void ov_genai_llm_pipeline_free(ov_genai_llm_pipeline* pipe);
 
+typedef enum {
+    OV_GENAI_STREAMMING_STATUS_RUNNING = 0,  // Continue to run inference
+    OV_GENAI_STREAMMING_STATUS_STOP =
+        1,  // Stop generation, keep history as is, KV cache includes last request and generated tokens
+    OV_GENAI_STREAMMING_STATUS_CANCEL = 2  // Stop generate, drop last prompt and all generated tokens from history, KV
+                                           // cache includes history but last step
+} ov_genai_streamming_status_e;
+
 /**
  * @brief Callback function for streaming output.
  */
-typedef void(OPENVINO_C_API_CALLBACK* stream_callback)(const char*);
+typedef ov_genai_streamming_status_e(OPENVINO_C_API_CALLBACK* stream_callback)(const char*);
 /**
  * @brief Generate text by ov_genai_llm_pipeline.
  * @param pipe A pointer to the ov_genai_llm_pipeline instance.

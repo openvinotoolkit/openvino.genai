@@ -16,12 +16,14 @@
         goto err;                                                                        \
     }
 
-void print_callback(const char* args) {
+ov_genai_streamming_status_e print_callback(const char* args) {
     if (args) {
         fprintf(stdout, "%s", args);
         fflush(stdout);
+        return OV_GENAI_STREAMMING_STATUS_RUNNING;
     } else {
         printf("Callback executed with NULL message!\n");
+        return OV_GENAI_STREAMMING_STATUS_STOP;
     }
 }
 

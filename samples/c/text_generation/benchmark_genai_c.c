@@ -138,14 +138,12 @@ int main(int argc, char* argv[]) {
     CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, NULL, &results));
 
     CHECK_STATUS(ov_genai_decoded_results_get_string(results, output, MAX_OUTPUT_LENGTH));
-    printf("%s\n", output);
 
     CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));
 
     if (results) {
         ov_genai_decoded_results_free(results);
-        results = NULL;  // Because the results pointer might need to be used repeatedly, set it to NULL manually after
-                         // freeing the memory.
+        results = NULL;  // The end of main() would try to free it again if not NULL.
     }
     for (size_t i = 0; i < options.num_iter - 1; i++) {
         CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, NULL, &results));
@@ -153,8 +151,7 @@ int main(int argc, char* argv[]) {
         CHECK_STATUS(ov_genai_perf_metrics_add_in_place(metrics, _metrics));  // metrics += _metrics
         if (_metrics) {
             ov_genai_decoded_results_perf_metrics_free(_metrics);
-            _metrics = NULL;  //  Because the _metrics pointer might need to be used repeatedly, set it to NULL manually
-                              //  after freeing the memory.
+            _metrics = NULL;  // The end of main() would try to free it again if not NULL.
         }
         if (results) {
             ov_genai_decoded_results_free(results);
