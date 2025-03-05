@@ -16,12 +16,26 @@
 #include "utils.hpp"
 
 namespace ov {
+
+// forward declaration, taken from OpenVINO Dev API
+bool with_cpu_sve();
+
 namespace genai {
 
 namespace {
 
 const std::string PA_BACKEND = "PA";
 const std::string SDPA_BACKEND = "SDPA";
+
+inline bool is_paged_attention_available() {
+#ifdef OPENVINO_ARCH_X86_64
+    return true;
+#elif defined OPENVINO_ARCH_ARM64
+    return with_cpu_sve();
+#else
+    return false;
+#endif
+}
 
 SchedulerConfig get_latency_oriented_scheduler_config() {
     SchedulerConfig default_config;
@@ -32,25 +46,25 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
 
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end()) {
-#ifdef OPENVINO_ARCH_X86_64
-        return true;
-#else
-        OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 platform only");
-#endif
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 with SVE platforms only");
+        }
     }
     if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
-#ifdef OPENVINO_ARCH_X86_64
-        return true;
-#else
-        OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 platform only");
-#endif
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 with SVE platforms only");
+        }
     }
-        if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
-#ifdef OPENVINO_ARCH_X86_64
-        return true;
-#else
-        OPENVINO_THROW("Prompt lookup decoding requires PagedAttention operation support, which is available on x86_64 platform only");
-#endif
+    if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Prompt lookup decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 with SVE platforms only");
+        }
     }
     return false;
 }
