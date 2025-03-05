@@ -295,6 +295,7 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }}
         run: |
           & ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.ps1 -i ${{ env.INSTALL_DIR }}
+          & ${{ env.OV_INSTALL_DIR }}/samples/c/build_samples.ps1 -i ${{ env.INSTALL_DIR }}
 
       - name: Build Samples (Debug)
         if: ${{ 'Release' != matrix.build-type }}

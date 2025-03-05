@@ -252,6 +252,8 @@ jobs:
         run: |
           chmod +x ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh
           ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh -i ${{ env.INSTALL_DIR }}
+          chmod +x ${{ env.OV_INSTALL_DIR }}/samples/c/build_samples.sh
+          ${{ env.OV_INSTALL_DIR }}/samples/c/build_samples.sh -i ${{ env.INSTALL_DIR }}
 
       - name: Build Samples (${{ matrix.build-type }})
         if: ${{ 'Release' != matrix.build-type }}

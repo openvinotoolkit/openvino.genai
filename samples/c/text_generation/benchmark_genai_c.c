@@ -136,7 +136,6 @@ int main(int argc, char* argv[]) {
     }
 
     CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, NULL, &results));
-    CHECK_STATUS(ov_genai_decoded_results_get_string(results, output, MAX_OUTPUT_LENGTH));
     CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));
 
     if (results) {
