@@ -229,7 +229,7 @@ def load_tokenizer(args):
 def load_processor(args):
     model_id = args.base_model if args.base_model is not None else args.target_model
     if model_id is None:
-        return None
+        return None, None
 
     config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
     if "llava-qwen" in config.model_type:
@@ -237,9 +237,7 @@ def load_processor(args):
     else:
         preprocessor_id = model_id
 
-    return AutoProcessor.from_pretrained(
-        preprocessor_id, trust_remote_code=True
-    )
+    return AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True), config
 
 
 def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
@@ -385,7 +383,11 @@ def create_evaluator(base_model, args):
             )
         elif task == "visual-text":
             tokenizer = load_tokenizer(args)
-            processor = load_processor(args)
+            processor, config = load_processor(args)
+            if config and "internvl" in config.model_type and args.hf:
+                crop_question = False
+            else:
+                crop_question = True
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -395,6 +397,7 @@ def create_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
+                crop_question=crop_question,
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
