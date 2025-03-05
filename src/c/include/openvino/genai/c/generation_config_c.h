@@ -260,7 +260,7 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_do_sample(ov
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_generation_config_set_repetition_penaltyy(ov_genai_generation_config* config, const float value);
+ov_genai_generation_config_set_repetition_penalty(ov_genai_generation_config* config, const float value);
 
 /**
  * @brief Set the presence penalty, which reduces absolute log prob if the
