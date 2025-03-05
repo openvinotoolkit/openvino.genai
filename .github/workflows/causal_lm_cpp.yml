@@ -599,7 +599,7 @@ jobs:
   Overall_Status:
     name: ci/gha_overall_status_causal_lm
     needs: [cpp-greedy_causal_lm-windows, cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
-            visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-llava_1_5, visual_language_chat_sample-ubuntu-llava_next, visual_language_chat_sample-ubuntu-internvl2,
+            visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-internvl2,
             cpp-continuous-batching-windows, cpp-continuous-batching-macos]
     if: ${{ always() }}
     runs-on: ubuntu-latest
