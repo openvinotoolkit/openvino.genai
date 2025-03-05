@@ -54,6 +54,8 @@ public:
     virtual void start_chat(const std::string& system_message) = 0;
     virtual void finish_chat() = 0;
 
+    virtual void remove_adapters(const ov::AnyMap& plugin_config) = 0;
+
     virtual ~LLMPipelineImplBase() = default;
 
     void save_load_time(std::chrono::steady_clock::time_point start_time) {
