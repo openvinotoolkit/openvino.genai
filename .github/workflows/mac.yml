@@ -454,7 +454,7 @@ jobs:
       - name: Test Samples (Python and C++)
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}" --log-file=${{ env.INSTALL_DIR }}/samples_tests.log
+          python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}" --log-file=${{ env.INSTALL_DIR }}/samples_tests_${{ matrix.test.name }}.log
         env:
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
@@ -465,7 +465,7 @@ jobs:
         with:
           name: test-results-samples
           path: |
-            ${{ env.INSTALL_DIR }}/samples_tests.log
+            ${{ env.INSTALL_DIR }}/samples_tests_${{ matrix.test.name }}.log
           if-no-files-found: 'warn'
           
   genai_nodejs_tests:

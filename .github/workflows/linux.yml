@@ -386,7 +386,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
         
       - name: Test Samples (Python and C++)
-        run: python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}" --log-file=${{ env.INSTALL_DIR }}/samples_tests.log
+        run: python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}" --log-file=${{ env.INSTALL_DIR }}/samples_tests_${{ matrix.test.name }}.log
         env:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
@@ -398,7 +398,7 @@ jobs:
         with:
           name: test-results-samples
           path: |
-            ${{ env.INSTALL_DIR }}/samples_tests.log
+            ${{ env.INSTALL_DIR }}/samples_tests_${{ matrix.test.name }}.log
           if-no-files-found: 'warn'
 
   genai_build_nodejs_bindings:
