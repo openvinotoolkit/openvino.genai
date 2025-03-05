@@ -57,6 +57,7 @@ public:
 
     void start_chat(const std::string& system_message) override;
     void finish_chat() override;
+    void remove_adapters(const ov::AnyMap& plugin_config) override;
 
 private:
     uint32_t m_max_prompt_len = 0u;
