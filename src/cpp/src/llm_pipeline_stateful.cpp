@@ -62,10 +62,11 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (!m_use_full_chat_history)
         m_kv_history_trim_manager.kv_cache_seq_length_axis = kv_pos.seq_len;
 
-    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
-    if (m_generation_config.adapters) {
-        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
-        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
+    std::optional<AdapterConfig> adapters;
+    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
+        adapters->set_tensor_name_prefix("base_model.model.");
+        m_adapter_controller = AdapterController(model, *adapters, device);  // TODO: Make the prefix name configurable
     }
     ov::CompiledModel compiled_model;
     if (m_is_npu) {
@@ -414,4 +415,12 @@ void StatefulLLMPipeline::finish_chat() {
     }
 }
 
+void StatefulLLMPipeline::remove_adapters(const ov::AnyMap& plugin_config) {
+    std::optional<AdapterConfig> adapters;
+    auto filtered_properties = extract_adapters_from_properties(plugin_config, &adapters);
+
+    if (m_adapter_controller) {
+        m_adapter_controller->remove_adapters(adapters);
+    }
+}
 } // namespace ov::genai
