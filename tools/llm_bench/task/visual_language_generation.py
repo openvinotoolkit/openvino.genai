@@ -366,10 +366,7 @@ def get_image_text_prompt(args):
         if len(vlm_param_list) > 0:
             for vlm_file in vlm_param_list:
                 if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
-                    media_path = vlm_file["media"]
-                    if not (media_path.startswith("http://") or media_path.startswith("https://")):
-                        media_path = os.path.join(os.path.dirname(args['prompt_file'][0]), media_path.replace("./", ""))
-                    vlm_file['media'] = media_path
+                    vlm_file['media'] = model_utils.resolve_media_file_path(vlm_file.get("media"), args['prompt_file'][0])
                 vlm_file_list.append(vlm_file)
     else:
         vlm_file_list.append(output_data_list)
