@@ -343,9 +343,8 @@ void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::KVCach
     size_t first_diverse_tokens_idx = ov::genai::utils::get_first_history_difference(new_chat_tokens, state);
     // in the case of beam_search the longest answer is in the kv cache, but the best one is needed
     // so generated tokens were not added to KVCacheState and num_tokens_to_trim was set to the size of the generated serquence
-    kv_cache_state.num_tokens_to_trim = kv_cache_state.num_tokens_to_trim > 0 ? kv_cache_state.num_tokens_to_trim : (state.size() - first_diverse_tokens_idx);
-    OPENVINO_ASSERT(state.size() >= kv_cache_state.num_tokens_to_trim, "Size of kv cache is less then amount of tokens, which should be trimmed from kv cache.");
-    state.resize(state.size() - kv_cache_state.num_tokens_to_trim);
+    kv_cache_state.num_tokens_to_trim += state.size() - first_diverse_tokens_idx;
+    state.resize(first_diverse_tokens_idx);
     kv_cache_state.reset_mem_state = state.empty();
 }
 

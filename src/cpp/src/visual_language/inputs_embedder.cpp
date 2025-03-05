@@ -44,6 +44,10 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
     if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
         // If chat generation process was cancelled by user, let's rollback to previous state of history
         m_history.pop_back();
+
+        std::vector<int64_t>& state = m_kv_cache_state.get_state();
+        state.resize(state.size() - processed_tokens_amount);
+        m_kv_cache_state.reset_mem_state = state.empty();
         m_kv_cache_state.num_tokens_to_trim = processed_tokens_amount;
     } else {
         // Tail of chat template is missing in KV cache.
