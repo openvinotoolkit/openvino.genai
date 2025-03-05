@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build_assets:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
@@ -42,7 +42,7 @@ jobs:
           path: ./site/build
 
   deploy_github_pages:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     needs: build_assets
     permissions:
       pages: write
