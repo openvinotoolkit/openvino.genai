@@ -283,6 +283,7 @@ ov::Core singleton_core() {
     return core;
 }
 
+
 namespace {
 
 bool is_gguf_model(const std::filesystem::path& file_path) {
@@ -533,6 +534,19 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
 
 void release_core_plugin(const std::string& device) {
     try {
+        // Ugly WA to clean up oneDNN lru cache
+        // dummy model created, compiled and cleaned for device (usefull for GPU only)
+        {
+            ov::PartialShape shape;
+            ov::Core core;
+            auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, shape);
+            const ov::ResultVector results{std::make_shared<ov::op::v0::Result>(parameter)};
+            ov::ParameterVector params = {parameter};
+            auto dummy = std::make_shared<ov::Model>(results, params, "ParameterResult");
+
+            auto compiled_model = core.compile_model(dummy, device);
+            compiled_model.release_memory();
+        }
         singleton_core().unload_plugin(device);
     } catch (const ov::Exception&) {
         // Note: in a theory it can throw an exception when 2 different pipelines are created from
