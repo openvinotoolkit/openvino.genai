@@ -334,6 +334,10 @@ def test_perf_metrics(cache):
 @pytest.mark.nightly
 # FIXME: katuni4ka/tiny-random-qwen2vl - fails on NPU
 @pytest.mark.parametrize("model_id", model_ids[:-1])
+@pytest.mark.skipif(
+    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
+    reason="NPU plugin is available only on Linux and Windows x86_64",
+)
 def test_vlm_npu_no_exception(model_id, cache):
     models_path = get_ov_model(model_ids[0], cache)
     properties = {
