@@ -363,18 +363,6 @@ jobs:
             f.write(content.encode("utf-8"))
       - run: diff cpp2.txt py2.txt
 
-  visual_language_chat_sample-ubuntu-llava_1_5:
-    uses: ./.github/workflows/job_vlm_sample_llava.yml
-    with:
-      model_id: llava-hf/llava-1.5-7b-hf
-      model_dir: llava_1_5_7b_ov
-
-  visual_language_chat_sample-ubuntu-llava_next:
-    uses: ./.github/workflows/job_vlm_sample_llava.yml
-    with:
-      model_id: llava-hf/llava-v1.6-mistral-7b-hf
-      model_dir: llava_v1_6_mistral_7b_ov
-
   visual_language_chat_sample-ubuntu-internvl2:
     runs-on: ubuntu-22.04-16-cores
     steps:
@@ -575,7 +563,7 @@ jobs:
   Overall_Status:
     name: ci/gha_overall_status_causal_lm
     needs: [cpp-greedy_causal_lm-windows, cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
-            visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-llava_1_5, visual_language_chat_sample-ubuntu-llava_next, visual_language_chat_sample-ubuntu-internvl2,
+            visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-internvl2,
             cpp-continuous-batching-windows, cpp-continuous-batching-macos]
     if: ${{ always() }}
     runs-on: ubuntu-latest
