@@ -217,6 +217,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     step_timer.end();
 }
 
+void ContinuousBatchingPipeline::SpeculativeDecodingImpl::remove_adapters(const std::optional<AdapterConfig>& adapters) {
+    m_main_pipeline->remove_adapters(adapters);
+    m_draft_pipeline->remove_adapters(adapters);
+}
+
 std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
