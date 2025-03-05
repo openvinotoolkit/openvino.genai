@@ -4,6 +4,7 @@
 import openvino_tokenizers
 import openvino
 import pytest
+import sys
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline, GenerationConfig, SchedulerConfig, ContinuousBatchingPipeline, GenerationStatus
