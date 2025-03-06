@@ -421,7 +421,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     else:
         if kwargs.get("static_reshape", False):
             image_gen_pipe = image_gen_pipeline_class(model_path)
-            guidance_scale = kwargs.get("guidance_scale",  image_gen_pipe.get_generation_config().guidance_scale )
+            guidance_scale = kwargs.get("guidance_scale", image_gen_pipe.get_generation_config().guidance_scale)
             num_images_per_prompt = kwargs.get("batch_size", 1)
             height = kwargs.get("height", 512)
             width = kwargs.get("width", 512)
