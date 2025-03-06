@@ -182,8 +182,16 @@ public:
 
         m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
 
+        // copy inputs to avoid changes in user data
+        std::vector<ov::Tensor> images;
+        for (auto rgb : rgbs) {
+            auto image = ov::Tensor{rgb.get_element_type(), rgb.get_shape()};
+            rgb.copy_to(image);
+            images.push_back(image);
+        }
+
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
+        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, images, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
         auto to_remove_from_hist = m_inputs_embedder->get_num_tokens_to_remove_from_hist();
