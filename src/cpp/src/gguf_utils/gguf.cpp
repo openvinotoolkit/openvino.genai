@@ -4,18 +4,11 @@
 #include <cstring>
 #include <fstream>
 #include <numeric>
-#include <variant>
 
 #include "gguf.h"
 
 // https://github.com/antirez/gguf-tools/blob/af7d88d808a7608a33723fba067036202910acb3/gguflib.h#L102-L108
 constexpr int gguf_array_header_size = 12;
-
-using GGUFMetaData =
-    std::variant<std::monostate, ov::Tensor, std::string, std::vector<std::string>>;
-using GGUFLoad = std::pair<
-    std::unordered_map<std::string, ov::Tensor>,
-    std::unordered_map<std::string, GGUFMetaData>>;
 
 std::optional<uint32_t> dtype_to_gguf_tensor_type(const ov::element::Type& dtype) {
   switch (dtype) {
@@ -65,7 +58,7 @@ ov::Tensor extract_tensor_data(gguf_tensor* tensor) {
   // If there's an equivalent type, we can simply copy.
   if (equivalent_dtype.has_value()) {
     auto shape = get_shape(*tensor);
-    ov::Tensor weights(equivalent_dtype, std::move(shape));
+    ov::Tensor weights(equivalent_dtype.value(), shape);
 
     memcpy(
         weights.data(),
@@ -81,7 +74,7 @@ ov::Tensor extract_tensor_data(gguf_tensor* tensor) {
     throw std::runtime_error("[load_gguf] gguf_tensor_to_f16 failed");
   }
   const size_t new_size = tensor->num_weights * sizeof(int16_t);
-  ov::Tensor weights(ov::element::f16, std::move(shape));
+  ov::Tensor weights(ov::element::f16, shape);
   memcpy(weights.data(), data, new_size);
   free(data);
   return weights;
@@ -94,41 +87,52 @@ void set_mx_value_from_gguf(
     GGUFMetaData& value) {
   switch (type) {
     case GGUF_VALUE_TYPE_UINT8:
-      value = array(val->uint8, uint8);
+      value = ov::Tensor(ov::element::u8, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::u8>::value_type>()) = val->uint8;
       break;
     case GGUF_VALUE_TYPE_INT8:
-      value = array(val->int8, int8);
+      value = ov::Tensor(ov::element::i8, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::i8>::value_type>()) = val->int8;
       break;
     case GGUF_VALUE_TYPE_UINT16:
-      value = array(val->uint16, uint16);
+      value = ov::Tensor(ov::element::u16, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::u16>::value_type>()) = val->uint16;
       break;
     case GGUF_VALUE_TYPE_INT16:
-      value = array(val->int16, int16);
+      value = ov::Tensor(ov::element::i16, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::i16>::value_type>()) = val->int16;
       break;
     case GGUF_VALUE_TYPE_UINT32:
-      value = array(val->uint32, uint32);
+      value = ov::Tensor(ov::element::u32, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::u32>::value_type>()) = val->uint32;
       break;
     case GGUF_VALUE_TYPE_INT32:
-      value = array(val->int32, int32);
+      value = ov::Tensor(ov::element::i32, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::i32>::value_type>()) = val->int32;
       break;
     case GGUF_VALUE_TYPE_UINT64:
-      value = array(val->uint64, uint64);
+      value = ov::Tensor(ov::element::u64, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::u64>::value_type>()) = val->uint64;
       break;
     case GGUF_VALUE_TYPE_INT64:
-      value = array(val->int64, int64);
+      value = ov::Tensor(ov::element::i64, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::i64>::value_type>()) = val->int64;
       break;
     case GGUF_VALUE_TYPE_FLOAT32:
-      value = array(val->float32, float32);
+      value = ov::Tensor(ov::element::f32, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::f32>::value_type>()) = val->float32;
       break;
     case GGUF_VALUE_TYPE_BOOL:
-      value = array(val->boolval, bool_);
+      value = ov::Tensor(ov::element::boolean, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::boolean>::value_type>()) = val->boolval;
       break;
     case GGUF_VALUE_TYPE_STRING:
       value =
           std::string(val->string.string, static_cast<int>(val->string.len));
       break;
     case GGUF_VALUE_TYPE_FLOAT64:
-      value = array(val->float64, float32);
+      value = ov::Tensor(ov::element::f64, ov::Shape(0));
+      *(std::get<ov::Tensor>(value).data<ov::element_type_traits<ov::element::f64>::value_type>()) = val->float64;
       break;
     case GGUF_VALUE_TYPE_ARRAY: {
       ctx->off += gguf_array_header_size; // Skip header
@@ -140,34 +144,34 @@ void set_mx_value_from_gguf(
       }
       switch (val->array.type) {
         case GGUF_VALUE_TYPE_UINT8:
-          value = array(reinterpret_cast<uint8_t*>(data), {size}, uint8);
+          value = ov::Tensor(ov::element::u8, {size}, reinterpret_cast<uint8_t*>(data));
           break;
         case GGUF_VALUE_TYPE_INT8:
-          value = array(reinterpret_cast<int8_t*>(data), {size}, int8);
+          value = ov::Tensor(ov::element::i8, {size}, reinterpret_cast<uint8_t*>(data));
           break;
         case GGUF_VALUE_TYPE_UINT16:
-          value = array(reinterpret_cast<uint16_t*>(data), {size}, uint16);
+          value = ov::Tensor(ov::element::u16, {size}, reinterpret_cast<uint16_t*>(data));
           break;
         case GGUF_VALUE_TYPE_INT16:
-          value = array(reinterpret_cast<int16_t*>(data), {size}, int16);
+          value = ov::Tensor(ov::element::i16, {size}, reinterpret_cast<int16_t*>(data));
           break;
         case GGUF_VALUE_TYPE_UINT32:
-          value = array(reinterpret_cast<uint32_t*>(data), {size}, uint32);
+          value = ov::Tensor(ov::element::u32, {size}, reinterpret_cast<uint32_t*>(data));
           break;
         case GGUF_VALUE_TYPE_INT32:
-          value = array(reinterpret_cast<int32_t*>(data), {size}, int32);
+          value = ov::Tensor(ov::element::i32, {size}, reinterpret_cast<int32_t*>(data));
           break;
         case GGUF_VALUE_TYPE_UINT64:
-          value = array(reinterpret_cast<uint64_t*>(data), {size}, uint64);
+          value = ov::Tensor(ov::element::u64, {size}, reinterpret_cast<uint64_t*>(data));
           break;
         case GGUF_VALUE_TYPE_INT64:
-          value = array(reinterpret_cast<uint64_t*>(data), {size}, int64);
+          value = ov::Tensor(ov::element::i64, {size}, reinterpret_cast<int64_t*>(data));
           break;
         case GGUF_VALUE_TYPE_FLOAT32:
-          value = array(reinterpret_cast<float*>(data), {size}, float32);
+          value = ov::Tensor(ov::element::f32, {size}, reinterpret_cast<float*>(data));
           break;
         case GGUF_VALUE_TYPE_BOOL:
-          value = array(reinterpret_cast<bool*>(data), {size}, bool_);
+          value = ov::Tensor(ov::element::boolean, {size}, reinterpret_cast<bool*>(data));
           break;
         case GGUF_VALUE_TYPE_STRING: {
           std::vector<std::string> strs(size);
@@ -181,7 +185,7 @@ void set_mx_value_from_gguf(
           break;
         }
         case GGUF_VALUE_TYPE_FLOAT64:
-          value = array(reinterpret_cast<double*>(data), {size}, float32);
+          value = ov::Tensor(ov::element::f64, {size}, reinterpret_cast<double*>(data));
           break;
         default:
           throw std::runtime_error(
@@ -195,8 +199,8 @@ void set_mx_value_from_gguf(
   }
   if (type == GGUF_VALUE_TYPE_STRING) {
     ctx->off += (sizeof(gguf_string) + std::get<std::string>(value).size());
-  } else if (auto pv = std::get_if<array>(&value); pv) {
-    ctx->off += pv->nbytes();
+  } else if (auto pv = std::get_if<ov::Tensor>(&value); pv) {
+    ctx->off += pv->get_byte_size();
   }
 }
 
@@ -211,14 +215,14 @@ std::unordered_map<std::string, GGUFMetaData> load_metadata(gguf_ctx* ctx) {
   return metadata;
 }
 
-std::unordered_map<std::string, array> load_arrays(gguf_ctx* ctx) {
-  std::unordered_map<std::string, array> array_map;
+std::unordered_map<std::string, ov::Tensor> load_arrays(gguf_ctx* ctx) {
+  std::unordered_map<std::string, ov::Tensor> array_map;
   gguf_tensor tensor;
 
   auto check_insert = [](const auto& inserted) {
     if (!inserted.second) {
       std::ostringstream msg;
-      msg << "[load_gguf] Duplicate parameter name " << inserted.first->second
+      msg << "[load_gguf] Duplicate parameter name " << inserted.first->first
           << " this can happend when loading quantized tensors.";
       throw std::runtime_error(msg.str());
     }
@@ -237,7 +241,7 @@ std::unordered_map<std::string, array> load_arrays(gguf_ctx* ctx) {
   return array_map;
 }
 
-GGUFLoad load_gguf(const std::string& file, StreamOrDevice s) {
+GGUFLoad load_gguf(const std::string& file) {
   bool exists;
   {
     std::ifstream f(file.c_str());
@@ -260,18 +264,18 @@ GGUFLoad load_gguf(const std::string& file, StreamOrDevice s) {
 void append_kv_array(
     gguf_ctx* ctx,
     const std::string& key,
-    array& val,
+    ov::Tensor& val,
     uint32_t gguf_type) {
-  if (val.ndim() == 1) {
-    size_t gguf_size = val.nbytes() + gguf_array_header_size;
+  if (val.get_shape().size() == 1) {
+    size_t gguf_size = val.get_byte_size() + gguf_array_header_size;
     std::vector<char> val_vec(gguf_size);
     gguf_value* gguf_val = reinterpret_cast<gguf_value*>(val_vec.data());
     gguf_val->array.type = gguf_type;
-    gguf_val->array.len = val.size();
+    gguf_val->array.len = val.get_size();
     memcpy(
         val_vec.data() + gguf_array_header_size,
-        val.data<char>(),
-        val.nbytes());
+        val.data<ov::element_type_traits<ov::element::u8>::value_type>(),
+        val.get_byte_size());
     gguf_append_kv(
         ctx,
         key.c_str(),
@@ -285,184 +289,184 @@ void append_kv_array(
         key.c_str(),
         key.length(),
         gguf_type,
-        reinterpret_cast<void*>(val.data<char>()),
-        val.nbytes());
+        reinterpret_cast<void*>(val.data<ov::element_type_traits<ov::element::u8>::value_type>()),
+        val.get_byte_size());
   }
 }
 
-void save_gguf(
-    std::string file,
-    std::unordered_map<std::string, array> array_map,
-    std::unordered_map<std::string, GGUFMetaData> metadata /* = {} */) {
-  // Add .gguf to file name if it is not there
-  if (file.length() < 5 || file.substr(file.length() - 5, 5) != ".gguf") {
-    file += ".gguf";
-  }
+// void save_gguf(
+//     std::string file,
+//     std::unordered_map<std::string, array> array_map,
+//     std::unordered_map<std::string, GGUFMetaData> metadata /* = {} */) {
+//   // Add .gguf to file name if it is not there
+//   if (file.length() < 5 || file.substr(file.length() - 5, 5) != ".gguf") {
+//     file += ".gguf";
+//   }
 
-  std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx(
-      gguf_create(file.c_str(), GGUF_OVERWRITE), gguf_close);
-  if (!ctx) {
-    throw std::runtime_error("[save_gguf] gguf_create failed");
-  }
+//   std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx(
+//       gguf_create(file.c_str(), GGUF_OVERWRITE), gguf_close);
+//   if (!ctx) {
+//     throw std::runtime_error("[save_gguf] gguf_create failed");
+//   }
 
-  auto string_to_gguf = [](char* dst, const std::string& src) {
-    gguf_string* val = reinterpret_cast<gguf_string*>(dst);
-    val->len = src.length();
-    memcpy(val->string, src.c_str(), src.length());
-  };
+//   auto string_to_gguf = [](char* dst, const std::string& src) {
+//     gguf_string* val = reinterpret_cast<gguf_string*>(dst);
+//     val->len = src.length();
+//     memcpy(val->string, src.c_str(), src.length());
+//   };
 
-  // Save any meta data
-  for (auto& [key, value] : metadata) {
-    if (auto pv = std::get_if<std::string>(&value); pv) {
-      const std::string& str = *pv;
-      size_t size = sizeof(gguf_string) + str.length();
-      std::vector<char> val_vec(size);
-      string_to_gguf(val_vec.data(), str);
-      gguf_append_kv(
-          ctx.get(),
-          key.c_str(),
-          key.length(),
-          GGUF_VALUE_TYPE_STRING,
-          static_cast<void*>(val_vec.data()),
-          size);
-    } else if (auto pv = std::get_if<std::vector<std::string>>(&value); pv) {
-      const auto& str_vec = *pv;
-      auto mem_size = std::accumulate(
-          str_vec.begin(), str_vec.end(), 0, [](size_t accum, const auto& s) {
-            return accum + s.size();
-          });
-      mem_size += str_vec.size() * sizeof(gguf_string) + gguf_array_header_size;
-      std::vector<char> val_vec(mem_size);
-      gguf_value* val = reinterpret_cast<gguf_value*>(val_vec.data());
-      val->array.type = GGUF_VALUE_TYPE_STRING;
-      val->array.len = str_vec.size();
-      auto str_ptr = val_vec.data() + gguf_array_header_size;
-      for (auto& str : str_vec) {
-        string_to_gguf(str_ptr, str);
-        str_ptr += str.length() + sizeof(gguf_string);
-      }
-      gguf_append_kv(
-          ctx.get(),
-          key.c_str(),
-          key.length(),
-          GGUF_VALUE_TYPE_ARRAY,
-          static_cast<void*>(val),
-          mem_size);
-    } else if (auto pv = std::get_if<array>(&value); pv) {
-      array v = *pv;
-      if (v.ndim() > 1) {
-        throw std::runtime_error(
-            "[save_gguf] Cannot save arrays with more than one dimension.");
-      }
-      if (v.size() == 0) {
-        throw std::runtime_error("[save_gguf] Cannot save empty arrays.");
-      }
+//   // Save any meta data
+//   for (auto& [key, value] : metadata) {
+//     if (auto pv = std::get_if<std::string>(&value); pv) {
+//       const std::string& str = *pv;
+//       size_t size = sizeof(gguf_string) + str.length();
+//       std::vector<char> val_vec(size);
+//       string_to_gguf(val_vec.data(), str);
+//       gguf_append_kv(
+//           ctx.get(),
+//           key.c_str(),
+//           key.length(),
+//           GGUF_VALUE_TYPE_STRING,
+//           static_cast<void*>(val_vec.data()),
+//           size);
+//     } else if (auto pv = std::get_if<std::vector<std::string>>(&value); pv) {
+//       const auto& str_vec = *pv;
+//       auto mem_size = std::accumulate(
+//           str_vec.begin(), str_vec.end(), 0, [](size_t accum, const auto& s) {
+//             return accum + s.size();
+//           });
+//       mem_size += str_vec.size() * sizeof(gguf_string) + gguf_array_header_size;
+//       std::vector<char> val_vec(mem_size);
+//       gguf_value* val = reinterpret_cast<gguf_value*>(val_vec.data());
+//       val->array.type = GGUF_VALUE_TYPE_STRING;
+//       val->array.len = str_vec.size();
+//       auto str_ptr = val_vec.data() + gguf_array_header_size;
+//       for (auto& str : str_vec) {
+//         string_to_gguf(str_ptr, str);
+//         str_ptr += str.length() + sizeof(gguf_string);
+//       }
+//       gguf_append_kv(
+//           ctx.get(),
+//           key.c_str(),
+//           key.length(),
+//           GGUF_VALUE_TYPE_ARRAY,
+//           static_cast<void*>(val),
+//           mem_size);
+//     } else if (auto pv = std::get_if<array>(&value); pv) {
+//       array v = *pv;
+//       if (v.ndim() > 1) {
+//         throw std::runtime_error(
+//             "[save_gguf] Cannot save arrays with more than one dimension.");
+//       }
+//       if (v.size() == 0) {
+//         throw std::runtime_error("[save_gguf] Cannot save empty arrays.");
+//       }
 
-      eval(v);
-      if (!v.flags().row_contiguous) {
-        v = reshape(flatten(v), v.shape());
-      }
-      if (!v.flags().row_contiguous) {
-        throw std::runtime_error(
-            "[save_gguf] Cannot save non contiguous arrays.");
-      }
-      switch (v.dtype()) {
-        case float32:
-          append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_FLOAT32);
-          break;
-        case int64:
-          append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_INT64);
-          break;
-        case int32:
-          append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_INT32);
-          break;
-        case int16:
-          append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_INT16);
-          break;
-        case int8:
-          append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_INT8);
-          break;
-        case uint64:
-          append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_UINT64);
-          break;
-        case uint32:
-          append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_UINT32);
-          break;
-        case uint16:
-          append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_UINT16);
-          break;
-        case uint8:
-          append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_UINT8);
-          break;
-        case bool_:
-          append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_BOOL);
-          break;
-        default:
-          std::ostringstream msg;
-          msg << "[save_gguf] array type " << v.dtype()
-              << " not support for metadata.";
-          throw std::invalid_argument(msg.str());
-      }
-    } else {
-      throw std::runtime_error(
-          "[save_gguf] Received unexpected type in metadata");
-    }
-  }
+//       eval(v);
+//       if (!v.flags().row_contiguous) {
+//         v = reshape(flatten(v), v.shape());
+//       }
+//       if (!v.flags().row_contiguous) {
+//         throw std::runtime_error(
+//             "[save_gguf] Cannot save non contiguous arrays.");
+//       }
+//       switch (v.dtype()) {
+//         case float32:
+//           append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_FLOAT32);
+//           break;
+//         case int64:
+//           append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_INT64);
+//           break;
+//         case int32:
+//           append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_INT32);
+//           break;
+//         case int16:
+//           append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_INT16);
+//           break;
+//         case int8:
+//           append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_INT8);
+//           break;
+//         case uint64:
+//           append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_UINT64);
+//           break;
+//         case uint32:
+//           append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_UINT32);
+//           break;
+//         case uint16:
+//           append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_UINT16);
+//           break;
+//         case uint8:
+//           append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_UINT8);
+//           break;
+//         case bool_:
+//           append_kv_array(ctx.get(), key, v, GGUF_VALUE_TYPE_BOOL);
+//           break;
+//         default:
+//           std::ostringstream msg;
+//           msg << "[save_gguf] array type " << v.dtype()
+//               << " not support for metadata.";
+//           throw std::invalid_argument(msg.str());
+//       }
+//     } else {
+//       throw std::runtime_error(
+//           "[save_gguf] Received unexpected type in metadata");
+//     }
+//   }
 
-  // Tensor offsets are relative to data section, so we start at offset 0.
-  uint64_t tensor_offset = 0;
+//   // Tensor offsets are relative to data section, so we start at offset 0.
+//   uint64_t tensor_offset = 0;
 
-  // First, append the tensor info
-  for (auto& [key, arr] : array_map) {
-    arr.eval();
+//   // First, append the tensor info
+//   for (auto& [key, arr] : array_map) {
+//     arr.eval();
 
-    // Try to make it row contiguous
-    if (!arr.flags().row_contiguous) {
-      arr = reshape(flatten(arr), arr.shape());
-      arr.eval();
-    }
+//     // Try to make it row contiguous
+//     if (!arr.flags().row_contiguous) {
+//       arr = reshape(flatten(arr), arr.shape());
+//       arr.eval();
+//     }
 
-    // Has to be row-major now but, check one more time in case
-    // any of the above change in the future
-    if (!arr.flags().row_contiguous) {
-      throw std::invalid_argument(
-          "[save_gguf] can only serialize row-major arrays");
-    }
+//     // Has to be row-major now but, check one more time in case
+//     // any of the above change in the future
+//     if (!arr.flags().row_contiguous) {
+//       throw std::invalid_argument(
+//           "[save_gguf] can only serialize row-major arrays");
+//     }
 
-    tensor_offset += gguf_get_alignment_padding(ctx->alignment, tensor_offset);
-    const std::optional<uint32_t> gguf_type =
-        dtype_to_gguf_tensor_type(arr.dtype());
-    if (!gguf_type.has_value()) {
-      std::ostringstream msg;
-      msg << "[save_gguf] dtype " << arr.dtype() << " is not supported";
-      throw std::runtime_error(msg.str());
-    }
-    const char* tensorname = key.c_str();
-    const uint64_t namelen = key.length();
-    const uint32_t num_dim = arr.ndim();
-    uint64_t dim[num_dim];
-    for (int i = 0; i < num_dim; i++) {
-      dim[i] = arr.shape()[num_dim - 1 - i];
-    }
-    if (!gguf_append_tensor_info(
-            ctx.get(),
-            tensorname,
-            namelen,
-            num_dim,
-            dim,
-            gguf_type.value(),
-            tensor_offset)) {
-      throw std::runtime_error("[save_gguf] gguf_append_tensor_info failed");
-    }
-    tensor_offset += arr.nbytes();
-  }
+//     tensor_offset += gguf_get_alignment_padding(ctx->alignment, tensor_offset);
+//     const std::optional<uint32_t> gguf_type =
+//         dtype_to_gguf_tensor_type(arr.dtype());
+//     if (!gguf_type.has_value()) {
+//       std::ostringstream msg;
+//       msg << "[save_gguf] dtype " << arr.dtype() << " is not supported";
+//       throw std::runtime_error(msg.str());
+//     }
+//     const char* tensorname = key.c_str();
+//     const uint64_t namelen = key.length();
+//     const uint32_t num_dim = arr.ndim();
+//     uint64_t dim[num_dim];
+//     for (int i = 0; i < num_dim; i++) {
+//       dim[i] = arr.shape()[num_dim - 1 - i];
+//     }
+//     if (!gguf_append_tensor_info(
+//             ctx.get(),
+//             tensorname,
+//             namelen,
+//             num_dim,
+//             dim,
+//             gguf_type.value(),
+//             tensor_offset)) {
+//       throw std::runtime_error("[save_gguf] gguf_append_tensor_info failed");
+//     }
+//     tensor_offset += arr.nbytes();
+//   }
 
-  // Then, append the tensor weights
-  for (const auto& [key, arr] : array_map) {
-    if (!gguf_append_tensor_data(
-            ctx.get(), (void*)arr.data<void>(), arr.nbytes())) {
-      throw std::runtime_error("[save_gguf] gguf_append_tensor_data failed");
-    }
-  }
-}
+//   // Then, append the tensor weights
+//   for (const auto& [key, arr] : array_map) {
+//     if (!gguf_append_tensor_data(
+//             ctx.get(), (void*)arr.data<void>(), arr.nbytes())) {
+//       throw std::runtime_error("[save_gguf] gguf_append_tensor_data failed");
+//     }
+//   }
+// }
 

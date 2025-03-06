@@ -87,9 +87,11 @@ if(ENABLE_GGUF)
                              PRIVATE $<BUILD_INTERFACE:${gguflib_SOURCE_DIR}>)
   target_include_directories(${TARGET_NAME_OBJ}
                             PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils>")
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   add_library(gguflib STATIC ${gguflib_SOURCE_DIR}/fp16.c
                              ${gguflib_SOURCE_DIR}/gguflib.c)
-  target_link_libraries(${TARGET_NAME_OBJ} PRIVATE $<BUILD_INTERFACE:gguflib>)
+  #target_compile_features(gguflib PRIVATE fPIC)
+  target_link_libraries(${TARGET_NAME_OBJ} PRIVATE $<BUILD_INTERFACE:gguflib>) 
   target_sources(${TARGET_NAME_OBJ} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf.cpp
                              ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_quants.cpp)
 endif()
@@ -119,6 +121,9 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
+if(ENABLE_GGUF)
+  target_link_libraries(${TARGET_NAME} PRIVATE gguflib ${CMAKE_DL_LIBS})
+endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
 
