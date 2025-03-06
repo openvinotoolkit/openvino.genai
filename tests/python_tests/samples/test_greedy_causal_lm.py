@@ -14,31 +14,14 @@ class TestGreedyCausalLM:
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
-            pytest.param("TinyLlama-1.1B-Chat-v1.0", "test"),
             pytest.param("SmolLM-135M", "return 0"),
             pytest.param("Qwen2.5-0.5B-Instruct", "69"),
+            pytest.param("phi-1_5", "Alan Turing was a"),
+            pytest.param("TinyLlama-1.1B-Chat-v1.0", "Alan Turing was a"),
         ],
         indirect=["convert_model"],
     )
-    def test_sample_greedy_causal_lm(self, convert_model, sample_args):
-        # Test Python sample
-        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
-        py_command = [sys.executable, py_script, convert_model, sample_args]
-        py_result = run_sample(py_command)
-
-        # Test CPP sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
-        cpp_command =[cpp_sample, convert_model, sample_args]
-        cpp_result = run_sample(cpp_command)
-
-        # Compare results
-        assert py_result.stdout == cpp_result.stdout, f"Results should match"
-    
-    @pytest.mark.llm
-    @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["phi-1_5", "TinyLlama-1.1B-Chat-v1.0"], indirect=True)
-    @pytest.mark.parametrize("sample_args", ["Alan Turing was a"])
-    def test_sample_greedy_causal_lm_refs(self, request, convert_model, sample_args):
+    def test_sample_greedy_causal_lm(self, request, convert_model, sample_args):
         # Python test
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
         py_command = [sys.executable, py_script, convert_model, sample_args]
