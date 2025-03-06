@@ -9,7 +9,7 @@ from typing import List, TypedDict
 
 from openvino_genai import GenerationConfig, StopCriteria
 
-from utils.ov_genai_pipelines import PipelineType, generate_and_compare, run_ov_pipeline
+from utils.ov_genai_pipelines import PipelineType, generate_and_compare, run_ov_pipeline, get_main_pipeline_types
 from utils.hugging_face import get_hugging_face_models, convert_models
 
 @pytest.mark.precommit
@@ -51,9 +51,10 @@ def test_basic_stop_criteria(tmp_path, generation_config, prompt):
                               "multiple_stop_strings_exclude_from_output",
                               "multiple_stop_strings_include_to_output",
                               "multiple_stop_strings_one_no_match_and_long_exclude_from_output"])
-def test_stop_strings(tmp_path, generation_config, model_id):
+@pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
+def test_stop_strings(tmp_path, generation_config, model_id, pipeline_type):
     prompts = [ "What is OpenVINO?" ]
-    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
+    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path, pipeline_type=pipeline_type)
 
 
 @pytest.mark.precommit
@@ -69,16 +70,14 @@ def test_stop_strings(tmp_path, generation_config, model_id):
     '你好！ 你好嗎？'.encode('unicode_escape'),  # to escape Win limitation on Unicode tmp path
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
-@pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION])
-def test_greedy(tmp_path, generation_config, prompt, pipeline_type):
+def test_greedy(tmp_path, generation_config, prompt):
     model_id : str = "katuni4ka/tiny-random-phi3"
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
     generate_and_compare(model=model_id, 
-                         prompts=[prompt], 
+                         prompts=prompt, 
                          generation_config=generation_config, 
-                         tmp_path=tmp_path,
-                         pipeline_type=pipeline_type)
+                         tmp_path=tmp_path)
 
 
 @pytest.mark.precommit

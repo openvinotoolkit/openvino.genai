@@ -4,6 +4,8 @@
 import openvino_tokenizers
 import openvino
 import pytest
+import platform
+import sys
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline, GenerationConfig, SchedulerConfig, ContinuousBatchingPipeline, GenerationStatus
@@ -92,7 +94,7 @@ def test_vlm_pipeline(model_id, cache):
         images = []
         for link in links:
             images.append(get_image_by_link(link))
-        
+
         result_from_streamer = []
         res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
         assert res.texts[0] == ''.join(result_from_streamer)
@@ -298,28 +300,29 @@ def test_perf_metrics(cache):
     assert perf_metrics is not None
 
     assert 0 < perf_metrics.get_load_time() < load_time
-    assert 0 < perf_metrics.get_num_generated_tokens() <= max_new_tokens
+    num_tokens = perf_metrics.get_num_generated_tokens()
+    assert 0 < num_tokens <= max_new_tokens
     assert 0 < perf_metrics.get_num_input_tokens() < len(prompts[0]) + image_tokens_num
     assert 0 < perf_metrics.get_ttft().mean < generate_time
-    assert 0 < perf_metrics.get_tpot().mean < generate_time
-    assert 0 < perf_metrics.get_ipot().mean < generate_time
-    assert 0 < perf_metrics.get_throughput().mean < max_new_tokens / ((generate_time - perf_metrics.get_ttft().mean) / 1000.0)
+    assert 0 < perf_metrics.get_tpot().mean < generate_time / num_tokens
+    assert 0 < perf_metrics.get_ipot().mean < generate_time / num_tokens
+    assert num_tokens / (generate_time / 1000.0) < perf_metrics.get_throughput().mean < num_tokens / ((generate_time - perf_metrics.get_ttft().mean) / 1000.0)
     assert 0 < perf_metrics.get_inference_duration().mean < generate_time
     assert 0 < perf_metrics.get_generate_duration().mean < generate_time
     assert 0 < perf_metrics.get_tokenization_duration().mean < generate_time
     assert 0 < perf_metrics.get_detokenization_duration().mean < generate_time
     assert 0 < perf_metrics.get_prepare_embeddings_duration().mean < generate_time
 
-    double_generate_time = generate_time * generate_time
-    assert 0 <= perf_metrics.get_ttft().std < double_generate_time
-    assert 0 <= perf_metrics.get_tpot().std < double_generate_time
-    assert 0 <= perf_metrics.get_ipot().std < double_generate_time
-    assert 0 <= perf_metrics.get_throughput().std < double_generate_time
-    assert 0 <= perf_metrics.get_inference_duration().std < double_generate_time
-    assert 0 <= perf_metrics.get_generate_duration().std < double_generate_time
-    assert 0 <= perf_metrics.get_tokenization_duration().std < double_generate_time
-    assert 0 <= perf_metrics.get_detokenization_duration().std < double_generate_time
-    assert 0 <= perf_metrics.get_prepare_embeddings_duration().std < double_generate_time
+    squared_generate_time = generate_time * generate_time
+    assert 0 <= perf_metrics.get_ttft().std < squared_generate_time
+    assert 0 <= perf_metrics.get_tpot().std < squared_generate_time
+    assert 0 <= perf_metrics.get_ipot().std < squared_generate_time
+    assert 0 <= perf_metrics.get_throughput().std < squared_generate_time
+    assert 0 <= perf_metrics.get_inference_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_generate_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_tokenization_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_detokenization_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     vlm_raw_metrics = perf_metrics.vlm_raw_metrics
@@ -328,3 +331,31 @@ def test_perf_metrics(cache):
     mean_dur, std_dur = perf_metrics.get_prepare_embeddings_duration()
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+# FIXME: katuni4ka/tiny-random-qwen2vl - fails on NPU
+@pytest.mark.parametrize("model_id", model_ids[:-1])
+@pytest.mark.skipif(
+    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
+    reason="NPU plugin is available only on Linux and Windows x86_64",
+)
+def test_vlm_npu_no_exception(model_id, cache):
+    models_path = get_ov_model(model_ids[0], cache)
+    properties = {
+       "DEVICE_PROPERTIES":
+       {
+           "NPU": { "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE" }
+       }
+    }
+
+    ov_pipe = VLMPipeline(models_path, "NPU", config=properties)
+
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    for link in image_links_for_testing[2]:
+        image = get_image_by_link(link)
+        out = ov_pipe.generate(prompts[0], images=[image], generation_config=generation_config)
