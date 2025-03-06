@@ -326,7 +326,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
         const auto running_sequences = sequence_group->get_running_sequences();
         OPENVINO_ASSERT(running_sequences.size() == 1u);
         auto last_token = running_sequences.front()->get_generated_ids().back();
-        auto last_idx = running_sequences.front()->get_generated_ids().size();
+        auto last_idx = running_sequences.front()->get_generated_ids().size() - 1;
 
         auto logits = decode_with_past(models.decoder_with_past,
                                        last_token,
