@@ -1,0 +1,45 @@
+:root {
+  --search-local-input-active-border-color: var(--genai-color-white);
+
+  --ifm-navbar-link-color: var(--genai-color-text-white);
+  --ifm-navbar-link-hover-color: var(--genai-text-color-white-hover);
+  --ifm-navbar-link-active-color: var(--genai-color-blue-energy);
+}
+
+.navbar {
+  background: linear-gradient(90deg, #27317f 6.98%, #1a3483 46.6%, #02227c 79.11%);
+  width: 100%;
+}
+
+.navbar__items {
+  margin-left: var(--ifm-navbar-height);
+}
+
+.navbar__inner {
+  align-items: center;
+}
+
+.navbar__logo {
+  top: 0;
+  left: 0;
+  height: 100%;
+  position: absolute;
+}
+
+.navbar__link--active:not(:has(~ .navbar__link--active)) {
+  --ifm-navbar-link-hover-color: var(--genai-color-blue-energy);
+}
+
+.navbar__search-input {
+  border-radius: 3px;
+  font-size: 14px;
+  font-family: var(--genai-font-family);
+  color: var(--genai-color-text-white);
+  width: 238px;
+  background: #122f84 url('../../static/img/magnifying-glass.svg') no-repeat 0.75rem center / 1rem
+    1rem;
+
+  &::placeholder {
+    color: var(--genai-color-text-white);
+  }
+}

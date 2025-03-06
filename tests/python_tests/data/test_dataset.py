@@ -3,7 +3,7 @@
 
 from typing import Tuple, List
 from openvino_genai import GenerationConfig
-from utils.generation_config import get_greedy, get_beam_search
+from utils.generation_config import get_greedy, get_beam_search, get_multinomial_temperature
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     prompts = [

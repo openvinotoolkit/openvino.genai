@@ -26,6 +26,10 @@
 #include "openvino/op/convert.hpp"
 #include "openvino/op/parameter.hpp"
 
+#include "openvino/pass/stateful_to_stateless.hpp"
+#include "openvino/op/shape_of.hpp"
+#include "openvino/opsets/opset13.hpp"
+
 using ov::genai::MicroSeconds;
 
 namespace {
@@ -519,6 +523,306 @@ std::shared_ptr<ov::Model> redirect_new_kv_to_output(const std::shared_ptr<ov::M
     return model;
 }
 
+void set_name(std::shared_ptr<ov::Node> result, const std::string& name) {
+    result->set_friendly_name(name);
+    result->get_output_tensor(0).set_names({name});
+}
+
+void remove_input_kv_tensors(std::shared_ptr<ov::Model>& model) {
+    const int CONCAT_CURR_KV_PORT = 1;
+
+    ov::ParameterVector params_to_remove;
+    ov::ResultVector results_to_add;
+    ov::ResultVector results_to_remove;
+
+    std::shared_ptr<ov::op::v0::Constant> cst_node;
+    for (const auto& input: model->inputs()) {
+        if (input.get_any_name().find("past_key_values") == std::string::npos) {
+            continue;
+        }
+
+        // Remember this to remove later on when all reconnections performed
+        params_to_remove.push_back(ov::as_type_ptr<ov::op::v0::Parameter>(input.get_node_shared_ptr()));
+        // KV-cache input tensor is connected with Concat and additionally can be connected with ShapeOf
+        std::shared_ptr<ov::Node> concat_node;
+        auto target_inputs = input.get_node()->output(0).get_target_inputs();
+        for (const auto& target_input : target_inputs) {
+            auto target_node = target_input.get_node();
+            // Get Concat node
+            if (strstr(target_node->get_type_name(), "Concat") != nullptr) {
+                concat_node = target_node->shared_from_this();
+            }
+        }
+
+        // Remove concat node
+        OPENVINO_ASSERT(concat_node);
+        auto cat_readers = concat_node->outputs()[0].get_target_inputs();
+
+        // Result and SDPA
+        OPENVINO_ASSERT(cat_readers.size() == 2);
+        for (const auto& cat_reader : cat_readers) {
+            if (strstr(cat_reader.get_node()->get_type_name(), "Result") != nullptr) {
+                auto result_in = cat_reader;
+
+                // Re-assign Result
+                auto result_to_remove = ov::as_type_ptr<ov::op::v0::Result>(result_in.get_node()->shared_from_this());
+                auto result_to_add    = std::make_shared<ov::op::v0::Result>(concat_node->inputs()[CONCAT_CURR_KV_PORT].get_source_output());
+                set_name(result_to_add, result_to_remove->get_friendly_name());
+
+                results_to_remove.push_back(result_to_remove);
+                results_to_add.push_back(result_to_add);
+            }
+            if (strstr(cat_reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr) {
+                auto sdpa_in = cat_reader;
+
+                // Redirect KV from concat to SDPA
+                auto curr_kv = concat_node->inputs()[CONCAT_CURR_KV_PORT].get_source_output();
+                sdpa_in.replace_source_output(curr_kv);
+            }
+        }
+
+        // In case KV-cache also connected with ShapeOf
+        if (target_inputs.size() == 2) {
+            for (const auto& target_in : target_inputs) {
+                if (strstr(target_in.get_node()->get_type_name(), "ShapeOf") != nullptr) {
+                    auto shapeof_node = ov::as_type_ptr<ov::op::v3::ShapeOf>(target_in.get_node()->shared_from_this());
+                    auto shape = std::vector<size_t>{1, size_t(input.get_partial_shape()[1].get_length()), 0, size_t(input.get_partial_shape()[3].get_length())};
+                    cst_node = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{4}, shape);
+
+                    ov::replace_node(shapeof_node, cst_node);
+                }
+            }
+        }
+    }
+
+    OPENVINO_ASSERT(cst_node);
+
+    for (const auto& r: results_to_remove) {
+        model->remove_result(r);
+    }
+    for (const auto& p: params_to_remove) {
+        model->remove_parameter(p);
+    }
+    model->add_results(results_to_add);
+    model->validate_nodes_and_infer_types();
+}
+
+auto remove_encoder_attn_read_value(const std::shared_ptr<ov::Node>& rv_node,
+                                    const ov::Output<ov::Node>& kv_out,
+                                    const ov::Input<ov::Node>& sdpa_in) {
+    // Find Assign node
+    OPENVINO_ASSERT(rv_node->outputs().size() == 1);
+    auto rv_out = rv_node->outputs()[0];
+    ov::NodeVector rv_readers;
+    for (const auto& target_in: rv_out.get_target_inputs()) {
+        rv_readers.push_back(target_in.get_node()->shared_from_this());
+    }
+    // Assign and SDPA
+    OPENVINO_ASSERT(rv_readers.size() == 2);
+    auto assign_node = (strstr(rv_readers[0]->get_type_name(), "Assign") != nullptr) ? rv_readers[0] : rv_readers[1];
+    OPENVINO_ASSERT(strstr(assign_node->get_type_name(), "Assign") != nullptr);
+    // Redirect KV-cache tensor to SDPA
+    sdpa_in.replace_source_output(kv_out);
+    return std::make_pair(std::make_shared<ov::op::v0::Result>(kv_out), ov::as_type_ptr<ov::op::v6::Assign>(assign_node));
+}
+
+std::string transform_key_value_name(std::string input_string, std::string prefix, std::string enc_or_dec, std::string key_or_value) {
+    std::regex pattern("[0-9]+");
+    std::smatch match;
+    std::regex_search(input_string, match, pattern);
+
+    if (match.empty())
+        OPENVINO_THROW("Input string does not match the expected pattern");
+
+    auto number = std::string(match[0]);
+    return prefix + "." + number + enc_or_dec + key_or_value;
+}
+
+void expose_runtime_states_as_outputs(std::shared_ptr<ov::Model>& model) {
+    // Find all ReadValue nodes
+    ov::NodeVector read_value_nodes;
+    for (const auto& op : model->get_ops()) {
+        if (strstr(op->get_type_name(), "ReadValue") != nullptr) {
+            read_value_nodes.push_back(op);
+        }
+    }
+
+    // Holds result layers for cross-attn KV-cache tensors
+    ov::ResultVector results;
+    ov::SinkVector assigns;
+
+    // Go through all ReadValue nodes and remove them
+    for (const auto& rv_node : read_value_nodes) {
+        OPENVINO_ASSERT(rv_node->inputs().size() == 1);
+        OPENVINO_ASSERT(rv_node->outputs().size() == 1);
+        auto rv_in  = rv_node->inputs()[0];
+        auto x = rv_in.get_source_output();
+        auto rv_out = rv_node->outputs()[0];
+        // Gather all nodes that read from ReadValue, there must be SDPA and Assign
+        auto rv_readers = rv_out.get_target_inputs();
+        OPENVINO_ASSERT(rv_readers.size() == 2);
+        // Input port for SDPA node
+        for (const auto& reader : rv_readers) {
+            if (strstr(reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr) {
+                auto sdpa_in = reader;
+                // Remove ReadValue, store new Result and Assign
+                auto key_or_value = (sdpa_in.get_index() == 1) ? "key" : "value";
+                auto [result, assign] = remove_encoder_attn_read_value(rv_node, rv_in.get_source_output(), sdpa_in);
+                auto normalized_name = transform_key_value_name(
+                    rv_node->inputs()[0].get_source_output().get_node()->get_friendly_name(),
+                    "present",
+                    ".encoder.",
+                    key_or_value
+                );
+                set_name(result, normalized_name);
+                results.push_back(result);
+                assigns.push_back(assign);
+            }
+        }
+    }
+
+    // Add, remove, validate
+    model->add_results(results);
+    for (const auto& assign : assigns) {
+        model->remove_sink(assign);
+    }
+    model->validate_nodes_and_infer_types();
+}
+
+void remove_cache_position(std::shared_ptr<ov::Model>& model) {
+    // Build subgraph that will replace cache_pos
+    auto input_ids = model->input("input_ids").get_node();
+    auto shape_of_node = std::make_shared<ov::op::v3::ShapeOf>(input_ids->outputs()[0]);
+
+    std::vector<int> v_0{0};
+    std::vector<int> v_1{1};
+
+    auto indices = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{}, v_1);
+    indices->set_friendly_name("indices");
+    auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{}, v_0);
+    axis->set_friendly_name("axis");
+
+    auto gather_node = std::make_shared<ov::op::v8::Gather>(shape_of_node->outputs()[0], indices, axis);
+    
+    auto cst_node = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{}, v_0);
+    auto step     = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{}, v_1);
+    step->set_friendly_name("step");
+    auto range_node = std::make_shared<ov::op::v4::Range>(cst_node->outputs()[0], gather_node->outputs()[0], step->outputs()[0], ov::element::i64);
+    // Replace cache_position
+    auto cache_pos = ov::as_type_ptr<ov::op::v0::Parameter>(model->input("cache_position").get_node()->shared_from_this());
+    for (const auto& target_input : cache_pos->outputs()[0].get_target_inputs()) {
+        target_input.replace_source_output(range_node->outputs()[0]);
+    }
+
+    model->remove_parameter(cache_pos);
+    model->validate_nodes_and_infer_types();
+}
+
+void normalize_input_key_value_names(std::shared_ptr<ov::Model>& model) {
+    ov::ResultVector new_results, old_results;
+    for (const auto& in : model->inputs()) {
+        if (in.get_any_name().find("decoder") == std::string::npos) {
+            continue;
+        }
+
+        auto key_or_value = (in.get_any_name().find(".key") != std::string::npos) ? "key" : "value";
+        auto normalized_name = transform_key_value_name(in.get_any_name(), "past_key_values", ".decoder.", key_or_value);
+        set_name(in.get_node_shared_ptr(), normalized_name);
+    }
+
+    model->validate_nodes_and_infer_types();
+}
+
+void normalize_output_key_value_names(std::shared_ptr<ov::Model>& model) {
+    ov::ResultVector new_results, old_results;
+    for (const auto& out : model->outputs()) {
+        if (out.get_any_name().find("decoder") == std::string::npos) {
+            continue;
+        }
+
+        auto key_or_value = (out.get_any_name().find(".key") != std::string::npos) ? "key" : "value";
+        auto normalized_name = transform_key_value_name(out.get_any_name(), "present", ".decoder.", key_or_value);
+        set_name(out.get_node_shared_ptr(), normalized_name);
+    }
+
+    model->validate_nodes_and_infer_types();
+}
+
+void expose_runtime_states_as_inputs(std::shared_ptr<ov::Model>& model) {
+    // Store Assign nodes to perform remove_sink later on
+    ov::SinkVector assigns;
+    // To add new Params to the model
+    ov::ParameterVector params;
+
+    ov::NodeVector read_value_nodes;
+    for (const auto& op : model->get_ops()) {
+        if (strstr(op->get_type_name(), "ReadValue") != nullptr) {
+            read_value_nodes.push_back(op);
+        }
+    }
+
+    for (const auto& rv_node : read_value_nodes) {
+        auto rv_out = rv_node->outputs()[0];
+        auto rv_readers = rv_out.get_target_inputs();
+        for (auto rv_reader: rv_readers) {
+            if (strstr(rv_reader.get_node()->get_type_name(), "Assign") != nullptr) {
+                auto assign_node = ov::as_type_ptr<ov::op::v6::Assign>(rv_reader.get_node()->shared_from_this());
+                assigns.push_back(assign_node);
+            } else if (strstr(rv_reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr) {
+                auto sdpa_in = rv_reader;
+                auto sdpa_node = rv_reader.get_node();
+
+                auto shape = rv_node->get_output_partial_shape(0);
+                auto new_param = std::make_shared<ov::op::v0::Parameter>(rv_node->get_output_element_type(0), shape);
+                
+                auto key_or_value = (sdpa_in.get_index() == 1) ? "key" : "value";
+                auto normalized_name = transform_key_value_name(sdpa_in.get_node()->get_friendly_name(),
+                                                                    "past_key_values",
+                                                                    ".encoder.",
+                                                                    key_or_value);
+                set_name(new_param, normalized_name);
+
+                params.push_back(new_param);
+                sdpa_in.replace_source_output(new_param->outputs()[0]);
+            }
+        }
+    }
+
+    // Remove sinks and add new params
+    model->add_parameters(params);
+    for (const auto& assign: assigns) {
+        model->remove_sink(assign);
+    }
+}
+
+std::shared_ptr<ov::Model> prepare_decoder_model(std::shared_ptr<ov::Model>& model) {
+    auto decoder_model = model->clone();
+    // 2) Remove all non-runtime states from inputs (they empty on first iteration)
+    remove_input_kv_tensors(decoder_model);
+    // 3) Expose all states that requires initialization on the first run as outputs
+    expose_runtime_states_as_outputs(decoder_model);
+    // 4) Remove cache_position input
+    remove_cache_position(decoder_model);
+    // 5) Normalize output names - should be done in stateful_to_stateless_transformation
+    normalize_output_key_value_names(decoder_model);
+
+    decoder_model->validate_nodes_and_infer_types();
+    return decoder_model;
+}
+
+std::shared_ptr<ov::Model> prepare_decoder_with_past_model(std::shared_ptr<ov::Model>& model) {
+    auto decoder_with_past_model = model->clone();
+    // FIXME: normalization should be done inside stateful_to_stateless_transformation
+    normalize_input_key_value_names(decoder_with_past_model);
+    normalize_output_key_value_names(decoder_with_past_model);
+    expose_runtime_states_as_inputs(decoder_with_past_model);
+
+    decoder_with_past_model->reshape({{"input_ids", ov::PartialShape({-1, 1})}});
+
+    decoder_with_past_model->validate_nodes_and_infer_types();
+    return decoder_with_past_model;
+}
+
 }  // namespace
 
 namespace ov {
@@ -544,8 +848,23 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     ov::Core core = utils::singleton_core();
 
     auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties);
-    auto decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
-    auto decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, properties);
+
+    std::shared_ptr<ov::Model> decoder_model;
+    std::shared_ptr<ov::Model> decoder_with_past_model;
+
+    if (std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml") ) {
+        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
+        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, properties);
+    } else {
+        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
+        ov::pass::StatefulToStateless().run_on_model(model);
+
+        decoder_model = prepare_decoder_model(model);
+        decoder_with_past_model = prepare_decoder_with_past_model(model);
+    }
+
+    if (!decoder_model || !decoder_with_past_model)
+        OPENVINO_THROW("Decoder/decoder_with_past model is not valid !");
 
     add_attention_mask_input(decoder_with_past_model);
 

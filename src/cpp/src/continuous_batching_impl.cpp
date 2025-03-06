@@ -53,11 +53,6 @@ void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std
             // x86 and ARM have different default kv cache type, take this information from the plugin
             m_kv_cache_type = core.get_property(device, ov::hint::kv_cache_precision);
         }
-
-        // TEMP WA: currently FP16 / BF16 KV cache is faster than U8 for PagedAttention
-        if (m_kv_cache_type == ov::element::u8) {
-            m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-        }
     } else if (device.find("GPU") != std::string::npos) {
         if (accuracy_mode) {
             inference_precision = ov::element::f32;
@@ -168,8 +163,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         filtered_properties.fork().erase("sampler_num_threads");   // do not use iterator sampler_num_threads_it because a forked container may not be the same container
     }
 
-    // TODO: remove once plugin automatically set KV cache precisions
-    apply_kv_cache_precision(model, device, *filtered_properties);
+    // TODO: remove once GPU plugin automatically set KV cache precisions
+    if (device.find("GPU") != std::string::npos) {
+        apply_kv_cache_precision(model, device, *filtered_properties);
+    }
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
 
@@ -269,9 +266,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
-        if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-            OPENVINO_THROW("Prefix caching is not supported for VLM models.");
-        }
         m_scheduler->restore_cached_blocks(sequence_group);
     }
 
@@ -405,6 +399,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
         free_fork_timer.end();
     }
+    
+    // append embeddings for generated tokens
+    if (m_model_input_type == ModelInputType::EMBEDDINGS)
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
 
     // notify requests dropped by handle
     {
@@ -774,7 +772,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
         }
         currently_processed_tokens += output_seq_len * num_running_sequences;
         // For max_new_tokens == 0, we don't reach sampling so need to notify handle separately
-        if(sequence_group->get_sampling_parameters().max_new_tokens == 0) {
+        if(sequence_group->get_max_new_tokens() == 0) {
             sequence_group->notify_handle_echo_only();
         }
     }
