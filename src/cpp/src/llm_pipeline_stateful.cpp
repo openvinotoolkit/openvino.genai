@@ -71,7 +71,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (m_is_npu) {
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(
-            model, *filtered_properties, kv_pos, models_path
+            model, *filtered_properties, kv_pos, models_path / "openvino_model.xml"
         );
         m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
     } else {
@@ -211,17 +211,23 @@ EncodedResults StatefulLLMPipeline::generate(
     if (!is_chat_conversation) {
         reset_kv_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
+        m_kv_cache_state.reset_state();
+        m_kv_history_trim_manager.reset();
     }
 
     auto start_time = std::chrono::steady_clock::now();
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
     if (auto data = std::get_if<ov::Tensor>(&inputs)) {
-        input_ids = *data;
+        input_ids = ov::Tensor(data->get_element_type(), data->get_shape());
+        data->copy_to(input_ids);
         attention_mask = ov::genai::utils::init_attention_mask(input_ids);
     } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
-        input_ids = data->input_ids;
-        attention_mask = data->attention_mask;
+        input_ids = ov::Tensor(data->input_ids.get_element_type(), data->input_ids.get_shape());
+        data->input_ids.copy_to(input_ids);
+
+        attention_mask = ov::Tensor{data->attention_mask.get_element_type(), data->attention_mask.get_shape()};
+        data->attention_mask.copy_to(attention_mask);
     }
 
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) 
@@ -363,8 +369,6 @@ EncodedResults StatefulLLMPipeline::generate(
         } else if (config.is_beam_search()) {
             m_kv_history_trim_manager.num_tokens_to_trim = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
         }
-    } else {
-        m_kv_cache_state.reset_state();
     }
 
     auto stop_time = std::chrono::steady_clock::now();

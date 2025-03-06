@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 # - "name": the model's name or path
 # - "convert_args": a list of arguments for the conversion command
 MODELS = {
-    "LaMini-GPT-124M": { 
-        "name": "MBZUAI/LaMini-GPT-124M",
+    "TinyLlama-1.1B-Chat-v1.0": { 
+        "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         "convert_args": []
     },
     "SmolLM-135M": {
@@ -52,12 +52,40 @@ MODELS = {
     "TinyStories-1M": {
         "name": "roneneldan/TinyStories-1M",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
-    }
+    },
+    "dreamlike-anime-1.0": {
+        "name": "dreamlike-art/dreamlike-anime-1.0",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16', "--task", "stable-diffusion"]
+    },
+    "LCM_Dreamshaper_v7-int8-ov": {
+        "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
+        "convert_args": []
+    },   
+    "llava-1.5-7b-hf": {
+        "name": "llava-hf/llava-1.5-7b-hf",
+        "convert_args": ['--trust-remote-code']
+    },    
+    "llava-v1.6-mistral-7b-hf": {
+        "name": "llava-hf/llava-v1.6-mistral-7b-hf",
+        "convert_args": ['--trust-remote-code']
+    },
+    "dreamlike-anime-1.0": {
+        "name": "dreamlike-art/dreamlike-anime-1.0",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16', "--task", "stable-diffusion"]
+    },
+    "LCM_Dreamshaper_v7-int8-ov": {
+        "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
+        "convert_args": []
+    }   
 }
 
 TEST_FILES = {
     "how_are_you_doing_today.wav": "https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav",
-    "adapter_model.safetensors": "https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors"
+    "adapter_model.safetensors": "https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors",
+    "monalisa.jpg": "https://llava-vl.github.io/static/images/monalisa.jpg",
+    "soulcard.safetensors": "https://civitai.com/api/download/models/72591",
+    "image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png",
+    "mask_image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png"
 }
 
 SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python")))
@@ -123,13 +151,42 @@ def convert_model(request):
             shutil.rmtree(model_cache)
 
 @pytest.fixture(scope="session")
+def download_model(request):
+    """Fixture to download the model once for the session."""
+    models_cache = request.config.cache.get("MODELS_DIR", None)
+    model_id = request.param
+    model_name = MODELS[model_id]["name"]
+    model_cache = os.path.join(models_cache, model_id)
+    model_path = os.path.join(model_cache, model_name)
+    model_hf_cache = os.environ.get("HF_HOME", os.path.join(model_cache, "hf_cache"))
+    logger.info(f"Preparing model: {model_name}")
+    # Download the model if not already downloaded
+    if not os.path.exists(model_path):
+        logger.info(f"Downloading the model: {model_name}")
+        command = [
+            "huggingface-cli", "download", model_name, 
+            "--cache-dir", model_hf_cache, 
+            "--local-dir", model_path
+        ]
+        logger.info(f"Downloading command: {' '.join(command)}")
+        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
+            
+    yield model_path
+    
+    # Cleanup the model after tests
+    if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
+        if os.path.exists(model_cache):
+            logger.info(f"Removing converted model: {model_cache}")
+            shutil.rmtree(model_cache)
+
+@pytest.fixture(scope="session")
 def download_test_content(request):
     """Download the test content from the given URL and return the file path."""
     
     test_data = request.config.cache.get("TEST_DATA", None)
     
-    file_url = request.param
-    file_name = os.path.basename(file_url)
+    file_name = request.param
+    file_url = TEST_FILES[file_name]
     file_path = os.path.join(test_data, file_name)
     if not os.path.exists(file_path):
         logger.info(f"Downloading test content from {file_url}...")
