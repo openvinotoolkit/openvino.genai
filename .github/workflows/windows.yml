@@ -435,7 +435,7 @@ jobs:
           - name: 'LLM'
             marker: 'llm'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-win-4-cores-8gb'
+            runner: 'aks-win-8-cores-16gb'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
