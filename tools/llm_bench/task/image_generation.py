@@ -266,7 +266,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 def get_image_prompt(args):
     input_image_list = []
 
-    input_key = 'prompt'
+    input_key = ['prompt']
     if args.get("task") == TASK["inpainting"] or ((args.get("media") or args.get("images")) and args.get("mask_image")):
         input_key = ['media', "mask_image", "prompt"]
     elif args.get("task") == TASK["img2img"] or args.get("media") or args.get("images"):
