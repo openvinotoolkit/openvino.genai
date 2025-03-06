@@ -33,4 +33,6 @@ export const LinksCell = ({ links }: { links: string[] }) => (
   </td>
 );
 
-export const StatusCell = ({ value }: { value: boolean }) => <td>{value ? '✅' : '❌'}</td>;
+export const StatusCell = ({ value }: { value: boolean }) => (
+  <td style={{ textAlign: 'center' }}>{value ? '✅' : '❌'}</td>
+);
