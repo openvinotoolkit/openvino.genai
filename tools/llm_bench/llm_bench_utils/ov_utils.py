@@ -389,6 +389,11 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     scheduler_type = model_index_data.get("scheduler", ["", ""])[1]
     if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "PNDMScheduler", "LMSDiscreteScheduler", "EulerDiscreteScheduler",
                                "FlowMatchEulerDiscreteScheduler", "EulerAncestralDiscreteScheduler"]):
+        # It's possible we could support --static_reshape here, but initially it seems too complicated to be worth it..
+        # (as we'd need to refactor each get_*_model calls below to perform explicit reshape + compile)
+        if kwargs.get("static_reshape", False):
+            raise RuntimeError(f'Type of scheduler {scheduler_type} is unsupported. Right now this is unsupported if --static_reshape is also specified. ')
+
         scheduler = openvino_genai.Scheduler.from_config(model_path / "scheduler/scheduler_config.json", openvino_genai.Scheduler.Type.DDIM)
         log.warning(f'Type of scheduler {scheduler_type} is unsupported. Please, be aware that it will be replaced to DDIMScheduler')
 
@@ -414,7 +419,17 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
         else:
             raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported _class_name {model_class_name}')
     else:
-        image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
+        if kwargs.get("static_reshape", False):
+            image_gen_pipe = image_gen_pipeline_class(model_path)
+            guidance_scale = kwargs.get("guidance_scale",  image_gen_pipe.get_generation_config().guidance_scale )
+            num_images_per_prompt = kwargs.get("batch_size", 1)
+            height = kwargs.get("height", 512)
+            width = kwargs.get("width", 512)
+            log.info(f"Image Pipeline reshape(num_images_per_prompt={num_images_per_prompt}, height={height}, width={width}, guidance_scale={guidance_scale})")
+            image_gen_pipe.reshape(num_images_per_prompt=num_images_per_prompt, height=height, width=width, guidance_scale=guidance_scale)
+            image_gen_pipe.compile(device.upper(), **ov_config)
+        else:
+            image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
 
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')

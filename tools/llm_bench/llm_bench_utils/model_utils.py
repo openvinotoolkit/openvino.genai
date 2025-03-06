@@ -122,6 +122,7 @@ def analyze_args(args):
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['media'] = args.media
     model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
+    model_args["static_reshape"] = args.static_reshape
     model_args['mask_image'] = args.mask_image
     model_args['task'] = args.task
     model_args['strength'] = args.strength

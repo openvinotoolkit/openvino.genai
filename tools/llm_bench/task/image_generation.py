@@ -157,6 +157,12 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         out_str += f", guidance_scale={input_args['guidance_scale']}"
     log.info(f"[{'warm-up' if num == 0 else num}][P{image_id}] {out_str}")
 
+    if args.get("static_reshape", False) and 'guidance_scale' in input_args:
+        reshaped_gs = pipe.get_generation_config().guidance_scale
+        new_gs = input_args['guidance_scale']
+        if new_gs != reshaped_gs:
+            log.warning(f"image generation pipeline was reshaped with guidance_scale={reshaped_gs}, but is being passed into generate() as {new_gs}")
+
     result_md5_list = []
     max_rss_mem_consumption = ''
     max_uss_mem_consumption = ''
@@ -210,14 +216,8 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    pipe, pretrain_time, use_genai, callback = FW_UTILS[framework].create_image_gen_model(model_path, device, **args)
-    iter_data_list = []
-    input_image_list = get_image_prompt(args)
-    if framework == "ov" and not use_genai:
-        stable_diffusion_hook.new_text_encoder(pipe)
-        stable_diffusion_hook.new_unet(pipe)
-        stable_diffusion_hook.new_vae_decoder(pipe)
 
+    input_image_list = get_image_prompt(args)
     if args['prompt_index'] is None:
         prompt_idx_list = [image_id for image_id, input_text in enumerate(input_image_list)]
         image_list = input_image_list
@@ -230,6 +230,25 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
                 prompt_idx_list.append(i)
     if len(image_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
+
+    # If --static_reshape is specified, we need to get width, height, and guidance scale to drop into args
+    # as genai's create_image_gen_model implementation will need those to reshape the pipeline before compile().
+    if args.get("static_reshape", False):
+        static_input_args = collects_input_args(image_list[0], args['model_type'], args['model_name'], args["num_steps"],
+                                     args.get("height"), args.get("width"), image_as_ov_tensor=False)
+        args["height"] = static_input_args["height"]
+        args["width"] = static_input_args["width"]
+        if "guidance_scale" in static_input_args:
+            args["guidance_scale"] = static_input_args["guidance_scale"]
+
+    pipe, pretrain_time, use_genai, callback = FW_UTILS[framework].create_image_gen_model(model_path, device, **args)
+    iter_data_list = []
+
+    if framework == "ov" and not use_genai:
+        stable_diffusion_hook.new_text_encoder(pipe)
+        stable_diffusion_hook.new_unet(pipe)
+        stable_diffusion_hook.new_vae_decoder(pipe)
+
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(image_list)}, prompt idx: {prompt_idx_list}')
 
     if use_genai:
