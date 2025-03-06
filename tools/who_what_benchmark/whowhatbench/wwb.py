@@ -13,7 +13,7 @@ from PIL import Image
 
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
-from whowhatbench.visualtext_evaluator import align_phi3_v
+from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -337,7 +337,7 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
     image_data = ov.Tensor(np.array(image)[None])
     out = model.generate(
         prompt,
-        **align_phi3_v(model.config.model_type, tokenizer),
+        **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
         image=image_data,
         do_sample=False,
         max_new_tokens=max_new_tokens
