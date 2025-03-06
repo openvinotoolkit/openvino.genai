@@ -667,6 +667,14 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     return inputs_embeds;
 }
 
+void InputsEmbedderMiniCPM::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
+    IInputsEmbedder::update_chat_history(decoded_results, generation_finish_status);
+    if (generation_finish_status == ov::genai::GenerationStatus::CANCEL)
+        m_image_id = m_prev_image_id;
+    else
+        m_prev_image_id = m_image_id;
+}
+
 void InputsEmbedderMiniCPM::start_chat(const std::string& system_message) {
     IInputsEmbedder::start_chat(system_message);
     m_image_id = 0;
