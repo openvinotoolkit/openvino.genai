@@ -336,9 +336,13 @@ jobs:
             marker: 'image_generation'
             cmd: 'tests/python_tests/samples'
             runner: 'aks-linux-8-cores-64gb'
+          - name: 'VLM'
+            marker: 'vlm'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-8-cores-64gb'
             
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples ] 
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash

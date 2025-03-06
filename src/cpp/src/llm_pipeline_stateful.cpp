@@ -71,7 +71,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (m_is_npu) {
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(
-            model, *filtered_properties, kv_pos, models_path
+            model, *filtered_properties, kv_pos, models_path / "openvino_model.xml"
         );
         m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
     } else {
