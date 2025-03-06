@@ -90,9 +90,6 @@ public:
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
 
         m_language = compiled_language_model.create_infer_request();
-
-        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
-        kv_cache_state.seq_length_axis = kv_pos.seq_len;
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
         auto embedder_properties = device_propertes.empty()
@@ -101,6 +98,9 @@ public:
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
+
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        kv_cache_state.seq_length_axis = kv_pos.seq_len;
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -236,7 +236,7 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation)
-            m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status, m_language.get_tensor("attention_mask").get_shape().at(1) - history_size);
+            m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
         else
             kv_cache_state.reset_state();
 

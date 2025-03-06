@@ -550,6 +550,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
     }
     ov::Tensor new_merged_tokens = insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     ov::Tensor new_tokens = update_history(new_merged_tokens);
+    m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_tokens);
 
     std::vector<ov::Tensor> tokens = drop_image_placeholders(new_tokens);
@@ -604,8 +605,8 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
     return inputs_embeds;
 }
 
-void InputsEmbedderPhi3V::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status, size_t processed_tokens_amount) {
-    IInputsEmbedder::update_chat_history(decoded_results, generation_finish_status, processed_tokens_amount);
+void InputsEmbedderPhi3V::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
+    IInputsEmbedder::update_chat_history(decoded_results, generation_finish_status);
     if (generation_finish_status == ov::genai::GenerationStatus::CANCEL)
         m_tokens_per_images = m_prev_tokens_per_images;
     else

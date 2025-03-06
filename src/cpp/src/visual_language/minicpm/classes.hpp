@@ -49,7 +49,7 @@ public:
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override;
 
-    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status, size_t processed_tokens_amount) override;
+    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) override;
 
     void start_chat(const std::string& system_message) override;
 

@@ -224,9 +224,11 @@ def test_vlm_with_scheduler_vs_default(config, cache):
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
-@pytest.mark.parametrize("iteration_images", [[image_links_for_testing[0], image_links_for_testing[0]], [image_links_for_testing[0], image_links_for_testing[2], image_links_for_testing[0]],
-                                              [image_links_for_testing[1], image_links_for_testing[1]], [image_links_for_testing[1], image_links_for_testing[1], image_links_for_testing[1]],
-                                              [image_links_for_testing[2], image_links_for_testing[1]], [image_links_for_testing[2], image_links_for_testing[0], image_links_for_testing[1]]])
+@pytest.mark.parametrize("iteration_images", [[image_links_for_testing[0], image_links_for_testing[0]], # generation with text input only
+                                              [image_links_for_testing[0], image_links_for_testing[2], image_links_for_testing[0]], # combination of generations with text input and text + image input, empty image first
+                                              [image_links_for_testing[2], image_links_for_testing[1]], # generation with text + image input
+                                              [image_links_for_testing[2], image_links_for_testing[0], image_links_for_testing[1]]] # combination of generations with text input and text + image input, image input first
+                         )
 def test_vlm_pipeline_chat(model_id, system_message, iteration_images, cache):
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer

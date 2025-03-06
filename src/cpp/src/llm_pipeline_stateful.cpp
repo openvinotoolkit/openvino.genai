@@ -212,7 +212,6 @@ EncodedResults StatefulLLMPipeline::generate(
         reset_kv_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
         m_kv_cache_state.reset_state();
-        m_kv_history_trim_manager.reset();
     }
 
     auto start_time = std::chrono::steady_clock::now();

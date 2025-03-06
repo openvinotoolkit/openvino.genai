@@ -51,7 +51,7 @@ public:
     void start_chat(const std::string& system_message);
 
     // adds currently generated text to chat history
-    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status, size_t processed_tokens_amount);
+    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
 
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
@@ -83,6 +83,8 @@ private:
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
         // reflection of tokens contained in the kv cache
         utils::KVCacheState m_kv_cache_state;
+        // length of attention_mask/kv cache at the beginning of generation()
+        size_t m_prev_hist_length = 0;
     public:
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
     
@@ -106,7 +108,7 @@ private:
     
         virtual void start_chat(const std::string& system_message);
     
-        virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status, size_t processed_tokens_amount);
+        virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
     
         virtual void finish_chat();
     
