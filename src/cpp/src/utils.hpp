@@ -44,8 +44,6 @@ struct GenerationFinishInfo
 
 Tensor init_attention_mask(const Tensor& position_ids);
 
-void print_tensor(const ov::Tensor& tensor);
-
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0);
 
 ov::Tensor extend_attention(ov::Tensor attention_mask);
@@ -114,6 +112,15 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 
+struct KVDesc {
+    uint32_t max_prompt_len;
+    uint32_t min_response_len;
+};
+
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
+                                                             const ov::AnyMap& config,
+                                                             const KVAxesPosition& kv_pos,
+                                                             const std::filesystem::path& path = {});
 
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.
@@ -181,11 +188,23 @@ template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer);
 
+std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name);
+
+template <typename T>
+T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_value) {
+    auto anyopt = pop_option(config, key);
+    if (anyopt.has_value()) {
+        if (anyopt.value().empty()) {
+            OPENVINO_THROW("Got empty ov::Any for key: " + key);
+        }
+        return anyopt.value().as<T>();
+    }
+    return default_value;
+}
 
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
-
 
 }  // namespace utils
 }  // namespace genai

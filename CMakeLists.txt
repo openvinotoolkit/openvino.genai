@@ -41,12 +41,14 @@ endif()
 
 # Looking for OpenVINO in the python distribution. It doesn't work for cross-compiling build
 if(NOT CMAKE_CROSSCOMPILING)
-    find_package(Python3 REQUIRED)
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
-        OUTPUT_VARIABLE OpenVINO_DIR_PY
-        ERROR_QUIET
-    )
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        execute_process(
+            COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
+            OUTPUT_VARIABLE OpenVINO_DIR_PY
+            ERROR_QUIET
+        )
+    endif()
 endif()
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
@@ -114,5 +116,8 @@ if(ENABLE_JS)
 endif()
 if(WIN32 AND NOT DEFINED CPACK_GENERATOR)
     set(CPACK_GENERATOR "ZIP")
+endif()
+if(CPACK_GENERATOR STREQUAL "NPM")
+    set(CPACK_GENERATOR "TGZ")
 endif()
 include(CPack)

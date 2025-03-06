@@ -29,6 +29,19 @@ std::shared_ptr<CacheManager> init_cache_manager(SchedulerConfig scheduler_confi
     return std::make_shared<CacheManager>(request, kv_head_configs);
 }
 
+ov::Tensor embeds_matrix_to_tensor(std::vector<std::vector<float>> vec) {
+    size_t hidden_size = vec[0].size();
+    ov::Tensor res = ov::Tensor(ov::element::f32, {1, vec.size(), hidden_size});
+    auto res_data = res.data<float>();
+    size_t pos = 0;
+    for (size_t i = 0; i < vec.size(); i ++) {
+        for (size_t j = 0; j < hidden_size; j++) {
+            res_data[pos++] = vec[i][j];
+        }
+    }
+    return res;
+}
+
 TEST(TestScheduler, general_test) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;
@@ -1010,4 +1023,95 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
             scheduler.free_sequence(seq->get_id());
         }
     }
+}
+
+TEST(TestScheduler, prefix_caching_embeddings_test) {
+    std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
+    configs.at(0).max_num_batched_tokens = 32;
+    configs.at(0).num_kv_blocks = 100;
+    configs.at(0).dynamic_split_fuse = false;
+    configs.at(0).max_num_seqs = 5;
+    configs.at(0).enable_prefix_caching = true;
+    configs.at(1).max_num_batched_tokens = 32;
+    configs.at(1).num_kv_blocks = 100;
+    configs.at(1).dynamic_split_fuse = true;
+    configs.at(1).max_num_seqs = 5;
+    configs.at(1).enable_prefix_caching = true;
+    for (auto scheduler_config: configs) {
+        size_t hidden_size = 300;
+        std::vector<std::vector<float>> prompt_embeddings;
+        for (size_t i = 0; i < 8; i++) {
+            prompt_embeddings.emplace_back(std::vector<float>());
+            for (size_t j = 0; j < hidden_size; j++) {
+                prompt_embeddings[i].push_back(i * hidden_size + j + (float)j * 0.05);
+            }
+        }
+        std::vector<std::vector<float>> histrory_embeddings = {};
+        // schedule prompt
+        Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+
+        size_t chat_iterations = 10;
+
+        for (size_t chat_iteration = 0; chat_iteration < chat_iterations; chat_iteration++) {
+            std::vector<std::vector<float>> embeddings = histrory_embeddings;
+            embeddings.insert(embeddings.end(), prompt_embeddings.begin(), prompt_embeddings.end());
+            SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, embeds_matrix_to_tensor(embeddings), ov::genai::greedy(), 4);
+            scheduler.restore_cached_blocks(sequence_group);
+            std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+            auto out1 = scheduler.schedule(requests);
+            if (chat_iteration == 0)
+                EXPECT_EQ(out1.m_total_num_scheduled_tokens, prompt_embeddings.size());
+            else
+            {
+                EXPECT_EQ(out1.m_total_num_scheduled_tokens, prompt_embeddings.size() + 1);
+            }
+            for (auto seq: requests) {
+                std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+                running_sequences[0]->append_token(chat_iteration, 0.7);
+
+                std::vector<float> embed(hidden_size);
+                for (size_t i = 0; i < hidden_size; i++) {
+                    embed[i] = chat_iteration + i * hidden_size + (float)i * 0.05; 
+                }
+                running_sequences[0]->append_generated_ids_embeds(embeds_matrix_to_tensor({embed}));
+                seq->finish_iteration();
+            }
+
+            // schedule generate
+            size_t num_generate_tokens = 10;
+            for (size_t i = 0; i < num_generate_tokens; i++) {
+                auto out2 = scheduler.schedule(requests);
+                EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1);
+                for (auto seq: requests) {
+                    std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+                    running_sequences[0]->append_token(16 + chat_iteration, 0.9);
+                    std::vector<float> embed(hidden_size);
+                    for (size_t i = 0; i < hidden_size; i++) {
+                        embed[i] = chat_iteration + i * hidden_size + (float)i * 0.05; 
+                    }
+                    running_sequences[0]->append_generated_ids_embeds(embeds_matrix_to_tensor({embed}));
+                    seq->finish_iteration();
+                }
+            }
+
+            // finish sequence
+            auto sequence = requests[0]->get_running_sequences()[0];
+            sequence->set_status(SequenceStatus::FINISHED);
+            auto idx0 = sequence->get_id();
+            scheduler.free_sequence(idx0);
+            auto generated_embeddings = sequence->get_generated_ids_embeds();
+
+            histrory_embeddings.insert(histrory_embeddings.end(), prompt_embeddings.begin(), prompt_embeddings.end());
+            histrory_embeddings.insert(histrory_embeddings.end(), generated_embeddings.begin(), generated_embeddings.end());
+
+            for (auto& seq : sequence_group->get_sequences()) {
+                if (seq->get_id() == idx0) {
+                    continue;
+                }
+                scheduler.free_sequence(seq->get_id());
+            }
+         }
+    }
+
 }
