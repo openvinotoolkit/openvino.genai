@@ -38,8 +38,7 @@ def test_string_inputs(model_id, generation_config_dict, prompt, pipeline_type):
 
 input_tensors_list = [
     # input_ids, attention_mask
-    (np.array([[1, 4, 42]], dtype=np.int64), None),
-    (np.array([[1, 4, 42]], dtype=np.int64), np.array([[1, 1, 1]], dtype=np.int64)),
+    (np.array([[1, 4, 42]], dtype=np.int64), None)
 ]
 @pytest.mark.parametrize("inputs", input_tensors_list)
 @pytest.mark.parametrize("model_id", get_models_list())
@@ -112,6 +111,30 @@ def test_empty_encoded_inputs_throw():
     with pytest.raises(RuntimeError):
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
 
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", get_chat_models_list())
+def test_different_input_types_works_same_and_change_nothing(model_id):
+    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(models_path)
+
+    ov_generation_config = ov_genai.GenerationConfig()
+    ov_generation_config.max_new_tokens = 30
+    ov_generation_config.apply_chat_template = False
+
+    res_string_input_1 = ov_pipe.generate(questions[0], generation_config=ov_generation_config)
+
+    tokenizer = ov_pipe.get_tokenizer()
+    ov_tokens = tokenizer.encode(questions[0], add_special_tokens=True)
+    res_encoded_input = ov_pipe.generate(ov_tokens, generation_config=ov_generation_config)
+
+    assert res_string_input_1 == res_encoded_input
+
+    res_string_input_2 = ov_pipe.generate(questions[0], generation_config=ov_generation_config)
+
+    assert res_string_input_1 == res_string_input_2
+
 #
 # Chat scenario
 #
@@ -131,9 +154,10 @@ questions = [
 
 @pytest.mark.parametrize("intpus", chat_intpus)
 @pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("string_inputs", [True, False])
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_chat_scenario(model_id, intpus):
+def test_chat_scenario(model_id, intpus, string_inputs):
     chat_history_hf = []
     chat_history_ov = []
 
@@ -144,6 +168,8 @@ def test_chat_scenario(model_id, intpus):
 
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
+
+    prev_chat_len = 0
 
     ov_pipe.start_chat(system_message)
     chat_history_hf.append({"role": "system", "content": system_message})
@@ -160,8 +186,20 @@ def test_chat_scenario(model_id, intpus):
         answer_str = hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
-        answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
-        chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
+        if string_inputs:
+            answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
+            chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
+        else:
+            input_ids = np.array([tokenized['input_ids'][0][prev_chat_len:]], dtype=np.int64)
+            attention_mask = np.array([tokenized['attention_mask'][0][prev_chat_len:]], dtype=np.int64)
+            inputs_ov = ov_genai.TokenizedInputs(ov.Tensor(input_ids), ov.Tensor(attention_mask))
+
+            result_ov = ov_pipe.generate(inputs_ov, generation_config=ov_generation_config).tokens[0]
+
+            answer_ov = hf_tokenizer.decode(result_ov, skip_special_tokens=True)
+            prev_chat_len = len(tokenized['input_ids'][0]) + len(answer_ov[0][0])
+
+        chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
     ov_pipe.finish_chat()
 
@@ -209,6 +247,7 @@ def test_chat_scenario_several_chats_in_series():
 
         assert chat_history_ov == chat_history_hf
 
+
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", get_chat_models_list())
@@ -223,6 +262,28 @@ def test_chat_scenario_several_start(model_id):
     ov_pipe.start_chat()
     ov_pipe.generate(questions[0], generation_config=ov_generation_config)
     ov_pipe.finish_chat()
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", get_chat_models_list())
+def test_generate_works_same_before_and_after_chat(model_id):
+    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(models_path)
+
+    generation_config_kwargs, _ = chat_intpus[0]
+    ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
+    ov_generation_config.apply_chat_template = False
+
+    res_before_chat = ov_pipe.generate(questions[0], generation_config=ov_generation_config)
+
+    ov_pipe.start_chat()
+    ov_pipe.generate(questions[0], generation_config=ov_generation_config)
+    ov_pipe.finish_chat()
+
+    res_after_chat = ov_pipe.generate(questions[0], generation_config=ov_generation_config)
+    
+    assert res_after_chat == res_before_chat
 
 #
 # Streaming with callback
