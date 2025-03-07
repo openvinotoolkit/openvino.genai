@@ -295,6 +295,7 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }}
         run: |
           & ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.ps1 -i ${{ env.INSTALL_DIR }}
+          & ${{ env.OV_INSTALL_DIR }}/samples/c/build_samples.ps1 -i ${{ env.INSTALL_DIR }}
 
       - name: Build Samples (Debug)
         if: ${{ 'Release' != matrix.build-type }}
@@ -492,6 +493,7 @@ jobs:
           PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
+          SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
   genai_nodejs_tests:
     name: Node.js bindings tests
