@@ -15,22 +15,24 @@ class TestGreedyCausalLM:
         "convert_model, sample_args",
         [
             pytest.param("SmolLM-135M", "return 0"),
-            pytest.param("Qwen2.5-0.5B-Instruct", "69"),
+            pytest.param("Qwen2-0.5B-Instruct", "69"),
             pytest.param("phi-1_5", "Alan Turing was a"),
             pytest.param("TinyLlama-1.1B-Chat-v1.0", "Alan Turing was a"),
         ],
         indirect=["convert_model"],
     )
     def test_sample_greedy_causal_lm(self, request, convert_model, sample_args):
+        prompt = sample_args
+        
         # Python test
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
-        py_command = [sys.executable, py_script, convert_model, sample_args]
+        py_command = [sys.executable, py_script, convert_model, prompt]
         py_result = run_sample(py_command)
         py_predictions = py_result.stdout
 
         # C++ test
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
-        cpp_command = [cpp_sample, convert_model, sample_args]
+        cpp_command = [cpp_sample, convert_model, prompt]
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
         
@@ -42,8 +44,7 @@ class TestGreedyCausalLM:
         
         import transformers
         tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'])
-        prompt = sample_args
-        
+                
         if tokenizer.chat_template:
             prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
