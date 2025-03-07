@@ -153,7 +153,6 @@ public:
 
     template <typename T>
     void set_state_value(ov::VariableState& state, std::optional<T> value) {
-        
         // better to store which value is in the state locally so that get_state is not called every infer request
         std::optional<T> last_value;
         ov::genai::utils::read_anymap_param(m_state_flags, state.get_name(), last_value);
@@ -198,19 +197,14 @@ public:
         
         for (auto& state: infer_request_guard.get().query_state()) {
             auto name = state.get_name();
-            if (state.get_name() == add_special_tokens.name()) {
+
+            if (name == add_special_tokens.name()) {
                 set_state_value(state, add_special_tokens_flag);
-            } else if (state.get_name() == skip_special_tokens.name()) {
+            } else if (name == skip_special_tokens.name()) {
                 set_state_value(state, skip_special_tokens_flag);
-            } else if (state.get_name() == MAX_LENGTH_VAR_ID) {
-                if (max_length_val.has_value()) {
-                    set_state_value(state, max_length_val);
-                } else {
-                    // If after some time user called encode without max_length we should return
-                    // to the default value stored in constant from IR.
-                    state.reset();
-                }
-            } else if (state.get_name() == PAD_TO_MAX_LENGTH_VAR_ID) {
+            } else if (name == MAX_LENGTH_VAR_ID) {
+                set_state_value(state, max_length_val);
+            } else if (name == PAD_TO_MAX_LENGTH_VAR_ID) {
                 set_state_value(state, pad_to_max_length_val);
             }
         }
