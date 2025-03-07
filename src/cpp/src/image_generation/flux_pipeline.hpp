@@ -109,6 +109,9 @@ namespace genai {
 
 class FluxPipeline : public DiffusionPipeline {
 public:
+    explicit FluxPipeline(PipelineType pipeline_type) :
+        DiffusionPipeline(pipeline_type) {}
+
     FluxPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) : DiffusionPipeline(pipeline_type) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
@@ -153,8 +156,12 @@ public:
             OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
+        const std::string class_name = data["_class_name"].get<std::string>();
+        OPENVINO_ASSERT(!(is_inpainting_model() && class_name != "FluxFillPipeline"),
+                        "inpainting model is not currently supported by Flux InpaintingPipeline. Please, contact OpenVINO GenAI developers.");
+
         // initialize generation config
-        initialize_generation_config(data["_class_name"].get<std::string>());
+        initialize_generation_config(class_name);
     }
 
     FluxPipeline(PipelineType pipeline_type,
@@ -207,8 +214,12 @@ public:
             OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
+        const std::string class_name = data["_class_name"].get<std::string>();
+        OPENVINO_ASSERT(!(is_inpainting_model() && class_name != "FluxFillPipeline"),
+                        "inpainting model is not currently supported by Flux InpaintingPipeline. Please, contact OpenVINO GenAI developers.");
+
         // initialize generation config
-        initialize_generation_config(data["_class_name"].get<std::string>());
+        initialize_generation_config(class_name);
         update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
@@ -223,6 +234,8 @@ public:
         m_vae = std::make_shared<AutoencoderKL>(vae);
         m_transformer = std::make_shared<FluxTransformer2DModel>(transformer);
         initialize_generation_config("FluxPipeline");
+
+        OPENVINO_ASSERT(!is_inpainting_model(), "inpainting model is not currently supported by Flux InpaintingPipeline. Please, contact OpenVINO GenAI developers.");
     }
 
     FluxPipeline(PipelineType pipeline_type, const FluxPipeline& pipe) :
@@ -538,7 +551,7 @@ public:
         return m_perf_metrics;
     }
 
-private:
+protected:
     void compute_dim(int64_t & generation_config_value, ov::Tensor initial_image, int dim_idx) {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
@@ -569,6 +582,10 @@ private:
                 m_generation_config.num_inference_steps = 28;
                 m_generation_config.strength = 0.6f;
             }
+            m_generation_config.max_sequence_length = 512;
+        } else if (class_name == "FluxFillPipeline" && m_pipeline_type == PipelineType::INPAINTING) {
+            m_generation_config.guidance_scale = 30.f;
+            m_generation_config.num_inference_steps = 50;
             m_generation_config.max_sequence_length = 512;
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
