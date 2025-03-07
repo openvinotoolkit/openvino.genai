@@ -629,15 +629,16 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     std::string native_tag = "<image>./</image>";
     auto [unified_prompt, images_sequence] = unify_prompt(prompt, native_tag, embeds.size(), n_prev_images);
 
+    std::string unk64;
+    for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
+        unk64 += m_vlm_config.unk;
+    }
+
     for (const EncodedImage& encoded_image : embeds) {
         std::string expanded_tag;
         if (m_vlm_config.use_image_id) {
             expanded_tag += m_vlm_config.im_id_start + std::to_string(m_image_id) + m_vlm_config.im_id_end;
             ++m_image_id;
-        }
-        std::string unk64;
-        for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
-            unk64 += m_vlm_config.unk;
         }
         expanded_tag += m_vlm_config.im_start + unk64 + m_vlm_config.im_end;
         if (encoded_image.slices) {
