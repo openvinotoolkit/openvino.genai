@@ -136,7 +136,7 @@ int main(int argc, char* argv[]) {
     }
 
     CHECK_STATUS(ov_genai_llm_pipeline_generate_decoded_results(pipe, options.prompt, config, NULL, &results));
-    CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));
+    CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &cumulative_metrics));
 
     if (results) {
         ov_genai_decoded_results_free(results);
@@ -144,11 +144,11 @@ int main(int argc, char* argv[]) {
     }
     for (size_t i = 0; i < options.num_iter - 1; i++) {
         CHECK_STATUS(ov_genai_llm_pipeline_generate_decoded_results(pipe, options.prompt, config, NULL, &results));
-        CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &cumulative_metrics));
-        CHECK_STATUS(ov_genai_perf_metrics_add_in_place(metrics, cumulative_metrics));  // metrics += _metrics
-        if (cumulative_metrics) {
-            ov_genai_decoded_results_perf_metrics_free(cumulative_metrics);
-            cumulative_metrics = NULL;  // The end of main() would try to free it again if not NULL.
+        CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));
+        CHECK_STATUS(ov_genai_perf_metrics_add_in_place(cumulative_metrics, metrics));  // metrics += _metrics
+        if (metrics) {
+            ov_genai_decoded_results_perf_metrics_free(metrics);
+            metrics = NULL;  // The end of main() would try to free it again if not NULL.
         }
         if (results) {
             ov_genai_decoded_results_free(results);
@@ -158,19 +158,19 @@ int main(int argc, char* argv[]) {
     float mean = 0.0f;
     float std = 0.0f;
     float load_time = 0.0f;
-    CHECK_STATUS(ov_genai_perf_metrics_get_load_time(metrics, &load_time));
+    CHECK_STATUS(ov_genai_perf_metrics_get_load_time(cumulative_metrics, &load_time));
     printf("%.2f ms\n", load_time);
-    CHECK_STATUS(ov_genai_perf_metrics_get_generate_duration(metrics, &mean, &std));
+    CHECK_STATUS(ov_genai_perf_metrics_get_generate_duration(cumulative_metrics, &mean, &std));
     printf("Generate time: %.2f ± %.2f ms\n", mean, std);
-    CHECK_STATUS(ov_genai_perf_metrics_get_tokenization_duration(metrics, &mean, &std));
+    CHECK_STATUS(ov_genai_perf_metrics_get_tokenization_duration(cumulative_metrics, &mean, &std));
     printf("Tokenization time: %.2f ± %.2f ms\n", mean, std);
-    CHECK_STATUS(ov_genai_perf_metrics_get_detokenization_duration(metrics, &mean, &std));
+    CHECK_STATUS(ov_genai_perf_metrics_get_detokenization_duration(cumulative_metrics, &mean, &std));
     printf("Detokenization time: %.2f ± %.2f ms\n", mean, std);
-    CHECK_STATUS(ov_genai_perf_metrics_get_ttft(metrics, &mean, &std));
+    CHECK_STATUS(ov_genai_perf_metrics_get_ttft(cumulative_metrics, &mean, &std));
     printf("TTFT: %.2f ± %.2f ms\n", mean, std);
-    CHECK_STATUS(ov_genai_perf_metrics_get_tpot(metrics, &mean, &std));
+    CHECK_STATUS(ov_genai_perf_metrics_get_tpot(cumulative_metrics, &mean, &std));
     printf("TPOT: %.2f ± %.2f ms/token\n", mean, std);
-    CHECK_STATUS(ov_genai_perf_metrics_get_throughput(metrics, &mean, &std));
+    CHECK_STATUS(ov_genai_perf_metrics_get_throughput(cumulative_metrics, &mean, &std));
     printf("Throughput: %.2f ± %.2f tokens/s\n", mean, std);
 
 err:
