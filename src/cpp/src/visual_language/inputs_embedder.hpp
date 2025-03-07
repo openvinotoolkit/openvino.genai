@@ -45,16 +45,13 @@ public:
     Tokenizer get_tokenizer() const;
 
     // get reflection of tokens contained in the kv cache
-    KVCacheState& get_kv_cache_state();
-
-    // returns amount of elements, which need to remove from the end of the KV cache
-    size_t get_num_tokens_to_remove_from_hist() const;
+    utils::KVCacheState& get_kv_cache_state();
 
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);
 
     // adds currently generated text to chat history
-    void update_chat_history(const std::string& decoded_results);
+    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
 
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
@@ -80,16 +77,14 @@ private:
         bool m_is_chat_conversation = false;
         // Chat history
         ChatHistory m_history;
-        // If sequence contains some symbols, which could be ambiguous encoded by tokenizer, we need to trim kv cache
-        // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
-        // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
-        ov::genai::KVCacheTrimManager m_kv_history_trim_manager = {0, 2};
         // True if chat template should be applied for non-chat scenario
         bool m_apply_chat_template = true;
         // Finish reason of last generation for chat scenario
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
         // reflection of tokens contained in the kv cache
-        KVCacheState m_kv_cache_state;
+        utils::KVCacheState m_kv_cache_state;
+        // length of attention_mask/kv cache at the beginning of generation()
+        size_t m_prev_hist_length = 0;
     public:
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
     
@@ -103,12 +98,8 @@ private:
             return m_tokenizer;
         }
     
-        KVCacheState& get_kv_cache_state() {
+        utils::KVCacheState& get_kv_cache_state() {
             return m_kv_cache_state;
-        }
-    
-        size_t get_num_tokens_to_remove_from_hist() const {
-            return m_kv_history_trim_manager.num_tokens_to_trim;
         }
     
         void set_apply_chat_template_status(bool apply_chat_template) {
@@ -117,7 +108,7 @@ private:
     
         virtual void start_chat(const std::string& system_message);
     
-        void update_chat_history(const std::string& decoded_results);
+        virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
     
         virtual void finish_chat();
     
