@@ -467,6 +467,7 @@ jobs:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/openvino.genai
       INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
+      NODE_VERSION: 21
 
     steps:
       - name: Clone openvino.genai
@@ -488,6 +489,11 @@ jobs:
           name: genai_nodejs_bindings
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       # JS pacakges uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
       # Here we emulate the installation of the openvino-node package from NPM. The latest
