@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "openvino/genai/c/llm_pipeline_c.h"
+#include "openvino/genai/c/llm_pipeline.h"
 
 #define CHECK_STATUS(return_status)                                                      \
     if (return_status != OK) {                                                           \

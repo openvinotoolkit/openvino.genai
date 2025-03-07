@@ -1,7 +1,7 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/c/llm_pipeline_c.h"
+#include "openvino/genai/c/llm_pipeline.h"
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"

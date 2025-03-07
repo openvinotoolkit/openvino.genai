@@ -9,8 +9,8 @@
  */
 
 #pragma once
-#include "generation_config_c.h"
-#include "perf_metrics_c.h"
+#include "generation_config.h"
+#include "perf_metrics.h"
 
 /**
  * @struct ov_genai_decoded_results

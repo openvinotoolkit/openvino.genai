@@ -1,7 +1,7 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/c/generation_config_c.h"
+#include "openvino/genai/c/generation_config.h"
 
 #include "openvino/genai/generation_config.hpp"
 #include "types_c.h"

@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "openvino/genai/c/llm_pipeline_c.h"
+#include "openvino/genai/c/llm_pipeline.h"
 
 #define MAX_PROMPT_LENGTH 256
 #define MAX_OUTPUT_LENGTH 1024
