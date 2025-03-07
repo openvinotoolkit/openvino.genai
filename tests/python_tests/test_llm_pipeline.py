@@ -128,8 +128,9 @@ def test_different_input_types_works_same_and_change_nothing(model_id):
     tokenizer = ov_pipe.get_tokenizer()
     ov_tokens = tokenizer.encode(questions[0], add_special_tokens=True)
     res_encoded_input = ov_pipe.generate(ov_tokens, generation_config=ov_generation_config)
+    res_encoded_input_str = hf_tokenizer.decode(res_encoded_input.tokens[0], skip_special_tokens=True)
 
-    assert res_string_input_1 == res_encoded_input
+    assert res_string_input_1 == res_encoded_input_str
 
     res_string_input_2 = ov_pipe.generate(questions[0], generation_config=ov_generation_config)
 
@@ -188,7 +189,6 @@ def test_chat_scenario(model_id, intpus, string_inputs):
 
         if string_inputs:
             answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
-            chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
         else:
             input_ids = np.array([tokenized['input_ids'][0][prev_chat_len:]], dtype=np.int64)
             attention_mask = np.array([tokenized['attention_mask'][0][prev_chat_len:]], dtype=np.int64)
@@ -199,7 +199,7 @@ def test_chat_scenario(model_id, intpus, string_inputs):
             answer_ov = hf_tokenizer.decode(result_ov, skip_special_tokens=True)
             prev_chat_len = len(tokenized['input_ids'][0]) + len(answer_ov[0][0])
 
-        chat_history_hf.append({'role': 'assistant', 'content': answer_str})
+        chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
 
     ov_pipe.finish_chat()
 

@@ -364,7 +364,8 @@ EncodedResults StatefulLLMPipeline::generate(
             } else {
                 std::copy(result.tokens[0].begin(), result.tokens[0].end(), std::back_inserter(m_tokenized_chat_history));
             }
-        } else if (config.is_beam_search()) {
+        }
+        if (config.is_beam_search()) {
             m_kv_cache_state.num_tokens_to_trim = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
         }
     }
