@@ -124,10 +124,10 @@ public:
     *
     * @param models_map  A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler") 
     * and value is a pair of model IR as string and weights as tensor.
-    * @param scheduler_config Configuration for the scheduler.
     * @param tokenizer A manually initialized ov::genai::Tokenizer.
+    * @param scheduler_config Configuration for the scheduler.
     * @param device The device to run the pipeline on (e.g., CPU, GPU).
-    * @param embedder_config_dir_path A path to directory containing embedder config.
+    * @param embedder_config_dir_path Optional path to a directory containing embedder config.
     * @param properties Optional properties for the pipeline.
     * @param generation_config Optional generation configuration for the pipeline.
     */
