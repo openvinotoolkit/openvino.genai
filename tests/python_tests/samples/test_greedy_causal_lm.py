@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import logger, MODELS, SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import logger, MODELS, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR
 from test_utils import run_sample
 
 class TestGreedyCausalLM:
@@ -35,10 +35,16 @@ class TestGreedyCausalLM:
         cpp_command = [cpp_sample, convert_model, prompt]
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
-        
+
+        # Test C sample
+        c_sample = os.path.join(SAMPLES_C_DIR, "greedy_causal_lm_c")
+        c_command =[c_sample, convert_model, sample_args]
+        c_result = run_sample(c_command)
+
         # Compare results
-        assert py_predictions == cpp_predictions, f"Results should match"
-        
+        assert py_result.stdout == cpp_result.stdout, f"Results should match"
+        assert cpp_result.stdout == c_result.stdout, f"Results should match"
+                
         model_name = request.node.callspec.params['convert_model']
         model = MODELS[model_name]
         

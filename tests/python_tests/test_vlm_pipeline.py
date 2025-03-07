@@ -8,7 +8,7 @@ import platform
 import sys
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
-from openvino_genai import VLMPipeline, GenerationConfig, SchedulerConfig, ContinuousBatchingPipeline, GenerationStatus
+from openvino_genai import VLMPipeline, GenerationConfig, SchedulerConfig, ContinuousBatchingPipeline, GenerationStatus, StreamingStatus
 
 from utils.network import retry_request
 from utils.generation_config import get_beam_search, get_multinomial_all_parameters, get_greedy
@@ -224,7 +224,12 @@ def test_vlm_with_scheduler_vs_default(config, cache):
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
-def test_vlm_pipeline_chat(model_id, system_message, cache):
+@pytest.mark.parametrize("iteration_images", [[image_links_for_testing[0], image_links_for_testing[0]], # generation with text input only
+                                              [image_links_for_testing[0], image_links_for_testing[2], image_links_for_testing[0]], # combination of generations with text input and text + image input, empty image first
+                                              [image_links_for_testing[2], image_links_for_testing[1]], # generation with text + image input
+                                              [image_links_for_testing[2], image_links_for_testing[0], image_links_for_testing[1]]] # combination of generations with text input and text + image input, image input first
+                         )
+def test_vlm_pipeline_chat(model_id, system_message, iteration_images, cache):
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -236,23 +241,26 @@ def test_vlm_pipeline_chat(model_id, system_message, cache):
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
 
-    for links in image_links_for_testing:
+    ov_pipe.start_chat(system_message)
+
+    images = []
+    for link in iteration_images[0]:
+        images.append(get_image_by_link(link))
+
+    result_from_streamer = []
+    res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+    assert res.texts[0] == ''.join(result_from_streamer)
+
+    for image_set in iteration_images[1:]:
         images = []
-        for link in links:
+        for link in image_set:
             images.append(get_image_by_link(link))
 
-        ov_pipe.start_chat(system_message)
-
         result_from_streamer = []
-        res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+        res = ov_pipe.generate(prompts[1], images=images, generation_config=generation_config, streamer=streamer)
         assert res.texts[0] == ''.join(result_from_streamer)
 
-        for prompt in prompts[1:]:
-            result_from_streamer = []
-            res = ov_pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
-            assert res.texts[0] == ''.join(result_from_streamer)
-
-        ov_pipe.finish_chat()
+    ov_pipe.finish_chat()
 
 
 @pytest.mark.precommit
@@ -359,3 +367,95 @@ def test_vlm_npu_no_exception(model_id, cache):
     for link in image_links_for_testing[2]:
         image = get_image_by_link(link)
         out = ov_pipe.generate(prompts[0], images=[image], generation_config=generation_config)
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", model_ids)
+@pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
+def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_images, cache):
+    callback_questions = [
+        '1+1=',
+        'Why is the Sun yellow?',
+        'What is the previous answer?'
+    ]
+
+    current_iter = 0
+    num_iters = 3
+    def streamer(subword):
+        nonlocal current_iter
+        current_iter += 1
+        return StreamingStatus.CANCEL if current_iter == num_iters else StreamingStatus.RUNNING
+
+
+    models_path = get_ov_model(model_id, cache)
+    ov_pipe = VLMPipeline(models_path, "CPU")
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+    generation_config.ignore_eos = True
+
+    images = []
+    for link in iteration_images:
+        images.append(get_image_by_link(link))
+
+    results_with_cancel = ""
+    ov_pipe.start_chat()
+    results_with_cancel += ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config).texts[0]
+    # doesn't add to results_with_cancel as it should be complitely removed from the history
+    ov_pipe.generate(callback_questions[1], images=images, generation_config=generation_config, streamer=streamer)
+    results_with_cancel += ov_pipe.generate(callback_questions[2], images=images, generation_config=generation_config).texts[0]
+    ov_pipe.finish_chat()
+
+    results = ""
+    ov_pipe.start_chat()
+    results += ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config).texts[0]
+    results += ov_pipe.generate(callback_questions[2], images=images, generation_config=generation_config).texts[0]
+    ov_pipe.finish_chat()
+
+    assert results_with_cancel == results
+
+    results = ""
+    ov_pipe.start_chat()
+    results += ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config).texts[0]
+    results += ov_pipe.generate(callback_questions[2], images=images, generation_config=generation_config).texts[0]
+    ov_pipe.finish_chat()
+
+    assert results_with_cancel == results
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", model_ids)
+@pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
+def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_images, cache):
+    callback_questions = [
+        'Why is the Sun yellow?',
+        '1+1=',
+    ]
+
+    current_iter = 0
+    num_iters = 3
+    def streamer(subword):
+        nonlocal current_iter
+        current_iter += 1
+        return StreamingStatus.CANCEL if current_iter == num_iters else StreamingStatus.RUNNING
+
+    models_path = get_ov_model(model_id, cache)
+    ov_pipe = VLMPipeline(models_path, "CPU")
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.ignore_eos = True
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    images = []
+    for link in iteration_images:
+        images.append(get_image_by_link(link))
+
+    ov_pipe.start_chat()
+    res_first = ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config, streamer=streamer).texts[0]
+    current_iter = 0
+    res_second = ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config, streamer=streamer).texts[0]
+    ov_pipe.finish_chat()
+    
+    assert res_first == res_second
