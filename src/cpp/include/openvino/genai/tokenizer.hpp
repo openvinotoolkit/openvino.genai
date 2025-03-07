@@ -63,9 +63,9 @@ public:
      */
     Tokenizer(
         const std::string& tokenizer_model_str,
-        ov::Tensor& tokenizer_weights_tensor,
-        std::string& detokenizer_model_str,
-        ov::Tensor& detokenizer_weights_tensor,
+        const ov::Tensor& tokenizer_weights_tensor,
+        const std::string& detokenizer_model_str,
+        const ov::Tensor& detokenizer_weights_tensor,
         const ov::AnyMap& properties = {}
     );
 

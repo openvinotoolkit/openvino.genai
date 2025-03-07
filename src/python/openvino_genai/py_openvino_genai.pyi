@@ -347,7 +347,7 @@ class CacheEvictionConfig:
         ...
     def get_start_size(self) -> int:
         ...
-class ChunkStreamerBase:
+class ChunkStreamerBase(StreamerBase):
     """
     
         Base class for chunk streamers. In order to use inherit from from this class.
@@ -366,14 +366,6 @@ class ChunkStreamerBase:
         """
         put_chunk is called every time new token chunk is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def write(self, token: int) -> StreamingStatus:
-        """
-        Write is called every time new token is generated. Returns a StreamingStatus flag to indicate whether generation should be stopped
-        """
-    def write_chunk(self, tokens: list[int]) -> StreamingStatus:
-        """
-        write_chunk is called every time new token chunk is generated. Returns a StreamingStatus flag to indicate whether generation should be stopped
-        """
 class ContinuousBatchingPipeline:
     """
     This class is used for generation with LLMs with continuous batchig
@@ -391,10 +383,19 @@ class ContinuousBatchingPipeline:
     def add_request(self, request_id: int, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
+    def add_request(self, request_id: int, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
+        ...
+    @typing.overload
     def generate(self, input_ids: list[openvino._pyopenvino.Tensor], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
         ...
     @typing.overload
     def generate(self, prompts: list[str], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, prompt: str, generation_config: GenerationConfig, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, prompts: list[str], images: list[list[openvino._pyopenvino.Tensor]], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -807,6 +808,14 @@ class Image2ImagePipeline:
     def stable_diffusion(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Image2ImagePipeline:
         ...
     @staticmethod
+    @typing.overload
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, t5_encoder_model: T5EncoderModel, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> Image2ImagePipeline:
+        ...
+    @staticmethod
+    @typing.overload
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> Image2ImagePipeline:
+        ...
+    @staticmethod
     def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Image2ImagePipeline:
         ...
     @typing.overload
@@ -995,10 +1004,21 @@ class InpaintingPipeline:
     def flux(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
         ...
     @staticmethod
+    def flux_fill(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @staticmethod
     def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
         ...
     @staticmethod
     def stable_diffusion(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @staticmethod
+    @typing.overload
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, t5_encoder_model: T5EncoderModel, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @staticmethod
+    @typing.overload
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
         ...
     @staticmethod
     def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
@@ -1154,6 +1174,17 @@ class LLMPipeline:
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
                     Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer, device: str, generation_config: GenerationConfig = ..., **kwargs) -> None:
+        """
+                    LLMPipeline class constructor.
+                    model (str): Pre-read model.
+                    weights (ov.Tensor): Pre-read model weights.
+                    tokenizer (str): Genai Tokenizers.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
+                    generation_config {ov_genai.GenerationConfig} Genai GenerationConfig. Default is an empty config.
                     kwargs: Device properties.
         """
     def finish_chat(self) -> None:
@@ -1644,7 +1675,7 @@ class StopCriteria:
 class StreamerBase:
     """
     
-        Base class for streamers. In order to use inherit from from this class and implement put, and methods.
+        Base class for streamers. In order to use inherit from from this class and implement write and end methods.
     """
     def __init__(self) -> None:
         ...
@@ -1656,9 +1687,9 @@ class StreamerBase:
         """
         Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def write(self, token: int) -> StreamingStatus:
+    def write(self, token: int | list[int]) -> StreamingStatus:
         """
-        Write is called every time new token is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
+        Write is called every time new token or vector of tokens is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
         """
 class StreamingStatus:
     """
@@ -1781,10 +1812,20 @@ class Text2ImagePipeline:
     @typing.overload
     def __init__(self, pipe: InpaintingPipeline) -> None:
         ...
+    @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                        denoise_device (str): Device to run denoise steps on.
+                        vae_device (str): Device to run vae decoder on.
                         kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -1842,7 +1883,7 @@ class TextStreamer(StreamerBase):
         ...
     def end(self) -> None:
         ...
-    def write(self, token: int) -> StreamingStatus:
+    def write(self, token: int | list[int]) -> StreamingStatus:
         ...
 class TokenizedInputs:
     attention_mask: openvino._pyopenvino.Tensor
@@ -1870,7 +1911,11 @@ class Tokenizer:
             openvino.Model if the entry exists.
     """
     chat_template: str
+    @typing.overload
     def __init__(self, tokenizer_path: os.PathLike, properties: dict[str, typing.Any] = {}, **kwargs) -> None:
+        ...
+    @typing.overload
+    def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
     def apply_chat_template(self, history: list[dict[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
         """
@@ -2339,7 +2384,7 @@ class WhisperPipeline:
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | ChunkStreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
+    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         

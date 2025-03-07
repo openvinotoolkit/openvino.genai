@@ -6,9 +6,7 @@
 #include <cassert>
 
 #include "image_generation/diffusion_pipeline.hpp"
-#include "image_generation/numpy_utils.hpp"
 
-#include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
 #include "openvino/genai/image_generation/t5_encoder_model.hpp"
@@ -194,12 +192,12 @@ public:
                              const T5EncoderModel& t5_encoder_model,
                              const SD3Transformer2DModel& transformer,
                              const AutoencoderKL& vae)
-        : DiffusionPipeline(pipeline_type),
-          m_clip_text_encoder_1(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_1)),
-          m_clip_text_encoder_2(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_2)),
-          m_t5_text_encoder(std::make_shared<T5EncoderModel>(t5_encoder_model)),
-          m_vae(std::make_shared<AutoencoderKL>(vae)),
-          m_transformer(std::make_shared<SD3Transformer2DModel>(transformer)) {
+        : DiffusionPipeline(pipeline_type) {
+        m_clip_text_encoder_1 = std::make_shared<CLIPTextModelWithProjection>(clip_text_model_1);
+        m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(clip_text_model_2);
+        m_t5_text_encoder = std::make_shared<T5EncoderModel>(t5_encoder_model);
+        m_vae = std::make_shared<AutoencoderKL>(vae);
+        m_transformer = std::make_shared<SD3Transformer2DModel>(transformer);
         initialize_generation_config("StableDiffusion3Pipeline");
     }
 
@@ -208,16 +206,16 @@ public:
                              const CLIPTextModelWithProjection& clip_text_model_2,
                              const SD3Transformer2DModel& transformer,
                              const AutoencoderKL& vae)
-        : DiffusionPipeline(pipeline_type),
-          m_clip_text_encoder_1(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_1)),
-          m_clip_text_encoder_2(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_2)),
-          m_vae(std::make_shared<AutoencoderKL>(vae)),
-          m_transformer(std::make_shared<SD3Transformer2DModel>(transformer)) {
+        : DiffusionPipeline(pipeline_type) {
+        m_clip_text_encoder_1 = std::make_shared<CLIPTextModelWithProjection>(clip_text_model_1);
+        m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(clip_text_model_2);
+        m_vae = std::make_shared<AutoencoderKL>(vae);
+        m_transformer = std::make_shared<SD3Transformer2DModel>(transformer);
         initialize_generation_config("StableDiffusion3Pipeline");
     }
 
     StableDiffusion3Pipeline(PipelineType pipeline_type, const StableDiffusion3Pipeline& pipe) :
-        StableDiffusion3Pipeline(pipe) {
+        DiffusionPipeline(pipeline_type) {
         OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
             pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
 
@@ -235,26 +233,36 @@ public:
             do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
         m_clip_text_encoder_1->reshape(batch_size_multiplier);
         m_clip_text_encoder_2->reshape(batch_size_multiplier);
+
+        int transformer_tokenizer_max_length = m_clip_text_encoder_1->get_config().max_position_embeddings;
         if (m_t5_text_encoder) {
             m_t5_text_encoder->reshape(batch_size_multiplier, m_generation_config.max_sequence_length);
+            transformer_tokenizer_max_length += m_generation_config.max_sequence_length;
         }
+        else {
+            transformer_tokenizer_max_length *= 2;
+        }
+
         m_transformer->reshape(num_images_per_prompt * batch_size_multiplier,
                                height,
                                width,
-                               m_clip_text_encoder_1->get_config().max_position_embeddings);
+                               transformer_tokenizer_max_length);
         m_vae->reshape(num_images_per_prompt, height, width);
     }
 
-    void compile(const std::string& device, const ov::AnyMap& properties) override {
+    void compile(const std::string& text_encode_device,
+                 const std::string& denoise_device,
+                 const std::string& vae_device,
+                 const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
 
-        m_clip_text_encoder_1->compile(device, properties);
-        m_clip_text_encoder_2->compile(device, properties);
+        m_clip_text_encoder_1->compile(text_encode_device, properties);
+        m_clip_text_encoder_2->compile(text_encode_device, properties);
         if (m_t5_text_encoder) {
-            m_t5_text_encoder->compile(device, properties);
+            m_t5_text_encoder->compile(text_encode_device, properties);
         }
-        m_transformer->compile(device, properties);
-        m_vae->compile(device, properties);
+        m_transformer->compile(denoise_device, properties);
+        m_vae->compile(vae_device, properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -416,10 +424,21 @@ public:
                                generation_config.height / vae_scale_factor,
                                generation_config.width / vae_scale_factor};
 
-        ov::Tensor latent(ov::element::f32, {}), proccesed_image, image_latent, noise;
+        ov::Tensor latent(ov::element::f32, {}), proccesed_image, image_latents, noise;
 
         if (initial_image) {
-            OPENVINO_THROW("StableDiffusion3 image to image is not implemented");
+            proccesed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
+            proccesed_image = m_image_processor->execute(proccesed_image);
+
+            image_latents = m_vae->encode(proccesed_image, generation_config.generator);
+            if (m_pipeline_type == PipelineType::INPAINTING) {
+                image_latents = numpy_utils::repeat(image_latents, generation_config.num_images_per_prompt);
+            }
+
+            noise = generation_config.generator->randn_tensor(latent_shape);
+            latent = ov::Tensor(image_latents.get_element_type(), image_latents.get_shape());
+            image_latents.copy_to(latent);
+            m_scheduler->scale_noise(latent, m_latent_timestep, noise);
         } else {
             noise = generation_config.generator->randn_tensor(latent_shape);
             latent.set_shape(latent_shape);
@@ -431,7 +450,7 @@ public:
                 latent_data[i] = noise_data[i] * m_scheduler->get_init_noise_sigma();
         }
 
-        return std::make_tuple(latent, proccesed_image, image_latent, noise);
+        return std::make_tuple(latent, proccesed_image, image_latents, noise);
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
@@ -467,20 +486,28 @@ public:
 
         // 3. Prepare timesteps
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
-        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
-        // 4 compute text encoders and set hidden states
+        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        m_latent_timestep = timesteps[0];
+
+        // 4. Compute text encoders and set hidden states
         compute_hidden_states(positive_prompt, generation_config);
 
         // 5. Prepare latent variables
         ov::Tensor latent, processed_image, image_latent, noise;
         std::tie(latent, processed_image, image_latent, noise) = prepare_latents(initial_image, generation_config);
 
+        // 6. Prepare mask latents
+        ov::Tensor mask, masked_image_latent;
+        if (m_pipeline_type == PipelineType::INPAINTING) {
+            std::tie(mask, masked_image_latent) = prepare_mask_latents(mask_image, processed_image, generation_config, batch_size_multiplier);
+        }
+
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
-        // 6. Denoising loop
+        // 7. Denoising loop
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
@@ -521,6 +548,10 @@ public:
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
+            if (m_pipeline_type == PipelineType::INPAINTING && !is_inpainting_model()) {
+                blend_latents(image_latent, noise, mask, latent, inference_step);
+            }
+
             if (callback && callback(inference_step, timesteps.size(), latent)) {
                 auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
                 m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
@@ -554,10 +585,42 @@ public:
     }
 
 private:
-    bool is_inpainting_model() const {
+    size_t get_config_in_channels() const override {
         assert(m_transformer != nullptr);
-        assert(m_vae != nullptr);
-        return m_transformer->get_config().in_channels == (m_vae->get_config().latent_channels * 2 + 1);
+        return m_transformer->get_config().in_channels;
+    }
+
+    void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step) override {
+        OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
+        OPENVINO_ASSERT(image_latent.get_shape() == latent.get_shape(), "Shapes for current", latent.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
+
+        ov::Tensor noised_image_latent(image_latent.get_element_type(), {});
+
+        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        if (inference_step < timesteps.size() - 1) {
+            image_latent.copy_to(noised_image_latent);
+
+            float noise_timestep = timesteps[inference_step + 1];
+            m_scheduler->scale_noise(noised_image_latent, noise_timestep, noise);
+        } else {
+            noised_image_latent = image_latent;
+        }
+
+        ov::Shape shape = image_latent.get_shape();
+        size_t batch_size = shape[0], in_channels = shape[1], channel_size = shape[2] * shape[3];
+        OPENVINO_ASSERT(batch_size == 1, "Batch size 1 is supported for now");
+
+        const float * mask_data = mask.data<const float>();
+        const float * noised_image_latent_data = noised_image_latent.data<const float>();
+        float * latent_data = latent.data<float>();
+
+        // blend initial noised and processed latents
+        for (size_t i = 0; i < channel_size; ++i) {
+            float mask_value = mask_data[i];
+            for (size_t j = 0; j < in_channels; ++j) {
+                latent_data[j * channel_size + i] = (1.0f - mask_value) * noised_image_latent_data[j * channel_size + i] + mask_value * latent_data[j * channel_size + i];
+            }
+        }
     }
 
     void compute_dim(int64_t & generation_config_value, ov::Tensor initial_image, int dim_idx) {
@@ -590,11 +653,8 @@ private:
 
         m_generation_config = ImageGenerationConfig();
 
-        // in case of image to image, the shape is computed based on initial image
-        if (m_pipeline_type != PipelineType::IMAGE_2_IMAGE) {
-            m_generation_config.height = transformer_config.sample_size * vae_scale_factor;
-            m_generation_config.width = transformer_config.sample_size * vae_scale_factor;
-        }
+        m_generation_config.height = transformer_config.sample_size * vae_scale_factor;
+        m_generation_config.width = transformer_config.sample_size * vae_scale_factor;
 
         if (class_name == "StableDiffusion3Pipeline" || class_name == "StableDiffusion3Img2ImgPipeline" || class_name == "StableDiffusion3InpaintPipeline") {
             m_generation_config.guidance_scale = 7.0f;
@@ -636,11 +696,6 @@ private:
             ov::Shape initial_image_shape = initial_image.get_shape();
             size_t height = initial_image_shape[1], width = initial_image_shape[2];
 
-            OPENVINO_ASSERT(generation_config.height == height,
-                "Height for initial (", height, ") and generated (", generation_config.height,") images must be the same");
-            OPENVINO_ASSERT(generation_config.width == width,
-                "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
-
             OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,
                 "'Strength' generation parameter must be withion [0, 1] range");
         } else {
@@ -656,7 +711,8 @@ private:
     std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_2 = nullptr;
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder = nullptr;
     std::shared_ptr<SD3Transformer2DModel> m_transformer = nullptr;
-    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
+
+    float m_latent_timestep = -1;
 };
 
 }  // namespace genai

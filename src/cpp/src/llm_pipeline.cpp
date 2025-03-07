@@ -13,14 +13,29 @@
 #include "llm_pipeline_stateful.hpp"
 #include "continuous_batching_adapter.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "utils.hpp"
 
 namespace ov {
+
+// forward declaration, taken from OpenVINO Dev API
+bool with_cpu_sve();
+
 namespace genai {
 
 namespace {
 
 const std::string PA_BACKEND = "PA";
 const std::string SDPA_BACKEND = "SDPA";
+
+inline bool is_paged_attention_available() {
+#ifdef OPENVINO_ARCH_X86_64
+    return true;
+#elif defined OPENVINO_ARCH_ARM64
+    return with_cpu_sve();
+#else
+    return false;
+#endif
+}
 
 SchedulerConfig get_latency_oriented_scheduler_config() {
     SchedulerConfig default_config;
@@ -30,9 +45,28 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
 }
 
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
-    return properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
-           properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
-           properties.find(ov::genai::prompt_lookup.name()) != properties.end();
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end()) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 with SVE platforms only");
+        }
+    }
+    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 with SVE platforms only");
+        }
+    }
+    if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Prompt lookup decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 with SVE platforms only");
+        }
+    }
+    return false;
 }
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
@@ -53,19 +87,6 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
     }
 
     return {properties, attention_backend};
-};
-
-std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt) {
-    ov::AnyMap plugin_config = properties;
-    auto it = plugin_config.find(ov::genai::scheduler_config.name());
-    SchedulerConfig scheduler_config;
-    if (it != plugin_config.end()) {
-        scheduler_config = it->second.as<SchedulerConfig>();
-        plugin_config.erase(it);
-    } else if (default_config.has_value()) {
-        scheduler_config = *default_config;
-    }
-    return {plugin_config, scheduler_config};
 };
 
 
@@ -91,7 +112,7 @@ std::pair<std::string, Any> draft_model(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& properties) {
-    auto [plugin_config, scheduler_config] = extract_scheduler_config(properties);
+    auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
@@ -107,7 +128,7 @@ std::pair<std::string, Any> draft_model(
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config) {
-    auto [plugin_config, scheduler_config] = extract_scheduler_config(properties);
+    auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
@@ -130,17 +151,18 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& user_properties) {
     auto start_time = std::chrono::steady_clock::now();
-
     auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (explicitly_requires_paged_attention(properties)) {
-        auto [device_properties, scheduler_config] = extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
+        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, tokenizer, device, properties);
+        m_pimpl = properties.count("STATIC_PIPELINE")
+            ? static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties)
+            : std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
@@ -173,12 +195,14 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (explicitly_requires_paged_attention(properties)) {
-        auto [device_properties, scheduler_config] = extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
+        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, device, properties);
+        m_pimpl = properties.count("STATIC_PIPELINE")
+            ? static_llm::LLMPipelineFactory::create(models_path, properties)
+            : std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
@@ -214,19 +238,24 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (explicitly_requires_paged_attention(properties)) {
-        auto [device_properties, scheduler_config] = extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
+        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
                                                               tokenizer, scheduler_config, device, device_properties, generation_config);
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(
-            utils::singleton_core().read_model(model_str, weights_tensor),
-            tokenizer,
-            device,
-            properties,
-            generation_config
-        );
+        m_pimpl = properties.count("STATIC_PIPELINE")
+            ? static_llm::LLMPipelineFactory::create(
+                  utils::singleton_core().read_model(model_str, weights_tensor),
+                  tokenizer,
+                  properties,
+                  generation_config)
+            : std::make_unique<StatefulLLMPipeline>(
+                utils::singleton_core().read_model(model_str, weights_tensor),
+                tokenizer,
+                device,
+                properties,
+                generation_config);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception

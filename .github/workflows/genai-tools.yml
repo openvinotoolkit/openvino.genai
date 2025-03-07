@@ -51,7 +51,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     strategy:
       fail-fast: false
       matrix:
@@ -103,7 +103,7 @@ jobs:
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-qwen2 --draft_model ./ov_models/tiny-random-qwen2-int8 -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --num_assistant_tokens 5 -ic 20
           rm -rf ./tiny-random-qwen2
           rm -rf ./ov_models/
-      - name: Create prompt file for for image generation
+      - name: Create prompt file for image generation
         run: |
           prompt="side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, 8K HD Resolution, beautifully background"
           json_template='{steps: $steps, width: $width, height: $height, guidance_scale: $guidance_scale, prompt: $prompt}'
@@ -113,13 +113,34 @@ jobs:
         run: |
           optimum-cli export openvino --model echarlaix/tiny-random-latent-consistency --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-latent-consistency
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --optimum --num_steps 4
-      - name: Test echarlaix/tiny-random-latent-consistency with GenAI
+      - name: Test echarlaix/tiny-random-latent-consistency with GenAI Text to Image
         run: python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --num_steps 4
       - name: Test echarlaix/tiny-random-latent-consistency with GenAI and LoRA
         run: |
           huggingface-cli download katuni4ka/tiny-random-latent-consistency-lora --local-dir ./lora
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1  --num_steps 4 --lora ./lora/tiny-random-latent-consistency-lora.safetensors --lora_alphas 0.7
-          rm -rf ./ov_models/ ./lora ./image_generation.jsonl
+          rm -rf ./lora ./image_generation.jsonl
+      - name: Create prompt file for inpainting image generation
+        run: |
+          prompt="side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, 8K HD Resolution, beautifully background"
+          media="https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png"
+          mask_image="https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png"
+          json_template='{steps: $steps, width: $width, height: $height, guidance_scale: $guidance_scale, strength: $strength, prompt: $prompt, media: $media, mask_image: $mask_image}'
+          jq -n -c --arg steps "30" --arg width "64" --arg height "128" --arg guidance_scale "1.0" --arg strength "0.8" --arg prompt "$prompt" --arg media "$media" --arg mask_image "$mask_image" "$json_template" > ./image_generation_inpainting.jsonl
+      - name: Test echarlaix/tiny-random-latent-consistency Inpainting
+        run: |
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation_inpainting.jsonl -d cpu -n 1 --num_steps 4 --task inpainting
+          rm -rf ./image_generation_inpainting.jsonl
+      - name: Create prompt file for for image to image generation
+        run: |
+          prompt="cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k"
+          media="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png"
+          json_template='{steps: $steps, width: $width, height: $height, guidance_scale: $guidance_scale, strength: $strength, prompt: $prompt, media: $media}'
+          jq -n -c --arg steps "30" --arg width "64" --arg height "128" --arg guidance_scale "1.0" --arg strength "0.8" --arg prompt "$prompt" --arg media "$media" "$json_template" > ./image_generation_i2i.jsonl
+      - name: Test echarlaix/tiny-random-latent-consistency Image to Image
+        run: |
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation_i2i.jsonl -d cpu -n 1 --num_steps 4 --task image-to-image
+          rm -rf ./ov_models/ ./image_generation_i2i.jsonl
       - name: Test openai/whisper-tiny via Optimum
         run: |
           GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch main --single-branch https://huggingface.co/datasets/facebook/multilingual_librispeech
@@ -151,7 +172,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     strategy:
       fail-fast: false
       matrix:

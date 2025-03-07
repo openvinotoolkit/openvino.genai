@@ -38,6 +38,7 @@ def main():
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.
     pipe.generate(args.prompt, config, streamer)
+    print()
 
 if '__main__' == __name__:
     main()

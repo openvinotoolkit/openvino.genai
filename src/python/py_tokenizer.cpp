@@ -65,6 +65,15 @@ void init_tokenizer(py::module_& m) {
             return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, kwargs_properties);
         }), py::arg("tokenizer_path"), py::arg("properties") = ov::AnyMap({}))
 
+        .def(py::init([](const std::string& tokenizer_model, const ov::Tensor& tokenizer_weights,
+                         const std::string& detokenizer_model, const ov::Tensor& detokenizer_weights,
+                         const py::kwargs& kwargs) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            auto kwargs_properties = pyutils::kwargs_to_any_map(kwargs);
+
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_model, tokenizer_weights, detokenizer_model, detokenizer_weights, kwargs_properties);
+        }), py::arg("tokenizer_model"), py::arg("tokenizer_weights"), py::arg("detokenizer_model"), py::arg("detokenizer_weights"))
+
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, 
                           bool add_special_tokens, 
                           bool pad_to_max_length,

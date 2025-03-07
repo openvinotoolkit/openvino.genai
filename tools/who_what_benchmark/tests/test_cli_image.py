@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 MODEL_CACHE = tempfile.mkdtemp()
 OV_IMAGE_MODELS = ["echarlaix/tiny-random-stable-diffusion-xl",
                    "yujiepan/stable-diffusion-3-tiny-random",
-                   "katuni4ka/tiny-random-flux"]
+                   "katuni4ka/tiny-random-flux",
+                   "katuni4ka/tiny-random-flux-fill"]
 
 
 def run_wwb(args):
@@ -103,8 +104,8 @@ def test_image_model_types(model_id, model_type, backend):
                             ])),
 )
 def test_image_model_genai(model_id, model_type):
-    if ("stable-diffusion-3" in model_id) and model_type != "text-to-image":
-        pytest.skip(reason="SD3 is supported as text to image only")
+    if ("flux-fill" in model_id) and (model_type != "image-inpainting"):
+        pytest.skip(reason="FLUX-Fill is supported as inpainting only")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         GT_FILE = os.path.join(temp_dir, "gt.csv")

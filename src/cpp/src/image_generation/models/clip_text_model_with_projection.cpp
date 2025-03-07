@@ -113,12 +113,26 @@ ov::Tensor CLIPTextModelWithProjection::infer(const std::string& pos_prompt, con
         }
     };
 
+    ov::PartialShape compiled_input_partial_shape = m_request.get_compiled_model().inputs()[0].get_partial_shape();
+
     ov::Tensor input_ids = m_request.get_input_tensor();
-    input_ids.set_shape({text_embedding_batch_size, m_config.max_position_embeddings});
+
+    if (compiled_input_partial_shape.is_dynamic()) {
+        input_ids.set_shape({text_embedding_batch_size, m_config.max_position_embeddings});
+    } else {
+        auto compiled_input_shape = input_ids.get_shape();
+        OPENVINO_ASSERT(compiled_input_shape.size() == 2, "CLIP text encoder model input must have rank of 2");
+        OPENVINO_ASSERT(text_embedding_batch_size <= compiled_input_shape[0],
+                        "text_embedding_batch_size (", text_embedding_batch_size,
+                        ") > CLIP text encoder model batch size (", compiled_input_shape[0], ").");
+        OPENVINO_ASSERT(m_config.max_position_embeddings == compiled_input_shape[1],
+                        "max_position_embeddings (", m_config.max_position_embeddings,
+                        ") != what CLIP text encoder model was compiled for (", compiled_input_shape[1], ").");
+    }
 
     size_t current_batch_idx = 0;
 
-    if (do_classifier_free_guidance) {
+    if (input_ids.get_shape()[0] == 2) {
         perform_tokenization(neg_prompt,
                              ov::Tensor(input_ids, {current_batch_idx    , 0},
                                                    {current_batch_idx + 1, m_config.max_position_embeddings}));
@@ -134,11 +148,25 @@ ov::Tensor CLIPTextModelWithProjection::infer(const std::string& pos_prompt, con
     // text embeddings
     m_request.infer();
 
-    return m_request.get_output_tensor(0);
+    // This is true when text_embedding_batch_size is 1, but model was reshaped / compiled as batch size 2.
+    m_slice_batch1_output = (text_embedding_batch_size != input_ids.get_shape()[0]);
+
+    return get_output_tensor(0);
 }
 
 ov::Tensor CLIPTextModelWithProjection::get_output_tensor(const size_t idx) {
-    return m_request.get_output_tensor(idx);
+    auto infer_out_tensor = m_request.get_output_tensor(idx);
+    if (m_slice_batch1_output) {
+        // Slice and return batch index 1 output.
+        auto out_shape = infer_out_tensor.get_shape();
+        auto begin_coord = ov::Coordinate(out_shape.size(), 0);
+        begin_coord[0] = 1;
+        auto end_coord = ov::Coordinate(out_shape);
+        auto sliced_out_tensor = ov::Tensor(infer_out_tensor, begin_coord, end_coord);
+        return sliced_out_tensor;
+    } else {
+        return infer_out_tensor;
+    }
 }
 
 } // namespace genai

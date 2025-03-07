@@ -1,0 +1,19 @@
+:global(.button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  --button-icon-size: calc(1.5rem * var(--ifm-button-size-multiplier));
+
+  .buttonIcon {
+    display: inline-flex;
+    height: var(--button-icon-size);
+    width: var(--button-icon-size);
+    margin-right: 1rem;
+
+    svg {
+      height: 100%;
+      width: 100%;
+    }
+  }
+}

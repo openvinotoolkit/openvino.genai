@@ -206,14 +206,16 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("score", &GenerationOutput::score)
         .def_readwrite("finish_reason", &GenerationOutput::finish_reason);
 
-    py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
+    auto generation_handle = py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
         .def("get_status", &GenerationHandleImpl::get_status)
         .def("can_read", &GenerationHandleImpl::can_read)
-        .def("drop", &GenerationHandleImpl::drop)
         .def("stop", &GenerationHandleImpl::stop)
         .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
         .def("read_all", &GenerationHandleImpl::read_all);
+    OPENVINO_SUPPRESS_DEPRECATED_START
+    generation_handle.def("drop", &GenerationHandleImpl::drop);
+    OPENVINO_SUPPRESS_DEPRECATED_END
 
     // Binding for StopCriteria
     py::enum_<AggregationMode>(m, "AggregationMode",
@@ -278,6 +280,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
         .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("input_ids"), py::arg("generation_config"))
         .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("generation_config"))
+        .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("generation_config"))
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
 
@@ -306,6 +309,44 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 return __call_cb_generate(pipe, prompts, generation_config, streamer);
             },
             py::arg("prompts"),
+            py::arg("generation_config"),
+            py::arg("streamer") = std::monostate{}
+        )
+        
+        .def(
+            "generate",
+            [](ContinuousBatchingPipeline& pipe,
+               const std::string& prompt,
+               const ov::genai::GenerationConfig& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+                std::vector<std::string> prompts = { prompts };
+                std::vector<ov::genai::GenerationConfig> generation_configs = { generation_config };
+                return __call_cb_generate(pipe, prompts, generation_configs, streamer);
+            },
+            py::arg("prompt"),
+            py::arg("generation_config"),
+            py::arg("streamer") = std::monostate{}
+        )
+
+        .def(
+            "generate",
+            [](ContinuousBatchingPipeline& pipe,
+               const std::vector<std::string>& prompts,
+               const std::vector<std::vector<ov::Tensor>>& images,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& py_streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+                ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+                std::vector<ov::genai::GenerationResult> generated_results;
+                {
+                    py::gil_scoped_release rel;
+                    generated_results = pipe.generate(prompts, images, generation_config, streamer);
+                }  
+                return py::cast(generated_results);
+            },
+            py::arg("prompts"),
+            py::arg("images"),
             py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}
         );

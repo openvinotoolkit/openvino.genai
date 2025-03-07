@@ -7,10 +7,7 @@
 #include <filesystem>
 
 #include "image_generation/diffusion_pipeline.hpp"
-#include "image_generation/numpy_utils.hpp"
-#include "image_generation/image_processor.hpp"
 
-#include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
 #include "openvino/genai/image_generation/unet2d_condition_model.hpp"
@@ -28,23 +25,7 @@ namespace genai {
 class StableDiffusionPipeline : public DiffusionPipeline {
 public:
     explicit StableDiffusionPipeline(PipelineType pipeline_type) :
-        DiffusionPipeline(pipeline_type) {
-        // TODO: support GPU as well
-        const std::string device = "CPU";
-
-        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-            const bool do_normalize = true, do_binarize = false, gray_scale_source = false;
-            m_image_processor = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, gray_scale_source);
-            m_image_resizer = std::make_shared<ImageResizer>(device, ov::element::u8, "NHWC", ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
-        }
-
-        if (m_pipeline_type == PipelineType::INPAINTING) {
-            bool do_normalize = false, do_binarize = true;
-            m_mask_processor_rgb = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, false);
-            m_mask_processor_gray = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, true);
-            m_mask_resizer = std::make_shared<ImageResizer>(device, ov::element::f32, "NCHW", ov::op::v11::Interpolate::InterpolateMode::NEAREST);
-        }
-    }
+        DiffusionPipeline(pipeline_type) {}
 
     StableDiffusionPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
         StableDiffusionPipeline(pipeline_type) {
@@ -170,13 +151,16 @@ public:
         m_vae->reshape(num_images_per_prompt, height, width);
     }
 
-    void compile(const std::string& device, const ov::AnyMap& properties) override {
+    void compile(const std::string& text_encode_device,
+        const std::string& denoise_device,
+        const std::string& vae_device,
+        const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
         auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
 
-        m_clip_text_encoder->compile(device, *updated_properties);
-        m_unet->compile(device, *updated_properties);
-        m_vae->compile(device, *updated_properties);
+        m_clip_text_encoder->compile(text_encode_device, *updated_properties);
+        m_unet->compile(denoise_device, *updated_properties);
+        m_vae->compile(vae_device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -270,47 +254,6 @@ public:
         return std::make_tuple(latent, proccesed_image, image_latent, noise);
     }
 
-    std::tuple<ov::Tensor, ov::Tensor> prepare_mask_latents(ov::Tensor mask_image, ov::Tensor processed_image, const ImageGenerationConfig& generation_config) {
-        OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'prepare_mask_latents' can be called for inpainting pipeline only");
-
-        const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
-        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        ov::Shape target_shape = processed_image.get_shape();
-
-        ov::Tensor mask_condition = m_image_resizer->execute(mask_image, target_shape[2], target_shape[3]);
-        std::shared_ptr<IImageProcessor> mask_processor = mask_condition.get_shape()[3] == 1 ? m_mask_processor_gray : m_mask_processor_rgb;
-        mask_condition = mask_processor->execute(mask_condition);
-
-        // resize mask to shape of latent space
-        ov::Tensor mask = m_mask_resizer->execute(mask_condition, target_shape[2] / vae_scale_factor, target_shape[3] / vae_scale_factor);
-        mask = numpy_utils::repeat(mask, generation_config.num_images_per_prompt * batch_size_multiplier);
-
-        ov::Tensor masked_image_latent;
-
-        if (is_inpainting_model()) {
-            // create masked image
-            ov::Tensor masked_image(ov::element::f32, processed_image.get_shape());
-            const float * mask_condition_data = mask_condition.data<const float>();
-            const float * processed_image_data = processed_image.data<const float>();
-            float * masked_image_data = masked_image.data<float>();
-
-            for (size_t i = 0, plane_size = mask_condition.get_shape()[2] * mask_condition.get_shape()[3]; i < mask_condition.get_size(); ++i) {
-                masked_image_data[i + 0 * plane_size] = mask_condition_data[i] < 0.5f ? processed_image_data[i + 0 * plane_size] : 0.0f;
-                masked_image_data[i + 1 * plane_size] = mask_condition_data[i] < 0.5f ? processed_image_data[i + 1 * plane_size] : 0.0f;
-                masked_image_data[i + 2 * plane_size] = mask_condition_data[i] < 0.5f ? processed_image_data[i + 2 * plane_size] : 0.0f;
-            }
-
-            // encode masked image to latent scape
-            auto encode_start = std::chrono::steady_clock::now();
-            masked_image_latent = m_vae->encode(masked_image, generation_config.generator);
-            m_perf_metrics.vae_encoder_inference_duration += std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - encode_start).count();
-            masked_image_latent = numpy_utils::repeat(masked_image_latent, generation_config.num_images_per_prompt * batch_size_multiplier);
-        }
-
-        return std::make_tuple(mask, masked_image_latent);
-    }
-
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
         if(adapters) {
             if(auto updated_adapters = derived_adapters(*adapters)) {
@@ -367,7 +310,7 @@ public:
         // prepare mask latents
         ov::Tensor mask, masked_image_latent;
         if (m_pipeline_type == PipelineType::INPAINTING) {
-            std::tie(mask, masked_image_latent) = prepare_mask_latents(mask_image, processed_image, generation_config);
+            std::tie(mask, masked_image_latent) = prepare_mask_latents(mask_image, processed_image, generation_config, batch_size_multiplier);
         }
 
         // prepare latents passed to models taking into account guidance scale (batch size multipler)
@@ -458,10 +401,9 @@ public:
     }
 
 protected:
-    bool is_inpainting_model() const {
+    size_t get_config_in_channels() const override {
         assert(m_unet != nullptr);
-        assert(m_vae != nullptr);
-        return m_unet->get_config().in_channels == (m_vae->get_config().latent_channels * 2 + 1);
+        return m_unet->get_config().in_channels;
     }
 
     void compute_dim(int64_t & generation_config_value, ov::Tensor initial_image, int dim_idx) {
@@ -547,9 +489,6 @@ protected:
 
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
     std::shared_ptr<UNet2DConditionModel> m_unet = nullptr;
-    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
-    std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor_rgb = nullptr, m_mask_processor_gray = nullptr;
-    std::shared_ptr<ImageResizer> m_image_resizer = nullptr, m_mask_resizer = nullptr;
 };
 
 }  // namespace genai

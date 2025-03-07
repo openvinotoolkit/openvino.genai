@@ -9,6 +9,23 @@ from llm_bench_utils.config_class import DEFAULT_MODEL_CLASSES, USE_CASES, OV_MO
 import librosa
 
 
+KNOWN_PRECISIONS = [
+    'FP32', 'FP16',
+    'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
+    'OV_FP32-INT8', 'OV_FP16-INT8',
+    'OV_FP32-INT8_ASYM', 'OV_FP32-INT8_SYM', 'OV_FP16-INT8_ASYM', 'OV_FP16-INT8_SYM', 'OV_FP16-INT8_ASYM_HYBRID',
+    'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP32-INT8_SYM', 'PT_FP16-INT8_ASYM', 'PT_FP16-INT8_SYM',
+    'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
+    'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM',
+    'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
+
+
+KNOWN_FRAMEWORKS = ['pytorch', 'ov', 'dldt']
+
+
+OTHER_IGNORE_MODEL_PATH_PARTS = ['compressed_weights']
+
+
 def get_param_from_file(args, input_key):
     is_json_data = False
     data_list = []
@@ -33,17 +50,29 @@ def get_param_from_file(args, input_key):
                     else:
                         raise RuntimeError(f'== {input_key} path should not be empty string ==')
         else:
-            if args["use_case"] != "vlm":
-                raise RuntimeError("Multiple sources for benchmarking supported only for Visual Language Models")
+            if args["use_case"] != "vlm" and args["use_case"] != "image_gen":
+                raise RuntimeError("Multiple sources for benchmarking supported for Visual Language Models / Image To Image Models / Inpainting Models")
             data_dict = {}
-            if args["media"] is None and args["images"] is None:
-                log.warn("Input image is not provided. Only text generation part will be evaluated")
-            else:
-                data_dict["media"] = args["media"] if args["media"] is not None else args["images"]
+            if "media" in input_key:
+                if args["media"] is None and args["images"] is None:
+                    if args["use_case"] != "vlm":
+                        log.warn("Input image is not provided. Only text generation part will be evaluated")
+                    elif args["use_case"] != "image_gen":
+                        raise RuntimeError("No input image. ImageToImage/Inpainting Models cannot start generation without one. Please, provide an image.")
+                else:
+                    data_dict["media"] = args["media"] if args["media"] is not None else args["images"]
             if args["prompt"] is None:
-                data_dict["prompt"] = "What is OpenVINO?" if data_dict["media"] is None else "Describe image"
+                if args["use_case"] != "vlm":
+                    data_dict["prompt"] = "What is OpenVINO?" if data_dict["media"] is None else "Describe image"
+                elif args['use_case'] == 'image_gen':
+                    data_dict["prompt"] = 'sailing ship in storm by Leonardo da Vinci'
             else:
                 data_dict["prompt"] = args["prompt"]
+            if "mask_image" in input_key:
+                if args.get("mask_image"):
+                    data_dict["mask_image"] = args["mask_image"]
+                else:
+                    raise RuntimeError("Mask image is not provided. Inpainting Models cannot start of generation wihtout it. Please, provide a mask image.")
             data_list.append(data_dict)
     else:
         input_prompt_list = args['prompt_file']
@@ -93,6 +122,9 @@ def analyze_args(args):
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['media'] = args.media
     model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
+    model_args['mask_image'] = args.mask_image
+    model_args['task'] = args.task
+    model_args['strength'] = args.strength
 
     optimum = args.optimum
 
@@ -204,6 +236,17 @@ def get_model_name(model_name_or_path):
     return None, None
 
 
+def get_model_name_with_path_part(model_name_or_path):
+    IGNORE_MODEL_PATH_PARTS = [x.lower() for x in (KNOWN_FRAMEWORKS + KNOWN_PRECISIONS + OTHER_IGNORE_MODEL_PATH_PARTS)]
+    model_path = Path(model_name_or_path)
+    model_name = None
+    for path_part in reversed(model_path.parts):
+        if not path_part.lower() in IGNORE_MODEL_PATH_PARTS:
+            model_name = path_part
+            break
+    return model_name
+
+
 def get_config(config):
     if Path(config).is_file():
         with open(config, 'r') as f:
@@ -249,19 +292,10 @@ def get_ir_conversion_frontend(cur_model_name, model_name_list):
 
 
 def get_model_precision(model_name_list):
-    precision_list = [
-        'FP32', 'FP16',
-        'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
-        'OV_FP32-INT8', 'OV_FP16-INT8',
-        'OV_FP32-INT8_ASYM', 'OV_FP32-INT8_SYM', 'OV_FP16-INT8_ASYM', 'OV_FP16-INT8_SYM',
-        'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP32-INT8_SYM', 'PT_FP16-INT8_ASYM', 'PT_FP16-INT8_SYM',
-        'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
-        'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM',
-        'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
     model_precision = 'unknown'
     # Search from right to left of model path
     for i in range(len(model_name_list) - 1, -1, -1):
-        for precision in precision_list:
+        for precision in KNOWN_PRECISIONS:
             if model_name_list[i] == precision:
                 model_precision = precision
                 break
@@ -278,3 +312,11 @@ def init_timestamp(num_iters, prompt_list, prompt_idx_list):
             p_idx = prompt_idx_list[idx]
             iter_timestamp[num][p_idx] = {}
     return iter_timestamp
+
+
+def resolve_media_file_path(file_path, prompt_file_path):
+    if not file_path:
+        return file_path
+    if not (file_path.startswith("http://") or file_path.startswith("https://")):
+        return os.path.join(os.path.dirname(prompt_file_path), file_path.replace("./", ""))
+    return file_path
