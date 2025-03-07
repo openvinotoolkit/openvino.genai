@@ -109,6 +109,14 @@ public:
 
     /// @brief Generate a response given a prompt and uint8 RGB image with [NHWC] or [HWC] layout.
     /// @param prompt A prompt to respond to.
+    /// The prompt can contain <ov_genai_image_i> with i replaced with
+    /// an actual number substring to refer to an image. Reference to
+    /// images used in previous prompts isn't implemented.
+    /// A model's native image tag can be used instead of 
+    /// <ov_genai_image_i>. These tags are:
+    /// MiniCPM-V-2_6: <image>./</image>
+    /// If the prompt doesn't contain image tags, but images are
+    /// provided, the tags are prepended to the prompt,
     /// @param image Image to be prepended to a prompt.
     /// @param generation_config A config to follow for text generation.
     /// @param streamer A streamer to acquire intermediate result.

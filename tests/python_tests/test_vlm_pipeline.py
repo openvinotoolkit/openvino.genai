@@ -71,7 +71,7 @@ def get_image_by_link(link):
     image = Image.open(requests.get(link, stream=True).raw)
     if image.mode != 'RGB':
         image = image.convert('RGB')
-    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, image.size[1], image.size[0], 3)
+    image_data = np.array(image)
     return Tensor(image_data)
 
 
@@ -459,3 +459,121 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_im
     ov_pipe.finish_chat()
     
     assert res_first == res_second
+
+
+def retry(func):
+    max_retries = 5
+    for idx in range(max_retries):
+        try: 
+            return func()
+        except AssertionError:
+            if idx == max_retries - 1:
+                raise
+
+
+def generate(vlm, requests):
+    generation_config = vlm.get_generation_config()
+    generation_config.max_new_tokens = 30
+    vlm.set_generation_config(generation_config)
+    vlm.start_chat()
+    answers = [vlm.generate(prompt, images=list(images)) for (prompt, images) in requests]
+    vlm.finish_chat()
+    return vlm, answers
+
+
+requests = (
+    ("Describe", (get_image_by_link(image_links[0]),)),
+    ("How many images are there?", (get_image_by_link(image_links[1]), get_image_by_link(image_links[2])))
+)
+
+
+models_to_tag = [
+    ("katuni4ka/tiny-random-minicpmv-2_6", "<image>./</image>")
+]
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+class TestImageTags:
+    @pytest.mark.parametrize("model_to_tag", models_to_tag)
+    def test_prepend_native(self, model_to_tag, cache):
+        def workaround_inconsistent_inference():
+            vlm = VLMPipeline(get_ov_model(model_to_tag[0], cache), "CPU")
+            vlm, answers = generate(vlm, requests)
+
+            vlm.start_chat()
+            native_tag0 = vlm.generate("\n".join([model_to_tag[1], requests[0][0]]), images=list(requests[0][1]))
+            assert native_tag0.texts == answers[0].texts
+            assert native_tag0.scores == answers[0].scores
+            native_tags1 = vlm.generate("\n".join([model_to_tag[1]] * 2 + [requests[1][0]]), images=list(requests[1][1]))
+            assert native_tags1.texts == answers[1].texts
+            assert native_tags1.scores == answers[1].scores
+            vlm.finish_chat()
+        retry(workaround_inconsistent_inference)
+
+
+    @pytest.mark.parametrize("model_to_tag", models_to_tag)
+    def test_prepend_universal(self, model_to_tag, cache):
+        def workaround_inconsistent_inference():
+            vlm = VLMPipeline(get_ov_model(model_to_tag[0], cache), "CPU")
+            vlm, answers = generate(vlm, requests)
+
+            vlm.start_chat()
+            universal_tag0 = vlm.generate("<ov_genai_image_0>\n" + requests[0][0], images=list(requests[0][1]))
+            assert universal_tag0.texts == answers[0].texts
+            assert universal_tag0.scores == answers[0].scores
+            universal_tags1 = vlm.generate("<ov_genai_image_1>\n<ov_genai_image_2>\n" + requests[1][0], images=list(requests[1][1]))
+            assert universal_tags1.texts == answers[1].texts
+            assert universal_tags1.scores == answers[1].scores
+            vlm.finish_chat()
+        retry(workaround_inconsistent_inference)
+
+
+    @pytest.mark.parametrize("model_to_tag", models_to_tag)
+    def test_append(self, model_to_tag, cache):
+        def workaround_inconsistent_inference():
+            vlm = VLMPipeline(get_ov_model(model_to_tag[0], cache), "CPU")
+            generation_config = vlm.get_generation_config()
+            generation_config.max_new_tokens = 30
+            vlm.set_generation_config(generation_config)
+
+            vlm.start_chat()
+            native_tag0 = vlm.generate("\n".join([requests[0][0], model_to_tag[1]]), images=list(requests[0][1]))
+            native_tags1 = vlm.generate("\n".join([requests[1][0]] + [model_to_tag[1]] * 2), images=list(requests[1][1]))
+            vlm.finish_chat()
+
+            vlm.start_chat()
+            universal_tag0 = vlm.generate(requests[0][0] + "\n<ov_genai_image_0>" , images=list(requests[0][1]))
+            assert universal_tag0.texts == native_tag0.texts
+            assert universal_tag0.scores == native_tag0.scores
+            universal_tags1 = vlm.generate(requests[1][0] + "\n<ov_genai_image_1>\n<ov_genai_image_2>" , images=list(requests[1][1]))
+            assert universal_tags1.texts == native_tags1.texts
+            assert universal_tags1.scores == native_tags1.scores
+            vlm.finish_chat()
+        retry(workaround_inconsistent_inference)
+
+
+    @pytest.mark.parametrize("model_to_tag", models_to_tag)
+    def test_older(self, model_to_tag, cache):
+        vlm = VLMPipeline(get_ov_model(model_to_tag[0], cache), "CPU")
+        generation_config = vlm.get_generation_config()
+        generation_config.max_new_tokens = 30
+        vlm.set_generation_config(generation_config)
+        images = [get_image_by_link(image_links[1])]
+        vlm.start_chat()
+        vlm.generate("", images=images)
+        with pytest.raises(RuntimeError):
+            vlm.generate("<ov_genai_image_0>", images=images)
+
+
+    @pytest.mark.parametrize("model_to_tag", models_to_tag)
+    def test_missing_universal(self, model_to_tag, cache):
+        vlm = VLMPipeline(get_ov_model(model_to_tag[0], cache), "CPU")
+        with pytest.raises(RuntimeError):
+            vlm.generate("<ov_genai_image_0>")
+
+    @pytest.mark.parametrize("model_to_tag", models_to_tag)
+    def test_missing_native(self, model_to_tag, cache):
+        vlm = VLMPipeline(get_ov_model(model_to_tag[0], cache), "CPU")
+        with pytest.raises(RuntimeError):
+            vlm.generate(model_to_tag[1])
