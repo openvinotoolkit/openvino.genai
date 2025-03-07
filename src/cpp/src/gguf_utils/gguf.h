@@ -1,4 +1,3 @@
-// Copyright © 2023-2024 Apple Inc.
 #pragma once
 
 #include <cstdint>
@@ -23,3 +22,4 @@ void gguf_load_quantized(
     std::unordered_map<std::string, ov::Tensor>& a,
     const gguf_tensor& tensor);
 
+GGUFLoad load_gguf(const std::string& file);

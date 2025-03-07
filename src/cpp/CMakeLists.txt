@@ -93,7 +93,9 @@ if(ENABLE_GGUF)
   #target_compile_features(gguflib PRIVATE fPIC)
   target_link_libraries(${TARGET_NAME_OBJ} PRIVATE $<BUILD_INTERFACE:gguflib>) 
   target_sources(${TARGET_NAME_OBJ} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf.cpp
-                             ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_quants.cpp)
+                             ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_quants.cpp
+                             ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_modeling.cpp
+                             ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/building_blocks.cpp)
 endif()
 
 target_include_directories(${TARGET_NAME_OBJ}
