@@ -82,9 +82,10 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     Sampler& sampler,
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
-    KVCacheState& kv_cache_state,
+    utils::KVCacheState& kv_cache_state,
     std::optional<EmbeddingsModel> m_embedding,
-    std::optional<int64_t> rope_delta
+    std::optional<int64_t> rope_delta,
+    const size_t max_kv_cache_size
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -107,7 +108,14 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         }
     };
 
-    auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups]() {
+    auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups, &max_kv_cache_size]() {
+        for (auto& sg : active_sequence_groups) {
+            for (auto& seq : sg->get_sequences()) {
+                if (sg->get_prompt_len() + seq->get_generated_len() - 1 == max_kv_cache_size) {
+                    seq->set_status(SequenceStatus::OUT_OF_MEMORY);
+                }
+            }
+        }
         auto removed_it = std::remove_if(active_sequence_groups.begin(), active_sequence_groups.end(),
             [](SequenceGroup::Ptr sg) -> bool {
                 return sg->has_finished() || sg->handle_stopped() || sg->handle_cancelled();
@@ -290,7 +298,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 }
 
 
-TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, KVCacheState& kv_cache_state) {
+TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils::KVCacheState& kv_cache_state) {
     TokenizedInputs encoded_input;
     size_t kv_cache_len = kv_cache_state.get_state().size();
     if (kv_cache_len == 0) {
@@ -317,7 +325,7 @@ TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, KVCach
 }
 
 
-void align_kv_cache_and_history(ov::genai::KVCacheTrimManager& kv_history_manager, const ov::Tensor& new_chat_tokens, KVCacheState& kv_cache_state) {
+void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::KVCacheState& kv_cache_state) {
     // KV cache in model already contains prompts and answers from previous iterations.
     // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
     // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
@@ -335,8 +343,9 @@ void align_kv_cache_and_history(ov::genai::KVCacheTrimManager& kv_history_manage
     size_t first_diverse_tokens_idx = ov::genai::utils::get_first_history_difference(new_chat_tokens, state);
     // in the case of beam_search the longest answer is in the kv cache, but the best one is needed
     // so generated tokens were not added to KVCacheState and num_tokens_to_trim was set to the size of the generated serquence
-    kv_history_manager.num_tokens_to_trim = kv_history_manager.num_tokens_to_trim > 0 ? kv_history_manager.num_tokens_to_trim : (state.size() - first_diverse_tokens_idx);
+    kv_cache_state.num_tokens_to_trim += state.size() - first_diverse_tokens_idx;
     state.resize(first_diverse_tokens_idx);
+    kv_cache_state.reset_mem_state = state.empty();
 }
 
 }  // namespace genai
