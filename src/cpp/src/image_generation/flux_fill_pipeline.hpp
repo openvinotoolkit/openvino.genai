@@ -12,7 +12,28 @@ namespace ov {
 namespace genai {
 
 class FluxFillPipeline : public FluxPipeline {
-    using FluxPipeline::FluxPipeline;
+public:
+    FluxFillPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir)
+        : FluxPipeline(pipeline_type, root_dir) {}
+
+    FluxFillPipeline(PipelineType pipeline_type,
+                     const std::filesystem::path& root_dir,
+                     const std::string& device,
+                     const ov::AnyMap& properties)
+        : FluxPipeline(pipeline_type, root_dir, device, properties) {}
+
+    FluxFillPipeline(PipelineType pipeline_type,
+                     const CLIPTextModel& clip_text_model,
+                     const T5EncoderModel& t5_text_model,
+                     const FluxTransformer2DModel& transformer,
+                     const AutoencoderKL& vae)
+        : FluxPipeline(pipeline_type) {
+        m_clip_text_encoder = std::make_shared<CLIPTextModel>(clip_text_model);
+        m_t5_text_encoder = std::make_shared<T5EncoderModel>(t5_text_model);
+        m_vae = std::make_shared<AutoencoderKL>(vae);
+        m_transformer = std::make_shared<FluxTransformer2DModel>(transformer);
+        initialize_generation_config("FluxFillPipeline");
+    }
 
     std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
 
@@ -82,7 +103,7 @@ class FluxFillPipeline : public FluxPipeline {
         // Encode the masked image
         auto encode_start = std::chrono::steady_clock::now();
         ov::Tensor masked_image_latent = m_vae->encode(processed_image, generation_config.generator);
-        m_perf_metrics.vae_encoder_inference_duration +=
+        m_perf_metrics.vae_encoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - encode_start).count();
 
         ov::Tensor repeated_masked_image_latent = repeat_mask(masked_image_latent, generation_config.num_images_per_prompt / masked_image_latent.get_shape()[0]);
@@ -183,83 +204,103 @@ class FluxFillPipeline : public FluxPipeline {
     }
 
 private:
+    bool is_inpainting_model() const override {
+        return true;
+    }
 
-void check_image_size(const int height, const int width) const override {
-    assert(m_transformer != nullptr);
-    const size_t vae_scale_factor = m_vae->get_vae_scale_factor() * 2;
-    OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) && (width % vae_scale_factor == 0 || width < 0),
-                    "Both 'width' and 'height' must be divisible by ",
-                    vae_scale_factor);
-}
+    void check_image_size(const int height, const int width) const override {
+        assert(m_transformer != nullptr);
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor() * 2;
+        OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) && (width % vae_scale_factor == 0 || width < 0),
+                        "Both 'width' and 'height' must be divisible by ",
+                        vae_scale_factor);
+    }
 
-void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-    OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "FluxFillPipeline supports inpainting mode only");
+    void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
+        OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "FluxFillPipeline supports inpainting mode only");
 
-    check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.width, generation_config.height);
 
-    OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
-    OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by FluxFillPipeline");
-    OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by FluxFillPipeline");
-    OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by FluxFillPipeline");
-    OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by FluxFillPipeline");
-}
+        OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
+        OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by FluxFillPipeline");
+        OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by FluxFillPipeline");
+        OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by FluxFillPipeline");
+        OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by FluxFillPipeline");
+    }
 
-void transform_mask(ov::Tensor& mask, size_t batch_size, size_t height, size_t width, size_t vae_scale_factor) {
-    ov::Shape mask_shape = mask.get_shape();
-    OPENVINO_ASSERT(mask_shape.size() == 4 && mask_shape[1] == 1, "Unexpected mask shape");
+    void transform_mask(ov::Tensor& mask, size_t batch_size, size_t height, size_t width, size_t vae_scale_factor) {
+        ov::Shape mask_shape = mask.get_shape();
+        OPENVINO_ASSERT(mask_shape.size() == 4 && mask_shape[1] == 1, "Unexpected mask shape");
 
-    // Permutation to (0, 2, 4, 1, 3)
-    auto transpose = [&](float* src, float* dst) {
-        for (size_t b = 0; b < batch_size; ++b) {
-            for (size_t h = 0; h < height; ++h) {
-                for (size_t w = 0; w < width; ++w) {
-                    for (size_t vh = 0; vh < vae_scale_factor; ++vh) {
-                        for (size_t vw = 0; vw < vae_scale_factor; ++vw) {
-                            size_t src_idx = b * (height * vae_scale_factor * width * vae_scale_factor) + h * (vae_scale_factor * width * vae_scale_factor) + vh * (width * vae_scale_factor) + w * vae_scale_factor + vw;
-                            size_t dst_idx = b * (vae_scale_factor * vae_scale_factor * height * width) + vh * (vae_scale_factor * height * width) + vw * (height * width) + h * width + w;
-                            dst[dst_idx] = src[src_idx];
+        // Permutation to (0, 2, 4, 1, 3)
+        auto transpose = [&](float* src, float* dst) {
+            size_t height_width = height * width;
+            size_t width_vsc = width * vae_scale_factor;
+            size_t width_vsc_vsc = width * vae_scale_factor * vae_scale_factor;
+            size_t height_width_vsc = height_width * vae_scale_factor;
+            size_t height_width_vsc_vsc = height_width_vsc * vae_scale_factor;
+
+            for (size_t b = 0; b < batch_size; ++b) {
+                size_t b_height_width_vsc_vsc = b * height_width_vsc_vsc;
+
+                for (size_t h = 0; h < height; ++h) {
+                    size_t shift_1_src = b_height_width_vsc_vsc + h * width_vsc_vsc;
+                    size_t shift_1_dst = b_height_width_vsc_vsc + h * width;
+
+                    for (size_t w = 0; w < width; ++w) {
+                        size_t shift_2_src = shift_1_src + w * vae_scale_factor;
+                        size_t shift_2_dst = shift_1_dst + w;
+
+                        for (size_t vh = 0; vh < vae_scale_factor; ++vh) {
+                            size_t shift_3_src = shift_2_src + vh * width_vsc;
+                            size_t shift_3_dst = shift_2_dst + vh * height_width_vsc;
+
+                            for (size_t vw = 0; vw < vae_scale_factor; ++vw) {
+                                size_t src_idx = shift_3_src + vw;
+                                size_t dst_idx = shift_3_dst + vw * height_width;
+                                dst[dst_idx] = src[src_idx];
+                            }
                         }
                     }
                 }
             }
-        }
-    };
+        };
 
-    float* mask_data = mask.data<float>();
-    std::vector<size_t> final_shape = {batch_size, vae_scale_factor * vae_scale_factor, height, width};
-    ov::Tensor final_mask(mask.get_element_type(), final_shape);
-    transpose(mask_data, final_mask.data<float>());
+        float* mask_data = mask.data<float>();
+        std::vector<size_t> final_shape = {batch_size, vae_scale_factor * vae_scale_factor, height, width};
+        ov::Tensor final_mask(mask.get_element_type(), final_shape);
+        transpose(mask_data, final_mask.data<float>());
 
-    mask = ov::Tensor(mask.get_element_type(), final_shape);
-    final_mask.copy_to(mask);
-}
-
-ov::Tensor repeat_mask(const ov::Tensor& masked_image_latents, size_t batch_size) {
-    const ov::Shape& input_shape = masked_image_latents.get_shape();
-    OPENVINO_ASSERT(input_shape.size() == 4, "Input tensor must have 4 dimensions.");
-
-    size_t input_batch_size = input_shape[0], channels = input_shape[1];
-    size_t height = input_shape[2], width = input_shape[3];
-
-    OPENVINO_ASSERT(batch_size % input_batch_size == 0, "'batch_size' must be a multiple of the 'input_batch_size'");
-
-    ov::Shape target_shape = {batch_size, channels, height, width};
-    ov::Tensor repeated_tensor(masked_image_latents.get_element_type(), target_shape);
-
-    const float* src_data = masked_image_latents.data<float>();
-    float* dst_data = repeated_tensor.data<float>();
-
-    size_t input_spatial_size = channels * height * width;
-
-    for (size_t b = 0; b < batch_size; ++b) {
-        size_t src_batch_index = b % input_batch_size;
-        const float* src_batch = src_data + src_batch_index * input_spatial_size;
-        float* dst_batch = dst_data + b * input_spatial_size;
-        std::memcpy(dst_batch, src_batch, input_spatial_size * sizeof(float));
+        mask = ov::Tensor(mask.get_element_type(), final_shape);
+        final_mask.copy_to(mask);
     }
 
-    return repeated_tensor;
-}
+    ov::Tensor repeat_mask(const ov::Tensor& masked_image_latents, size_t batch_size) {
+        const ov::Shape& input_shape = masked_image_latents.get_shape();
+        OPENVINO_ASSERT(input_shape.size() == 4, "Input tensor must have 4 dimensions.");
+
+        size_t input_batch_size = input_shape[0], channels = input_shape[1];
+        size_t height = input_shape[2], width = input_shape[3];
+
+        OPENVINO_ASSERT(batch_size % input_batch_size == 0, "'batch_size' must be a multiple of the 'input_batch_size'");
+
+        ov::Shape target_shape = {batch_size, channels, height, width};
+        ov::Tensor repeated_tensor(masked_image_latents.get_element_type(), target_shape);
+
+        const float* src_data = masked_image_latents.data<float>();
+        float* dst_data = repeated_tensor.data<float>();
+
+        size_t input_spatial_size = channels * height * width;
+
+        for (size_t b = 0; b < batch_size; ++b) {
+            size_t src_batch_index = b % input_batch_size;
+            const float* src_batch = src_data + src_batch_index * input_spatial_size;
+            float* dst_batch = dst_data + b * input_spatial_size;
+            std::memcpy(dst_batch, src_batch, input_spatial_size * sizeof(float));
+        }
+
+        return repeated_tensor;
+    }
 
 };
 
