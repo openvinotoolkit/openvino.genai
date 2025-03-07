@@ -110,7 +110,7 @@ public:
     /// @brief Generate a response given a prompt and uint8 RGB image with [NHWC] or [HWC] layout.
     /// @param prompt A prompt to respond to.
     /// The prompt can contain <ov_genai_image_i> with i replaced with
-    /// an actual number substring to refer to an image. Reference to
+    /// an actual zero based index to refer to an image. Reference to
     /// images used in previous prompts isn't implemented.
     /// A model's native image tag can be used instead of
     /// <ov_genai_image_i>. These tags are:
@@ -133,7 +133,7 @@ public:
     /// @brief Generate a response given a prompt and config.
     /// @param prompt A prompt to respond to.
     /// The prompt can contain <ov_genai_image_i> with i replaced with
-    /// an actual number substring to refer to an image. Reference to
+    /// an actual zero based index to refer to an image. Reference to
     /// images used in previous prompts isn't implemented.
     /// A model's native image tag can be used instead of
     /// <ov_genai_image_i>. These tags are:
@@ -157,7 +157,7 @@ public:
     /// generate("text", image(rgb), do_sample(true));
     /// @param prompt A prompt to respond to.
     /// The prompt can contain <ov_genai_image_i> with i replaced with
-    /// an actual number substring to refer to an image. Reference to
+    /// an actual zero based index to refer to an image. Reference to
     /// images used in previous prompts isn't implemented.
     /// A model's native image tag can be used instead of
     /// <ov_genai_image_i>. These tags are:
