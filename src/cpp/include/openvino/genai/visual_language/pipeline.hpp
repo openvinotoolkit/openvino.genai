@@ -19,11 +19,6 @@ public:
     VLMPerfMetrics perf_metrics;
 };
 
-/// @brief A map of models for VLMPipeline constructor. 
-/// Key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
-/// and value is a pair of model IR as string and weights as tensor.
-using ModelsMap = std::map<std::string, std::pair<std::string, ov::Tensor>>;
-
 /// @brief A Visual language modeling pipeline class used to generate a
 /// response or run a chat given a prompt and an image.
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
