@@ -142,7 +142,7 @@ InpaintingPipeline InpaintingPipeline::flux_fill(
     const T5EncoderModel& t5_text_encoder,
     const FluxTransformer2DModel& transformer,
     const AutoencoderKL& vae) {
-    auto impl = std::make_shared<FluxPipeline>(PipelineType::INPAINTING, clip_text_model, t5_text_encoder, transformer, vae);
+    auto impl = std::make_shared<FluxFillPipeline>(PipelineType::INPAINTING, clip_text_model, t5_text_encoder, transformer, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
