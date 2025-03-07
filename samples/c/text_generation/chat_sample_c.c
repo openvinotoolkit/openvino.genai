@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
     stream_callback streamer = &print_callback;
     char prompt[MAX_PROMPT_LENGTH], output[MAX_OUTPUT_LENGTH];
 
-    CHECK_STATUS(ov_genai_llm_pipeline_create(models_path, "CPU", &pipeline));
+    CHECK_STATUS(ov_genai_llm_pipeline_create(models_path, device, &pipeline));
     CHECK_STATUS(ov_genai_generation_config_create(&config));
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, 100));
 

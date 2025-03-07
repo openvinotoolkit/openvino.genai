@@ -115,11 +115,11 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_llm_pipeline_generate_decode_results(ov_genai_llm_pipeline* pipe,
-                                                          const char* inputs,
-                                                          const ov_genai_generation_config* config,
-                                                          const stream_callback* streamer,
-                                                          ov_genai_decoded_results** results) {
+ov_status_e ov_genai_llm_pipeline_generate_decoded_results(ov_genai_llm_pipeline* pipe,
+                                                           const char* inputs,
+                                                           const ov_genai_generation_config* config,
+                                                           const stream_callback* streamer,
+                                                           ov_genai_decoded_results** results) {
     if (!pipe || !(pipe->object) || !inputs || !results) {
         return ov_status_e::INVALID_C_PARAM;
     }

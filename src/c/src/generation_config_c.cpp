@@ -383,64 +383,6 @@ ov_status_e ov_genai_generation_config_get_max_new_tokens(const ov_genai_generat
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_generation_config_is_greedy_decoding(const ov_genai_generation_config* config,
-                                                          bool* is_greedy_decoding) {
-    if (!config || !(config->object) || !is_greedy_decoding) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
-    try {
-        *is_greedy_decoding = config->object->is_greedy_decoding();
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
-}
-ov_status_e ov_genai_generation_config_is_beam_search(const ov_genai_generation_config* config, bool* is_beam_search) {
-    if (!config || !(config->object) || !is_beam_search) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
-    try {
-        *is_beam_search = config->object->is_beam_search();
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
-}
-ov_status_e ov_genai_generation_config_is_multinomial(const ov_genai_generation_config* config, bool* is_multinomial) {
-    if (!config || !(config->object) || !is_multinomial) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
-    try {
-        *is_multinomial = config->object->is_multinomial();
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
-}
-ov_status_e ov_genai_generation_config_is_assisting_generation(const ov_genai_generation_config* config,
-                                                               bool* is_assisting_generation) {
-    if (!config || !(config->object) || !is_assisting_generation) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
-    try {
-        *is_assisting_generation = config->object->is_assisting_generation();
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
-}
-ov_status_e ov_genai_generation_config_is_prompt_lookup(const ov_genai_generation_config* config,
-                                                        bool* is_prompt_lookup) {
-    if (!config || !(config->object) || !is_prompt_lookup) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
-    try {
-        *is_prompt_lookup = config->object->is_prompt_lookup();
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
-}
 ov_status_e ov_genai_generation_config_validate(ov_genai_generation_config* config) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;

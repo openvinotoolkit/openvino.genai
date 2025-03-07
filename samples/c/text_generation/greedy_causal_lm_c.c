@@ -21,13 +21,10 @@ int main(int argc, char* argv[]) {
 
     ov_genai_llm_pipeline* pipeline = NULL;
     ov_genai_generation_config* config = NULL;
+    const char* device = "CPU";  // GPU, NPU can be used as well
     char output[1024];
 
-    CHECK_STATUS(ov_genai_llm_pipeline_create(model_dir, "CPU", &pipeline));
-    if (pipeline == NULL) {
-        fprintf(stderr, "Failed to create LLM pipeline\n");
-        return EXIT_FAILURE;
-    }
+    CHECK_STATUS(ov_genai_llm_pipeline_create(model_dir, device, &pipeline));
     CHECK_STATUS(ov_genai_generation_config_create(&config));
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, 100));
 

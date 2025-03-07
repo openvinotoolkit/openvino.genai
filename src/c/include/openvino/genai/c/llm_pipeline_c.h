@@ -123,11 +123,11 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm
  * @return Status code of the operation: OK(0) for success.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_llm_pipeline_generate_decode_results(ov_genai_llm_pipeline* pipe,
-                                              const char* inputs,
-                                              const ov_genai_generation_config* config,
-                                              const stream_callback* streamer,
-                                              ov_genai_decoded_results** results);
+ov_genai_llm_pipeline_generate_decoded_results(ov_genai_llm_pipeline* pipe,
+                                               const char* inputs,
+                                               const ov_genai_generation_config* config,
+                                               const stream_callback* streamer,
+                                               ov_genai_decoded_results** results);
 /**
  * @brief Start chat with keeping history in kv cache.
  * @param pipe A pointer to the ov_genai_llm_pipeline instance.

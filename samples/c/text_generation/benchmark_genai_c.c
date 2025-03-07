@@ -26,7 +26,7 @@ typedef struct {
 } Options;
 
 void print_usage() {
-    printf("Usage: benchmark_vanilla_genai [OPTIONS]\n");
+    printf("Usage: benchmark_genai_c [OPTIONS]\n");
     printf("Options:\n");
     printf("  -m, --model            Path to model and tokenizers base directory\n");
     printf("  -p, --prompt           Prompt (default: \"%s\")\n", DEFAULT_PROMPT);
@@ -123,7 +123,7 @@ int main(int argc, char* argv[]) {
     ov_genai_generation_config* config = NULL;
     ov_genai_decoded_results* results = NULL;
     ov_genai_perf_metrics* metrics = NULL;
-    ov_genai_perf_metrics* _metrics = NULL;
+    ov_genai_perf_metrics* cumulative_metrics = NULL;
     char output[MAX_OUTPUT_LENGTH];
 
     CHECK_STATUS(ov_genai_llm_pipeline_create(options.model, options.device, &pipe));
@@ -135,7 +135,7 @@ int main(int argc, char* argv[]) {
         CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, output, MAX_OUTPUT_LENGTH));
     }
 
-    CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, NULL, &results));
+    CHECK_STATUS(ov_genai_llm_pipeline_generate_decoded_results(pipe, options.prompt, config, NULL, &results));
     CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));
 
     if (results) {
@@ -143,12 +143,12 @@ int main(int argc, char* argv[]) {
         results = NULL;  // The end of main() would try to free it again if not NULL.
     }
     for (size_t i = 0; i < options.num_iter - 1; i++) {
-        CHECK_STATUS(ov_genai_llm_pipeline_generate_decode_results(pipe, options.prompt, config, NULL, &results));
-        CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &_metrics));
-        CHECK_STATUS(ov_genai_perf_metrics_add_in_place(metrics, _metrics));  // metrics += _metrics
-        if (_metrics) {
-            ov_genai_decoded_results_perf_metrics_free(_metrics);
-            _metrics = NULL;  // The end of main() would try to free it again if not NULL.
+        CHECK_STATUS(ov_genai_llm_pipeline_generate_decoded_results(pipe, options.prompt, config, NULL, &results));
+        CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &cumulative_metrics));
+        CHECK_STATUS(ov_genai_perf_metrics_add_in_place(metrics, cumulative_metrics));  // metrics += _metrics
+        if (cumulative_metrics) {
+            ov_genai_decoded_results_perf_metrics_free(cumulative_metrics);
+            cumulative_metrics = NULL;  // The end of main() would try to free it again if not NULL.
         }
         if (results) {
             ov_genai_decoded_results_free(results);
@@ -180,8 +180,8 @@ err:
         ov_genai_generation_config_free(config);
     if (metrics)
         ov_genai_decoded_results_perf_metrics_free(metrics);
-    if (_metrics)
-        ov_genai_decoded_results_perf_metrics_free(_metrics);
+    if (cumulative_metrics)
+        ov_genai_decoded_results_perf_metrics_free(cumulative_metrics);
     if (results)
         ov_genai_decoded_results_free(results);
     return EXIT_SUCCESS;

@@ -63,7 +63,7 @@ configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.cpp.in"
                "${CMAKE_CURRENT_BINARY_DIR}/version.cpp" @ONLY)
 
 # Object library
-file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c" "${CMAKE_SOURCE_DIR}/src/c/src/*.cpp")
+file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c" "${OpenVINOGenAI_SOURCE_DIR}/src/c/src/*.cpp")
 list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
 
 set(TARGET_NAME openvino_genai)
@@ -77,13 +77,13 @@ endif()
 
 target_include_directories(${TARGET_NAME_OBJ}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-           "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/c/include>"
+           "$<BUILD_INTERFACE:${OpenVINOGenAI_SOURCE_DIR}/src/c/include>"
            "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
-target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json jinja2cpp)
+target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::runtime::c openvino::threading nlohmann_json::nlohmann_json jinja2cpp)
 
 target_compile_features(${TARGET_NAME_OBJ} PRIVATE cxx_std_17)
 
@@ -98,10 +98,10 @@ add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime/include>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                    "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/c/include>"
+                                                    "$<BUILD_INTERFACE:${OpenVINOGenAI_SOURCE_DIR}/src/c/include>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
-target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
+target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime openvino::runtime::c PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
 
@@ -205,7 +205,7 @@ if(CPACK_GENERATOR STREQUAL "NPM")
 endif()
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-                  ${CMAKE_SOURCE_DIR}/src/c/include/
+                  ${OpenVINOGenAI_SOURCE_DIR}/src/c/include/
         DESTINATION runtime/include COMPONENT core_genai_dev)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/openvino/genai/version.hpp
         DESTINATION runtime/include/openvino/genai COMPONENT core_genai_dev)
