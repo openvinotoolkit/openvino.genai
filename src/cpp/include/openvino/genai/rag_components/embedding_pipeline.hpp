@@ -12,8 +12,7 @@
 namespace ov {
 namespace genai {
 
-// using EmbeddingResult = std::variant<std::vector<float>, std::vector<int8_t>, std::vector<uint8_t>>;
-using EmbeddingResult = std::variant<std::vector<float>>;
+using EmbeddingResult = std::variant<std::vector<float>, std::vector<int8_t>, std::vector<uint8_t>>;
 
 class OPENVINO_GENAI_EXPORTS TextEmbeddingPipeline {
 public:
