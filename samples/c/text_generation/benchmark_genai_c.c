@@ -30,9 +30,9 @@ void print_usage() {
     printf("Options:\n");
     printf("  -m, --model            Path to model and tokenizers base directory\n");
     printf("  -p, --prompt           Prompt (default: \"%s\")\n", DEFAULT_PROMPT);
-    printf("  -nw, --num_warmup      Number of warmup iterations (default: %d)\n", DEFAULT_NUM_WARMUP);
+    printf("  --nw, --num_warmup      Number of warmup iterations (default: %d)\n", DEFAULT_NUM_WARMUP);
     printf("  -n, --num_iter         Number of iterations (default: %d)\n", DEFAULT_NUM_ITER);
-    printf("  -mt, --max_new_tokens  Maximal number of new tokens (default: %d)\n", DEFAULT_MAX_NEW_TOKENS);
+    printf("  --mt, --max_new_tokens  Maximal number of new tokens (default: %d)\n", DEFAULT_MAX_NEW_TOKENS);
     printf("  -d, --device           Device (default: %s)\n", DEFAULT_DEVICE);
     printf("  -h, --help             Print usage\n");
 }
@@ -52,7 +52,7 @@ int parse_arguments(int argc, char* argv[], Options* options) {
                 printf("Error: --prompt requires an argument\n");
                 return -1;
             }
-        } else if (strcmp(argv[i], "-nw") == 0 || strcmp(argv[i], "--num_warmup") == 0) {
+        } else if (strcmp(argv[i], "--nw") == 0 || strcmp(argv[i], "--num_warmup") == 0) {
             if (i + 1 < argc) {
                 options->num_warmup = atoi(argv[++i]);
             } else {
@@ -66,7 +66,7 @@ int parse_arguments(int argc, char* argv[], Options* options) {
                 printf("Error: --num_iter requires an argument\n");
                 return -1;
             }
-        } else if (strcmp(argv[i], "-mt") == 0 || strcmp(argv[i], "--max_new_tokens") == 0) {
+        } else if (strcmp(argv[i], "--mt") == 0 || strcmp(argv[i], "--max_new_tokens") == 0) {
             if (i + 1 < argc) {
                 options->max_new_tokens = atoi(argv[++i]);
             } else {
