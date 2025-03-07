@@ -150,11 +150,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const ov::AnyMap& properties,
     const std::vector<KVHeadConfig>& kv_cache_config) {
     // apply LoRA
-    std::optional<AdapterConfig> adapters;
-    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
-    if (adapters) {
-        adapters->set_tensor_name_prefix("base_model.model.model.");
-        m_adapter_controller = AdapterController(model, *adapters, device);  // TODO: Make the prefix name configurable
+    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    if (m_generation_config.adapters) {
+        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
+        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
