@@ -47,9 +47,9 @@ jobs:
     - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
       id: openvino_download
       with:
-        platform: 'windows'
+        platform: windows
         commit_packages_to_provide: wheels,openvino_js_package.zip
-        revision: 'latest_available_commit'
+        revision: ed8e7bd23f11cf4e85804cf4aa0523e71644e7d1
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build_type }})
@@ -295,6 +295,7 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }}
         run: |
           & ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.ps1 -i ${{ env.INSTALL_DIR }}
+          & ${{ env.OV_INSTALL_DIR }}/samples/c/build_samples.ps1 -i ${{ env.INSTALL_DIR }}
 
       - name: Build Samples (Debug)
         if: ${{ 'Release' != matrix.build-type }}
@@ -492,6 +493,7 @@ jobs:
           PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
+          SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
   genai_nodejs_tests:
     name: Node.js bindings tests

@@ -1,0 +1,17 @@
+:root {
+  --global-font-apple-system: -apple-system;
+  --global-font-blink-mac-system-font: BlinkMacSystemFont;
+  --global-font-segoe-ui: 'Segoe UI';
+  --global-font-roboto: Roboto;
+  --global-font-helvetica: Helvetica;
+  --global-font-arial: Arial;
+  --global-font-sans-serif: sans-serif;
+  --global-font-apple-color-emoji: 'Apple Color Emoji';
+  --global-font-segoe-ui-emoji: 'Segoe UI Emoji';
+  --global-font-segoe-ui-symbol: 'Segoe UI Symbol';
+
+  --genai-font-family: var(--global-font-apple-system), var(--global-font-blink-mac-system-font),
+    var(--global-font-segoe-ui), var(--global-font-roboto), var(--global-font-helvetica),
+    var(--global-font-arial), var(--global-font-sans-serif), var(--global-font-apple-color-emoji),
+    var(--global-font-segoe-ui-emoji), var(--global-font-segoe-ui-symbol);
+}
