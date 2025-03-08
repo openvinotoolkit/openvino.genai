@@ -104,5 +104,5 @@ Add the `openvino-genai-node` package manually by specifying the path to the `sr
 
 ### Verify the installation:
 ```sh
-node -e "const { Pipeline } = require('openvino-genai-node'); console.log(Pipeline);"
+node -e "const { LLMPipeline } = require('openvino-genai-node'); console.log(LLMPipeline);"
 ```
