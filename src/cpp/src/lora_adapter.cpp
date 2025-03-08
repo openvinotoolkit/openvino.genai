@@ -1082,10 +1082,6 @@ struct AdapterControllerImpl {
                     }
                 }
             }
-
-            for (const auto& adapter2 : adapters2) {
-                adapter2.~Adapter();
-            }
         }
     }
 
