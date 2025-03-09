@@ -10,6 +10,10 @@ std::shared_ptr<ov::Model> get_dummy_model(ov::Core core, size_t num_layers) {
     ov::element::Type kv_cache_type = core.get_property("CPU", ov::hint::kv_cache_precision);
 
     auto shape = ov::PartialShape::dynamic(4);
+    shape[1] = 12;
+    shape[2] = 64;
+    shape[3] = 64;
+
     for (size_t i = 0; i < num_layers; i++) {
         auto key = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
         auto value = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
