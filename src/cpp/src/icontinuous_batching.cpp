@@ -162,24 +162,21 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
         // TODO: save embeddings, instead of image tensors and compare performance
         m_history_images.insert(m_history_images.end(), rgbs.begin(), rgbs.end());
-        std::string history = m_tokenizer.apply_chat_template(m_history, true);
+        std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
+
+        m_inputs_embedder->set_apply_chat_template_status(sampling_params[0].apply_chat_template);
 
         VLMPerfMetrics perf_metrics;
-        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(history, m_history_images, perf_metrics));
+        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, perf_metrics));
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
             auto prompt = prompts[i];
             auto rgbs = rgbs_vector[i];
 
+            m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
+
             VLMPerfMetrics perf_metrics;
-            if (sampling_params.at(i).apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
-                prompt = add_image_tags_to_prompt(prompts[i], rgbs_vector[i]);
-                ChatHistory history({{{"role", "user"}, {"content", prompt}}});
-                auto templated_prompt = m_tokenizer.apply_chat_template(history, true);
-                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(templated_prompt, rgbs, perf_metrics));
-            } else {
-                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics));
-            }
+            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics));
         }
     }
 
@@ -207,6 +204,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     ov::Tensor inputs;
     {
         const std::lock_guard<std::mutex> lock(m_inputs_embedder_mutex);
+        m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
     }
     return add_request(request_id, inputs, sampling_params);
