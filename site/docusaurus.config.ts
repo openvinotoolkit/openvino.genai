@@ -55,7 +55,7 @@ const config: Config = {
           },
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl: `https://github.com/${organizationName}/${projectName}/tree/main/site`,
+          editUrl: `https://github.com/${organizationName}/${projectName}/tree/master/site`,
         },
         blog: false,
         theme: {
