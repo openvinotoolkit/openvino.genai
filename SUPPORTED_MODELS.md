@@ -744,21 +744,6 @@
         </ul>
       </td>
     </tr>
-    </tr>
-      <tr>
-      <td><code>XGLMForCausalLM</code></td>
-      <td>XGLM</td>
-      <td>
-        <ul>
-          <li><a href="https://huggingface.co/facebook/xglm-564M"><code>facebook/xglm-564M</code></a></li>
-          <li><a href="https://huggingface.co/facebook/xglm-1.7B"><code>facebook/xglm-1.7B</code></a></li>
-          <li><a href="https://huggingface.co/facebook/xglm-2.9B"><code>facebook/xglm-2.9B</code></a></li>
-          <li><a href="https://huggingface.co/facebook/xglm-4.5B"><code>facebook/xglm-4.5B</code></a></li>
-          <li><a href="https://huggingface.co/facebook/xglm-7.5B"><code>facebook/xglm-7.5B</code></a></li>
-        </ul>
-      </td>
-    </tr>
-    </tr>
       <tr>
       <td><code>XverseForCausalLM</code></td>
       <td>Xverse</td>
