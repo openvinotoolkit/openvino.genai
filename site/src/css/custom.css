@@ -10,7 +10,6 @@
 @import './menu.css';
 @import './footer.css';
 @import './toc.css';
-@import './breadcrumbs.css';
 
 :root {
   --black: #000000;

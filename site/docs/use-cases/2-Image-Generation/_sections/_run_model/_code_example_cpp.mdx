@@ -1,0 +1,16 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="cpp" showLineNumbers>
+{`#include "openvino/genai/image_generation/text2image_pipeline.hpp"
+#include "imwrite.hpp"
+
+int main(int argc, char* argv[]) {
+    const std::string models_path = argv[1], prompt = argv[2];
+
+    ov::genai::Text2ImagePipeline pipe(models_path, "${props.device || 'CPU'}");
+    ov::Tensor image = pipe.generate(prompt);
+
+    imwrite("image.bmp", image, true);
+}
+`}
+</CodeBlock>
