@@ -54,6 +54,8 @@ public:
 
     void finish_chat() override;
 
+    bool prompt_has_image_tag(const std::string& prompt) const override;
+
 protected:
     ov::Tensor merge_text_and_image_embeddings_qwen2vl(
         const ov::Tensor& input_ids,

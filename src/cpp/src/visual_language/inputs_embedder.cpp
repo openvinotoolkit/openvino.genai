@@ -17,6 +17,12 @@
 
 #include "utils.hpp"
 
+namespace {
+
+std::regex UNIVERSAL_PATTERN{R"(<ov_genai_image_(\d+)>)"};
+
+}
+
 namespace ov::genai {
 
 // Base InputsEmbedder class
@@ -28,6 +34,7 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 }
 
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
+    m_image_id = 0;
     m_is_chat_conversation = true;
     if (!m_kv_cache_state.get_state().empty()) {
         m_history.clear();
@@ -58,9 +65,14 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
 }
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
+    m_image_id = 0;
     m_is_chat_conversation = false;
     m_history.clear();
     m_kv_cache_state.reset_state();
+}
+
+bool InputsEmbedder::IInputsEmbedder::prompt_has_image_tag(const std::string& prompt) const {
+    return std::regex_search(prompt, UNIVERSAL_PATTERN);
 }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
@@ -256,6 +268,49 @@ void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
 
 void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
+}
+
+bool InputsEmbedder::prompt_has_image_tag(const std::string& prompt) const {
+    return m_impl->prompt_has_image_tag(prompt);
+}
+
+std::pair<std::string, std::vector<size_t>> unify_prompt(const std::string& prompt, const std::string& native_tag, size_t n_new_images, size_t first_new_image_id) {
+    bool found_universal_tag = std::regex_search(prompt, UNIVERSAL_PATTERN);
+    bool found_native_tag = prompt.find(native_tag) != std::string::npos;
+    OPENVINO_ASSERT(!(found_universal_tag && found_native_tag), "Prompt can contain only one type of image tags.");
+    std::stringstream images_prompt;
+    if (!found_universal_tag && ! found_native_tag) {
+        for (size_t i = first_new_image_id; i < n_new_images + first_new_image_id; ++i) {
+            images_prompt << "<ov_genai_image_" << i << ">\n";
+        }
+    }
+    images_prompt << prompt;
+
+    std::vector<size_t> images_sequence;
+    std::string unified_prompt = images_prompt.str();
+    std::sregex_iterator end_it;
+    if (found_native_tag) {
+        size_t pos = 0;
+        while ((pos = unified_prompt.find(native_tag, pos)) != std::string::npos) {
+            images_sequence.push_back(first_new_image_id + images_sequence.size());
+            pos += native_tag.length();
+        }
+        OPENVINO_ASSERT(images_sequence.size() == n_new_images);
+    } else {
+        bool found = true;
+        while (found) {
+            found = false;
+            for (std::sregex_iterator it(unified_prompt.begin(), unified_prompt.end(), UNIVERSAL_PATTERN); it != end_it; ++it) {
+                images_sequence.push_back(std::stoi((*it)[1].str()));
+                OPENVINO_ASSERT(images_sequence.back() < n_new_images + first_new_image_id, "Missing image ", images_sequence.back());
+                OPENVINO_ASSERT(first_new_image_id <= images_sequence.back(), "Referring to older images isn't implemented");
+                unified_prompt.replace(it->position(), it->length(), native_tag);
+                found = true;
+                break;
+            }
+        }
+    }
+    return {std::move(unified_prompt), std::move(images_sequence)};
 }
 
 } // namespace ov::genai
