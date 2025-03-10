@@ -89,7 +89,11 @@ def text2image(args):
     num_iter = args.num_iter
     output_dir = args.output_dir
     
-    pipe = ov_genai.Text2ImagePipeline(models_path, device)
+    pipe = ov_genai.Text2ImagePipeline(models_path)
+    if args.reshape:
+        pipe.reshape(args.num_images_per_prompt, args.height, args.width, pipe.get_generation_config().guidance_scale)
+    pipe.compile(device)
+
     config = pipe.get_generation_config()
     config.width = args.width
     config.height = args.height
@@ -131,9 +135,14 @@ def image2image(args):
     image_path = args.image
     strength = args.strength
     
-    pipe = ov_genai.Image2ImagePipeline(models_path, device)
-
     image_input = read_image(image_path)
+
+    pipe = ov_genai.Image2ImagePipeline(models_path)
+    if args.reshape:
+        height = image_input.get_shape()[1]
+        width = image_input.get_shape()[2]
+        pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale)
+    pipe.compile(device)
 
     warmup_metrics = []
     for i in range(num_warmup):
@@ -165,10 +174,15 @@ def inpainting(args):
     strength = args.strength
     mask_image_path = args.mask_image
     
-    pipe = ov_genai.InpaintingPipeline(models_path, device)
-
     image_input = read_image(image_path)
     mask_image = read_image(mask_image_path)
+
+    pipe = ov_genai.InpaintingPipeline(models_path)
+    if args.reshape:
+        height = image_input.get_shape()[1]
+        width = image_input.get_shape()[2]
+        pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale)
+    pipe.compile(device)
 
     warmup_metrics = []
     for i in range(num_warmup):
@@ -202,6 +216,7 @@ def main():
     parser.add_argument("-is", "--num_inference_steps", type=int, default=20, help="The number of inference steps used to denoise initial noised latent to final image")
     parser.add_argument("-ni", "--num_images_per_prompt", type=int, default=1, help="The number of images to generate per generate() call")
     parser.add_argument("-i", "--image", type=str, help="Image path")
+    parser.add_argument("-r", "--reshape", action="store_true", help="Reshape pipeline before compilation")
     # special parameters of text2image pipeline
     parser.add_argument("-w", "--width", type=int, default=512, help="The width of the resulting image")
     parser.add_argument("-ht", "--height", type=int, default=512, help="The height of the resulting image")
