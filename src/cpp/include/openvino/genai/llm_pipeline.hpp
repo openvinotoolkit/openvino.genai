@@ -26,6 +26,11 @@ using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
 
+/// @brief A map of models for VLMPipeline constructor. 
+/// Key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+/// and value is a pair of model IR as string and weights as tensor.
+using ModelsMap = std::map<std::string, std::pair<std::string, ov::Tensor>>;
+
 /**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
 * The first num_return_sequences elements correspond to the first batch element.
