@@ -81,10 +81,20 @@ def print_statistic(warmup_metrics, iter_metrics):
           f"infer avg time: {inference_mean:.2f} ms, all text encoder infer avg time: {text_encoder_mean:.2f} ms, "
           f"vae encoder infer avg time: {vae_encoder_mean:.2f} ms, vae decoder infer avg time: {vae_decoder_mean:.2f} ms")
 
+def device_string_to_triplet(device_input):
+    devices = [device.strip() for device in device_input.split(",")]
+    if len(devices) == 1:
+        return [devices[0]] * 3
+    elif len(devices) == 3:
+        return devices
+    else:
+        raise ValueError("The device specified by -d/--device must be a single device (e.g. -d \"GPU\"), " +
+                         "or exactly 3 comma separated device names (e.g. -d \"CPU,NPU,GPU\")")
+
 def text2image(args):
     prompt = args.prompt
     models_path = args.model
-    device = args.device
+    devices = device_string_to_triplet(args.device)
     num_warmup = args.num_warmup
     num_iter = args.num_iter
     output_dir = args.output_dir
@@ -92,7 +102,7 @@ def text2image(args):
     pipe = ov_genai.Text2ImagePipeline(models_path)
     if args.reshape:
         pipe.reshape(args.num_images_per_prompt, args.height, args.width, pipe.get_generation_config().guidance_scale)
-    pipe.compile(device)
+    pipe.compile(devices[0], devices[1], devices[2])
 
     config = pipe.get_generation_config()
     config.width = args.width
@@ -128,7 +138,7 @@ def read_image(path: str) -> openvino.Tensor:
 def image2image(args):
     prompt = args.prompt
     models_path = args.model
-    device = args.device
+    devices = device_string_to_triplet(args.device)
     num_warmup = args.num_warmup
     num_iter = args.num_iter
     output_dir = args.output_dir
@@ -142,7 +152,7 @@ def image2image(args):
         height = image_input.get_shape()[1]
         width = image_input.get_shape()[2]
         pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale)
-    pipe.compile(device)
+    pipe.compile(devices[0], devices[1], devices[2])
 
     warmup_metrics = []
     for i in range(num_warmup):
@@ -166,7 +176,7 @@ def image2image(args):
 def inpainting(args):
     prompt = args.prompt
     models_path = args.model
-    device = args.device
+    devices = device_string_to_triplet(args.device)
     num_warmup = args.num_warmup
     num_iter = args.num_iter
     output_dir = args.output_dir
@@ -182,7 +192,7 @@ def inpainting(args):
         height = image_input.get_shape()[1]
         width = image_input.get_shape()[2]
         pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale)
-    pipe.compile(device)
+    pipe.compile(devices[0], devices[1], devices[2])
 
     warmup_metrics = []
     for i in range(num_warmup):
