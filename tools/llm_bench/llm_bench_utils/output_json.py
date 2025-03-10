@@ -50,7 +50,26 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
 
         result.append(res_data)
 
+    keys_to_average = [
+        'generation_time',
+        'latency',
+        'first_latency',
+        'second_avg_latency',
+        'first_infer_latency',
+        'second_infer_avg_latency',
+        'tokenization_time',
+        'detokenization_time'
+    ]
+    results_averaged = {}
+    for key in keys_to_average:
+        values = [x[key] for x in result if x[key] != '']
+        if len(values) > 0:
+            results_averaged[key] = round(sum(values) / len(values), 5)
+
     output_result = {'metadata': metadata, "perfdata": {'compile_time': pretrain_time, 'results': result}}
+
+    if len(results_averaged) > 0:
+        output_result['perfdata']['results_averaged'] = results_averaged
 
     with open(report_file, 'w') as outfile:
         json.dump(output_result, outfile, indent=4)
