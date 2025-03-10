@@ -1,8 +1,5 @@
 {
   "label": "Guides",
   "position": 3,
-  "link": {
-    "type": "generated-index",
-    "description": "How-to guides to OpenVINO GenAI."
-  }
+  "link": null
 }
