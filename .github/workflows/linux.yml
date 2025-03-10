@@ -51,7 +51,7 @@ jobs:
     - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
       id: openvino_download
       with:
-        platform: ubuntu22
+        platform: centos
         commit_packages_to_provide: wheels,openvino_js_package.tar.gz
         revision: adf0188290a04c49c089b442d67255080f5ca31b
 
