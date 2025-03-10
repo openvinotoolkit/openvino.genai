@@ -164,7 +164,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history_images.insert(m_history_images.end(), rgbs.begin(), rgbs.end());
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
-        m_inputs_embedder->set_apply_chat_template_status(sampling_params[0].apply_chat_template);
+        m_inputs_embedder->set_apply_chat_template_status(false);
 
         VLMPerfMetrics perf_metrics;
         input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, perf_metrics));
