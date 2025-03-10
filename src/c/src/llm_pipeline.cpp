@@ -46,16 +46,22 @@ void ov_genai_decoded_results_perf_metrics_free(ov_genai_perf_metrics* metrics) 
 }
 ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* results,
                                                 char* output,
-                                                size_t max_size) {
-    if (!results || !(results->object) || !output) {
+                                                size_t output_size,
+                                                size_t* needed_size) {
+    if (!results || !(results->object) || !(output || needed_size)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
         std::string str = *(results->object);
-        strncpy(output, str.c_str(), max_size - 1);
-        output[max_size - 1] = '\0';
-        if (str.length() + 1 > max_size) {
-            return ov_status_e::OUT_OF_BOUNDS;
+        if (output) {
+            strncpy(output, str.c_str(), output_size - 1);
+            output[output_size - 1] = '\0';
+            if (str.length() + 1 > output_size) {
+                return ov_status_e::OUT_OF_BOUNDS;
+            }
+        }
+        if (needed_size) {
+            *needed_size = str.length() + 1;
         }
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
@@ -88,7 +94,7 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                            const stream_callback* streamer,
                                            char* output,
                                            size_t output_max_size) {
-    if (!pipe || !(pipe->object) || !inputs || !output) {
+    if (!pipe || !(pipe->object) || !inputs || !(streamer || output)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
@@ -105,10 +111,12 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
             results = (config && config->object) ? pipe->object->generate(input, *(config->object))
                                                  : pipe->object->generate(input);
         }
-        strncpy(output, results.c_str(), output_max_size - 1);
-        output[output_max_size - 1] = '\0';
-        if (results.length() + 1 > output_max_size) {
-            return ov_status_e::OUT_OF_BOUNDS;
+        if (output) {
+            strncpy(output, results.c_str(), output_max_size - 1);
+            output[output_max_size - 1] = '\0';
+            if (results.length() + 1 > output_max_size) {
+                return ov_status_e::OUT_OF_BOUNDS;
+            }
         }
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
