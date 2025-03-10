@@ -177,6 +177,13 @@ void Image2ImagePipeline::compile(const std::string& device, const ov::AnyMap& p
     m_impl->compile(device, properties);
 }
 
+void Image2ImagePipeline::compile(const std::string& text_encode_device,
+                                  const std::string& denoise_device,
+                                  const std::string& vae_device,
+                                  const ov::AnyMap& properties) {
+    m_impl->compile(text_encode_device, denoise_device, vae_device, properties);
+}
+
 ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(initial_image, "Initial image cannot be empty when passed to Image2ImagePipeline::generate");
     return m_impl->generate(positive_prompt, initial_image, {}, properties);

@@ -124,6 +124,30 @@ public:
     }
 
     /**
+     * Compiles image generation pipeline for given devices for text encoding, denoising, and vae decoding.
+     * @param text_encode_device A device to compile text encoder(s) with
+     * @param denoise_device A device to compile denoiser (e.g. UNet, SD3 Transformer, etc.) with
+     * @param vae_device A device to compile VAE encoder / decoder(s) with
+     * @param properties A map of properties which affect models compilation
+     * @note If pipeline was compiled before, an exception is thrown.
+     */
+    void compile(const std::string& text_encode_device,
+                 const std::string& denoise_device,
+                 const std::string& vae_device,
+                 const ov::AnyMap& properties = {});
+
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<void, Properties...> compile(const std::string& text_encode_device,
+                                                                const std::string& denoise_device,
+                                                                const std::string& vae_device,
+                                                                Properties&&... properties) {
+        return compile(text_encode_device,
+                       denoise_device,
+                       vae_device,
+                       ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    /**
      * Inpaints an initial image within an area defined by mask and conditioned on prompt
      * @param positive_prompt Prompt to generate image(s) from
      * @param initial_image RGB/BGR image of [1, height, width, 3] shape used to initialize latent image
