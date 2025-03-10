@@ -48,7 +48,7 @@ ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* 
                                                 char* output,
                                                 size_t output_size,
                                                 size_t* needed_size) {
-    if (!results || !(results->object) || !(output || needed_size)) {
+    if (!results || !(results->object) || !(output && output_size || needed_size)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
@@ -94,7 +94,7 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                            const stream_callback* streamer,
                                            char* output,
                                            size_t output_max_size) {
-    if (!pipe || !(pipe->object) || !inputs || !(streamer || output)) {
+    if (!pipe || !(pipe->object) || !inputs || !(streamer || output && output_max_size)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
