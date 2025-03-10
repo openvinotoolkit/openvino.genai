@@ -4,6 +4,7 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
 
+
 using namespace ov;
 using namespace ov::op::v13;
 using namespace ov::op;
@@ -231,5 +232,160 @@ std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
     return {
         std::make_shared<ov::opset13::Cos>(emb),
         std::make_shared<ov::opset13::Sin>(emb)
+    };
+}
+
+//std::tuple<Output<Node>, std::vector<std::shared_ptr<VariableState>>, std::pair<Output<Node>, Output<Node>>, Output<Node>>
+std::tuple<Output<Node>, std::vector<Output<Node>>, std::pair<Output<Node>, Output<Node>>, Output<Node>>
+multi_head_attention(
+    const Output<Node>& query,
+    const Output<Node>& key,
+    const Output<Node>& value,
+    const std::map<std::string, int>& configs,
+    const Output<Node>& batch_dim,
+    int layer_idx,
+    int hidden_dim,
+    const Output<Node>& input_shape,
+    const Output<Node>& output_shape,
+    const Output<Node>& attention_mask,
+    const Output<Node>& mask,
+    const Output<Node>& position_ids,
+    const Output<Node>& rope_const,
+    const Output<Node>& beam_idx,
+    const std::pair<Output<Node>, Output<Node>>& cos_sin_cached) {
+
+    int num_heads = configs.at("head_num");
+    int head_dim = configs.at("head_size");
+    int num_heads_kv = configs.at("head_num_kv");
+
+    // Helper function to split heads
+    auto split_heads = [&](const Output<Node>& x, int num_h) {
+        auto shape = std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, 0, num_h, head_dim});
+        auto reshaped = std::make_shared<v1::Reshape>(x, shape, true);
+        auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
+        return std::make_shared<v1::Transpose>(reshaped, transpose_order);
+    };
+
+    // 1. Split heads
+    auto q_split = split_heads(query, num_heads);
+    auto k_split = split_heads(key, num_heads_kv);
+    auto v_split = split_heads(value, num_heads_kv);
+
+    // 2. Apply rotary embeddings
+    Output<Node> cos, sin;
+    if (cos_sin_cached.first.get_node() == nullptr) {
+        std::tie(cos, sin) = rope_emb(v_split, rope_const, position_ids, batch_dim);
+    } else {
+        cos = cos_sin_cached.first;
+        sin = cos_sin_cached.second;
+    }
+
+    auto [q_rot, k_rot, new_cos_sin] = apply_rotary_pos_emb(
+        q_split, k_split, cos, sin, head_dim, hidden_dim, cos_sin_cached, 1
+    );
+
+    // 3. Handle cache
+    auto create_cache = [&](const std::string& name, const Output<Node>& init_value) {
+        // auto default_shape = std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{
+        //     -1, num_heads_kv, 0, head_dim});
+        //auto var = std::make_shared<v6::ReadValue>({init_value}, default_shape, element::f32, name);
+        //auto var = makeOP<v6::ReadValue>({init_value}, {{"variable_id", name}, {"variable_type", "f32"}, {"variable_shape", default_shape}});
+        // auto var = std::make_shared<v6::ReadValue>(init_value name);
+        // var->visit_attributes();
+        // var->constructor_validate_and_infer_types();
+        auto var_info = ov::op::util::VariableInfo{
+                ov::PartialShape{-1, num_heads_kv, 0, head_dim},
+                ov::element::f32,
+                name
+            };
+        auto var = std::make_shared<ov::op::util::Variable>(var_info);
+        auto read_value = std::make_shared<v6::ReadValue>(var);
+        auto gathered = std::make_shared<v8::Gather>(read_value, beam_idx, 
+            std::make_shared<v0::Constant>(element::i64, Shape{}, 0));
+        return std::make_pair(var, gathered);
+    };
+
+    auto zero_const = std::make_shared<v0::Constant>(element::f32, Shape{}, 0.0f);
+    auto k_cache_default = std::make_shared<v3::Broadcast>(zero_const, 
+        std::make_shared<ov::opset13::Concat>(OutputVector{
+            batch_dim,
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, num_heads_kv),
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, 0),
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, head_dim)
+        }, 0));
+
+    auto v_cache_default = std::make_shared<v3::Broadcast>(zero_const, 
+        std::make_shared<ov::opset13::Concat>(OutputVector{
+            batch_dim,
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, num_heads_kv),
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, 0),
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, head_dim)
+        }, 0));
+
+    auto k_cache = create_cache(
+        "past_key_values." + std::to_string(layer_idx) + ".keypresent." + std::to_string(layer_idx) + ".key",
+        k_cache_default
+    );
+    auto v_cache = create_cache(
+        "past_key_values." + std::to_string(layer_idx) + ".valuepresent." + std::to_string(layer_idx) + ".key",
+        v_cache_default
+    );
+
+    auto k_combined = std::make_shared<ov::opset13::Concat>(OutputVector{k_cache.second, k_rot}, 2);
+    auto v_combined = std::make_shared<ov::opset13::Concat>(OutputVector{v_cache.second, v_split}, 2);
+
+    auto k_assign = std::make_shared<ov::opset13::Assign>(k_combined, k_cache.first); //->get_variable_id()
+    auto v_assign = std::make_shared<ov::opset13::Assign>(v_combined, v_cache.first);
+
+    // 4. Handle group query attention
+    Output<Node> k_reshaped = k_combined;
+    Output<Node> v_reshaped = v_combined;
+    if (num_heads != num_heads_kv) {
+        int kv_per_head = num_heads / num_heads_kv;
+        auto unsqueeze_axes = std::make_shared<v0::Constant>(element::i64, Shape{1}, 2);
+        auto k_unsq = std::make_shared<v0::Unsqueeze>(k_combined, unsqueeze_axes);
+        auto v_unsq = std::make_shared<v0::Unsqueeze>(v_combined, unsqueeze_axes);
+
+        auto broadcast_shape = std::make_shared<ov::opset13::Concat>(OutputVector{
+            batch_dim,
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, num_heads_kv),
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, kv_per_head),
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, 0),
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, head_dim)
+        }, 0);
+
+        k_reshaped = std::make_shared<v1::Reshape>(
+            std::make_shared<v3::Broadcast>(k_unsq, broadcast_shape, BroadcastType::BIDIRECTIONAL),
+            std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, num_heads, -1, head_dim}),
+            true
+        );
+
+        v_reshaped = std::make_shared<v1::Reshape>(
+            std::make_shared<v3::Broadcast>(v_unsq, broadcast_shape, BroadcastType::BIDIRECTIONAL),
+            std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, num_heads, -1, head_dim}),
+            true
+        );
+    }
+
+    // 5. Create causal mask if needed
+    Output<Node> final_mask = mask;
+    if (mask.get_node() == nullptr) {
+        final_mask = causal_mask(attention_mask, k_combined, hidden_dim, input_shape);
+    }
+
+    // 6. Scaled dot product attention
+    auto attention = std::make_shared<ScaledDotProductAttention>(
+        q_rot, k_reshaped, v_reshaped, final_mask, false);
+
+    // 7. Reshape output
+    auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
+    auto context_transposed = std::make_shared<v1::Transpose>(attention, transpose_order);
+    auto output = std::make_shared<v1::Reshape>(context_transposed, output_shape, false);
+
+    return {
+        output,
+        {k_assign, v_assign},
+        new_cos_sin,
+        final_mask
     };
 }
