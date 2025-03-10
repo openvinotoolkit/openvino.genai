@@ -1,13 +1,64 @@
 #include <vector>
+#include <stdexcept>
+#include <algorithm>
+#include <unordered_map>
 #include <openvino/openvino.hpp>
+#include <math.h>
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
+
+//#include "fp16.h"
 
 
 using namespace ov;
 using namespace ov::op::v13;
 using namespace ov::op;
+
+static const size_t GGML_QUANTIZATION_GROUP_SIZE = 32;
+enum class QType { FP16, INT8, INT4 };
+
+
+static inline float fp32_from_bits(uint32_t w) {
+    union {
+        uint32_t as_bits;
+        float as_value;
+    } fp32;
+    fp32.as_bits = w;
+    return fp32.as_value;
+}
+
+static inline uint32_t fp32_to_bits(float f) {
+    union {
+        float as_value;
+        uint32_t as_bits;
+    } fp32;
+    fp32.as_value = f;
+    return fp32.as_bits;
+}
+
+float from_half(uint16_t h) {
+    const uint32_t w = (uint32_t) h << 16;
+    const uint32_t sign = w & UINT32_C(0x80000000);
+    const uint32_t two_w = w + w;
+
+    const uint32_t exp_offset = UINT32_C(0xE0) << 23;
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) || defined(__GNUC__) && !defined(__STRICT_ANSI__)
+    const float exp_scale = 0x1.0p-112f;
+#else
+    const float exp_scale = fp32_from_bits(UINT32_C(0x7800000));
+#endif
+    const float normalized_value = fp32_from_bits((two_w >> 4) + exp_offset) * exp_scale;
+
+    const uint32_t magic_mask = UINT32_C(126) << 23;
+    const float magic_bias = 0.5f;
+    const float denormalized_value = fp32_from_bits((two_w >> 17) | magic_mask) - magic_bias;
+
+    const uint32_t denormalized_cutoff = UINT32_C(1) << 27;
+    const uint32_t result = sign |
+        (two_w < denormalized_cutoff ? fp32_to_bits(denormalized_value) : fp32_to_bits(normalized_value));
+    return fp32_from_bits(result);
+}
 
 Output<ov::Node> causal_mask(
     const Output<ov::Node>& attention_mask,
@@ -286,13 +337,6 @@ multi_head_attention(
 
     // 3. Handle cache
     auto create_cache = [&](const std::string& name, const Output<Node>& init_value) {
-        // auto default_shape = std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{
-        //     -1, num_heads_kv, 0, head_dim});
-        //auto var = std::make_shared<v6::ReadValue>({init_value}, default_shape, element::f32, name);
-        //auto var = makeOP<v6::ReadValue>({init_value}, {{"variable_id", name}, {"variable_type", "f32"}, {"variable_shape", default_shape}});
-        // auto var = std::make_shared<v6::ReadValue>(init_value name);
-        // var->visit_attributes();
-        // var->constructor_validate_and_infer_types();
         auto var_info = ov::op::util::VariableInfo{
                 ov::PartialShape{-1, num_heads_kv, 0, head_dim},
                 ov::element::f32,
@@ -388,4 +432,302 @@ multi_head_attention(
         new_cos_sin,
         final_mask
     };
+}
+
+// TODO: can be issues with allocated memory
+// TODO: rewrite without doubling a memory
+ov::Tensor reorder_interleaved_format(const ov::Tensor& weights, int head_size) {
+    ov::Shape input_shape = weights.get_shape();
+    if (input_shape.empty() || input_shape[0] % head_size != 0) {
+        throw std::invalid_argument("Invalid input dimensions");
+    }
+
+    size_t num_heads = input_shape[0] / head_size;
+    size_t total_rows = input_shape[0];
+    std::vector<size_t> permutation(total_rows);
+
+    // Precompute permutation indices
+    for (size_t i = 0; i < total_rows; ++i) {
+        size_t head = i / head_size;
+        size_t row_in_head = i % head_size;
+        size_t new_row_in_head = (row_in_head < head_size/2)
+            ? row_in_head * 2
+            : (row_in_head - head_size/2) * 2 + 1;
+        permutation[i] = head * head_size + new_row_in_head;
+    }
+
+    // Create output tensor
+    ov::Tensor reordered(weights.get_element_type(), input_shape);
+
+    // Calculate row size in bytes
+    size_t row_size = weights.get_byte_size() / total_rows;
+    const char* src_data = weights.data<char>();
+    char* dst_data = reordered.data<char>();
+
+    // Perform permutation copy
+    for (size_t i = 0; i < total_rows; ++i) {
+        std::memcpy(dst_data + i * row_size,
+                   src_data + permutation[i] * row_size,
+                   row_size);
+    }
+
+    return reordered;
+}
+
+ov::Output<ov::Node> make_fp16_weights(
+    const std::string& key,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    bool reorder,
+    int head_size) {
+
+    auto it = consts.find(key + ".weight");
+    if (it == consts.end()) {
+        throw std::runtime_error("Weight not found: " + key);
+    }
+    ov::Tensor weight_f16 = it->second;    
+
+    // Apply reordering
+    if (reorder) {
+        weight_f16 = reorder_interleaved_format(weight_f16, head_size);
+    }
+
+    // Create FP16 constant and convert to FP32
+    auto weights_node = std::make_shared<v0::Constant>(weight_f16);
+    weights_node->set_friendly_name(key + ".weight");
+    return std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f32);
+}
+
+ov::Output<ov::Node> make_int8_weights(
+    const std::string& key,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    bool reorder,
+    int head_size,
+    int group_size = GGML_QUANTIZATION_GROUP_SIZE) {
+
+    // Retrieve tensors
+    auto get_tensor = [&](const std::string& suffix) {
+        auto it = consts.find(key + suffix);
+        if (it == consts.end()) throw std::runtime_error("Missing tensor: " + key + suffix);
+        return it->second;
+    };
+
+    ov::Tensor weight = get_tensor(".weight");
+    ov::Tensor scales = get_tensor(".scales");
+    ov::Tensor biases = get_tensor(".biases");
+
+    // Reshape weight to (num_heads, -1, group_size)
+    ov::Shape orig_shape = weight.get_shape();
+    // size_t num_heads = orig_shape[0] / head_size;
+    // size_t reshaped_rows = (orig_shape[1] * orig_shape[2]) / group_size; // Assuming 3D shape
+    // ov::Shape new_shape = {num_heads * head_size, reshaped_rows, group_size};
+    // weight.set_shape(new_shape);
+    size_t num_heads = orig_shape[0] / head_size;
+    size_t num_groups = orig_shape[1] / group_size;
+    weight.set_shape(ov::Shape{orig_shape[0], num_groups, group_size});
+
+    // Expand dimensions for scales and biases
+    auto scale_shape = scales.get_shape();
+    scale_shape.push_back(1);
+    scales.set_shape(scale_shape);
+    biases.set_shape(scale_shape);
+
+    // Apply reordering
+    if (reorder) {
+        weight = reorder_interleaved_format(weight, head_size);
+        scales = reorder_interleaved_format(scales, head_size);
+        biases = reorder_interleaved_format(biases, head_size);
+    }
+
+    // Create graph nodes
+    auto weights_node = std::make_shared<ov::op::v0::Constant>(weight);
+    auto scales_node = std::make_shared<ov::op::v0::Constant>(scales);
+    ov::Tensor biases_u8(ov::element::u8, scale_shape);
+
+    // Calculate zero point
+    const uint16_t* bias_data = biases.data<uint16_t>();
+    const uint16_t* scale_data = scales.data<uint16_t>();
+    uint8_t* bias_u8_data = biases_u8.data<uint8_t>();
+    for (size_t i = 0; i < biases_u8.get_size(); ++i) {
+        bias_u8_data[i] = (uint8_t)(-1.f * from_half(bias_data[i]) / from_half(scale_data[i]));
+    }
+
+    auto zero_point = std::make_shared<ov::op::v0::Constant>(biases_u8);
+
+    // Quantization operations
+    auto weights_f16 = std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f16);
+    auto zero_point_f16 = std::make_shared<ov::op::v0::Convert>(zero_point, ov::element::f16);
+    auto scales_f16 = std::make_shared<ov::op::v0::Convert>(scales_node, ov::element::f16);
+
+    auto w_zp = std::make_shared<ov::op::v1::Subtract>(
+        weights_f16, zero_point_f16, ov::op::AutoBroadcastType::NUMPY
+    );
+    auto w_zp_s = std::make_shared<ov::op::v1::Multiply>(
+        w_zp, scales_f16, ov::op::AutoBroadcastType::NUMPY
+    );
+
+    // Reshape back to original dimensions
+    auto final_shape = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64, ov::Shape{orig_shape.size()}, orig_shape
+    );
+    auto w_zp_s_r = std::make_shared<ov::op::v1::Reshape>(
+        w_zp_s, final_shape, true
+    );
+
+    return std::make_shared<ov::op::v0::Convert>(w_zp_s_r, ov::element::f32);
+}
+
+ov::Output<ov::Node> make_weights_subgraph(
+    const std::string& key,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    QType qtype,
+    bool reorder,
+    int head_size) {
+
+    switch(qtype) {
+        case QType::FP16:
+            return make_fp16_weights(key, consts, reorder, head_size);
+        case QType::INT8:
+            return make_int8_weights(key, consts, reorder, head_size);
+        // case QType::INT4:
+        //     // Assuming make_int4_weights is implemented similarly
+        //     return make_int4_weights(key, consts, reorder, head_size);
+        default:
+            throw std::invalid_argument("Unsupported quantization type");
+    }
+}
+
+ov::Output<ov::Node> make_fc(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    QType qtype,
+    bool reorder = false,
+    int head_size = -1) {
+
+    auto w_f32 = make_weights_subgraph(key, consts, qtype, reorder, head_size);
+    return std::make_shared<ov::op::v0::MatMul>(
+        input, w_f32, false, true);
+}
+
+ov::Output<ov::Node> make_lm_head(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    const ov::Output<ov::Node>& embeddings_node,
+    QType qtype) {
+
+    ov::Output<ov::Node> w_f32;
+    if (consts.count(key + ".weight")) {
+        QType lm_qtype = qtype;
+        if (!consts.count(key + ".scales")) {
+            lm_qtype = QType::FP16;
+        }
+        w_f32 = make_weights_subgraph(key, consts, lm_qtype, false, -1);
+    } else {
+        w_f32 = embeddings_node;
+    }
+    return std::make_shared<ov::op::v0::MatMul>(
+        input, w_f32, false, true);
+}
+
+ov::Output<ov::Node> make_mvn(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    const std::map<std::string, float>& configs,
+    const std::string& name_suffix = "") {
+
+    float eps = configs.at("layer_norm_eps");
+    auto reduction_axes = std::make_shared<ov::op::v0::Constant>(
+            ov::element::i64, ov::Shape{1}, -1);
+    auto mvn = std::make_shared<ov::op::v6::MVN>(
+        input, reduction_axes, true, eps, ov::op::MVNEpsMode::INSIDE_SQRT);
+    mvn->set_friendly_name(key + ".mvn" + name_suffix);
+
+    std::shared_ptr<ov::Node> result = mvn;
+
+    if (consts.count(key + ".weight")) {
+        auto weights = std::make_shared<ov::op::v0::Constant>(
+            consts.at(key + ".weight"));
+        weights->set_friendly_name(key + ".weight" + name_suffix);
+        result = std::make_shared<ov::op::v1::Multiply>(
+            mvn, weights, AutoBroadcastType::NUMPY);
+    }
+
+    if (consts.count(key + ".bias")) {
+        auto bias = std::make_shared<ov::op::v0::Constant>(
+            consts.at(key + ".bias"));
+        bias->set_friendly_name(key + ".bias" + name_suffix);
+        result = std::make_shared<ov::op::v1::Add>(
+            mvn, bias, AutoBroadcastType::NUMPY);
+    }
+
+    return result;
+}
+
+ov::Output<ov::Node> make_rms_norm(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    float epsilon) {
+
+    auto eps_node = std::make_shared<ov::op::v0::Constant>(
+        ov::element::f32, ov::Shape{1,1,1}, epsilon);
+    auto square = std::make_shared<ov::op::v1::Power>(
+        input, 
+        std::make_shared<ov::op::v0::Constant>(
+            ov::element::f32, ov::Shape{1,1,1}, 2.0f));
+    
+    auto variance = std::make_shared<ov::op::v1::ReduceMean>(
+        square, 
+        std::make_shared<ov::op::v0::Constant>(
+            ov::element::i32, ov::Shape{1}, -1),
+        true);
+
+    auto add_eps = std::make_shared<ov::op::v1::Add>(variance, eps_node);
+    auto sqrt_node = std::make_shared<ov::op::v0::Sqrt>(add_eps);
+    auto reciprocal = std::make_shared<ov::op::v1::Divide>(
+        std::make_shared<ov::op::v0::Constant>(
+            ov::element::f32, ov::Shape{1,1,1}, 1.0f),
+        sqrt_node);
+
+    std::shared_ptr<ov::Node> mul = std::make_shared<ov::op::v1::Multiply>(
+        reciprocal, input, AutoBroadcastType::NUMPY);
+
+    if (consts.count(key + ".weight")) {
+        auto weight_tensor = consts.at(key + ".weight");
+        // Check if all elements are 1.0
+        bool all_ones = true;
+        if (weight_tensor.get_element_type() == ov::element::f32) {
+            const float* data = weight_tensor.data<float>();
+            for (size_t i = 0; i < weight_tensor.get_size(); ++i) {
+                if (data[i] != 1.0f) {
+                    all_ones = false;
+                    break;
+                }
+            }
+        } else if (weight_tensor.get_element_type() == ov::element::f16) {
+            const uint16_t* data = weight_tensor.data<uint16_t>();
+            for (size_t i = 0; i < weight_tensor.get_size(); ++i) {
+                if (from_half(data[i]) != 1.0f) { // TODO: convert 1.0f to half instead and compare
+                    all_ones = false;
+                    break;
+                }
+            }
+        } else {
+            throw std::runtime_error("Unsupported weight type");
+        }
+
+        if (!all_ones) {
+            weight_tensor.set_shape(ov::Shape{1, 1, weight_tensor.get_shape()[0]});
+            auto weights_const = std::make_shared<ov::op::v0::Constant>(
+                weight_tensor);
+            auto weights_f32 = std::make_shared<ov::op::v0::Convert>(
+                weights_const, ov::element::f32);
+            mul = std::make_shared<ov::op::v1::Multiply>(
+                mul, weights_f32, AutoBroadcastType::NUMPY);
+        }
+    }
+
+    return mul;
 }

@@ -84,7 +84,7 @@ if(ENABLE_GGUF)
     GIT_TAG af7d88d808a7608a33723fba067036202910acb3)
   FetchContent_MakeAvailable(gguflib)
   target_include_directories(${TARGET_NAME_OBJ}
-                             PRIVATE $<BUILD_INTERFACE:${gguflib_SOURCE_DIR}>)
+                             PRIVATE "${gguflib_SOURCE_DIR}")
   target_include_directories(${TARGET_NAME_OBJ}
                             PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils>")
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -103,7 +103,7 @@ target_include_directories(${TARGET_NAME_OBJ}
            "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
-target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
+target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}" "${gguflib_SOURCE_DIR}")
 
 target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json jinja2cpp)
 
