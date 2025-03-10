@@ -124,3 +124,112 @@ Output<ov::Node> causal_mask(
 
     return t217->output(0);
 }
+
+// Rotate half the hidden dimensions of the input tensor
+Output<ov::Node> rotate_half(const Output<ov::Node>& x, int64_t head_size, int64_t axis) {
+    auto axis_const = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, axis);
+    auto half_head = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, head_size / 2);
+    auto max_int = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 9223372036854775807);
+    auto step = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1);
+
+    // Slice second half
+    auto second_half = std::make_shared<ov::opset13::Slice>(x, half_head, max_int, step, axis_const);
+    
+    // Multiply by -1
+    auto neg_one = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{}, -1.0f);
+    auto rotated_half = std::make_shared<v1::Multiply>(second_half, neg_one);
+    
+    // Slice first half
+    auto first_half = std::make_shared<ov::opset13::Slice>(x, 
+        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 0),
+        half_head,
+        step,
+        axis_const);
+    
+    // Concatenate rotated half and first half
+    return std::make_shared<v0::Concat>(ov::OutputVector{rotated_half, first_half}, axis);
+}
+
+// Apply Rotary Position Embedding to query and key tensors
+std::tuple<Output<ov::Node>, Output<ov::Node>, std::pair<Output<ov::Node>, Output<ov::Node>>> 
+apply_rotary_pos_emb(
+    const Output<ov::Node>& q, 
+    const Output<ov::Node>& k,
+    const Output<ov::Node>& cos,
+    const Output<ov::Node>& sin,
+    int64_t head_size,
+    int64_t hidden_dim,
+    const std::pair<Output<ov::Node>, Output<ov::Node>>& cos_sin_cached,
+    int64_t unsqueeze_dim) {
+    
+    // Handle unsqueeze or cached values
+    Output<ov::Node> cos_unsqueezed, sin_unsqueezed;
+    if (cos_sin_cached.first.get_node() == nullptr) {
+        auto unsqueeze_axes = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, unsqueeze_dim);
+        cos_unsqueezed = std::make_shared<v0::Unsqueeze>(cos, unsqueeze_axes);
+        sin_unsqueezed = std::make_shared<v0::Unsqueeze>(sin, unsqueeze_axes);
+    } else {
+        cos_unsqueezed = cos_sin_cached.first;
+        sin_unsqueezed = cos_sin_cached.second;
+    }
+
+    // Apply rotation
+    auto q_rot = std::make_shared<v1::Add>(
+        std::make_shared<v1::Multiply>(q, cos_unsqueezed),
+        std::make_shared<v1::Multiply>(rotate_half(q, head_size, hidden_dim), sin_unsqueezed)
+    );
+
+    auto k_rot = std::make_shared<v1::Add>(
+        std::make_shared<v1::Multiply>(k, cos_unsqueezed),
+        std::make_shared<v1::Multiply>(rotate_half(k, head_size, hidden_dim), sin_unsqueezed)
+    );
+
+    return {q_rot, k_rot, {cos_unsqueezed, sin_unsqueezed}};
+}
+
+// Generate Rotary Position Embedding components
+std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
+    const Output<ov::Node>& x,
+    const Output<ov::Node>& rope_const,
+    const Output<ov::Node>& position_ids,
+    const Output<ov::Node>& batch_dim) {
+    
+    // Process position IDs
+    auto position_expanded = std::make_shared<v0::Convert>(
+        std::make_shared<v0::Unsqueeze>(position_ids, 
+            std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1)),
+        element::f32
+    );
+
+    // Broadcast rope constants
+    auto target_shape = std::make_shared<v0::Concat>(OutputVector{
+        batch_dim,
+        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1),
+        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1)
+    }, 0);
+
+    auto inv_freq_expanded = std::make_shared<v3::Broadcast>(
+        rope_const, target_shape, BroadcastType::BIDIRECTIONAL
+    );
+
+    // Compute frequencies
+    auto freqs = std::make_shared<v0::MatMul>(
+        inv_freq_expanded, position_expanded,
+        false, false
+    );
+
+    auto freqs_transposed = std::make_shared<v1::Transpose>(
+        freqs, 
+        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{3}, std::vector<int32_t>{0, 2, 1})
+    );
+
+    // Concatenate and compute trigonometric values
+    auto emb = std::make_shared<ov::opset13::Concat>(
+        ov::NodeVector{freqs_transposed, freqs_transposed}, -1
+    );
+
+    return {
+        std::make_shared<ov::opset13::Cos>(emb),
+        std::make_shared<ov::opset13::Sin>(emb)
+    };
+}
