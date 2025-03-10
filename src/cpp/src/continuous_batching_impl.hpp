@@ -115,7 +115,7 @@ public:
                            const ov::genai::GenerationConfig& generation_config,
                            bool is_validation_mode_enabled = false);
     
-    virtual ~ContinuousBatchingImpl();
+    ~ContinuousBatchingImpl() override;
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
