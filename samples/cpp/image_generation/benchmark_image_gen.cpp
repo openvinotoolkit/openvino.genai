@@ -114,7 +114,15 @@ void text2image(cxxopts::ParseResult& result) {
     size_t num_iter = result["num_iter"].as<size_t>();
     const std::string output_dir = result["output_dir"].as<std::string>();
 
-    ov::genai::Text2ImagePipeline pipe(models_path, device);
+    ov::genai::Text2ImagePipeline pipe(models_path);
+    if (result["reshape"].as<bool>()) {
+        pipe.reshape(result["num_images_per_prompt"].as<size_t>(),
+                     result["height"].as<size_t>(),
+                     result["width"].as<size_t>(),
+                     pipe.get_generation_config().guidance_scale);
+    }
+    pipe.compile(device);
+
     ov::genai::ImageGenerationConfig config = pipe.get_generation_config();
     config.width = result["width"].as<size_t>();
     config.height = result["height"].as<size_t>();
@@ -156,7 +164,13 @@ void image2image(cxxopts::ParseResult& result) {
 
     ov::Tensor image_input = utils::load_image(image_path);
 
-    ov::genai::Image2ImagePipeline pipe(models_path, device);
+    ov::genai::Image2ImagePipeline pipe(models_path);
+    if (result["reshape"].as<bool>()) {
+        auto height = image_input.get_shape()[1];
+        auto width = image_input.get_shape()[2];
+        pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale);
+    }
+    pipe.compile(device);
 
     std::vector<ov::genai::ImageGenerationPerfMetrics> warmup_metrics;
     std::cout << std::fixed << std::setprecision(2);
@@ -193,7 +207,13 @@ void inpainting(cxxopts::ParseResult& result) {
     ov::Tensor image_input = utils::load_image(image_path);
     ov::Tensor mask_image = utils::load_image(mask_image_path);
 
-    ov::genai::InpaintingPipeline pipe(models_path, device);
+    ov::genai::InpaintingPipeline pipe(models_path);
+    if (result["reshape"].as<bool>()) {
+        auto height = image_input.get_shape()[1];
+        auto width = image_input.get_shape()[2];
+        pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale);
+    }
+    pipe.compile(device);
 
     std::cout << std::fixed << std::setprecision(2);
     std::vector<ov::genai::ImageGenerationPerfMetrics> warmup_metrics;
@@ -239,6 +259,7 @@ int main(int argc, char* argv[]) try {
     ("s,strength", "Indicates extent to transform the reference `image`. Must be between 0 and 1", cxxopts::value<float>()->default_value(std::to_string(0.8)))
     //special parameters of inpainting pipeline
     ("mi,mask_image", "Mask image path", cxxopts::value<std::string>())
+    ("r,reshape", "Reshape pipeline before compilation", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
