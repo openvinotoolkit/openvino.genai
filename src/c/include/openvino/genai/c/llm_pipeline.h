@@ -52,7 +52,7 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_decoded_results_perf_metrics_free(ov_gena
  * @param output A pointer to the pre-allocated output string buffer.
  * @param output_size The maximum size of the output buffer. If output_size is too small, output will contain a
  * truncated string.
- * @param needed_size If not NULL, it is set to the minimum buffer size required, including the size of null
+ * @param required_size If not NULL, it is set to the minimum buffer size required, including the size of null
  * terminator.
  * @return ov_status_e A status code, return OK(0) if successful. Returns OUT_OF_BOUNDS if output_size is insufficient
  * to store the result.
@@ -60,7 +60,7 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_decoded_results_perf_metrics_free(ov_gena
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* results,
                                                                          char* output,
                                                                          size_t output_size,
-                                                                         size_t* needed_size);
+                                                                         size_t* required_size);
 
 /**
  * @struct ov_genai_llm_pipeline
@@ -107,7 +107,8 @@ typedef ov_genai_streamming_status_e(OPENVINO_C_API_CALLBACK* stream_callback)(c
  * @param config A pointer to the ov_genai_generation_config, This is optional, the pointer can be NULL.
  * @param streamer A pointer to the stream callback. Either this or output must be non-NULL.
  * @param output A pointer to the pre-allocated output string buffer. Either this or streamer must be non-NULL.
- * @param output_max_size The maximum size of the output buffer. If output_size is too small, output will contain a truncated string.
+ * @param output_max_size The maximum size of the output buffer. If output_size is too small, output will contain a
+ * truncated string.
  * @return ov_status_e A status code, return OK(0) if successful. Returns OUT_OF_BOUNDS if output_size is insufficient
  * to store the result.
  */

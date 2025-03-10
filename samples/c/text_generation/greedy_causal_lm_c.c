@@ -5,6 +5,10 @@
 
 #include "openvino/genai/c/llm_pipeline.h"
 
+#define DEFAULT_OUTPUT_SIZE \
+    16  // Allocate a small size for output by default (though it may not always be that small), used for testing
+        // purposes to allow realloc logic to execute.
+
 #define CHECK_STATUS(return_status)                                                      \
     if (return_status != OK) {                                                           \
         fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
@@ -22,10 +26,9 @@ int main(int argc, char* argv[]) {
     ov_genai_llm_pipeline* pipeline = NULL;
     ov_genai_generation_config* config = NULL;
     ov_genai_decoded_results* results = NULL;
-    const char* device = "CPU";        // GPU, NPU can be used as well
-    char* output = (char*)malloc(16);  // Firstly, malloc a small size (though it may not necessarily be that small),
-                                       // used only for testing to allow realloc logic to run.
-    size_t required_size = 0;          // Used to store the required size of the output buffer.
+    const char* device = "CPU";  // GPU, NPU can be used as well
+    char* output = (char*)malloc(DEFAULT_OUTPUT_SIZE);
+    size_t required_size = 0;  // Used to store the required size of the output buffer.
 
     if (!output) {
         fprintf(stderr, "[Error] Memory allocation failed (malloc 5 bytes).\n");

@@ -47,8 +47,8 @@ void ov_genai_decoded_results_perf_metrics_free(ov_genai_perf_metrics* metrics) 
 ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* results,
                                                 char* output,
                                                 size_t output_size,
-                                                size_t* needed_size) {
-    if (!results || !(results->object) || !(output && output_size || needed_size)) {
+                                                size_t* required_size) {
+    if (!results || !(results->object) || !(output && output_size || required_size)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
@@ -60,8 +60,8 @@ ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* 
                 return ov_status_e::OUT_OF_BOUNDS;
             }
         }
-        if (needed_size) {
-            *needed_size = str.length() + 1;
+        if (required_size) {
+            *required_size = str.length() + 1;
         }
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
