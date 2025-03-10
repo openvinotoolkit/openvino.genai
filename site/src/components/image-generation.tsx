@@ -40,7 +40,7 @@ export const ImageGeneration = () => {
         </LanguageTabs>
         <hr />
         <ExploreCodeSamples link={'docs/category/samples'} />
-        <GoToDocumentation link={'docs/how-to-guides/image-generation'} />
+        <GoToDocumentation link={'docs/use-cases/Image-Generation/'} />
       </Section.Column>
     </Section.Container>
   );
