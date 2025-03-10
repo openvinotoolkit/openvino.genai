@@ -49,6 +49,7 @@ protected:
 
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
+    std::vector<ov::Tensor> m_history_images;
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms
@@ -59,6 +60,7 @@ protected:
     std::mutex m_inputs_embedder_mutex;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
+    std::string add_image_tags_to_prompt(const std::string& prompt, const std::vector<ov::Tensor>& rgbs);
 public:
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);

@@ -25,9 +25,6 @@ Tokenizer ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_tokenizer
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::start_chat(const std::string& system_message) {
-    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        OPENVINO_THROW("Chat mode is not supported.");
-    }
     if (!system_message.empty()) {
         m_history.push_back({{"role", "system"}, {"content", system_message}});
     }
@@ -133,6 +130,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return decoded;
 }
 
+std::string ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_image_tags_to_prompt(const std::string& prompt, const std::vector<ov::Tensor>& rgbs) {
+    std::stringstream prompt_with_image_tags;
+    for (size_t i = 0; i < rgbs.size(); i++) {
+        prompt_with_image_tags << "<ov_genai_image_" << i + m_history_images.size() << ">\n";
+    }
+    prompt_with_image_tags << prompt;
+    return prompt_with_image_tags.str();
+}
+
+
 std::vector<GenerationResult>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
@@ -142,19 +149,39 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     // TODO: Add performance metrics
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
-    OPENVINO_ASSERT(!m_is_chat_conversation, "Chat mode is not supported.");
 
     OPENVINO_ASSERT(prompts.size() == sampling_params.size(), "Number of prompts should be equal to the number of generation configs.");
     OPENVINO_ASSERT(prompts.size() == rgbs_vector.size(), "Number of prompts should be equal to the number of images vectors.");
 
     std::vector<ov::Tensor> input_embeds_list;
-    for (size_t i = 0; i < prompts.size(); i++) {
-        auto prompt = prompts[i];
-        auto rgbs = rgbs_vector[i];
+
+    if (m_is_chat_conversation) {
+        OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
+        const auto& rgbs = rgbs_vector[0];
+        const auto prompt_with_tags = add_image_tags_to_prompt(prompts[0], rgbs_vector[0]);
+        m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
+        m_history_images.insert(m_history_images.end(), rgbs.begin(), rgbs.end());
+        std::string history = m_tokenizer.apply_chat_template(m_history, true);
 
         VLMPerfMetrics perf_metrics;
-        input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics));
+        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(history, m_history_images, perf_metrics));
+    } else {
+        for (size_t i = 0; i < prompts.size(); i++) {
+            auto prompt = prompts[i];
+            auto rgbs = rgbs_vector[i];
+
+            VLMPerfMetrics perf_metrics;
+            if (sampling_params.at(i).apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+                prompt = add_image_tags_to_prompt(prompts[i], rgbs_vector[i]);
+                ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+                auto templated_prompt = m_tokenizer.apply_chat_template(history, true);
+                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(templated_prompt, rgbs, perf_metrics));
+            } else {
+                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics));
+            }
+        }
     }
+
     std::vector<GenerationResult> results;
     auto encoded_results = generate(input_embeds_list, sampling_params, streamer);
     for (const auto& result: encoded_results) {
