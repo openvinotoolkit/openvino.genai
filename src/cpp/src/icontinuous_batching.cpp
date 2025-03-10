@@ -3,6 +3,17 @@
 
 #include "icontinuous_batching.hpp"
 
+namespace {
+    std::string add_image_tags_to_prompt(const std::string& prompt, const std::vector<ov::Tensor>& rgbs, size_t history_images_size) {
+        std::stringstream prompt_with_image_tags;
+        for (size_t i = 0; i < rgbs.size(); i++) {
+            prompt_with_image_tags << "<ov_genai_image_" << i + history_images_size << ">\n";
+        }
+        prompt_with_image_tags << prompt;
+        return prompt_with_image_tags.str();
+    }
+}
+
 namespace ov::genai {
 
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -130,16 +141,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return decoded;
 }
 
-std::string ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_image_tags_to_prompt(const std::string& prompt, const std::vector<ov::Tensor>& rgbs) {
-    std::stringstream prompt_with_image_tags;
-    for (size_t i = 0; i < rgbs.size(); i++) {
-        prompt_with_image_tags << "<ov_genai_image_" << i + m_history_images.size() << ">\n";
-    }
-    prompt_with_image_tags << prompt;
-    return prompt_with_image_tags.str();
-}
-
-
 std::vector<GenerationResult>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
@@ -158,7 +159,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
         const auto& rgbs = rgbs_vector[0];
-        const auto prompt_with_tags = add_image_tags_to_prompt(prompts[0], rgbs_vector[0]);
+        const auto prompt_with_tags = add_image_tags_to_prompt(prompts[0], rgbs_vector[0], m_history_images.size());
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
         // TODO: save embeddings, instead of image tensors and compare performance
         m_history_images.insert(m_history_images.end(), rgbs.begin(), rgbs.end());
