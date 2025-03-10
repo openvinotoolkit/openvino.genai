@@ -456,7 +456,7 @@ jobs:
       - name: Test Samples (Python and C++)
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+          python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
