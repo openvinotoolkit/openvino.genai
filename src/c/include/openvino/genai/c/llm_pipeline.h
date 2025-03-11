@@ -101,7 +101,7 @@ typedef enum {
 typedef ov_genai_streamming_status_e(OPENVINO_C_API_CALLBACK* stream_callback)(const char*);
 
 /**
- * @brief Generate text by ov_genai_llm_pipeline and return ov_genai_decoded_results.
+ * @brief Generate results by ov_genai_llm_pipeline
  * @param pipe A pointer to the ov_genai_llm_pipeline instance.
  * @param inputs A pointer to the input string.
  * @param config A pointer to the ov_genai_generation_config, the pointer can be NULL.
