@@ -159,7 +159,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
         const auto& rgbs = rgbs_vector[0];
-        const auto prompt_with_tags = add_image_tags_to_prompt(prompts[0], rgbs_vector[0], m_history_images.size());
+        auto prompt_with_tags = prompts[0];
+        if (!m_inputs_embedder->prompt_has_image_tag(prompt_with_tags)) {
+            prompt_with_tags = add_image_tags_to_prompt(prompts[0], rgbs_vector[0], m_history_images.size());
+        }
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
         // TODO: save embeddings, instead of image tensors and compare performance
         m_history_images.insert(m_history_images.end(), rgbs.begin(), rgbs.end());
