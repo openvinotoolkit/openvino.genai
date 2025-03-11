@@ -40,7 +40,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-2-cores-8gb
+    runs-on: aks-linux-medium
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -84,7 +84,7 @@ jobs:
     runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
-      volumes: 
+      volumes:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
       options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
@@ -399,8 +399,8 @@ jobs:
             marker: 'vlm'
             cmd: 'tests/python_tests/samples'
             runner: 'aks-linux-8-cores-64gb'
-            
-    needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples ] 
+
+    needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples ]
     timeout-minutes: 60
     defaults:
       run:
@@ -416,7 +416,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-        
+
     steps:
       - name: Clone openvino.genai
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -443,7 +443,7 @@ jobs:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
-        
+
       - name: Test Samples (Python and C++)
         run: python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
