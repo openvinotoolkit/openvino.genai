@@ -45,26 +45,23 @@ void ov_genai_decoded_results_perf_metrics_free(ov_genai_perf_metrics* metrics) 
     }
 }
 ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* results,
-                                                char** output,
+                                                char* output,
                                                 size_t* output_size) {
-    if (!results || !(results->object) || !(output && output_size)) {
+    if (!results || !(results->object) || !(output_size)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
         std::string str = *(results->object);
-        if (*output) {
-            delete[] *output;  // Free the previous memory if exits
+        if (!output) {
+            *output_size = str.length() + 1;
+        } else {
+            if (*output_size < str.length() + 1) {
+                return ov_status_e::OUT_OF_BOUNDS;
+            }
+            strncpy(output, str.c_str(), str.length() + 1);
+            output[str.length()] = '\0';
+            *output_size = str.length() + 1;
         }
-        try {
-            *output = new char[str.length() + 1];
-        } catch (const std::bad_alloc& e) {
-            *output = nullptr;  // Ensure that output is NULL if allocation fails
-            return ov_status_e::NOT_ALLOCATED;
-        }
-        strncpy(*output, str.c_str(), str.length() + 1);
-        (*output)[str.length()] = '\0';
-        *output_size = str.length() + 1;
-
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -94,50 +91,8 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                            const char* inputs,
                                            const ov_genai_generation_config* config,
                                            const stream_callback* streamer,
-                                           char** output,
-                                           size_t* output_size) {
-    if (!pipe || !(pipe->object) || !inputs || !(streamer || (output && output_size))) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
-    try {
-        std::string input_str(inputs);
-        ov::genai::StringInputs input = {input_str};
-        std::string results;
-        if (streamer) {
-            auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
-                return static_cast<ov::genai::StreamingStatus>((*streamer)(word.c_str()));
-            };
-            results = (config && config->object) ? pipe->object->generate(input, *(config->object), callback)
-                                                 : pipe->object->generate(input, {}, callback);
-        } else {
-            results = (config && config->object) ? pipe->object->generate(input, *(config->object))
-                                                 : pipe->object->generate(input);
-        }
-        if (output) {
-            if (*output) {
-                delete[] *output;  // Free the previous memory if exits
-            }
-            try {
-                *output = new char[results.length() + 1];
-            } catch (const std::bad_alloc& e) {
-                *output = nullptr;  // Ensure that output is NULL if allocation fails
-                return ov_status_e::NOT_ALLOCATED;
-            }
-            strncpy(*output, results.c_str(), results.length() + 1);
-            (*output)[results.length()] = '\0';
-            *output_size = results.length() + 1;
-        }
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
-}
-ov_status_e ov_genai_llm_pipeline_generate_decoded_results(ov_genai_llm_pipeline* pipe,
-                                                           const char* inputs,
-                                                           const ov_genai_generation_config* config,
-                                                           const stream_callback* streamer,
-                                                           ov_genai_decoded_results** results) {
-    if (!pipe || !(pipe->object) || !inputs || !results) {
+                                           ov_genai_decoded_results** results) {
+    if (!pipe || !(pipe->object) || !inputs || !(streamer || results)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
@@ -156,7 +111,9 @@ ov_status_e ov_genai_llm_pipeline_generate_decoded_results(ov_genai_llm_pipeline
             *(_results->object) = (config && config->object) ? pipe->object->generate(input, *(config->object))
                                                              : pipe->object->generate(input);
         }
-        *results = _results.release();
+        if (results) {
+            *results = _results.release();
+        }
 
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;

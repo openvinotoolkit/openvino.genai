@@ -23,13 +23,25 @@ int main(int argc, char* argv[]) {
     ov_genai_generation_config* config = NULL;
     ov_genai_decoded_results* results = NULL;
     const char* device = "CPU";  // GPU, NPU can be used as well
-    char* output = NULL;     // The output of the generation function. The caller is responsible for freeing the memory.
+    char* output = NULL;  // The output of the generation function. The caller is responsible for allocating and freeing
+                          // the memory.
     size_t output_size = 0;  // Used to store the required size of the output buffer.
 
     CHECK_STATUS(ov_genai_llm_pipeline_create(model_dir, device, &pipeline));
     CHECK_STATUS(ov_genai_generation_config_create(&config));
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, 100));
-    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipeline, prompt, config, NULL, &output, &output_size));
+    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipeline, prompt, config, NULL, &results));
+
+    // The function is called with NULL as the output to determine the required buffer size.
+    CHECK_STATUS(ov_genai_decoded_results_get_string(results, NULL, &output_size));
+    output = (char*)malloc(output_size);  // Allocate memory for the output string based on the determined size.
+    if (!output) {
+        fprintf(stderr, "Failed to allocate memory for output\n");
+        goto err;
+    }
+
+    // Retrieve the actual output string from the results into the allocated buffer.
+    CHECK_STATUS(ov_genai_decoded_results_get_string(results, output, &output_size));
     printf("%s\n", output);
 
 err:

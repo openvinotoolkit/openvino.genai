@@ -49,16 +49,16 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_decoded_results_perf_metrics_free(ov_gena
 /**
  * @brief Get string result from ov_genai_decoded_results.
  * @param results A pointer to the ov_genai_decoded_results instance.
- * @param output A Pointer to a char* that will receive the address of the output string.
- *               - If *output is nullptr, the function will allocate new memory.
- *               - If *output is not nullptr, the function will free the existing memory and allocate new memory.
- *              - The caller is responsible for freeing the memory allocated by this function.
- * @param output_size A Pointer to the size of the currently allocated memory for output.
- * @return ov_status_e A status code, return OK(0) if successful. Returns OUT_OF_BOUNDS if output_size is insufficient
- * to store the result.
+ * @param output A Pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
+ * *output_size will provide the needed buffer size. The user should then allocate the required buffer size and call
+ * this function again to obtain the entire output.
+ * @param output_size A Pointer to the size of the output string from the results, including the null terminator. If
+ * output is not NULL, *output_size should be greater than or equal to the result string size; otherwise, the function
+ * will return OUT_OF_BOUNDS(-6).
+ * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* results,
-                                                                         char** output,
+                                                                         char* output,
                                                                          size_t* output_size);
 
 /**
@@ -99,42 +99,23 @@ typedef enum {
  * @brief Callback function for streaming output.
  */
 typedef ov_genai_streamming_status_e(OPENVINO_C_API_CALLBACK* stream_callback)(const char*);
-/**
- * @brief Generate text by ov_genai_llm_pipeline.
- * @param pipe A pointer to the ov_genai_llm_pipeline instance.
- * @param inputs A pointer to the input string.
- * @param config A pointer to the ov_genai_generation_config, This is optional, the pointer can be NULL.
- * @param streamer A pointer to the stream callback. Either this or output must be non-NULL.
- * @param output A Pointer to a char* that will receive the address of the output string. Either this or streamer must
- * be non-NULL.
- *               - If *output is nullptr, the function will allocate new memory.
- *              - If *output is not nullptr, the function will free the existing memory and allocate new memory.
- *              - The caller is responsible for freeing the memory allocated by this function.
- * @param output_size A Pointer to the size of the currently allocated memory for output.
- * @return ov_status_e A status code, return OK(0) if successful. Returns OUT_OF_BOUNDS if output_size is insufficient
- * to store the result.
- */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
-                                                                    const char* inputs,
-                                                                    const ov_genai_generation_config* config,
-                                                                    const stream_callback* streamer,
-                                                                    char** output,
-                                                                    size_t* output_size);
+
 /**
  * @brief Generate text by ov_genai_llm_pipeline and return ov_genai_decoded_results.
  * @param pipe A pointer to the ov_genai_llm_pipeline instance.
  * @param inputs A pointer to the input string.
  * @param config A pointer to the ov_genai_generation_config, the pointer can be NULL.
- * @param streamer A pointer to the stream callback. This is optional; set to NULL if no callback is needed.
- * @param ov_genai_decoded_results A pointer to the ov_genai_decoded_results.
+ * @param streamer A pointer to the stream callback. Set to NULL if no callback is needed. Either this or results must
+ * be non-NULL.
+ * @param results A pointer to the ov_genai_decoded_results, which retrieves the results of the generation. Either this
+ * or streamer must be non-NULL.
  * @return Status code of the operation: OK(0) for success.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_llm_pipeline_generate_decoded_results(ov_genai_llm_pipeline* pipe,
-                                               const char* inputs,
-                                               const ov_genai_generation_config* config,
-                                               const stream_callback* streamer,
-                                               ov_genai_decoded_results** results);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
+                                                                    const char* inputs,
+                                                                    const ov_genai_generation_config* config,
+                                                                    const stream_callback* streamer,
+                                                                    ov_genai_decoded_results** results);
 /**
  * @brief Start chat with keeping history in kv cache.
  * @param pipe A pointer to the ov_genai_llm_pipeline instance.

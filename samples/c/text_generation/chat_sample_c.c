@@ -48,13 +48,11 @@ int main(int argc, char* argv[]) {
     printf("question:\n");
     while (fgets(prompt, MAX_PROMPT_LENGTH, stdin)) {
         prompt[strcspn(prompt, "\n")] = 0;
-        CHECK_STATUS(ov_genai_llm_pipeline_generate(
-            pipeline,
-            prompt,
-            config,
-            &streamer,
-            NULL,
-            0));  // Only the streamer functionality is used here, so output is allowed to be NULL.
+        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipeline,
+                                                    prompt,
+                                                    config,
+                                                    &streamer,
+                                                    NULL));  // Only the streamer functionality is used here.
         printf("\n----------\nquestion:\n");
     }
     CHECK_STATUS(ov_genai_llm_pipeline_finish_chat(pipeline));

@@ -124,8 +124,6 @@ int main(int argc, char* argv[]) {
     ov_genai_decoded_results* results = NULL;
     ov_genai_perf_metrics* metrics = NULL;
     ov_genai_perf_metrics* cumulative_metrics = NULL;
-    char* output = NULL;     // The output of the generation function. The caller is responsible for freeing the memory.
-    size_t output_size = 0;  // Used to store the required size of the output buffer.
 
     CHECK_STATUS(ov_genai_llm_pipeline_create(options.model, options.device, &pipe));
 
@@ -133,10 +131,14 @@ int main(int argc, char* argv[]) {
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, options.max_new_tokens));
 
     for (size_t i = 0; i < options.num_warmup; i++) {
-        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, &output, &output_size));
+        if (results) {
+            ov_genai_decoded_results_free(results);
+            results = NULL;  // The end of main() would try to free it again if not NULL.
+        }
+        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, &results));
     }
 
-    CHECK_STATUS(ov_genai_llm_pipeline_generate_decoded_results(pipe, options.prompt, config, NULL, &results));
+    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, &results));
     CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &cumulative_metrics));
 
     if (results) {
@@ -144,7 +146,7 @@ int main(int argc, char* argv[]) {
         results = NULL;  // The end of main() would try to free it again if not NULL.
     }
     for (size_t i = 0; i < options.num_iter - 1; i++) {
-        CHECK_STATUS(ov_genai_llm_pipeline_generate_decoded_results(pipe, options.prompt, config, NULL, &results));
+        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, &results));
         CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));
         CHECK_STATUS(ov_genai_perf_metrics_add_in_place(cumulative_metrics, metrics));  // metrics += _metrics
         if (metrics) {
@@ -185,8 +187,5 @@ err:
         ov_genai_decoded_results_perf_metrics_free(cumulative_metrics);
     if (results)
         ov_genai_decoded_results_free(results);
-    if (output)
-        free(output);
-
     return EXIT_SUCCESS;
 }
