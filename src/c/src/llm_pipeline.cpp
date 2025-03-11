@@ -45,24 +45,26 @@ void ov_genai_decoded_results_perf_metrics_free(ov_genai_perf_metrics* metrics) 
     }
 }
 ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* results,
-                                                char* output,
-                                                size_t output_size,
-                                                size_t* required_size) {
-    if (!results || !(results->object) || !(output && output_size || required_size)) {
+                                                char** output,
+                                                size_t* output_size) {
+    if (!results || !(results->object) || !(output && output_size)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
         std::string str = *(results->object);
-        if (output) {
-            strncpy(output, str.c_str(), output_size - 1);
-            output[output_size - 1] = '\0';
-            if (str.length() + 1 > output_size) {
-                return ov_status_e::OUT_OF_BOUNDS;
-            }
+        if (*output) {
+            delete[] *output;  // Free the previous memory if exits
         }
-        if (required_size) {
-            *required_size = str.length() + 1;
+        try {
+            *output = new char[str.length() + 1];
+        } catch (const std::bad_alloc& e) {
+            *output = nullptr;  // Ensure that output is NULL if allocation fails
+            return ov_status_e::NOT_ALLOCATED;
         }
+        strncpy(*output, str.c_str(), str.length() + 1);
+        (*output)[str.length()] = '\0';
+        *output_size = str.length() + 1;
+
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -92,9 +94,9 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                            const char* inputs,
                                            const ov_genai_generation_config* config,
                                            const stream_callback* streamer,
-                                           char* output,
-                                           size_t output_max_size) {
-    if (!pipe || !(pipe->object) || !inputs || !(streamer || output && output_max_size)) {
+                                           char** output,
+                                           size_t* output_size) {
+    if (!pipe || !(pipe->object) || !inputs || !(streamer || (output && output_size))) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
@@ -112,11 +114,18 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                                  : pipe->object->generate(input);
         }
         if (output) {
-            strncpy(output, results.c_str(), output_max_size - 1);
-            output[output_max_size - 1] = '\0';
-            if (results.length() + 1 > output_max_size) {
-                return ov_status_e::OUT_OF_BOUNDS;
+            if (*output) {
+                delete[] *output;  // Free the previous memory if exits
             }
+            try {
+                *output = new char[results.length() + 1];
+            } catch (const std::bad_alloc& e) {
+                *output = nullptr;  // Ensure that output is NULL if allocation fails
+                return ov_status_e::NOT_ALLOCATED;
+            }
+            strncpy(*output, results.c_str(), results.length() + 1);
+            (*output)[results.length()] = '\0';
+            *output_size = results.length() + 1;
         }
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;

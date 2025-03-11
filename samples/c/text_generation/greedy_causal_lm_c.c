@@ -5,10 +5,6 @@
 
 #include "openvino/genai/c/llm_pipeline.h"
 
-#define DEFAULT_OUTPUT_SIZE \
-    16  // Allocate a small size for output by default (though it may not always be that small), used for testing
-        // purposes to allow realloc logic to execute.
-
 #define CHECK_STATUS(return_status)                                                      \
     if (return_status != OK) {                                                           \
         fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
@@ -27,30 +23,13 @@ int main(int argc, char* argv[]) {
     ov_genai_generation_config* config = NULL;
     ov_genai_decoded_results* results = NULL;
     const char* device = "CPU";  // GPU, NPU can be used as well
-    char* output = (char*)malloc(DEFAULT_OUTPUT_SIZE);
-    size_t required_size = 0;  // Used to store the required size of the output buffer.
+    char* output = NULL;     // The output of the generation function. The caller is responsible for freeing the memory.
+    size_t output_size = 0;  // Used to store the required size of the output buffer.
 
-    if (!output) {
-        fprintf(stderr, "[Error] Memory allocation failed (malloc 5 bytes).\n");
-        goto err;
-    }
     CHECK_STATUS(ov_genai_llm_pipeline_create(model_dir, device, &pipeline));
     CHECK_STATUS(ov_genai_generation_config_create(&config));
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, 100));
-    CHECK_STATUS(ov_genai_llm_pipeline_generate_decoded_results(pipeline, prompt, config, NULL, &results));
-    CHECK_STATUS(ov_genai_decoded_results_get_string(results,
-                                                     NULL,
-                                                     0,
-                                                     &required_size));  // get the required size of the output buffer.
-    if (required_size > sizeof(output)) {
-        char* temp = (char*)realloc(output, required_size);
-        if (!temp) {
-            fprintf(stderr, "[Error] Memory allocation failed (malloc %zu bytes).\n", required_size);
-            goto err;
-        }
-        output = temp;
-    }
-    CHECK_STATUS(ov_genai_decoded_results_get_string(results, output, required_size, NULL));
+    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipeline, prompt, config, NULL, &output, &output_size));
     printf("%s\n", output);
 
 err:
