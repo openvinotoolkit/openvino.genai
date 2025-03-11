@@ -74,7 +74,7 @@ tokenizer = AutoTokenizer.from_pretrained(llm_model_path, trust_remote_code=True
 
 llm_pipe = openvino_genai.LLMPipeline(args.model_dir, device)
 llm_config = openvino_genai.GenerationConfig()
-llm_config.max_new_tokens = 100
+llm_config.max_new_tokens = 256
 
 llm_pipe.start_chat()
 
