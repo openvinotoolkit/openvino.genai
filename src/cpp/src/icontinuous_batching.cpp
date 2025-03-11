@@ -157,7 +157,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::vector<ov::Tensor>>& rgbs_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer)  {
-    // TODO: Add performance metrics
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
 
@@ -187,23 +186,34 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             const auto& prompt = prompts[i];
             const auto& rgbs = rgbs_vector[i];
 
+            auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
             input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(prompt, rgbs, vlm_perf_metrics[i]));
+            auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+            vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
     }
     std::vector<VLMDecodedResults> results;
     auto encoded_results = generate(input_embeds_list, sampling_params, streamer);
     for (size_t i = 0; i < prompts.size(); i++) {
         auto result = encoded_results[i];
         VLMDecodedResults gen_result;
-        gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
-        gen_result.perf_metrics.tokenization_duration = vlm_perf_metrics[i].tokenization_duration;
-        gen_result.perf_metrics.detokenization_duration = vlm_perf_metrics[i].detokenization_duration;
+        gen_result.perf_metrics = result.perf_metrics;
 
+        gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
+        gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
+        gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[i].raw_metrics.detokenization_durations;
+        
+        auto decode_start_time = std::chrono::steady_clock::now();
         for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
             gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
             gen_result.scores.push_back(result.m_scores.at(idx));
-            gen_result.perf_metrics = result.perf_metrics;
         }
+        auto decode_end_time = std::chrono::steady_clock::now();
+        gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+        
+        gen_result.perf_metrics.m_evaluated = false;
+        gen_result.perf_metrics.evaluate_statistics();
+
         results.emplace_back(gen_result);
     }
     if (m_is_chat_conversation) {
