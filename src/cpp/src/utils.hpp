@@ -6,7 +6,6 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
-#include <regex>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"

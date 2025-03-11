@@ -16,6 +16,7 @@
 #include "visual_language/internvl_chat/classes.hpp"
 
 #include "utils.hpp"
+#include <regex>
 
 namespace {
 
