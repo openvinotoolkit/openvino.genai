@@ -75,13 +75,35 @@ if(TARGET openvino_tokenizers)
     add_dependencies(${TARGET_NAME_OBJ} openvino_tokenizers)
 endif()
 
+if(ENABLE_GGUF)
+  message(STATUS "Downloading gguflib")
+  FetchContent_Declare(
+    gguflib
+    GIT_REPOSITORY https://github.com/antirez/gguf-tools/
+    GIT_TAG af7d88d808a7608a33723fba067036202910acb3)
+  FetchContent_MakeAvailable(gguflib)
+  target_include_directories(${TARGET_NAME_OBJ}
+                             PRIVATE "${gguflib_SOURCE_DIR}")
+  target_include_directories(${TARGET_NAME_OBJ}
+                            PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils>")
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  add_library(gguflib STATIC ${gguflib_SOURCE_DIR}/fp16.c
+                             ${gguflib_SOURCE_DIR}/gguflib.c)
+  #target_compile_features(gguflib PRIVATE fPIC)
+  target_link_libraries(${TARGET_NAME_OBJ} PRIVATE $<BUILD_INTERFACE:gguflib>) 
+  target_sources(${TARGET_NAME_OBJ} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf.cpp
+                             ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_quants.cpp
+                             ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_modeling.cpp
+                             ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/building_blocks.cpp)
+endif()
+
 target_include_directories(${TARGET_NAME_OBJ}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
            "$<BUILD_INTERFACE:${OpenVINOGenAI_SOURCE_DIR}/src/c/include>"
            "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
-target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
+target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}" "${gguflib_SOURCE_DIR}")
 
 target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::runtime::c openvino::threading nlohmann_json::nlohmann_json jinja2cpp)
 
@@ -102,6 +124,10 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime openvino::runtime::c PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
+
+if(ENABLE_GGUF)
+  target_link_libraries(${TARGET_NAME} PRIVATE gguflib ${CMAKE_DL_LIBS})
+endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
 
