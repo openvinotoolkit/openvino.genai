@@ -835,10 +835,20 @@ class Image2ImagePipeline:
     @typing.overload
     def __init__(self, pipe: InpaintingPipeline) -> None:
         ...
+    @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                        denoise_device (str): Device to run denoise steps on.
+                        vae_device (str): Device to run vae encoder / decoder on.
                         kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -1004,6 +1014,9 @@ class InpaintingPipeline:
     def flux(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
         ...
     @staticmethod
+    def flux_fill(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @staticmethod
     def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
         ...
     @staticmethod
@@ -1037,10 +1050,20 @@ class InpaintingPipeline:
     @typing.overload
     def __init__(self, pipe: Image2ImagePipeline) -> None:
         ...
+    @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                        denoise_device (str): Device to run denoise steps on.
+                        vae_device (str): Device to run vae encoder / decoder on.
                         kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:

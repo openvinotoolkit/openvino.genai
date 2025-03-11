@@ -522,6 +522,30 @@ void init_image_generation_pipelines(py::module_& m) {
                 kwargs: Device properties.
             )")
         .def(
+            "compile",
+            [](ov::genai::Image2ImagePipeline& pipe,
+                const std::string& text_encode_device,
+                const std::string& denoise_device,
+                const std::string& vae_device,
+                const py::kwargs& kwargs
+            ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(text_encode_device, denoise_device, vae_device, map);
+                }
+            },
+            py::arg("text_encode_device"), "device to run the text encoder(s) on",
+            py::arg("denoise_device"), "device to run denoise steps on",
+            py::arg("vae_device"), "device to run vae encoder / decoder on",
+            R"(
+                Compiles the model.
+                text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                denoise_device (str): Device to run denoise steps on.
+                vae_device (str): Device to run vae encoder / decoder on.
+                kwargs: Device properties.
+            )")
+        .def(
             "generate",
             [](ov::genai::Image2ImagePipeline& pipe,
                 const std::string& prompt,
@@ -582,6 +606,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_static("latent_consistency_model", &ov::genai::InpaintingPipeline::latent_consistency_model, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
         .def_static("stable_diffusion_xl", &ov::genai::InpaintingPipeline::stable_diffusion_xl, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("clip_text_model_with_projection"), py::arg("unet"), py::arg("vae"))
         .def_static("flux", &ov::genai::InpaintingPipeline::flux, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
+        .def_static("flux_fill", &ov::genai::InpaintingPipeline::flux, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
         .def_static("stable_diffusion_3", py::overload_cast<const std::shared_ptr<ov::genai::Scheduler>&, const ov::genai::CLIPTextModelWithProjection&, const ov::genai::CLIPTextModelWithProjection&, const ov::genai::T5EncoderModel&,
                                                             const ov::genai::SD3Transformer2DModel&, const ov::genai::AutoencoderKL&>(&ov::genai::InpaintingPipeline::stable_diffusion_3),
             py::arg("scheduler"), py::arg("clip_text_model_1"), py::arg("clip_text_model_2"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
@@ -604,6 +629,30 @@ void init_image_generation_pipelines(py::module_& m) {
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
+            )")
+        .def(
+            "compile",
+            [](ov::genai::InpaintingPipeline& pipe,
+                const std::string& text_encode_device,
+                const std::string& denoise_device,
+                const std::string& vae_device,
+                const py::kwargs& kwargs
+            ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(text_encode_device, denoise_device, vae_device, map);
+                }
+            },
+            py::arg("text_encode_device"), "device to run the text encoder(s) on",
+            py::arg("denoise_device"), "device to run denoise steps on",
+            py::arg("vae_device"), "device to run vae encoder / decoder on",
+            R"(
+                Compiles the model.
+                text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                denoise_device (str): Device to run denoise steps on.
+                vae_device (str): Device to run vae encoder / decoder on.
                 kwargs: Device properties.
             )")
         .def(

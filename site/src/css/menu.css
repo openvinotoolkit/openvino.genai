@@ -1,0 +1,16 @@
+.menu__link {
+  font-size: 0.875rem;
+  position: relative;
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  --ifm-menu-color-active: var(--genai-color-classic-blue);
+}
+
+.menu__link--sublist-caret:after,
+.menu__caret:before {
+  --ifm-menu-link-sublist-icon: url('../../static/img/chevron-up.svg');
+  background: var(--ifm-menu-link-sublist-icon);
+  background-position: center;
+  background-repeat: no-repeat;
+}
