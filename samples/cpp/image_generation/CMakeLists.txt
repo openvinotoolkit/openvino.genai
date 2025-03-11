@@ -13,6 +13,13 @@ file(DOWNLOAD https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef
 
 include(FetchContent)
 
+if(NOT TARGET nlohmann_json)
+    FetchContent_Declare(nlohmann_json
+        URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
+        URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406)
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
 if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
 endif()
@@ -125,6 +132,20 @@ set_target_properties(benchmark_image_gen PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS benchmark_image_gen
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
+
+add_executable(benchmark_image_gen_android benchmark_image_gen_android.cpp load_image.cpp imwrite.cpp ../text_generation/misc.cpp)
+target_link_libraries(benchmark_image_gen_android PRIVATE openvino::genai cxxopts::cxxopts PRIVATE nlohmann_json)
+target_include_directories(benchmark_image_gen_android PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
+target_link_libraries(benchmark_image_gen_android PRIVATE openvino::genai cxxopts::cxxopts indicators::indicators)
+set_target_properties(benchmark_image_gen_android PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS benchmark_image_gen_android
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)

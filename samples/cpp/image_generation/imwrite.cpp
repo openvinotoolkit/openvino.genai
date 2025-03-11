@@ -144,7 +144,7 @@ void imwrite(const std::string& name, ov::Tensor images, bool convert_bgr2rgb) {
     uint8_t* img_data = images.data<uint8_t>();
 
     for (int img_num = 0, num_images = shape[0], img_size = ov::shape_size(img_shape); img_num < num_images; ++img_num, img_data += img_size) {
-        char img_name[25];
+        char img_name[100] = {0};
         sprintf(img_name, name.c_str(), img_num);
 
         ov::Tensor image(images.get_element_type(), img_shape, img_data);
