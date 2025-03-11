@@ -888,3 +888,31 @@ std::tuple<ov::Output<ov::Node>,
 
     return {output, sinks, new_causal_mask, new_cos_sin, final_output_shape};
 }
+
+ov::Output<ov::Node> init_rope(
+    int64_t head_dim,
+    int64_t max_position_embeddings = 2048,
+    float base = 10000.0f,
+    float scaling_factor = 1.0f) {
+
+    // Calculate inverse frequencies
+    size_t num_elements = head_dim / 2;
+    std::vector<float> inv_freq_data(num_elements);
+    for (size_t i = 0; i < num_elements; ++i) {
+        float idx = static_cast<float>(2 * i);  // Matches Python's step=2
+        float exponent = idx / static_cast<float>(head_dim);
+        inv_freq_data[i] = 1.0f / std::pow(base, exponent);
+        
+        // Apply scaling factor if needed (from original Python signature)
+        if (scaling_factor != 1.0f) {
+            inv_freq_data[i] *= scaling_factor;
+        }
+    }
+
+    // Create OpenVINO constant with shape [1, num_elements, 1]
+    ov::Shape const_shape = {1, static_cast<unsigned long>(num_elements), 1};
+    auto rope_const = std::make_shared<ov::op::v0::Constant>(
+        ov::element::f32, const_shape, inv_freq_data);
+
+    return rope_const;
+}
