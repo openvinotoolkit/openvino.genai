@@ -174,8 +174,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, perf_metrics));
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
-            auto prompt = prompts[i];
-            auto rgbs = rgbs_vector[i];
+            const auto& prompt = prompts[i];
+            const auto& rgbs = rgbs_vector[i];
 
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
