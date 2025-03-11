@@ -56,12 +56,15 @@ elseif(APPLE)
     set(cpp_rpaths "$loader_path/../openvino/libs")
 endif()
 
-if(py_rpaths)
-    set_target_properties(${TARGET_NAME} PROPERTIES INSTALL_RPATH "${py_rpaths}")
-endif()
-
 if(cpp_rpaths)
     set_target_properties(openvino_genai PROPERTIES INSTALL_RPATH "${cpp_rpaths}")
+
+    # for some reason on manylinux python part depends on all C++ dependencies transitively; adding C++ RPATHs as well
+    list(APPEND py_rpaths ${cpp_rpaths})
+endif()
+
+if(py_rpaths)
+    set_target_properties(${TARGET_NAME} PROPERTIES INSTALL_RPATH "${py_rpaths}")
 endif()
 
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
