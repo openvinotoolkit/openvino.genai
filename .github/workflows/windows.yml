@@ -47,7 +47,7 @@ jobs:
     - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
       id: openvino_download
       with:
-        platform: 'windows'
+        platform: windows
         commit_packages_to_provide: wheels,openvino_js_package.zip
         revision: 'latest_available_commit'
 
