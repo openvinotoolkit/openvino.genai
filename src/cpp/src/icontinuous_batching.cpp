@@ -45,6 +45,7 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::start_chat(const s
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
+    m_history_images.clear();
 };
 
 std::vector<GenerationResult>
