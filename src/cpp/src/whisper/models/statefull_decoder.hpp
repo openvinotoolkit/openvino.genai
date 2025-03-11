@@ -20,6 +20,8 @@ public:
 
     void reset_state() override;
 
+    ov::Tensor create_host_tensor(const element::Type element_type, const Shape& shape) override;
+
 private:
     void _set_cache_position_tensor(const size_t seq_len);
 

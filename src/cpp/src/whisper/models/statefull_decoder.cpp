@@ -28,11 +28,14 @@ void WhisperStatefullDecoder::start_async(const Tensor& encoder_hidden_state,
     const size_t batch_size = input_ids.get_shape().at(0);
     const size_t seq_len = input_ids.get_shape().at(1);
 
+    Tensor beam_idx_tensor = create_host_tensor(ov::element::i32, {1});
+    beam_idx_tensor.data<int32_t>()[0] = 0;
+
     _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size, m_request);
 
     _set_cache_position_tensor(seq_len);
     m_request.set_tensor("input_ids", input_ids);
-    m_request.set_tensor("beam_idx", beam_idx);
+    m_request.set_tensor("beam_idx", beam_idx_tensor);
 
     m_request.start_async();
 };
@@ -63,7 +66,11 @@ void WhisperStatefullDecoder::reset_state() {
 
     Shape encoder_hidden_states_shape{m_request.get_tensor("encoder_hidden_states").get_shape()};
     encoder_hidden_states_shape[0] = 0;
-    m_request.set_tensor("encoder_hidden_states", ov::Tensor{ov::element::f32, encoder_hidden_states_shape});
+
+    m_request.set_tensor("encoder_hidden_states", create_host_tensor(ov::element::f32, encoder_hidden_states_shape));
 };
 
+ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type element_type, const Shape& shape) {
+    return m_request.get_compiled_model().get_context().create_host_tensor(element_type, shape);
+}
 }  // namespace ov::genai
