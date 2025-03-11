@@ -196,7 +196,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         results.emplace_back(gen_result);
     }
     if (m_is_chat_conversation) {
-        if  (results[0].m_status == ov::genai::GenerationStatus::CANCEL)  {
+        if (results[0].m_status == ov::genai::GenerationStatus::CANCEL) {
             m_history.pop_back();
         }
         else {
