@@ -161,7 +161,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         const auto& rgbs = rgbs_vector[0];
         auto prompt_with_tags = prompts[0];
         if (!m_inputs_embedder->prompt_has_image_tag(prompt_with_tags)) {
-            prompt_with_tags = add_image_tags_to_prompt(prompts[0], rgbs_vector[0], m_history_images.size());
+            prompt_with_tags = add_image_tags_to_prompt(prompt_with_tags, rgbs, m_history_images.size());
         }
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
         // TODO: save embeddings, instead of image tensors and compare performance
