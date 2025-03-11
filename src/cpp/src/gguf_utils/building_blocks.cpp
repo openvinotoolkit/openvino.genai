@@ -10,13 +10,14 @@
 
 //#include "fp16.h"
 
+#include "building_blocks.h"
 
 using namespace ov;
 using namespace ov::op::v13;
 using namespace ov::op;
 
 static const size_t GGML_QUANTIZATION_GROUP_SIZE = 32;
-enum class QType { FP16, INT8, INT4 };
+
 
 
 static inline float fp32_from_bits(uint32_t w) {
@@ -63,10 +64,9 @@ float from_half(uint16_t h) {
 Output<ov::Node> causal_mask(
     const Output<ov::Node>& attention_mask,
     const Output<ov::Node>& keys,
-    int64_t hidden_dim,
+    const Output<ov::Node>& hidden_dim,
     const Output<ov::Node>& input_shape) {
 
-    auto hidden_dim_const = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, hidden_dim);
     // Extract shape of attention mask
     auto t130 = std::make_shared<v3::ShapeOf>(attention_mask, element::i64);
     auto t131 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1);
@@ -145,12 +145,12 @@ Output<ov::Node> causal_mask(
     auto t188 = std::make_shared<v1::Reshape>(t187, t184, false);
     auto t189 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
     auto t190 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
-    auto t191 = std::make_shared<ov::opset13::Slice>(t188, t189, t135, t190, hidden_dim_const);
+    auto t191 = std::make_shared<ov::opset13::Slice>(t188, t189, t135, t190, hidden_dim);
     auto t192 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{2}, std::vector<int64_t>{-1, 1});
     auto t193 = std::make_shared<v1::Reshape>(t191, t192, false);
     auto t194 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
     auto t195 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
-    auto t196 = std::make_shared<ov::opset13::Slice>(t180, t194, t135, t195, hidden_dim_const);
+    auto t196 = std::make_shared<ov::opset13::Slice>(t180, t194, t135, t195, hidden_dim);
 
     auto t197 = std::make_shared<v0::Unsqueeze>(attention_mask, t48);
     auto t198 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 2);
@@ -172,20 +172,19 @@ Output<ov::Node> causal_mask(
     auto t214 = std::make_shared<v1::Reshape>(t164, t213, false);
     auto t215 = std::make_shared<v1::Add>(t214, t129, AutoBroadcastType::NUMPY);
     auto t216 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
-    auto t217 = std::make_shared<ov::opset13::Slice>(t211, t212, t215, t216, hidden_dim_const);
+    auto t217 = std::make_shared<ov::opset13::Slice>(t211, t212, t215, t216, hidden_dim);
 
     return t217->output(0);
 }
 
 // Rotate half the hidden dimensions of the input tensor
-Output<ov::Node> rotate_half(const Output<ov::Node>& x, int64_t head_size, int64_t axis) {
-    auto axis_const = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, axis);
+Output<ov::Node> rotate_half(const Output<ov::Node>& x, int64_t head_size, const Output<Node>& axis) {
     auto half_head = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, head_size / 2);
     auto max_int = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 9223372036854775807);
     auto step = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1);
 
     // Slice second half
-    auto second_half = std::make_shared<ov::opset13::Slice>(x, half_head, max_int, step, axis_const);
+    auto second_half = std::make_shared<ov::opset13::Slice>(x, half_head, max_int, step, axis);
     
     // Multiply by -1
     auto neg_one = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{}, -1.0f);
@@ -196,10 +195,10 @@ Output<ov::Node> rotate_half(const Output<ov::Node>& x, int64_t head_size, int64
         std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 0),
         half_head,
         step,
-        axis_const);
+        axis);
     
     // Concatenate rotated half and first half
-    return std::make_shared<v0::Concat>(ov::OutputVector{rotated_half, first_half}, axis);
+    return std::make_shared<v0::Concat>(ov::OutputVector{rotated_half, first_half}, -1);
 }
 
 // Apply Rotary Position Embedding to query and key tensors
@@ -210,7 +209,7 @@ apply_rotary_pos_emb(
     const Output<ov::Node>& cos,
     const Output<ov::Node>& sin,
     int64_t head_size,
-    int64_t hidden_dim,
+    const Output<Node>& hidden_dim,
     const std::pair<Output<ov::Node>, Output<ov::Node>>& cos_sin_cached,
     int64_t unsqueeze_dim) {
     
@@ -287,7 +286,7 @@ std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
 }
 
 //std::tuple<Output<Node>, std::vector<std::shared_ptr<VariableState>>, std::pair<Output<Node>, Output<Node>>, Output<Node>>
-std::tuple<Output<Node>, std::vector<Output<Node>>, std::pair<Output<Node>, Output<Node>>, Output<Node>>
+std::tuple<Output<Node>, ov::SinkVector, std::pair<Output<Node>, Output<Node>>, Output<Node>>
 multi_head_attention(
     const Output<Node>& query,
     const Output<Node>& key,
@@ -295,7 +294,7 @@ multi_head_attention(
     const std::map<std::string, float>& configs,
     const Output<Node>& batch_dim,
     int layer_idx,
-    int hidden_dim,
+    const Output<Node>& hidden_dim,
     const Output<Node>& input_shape,
     const Output<Node>& output_shape,
     const Output<Node>& attention_mask,
@@ -758,10 +757,10 @@ std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_embedding(
 }
 
 std::tuple<ov::Output<ov::Node>, 
-           std::vector<Output<Node>>,
+           ov::SinkVector,
            ov::Output<ov::Node>,
            std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>,
-           ov::Output<ov::Node>> 
+           std::shared_ptr<ov::Node>> 
     layer(const std::map<std::string, float>& configs,
         const std::unordered_map<std::string, 
             std::unordered_map<int, std::unordered_map<std::string, ov::Tensor>>>& consts,
@@ -773,9 +772,9 @@ std::tuple<ov::Output<ov::Node>,
         const ov::Output<ov::Node>& rope_const,
         const ov::Output<ov::Node>& beam_idx,
         const ov::Output<ov::Node>& batch_dim,
-        int hidden_dim,
+        const ov::Output<ov::Node>& hidden_dim,
         const std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>& cos_sin_cached,
-        const std::shared_ptr<ov::Node>& output_shape = nullptr) {
+        const std::shared_ptr<ov::Node>& output_shape) {
 
     std::string name_suffix = ".layer" + std::to_string(layer_idx);
     std::string name_prefix = "model.layers.self_attn";
@@ -811,7 +810,7 @@ std::tuple<ov::Output<ov::Node>,
         static_cast<QType>(configs.at("qtype")));
 
     // Handle output shape
-    ov::Output<ov::Node> final_output_shape = output_shape;
+    std::shared_ptr<ov::Node> final_output_shape = output_shape;
     if (!output_shape) {
         auto input_shape = std::make_shared<ov::op::v3::ShapeOf>(input_layernorm);
         auto indices = std::make_shared<ov::op::v0::Constant>(
@@ -891,9 +890,9 @@ std::tuple<ov::Output<ov::Node>,
 
 ov::Output<ov::Node> init_rope(
     int64_t head_dim,
-    int64_t max_position_embeddings = 2048,
-    float base = 10000.0f,
-    float scaling_factor = 1.0f) {
+    int64_t max_position_embeddings,
+    float base,
+    float scaling_factor) {
 
     // Calculate inverse frequencies
     size_t num_elements = head_dim / 2;
