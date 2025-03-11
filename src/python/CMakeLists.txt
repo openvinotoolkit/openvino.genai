@@ -39,28 +39,32 @@ if(OpenVINODeveloperPackage_FOUND)
     # ov_add_clang_format_target(${TARGET_NAME}_clang FOR_TARGETS ${TARGET_NAME})
 endif()
 
-if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME)
-    # RPATH for wheel is mandatory to find openvino_genai library. It
-    # must be forced because GenAI may be built with OpenVINO targeting
-    # archive. Such OpenVINO configurations sets
-    # CMAKE_SKIP_INSTALL_RPATH to ON because it relies on setupvars.sh.
-    set(CMAKE_SKIP_INSTALL_RPATH OFF)
-endif()
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)
     # to find libopenvino_genai.so in the same folder
-    set(rpaths "$ORIGIN")
+    set(py_rpaths "$ORIGIN")
+    # to find libopenvino_c.so for libopenvino_genai.so
+    set(cpp_rpaths "$ORIGIN/../openvino/libs")
 elseif(APPLE)
     # to find libopenvino_genai.dylib in the same folder
-    set(rpaths "@loader_path")
+    set(py_rpaths "@loader_path")
     if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME)
         # in case we build pip package, we need to refer to libopenvino.dylib from 'openvino' package
-        list(APPEND rpaths "@loader_path/../openvino/libs")
+        list(APPEND py_rpaths "@loader_path/../openvino/libs")
     endif()
+    # to find libopenvino_c.dylib for libopenvino_genai.dylib
+    set(cpp_rpaths "$loader_path/../openvino/libs")
 endif()
 
-if(rpaths)
-    set_target_properties(${TARGET_NAME} PROPERTIES INSTALL_RPATH "${rpaths}")
+if(cpp_rpaths)
+    set_target_properties(openvino_genai PROPERTIES INSTALL_RPATH "${cpp_rpaths}")
+
+    # for some reason on manylinux python part depends on all C++ dependencies transitively; adding C++ RPATHs as well
+    list(APPEND py_rpaths ${cpp_rpaths})
+endif()
+
+if(py_rpaths)
+    set_target_properties(${TARGET_NAME} PROPERTIES INSTALL_RPATH "${py_rpaths}")
 endif()
 
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"

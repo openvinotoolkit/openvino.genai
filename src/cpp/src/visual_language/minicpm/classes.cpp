@@ -7,11 +7,12 @@
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
-#include <regex>
 
 namespace ov::genai {
 
 namespace {
+
+std::string NATIVE_TAG = "<image>./</image>";
 
 int ensure_divide(int length, int patch_size) {
     return std::max(static_cast<int>(std::round(static_cast<float>(length) / patch_size) * patch_size), patch_size);
@@ -537,52 +538,6 @@ void adjust_pos_cache(
     }
 }
 
-/// @brief Check if universal tag is given.
-/// Check if native tag is given.
-/// Assert different tag aren't mixed.
-/// If no any tag, prepend universal image tag.
-/// If native tag, assume incremental image order.
-/// Else replace universal tags with native tags and save image order.
-std::pair<std::string, std::vector<size_t>> unify_prompt(const std::string& prompt, const std::string& native_tag, size_t n_new_images, size_t n_prev_images) {
-    std::regex universal_pattern(R"(<ov_genai_image_(\d+)>)");
-    bool found_universal_tag = std::regex_search(prompt, universal_pattern);
-    bool found_minicpm_tag = prompt.find(native_tag) != std::string::npos;
-    OPENVINO_ASSERT(!(found_universal_tag && found_minicpm_tag), "Prompt can contain only one type of image tags.");
-    std::stringstream images_prompt;
-    if (!found_universal_tag && ! found_minicpm_tag) {
-        for (size_t i = n_prev_images; i < n_new_images + n_prev_images; ++i) {
-            images_prompt << "<ov_genai_image_" << i << ">\n";
-        }
-    }
-    images_prompt << prompt;
-
-    std::vector<size_t> images_sequence;
-    std::string unified_prompt = images_prompt.str();
-    std::sregex_iterator end_it;
-    if (found_minicpm_tag) {
-        size_t pos = 0;
-        while ((pos = unified_prompt.find(native_tag, pos)) != std::string::npos) {
-            images_sequence.push_back(n_prev_images + images_sequence.size());
-            pos += native_tag.length();
-        }
-        OPENVINO_ASSERT(images_sequence.size() == n_new_images);
-    } else {
-        bool found = true;
-        while (found) {
-            found = false;
-            for (std::sregex_iterator it(unified_prompt.begin(), unified_prompt.end(), universal_pattern); it != end_it; ++it) {
-                images_sequence.push_back(std::stoi((*it)[1].str()));
-                OPENVINO_ASSERT(images_sequence.back() < n_new_images + n_prev_images, "Missing image ", images_sequence.back());
-                OPENVINO_ASSERT(n_prev_images <= images_sequence.back(), "Referring to older images isn't implemented");
-                unified_prompt.replace(it->position(), it->length(), native_tag);
-                found = true;
-                break;
-            }
-        }
-    }
-    return {std::move(unified_prompt), std::move(images_sequence)};
-}
-
 } // namespace
 
 InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
@@ -620,25 +575,22 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     std::vector<EncodedImage> embeds;
 
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+    auto [unified_prompt, images_sequence] = unify_prompt(prompt, NATIVE_TAG, single_images.size(), m_image_id);
 
     for (const ov::Tensor& image : single_images) {
         embeds.push_back(m_vision_encoder->encode(image));
     }
-
-    size_t n_prev_images = m_image_id;
-    std::string native_tag = "<image>./</image>";
-    auto [unified_prompt, images_sequence] = unify_prompt(prompt, native_tag, embeds.size(), n_prev_images);
 
     std::string unk64;
     for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
         unk64 += m_vlm_config.unk;
     }
 
-    for (const EncodedImage& encoded_image : embeds) {
+    for (size_t new_image_id : images_sequence) {
+        const EncodedImage& encoded_image = embeds.at(new_image_id - m_prev_image_id);
         std::string expanded_tag;
         if (m_vlm_config.use_image_id) {
-            expanded_tag += m_vlm_config.im_id_start + std::to_string(m_image_id) + m_vlm_config.im_id_end;
-            ++m_image_id;
+            expanded_tag += m_vlm_config.im_id_start + std::to_string(new_image_id) + m_vlm_config.im_id_end;
         }
         expanded_tag += m_vlm_config.im_start + unk64 + m_vlm_config.im_end;
         if (encoded_image.slices) {
@@ -651,8 +603,9 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
             }
             expanded_tag.pop_back();  // Equivalent of python "\n".join(slices).
         }
-        unified_prompt.replace(unified_prompt.find(native_tag), native_tag.length(), expanded_tag);
+        unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
     }
+    m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
 
     ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
 
@@ -686,7 +639,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     int64_t* end = ids + encoded_input_size;
     float* inputs_embeds_data = inputs_embeds.data<float>();
     for (size_t image_id : images_sequence) {
-        const EncodedImage& encoded_image = embeds.at(image_id - n_prev_images);
+        const EncodedImage& encoded_image = embeds.at(image_id - m_prev_image_id);
         const ov::Tensor& resampled_source = resample(encoded_image.resized_source, {encoded_image.resized_source_size});
         float* emb = resampled_source.data<float>();
         ids = std::find(ids, end, im_start_id);
@@ -715,6 +668,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
 
     if (!m_is_chat_conversation) {
         m_image_id = 0;
+        m_prev_image_id = 0;
     }
     return inputs_embeds;
 }
@@ -729,12 +683,16 @@ void InputsEmbedderMiniCPM::update_chat_history(const std::string& decoded_resul
 
 void InputsEmbedderMiniCPM::start_chat(const std::string& system_message) {
     IInputsEmbedder::start_chat(system_message);
-    m_image_id = 0;
+    m_prev_image_id = 0;
 }
 
 void InputsEmbedderMiniCPM::finish_chat() {
     IInputsEmbedder::finish_chat();
-    m_image_id = 0;
+    m_prev_image_id = 0;
+}
+
+bool InputsEmbedderMiniCPM::prompt_has_image_tag(const std::string& prompt) const {
+    return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(NATIVE_TAG) != std::string::npos;
 }
 
 ov::Tensor InputsEmbedderMiniCPM::resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes) {

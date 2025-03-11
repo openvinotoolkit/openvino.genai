@@ -835,10 +835,20 @@ class Image2ImagePipeline:
     @typing.overload
     def __init__(self, pipe: InpaintingPipeline) -> None:
         ...
+    @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                        denoise_device (str): Device to run denoise steps on.
+                        vae_device (str): Device to run vae encoder / decoder on.
                         kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -1040,10 +1050,20 @@ class InpaintingPipeline:
     @typing.overload
     def __init__(self, pipe: Image2ImagePipeline) -> None:
         ...
+    @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                        denoise_device (str): Device to run denoise steps on.
+                        vae_device (str): Device to run vae encoder / decoder on.
                         kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -2089,6 +2109,15 @@ class VLMPipeline:
         
             :param prompt: input prompt
             :type prompt: str
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            MiniCPM-V-2_6: <image>./</image>
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            If the prompt doesn't contain image tags, but images are
+            provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
             :type images: List[ov.Tensor] or ov.Tensor
@@ -2112,6 +2141,15 @@ class VLMPipeline:
         
             :param prompt: input prompt
             :type prompt: str
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            MiniCPM-V-2_6: <image>./</image>
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            If the prompt doesn't contain image tags, but images are
+            provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
             :type images: List[ov.Tensor] or ov.Tensor
@@ -2134,6 +2172,16 @@ class VLMPipeline:
             Generates sequences for VLMs.
         
             :param prompt: input prompt
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            MiniCPM-V-2_6: <image>./</image>
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            If the prompt doesn't contain image tags, but images are
+            provided, the tags are prepended to the prompt.
+        
             :type prompt: str
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.

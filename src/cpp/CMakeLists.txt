@@ -71,10 +71,6 @@ set(TARGET_NAME_OBJ ${TARGET_NAME}_obj)
 
 add_library(${TARGET_NAME_OBJ} OBJECT ${SOURCE_FILES})
 
-if(TARGET openvino_tokenizers)
-    add_dependencies(${TARGET_NAME_OBJ} openvino_tokenizers)
-endif()
-
 target_include_directories(${TARGET_NAME_OBJ}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
            "$<BUILD_INTERFACE:${OpenVINOGenAI_SOURCE_DIR}/src/c/include>"
@@ -104,6 +100,10 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime openvino::runtime::c PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
+
+if(TARGET openvino_tokenizers)
+    add_dependencies(${TARGET_NAME} openvino_tokenizers)
+endif()
 
 set_target_properties(${TARGET_NAME} PROPERTIES
     EXPORT_NAME genai
@@ -160,7 +160,7 @@ elseif(ARCH_DIR STREQUAL "x86_64" OR ARCH_DIR STREQUAL "amd64"  # Windows detect
         OR CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
     set(ARCH_DIR intel64)
 endif()
-if(MSVC OR APPLE)
+if(GENERATOR_IS_MULTI_CONFIG_VAR)
     set(ARCH_DIR ${ARCH_DIR}/${CMAKE_BUILD_TYPE})
 endif()
 
