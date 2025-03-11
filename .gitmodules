@@ -1,9 +1,3 @@
 [submodule "thirdparty/openvino_tokenizers"]
     path = thirdparty/openvino_tokenizers
     url = https://github.com/openvinotoolkit/openvino_tokenizers.git
-[submodule "gguf-tools"]
-	path = gguf-tools
-	url = https://github.com/antirez/gguf-tools.git
-[submodule "thirdparty/gguf-tools"]
-	path = thirdparty/gguf-tools
-	url = https://github.com/antirez/gguf-tools.git

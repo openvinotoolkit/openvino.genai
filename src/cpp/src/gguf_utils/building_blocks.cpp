@@ -731,3 +731,28 @@ ov::Output<ov::Node> make_rms_norm(
 
     return mul;
 }
+
+std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_embedding(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    QType qtype) {
+
+    auto embedding_type = qtype;
+    // Detmbedding_type = qtype;
+    if (consts.count(key + ".scales") == 0) {
+        embedding_type = QType::FP16;
+    }
+
+    // Create embedding weights
+    auto embed_f32 = make_weights_subgraph(key, consts, embedding_type, false, -1);
+
+    // Convert input to int32 indices
+    auto input_int32 = std::make_shared<ov::op::v0::Convert>(input, ov::element::i32);
+
+    // Gather embeddings
+    auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{}, 0);
+    auto embeddings = std::make_shared<ov::op::v8::Gather>(embed_f32, input_int32, axis);
+
+    return {embeddings, embed_f32};
+}
