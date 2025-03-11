@@ -10,4 +10,8 @@ option(ENABLE_GGUF "Enable support for GGUF format" ON)
 # Disable building samples for NPM package
 if(CPACK_GENERATOR STREQUAL "NPM")
     set(ENABLE_SAMPLES OFF)
+    set(ENABLE_PYTHON OFF)
+    set(ENABLE_JS ON)
+else()
+    set(ENABLE_JS OFF)
 endif()

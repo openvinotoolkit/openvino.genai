@@ -53,11 +53,6 @@ void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std
             // x86 and ARM have different default kv cache type, take this information from the plugin
             m_kv_cache_type = core.get_property(device, ov::hint::kv_cache_precision);
         }
-
-        // TEMP WA: currently FP16 / BF16 KV cache is faster than U8 for PagedAttention
-        if (m_kv_cache_type == ov::element::u8) {
-            m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-        }
     } else if (device.find("GPU") != std::string::npos) {
         if (accuracy_mode) {
             inference_precision = ov::element::f32;
@@ -168,8 +163,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         filtered_properties.fork().erase("sampler_num_threads");   // do not use iterator sampler_num_threads_it because a forked container may not be the same container
     }
 
-    // TODO: remove once plugin automatically set KV cache precisions
-    apply_kv_cache_precision(model, device, *filtered_properties);
+    // TODO: remove once GPU plugin automatically set KV cache precisions
+    if (device.find("GPU") != std::string::npos) {
+        apply_kv_cache_precision(model, device, *filtered_properties);
+    }
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
 
