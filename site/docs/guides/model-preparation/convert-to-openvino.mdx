@@ -4,6 +4,7 @@ description: How to convert models to OpenVINO format
 ---
 
 import OptimumCLI from '@site/src/components/OptimumCLI';
+import UseCasesNote from './_use_cases_note.mdx';
 
 # Convert Models to OpenVINO Format
 
@@ -61,3 +62,5 @@ ModelScope models need to be downloaded first, then converted to OpenVINO IR for
     ```
 3. Convert the model (and optionally compress weights) using `optimum-cli` tool:
     <OptimumCLI model='<model_path>' weightFormat='int4' />
+
+<UseCasesNote />
