@@ -16,6 +16,8 @@ class TestVisualLanguageChat:
         [
             pytest.param("llava-1.5-7b-hf", 'Who drew this painting?\nWhen did the painter live?'),
             pytest.param("llava-v1.6-mistral-7b-hf", 'Who drew this painting?\nWhen did the painter live?'),
+            pytest.param("InternVL2-1B", 'Who drew this painting?\nWhen did the painter live?'),
+            pytest.param("Qwen2-VL-2B-Instruct", 'Who drew this painting?\nWhen did the painter live?'),
         ],
         indirect=["convert_model"],
     )
