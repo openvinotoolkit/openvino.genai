@@ -6,8 +6,8 @@ import { LanguageTabs, TabItemCpp, TabItemPython } from '@site/src/components/La
 
 import ImagePlaceholder from '@site/static/img/image-generation-placeholder.webp';
 
-import CodeExampleCpp from '@site/docs/use-cases/1-text-generation/_sections/_run_model/_code_example_cpp.mdx';
-import CodeExamplePython from '@site/docs/use-cases/1-text-generation/_sections/_run_model/_code_example_python.mdx';
+import CodeExampleCpp from '@site/docs/use-cases/text-generation/_sections/_run_model/_code_example_cpp.mdx';
+import CodeExamplePython from '@site/docs/use-cases/text-generation/_sections/_run_model/_code_example_python.mdx';
 
 // TODO Consider moving to mdx
 const FEATURES = [

@@ -68,8 +68,8 @@ export const SpeechToText = () => {
           <TabItemCpp>{cppCodeBlock}</TabItemCpp>
         </LanguageTabs>
         <hr />
-        <ExploreCodeSamples link={'docs/category/samples'} />
-        <GoToDocumentation link={'docs/use-cases/Processing-speech-whisper'} />
+        <ExploreCodeSamples link="docs/category/samples" />
+        <GoToDocumentation link="docs/use-cases/speech-processings" />
       </Section.Column>
     </Section.Container>
   );

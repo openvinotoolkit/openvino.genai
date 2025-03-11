@@ -72,8 +72,8 @@ export const ImageProcessing = () => {
           <TabItemCpp>{cppCodeBlock}</TabItemCpp>
         </LanguageTabs>
         <hr />
-        <ExploreCodeSamples link={'docs/category/samples'} />
-        <GoToDocumentation link={'docs/use-cases/Processing-images-using-VLMs'} />
+        <ExploreCodeSamples link="docs/category/samples" />
+        <GoToDocumentation link="docs/use-cases/image-processing" />
       </Section.Column>
     </Section.Container>
   );
