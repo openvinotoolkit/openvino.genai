@@ -49,7 +49,7 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_decoded_results_perf_metrics_free(ov_gena
 /**
  * @brief Get string result from ov_genai_decoded_results.
  * @param results A pointer to the ov_genai_decoded_results instance.
- * @param output A Pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
+ * @param output A pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
  * *output_size will provide the needed buffer size. The user should then allocate the required buffer size and call
  * this function again to obtain the entire output.
  * @param output_size A Pointer to the size of the output string from the results, including the null terminator. If
