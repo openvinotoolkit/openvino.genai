@@ -32,12 +32,13 @@ public:
         const ov::AnyMap& properties,
         const ov::genai::GenerationConfig& generation_config
     ): m_impl{
-        "./", 
-        scheduler_config, 
-        device, 
-        properties} {
-        // TODO: Implement the constructor of ContinuousBatchingPipeline from ModelsMap
-        OPENVINO_THROW("Not implemented.");
+        models_map,
+        tokenizer,
+        scheduler_config,
+        device,
+        config_dir_path,
+        properties,
+        generation_config} {
     }
 
     VLMDecodedResults generate(

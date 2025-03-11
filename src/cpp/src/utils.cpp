@@ -80,6 +80,7 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
     rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
 }
@@ -325,13 +326,27 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     return kv_pos;
 }
 
-void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller) {
+void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller) {
+    if (kv_cache_state.reset_mem_state) {
+        if (adapter_controller) {
+            for(auto& state: request.query_state()) {
+                if(!adapter_controller->has_state_name(state.get_name())) {
+                    state.reset();
+                }
+            }
+        } else {
+            request.reset_state();
+        }
+
+        return;
+    }
+
     // nothing to trim in this case
-    if (remove_from_end == 0)
+    if (kv_cache_state.num_tokens_to_trim == 0)
         return;
 
     auto states = request.query_state();
-    
+
     OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");
 
     for (auto& state : states) {
@@ -341,7 +356,7 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
         ov::Tensor old_tensor = state.get_state();
         // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
         auto shape = old_tensor.get_shape();
-        shape[seq_length_axis] -= remove_from_end;
+        shape[kv_cache_state.seq_length_axis] -= kv_cache_state.num_tokens_to_trim;
 
         ov::Coordinate new_shape_begin{0, 0, 0, 0};
         ov::Coordinate new_shape_end{shape};
