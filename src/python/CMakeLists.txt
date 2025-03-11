@@ -43,8 +43,6 @@ endif()
 if(LINUX)
     # to find libopenvino_genai.so in the same folder
     set(py_rpaths "$ORIGIN")
-    # to find libopenvino_c.so for libopenvino_genai.so
-    set(cpp_rpaths "$ORIGIN/../openvino/libs")
 elseif(APPLE)
     # to find libopenvino_genai.dylib in the same folder
     set(py_rpaths "@loader_path")
@@ -52,15 +50,6 @@ elseif(APPLE)
         # in case we build pip package, we need to refer to libopenvino.dylib from 'openvino' package
         list(APPEND py_rpaths "@loader_path/../openvino/libs")
     endif()
-    # to find libopenvino_c.dylib for libopenvino_genai.dylib
-    set(cpp_rpaths "$loader_path/../openvino/libs")
-endif()
-
-if(cpp_rpaths)
-    set_target_properties(openvino_genai PROPERTIES INSTALL_RPATH "${cpp_rpaths}")
-
-    # for some reason on manylinux python part depends on all C++ dependencies transitively; adding C++ RPATHs as well
-    list(APPEND py_rpaths ${cpp_rpaths})
 endif()
 
 if(py_rpaths)
