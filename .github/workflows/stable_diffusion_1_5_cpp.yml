@@ -32,7 +32,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-mediumworker
+    runs-on: aks-linux-medium
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -58,7 +58,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-mediumworker
+    runs-on: aks-linux-medium
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:

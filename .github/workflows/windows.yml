@@ -35,7 +35,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-mediumworker
+    runs-on: aks-linux-medium
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -457,7 +457,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-          
+
       - name: Install OpenVINO wheel
         run: python -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
         working-directory: ${{ env.INSTALL_DIR }}
