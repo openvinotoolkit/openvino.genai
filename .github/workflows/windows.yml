@@ -388,8 +388,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      TRANSFORMERS_CACHE: ${{ github.workspace }}/models  # Hugging Face transformers cache
-      HF_HOME: ${{ github.workspace }}/datasets           # Hugging Face datasets cache
+      HF_HOME: ${{ github.workspace }}/hf_cache
 
     steps:
       - name: Clone openvino.genai
@@ -436,7 +435,7 @@ jobs:
           - name: 'LLM'
             marker: 'llm'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-win-4-cores-8gb'
+            runner: 'aks-win-16-cores-32gb'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
@@ -455,7 +454,9 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      HF_HOME: /mount/caches/huggingface
+      HF_HOME: C:/mount/caches/huggingface
+      OV_CACHE: ${{ github.workspace }}/ov_cache
+      CLEANUP_CACHE: 1
 
     steps:
       - name: Clone openvino.genai
@@ -488,7 +489,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Test Samples (Python and C++)
-        run: python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
