@@ -203,18 +203,15 @@ def load_visual_text_model(
             model = AutoModelForVision2Seq.from_pretrained(
                 model_id, trust_remote_code=True, device_map=device.lower()
             )
-            logger.info("================ AutoModelForVision2Seq")
         except ValueError:
             try:
                 model = AutoModel.from_pretrained(
                     model_id, trust_remote_code=True, device_map=device.lower()
                 )
-                logger.info("=================== AutoModel")
             except ValueError:
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id, trust_remote_code=True, device_map=device.lower(), _attn_implementation="eager", use_flash_attention_2=False
                 )
-                logger.info("======================= AutoModelForCausalLM")
         model.eval()
         try:
             model.get_vision_tower().load_model()
