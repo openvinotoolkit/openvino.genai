@@ -28,8 +28,6 @@ class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
     // [70, 70, hidden_size]. 70 is the initial guess of the image
     // height and width after dividing by patch_size.
     ov::Tensor m_pos_embed_cache;
-    // Used to insert <image_id>i</image_id> per image (not a slice).
-    size_t m_image_id = 0;
     size_t m_prev_image_id = 0;
 
 public:
@@ -54,6 +52,8 @@ public:
     void start_chat(const std::string& system_message) override;
 
     void finish_chat() override;
+
+    bool prompt_has_image_tag(const std::string& prompt) const override;
 
 private:
     ov::Tensor resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes);
