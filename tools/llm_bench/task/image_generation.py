@@ -37,7 +37,7 @@ def read_image(image_path: str, ov_tensor=True):
     return pil_image
 
 
-def collects_input_args(image_param, model_type, model_name, infer_count=None, height=None, width=None, callback=None, image_as_ov_tensor=True):
+def collects_input_args(image_param, model_name, infer_count=None, height=None, width=None, callback=None, image_as_ov_tensor=True):
     input_args = {}
     input_args["width"] = image_param.get('width', width or DEFAULT_IMAGE_WIDTH)
     input_args["height"] = image_param.get('height', height or DEFAULT_IMAGE_HEIGHT)
@@ -85,7 +85,7 @@ def collects_input_args(image_param, model_type, model_name, infer_count=None, h
 def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
-    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["num_steps"],
+    input_args = collects_input_args(image_param, args['model_name'], args["num_steps"],
                                      args.get("height"), args.get("width"), image_as_ov_tensor=False)
     out_str = f"Input params: Batch_size={args['batch_size']}, " \
               f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
@@ -150,7 +150,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
     set_seed(args['seed'])
     input_text = image_param['prompt']
     input_token_size = callback.orig_tokenizer(input_text, return_tensors="pt").input_ids.numel()
-    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["num_steps"], args.get("height"), args.get("width"), callback)
+    input_args = collects_input_args(image_param, args['model_name'], args["num_steps"], args.get("height"), args.get("width"), callback)
     out_str = f"Input params: Batch_size={args['batch_size']}, " \
               f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
     if 'guidance_scale' in input_args:
@@ -174,6 +174,13 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
     res = pipe.generate(input_text, **input_args).data
     end = time.perf_counter()
     callback.duration = end - start
+
+    performance_metrics = None
+    if hasattr(pipe, 'get_performance_metrics'):
+        performance_metrics = pipe.get_performance_metrics()
+    elif "callback" in input_args:
+        performance_metrics = callback
+
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
@@ -202,7 +209,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
-        stable_diffusion=callback if "callback" in input_args else None,
+        stable_diffusion=performance_metrics,
         prompt_idx=image_id
     )
     metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn, prompt_idx=image_id)
