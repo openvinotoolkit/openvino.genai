@@ -199,14 +199,18 @@ void Text2ImagePipeline::reshape(const int num_images_per_prompt, const int heig
 }
 
 void Text2ImagePipeline::compile(const std::string& device, const ov::AnyMap& properties) {
+    auto start_time = std::chrono::steady_clock::now();
     m_impl->compile(device, properties);
+    m_impl->save_load_time(start_time);
 }
 
 void Text2ImagePipeline::compile(const std::string& text_encode_device,
     const std::string& denoise_device,
     const std::string& vae_device,
     const ov::AnyMap& properties) {
+    auto start_time = std::chrono::steady_clock::now();
     m_impl->compile(text_encode_device, denoise_device, vae_device, properties);
+    m_impl->save_load_time(start_time);
 }
 
 ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
