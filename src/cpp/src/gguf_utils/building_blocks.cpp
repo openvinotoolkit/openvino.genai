@@ -292,7 +292,7 @@ multi_head_attention(
     const Output<Node>& query,
     const Output<Node>& key,
     const Output<Node>& value,
-    const std::map<std::string, int>& configs,
+    const std::map<std::string, float>& configs,
     const Output<Node>& batch_dim,
     int layer_idx,
     int hidden_dim,
@@ -305,9 +305,9 @@ multi_head_attention(
     const Output<Node>& beam_idx,
     const std::pair<Output<Node>, Output<Node>>& cos_sin_cached) {
 
-    int num_heads = configs.at("head_num");
-    int head_dim = configs.at("head_size");
-    int num_heads_kv = configs.at("head_num_kv");
+    int num_heads = static_cast<int>(configs.at("head_num"));
+    int head_dim = static_cast<int>(configs.at("head_size"));
+    int num_heads_kv = static_cast<int>(configs.at("head_num_kv"));
 
     // Helper function to split heads
     auto split_heads = [&](const Output<Node>& x, int num_h) {
@@ -755,4 +755,136 @@ std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_embedding(
     auto embeddings = std::make_shared<ov::op::v8::Gather>(embed_f32, input_int32, axis);
 
     return {embeddings, embed_f32};
+}
+
+std::tuple<ov::Output<ov::Node>, 
+           std::vector<Output<Node>>,
+           ov::Output<ov::Node>,
+           std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>,
+           ov::Output<ov::Node>> 
+    layer(const std::map<std::string, float>& configs,
+        const std::unordered_map<std::string, 
+            std::unordered_map<int, std::unordered_map<std::string, ov::Tensor>>>& consts,
+        int layer_idx,
+        const ov::Output<ov::Node>& hidden_states,
+        const ov::Output<ov::Node>& attn_mask,
+        const ov::Output<ov::Node>& causal_mask,
+        const ov::Output<ov::Node>& position_ids,
+        const ov::Output<ov::Node>& rope_const,
+        const ov::Output<ov::Node>& beam_idx,
+        const ov::Output<ov::Node>& batch_dim,
+        int hidden_dim,
+        const std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>& cos_sin_cached,
+        const std::shared_ptr<ov::Node>& output_shape = nullptr) {
+
+    std::string name_suffix = ".layer" + std::to_string(layer_idx);
+    std::string name_prefix = "model.layers.self_attn";
+
+    // LayerNorm
+    auto input_layernorm = make_rms_norm(
+        "model.layers.input_layernorm",
+        hidden_states,
+        consts.at("layers").at(layer_idx),
+        configs.at("rms_norm_eps"));
+
+    // Attention projections
+    auto q = make_fc(
+        "model.layers.self_attn.q_proj",
+        input_layernorm,
+        consts.at("layers").at(layer_idx),
+        static_cast<QType>(configs.at("qtype")),
+        true,
+        configs.at("head_size"));
+
+    auto k = make_fc(
+        "model.layers.self_attn.k_proj",
+        input_layernorm,
+        consts.at("layers").at(layer_idx),
+        static_cast<QType>(configs.at("qtype")),
+        true,
+        configs.at("head_size"));
+
+    auto v = make_fc(
+        "model.layers.self_attn.v_proj",
+        input_layernorm,
+        consts.at("layers").at(layer_idx),
+        static_cast<QType>(configs.at("qtype")));
+
+    // Handle output shape
+    ov::Output<ov::Node> final_output_shape = output_shape;
+    if (!output_shape) {
+        auto input_shape = std::make_shared<ov::op::v3::ShapeOf>(input_layernorm);
+        auto indices = std::make_shared<ov::op::v0::Constant>(
+            ov::element::i64, ov::Shape{2}, std::vector<int64_t>{0, 1});
+        auto gathered = std::make_shared<ov::op::v8::Gather>(
+            input_shape, indices, 
+            std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{}, 0));
+        auto minus_one = std::make_shared<ov::op::v0::Constant>(
+            ov::element::i64, ov::Shape{1}, -1);
+        final_output_shape = std::make_shared<ov::op::v0::Concat>(
+            ov::OutputVector{gathered, minus_one}, 0);
+    }
+
+    // Multi-head attention
+    auto [attn_output, sinks, new_cos_sin, new_causal_mask] = multi_head_attention(
+        q, k, v,
+        configs,
+        batch_dim,
+        layer_idx,
+        hidden_dim,
+        std::make_shared<ov::op::v3::ShapeOf>(input_layernorm),
+        final_output_shape,
+        attn_mask,
+        causal_mask,
+        position_ids,
+        rope_const,
+        beam_idx,
+        cos_sin_cached);
+
+    // Output projection
+    auto o_proj = make_fc(
+        "model.layers.self_attn.o_proj",
+        attn_output,
+        consts.at("layers").at(layer_idx),
+        static_cast<QType>(configs.at("qtype")));
+
+    // Residual connection
+    auto attn_add = std::make_shared<ov::op::v1::Add>(
+        hidden_states, o_proj, ov::op::AutoBroadcastType::NUMPY);
+    attn_add->set_friendly_name(name_prefix + ".add0" + name_suffix);
+
+    // Post-attention Layernorm
+    auto post_attn_norm = make_rms_norm(
+        "model.layers.post_attention_layernorm",
+        attn_add,
+        consts.at("layers").at(layer_idx),
+        configs.at("rms_norm_eps"));
+
+    // MLP block
+    auto gate_proj = make_fc(
+        "model.layers.mlp.gate_proj",
+        post_attn_norm,
+        consts.at("layers").at(layer_idx),
+        static_cast<QType>(configs.at("qtype")));
+    auto silu = std::make_shared<ov::op::v4::Swish>(gate_proj);
+    auto up_proj = make_fc(
+        "model.layers.mlp.up_proj",
+        post_attn_norm,
+        consts.at("layers").at(layer_idx),
+        static_cast<QType>(configs.at("qtype")));
+    auto mul = std::make_shared<ov::op::v1::Multiply>(
+        silu, up_proj, ov::op::AutoBroadcastType::NUMPY);
+    mul->set_friendly_name(name_prefix + ".mlp.mul" + name_suffix);
+    auto down_proj = make_fc(
+        "model.layers.mlp.down_proj",
+        mul,
+        consts.at("layers").at(layer_idx),
+        static_cast<QType>(configs.at("qtype")));
+
+    // Final residual connection
+    auto output = std::make_shared<ov::op::v1::Add>(
+        attn_add, down_proj, ov::op::AutoBroadcastType::NUMPY);
+    output->set_friendly_name(name_prefix + ".add1" + name_suffix);
+
+    return {output, sinks, new_causal_mask, new_cos_sin, final_output_shape};
 }
