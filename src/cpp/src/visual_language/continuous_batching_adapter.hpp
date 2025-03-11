@@ -49,9 +49,10 @@ public:
     ) override {
         auto result = m_impl.generate({prompt}, {rgbs}, {generation_config}, streamer)[0];
         VLMDecodedResults decoded;
-        for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
-            decoded.texts.push_back(result.m_generation_ids.at(idx));
-            decoded.scores.push_back(result.m_scores.at(idx));
+        for (size_t idx = 0; idx < result.texts.size(); ++idx) {
+            decoded.texts.push_back(result.texts.at(idx));
+            decoded.scores.push_back(result.scores.at(idx));
+            decoded.perf_metrics = result.perf_metrics;
         }
         return decoded;
     }

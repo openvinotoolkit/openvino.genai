@@ -57,7 +57,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // TODO: remove this code and within model runner add check: if sequence group type is tokens, 
         // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(prompts.size());
-        return generate(prompts, images, sampling_params, streamer);
+        auto results_vlm = generate(prompts, images, sampling_params, streamer);
+        std::vector<GenerationResult> resutls;
+        for (auto& vlm_result : results_vlm) {
+            GenerationResult result;
+            result.m_generation_ids = std::move(vlm_result.texts);
+            result.m_scores = std::move(vlm_result.scores);
+            result.perf_metrics = std::move(vlm_result.perf_metrics);
+            resutls.push_back(result);
+        }
+        return resutls;
     }
     std::vector<ov::Tensor> input_ids;
     auto start_time =  std::chrono::steady_clock::now();
@@ -142,7 +151,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return decoded;
 }
 
-std::vector<GenerationResult>
+std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& rgbs_vector,
@@ -156,6 +165,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(prompts.size() == rgbs_vector.size(), "Number of prompts should be equal to the number of images vectors.");
 
     std::vector<ov::Tensor> input_embeds_list;
+    std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
 
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
@@ -171,28 +181,28 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
-        VLMPerfMetrics perf_metrics;
-        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, perf_metrics));
+        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0]));
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
             const auto& rgbs = rgbs_vector[i];
 
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
-
-            VLMPerfMetrics perf_metrics;
-            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics));
-        }
+            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(prompt, rgbs, vlm_perf_metrics[i]));
     }
-
-    std::vector<GenerationResult> results;
+    std::vector<VLMDecodedResults> results;
     auto encoded_results = generate(input_embeds_list, sampling_params, streamer);
-    for (const auto& result: encoded_results) {
-        GenerationResult gen_result;
+    for (size_t i = 0; i < prompts.size(); i++) {
+        auto result = encoded_results[i];
+        VLMDecodedResults gen_result;
+        gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
+        gen_result.perf_metrics.tokenization_duration = vlm_perf_metrics[i].tokenization_duration;
+        gen_result.perf_metrics.detokenization_duration = vlm_perf_metrics[i].detokenization_duration;
+
         for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
-            gen_result.m_generation_ids.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
-            gen_result.m_scores.push_back(result.m_scores.at(idx));
-            gen_result.m_status = result.m_status;
+            gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
+            gen_result.scores.push_back(result.m_scores.at(idx));
+            gen_result.perf_metrics = result.perf_metrics;
         }
         results.emplace_back(gen_result);
     }
