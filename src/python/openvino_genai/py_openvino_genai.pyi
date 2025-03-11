@@ -1197,7 +1197,7 @@ class LLMPipeline:
                     kwargs: Device properties.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer, device: str, generation_config: GenerationConfig = ..., **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
         """
                     LLMPipeline class constructor.
                     model (str): Pre-read model.
