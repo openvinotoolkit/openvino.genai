@@ -191,6 +191,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(prompt, rgbs, vlm_perf_metrics[i]));
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
             vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+        }
     }
     std::vector<VLMDecodedResults> results;
     auto encoded_results = generate(input_embeds_list, sampling_params, streamer);
@@ -217,11 +218,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         results.emplace_back(gen_result);
     }
     if (m_is_chat_conversation) {
-        if (results[0].m_status == ov::genai::GenerationStatus::CANCEL) {
+        if (encoded_results[0].m_status == ov::genai::GenerationStatus::CANCEL) {
             m_history.pop_back();
         }
         else {
-            m_history.push_back({{"role", "assistant"}, {"content", results[0].m_generation_ids[0]}});
+            m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
         }
     }
     return results;
