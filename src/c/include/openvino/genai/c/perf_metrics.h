@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 #include "openvino/c/ov_common.h"
-#include "openvino/genai/visibility.hpp"
+#include "openvino/genai/c/visibility.h"
 
 /**
  * @struct ov_genai_perf_metrics

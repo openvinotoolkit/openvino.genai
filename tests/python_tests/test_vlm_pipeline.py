@@ -487,14 +487,53 @@ requests = [
 ]
 
 
-models_to_tag = [
-    ("katuni4ka/tiny-random-minicpmv-2_6", "<image>./</image>")
+image_id_ignorant = [
+    ("katuni4ka/tiny-random-qwen2vl", "<|vision_start|><|image_pad|><|vision_end|>"),
+]
+
+
+models_to_tag = image_id_ignorant + [
+    # minicpm tracks image number in expanded tags
+    ("katuni4ka/tiny-random-minicpmv-2_6", "<image>./</image>"),
 ]
 
 
 @pytest.mark.precommit
 @pytest.mark.nightly
 class TestImageTags:
+    def test_qwen2vl_representation(self, cache):
+        def workaround_inconsistent_inference():
+            model_id = "katuni4ka/tiny-random-qwen2vl"
+            vlm = VLMPipeline(get_ov_model(model_id, cache), "CPU")
+            generation_config = vlm.get_generation_config()
+            generation_config.max_new_tokens = 30
+            vlm.set_generation_config(generation_config)
+            prompt = "Describe"
+            image = get_image_by_link(image_links[0])
+
+            automatic_tags = vlm.generate(prompt, images=[image])
+
+            align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
+            processor = retry_request(lambda: transformers.AutoProcessor.from_pretrained(
+                model_id,
+                trust_remote_code=True,
+                **align_with_optimum_cli,
+            ))
+            templated_prompt = processor.apply_chat_template([{
+                "role": "user",
+                "content": [
+                    {"type": "image"},
+                    {"type": "text", "text": prompt},
+                ],
+            }], add_generation_prompt=True)
+            generation_config = vlm.get_generation_config()
+            generation_config.apply_chat_template = False
+            vlm.set_generation_config(generation_config)
+            reference_tags = vlm.generate(templated_prompt, images=[image])
+            assert automatic_tags.texts == reference_tags.texts
+            assert automatic_tags.scores == reference_tags.scores
+        retry(workaround_inconsistent_inference)
+
     @pytest.mark.parametrize("model_to_tag", models_to_tag)
     def test_prepend_native(self, model_to_tag, cache):
         def workaround_inconsistent_inference():
@@ -548,6 +587,21 @@ class TestImageTags:
             assert universal_tags1.texts == native_tags1.texts
             assert universal_tags1.scores == native_tags1.scores
             vlm.finish_chat()
+        retry(workaround_inconsistent_inference)
+
+    @pytest.mark.parametrize("model_to_tag", image_id_ignorant)
+    def test_same_reference(self, model_to_tag, cache):
+        def workaround_inconsistent_inference():
+            vlm = VLMPipeline(get_ov_model(model_to_tag[0], cache), "CPU")
+            generation_config = vlm.get_generation_config()
+            generation_config.max_new_tokens = 30
+            vlm.set_generation_config(generation_config)
+            image = get_image_by_link(image_links[0])
+
+            one_image = vlm.generate("<ov_genai_image_0>" * 2, images=[image])
+            two_images = vlm.generate("<ov_genai_image_0><ov_genai_image_1>", images=[image, image])
+            assert one_image.texts == two_images.texts
+            assert one_image.scores == two_images.scores
         retry(workaround_inconsistent_inference)
 
     @pytest.mark.parametrize("model_to_tag", models_to_tag)
