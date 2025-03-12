@@ -38,4 +38,3 @@ class TestVisualLanguageChat:
         # Compare results
         if model_name != "Qwen2-VL-2B-Instruct": # "Skipping result comparison for Qwen2-VL-2B-Instruct due to CVS-164144"
             assert py_result.stdout == cpp_result.stdout, f"Results should match"
-        assert py_result.stdout == cpp_result.stdout, f"Results should match"
