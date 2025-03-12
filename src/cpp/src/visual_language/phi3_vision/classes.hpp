@@ -37,8 +37,8 @@ public:
     void finish_chat() override;
 
 private:
-    ov::InferRequest m_hd_feature_transformer;
-    ov::InferRequest m_vision_projection;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_hd_feature_transformer;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_projection;
     std::vector<size_t> m_tokens_per_images;
     std::vector<size_t> m_prev_tokens_per_images;
 };

@@ -30,7 +30,7 @@ set (SAMPLE_LIST
     prompt_lookup_decoding_lm
     speculative_decoding_lm)
 
-foreach(sample ${SAMPLE_LIST})
+foreach(sample IN LISTS SAMPLE_LIST)
     add_sample_executable(${sample})
 endforeach()
 
