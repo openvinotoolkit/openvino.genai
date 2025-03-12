@@ -21,8 +21,13 @@ elseif(ARCH_DIR STREQUAL "x86_64" OR ARCH_DIR STREQUAL "amd64"  # Windows detect
         OR CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
     set(ARCH_DIR intel64)
 endif()
-if(GENERATOR_IS_MULTI_CONFIG_VAR)
-    set(ARCH_DIR ${ARCH_DIR}/${CMAKE_BUILD_TYPE})
+
+if(WIN32 OR APPLE)
+    if(GENERATOR_IS_MULTI_CONFIG_VAR)
+        set(ARCH_DIR ${ARCH_DIR}/$<CONFIG>)
+    else()
+        set(ARCH_DIR ${ARCH_DIR}/${CMAKE_BUILD_TYPE})
+    endif()
 endif()
 
 # Extract two last digits from OpenVINOGenAI_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
