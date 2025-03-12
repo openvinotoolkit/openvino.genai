@@ -46,16 +46,21 @@ void ov_genai_decoded_results_perf_metrics_free(ov_genai_perf_metrics* metrics) 
 }
 ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* results,
                                                 char* output,
-                                                size_t max_size) {
-    if (!results || !(results->object) || !output) {
+                                                size_t* output_size) {
+    if (!results || !(results->object) || !(output_size)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
         std::string str = *(results->object);
-        strncpy(output, str.c_str(), max_size - 1);
-        output[max_size - 1] = '\0';
-        if (str.length() + 1 > max_size) {
-            return ov_status_e::OUT_OF_BOUNDS;
+        if (!output) {
+            *output_size = str.length() + 1;
+        } else {
+            if (*output_size < str.length() + 1) {
+                return ov_status_e::OUT_OF_BOUNDS;
+            }
+            strncpy(output, str.c_str(), str.length() + 1);
+            output[str.length()] = '\0';
+            *output_size = str.length() + 1;
         }
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
@@ -86,41 +91,8 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                            const char* inputs,
                                            const ov_genai_generation_config* config,
                                            const stream_callback* streamer,
-                                           char* output,
-                                           size_t output_max_size) {
-    if (!pipe || !(pipe->object) || !inputs || !output) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
-    try {
-        std::string input_str(inputs);
-        ov::genai::StringInputs input = {input_str};
-        std::string results;
-        if (streamer) {
-            auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
-                return static_cast<ov::genai::StreamingStatus>((*streamer)(word.c_str()));
-            };
-            results = (config && config->object) ? pipe->object->generate(input, *(config->object), callback)
-                                                 : pipe->object->generate(input, {}, callback);
-        } else {
-            results = (config && config->object) ? pipe->object->generate(input, *(config->object))
-                                                 : pipe->object->generate(input);
-        }
-        strncpy(output, results.c_str(), output_max_size - 1);
-        output[output_max_size - 1] = '\0';
-        if (results.length() + 1 > output_max_size) {
-            return ov_status_e::OUT_OF_BOUNDS;
-        }
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
-}
-ov_status_e ov_genai_llm_pipeline_generate_decoded_results(ov_genai_llm_pipeline* pipe,
-                                                           const char* inputs,
-                                                           const ov_genai_generation_config* config,
-                                                           const stream_callback* streamer,
-                                                           ov_genai_decoded_results** results) {
-    if (!pipe || !(pipe->object) || !inputs || !results) {
+                                           ov_genai_decoded_results** results) {
+    if (!pipe || !(pipe->object) || !inputs || !(streamer || results)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
@@ -139,7 +111,9 @@ ov_status_e ov_genai_llm_pipeline_generate_decoded_results(ov_genai_llm_pipeline
             *(_results->object) = (config && config->object) ? pipe->object->generate(input, *(config->object))
                                                              : pipe->object->generate(input);
         }
-        *results = _results.release();
+        if (results) {
+            *results = _results.release();
+        }
 
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;

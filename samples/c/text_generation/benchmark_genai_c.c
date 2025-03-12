@@ -124,7 +124,6 @@ int main(int argc, char* argv[]) {
     ov_genai_decoded_results* results = NULL;
     ov_genai_perf_metrics* metrics = NULL;
     ov_genai_perf_metrics* cumulative_metrics = NULL;
-    char output[MAX_OUTPUT_LENGTH];
 
     CHECK_STATUS(ov_genai_llm_pipeline_create(options.model, options.device, &pipe));
 
@@ -132,10 +131,14 @@ int main(int argc, char* argv[]) {
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, options.max_new_tokens));
 
     for (size_t i = 0; i < options.num_warmup; i++) {
-        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, output, MAX_OUTPUT_LENGTH));
+        if (results) {
+            ov_genai_decoded_results_free(results);
+            results = NULL;  // The end of main() would try to free it again if not NULL.
+        }
+        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, &results));
     }
 
-    CHECK_STATUS(ov_genai_llm_pipeline_generate_decoded_results(pipe, options.prompt, config, NULL, &results));
+    CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, &results));
     CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &cumulative_metrics));
 
     if (results) {
@@ -143,7 +146,7 @@ int main(int argc, char* argv[]) {
         results = NULL;  // The end of main() would try to free it again if not NULL.
     }
     for (size_t i = 0; i < options.num_iter - 1; i++) {
-        CHECK_STATUS(ov_genai_llm_pipeline_generate_decoded_results(pipe, options.prompt, config, NULL, &results));
+        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipe, options.prompt, config, NULL, &results));
         CHECK_STATUS(ov_genai_decoded_results_get_perf_metrics(results, &metrics));
         CHECK_STATUS(ov_genai_perf_metrics_add_in_place(cumulative_metrics, metrics));  // metrics += _metrics
         if (metrics) {
