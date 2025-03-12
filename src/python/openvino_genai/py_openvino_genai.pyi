@@ -371,7 +371,7 @@ class ContinuousBatchingPipeline:
     This class is used for generation with LLMs with continuous batchig
     """
     @typing.overload
-    def __init__(self, models_path: os.PathLike, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}) -> None:
+    def __init__(self, models_path: os.PathLike, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}, vision_encoder_properties: dict[str, typing.Any] = {}) -> None:
         ...
     @typing.overload
     def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
