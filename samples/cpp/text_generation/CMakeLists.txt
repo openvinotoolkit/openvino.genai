@@ -12,7 +12,6 @@ function(add_sample_executable target_name)
     add_executable(${target_name} ${target_name}.cpp)
     target_link_libraries(${target_name} PRIVATE openvino::genai)
     set_target_properties(${target_name} PROPERTIES
-        COMPILE_PDB_NAME ${target_name}
         # Ensure out-of-box LC_RPATH on macOS with SIP
         INSTALL_RPATH_USE_LINK_PATH ON)
     install(TARGETS ${target_name}
@@ -51,7 +50,6 @@ FetchContent_MakeAvailable(cxxopts)
 add_executable(benchmark_genai benchmark_genai.cpp)
 target_link_libraries(benchmark_genai PRIVATE openvino::genai cxxopts::cxxopts)
 set_target_properties(benchmark_genai PROPERTIES
-    COMPILE_PDB_NAME benchmark_genai
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 
