@@ -36,6 +36,6 @@ class TestVisualLanguageChat:
         cpp_result = run_sample(cpp_command, sample_args)
 
         # Compare results
-        if model_name == "Qwen2-VL-2B-Instruct":
-            pytest.skip("Skipping result comparison for Qwen2-VL-2B-Instruct due to CVS-164144")
+        if model_name != "Qwen2-VL-2B-Instruct": # "Skipping result comparison for Qwen2-VL-2B-Instruct due to CVS-164144"
+            assert py_result.stdout == cpp_result.stdout, f"Results should match"
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
