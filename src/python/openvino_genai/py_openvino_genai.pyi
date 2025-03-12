@@ -371,7 +371,7 @@ class ContinuousBatchingPipeline:
     This class is used for generation with LLMs with continuous batchig
     """
     @typing.overload
-    def __init__(self, models_path: os.PathLike, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}) -> None:
+    def __init__(self, models_path: os.PathLike, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}, vision_encoder_properties: dict[str, typing.Any] = {}) -> None:
         ...
     @typing.overload
     def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
@@ -2114,7 +2114,7 @@ class VLMPipeline:
             images used in previous prompts isn't implemented.
             A model's native image tag can be used instead of
             <ov_genai_image_i>. These tags are:
-            MiniCPM-V-2_6: <image>./</image>
+            MiniCPM-V-2_6: (<image>./</image>)\\n
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
@@ -2146,7 +2146,7 @@ class VLMPipeline:
             images used in previous prompts isn't implemented.
             A model's native image tag can be used instead of
             <ov_genai_image_i>. These tags are:
-            MiniCPM-V-2_6: <image>./</image>
+            MiniCPM-V-2_6: (<image>./</image>)\\n
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
@@ -2177,7 +2177,7 @@ class VLMPipeline:
             images used in previous prompts isn't implemented.
             A model's native image tag can be used instead of
             <ov_genai_image_i>. These tags are:
-            MiniCPM-V-2_6: <image>./</image>
+            MiniCPM-V-2_6: (<image>./</image>)\\n
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.

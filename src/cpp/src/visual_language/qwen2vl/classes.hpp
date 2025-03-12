@@ -26,7 +26,7 @@ class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
     //  - rotary_pos_emb: [?, 40]
     //  - attention_mask: [1, ?, ?]
     // Output: [N, hidden_size]
-    ov::InferRequest m_vision_embeddings_merger;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_merger;
 
     ov::Tensor m_position_ids;
     int64_t m_rope_delta = 0;

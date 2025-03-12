@@ -74,7 +74,8 @@ public:
                                const SchedulerConfig& scheduler_config,
                                const std::string& device,
                                const ov::AnyMap& properties = {},
-                               const ov::AnyMap& tokenizer_properties = {});
+                               const ov::AnyMap& tokenizer_properties = {},
+                               const ov::AnyMap& vision_encoder_properties = {});
 
     /**
     * @brief Constructs a ContinuousBatchingPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.
