@@ -141,7 +141,7 @@ def test_pipeline_cache_dir(config, model_id):
     ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
 
     # NB: Generate the blob
-    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "CACHE_DIR": cache_dir }))
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "NPUW_DEVICES": "CPU", "CACHE_DIR": cache_dir }))
     del npu_pipe
 
     # Check that blob was cached
@@ -180,7 +180,8 @@ def test_pipeline_cache_dir_blob_with_weights(config, model_id):
     ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
 
     # NB: Generate the blob
-    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "CACHE_DIR": cache_dir, "CACHE_MODE": "OPTIMIZE_SPEED" }))
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "NPUW_DEVICES": "CPU", "CACHE_DIR": cache_dir, \
+                                                            "CACHE_MODE": "OPTIMIZE_SPEED" }))
     del npu_pipe
 
     # Check that blob was cached
