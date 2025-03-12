@@ -165,6 +165,17 @@ private:
 /// If no any tag, prepend universal image tag.
 /// If native tag, assume incremental image order.
 /// Else replace universal tags with native tags and save image order.
-std::pair<std::string, std::vector<size_t>> unify_prompt(const std::string& prompt, const std::string& native_tag, size_t n_new_images, size_t first_new_image_id);
+/// @param unified_tag_to_native_tag MiniCPM-V-2_6 inserts
+/// (<image>./</image>)\n per image but it only replaces
+/// <image>./</image> leaving ()\n untouched.
+/// unified_tag_to_native_tag allows to handle this by being separated
+/// from native_tag param.
+std::pair<std::string, std::vector<size_t>> unify_prompt(
+    const std::string& prompt,
+    const std::string& native_tag,
+    const std::string& unified_tag_to_native_tag,
+    size_t n_new_images,
+    size_t first_new_image_id
+);
 
 } // namespace ov::genai

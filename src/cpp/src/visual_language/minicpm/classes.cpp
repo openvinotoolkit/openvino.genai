@@ -575,7 +575,13 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     std::vector<EncodedImage> embeds;
 
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
-    auto [unified_prompt, images_sequence] = unify_prompt(prompt, NATIVE_TAG, single_images.size(), m_image_id);
+    auto [unified_prompt, images_sequence] = unify_prompt(
+        prompt,
+        NATIVE_TAG,
+        '(' + NATIVE_TAG + ")\n",
+        single_images.size(),
+        m_image_id
+    );
 
     for (const ov::Tensor& image : single_images) {
         embeds.push_back(m_vision_encoder->encode(image));
