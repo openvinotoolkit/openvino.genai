@@ -47,6 +47,8 @@ void padding_right(ov::Tensor src, ov::Tensor res) {
 // returns tensor, which shares data with input tensor and pointing to a given batch slice
 ov::Tensor get_tensor_batch(const ov::Tensor input, size_t batch_id) {
     ov::Shape target_shape = input.get_shape();
+
+    OPENVINO_ASSERT(target_shape.at(0) > batch_id, "Cannot get batch with id ", batch_id, ", total batch size is ", target_shape.at(0));
     target_shape[0] = 1;
 
     void * target_data = input.data<float>() + batch_id * ov::shape_size(target_shape);
@@ -312,7 +314,7 @@ public:
                     .count();
             m_perf_metrics.encoder_inference_duration["text_encode_3"] = infer_duration;
         } else {
-            ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
+            ov::Shape t5_prompt_embed_shape = {batch_size_multiplier,
                                                m_clip_text_encoder_1->get_config().max_position_embeddings,
                                                transformer_config.joint_attention_dim};
             text_encoder_3_output = ov::Tensor(ov::element::f32, t5_prompt_embed_shape);

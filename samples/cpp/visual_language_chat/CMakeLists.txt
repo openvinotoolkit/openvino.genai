@@ -20,7 +20,6 @@ target_include_directories(visual_language_chat PRIVATE "${CMAKE_CURRENT_SOUCE_D
 target_link_libraries(visual_language_chat PRIVATE openvino::genai)
 
 set_target_properties(visual_language_chat PROPERTIES
-    COMPILE_PDB_NAME visual_language_chat
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 
@@ -35,7 +34,6 @@ add_executable(benchmark_vlm benchmark_vlm.cpp load_image.cpp)
 target_include_directories(benchmark_vlm PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
 target_link_libraries(benchmark_vlm PRIVATE openvino::genai cxxopts::cxxopts)
 set_target_properties(benchmark_vlm PROPERTIES
-    COMPILE_PDB_NAME benchmark_vlm
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 

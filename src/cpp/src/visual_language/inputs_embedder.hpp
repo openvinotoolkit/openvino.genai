@@ -59,6 +59,8 @@ public:
     // finishes chat and clears a chat history 
     void finish_chat();
 
+    bool prompt_has_image_tag(const std::string& prompt) const;
+
 private:
     class IInputsEmbedder {
     protected:
@@ -85,6 +87,9 @@ private:
         utils::KVCacheState m_kv_cache_state;
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
+        // Verifies no previous image is referenced.
+        // InputsEmbedderMiniCPM Uses to insert <image_id>i</image_id> per image (not a slice).
+        size_t m_image_id = 0;
     public:
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
     
@@ -111,6 +116,8 @@ private:
         virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
     
         virtual void finish_chat();
+
+        virtual bool prompt_has_image_tag(const std::string& prompt) const;
     
     protected:
         IInputsEmbedder(
@@ -151,5 +158,13 @@ private:
     friend class InputsEmbedderPhi3V;
     friend class InputsEmbedderQwen2VL;
 };
+
+/// @brief Check if universal tag is given.
+/// Check if native tag is given.
+/// Assert different tag aren't mixed.
+/// If no any tag, prepend universal image tag.
+/// If native tag, assume incremental image order.
+/// Else replace universal tags with native tags and save image order.
+std::pair<std::string, std::vector<size_t>> unify_prompt(const std::string& prompt, const std::string& native_tag, size_t n_new_images, size_t first_new_image_id);
 
 } // namespace ov::genai
