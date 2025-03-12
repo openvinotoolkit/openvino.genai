@@ -92,7 +92,8 @@ jobs:
       CMAKE_GENERATOR: Unix Makefiles
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
-      INSTALL_SAMPLES_DIR: ${{ github.workspace }}/samples
+      INSTALL_TOOLS_DIR: ${{ github.workspace }}/tools
+      INSTALL_TESTS_DIR: ${{ github.workspace }}/tests
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
 
@@ -116,17 +117,35 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR}} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TESTS_DIR }} --component tests
 
       - name: Pack Artifacts
         run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
         working-directory: ${{ env.INSTALL_DIR }}
 
       - name: Upload Archive Distribution Package
-        if: ${{ always() }}
+        if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: genai_archive_${{ matrix.build-type }}
           path: ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
+          if-no-files-found: 'error'
+      
+      - name: Upload Tools
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: genai_tools_${{ matrix.build-type }}
+          path: ${{ env.INSTALL_TOOLS_DIR }}
+          if-no-files-found: 'error'
+        
+      - name: Upload Tests
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: genai_tests_${{ matrix.build-type }}
+          path: ${{ env.INSTALL_TESTS_DIR }}
           if-no-files-found: 'error'
 
   genai_build_wheel:
@@ -452,6 +471,63 @@ jobs:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
           SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
+  genai_tools_tests:
+    name: Tools ${{ matrix.test.name }} (${{ matrix.build-type }})
+    strategy:
+      fail-fast: false
+      matrix:
+        build-type: [Release]
+    needs: [ openvino_download, genai_build_cmake, genai_build_wheel ] 
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    runs-on: ${{ matrix.test.runner }}
+    container:
+      image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+
+    env:
+      INSTALL_DIR: ${{ github.workspace }}/ov
+      SRC_DIR: ${{ github.workspace }}/src
+      BUILD_DIR: ${{ github.workspace }}/build
+        
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_tools_${{ matrix.build-type }},genai_tests_${{ matrix.build-type }}}"
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Extract Artifacts
+        run: |
+          pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
+        working-directory: ${{ env.INSTALL_DIR }}
+        
+      - name: Install requirements
+        run: pip install pytest -r ${{ env.SRC_DIR }}/samples/requirements.txt
+        
+      - name: gtests
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
+        
+      - name: Test Tools (Python and C++)
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching.py
+        env:
+          SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
+  
   genai_nodejs_tests:
     name: Node.js bindings tests
     needs: [ openvino_download, genai_build_nodejs ]
