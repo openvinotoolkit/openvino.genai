@@ -12,15 +12,17 @@ class TestVisualLanguageChat:
     @pytest.mark.vlm
     @pytest.mark.samples
     @pytest.mark.parametrize(
-        "convert_model, sample_args",
+        "convert_model, download_test_content, sample_args",
         [
-            pytest.param("llava-1.5-7b-hf", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("llava-v1.6-mistral-7b-hf", 'Who drew this painting?\nWhen did the painter live?'),
+            pytest.param("llava-1.5-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
+            pytest.param("llava-v1.6-mistral-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
+            pytest.param("tiny-random-minicpmv-2_6", ("cat.png", "images"), 'What is unusual on this image?\nGo on.'),
         ],
-        indirect=["convert_model"],
+        indirect=["convert_model", "download_test_content"],
     )
-    @pytest.mark.parametrize("download_test_content", ["monalisa.jpg"], indirect=True)
-    def test_sample_visual_language_chat(self, convert_model, download_test_content, sample_args):
+    def test_sample_visual_language_chat(self, request, convert_model, download_test_content, sample_args):
+        model_name = request.node.callspec.params['convert_model']
+        
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
         py_command = [sys.executable, py_script, convert_model, download_test_content]
@@ -29,6 +31,33 @@ class TestVisualLanguageChat:
         # Test CPP sample
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'visual_language_chat')
         cpp_command =[cpp_sample, convert_model, download_test_content]
+        cpp_result = run_sample(cpp_command, sample_args)
+
+        # Compare results
+        assert py_result.stdout == cpp_result.stdout, f"Results should match"
+
+    @pytest.mark.vlm
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model, sample_args",
+        [
+            pytest.param("tiny-random-minicpmv-2_6", 'Describe the images?'),
+        ],
+        indirect=["convert_model"],
+    )
+    @pytest.mark.parametrize("download_test_content", [("cat.png", "images")], indirect=True)
+    @pytest.mark.parametrize("generate_test_content", [("lines.png", "images")], indirect=True)
+    def test_sample_visual_language_chat_images(self, request, convert_model, download_test_content, generate_test_content, sample_args):
+        model_name = request.node.callspec.params['convert_model']
+        
+        # Test Python sample
+        py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
+        py_command = [sys.executable, py_script, convert_model, os.path.dirname(generate_test_content)]
+        py_result = run_sample(py_command, sample_args)
+
+        # Test CPP sample
+        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'visual_language_chat')
+        cpp_command =[cpp_sample, convert_model, os.path.dirname(generate_test_content)]
         cpp_result = run_sample(cpp_command, sample_args)
 
         # Compare results
