@@ -49,7 +49,7 @@ protected:
 
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
-    std::vector<ov::Tensor> m_history_images;
+    std::vector<ov::genai::EncodedImage> m_history_images;
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms

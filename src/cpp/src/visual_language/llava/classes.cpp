@@ -101,18 +101,26 @@ InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
 
-ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
-    std::string image_token = m_vlm_config.im_start;
-    
+std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const std::vector<ov::Tensor>& images) {
+    std::vector<EncodedImage> embeds;
+    ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+    embeds.reserve(single_images.size());
+    for (const ov::Tensor& image : single_images) {
+        embeds.emplace_back(m_vision_encoder->encode(image, vision_config));
+    }
+    return embeds;
+}
+
+ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+    std::string image_token = m_vlm_config.im_start;
 
     std::string formatted_prompt;
     std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(single_images.size());
+    image_embeds.reserve(images.size());
 
-    for (const auto& image : single_images) {
+    for (const auto& encoded_image : images) {
         ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
-        EncodedImage encoded_image = m_vision_encoder->encode(image, vision_config);
         for (size_t idx = 0; idx < encoded_image.resized_source.get_shape().at(1); ++idx) {
             formatted_prompt += image_token;
         }

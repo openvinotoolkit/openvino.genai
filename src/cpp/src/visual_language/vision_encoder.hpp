@@ -41,6 +41,9 @@ struct EncodedImage {
     /// @brief Patches grid after llava_next preprocessing.
     /// Format: [num_patches_height, num_patches_width]
     std::pair<int, int> patches_grid;
+    
+    /// @brief Original size of the image
+    ImageSize original_image_size;
 };
 
 /// @brief A class used to infer embeddings of an image using

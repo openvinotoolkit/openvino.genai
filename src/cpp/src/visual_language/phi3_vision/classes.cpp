@@ -515,11 +515,10 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
     m_hd_feature_transformer{create_hd_feature_transformer()},
     m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {}).create_infer_request()} {}
 
-ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
     std::vector<ov::Tensor> images_features_proj;
     std::stringstream images_prompt;
-    for (const ov::Tensor& image : to_single_image_tensors(images)) {
-        EncodedImage encoded_image = m_vision_encoder->encode(image);
+    for (const ov::genai::EncodedImage& encoded_image : images) {
         images_features_proj.push_back(hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, m_vision_projection));
         m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
         images_prompt << "<|image_" << m_tokens_per_images.size() << "|>\n";

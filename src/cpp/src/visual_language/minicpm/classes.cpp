@@ -570,16 +570,9 @@ InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
 }
 
-ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
     std::string images_prompt;
-    std::vector<EncodedImage> embeds;
-
-    std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
-    auto [unified_prompt, images_sequence] = unify_prompt(prompt, NATIVE_TAG, single_images.size(), m_image_id);
-
-    for (const ov::Tensor& image : single_images) {
-        embeds.push_back(m_vision_encoder->encode(image));
-    }
+    auto [unified_prompt, images_sequence] = unify_prompt(prompt, NATIVE_TAG, images.size(), m_image_id);
 
     std::string unk64;
     for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
@@ -587,7 +580,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     }
 
     for (size_t new_image_id : images_sequence) {
-        const EncodedImage& encoded_image = embeds.at(new_image_id - m_prev_image_id);
+        const EncodedImage& encoded_image = images.at(new_image_id - m_prev_image_id);
         std::string expanded_tag;
         if (m_vlm_config.use_image_id) {
             expanded_tag += m_vlm_config.im_id_start + std::to_string(new_image_id) + m_vlm_config.im_id_end;
@@ -639,7 +632,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     int64_t* end = ids + encoded_input_size;
     float* inputs_embeds_data = inputs_embeds.data<float>();
     for (size_t image_id : images_sequence) {
-        const EncodedImage& encoded_image = embeds.at(image_id - m_prev_image_id);
+        const EncodedImage& encoded_image = images.at(image_id - m_prev_image_id);
         const ov::Tensor& resampled_source = resample(encoded_image.resized_source, {encoded_image.resized_source_size});
         float* emb = resampled_source.data<float>();
         ids = std::find(ids, end, im_start_id);
