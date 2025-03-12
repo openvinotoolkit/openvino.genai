@@ -10,6 +10,7 @@ import time
 import json
 import types
 from llm_bench_utils.hook_common import get_bench_hook
+from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.config_class import (
     OV_MODEL_CLASSES_MAPPING,
     TOKENIZE_CLASSES_MAPPING,
@@ -315,14 +316,6 @@ def get_genai_unet_model(model_index_data, model_path, device, ov_config):
 
 def create_genai_image_gen_model(model_path, device, ov_config, model_index_data, **kwargs):
     import openvino_genai
-
-    class MeanStdPair():
-        def __init__(self, mean):
-            self.mean = mean
-
-    class RawImGenPerfMetrics():
-        def __init__(self, unet_inference_durations):
-            self.unet_inference_durations = unet_inference_durations
 
     class PerfCollector:
         def __init__(self, main_model_name="unet") -> types.NoneType:
