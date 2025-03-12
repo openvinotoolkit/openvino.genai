@@ -179,7 +179,7 @@ def test_vlm_continuous_batching_vs_stateful(config, cache):
         res_stateful = stateful_pipe.generate(prompts[0], images=images, generation_config=generation_config)
         for out_idx, text in enumerate(res_stateful.texts):
             assert text == res_cb[idx][0].texts[out_idx]
-            assert abs(res_stateful.scores[out_idx] - res_cb[idx][0].m_scores[out_idx]) < eps
+            assert abs(res_stateful.scores[out_idx] - res_cb[idx][0].scores[out_idx]) < eps
 
 
 
