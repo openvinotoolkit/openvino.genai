@@ -57,4 +57,3 @@ install(TARGETS benchmark_genai
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
-
