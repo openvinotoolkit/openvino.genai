@@ -8,6 +8,20 @@
 // https://github.com/antirez/gguf-tools/blob/af7d88d808a7608a33723fba067036202910acb3/gguflib.h#L102-L108
 constexpr int gguf_array_header_size = 12;
 
+using GGUFLoad = std::pair<
+    std::unordered_map<std::string, GGUFMetaData>,
+    std::unordered_map<std::string, ov::Tensor>>;
+
+std::string format(const std::string fmt_str, ...) {
+    va_list ap;
+    char *fp = NULL;
+    va_start(ap, fmt_str);
+    vasprintf(&fp, fmt_str.c_str(), ap);
+    va_end(ap);
+    std::unique_ptr<char[]> formatted(fp);
+    return std::string(formatted.get());
+}
+
 std::optional<uint32_t> dtype_to_gguf_tensor_type(const ov::element::Type& dtype) {
   switch (dtype) {
     case ov::element::f32:
@@ -239,7 +253,7 @@ std::unordered_map<std::string, ov::Tensor> load_arrays(gguf_ctx* ctx) {
   return array_map;
 }
 
-GGUFLoad load_gguf(const std::string& file) {
+GGUFLoad get_gguf_data(const std::string& file) {
   bool exists;
   {
     std::ifstream f(file.c_str());
@@ -256,7 +270,7 @@ GGUFLoad load_gguf(const std::string& file) {
   }
   auto metadata = load_metadata(ctx.get());
   auto arrays = load_arrays(ctx.get());
-  return {arrays, metadata};
+  return {metadata, arrays};
 }
 
 void append_kv_array(
@@ -290,6 +304,128 @@ void append_kv_array(
         reinterpret_cast<void*>(val.data<ov::element_type_traits<ov::element::u8>::value_type>()),
         val.get_byte_size());
   }
+}
+
+QType get_quantization_type(int gguf_type) {
+    switch(gguf_type) {
+        case 0:
+        case 1:
+            std::cout << "Working with FP16 model" << std::endl;
+            return QType::FP16;
+            
+        case 2:
+        case 3:
+            std::cout << "Working with INT4 quantized model" << std::endl;
+            return QType::INT4;
+            
+        case 7:
+            std::cout << "Working with INT8 quantized model" << std::endl;
+            return QType::INT8;
+            
+        default:
+            throw std::invalid_argument(
+                "Unsupported GGUF quantization type: " + std::to_string(gguf_type));
+    }
+}
+
+float metadata_to_float(const std::unordered_map<std::string, GGUFMetaData>& metadata, const std::string& key) {
+    auto tensor = std::get<ov::Tensor>(metadata.at(key));
+    return *(tensor.data<ov::element_type_traits<ov::element::f32>::value_type>());
+}
+
+int metadata_to_int(const std::unordered_map<std::string, GGUFMetaData>& metadata, const std::string& key) {
+    auto tensor = std::get<ov::Tensor>(metadata.at(key));
+    return *(tensor.data<ov::element_type_traits<ov::element::i32>::value_type>());
+}
+
+std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<std::string, GGUFMetaData>& metadata) {
+    std::map<std::string, GGUFMetaData> config;
+    config["layer_num"] = metadata_to_int(metadata, "llama.block_count");
+    config["head_num"] = metadata_to_int(metadata, "llama.attention.head_count");
+    config["head_size"] = metadata_to_int(metadata, "llama.embedding_length") / 
+                     metadata_to_int(metadata, "llama.attention.head_count");
+    config["head_num_kv"] = metadata.count("llama.attention.head_count_kv") ?
+            metadata_to_int(metadata, "llama.attention.head_count_kv") :
+            metadata_to_int(metadata, "llama.attention.head_count");
+    config["hidden_size"] = metadata_to_int(metadata, "llama.embedding_length");
+    config["max_position_embeddings"] = metadata.count("llama.context_length") ?
+            metadata_to_int(metadata, "llama.context_length") : 2048;
+    config["rotary_dims"] = metadata_to_int(metadata, "llama.rope.dimension_count");
+    config["rms_norm_eps"] = metadata_to_float(metadata, "llama.attention.layer_norm_rms_epsilon");
+    config["rope_freq_base"] = metadata.count("llama.rope.freq_base") ?
+            metadata_to_float(metadata, "llama.rope.freq_base") : 10000.0f;
+    config["qtype"] = (int)get_quantization_type(metadata_to_int(metadata, "general.file_type"));
+
+    config["architecture"] = std::get<std::string>(metadata.at("general.architecture"));
+
+    return config;
+}
+
+std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<std::string, GGUFMetaData>& config,
+                                                            const std::unordered_map<std::string, ov::Tensor>& weights) {
+    std::unordered_map<std::string, ov::Tensor> consts;
+
+    consts["model.embed_tokens.weight"] = weights.at("token_embd.weight");
+    consts["model.norm.weight"] = weights.at("output_norm.weight");
+    consts["lm_head.weight"] = weights.count("output.weight") ? 
+        weights.at("output.weight") : ov::Tensor();
+
+    // Handle quantization scales and biases
+    if (weights.count("token_embd.scales")) {
+        consts["model.embed_tokens.scales"] = weights.at("token_embd.scales");
+        consts["model.embed_tokens.biases"] = weights.at("token_embd.biases");
+    }
+    if (weights.count("output.scales")) {
+        consts["lm_head.scales"] = weights.at("output.scales");
+        consts["lm_head.biases"] = weights.at("output.biases");
+    }
+
+    // Process layer weights
+    for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
+        consts[format("model.layers[{}].input_layernorm.weight", i)] = weights.at(format("blk.{}.attn_norm.weight", i));
+        consts[format("model.layers[{}].post_attention_layernorm.weight", i)] = weights.at(format("blk.{}.ffn_norm.weight", i));
+        
+        // Attention weights
+        consts[format("model.layers[{}].self_attn.q_proj.weight", i)] = weights.at(format("blk.{}.attn_q.weight", i));
+        consts[format("model.layers[{}].self_attn.k_proj.weight", i)] = weights.at(format("blk.{}.attn_k.weight", i));
+        consts[format("model.layers[{}].self_attn.v_proj.weight", i)] = weights.at(format("blk.{}.attn_v.weight", i));
+        consts[format("model.layers[{}].self_attn.o_proj.weight", i)] = weights.at(format("blk.{}.attn_output.weight", i));
+
+        // MLP weights
+        consts[format("model.layers[{}].mlp.gate_proj.weight", i)] = weights.at(format("blk.{}.ffn_gate.weight", i));
+        consts[format("model.layers[{}].mlp.up_proj.weight", i)] = weights.at(format("blk.{}.ffn_up.weight", i));
+        consts[format("model.layers[{}].mlp.down_proj.weight", i)] = weights.at(format("blk.{}.ffn_down.weight", i));
+
+        // Quantization parameters
+        if (QType(std::get<int>(config.at("qtype"))) != QType::FP16) {
+            consts[format("model.layers[{}].self_attn.q_proj.scales", i)] = weights.at(format("blk.{}.attn_q.scales", i));
+            consts[format("model.layers[{}].self_attn.k_proj.scales", i)] = weights.at(format("blk.{}.attn_k.scales", i));
+            consts[format("model.layers[{}].self_attn.v_proj.scales", i)] = weights.at(format("blk.{}.attn_v.scales", i));
+            consts[format("model.layers[{}].self_attn.o_proj.scales", i)] = weights.at(format("blk.{}.attn_output.scales", i));
+            consts[format("model.layers[{}].mlp.gate_proj.scales", i)] = weights.at(format("blk.{}.ffn_gate.scales", i));
+            consts[format("model.layers[{}].mlp.up_proj.scales", i)] = weights.at(format("blk.{}.ffn_up.scales", i));
+            consts[format("model.layers[{}].mlp.down_proj.scales", i)] = weights.at(format("blk.{}.ffn_down.scales", i));
+
+            consts[format("model.layers[{}].self_attn.q_proj.biases", i)] = weights.at(format("blk.{}.attn_q.biases", i));
+            consts[format("model.layers[{}].self_attn.k_proj.biases", i)] = weights.at(format("blk.{}.attn_k.biases", i));
+            consts[format("model.layers[{}].self_attn.v_proj.biases", i)] = weights.at(format("blk.{}.attn_v.biases", i));
+            consts[format("model.layers[{}].self_attn.o_proj.biases", i)] = weights.at(format("blk.{}.attn_output.biases", i));
+            consts[format("model.layers[{}].mlp.gate_proj.biases", i)] = weights.at(format("blk.{}.ffn_gate.biases", i));
+            consts[format("model.layers[{}].mlp.up_proj.biases", i)] = weights.at(format("blk.{}.ffn_up.biases", i));
+            consts[format("model.layers[{}].mlp.down_proj.biases", i)] = weights.at(format("blk.{}.ffn_down.biases", i));
+        }
+    }
+
+    return consts;
+}
+
+std::pair<std::map<std::string, GGUFMetaData>, std::unordered_map<std::string, ov::Tensor>> load_gguf(const std::string& file) {
+    auto [metadata, weights] = get_gguf_data(file);
+
+    auto config = config_from_meta(metadata);
+    auto consts = consts_from_weights(config, weights);
+
+    return {config, consts};
 }
 
 // void save_gguf(

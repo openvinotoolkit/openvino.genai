@@ -8,9 +8,7 @@
 
 #include <openvino/openvino.hpp>
 
-std::string format(const std::string fmt_str, ...);
-
-enum class QType { FP16 = 0, INT8 = 1, INT4 = 2 };
+#include "gguf.h"
 
 ov::Output<ov::Node> make_lm_head(
     const std::string& key,
@@ -36,7 +34,7 @@ std::tuple<ov::Output<ov::Node>,
            ov::Output<ov::Node>,
            std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>,
            std::shared_ptr<ov::Node>> 
-    layer(const std::map<std::string, float>& configs,
+    layer(const std::map<std::string, GGUFMetaData>& configs,
         std::unordered_map<std::string, ov::Tensor>& consts,
         int layer_idx,
         const ov::Output<ov::Node>& hidden_states,

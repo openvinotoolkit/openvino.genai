@@ -2,9 +2,9 @@
 #include <stdexcept>
 #include <algorithm>
 #include <unordered_map>
-#include <openvino/openvino.hpp>
 #include <math.h>
 
+#include <openvino/openvino.hpp>
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
 
@@ -17,17 +17,6 @@ using namespace ov::op::v13;
 using namespace ov::op;
 
 static const size_t GGML_QUANTIZATION_GROUP_SIZE = 32;
-
-std::string format(const std::string fmt_str, ...)
-{
-    va_list ap;
-    char *fp = NULL;
-    va_start(ap, fmt_str);
-    vasprintf(&fp, fmt_str.c_str(), ap);
-    va_end(ap);
-    std::unique_ptr<char[]> formatted(fp);
-    return std::string(formatted.get());
-}
 
 static inline float fp32_from_bits(uint32_t w) {
     union {
@@ -301,7 +290,7 @@ multi_head_attention(
     const Output<Node>& query,
     const Output<Node>& key,
     const Output<Node>& value,
-    const std::map<std::string, float>& configs,
+    const std::map<std::string, GGUFMetaData>& configs,
     const Output<Node>& batch_dim,
     int layer_idx,
     const Output<Node>& hidden_dim,
@@ -314,9 +303,9 @@ multi_head_attention(
     const Output<Node>& beam_idx,
     const std::pair<Output<Node>, Output<Node>>& cos_sin_cached) {
 
-    int num_heads = static_cast<int>(configs.at("head_num"));
-    int head_dim = static_cast<int>(configs.at("head_size"));
-    int num_heads_kv = static_cast<int>(configs.at("head_num_kv"));
+    int num_heads = std::get<int>(configs.at("head_num"));
+    int head_dim = std::get<int>(configs.at("head_size"));
+    int num_heads_kv = std::get<int>(configs.at("head_num_kv"));
 
     // Helper function to split heads
     auto split_heads = [&](const Output<Node>& x, int num_h) {
@@ -643,10 +632,10 @@ ov::Output<ov::Node> make_mvn(
     const std::string& key,
     const ov::Output<ov::Node>& input,
     const std::unordered_map<std::string, ov::Tensor>& consts,
-    const std::map<std::string, float>& configs,
+    const std::map<std::string, GGUFMetaData>& configs,
     const std::string& name_suffix = "") {
 
-    float eps = configs.at("layer_norm_eps");
+    auto eps = std::get<float>(configs.at("layer_norm_eps"));
     auto reduction_axes = std::make_shared<ov::op::v0::Constant>(
             ov::element::i64, ov::Shape{1}, -1);
     auto mvn = std::make_shared<ov::op::v6::MVN>(
@@ -771,7 +760,7 @@ std::tuple<ov::Output<ov::Node>,
            ov::Output<ov::Node>,
            std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>,
            std::shared_ptr<ov::Node>> 
-    layer(const std::map<std::string, float>& configs,
+    layer(const std::map<std::string, GGUFMetaData>& configs,
         std::unordered_map<std::string, ov::Tensor>& consts,
         int layer_idx,
         const ov::Output<ov::Node>& hidden_states,
@@ -794,30 +783,30 @@ std::tuple<ov::Output<ov::Node>,
         layer_prefix + ".input_layernorm",
         hidden_states,
         consts,
-        configs.at("rms_norm_eps"));
+        std::get<float>(configs.at("rms_norm_eps")));
 
     // Attention projections
     auto q = make_fc(
         layer_prefix + ".self_attn.q_proj",
         input_layernorm,
         consts,
-        static_cast<QType>(configs.at("qtype")),
+        static_cast<QType>(std::get<int>(configs.at("qtype"))),
         true,
-        configs.at("head_size"));
+        std::get<int>(configs.at("head_size")));
 
     auto k = make_fc(
         layer_prefix + ".self_attn.k_proj",
         input_layernorm,
         consts,
-        static_cast<QType>(configs.at("qtype")),
+        static_cast<QType>(std::get<int>(configs.at("qtype"))),
         true,
-        configs.at("head_size"));
+        std::get<int>(configs.at("head_size")));
 
     auto v = make_fc(
         layer_prefix + ".self_attn.v_proj",
         input_layernorm,
         consts,
-        static_cast<QType>(configs.at("qtype")));
+        static_cast<QType>(std::get<int>(configs.at("qtype"))));
 
     // Handle output shape
     std::shared_ptr<ov::Node> final_output_shape = output_shape;
@@ -855,7 +844,7 @@ std::tuple<ov::Output<ov::Node>,
         layer_prefix + ".self_attn.o_proj",
         attn_output,
         consts,
-        static_cast<QType>(configs.at("qtype")));
+        static_cast<QType>(std::get<int>(configs.at("qtype"))));
 
     // Residual connection
     auto attn_add = std::make_shared<ov::op::v1::Add>(
@@ -867,20 +856,20 @@ std::tuple<ov::Output<ov::Node>,
         layer_prefix + ".post_attention_layernorm",
         attn_add,
         consts,
-        configs.at("rms_norm_eps"));
+        std::get<float>(configs.at("rms_norm_eps")));
 
     // MLP block
     auto gate_proj = make_fc(
         layer_prefix + ".mlp.gate_proj",
         post_attn_norm,
         consts,
-        static_cast<QType>(configs.at("qtype")));
+        static_cast<QType>(std::get<int>(configs.at("qtype"))));
     auto silu = std::make_shared<ov::op::v4::Swish>(gate_proj);
     auto up_proj = make_fc(
         layer_prefix + ".mlp.up_proj",
         post_attn_norm,
         consts,
-        static_cast<QType>(configs.at("qtype")));
+        static_cast<QType>(std::get<int>(configs.at("qtype"))));
     auto mul = std::make_shared<ov::op::v1::Multiply>(
         silu, up_proj, ov::op::AutoBroadcastType::NUMPY);
     mul->set_friendly_name(name_prefix + ".mlp.mul" + name_suffix);
@@ -888,7 +877,7 @@ std::tuple<ov::Output<ov::Node>,
         layer_prefix + ".mlp.down_proj",
         mul,
         consts,
-        static_cast<QType>(configs.at("qtype")));
+        static_cast<QType>(std::get<int>(configs.at("qtype"))));
 
     // Final residual connection
     auto output = std::make_shared<ov::op::v1::Add>(
