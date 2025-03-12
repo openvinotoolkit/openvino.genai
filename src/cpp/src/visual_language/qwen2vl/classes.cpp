@@ -273,7 +273,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
 
 ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
-    auto [unified_prompt, images_sequence] = unify_prompt(prompt, NATIVE_TAG, single_images.size(), m_image_id);
+    auto [unified_prompt, images_sequence] = unify_prompt(prompt, NATIVE_TAG, NATIVE_TAG, single_images.size(), m_image_id);
     std::vector<ov::Tensor> image_embeds;
     std::vector<std::array<size_t, 3>> images_grid_thw;
     image_embeds.reserve(single_images.size());
