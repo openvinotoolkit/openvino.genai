@@ -69,7 +69,7 @@ export const SpeechToText = () => {
         </LanguageTabs>
         <hr />
         <ExploreCodeSamples link="docs/category/samples" />
-        <GoToDocumentation link="docs/use-cases/speech-processings" />
+        <GoToDocumentation link="docs/use-cases/speech-processing" />
       </Section.Column>
     </Section.Container>
   );
