@@ -7,6 +7,7 @@ import os
 import pytest
 import platform
 import sys
+import shutil
 
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model
@@ -90,6 +91,114 @@ def test_pipeline_from_blob(config, model_id):
     actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
 
     os.remove(blob_path)
+
+    if ref_out != actual_out:
+        print(f'ref_out: {ref_out}\n')
+        print(f'actual_out: {actual_out}')
+    assert ref_out == actual_out
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+@pytest.mark.parametrize("model_id", get_models_list())
+def test_pipeline_from_blob_with_weights(config, model_id):
+    prompt = 'What is OpenVINO?'
+    _, _, model_path = download_and_convert_model(model_id)
+    blob_path = "compiled_model.blob"
+
+    cpu_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
+    ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
+
+    # NB: Generate the blob
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "EXPORT_BLOB": "YES", "BLOB_PATH": blob_path, \
+                                                            "CACHE_MODE": "OPTIMIZE_SPEED" }))
+    del npu_pipe
+
+    # Import blob and check accuracy
+    weights_path = os.path.join(model_path,  'openvino_model.bin')
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | {"BLOB_PATH": blob_path }))
+    actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
+
+    os.remove(blob_path)
+
+    if ref_out != actual_out:
+        print(f'ref_out: {ref_out}\n')
+        print(f'actual_out: {actual_out}')
+    assert ref_out == actual_out
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+@pytest.mark.parametrize("model_id", get_models_list())
+def test_pipeline_cache_dir(config, model_id):
+    prompt = 'What is OpenVINO?'
+    _, _, model_path = download_and_convert_model(model_id)
+    cache_dir = "tmp_cache_dir"
+
+    cpu_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
+    ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
+
+    # NB: Generate the blob
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "CACHE_DIR": cache_dir }))
+    del npu_pipe
+
+    # Check that blob was cached
+    if len(os.listdir(cache_dir)) == 0:
+        print(f"Couldn't cache the blob")
+    assert len(os.listdir(cache_dir)) > 0
+
+    # Import blob and check accuracy
+    weights_path = os.path.join(model_path,  'openvino_model.bin')
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "CACHE_DIR": cache_dir }))
+    actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
+
+    # Check that blob was used from cache
+    if len(os.listdir(cache_dir)) == 0:
+        print(f"Couldn't use cached blob")
+    assert len(os.listdir(cache_dir)) > 0
+
+    shutil.rmtree(cache_dir)
+
+    if ref_out != actual_out:
+        print(f'ref_out: {ref_out}\n')
+        print(f'actual_out: {actual_out}')
+    assert ref_out == actual_out
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+@pytest.mark.parametrize("model_id", get_models_list())
+def test_pipeline_cache_dir_blob_with_weights(config, model_id):
+    prompt = 'What is OpenVINO?'
+    _, _, model_path = download_and_convert_model(model_id)
+    cache_dir = "tmp_cache_dir"
+
+    cpu_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
+    ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
+
+    # NB: Generate the blob
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "CACHE_DIR": cache_dir, "CACHE_MODE": "OPTIMIZE_SPEED" }))
+    del npu_pipe
+
+    # Check that blob was cached
+    if len(os.listdir(cache_dir)) == 0:
+        print(f"Couldn't cache the blob")
+    assert len(os.listdir(cache_dir)) > 0
+
+    # Import blob and check accuracy
+    weights_path = os.path.join(model_path,  'openvino_model.bin')
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "CACHE_DIR": cache_dir }))
+    actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
+
+    # Check that blob was used from cache
+    if len(os.listdir(cache_dir)) == 0:
+        print(f"Couldn't use cached blob")
+    assert len(os.listdir(cache_dir)) > 0
+
+    shutil.rmtree(cache_dir)
 
     if ref_out != actual_out:
         print(f'ref_out: {ref_out}\n')
