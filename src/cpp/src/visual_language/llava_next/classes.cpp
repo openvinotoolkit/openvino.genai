@@ -261,7 +261,6 @@ ov::Tensor add_image_newline(const ov::Tensor& image_feature, const ov::Tensor& 
  */
 ov::Tensor pack_image_features_llava_next(
     const EncodedImage& encoded_image,
-    const ImageSize& original_image_size,
     const ov::Tensor& image_newline) {
     auto image_feature = encoded_image.resized_source;
     auto image_feature_shape = image_feature.get_shape();
@@ -294,7 +293,7 @@ ov::Tensor pack_image_features_llava_next(
 
         ov::Tensor reshaped_image_feature = reshape_and_rearrange_image_feature(patches_image_feature, num_patch_height, num_patch_width, height, width);
 
-        ov::Tensor unpadded_image_feature = unpad_image(reshaped_image_feature, original_image_size);
+        ov::Tensor unpadded_image_feature = unpad_image(reshaped_image_feature, encoded_image.original_image_size);
 
         ov::Tensor image_feature_with_newline = add_image_newline(unpadded_image_feature, image_newline);
 
@@ -358,9 +357,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt,
             std::copy(m_vlm_config.image_newline.begin(), m_vlm_config.image_newline.end(), image_newline_data);
         }
 
-        ImageSize original_image_size{encoded_image.original_image_size.height, encoded_image.original_image_size.width}; // [height, width]
-
-        ov::Tensor packed_features = pack_image_features_llava_next(encoded_image, original_image_size, image_newline);
+        ov::Tensor packed_features = pack_image_features_llava_next(encoded_image, image_newline);
         for (size_t idx = 0; idx < packed_features.get_shape().at(1); ++idx) {
             formatted_prompt += image_token;
         }
