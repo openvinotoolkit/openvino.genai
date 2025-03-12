@@ -571,8 +571,13 @@ InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
 }
 
 ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
-    std::string images_prompt;
-    auto [unified_prompt, images_sequence] = unify_prompt(prompt, NATIVE_TAG, images.size(), m_image_id);
+    auto [unified_prompt, images_sequence] = unify_prompt(
+        prompt,
+        NATIVE_TAG,
+        '(' + NATIVE_TAG + ")\n",
+        images.size(),
+        m_image_id
+    );
 
     std::string unk64;
     for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {

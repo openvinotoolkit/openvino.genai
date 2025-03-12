@@ -7,7 +7,7 @@ namespace {
 std::string add_image_tags_to_prompt(const std::string& prompt, const std::vector<ov::Tensor>& rgbs, size_t history_images_size) {
     std::stringstream prompt_with_image_tags;
     for (size_t i = 0; i < rgbs.size(); i++) {
-        prompt_with_image_tags << "<ov_genai_image_" << i + history_images_size << ">\n";
+        prompt_with_image_tags << "<ov_genai_image_" << i + history_images_size << ">";
     }
     prompt_with_image_tags << prompt;
     return prompt_with_image_tags.str();
