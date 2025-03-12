@@ -18,7 +18,16 @@ using namespace ov::op;
 
 static const size_t GGML_QUANTIZATION_GROUP_SIZE = 32;
 
-
+std::string format(const std::string fmt_str, ...)
+{
+    va_list ap;
+    char *fp = NULL;
+    va_start(ap, fmt_str);
+    vasprintf(&fp, fmt_str.c_str(), ap);
+    va_end(ap);
+    std::unique_ptr<char[]> formatted(fp);
+    return std::string(formatted.get());
+}
 
 static inline float fp32_from_bits(uint32_t w) {
     union {
@@ -215,6 +224,7 @@ apply_rotary_pos_emb(
     
     // Handle unsqueeze or cached values
     Output<ov::Node> cos_unsqueezed, sin_unsqueezed;
+    
     if (cos_sin_cached.first.get_node() == nullptr) {
         auto unsqueeze_axes = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, unsqueeze_dim);
         cos_unsqueezed = std::make_shared<v0::Unsqueeze>(cos, unsqueeze_axes);
@@ -762,8 +772,7 @@ std::tuple<ov::Output<ov::Node>,
            std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>,
            std::shared_ptr<ov::Node>> 
     layer(const std::map<std::string, float>& configs,
-        const std::unordered_map<std::string, 
-            std::unordered_map<int, std::unordered_map<std::string, ov::Tensor>>>& consts,
+        std::unordered_map<std::string, ov::Tensor>& consts,
         int layer_idx,
         const ov::Output<ov::Node>& hidden_states,
         const ov::Output<ov::Node>& attn_mask,
@@ -778,35 +787,36 @@ std::tuple<ov::Output<ov::Node>,
 
     std::string name_suffix = ".layer" + std::to_string(layer_idx);
     std::string name_prefix = "model.layers.self_attn";
+    std::string layer_prefix = format("model.layers[{}]", layer_idx);
 
     // LayerNorm
     auto input_layernorm = make_rms_norm(
-        "model.layers.input_layernorm",
+        layer_prefix + ".input_layernorm",
         hidden_states,
-        consts.at("layers").at(layer_idx),
+        consts,
         configs.at("rms_norm_eps"));
 
     // Attention projections
     auto q = make_fc(
-        "model.layers.self_attn.q_proj",
+        layer_prefix + ".self_attn.q_proj",
         input_layernorm,
-        consts.at("layers").at(layer_idx),
+        consts,
         static_cast<QType>(configs.at("qtype")),
         true,
         configs.at("head_size"));
 
     auto k = make_fc(
-        "model.layers.self_attn.k_proj",
+        layer_prefix + ".self_attn.k_proj",
         input_layernorm,
-        consts.at("layers").at(layer_idx),
+        consts,
         static_cast<QType>(configs.at("qtype")),
         true,
         configs.at("head_size"));
 
     auto v = make_fc(
-        "model.layers.self_attn.v_proj",
+        layer_prefix + ".self_attn.v_proj",
         input_layernorm,
-        consts.at("layers").at(layer_idx),
+        consts,
         static_cast<QType>(configs.at("qtype")));
 
     // Handle output shape
@@ -842,9 +852,9 @@ std::tuple<ov::Output<ov::Node>,
 
     // Output projection
     auto o_proj = make_fc(
-        "model.layers.self_attn.o_proj",
+        layer_prefix + ".self_attn.o_proj",
         attn_output,
-        consts.at("layers").at(layer_idx),
+        consts,
         static_cast<QType>(configs.at("qtype")));
 
     // Residual connection
@@ -854,30 +864,30 @@ std::tuple<ov::Output<ov::Node>,
 
     // Post-attention Layernorm
     auto post_attn_norm = make_rms_norm(
-        "model.layers.post_attention_layernorm",
+        layer_prefix + ".post_attention_layernorm",
         attn_add,
-        consts.at("layers").at(layer_idx),
+        consts,
         configs.at("rms_norm_eps"));
 
     // MLP block
     auto gate_proj = make_fc(
-        "model.layers.mlp.gate_proj",
+        layer_prefix + ".mlp.gate_proj",
         post_attn_norm,
-        consts.at("layers").at(layer_idx),
+        consts,
         static_cast<QType>(configs.at("qtype")));
     auto silu = std::make_shared<ov::op::v4::Swish>(gate_proj);
     auto up_proj = make_fc(
-        "model.layers.mlp.up_proj",
+        layer_prefix + ".mlp.up_proj",
         post_attn_norm,
-        consts.at("layers").at(layer_idx),
+        consts,
         static_cast<QType>(configs.at("qtype")));
     auto mul = std::make_shared<ov::op::v1::Multiply>(
         silu, up_proj, ov::op::AutoBroadcastType::NUMPY);
     mul->set_friendly_name(name_prefix + ".mlp.mul" + name_suffix);
     auto down_proj = make_fc(
-        "model.layers.mlp.down_proj",
+        layer_prefix + ".mlp.down_proj",
         mul,
-        consts.at("layers").at(layer_idx),
+        consts,
         static_cast<QType>(configs.at("qtype")));
 
     // Final residual connection

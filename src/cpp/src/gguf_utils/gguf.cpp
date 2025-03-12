@@ -1,5 +1,3 @@
-// Copyright © 2023-2024 Apple Inc.
-
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -80,7 +78,7 @@ ov::Tensor extract_tensor_data(gguf_tensor* tensor) {
   return weights;
 }
 
-void set_mx_value_from_gguf(
+void set_value_from_gguf(
     gguf_ctx* ctx,
     uint32_t type,
     gguf_value* val,
@@ -210,7 +208,7 @@ std::unordered_map<std::string, GGUFMetaData> load_metadata(gguf_ctx* ctx) {
   while (gguf_get_key(ctx, &key)) {
     std::string key_name = std::string(key.name, key.namelen);
     auto& val = metadata.insert({key_name, GGUFMetaData{}}).first->second;
-    set_mx_value_from_gguf(ctx, key.type, key.val, val);
+    set_value_from_gguf(ctx, key.type, key.val, val);
   }
   return metadata;
 }

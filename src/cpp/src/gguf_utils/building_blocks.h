@@ -4,9 +4,13 @@
 #include <stdexcept>
 #include <algorithm>
 #include <unordered_map>
+#include <cstdarg>
+
 #include <openvino/openvino.hpp>
 
-enum class QType { FP16, INT8, INT4 };
+std::string format(const std::string fmt_str, ...);
+
+enum class QType { FP16 = 0, INT8 = 1, INT4 = 2 };
 
 ov::Output<ov::Node> make_lm_head(
     const std::string& key,
@@ -33,8 +37,7 @@ std::tuple<ov::Output<ov::Node>,
            std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>,
            std::shared_ptr<ov::Node>> 
     layer(const std::map<std::string, float>& configs,
-        const std::unordered_map<std::string, 
-            std::unordered_map<int, std::unordered_map<std::string, ov::Tensor>>>& consts,
+        std::unordered_map<std::string, ov::Tensor>& consts,
         int layer_idx,
         const ov::Output<ov::Node>& hidden_states,
         const ov::Output<ov::Node>& attn_mask,
