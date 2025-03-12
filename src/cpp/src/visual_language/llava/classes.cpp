@@ -120,7 +120,6 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
     image_embeds.reserve(images.size());
 
     for (const auto& encoded_image : images) {
-        ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
         for (size_t idx = 0; idx < encoded_image.resized_source.get_shape().at(1); ++idx) {
             formatted_prompt += image_token;
         }
