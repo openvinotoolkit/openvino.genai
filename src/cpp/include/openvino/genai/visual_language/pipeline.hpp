@@ -109,7 +109,7 @@ public:
     /// images used in previous prompts isn't implemented.
     /// A model's native image tag can be used instead of
     /// <ov_genai_image_i>. These tags are:
-    /// MiniCPM-V-2_6: <image>./</image>
+    /// MiniCPM-V-2_6: (<image>./</image>)\n
     /// Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// If the prompt doesn't contain image tags, but images are
     /// provided, the tags are prepended to the prompt.
@@ -133,7 +133,7 @@ public:
     /// images used in previous prompts isn't implemented.
     /// A model's native image tag can be used instead of
     /// <ov_genai_image_i>. These tags are:
-    /// MiniCPM-V-2_6: <image>./</image>
+    /// MiniCPM-V-2_6: (<image>./</image>)\n
     /// Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// If the prompt doesn't contain image tags, but images are
     /// provided, the tags are prepended to the prompt.
@@ -158,7 +158,7 @@ public:
     /// images used in previous prompts isn't implemented.
     /// A model's native image tag can be used instead of
     /// <ov_genai_image_i>. These tags are:
-    /// MiniCPM-V-2_6: <image>./</image>
+    /// MiniCPM-V-2_6: (<image>./</image>)\n
     /// Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// If the prompt doesn't contain image tags, but images are
     /// provided, the tags are prepended to the prompt.
