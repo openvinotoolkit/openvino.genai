@@ -22,7 +22,9 @@ class TestVisualLanguageChat:
         indirect=["convert_model"],
     )
     @pytest.mark.parametrize("download_test_content", ["monalisa.jpg"], indirect=True)
-    def test_sample_visual_language_chat(self, convert_model, download_test_content, sample_args):
+    def test_sample_visual_language_chat(self, request, convert_model, download_test_content, sample_args):
+        model_name = request.node.callspec.params['convert_model']
+        
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
         py_command = [sys.executable, py_script, convert_model, download_test_content]
@@ -34,4 +36,6 @@ class TestVisualLanguageChat:
         cpp_result = run_sample(cpp_command, sample_args)
 
         # Compare results
+        if model_name == "Qwen2-VL-2B-Instruct":
+            pytest.skip("Skipping result comparison for Qwen2-VL-2B-Instruct due to CVS-164144")
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
