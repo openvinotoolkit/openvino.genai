@@ -189,7 +189,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
         log.info("Continuous Batching mode activated")
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
-        use_streamer_metrics = not openvino_genai.get_version().startswith("2025.") or draft_model_path
+        use_streamer_metrics = not openvino_genai.get_version().startswith("2025.")
 
     if draft_model_path:
         if not Path(draft_model_path).exists():
