@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
     ov_genai_generation_config* config = NULL;
     ov_genai_llm_pipeline* pipeline = NULL;
     stream_callback streamer = &print_callback;
-    char prompt[MAX_PROMPT_LENGTH], output[MAX_OUTPUT_LENGTH];
+    char prompt[MAX_PROMPT_LENGTH];
 
     CHECK_STATUS(ov_genai_llm_pipeline_create(models_path, device, &pipeline));
     CHECK_STATUS(ov_genai_generation_config_create(&config));
@@ -48,7 +48,11 @@ int main(int argc, char* argv[]) {
     printf("question:\n");
     while (fgets(prompt, MAX_PROMPT_LENGTH, stdin)) {
         prompt[strcspn(prompt, "\n")] = 0;
-        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipeline, prompt, config, &streamer, output, sizeof(output)));
+        CHECK_STATUS(ov_genai_llm_pipeline_generate(pipeline,
+                                                    prompt,
+                                                    config,
+                                                    &streamer,
+                                                    NULL));  // Only the streamer functionality is used here.
         printf("\n----------\nquestion:\n");
     }
     CHECK_STATUS(ov_genai_llm_pipeline_finish_chat(pipeline));

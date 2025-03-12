@@ -276,15 +276,18 @@ void init_image_generation_pipelines(py::module_& m) {
     init_autoencoder_kl(m);
 
     auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.");
-    py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
+    auto scheduler_enum = py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
         .value("AUTO", ov::genai::Scheduler::Type::AUTO)
         .value("LCM", ov::genai::Scheduler::Type::LCM)
-        .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)
         .value("DDIM", ov::genai::Scheduler::Type::DDIM)
         .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
         .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE)
         .value("PNDM", ov::genai::Scheduler::Type::PNDM)
         .value("EULER_ANCESTRAL_DISCRETE", ov::genai::Scheduler::Type::EULER_ANCESTRAL_DISCRETE);
+    OPENVINO_SUPPRESS_DEPRECATED_START
+    scheduler_enum
+        .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE);
+    OPENVINO_SUPPRESS_DEPRECATED_END
     image_generation_scheduler.def_static("from_config",
         &ov::genai::Scheduler::from_config,
         py::arg("scheduler_config_path"),

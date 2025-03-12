@@ -1561,8 +1561,6 @@ class Scheduler:
         
           LCM
         
-          LMS_DISCRETE
-        
           DDIM
         
           EULER_DISCRETE
@@ -1572,16 +1570,18 @@ class Scheduler:
           PNDM
         
           EULER_ANCESTRAL_DISCRETE
+        
+          LMS_DISCRETE
         """
         AUTO: typing.ClassVar[Scheduler.Type]  # value = <Type.AUTO: 0>
-        DDIM: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 3>
-        EULER_ANCESTRAL_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_ANCESTRAL_DISCRETE: 7>
-        EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_DISCRETE: 4>
-        FLOW_MATCH_EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.FLOW_MATCH_EULER_DISCRETE: 5>
+        DDIM: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 2>
+        EULER_ANCESTRAL_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_ANCESTRAL_DISCRETE: 6>
+        EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_DISCRETE: 3>
+        FLOW_MATCH_EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.FLOW_MATCH_EULER_DISCRETE: 4>
         LCM: typing.ClassVar[Scheduler.Type]  # value = <Type.LCM: 1>
-        LMS_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.LMS_DISCRETE: 2>
-        PNDM: typing.ClassVar[Scheduler.Type]  # value = <Type.PNDM: 6>
-        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>, 'PNDM': <Type.PNDM: 6>, 'EULER_ANCESTRAL_DISCRETE': <Type.EULER_ANCESTRAL_DISCRETE: 7>}
+        LMS_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 2>
+        PNDM: typing.ClassVar[Scheduler.Type]  # value = <Type.PNDM: 5>
+        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'DDIM': <Type.DDIM: 2>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 3>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 4>, 'PNDM': <Type.PNDM: 5>, 'EULER_ANCESTRAL_DISCRETE': <Type.EULER_ANCESTRAL_DISCRETE: 6>, 'LMS_DISCRETE': <Type.DDIM: 2>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -2109,6 +2109,15 @@ class VLMPipeline:
         
             :param prompt: input prompt
             :type prompt: str
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            MiniCPM-V-2_6: <image>./</image>
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            If the prompt doesn't contain image tags, but images are
+            provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
             :type images: List[ov.Tensor] or ov.Tensor
@@ -2132,6 +2141,15 @@ class VLMPipeline:
         
             :param prompt: input prompt
             :type prompt: str
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            MiniCPM-V-2_6: <image>./</image>
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            If the prompt doesn't contain image tags, but images are
+            provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
             :type images: List[ov.Tensor] or ov.Tensor
@@ -2154,6 +2172,16 @@ class VLMPipeline:
             Generates sequences for VLMs.
         
             :param prompt: input prompt
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            MiniCPM-V-2_6: <image>./</image>
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            If the prompt doesn't contain image tags, but images are
+            provided, the tags are prepended to the prompt.
+        
             :type prompt: str
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
