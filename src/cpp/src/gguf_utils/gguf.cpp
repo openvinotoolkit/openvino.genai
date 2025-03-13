@@ -3,7 +3,7 @@
 #include <fstream>
 #include <numeric>
 
-#include "gguf.h"
+#include "gguf.hpp"
 
 // https://github.com/antirez/gguf-tools/blob/af7d88d808a7608a33723fba067036202910acb3/gguflib.h#L102-L108
 constexpr int gguf_array_header_size = 12;

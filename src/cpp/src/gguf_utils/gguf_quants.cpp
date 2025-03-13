@@ -1,12 +1,10 @@
-// Copyright © 2023-2024 Apple Inc.
-
 #include <cstdint>
 #include <cstring>
 #include <numeric>
 #include <memory>
 #include <sstream>
 
-#include "gguf.h"
+#include "gguf.hpp"
 
 using namespace std;
 

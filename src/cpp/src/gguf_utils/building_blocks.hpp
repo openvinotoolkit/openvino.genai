@@ -8,7 +8,7 @@
 
 #include <openvino/openvino.hpp>
 
-#include "gguf.h"
+#include "gguf.hpp"
 
 ov::Output<ov::Node> make_lm_head(
     const std::string& key,

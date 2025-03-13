@@ -9,9 +9,8 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
 
-#include "gguf.h"
-#include "building_blocks.h"
-#include "gguf_modeling.h"
+#include "building_blocks.hpp"
+#include "gguf_modeling.hpp"
 
 
 using namespace ov;

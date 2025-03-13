@@ -10,7 +10,7 @@
 
 //#include "fp16.h"
 
-#include "building_blocks.h"
+#include "building_blocks.hpp"
 
 using namespace ov;
 using namespace ov::op::v13;
