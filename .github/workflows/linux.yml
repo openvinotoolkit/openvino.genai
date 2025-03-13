@@ -35,6 +35,7 @@ jobs:
       status: ${{ steps.openvino_download.outcome }}
       ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
       ov_wheel_source: ${{ steps.openvino_download.outputs.ov_wheel_source }}
+      ov_version: ${{ steps.openvino_download.outputs.ov_version }}
       docker_tag: ${{ steps.get_docker_tag.outputs.docker_tag }}
     timeout-minutes: 10
     defaults:
