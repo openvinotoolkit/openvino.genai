@@ -315,8 +315,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_causal_lm
-    needs: [cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
-            visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-internvl2,
+    needs: [cpp-continuous-batching-ubuntu, visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-internvl2,
             cpp-continuous-batching-windows, cpp-continuous-batching-macos]
     if: ${{ always() }}
     runs-on: ubuntu-latest
