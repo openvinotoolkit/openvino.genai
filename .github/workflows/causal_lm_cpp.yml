@@ -89,68 +89,6 @@ jobs:
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
-  visual_language_chat_sample-ubuntu-internvl2:
-    runs-on: ubuntu-22.04-16-cores
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-      - uses: ./.github/actions/install_openvino
-        with:
-          ov_link: ${{ env.l_u22_ov_link }}
-      - uses: ./.github/actions/build_app
-        with:
-          build_target: 'visual_language_chat py_openvino_genai'
-      - uses: ./.github/actions/install_python_deps
-      - name: Download and convert InternVL2 model
-        run: |
-          # Lowering transformers version, workaround for https://huggingface.co/OpenGVLab/InternVL2-1B/discussions/7
-          python -m pip install -U "transformers<4.45.0"
-          source ./ov/setupvars.sh
-          optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/ --trust-remote-code
-      - name: Download images
-        run: |
-          wget https://llava-vl.github.io/static/images/monalisa.jpg
-      - name: Run visual_language_chat C++ sample - InternVL2
-        run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./internvl2_4b_ov/ monalisa.jpg
-          <<< $'Who drew this painting?\nWhen did the painter live?'
-        timeout-minutes: 4
-
-  visual_language_chat_sample-ubuntu-qwen2vl:
-    runs-on: ubuntu-22.04-16-cores
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-      - uses: ./.github/actions/install_openvino
-        with:
-          ov_link: ${{ env.l_u22_ov_link }}
-      - uses: ./.github/actions/build_app
-        with:
-          build_target: 'visual_language_chat py_openvino_genai'
-      - uses: ./.github/actions/install_python_deps
-      - name: Download and convert Qwen2VL model
-        run: |
-          source ./ov/setupvars.sh
-          optimum-cli export openvino --model Qwen/Qwen2-VL-2B-Instruct ./qwen2_vl_2b_ov/ --trust-remote-code
-      - name: Download images
-        run: |
-          wget https://llava-vl.github.io/static/images/monalisa.jpg
-      - name: Run visual_language_chat C++ sample - Qwen2VL
-        run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./qwen2_vl_2b_ov/ monalisa.jpg
-          <<< $'Who drew this painting?\nWhen did the painter live?'
-        timeout-minutes: 4
-
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-22.04-8-cores
     defaults:
@@ -288,8 +226,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_causal_lm
-    needs: [cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu, visual_language_chat_sample-ubuntu-internvl2,
-            cpp-continuous-batching-windows, cpp-continuous-batching-macos]
+    needs: [cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu, cpp-continuous-batching-windows, cpp-continuous-batching-macos]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

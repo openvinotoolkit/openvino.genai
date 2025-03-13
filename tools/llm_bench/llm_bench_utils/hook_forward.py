@@ -1,6 +1,16 @@
 import time
 
 
+class MeanStdPair():
+    def __init__(self, mean):
+        self.mean = mean
+
+
+class RawImGenPerfMetrics():
+    def __init__(self, unet_inference_durations):
+        self.unet_inference_durations = unet_inference_durations
+
+
 class StableDiffusionHook:
     def __init__(self):
         self.text_encoder_time = 0
@@ -11,26 +21,37 @@ class StableDiffusionHook:
         self.vae_decoder_step_count = 0
         self.main_model_name = "unet"
 
-    def get_text_encoder_latency(self):
-        return (self.text_encoder_time / self.text_encoder_step_count) * 1000 if self.text_encoder_step_count > 0 else 0
-
     def get_1st_unet_latency(self):
         return self.unet_time_list[0] * 1000 if len(self.unet_time_list) > 0 else 0
 
     def get_2nd_unet_latency(self):
         return sum(self.unet_time_list[1:]) / (len(self.unet_time_list) - 1) * 1000 if len(self.unet_time_list) > 1 else 0
 
-    def get_unet_latency(self):
-        return (sum(self.unet_time_list) / len(self.unet_time_list)) * 1000 if len(self.unet_time_list) > 0 else 0
+    def get_first_and_other_unet_infer_duration(self):
+        first = self.get_1st_unet_latency()
+        other = self.get_2nd_unet_latency()
+        return (first, other)
 
-    def get_vae_decoder_latency(self):
+    def get_first_and_other_trans_infer_duration(self):
+        return self.get_first_and_other_unet_infer_duration()
+
+    def get_text_encoder_infer_duration(self):
+        duration = (self.text_encoder_time / self.text_encoder_step_count) * 1000 if self.text_encoder_step_count > 0 else 0
+        return {'text_encoder': duration}
+
+    def get_unet_infer_duration(self):
+        mean = (sum(self.unet_time_list) / len(self.unet_time_list)) * 1000 if len(self.unet_time_list) > 0 else 0
+        return MeanStdPair(mean=mean)
+
+    def get_vae_decoder_infer_duration(self):
         return (self.vae_decoder_time / self.vae_decoder_step_count) * 1000 if self.vae_decoder_step_count > 0 else 0
+
+    @property
+    def raw_metrics(self):
+        return RawImGenPerfMetrics(self.unet_time_list)
 
     def get_text_encoder_step_count(self):
         return self.text_encoder_step_count
-
-    def get_unet_step_count(self):
-        return self.unet_step_count
 
     def get_vae_decoder_step_count(self):
         return self.vae_decoder_step_count

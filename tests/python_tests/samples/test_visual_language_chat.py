@@ -16,7 +16,9 @@ class TestVisualLanguageChat:
         [
             pytest.param("llava-1.5-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
             pytest.param("llava-v1.6-mistral-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("tiny-random-minicpmv-2_6", ("cat.png", "images"), 'What is unusual on this image?\nGo on.'),
+            pytest.param("InternVL2-1B", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
+            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
+            pytest.param("tiny-random-minicpmv-2_6", ("cat.png", "images"), 'What is unusual on this image?\nGo on.')
         ],
         indirect=["convert_model", "download_test_content"],
     )
@@ -34,7 +36,8 @@ class TestVisualLanguageChat:
         cpp_result = run_sample(cpp_command, sample_args)
 
         # Compare results
-        assert py_result.stdout == cpp_result.stdout, f"Results should match"
+        if model_name != "Qwen2-VL-2B-Instruct": # "Skipping result comparison for Qwen2-VL-2B-Instruct due to CVS-164144"
+            assert py_result.stdout == cpp_result.stdout, f"Results should match"
 
     @pytest.mark.vlm
     @pytest.mark.samples

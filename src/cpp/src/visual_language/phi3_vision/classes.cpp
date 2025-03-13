@@ -212,12 +212,14 @@ std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& imag
 } // namespace
 
 EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+    ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     const auto& [pixel_values, image_size] = get_pixel_values_phi3_v(image, config);
-    m_vision_encoder.set_input_tensor(pixel_values);
-    m_vision_encoder.infer();
-    return {m_vision_encoder.get_output_tensor(), image_size};
+    encoder.set_input_tensor(pixel_values);
+    encoder.infer();
+    return {encoder.get_output_tensor(), image_size};
 }
 
 namespace {
@@ -270,7 +272,7 @@ namespace {
 // print(test([inp, 2, 2])["o"].flatten())
 // 2. Run https://github.com/slyalin/openvino_devtools/blob/bcd4a51b1354b24b2316ac3e1c77b2f87ae7a497/openvino_devtools/ov2py.py with the IR.
 // 3. Translate the printed Python implementation to C++.
-ov::InferRequest create_hd_feature_transformer() {
+ov::CompiledModel create_hd_feature_transformer() {
     using namespace ov;
     using namespace element;
     using namespace opset13;
@@ -348,7 +350,7 @@ ov::InferRequest create_hd_feature_transformer() {
     shared_ptr<Model> model = make_shared<Model>(make_shared<Result>(t69), ParameterVector{t0, t1, t2});
     return utils::singleton_core().compile_model(
         model, "CPU"
-    ).create_infer_request();
+    );
 }
 
 ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t h_crop, size_t w_crop, InferRequest& hd_feature_transformer) {
@@ -511,16 +513,31 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap device_config
-) : IInputsEmbedder(vlm_config, model_dir, device, device_config),
-    m_hd_feature_transformer{create_hd_feature_transformer()},
-    m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {}).create_infer_request()} {}
+) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+        auto compiled_model = create_hd_feature_transformer();
+        m_ireq_queue_hd_feature_transformer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled_model.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled_model]() -> ov::InferRequest {
+                return compiled_model.create_infer_request();
+            });
 
-ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+        compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
+        m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled_model.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled_model]() -> ov::InferRequest {
+                return compiled_model.create_infer_request();
+            });
+    }
+
+ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
     std::vector<ov::Tensor> images_features_proj;
     std::stringstream images_prompt;
-    for (const ov::Tensor& image : to_single_image_tensors(images)) {
-        EncodedImage encoded_image = m_vision_encoder->encode(image);
-        images_features_proj.push_back(hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, m_vision_projection));
+    CircularBufferQueueElementGuard<ov::InferRequest> hd_feature_transformer_ireq_guard(this->m_ireq_queue_hd_feature_transformer.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> vision_projection_ireq_guard(this->m_ireq_queue_vision_projection.get());
+    ov::InferRequest& hd_feature_transformer = hd_feature_transformer_ireq_guard.get();
+    ov::InferRequest& vision_projection = vision_projection_ireq_guard.get();
+    for (const ov::genai::EncodedImage& encoded_image : images) {
+        images_features_proj.push_back(hd_feature_transform(encoded_image, hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, vision_projection));
         m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
         images_prompt << "<|image_" << m_tokens_per_images.size() << "|>\n";
     }
@@ -569,7 +586,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
     ov::Tensor inputs_embeds{ov::element::f32, {1, features_length, m_vlm_config.hidden_size}};
     size_t offset = 0;
     if (tokens.size() > images_features_proj.size()) {
-        const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(0));
+        const ov::Tensor& text_embeds = m_embedding->infer(tokens.at(0));
         size_t text_length = text_embeds.get_shape().at(1);
         std::copy_n(
             text_embeds.data<float>(),
@@ -588,7 +605,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
             inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
         );
         offset += im_length;
-        const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(im_id));
+        const ov::Tensor& text_embeds = m_embedding->infer(tokens.at(im_id));
         size_t text_length = text_embeds.get_shape().at(1);
         std::copy_n(
             text_embeds.data<float>(),

@@ -494,7 +494,7 @@ image_id_ignorant = [
 
 models_to_tag = image_id_ignorant + [
     # minicpm tracks image number in expanded tags
-    ("katuni4ka/tiny-random-minicpmv-2_6", "<image>./</image>"),
+    ("katuni4ka/tiny-random-minicpmv-2_6", "(<image>./</image>)\n"),
 ]
 
 
@@ -541,10 +541,10 @@ class TestImageTags:
             answers = generate(vlm, requests)
 
             vlm.start_chat()
-            native_tag0 = vlm.generate("\n".join([model_to_tag[1], requests[0][0]]), images=requests[0][1])
+            native_tag0 = vlm.generate(model_to_tag[1] + requests[0][0], images=requests[0][1])
             assert native_tag0.texts == answers[0].texts
             assert native_tag0.scores == answers[0].scores
-            native_tags1 = vlm.generate("\n".join([model_to_tag[1]] * 2 + [requests[1][0]]), images=requests[1][1])
+            native_tags1 = vlm.generate(model_to_tag[1] * 2 + requests[1][0], images=requests[1][1])
             assert native_tags1.texts == answers[1].texts
             assert native_tags1.scores == answers[1].scores
             vlm.finish_chat()
@@ -557,10 +557,10 @@ class TestImageTags:
             answers = generate(vlm, requests)
 
             vlm.start_chat()
-            universal_tag0 = vlm.generate("<ov_genai_image_0>\n" + requests[0][0], images=requests[0][1])
+            universal_tag0 = vlm.generate("<ov_genai_image_0>" + requests[0][0], images=requests[0][1])
             assert universal_tag0.texts == answers[0].texts
             assert universal_tag0.scores == answers[0].scores
-            universal_tags1 = vlm.generate("<ov_genai_image_1>\n<ov_genai_image_2>\n" + requests[1][0], images=requests[1][1])
+            universal_tags1 = vlm.generate("<ov_genai_image_1><ov_genai_image_2>" + requests[1][0], images=requests[1][1])
             assert universal_tags1.texts == answers[1].texts
             assert universal_tags1.scores == answers[1].scores
             vlm.finish_chat()
@@ -575,15 +575,15 @@ class TestImageTags:
             vlm.set_generation_config(generation_config)
 
             vlm.start_chat()
-            native_tag0 = vlm.generate("\n".join([requests[0][0], model_to_tag[1]]), images=requests[0][1])
-            native_tags1 = vlm.generate("\n".join([requests[1][0]] + [model_to_tag[1]] * 2), images=requests[1][1])
+            native_tag0 = vlm.generate(requests[0][0] + model_to_tag[1], images=requests[0][1])
+            native_tags1 = vlm.generate(requests[1][0] + model_to_tag[1] * 2, images=requests[1][1])
             vlm.finish_chat()
 
             vlm.start_chat()
-            universal_tag0 = vlm.generate(requests[0][0] + "\n<ov_genai_image_0>" , images=requests[0][1])
+            universal_tag0 = vlm.generate(requests[0][0] + "<ov_genai_image_0>" , images=requests[0][1])
             assert universal_tag0.texts == native_tag0.texts
             assert universal_tag0.scores == native_tag0.scores
-            universal_tags1 = vlm.generate(requests[1][0] + "\n<ov_genai_image_1>\n<ov_genai_image_2>" , images=requests[1][1])
+            universal_tags1 = vlm.generate(requests[1][0] + "<ov_genai_image_1><ov_genai_image_2>" , images=requests[1][1])
             assert universal_tags1.texts == native_tags1.texts
             assert universal_tags1.scores == native_tags1.scores
             vlm.finish_chat()
