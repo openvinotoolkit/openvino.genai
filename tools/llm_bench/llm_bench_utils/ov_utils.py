@@ -522,6 +522,12 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs):
 
     processor_config = get_vlm_processor(model_path)
 
+    cb = kwargs.get("use_cb", False)
+    cb_config = kwargs.get("cb_config")
+    if cb or cb_config is not None:
+        log.info("Continuous Batching mode activated")
+        ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
+
     start = time.perf_counter()
     llm_pipe = openvino_genai.VLMPipeline(model_path, device.upper(), **ov_config)
     end = time.perf_counter()
