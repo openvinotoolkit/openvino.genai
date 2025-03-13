@@ -62,7 +62,7 @@ Tensor WhisperStatefullDecoder::wait() {
 
 void WhisperStatefullDecoder::reset_state() {
     m_request.reset_state();
-    m_request.set_tensor("cache_position", ov::Tensor{ov::element::i64, {0}});
+    m_request.set_tensor("cache_position", create_host_tensor(ov::element::i64, {0}));
 
     Shape encoder_hidden_states_shape{m_request.get_tensor("encoder_hidden_states").get_shape()};
     encoder_hidden_states_shape[0] = 0;
@@ -71,6 +71,10 @@ void WhisperStatefullDecoder::reset_state() {
 };
 
 ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type element_type, const Shape& shape) {
-    return m_request.get_compiled_model().get_context().create_host_tensor(element_type, shape);
+    try {
+        return m_request.get_compiled_model().get_context().create_host_tensor(element_type, shape);
+    } catch (std::exception& ex) {
+        return ov::Tensor(element_type, shape);
+    }
 }
 }  // namespace ov::genai
