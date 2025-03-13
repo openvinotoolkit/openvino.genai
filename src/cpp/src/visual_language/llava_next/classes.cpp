@@ -50,14 +50,16 @@ ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorC
 } // namespace
 
 EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+    ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Tensor pixel_values = get_pixel_values_llava_next(image, config);
 
-    m_vision_encoder.set_tensor("pixel_values", pixel_values);
-    m_vision_encoder.infer();
+    encoder.set_tensor("pixel_values", pixel_values);
+    encoder.infer();
 
-    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+    const ov::Tensor& infer_output = encoder.get_output_tensor();
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
@@ -73,6 +75,7 @@ EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::A
     encoded_image.resized_source = std::move(image_features);
     encoded_image.resized_source_size = resized_source_size;
     encoded_image.patches_grid = {num_patches_h, num_patches_w};
+    encoded_image.original_image_size = original_image_size;
     return encoded_image;
 }
 
@@ -260,7 +263,6 @@ ov::Tensor add_image_newline(const ov::Tensor& image_feature, const ov::Tensor& 
  */
 ov::Tensor pack_image_features_llava_next(
     const EncodedImage& encoded_image,
-    const ImageSize& original_image_size,
     const ov::Tensor& image_newline) {
     auto image_feature = encoded_image.resized_source;
     auto image_feature_shape = image_feature.get_shape();
@@ -293,7 +295,7 @@ ov::Tensor pack_image_features_llava_next(
 
         ov::Tensor reshaped_image_feature = reshape_and_rearrange_image_feature(patches_image_feature, num_patch_height, num_patch_width, height, width);
 
-        ov::Tensor unpadded_image_feature = unpad_image(reshaped_image_feature, original_image_size);
+        ov::Tensor unpadded_image_feature = unpad_image(reshaped_image_feature, encoded_image.original_image_size);
 
         ov::Tensor image_feature_with_newline = add_image_newline(unpadded_image_feature, image_newline);
 
@@ -331,21 +333,25 @@ ov::Tensor pack_image_features_llava_next(
 
 } // namespace
 
-ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
-    std::string image_token = m_vlm_config.im_start;
-
+std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(const std::vector<ov::Tensor>& images) {
+    std::vector<EncodedImage> embeds;
+    ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+    for (const ov::Tensor& image : single_images) {
+        embeds.emplace_back(m_vision_encoder->encode(image, vision_config));
+    }
+    return embeds;
+}
+
+ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+    std::string image_token = m_vlm_config.im_start;
 
     std::string formatted_prompt;
     std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(single_images.size());
-    
+    image_embeds.reserve(images.size());
     ov::Tensor image_newline;
 
-    for (const auto& image : single_images) {
-        ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
-        EncodedImage encoded_image = m_vision_encoder->encode(image, vision_config);
-
+    for (const auto& encoded_image : images) {
         if (!image_newline) {
             size_t embed_dim = encoded_image.resized_source.get_shape().at(2);
             image_newline = ov::Tensor(encoded_image.resized_source.get_element_type(), {embed_dim});
@@ -353,9 +359,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt,
             std::copy(m_vlm_config.image_newline.begin(), m_vlm_config.image_newline.end(), image_newline_data);
         }
 
-        ImageSize original_image_size{image.get_shape().at(1), image.get_shape().at(2)}; // [height, width]
-
-        ov::Tensor packed_features = pack_image_features_llava_next(encoded_image, original_image_size, image_newline);
+        ov::Tensor packed_features = pack_image_features_llava_next(encoded_image, image_newline);
         for (size_t idx = 0; idx < packed_features.get_shape().at(1); ++idx) {
             formatted_prompt += image_token;
         }
@@ -365,7 +369,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt,
     formatted_prompt += prompt;
 
     ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
-    ov::Tensor text_embeds = m_embedding.infer(input_ids);
+    ov::Tensor text_embeds = m_embedding->infer(input_ids);
 
     if (images.empty()) {
         return text_embeds;

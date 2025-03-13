@@ -76,7 +76,15 @@ MODELS = {
     "LCM_Dreamshaper_v7-int8-ov": {
         "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
         "convert_args": []
-    }   
+    },
+    "InternVL2-1B": {
+        "name": "OpenGVLab/InternVL2-1B",
+        "convert_args": ['--trust-remote-code']
+    },
+    "Qwen2-VL-2B-Instruct": {
+        "name": "Qwen/Qwen2-VL-2B-Instruct",
+        "convert_args": ['--trust-remote-code']
+    },
 }
 
 TEST_FILES = {

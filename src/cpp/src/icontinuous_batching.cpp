@@ -7,7 +7,7 @@ namespace {
 std::string add_image_tags_to_prompt(const std::string& prompt, const std::vector<ov::Tensor>& rgbs, size_t history_images_size) {
     std::stringstream prompt_with_image_tags;
     for (size_t i = 0; i < rgbs.size(); i++) {
-        prompt_with_image_tags << "<ov_genai_image_" << i + history_images_size << ">\n";
+        prompt_with_image_tags << "<ov_genai_image_" << i + history_images_size << ">";
     }
     prompt_with_image_tags << prompt;
     return prompt_with_image_tags.str();
@@ -165,8 +165,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             prompt_with_tags = add_image_tags_to_prompt(prompt_with_tags, rgbs, m_history_images.size());
         }
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
-        // TODO: save embeddings, instead of image tensors and compare performance
-        m_history_images.insert(m_history_images.end(), rgbs.begin(), rgbs.end());
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
         m_inputs_embedder->set_apply_chat_template_status(false);
@@ -214,12 +214,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
                                         GenerationConfig sampling_params) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
-    ov::Tensor inputs;
-    {
-        const std::lock_guard<std::mutex> lock(m_inputs_embedder_mutex);
-        m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
-        inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
-    }
+    m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+    ov::Tensor inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
     return add_request(request_id, inputs, sampling_params);
 }
 

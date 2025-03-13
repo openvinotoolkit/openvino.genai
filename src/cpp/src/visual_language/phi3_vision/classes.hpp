@@ -28,7 +28,7 @@ public:
         const ov::AnyMap device_config
     );
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) override;
 
     void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) override;
 
@@ -37,8 +37,8 @@ public:
     void finish_chat() override;
 
 private:
-    ov::InferRequest m_hd_feature_transformer;
-    ov::InferRequest m_vision_projection;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_hd_feature_transformer;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_projection;
     std::vector<size_t> m_tokens_per_images;
     std::vector<size_t> m_prev_tokens_per_images;
 };

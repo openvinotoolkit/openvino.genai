@@ -48,7 +48,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
                                                         const ov::AnyMap& properties,
-                                                        const ov::AnyMap& tokenizer_properties) {
+                                                        const ov::AnyMap& tokenizer_properties,
+                                                        const ov::AnyMap& vision_encoder_properties) {
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
@@ -73,7 +74,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(directory / "openvino_text_embeddings_model.xml")) {
-        embedder = std::make_shared<InputsEmbedder>(directory, device, properties);
+        embedder = std::make_shared<InputsEmbedder>(directory, device, vision_encoder_properties);
     }
 
     if (is_prompt_lookup_enabled) {
