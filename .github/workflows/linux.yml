@@ -528,6 +528,7 @@ jobs:
       - name: Test Tools (Python and C++)
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
+          chmod +x ${{ env.INSTALL_DIR }}/samples_bin/tools/*
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching.py -m "samples"
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
