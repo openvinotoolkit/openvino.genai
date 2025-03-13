@@ -529,7 +529,7 @@ jobs:
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           chmod +x ${{ env.INSTALL_DIR }}/samples_bin/tools/*
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching.py -m "samples"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
   
@@ -613,7 +613,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_nodejs_tests]
+    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
