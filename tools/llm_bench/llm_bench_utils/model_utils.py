@@ -320,3 +320,12 @@ def resolve_media_file_path(file_path, prompt_file_path):
     if not (file_path.startswith("http://") or file_path.startswith("https://")):
         return os.path.join(os.path.dirname(prompt_file_path), file_path.replace("./", ""))
     return file_path
+
+
+def get_version_in_format_to_pars(version):
+    processed_version = version
+    if "-" in processed_version:
+        ov_major_version, dev_info = version.split("-", 1)
+        commit_id = dev_info.split("-")[0]
+        processed_version = f"{ov_major_version}-{commit_id}"
+    return processed_version

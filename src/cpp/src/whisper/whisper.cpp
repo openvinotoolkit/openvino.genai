@@ -75,7 +75,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     const size_t batch_size = 1;
 
-    ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
+    ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
     std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
 
     const ov::Tensor input_ids_tensor{ov::element::i64, {1, input_ids.size()}, (void*)input_ids.data()};
