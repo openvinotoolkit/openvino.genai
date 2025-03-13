@@ -56,12 +56,7 @@ def collects_input_args(image_param, model_name, infer_count=None, height=None, 
         from openvino import get_version
         from packaging.version import parse
 
-        version = get_version()
-        # avoid invalid format
-        if "-" in version:
-            ov_major_version, dev_info = version.split("-", 1)
-            commit_id = dev_info.split("-")[0]
-            version = f"{ov_major_version}-{commit_id}"
+        version = model_utils.get_version_in_format_to_pars(get_version())
         is_callback_supported = parse(version) >= parse("2025.0.0")
         if is_callback_supported:
             input_args["callback"] = callback

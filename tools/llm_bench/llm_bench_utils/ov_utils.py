@@ -11,6 +11,7 @@ import json
 import types
 from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
+from llm_bench_utils.model_utils import get_version_in_format_to_pars
 from llm_bench_utils.config_class import (
     OV_MODEL_CLASSES_MAPPING,
     TOKENIZE_CLASSES_MAPPING,
@@ -175,6 +176,7 @@ def get_scheduler_config_genai(user_config, config_name="CB config"):
 def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
     from transformers import AutoTokenizer
+    from packaging.version import parse
 
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
         raise ValueError("OpenVINO Tokenizer model is not found in model directory. Please convert tokenizer using following command:\n"
@@ -190,7 +192,8 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
         log.info("Continuous Batching mode activated")
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
-        use_streamer_metrics = not openvino_genai.get_version().startswith("2025.") or draft_model_path
+        version = get_version_in_format_to_pars(openvino_genai.get_version())
+        use_streamer_metrics = parse(version) < parse("2025.0.0") or (draft_model_path and parse(version) < parse("2025.1.0"))
 
     if draft_model_path:
         if not Path(draft_model_path).exists():
