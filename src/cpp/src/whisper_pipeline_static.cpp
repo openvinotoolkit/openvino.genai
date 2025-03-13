@@ -945,10 +945,16 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
         static_cast<float>(m_feature_extractor.chunk_length) / m_model_config.max_source_positions;
     size_t segment_offset = 0;
 
+    OPENVINO_ASSERT(m_feature_extractor.sampling_rate != 0, "Sampling Rate for Feature Extractor is 0");
+    const float chunk_length_in_seconds =
+        static_cast<float>(m_feature_extractor.hop_length) / m_feature_extractor.sampling_rate;
+
     for (size_t chunk_offset = 0; chunk_offset < input_features.n_frames; chunk_offset += segment_offset) {
         if (output_tokens.size() >= max_new_tokens) {
             break;
         }
+
+        const float chunk_toffset = chunk_offset * chunk_length_in_seconds;
 
         auto input_features_chunk =
             input_features.get_data_with_offset(chunk_offset, m_feature_extractor.nb_max_frames);
@@ -985,7 +991,8 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
             auto extracted_segments = ov::genai::extract_segments(chunk_output_tokens,
                                                                   config,
                                                                   m_feature_extractor.nb_max_frames,
-                                                                  time_precision);
+                                                                  time_precision,
+                                                                  chunk_toffset);
 
             ov::genai::utils::filter_non_segment_metrics(raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
 
