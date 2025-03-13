@@ -195,7 +195,7 @@ def download_model(request):
 
 @pytest.fixture(scope="session")
 def download_test_content(request):
-    """Generate test content and return the file path."""
+    """Download the test content from the given URL and return the file path."""
     
     test_data = request.config.cache.get("TEST_DATA", None)
     
@@ -223,7 +223,7 @@ def download_test_content(request):
 
 @pytest.fixture(scope="session")
 def generate_test_content(request):
-    """Download the test content from the given URL and return the file path."""
+    """Generate an image of lines and return the file path."""
     
     test_data = request.config.cache.get("TEST_DATA", None)
     
