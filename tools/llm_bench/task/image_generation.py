@@ -110,7 +110,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         for bs_idx, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
     start = time.perf_counter()
-    res = pipe(input_text_list, **input_args, num_images_per_prompt=2).images
+    res = pipe(input_text_list, **input_args, num_images_per_prompt=args['batch_size']).images
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
