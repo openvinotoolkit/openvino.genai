@@ -165,8 +165,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             prompt_with_tags = add_image_tags_to_prompt(prompt_with_tags, rgbs, m_history_images.size());
         }
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
-        // TODO: save embeddings, instead of image tensors and compare performance
-        m_history_images.insert(m_history_images.end(), rgbs.begin(), rgbs.end());
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
         m_inputs_embedder->set_apply_chat_template_status(false);

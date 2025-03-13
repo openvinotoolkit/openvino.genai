@@ -218,8 +218,10 @@ EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMa
 
     const auto& [pixel_values, image_size] = get_pixel_values_phi3_v(image, config);
     encoder.set_input_tensor(pixel_values);
+    ov::Tensor res{ov::element::f32, encoder.get_output_tensor().get_shape()};
+    encoder.set_output_tensor(res);
     encoder.infer();
-    return {encoder.get_output_tensor(), image_size};
+    return {std::move(res), image_size};
 }
 
 namespace {
@@ -529,15 +531,14 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
             });
     }
 
-ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
     std::vector<ov::Tensor> images_features_proj;
     std::stringstream images_prompt;
     CircularBufferQueueElementGuard<ov::InferRequest> hd_feature_transformer_ireq_guard(this->m_ireq_queue_hd_feature_transformer.get());
     CircularBufferQueueElementGuard<ov::InferRequest> vision_projection_ireq_guard(this->m_ireq_queue_vision_projection.get());
     ov::InferRequest& hd_feature_transformer = hd_feature_transformer_ireq_guard.get();
     ov::InferRequest& vision_projection = vision_projection_ireq_guard.get();
-    for (const ov::Tensor& image : to_single_image_tensors(images)) {
-        EncodedImage encoded_image = m_vision_encoder->encode(image);
+    for (const ov::genai::EncodedImage& encoded_image : images) {
         images_features_proj.push_back(hd_feature_transform(encoded_image, hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, vision_projection));
         m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
         images_prompt << "<|image_" << m_tokens_per_images.size() << "|>\n";
