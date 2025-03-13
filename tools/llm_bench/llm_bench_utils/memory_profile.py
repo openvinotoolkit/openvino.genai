@@ -1,96 +1,79 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-from threading import Event, Thread
-import psutil
+
 import time
-import os
-import sys
+import logging as log
+
+from pathlib import Path
+
+from llm_bench_utils.memory_monitor import MemoryMonitor, MemoryType, MemoryUnit
 
 
-class MemConsumption:
+class MemMonitorWrapper():
+    INTERVAL = 0.01
+
     def __init__(self):
-        """Initialize MemConsumption."""
-        self.g_exit_get_mem_thread = False
-        self.g_end_collect_mem = False
-        self.g_max_rss_mem_consumption = -1
-        self.g_max_uss_mem_consumption = -1
-        self.g_max_shared_mem_consumption = -1
-        self.g_event = Event()
-        self.g_data_event = Event()
-        self.delay = 0.5
+        self.memory_unit = MemoryUnit.MiB
+        self.memory_monitor_configurations = [MemoryType.RSS, MemoryType.SYSTEM]
 
-    def collect_memory_consumption(self):
-        """Collect the data."""
-        while self.g_exit_get_mem_thread is False:
-            self.g_event.wait()
-            while True:
-                process = psutil.Process(os.getpid())
-                try:
-                    memory_full_info = process.memory_full_info()
-                    rss_mem_data = memory_full_info.rss
-                    if sys.platform.startswith('linux'):
-                        shared_mem_data = memory_full_info.shared
-                        uss_mem_data = rss_mem_data - shared_mem_data
-                    elif sys.platform.startswith('win'):
-                        uss_mem_data = memory_full_info.uss
-                        shared_mem_data = rss_mem_data - uss_mem_data
-                    else:
-                        uss_mem_data = -1
-                        shared_mem_data = -1
-                except Exception:
-                    rss_mem_data = -1
-                    uss_mem_data = -1
-                    shared_mem_data = -1
+        self.save_dir = None
+        self.memory_monitors = {}
+        self.memory_data = {}
 
-                if rss_mem_data > self.g_max_rss_mem_consumption:
-                    self.g_max_rss_mem_consumption = rss_mem_data
-                if shared_mem_data > self.g_max_shared_mem_consumption:
-                    self.g_max_shared_mem_consumption = shared_mem_data
-                if uss_mem_data > self.g_max_uss_mem_consumption:
-                    self.g_max_uss_mem_consumption = uss_mem_data
-                self.g_data_event.set()
-                if self.g_end_collect_mem is True:
-                    self.g_event.set()
-                    self.g_event.clear()
-                    self.g_end_collect_mem = False
-                    break
-                time.sleep(self.delay)
+    def create_monitors(self):
+        for memory_type in self.memory_monitor_configurations:
+            self.memory_monitors[memory_type] = MemoryMonitor(interval=self.INTERVAL, memory_type=memory_type, memory_unit=self.memory_unit)
 
-    def start_collect_memory_consumption(self):
-        """Start collect."""
-        self.g_end_collect_mem = False
-        self.g_event.set()
+    def set_dir(self, dir):
+        if not Path(dir).exists():
+            log.warning(f"Path to dir for memory consamption data is not exists {dir}, run without it.")
+        else:
+            self.save_dir = Path(dir)
 
-    def end_collect_momory_consumption(self):
-        """Stop collect."""
-        self.g_end_collect_mem = True
-        self.g_event.wait()
+    def start(self, interval=None, delay=None):
+        self.memory_data = {}
+        for memory_monitor in self.memory_monitors.values():
+            if interval:
+                memory_monitor.interval = interval
+            memory_monitor.start()
 
-    def get_max_memory_consumption(self):
-        """Return the data."""
-        self.g_data_event.wait()
-        self.g_data_event.clear()
-        max_rss_mem = self.g_max_rss_mem_consumption / float(2**20) if self.g_max_rss_mem_consumption > -1 else -1
-        max_shared_mem = self.g_max_shared_mem_consumption / float(2**20) if self.g_max_shared_mem_consumption > -1 else -1
-        max_uss_mem = self.g_max_uss_mem_consumption / float(2**20) if self.g_max_uss_mem_consumption > -1 else -1
-        return max_rss_mem, max_shared_mem, max_uss_mem
+        # compilation could be very fast, apply delay
+        if delay:
+            time.sleep(delay)
+        else:
+            sleep_time = interval * 3 if interval else self.INTERVAL * 3
+            time.sleep(sleep_time)
 
-    def clear_max_memory_consumption(self):
-        """Clear MemConsumption."""
-        self.g_max_rss_mem_consumption = -1
-        self.g_max_uss_mem_consumption = -1
-        self.g_max_shared_mem_consumption = -1
+    def stop_and_collect_data(self, dir_name='mem_monitor_log'):
+        self.stop()
 
-    def start_collect_mem_consumption_thread(self):
-        """Start the thread."""
-        self.t_mem_thread = Thread(target=self.collect_memory_consumption)
-        self.t_mem_thread.start()
+        for memory_type, memory_monitor in self.memory_monitors.items():
+            if not memory_monitor._memory_values_queue or len(memory_monitor._memory_values_queue.queue) == 0:
+                continue
 
-    def end_collect_mem_consumption_thread(self):
-        """End the thread."""
-        self.g_event.set()
-        self.g_data_event.set()
-        self.g_end_collect_mem = True
-        self.g_exit_get_mem_thread = True
-        self.t_mem_thread.join()
+            time_values, memory_values = memory_monitor.get_data(memory_from_zero=True)
+            self.memory_data[memory_type] = max(memory_values)
+
+            if self.save_dir:
+                memory_monitor.save_memory_logs(time_values, memory_values, save_dir=self.save_dir / dir_name)
+                time_values, memory_values = memory_monitor.get_data(memory_from_zero=False)
+                memory_monitor.save_memory_logs(time_values, memory_values, save_dir=self.save_dir / f"{dir_name}_full_proc")
+
+    def stop(self):
+        # Stop addition of new values as soon as possible
+        for memory_monitor in self.memory_monitors.values():
+            memory_monitor._monitoring_thread_should_stop = True
+
+        for memory_monitor in self.memory_monitors.values():
+            memory_monitor.stop()
+            memory_monitor.interval = self.INTERVAL
+
+    def get_data(self):
+        return self.memory_data.get(MemoryType.RSS, -1), self.memory_data.get(MemoryType.SYSTEM, -1)
+
+    def log_data(self, comment):
+        max_rss_mem, max_sys_mem = self.get_data()
+        msg = (f"Max rss memory cost {comment}: {max_rss_mem:.2f}{self.memory_unit.value}, "
+               f"max system memory memory cost {comment}: {max_sys_mem:.2f}{self.memory_unit.value}")
+        log.info(msg)
