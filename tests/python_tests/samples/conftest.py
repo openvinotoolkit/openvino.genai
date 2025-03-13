@@ -98,7 +98,7 @@ TEST_FILES = {
     "soulcard.safetensors": "https://civitai.com/api/download/models/72591",
     "image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png",
     "mask_image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png",
-    "cat.png": "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11"
+    "images/cat.png": "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11"
 }
 
 SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python")))
@@ -195,13 +195,13 @@ def download_model(request):
 
 @pytest.fixture(scope="session")
 def download_test_content(request):
-    """Download the test content from the given URL and return the file path."""
+    """Generate test content and return the file path."""
     
     test_data = request.config.cache.get("TEST_DATA", None)
     
-    file_name, subdir = request.param if isinstance(request.param, tuple) else (request.param, "")
+    file_name = request.param
     file_url = TEST_FILES[file_name]
-    file_path = os.path.join(test_data, subdir, file_name)
+    file_path = os.path.join(test_data, file_name)
     if not os.path.exists(file_path):
         logger.info(f"Downloading test content from {file_url} to {file_path}...")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -227,20 +227,19 @@ def generate_test_content(request):
     
     test_data = request.config.cache.get("TEST_DATA", None)
     
-    file_name, subdir = request.param if isinstance(request.param, tuple) else (request.param, "")
-    file_path = os.path.join(test_data, subdir, file_name)
+    file_name = request.param
+    file_path = os.path.join(test_data, file_name)
     if not os.path.exists(file_path):
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        logger.info(f"Generating test content {file_name}")
+
         from PIL import Image
         import numpy as np
-
         res = 28, 28
         lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
         lines = lines.reshape([*res, 3])
         lines_image = Image.fromarray(lines)
         lines_image.save(file_path)
-        logger.info(f"Generated test content to {file_path}")
+        logger.info(f"Generated test content {file_path}")
     else:
         logger.info(f"Test content already exists at {file_path}")
     yield file_path

@@ -18,7 +18,7 @@ class TestVisualLanguageChat:
             pytest.param("llava-v1.6-mistral-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
             pytest.param("InternVL2-1B", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
             pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("tiny-random-minicpmv-2_6", ("cat.png", "images"), 'What is unusual on this image?\nGo on.')
+            pytest.param("tiny-random-minicpmv-2_6", "images/cat.png", 'What is unusual on this image?\nGo on.')
         ],
         indirect=["convert_model", "download_test_content"],
     )
@@ -48,8 +48,8 @@ class TestVisualLanguageChat:
         ],
         indirect=["convert_model"],
     )
-    @pytest.mark.parametrize("download_test_content", [("cat.png", "images")], indirect=True)
-    @pytest.mark.parametrize("generate_test_content", [("lines.png", "images")], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["images/cat.png"], indirect=True)
+    @pytest.mark.parametrize("generate_test_content", ["images/lines.png"], indirect=True)
     def test_sample_visual_language_chat_images(self, convert_model, download_test_content, generate_test_content, questions):
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
