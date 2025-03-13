@@ -9,7 +9,8 @@ namespace genai {
 ov::genai::ExtractedSegments extract_segments(const std::vector<int64_t>& tokens,
                                               const ov::genai::WhisperGenerationConfig& config,
                                               const size_t nb_max_frames,
-                                              const float time_precision) {
+                                              const float time_precision,
+                                              float toffset) {
     ov::genai::ExtractedSegments extracted_segments;
     std::optional<int64_t> token_start = std::nullopt;
     const size_t timestamp_begin = config.no_timestamps_token_id + 1;
@@ -39,8 +40,8 @@ ov::genai::ExtractedSegments extract_segments(const std::vector<int64_t>& tokens
 
             ov::genai::Segment segment;
             segment.m_tokens = {tokens.begin() + idx_start + 1, tokens.begin() + i};
-            segment.m_start = (*token_start - timestamp_begin) * time_precision;
-            segment.m_end = (token - timestamp_begin) * time_precision;
+            segment.m_start = (*token_start - timestamp_begin) * time_precision + toffset;
+            segment.m_end = (token - timestamp_begin) * time_precision + toffset;
             extracted_segments.segments.push_back(segment);
 
             // each next timestamp token represents .02 time diff
