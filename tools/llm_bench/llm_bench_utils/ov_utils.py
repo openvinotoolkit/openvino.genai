@@ -273,7 +273,16 @@ def create_image_gen_model(model_path, device, **kwargs):
 
         log.info("Selected Optimum Intel for benchmarking")
         start = time.perf_counter()
-        ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
+        if kwargs.get("static_reshape", False):
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config, compile=False)
+            num_images_per_prompt = kwargs.get("batch_size", 1)
+            height = kwargs.get("height", 512)
+            width = kwargs.get("width", 512)
+            log.info(f"Image Pipeline reshape(batch_size=1, height={height}, width={width}, num_images_per_prompt={num_images_per_prompt})")
+            ov_model.reshape(batch_size=1, height=height, width=width, num_images_per_prompt=num_images_per_prompt)
+            ov_model.compile()
+        else:
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
         end = time.perf_counter()
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
