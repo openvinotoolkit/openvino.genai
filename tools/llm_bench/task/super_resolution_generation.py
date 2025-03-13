@@ -33,17 +33,15 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     low_res_img = Image.open(img['prompt']).convert('RGB')
     low_res_img = low_res_img.resize((resize_image_width, resize_image_height))
     max_rss_mem_consumption = ''
-    max_uss_mem_consumption = ''
-    max_shared_mem_consumption = ''
+    max_sys_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start_collect_memory_consumption()
+        mem_consumption.start()
     start = time.perf_counter()
     res = pipe(low_res_img, num_inference_steps=nsteps, tm_list=tm_list)
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.end_collect_momory_consumption()
-        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
-        mem_consumption.clear_max_memory_consumption()
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        max_rss_mem_consumption, max_sys_mem_consumption = mem_consumption.get_data()
     result_md5_list = []
     if framework == 'ov':
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(res[0], args, image_id, num, None, proc_id, '.png')
@@ -56,8 +54,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         gen_time=generation_time,
         res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
+        max_sys_mem=max_sys_mem_consumption,
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)
@@ -65,9 +62,6 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         num,
         iter_data,
         warm_up=(num == 0),
-        max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
         prompt_idx=image_id
     )
     metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn, prompt_idx=image_id)
@@ -77,7 +71,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     if args["genai"]:
         log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
-    pipe, pretrain_time = FW_UTILS[framework].create_ldm_super_resolution_model(model_path, device, **args)
+    pipe, pretrain_time = FW_UTILS[framework].create_ldm_super_resolution_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
     tm_list = []
     images = get_ldm_image_prompt(args)
