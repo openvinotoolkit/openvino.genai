@@ -546,7 +546,7 @@ jobs:
       - name: Download Build Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_cpack_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_cpack_${{ matrix.build-type }},genai_tools_${{ matrix.build-type }},genai_tests_${{ matrix.build-type }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
           
@@ -569,8 +569,8 @@ jobs:
         
       - name: gtests
         run: |
-          . "${{ env.INSTALL_DIR }}\setupvars.ps1"
-          & "${{ env.INSTALL_DIR }}\tests\tests_continuous_batching.exe"
+          . "${{ env.INSTALL_DIR }}/setupvars.ps1"
+          & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe"
         
       - name: Test C++ Tools
         run: |
