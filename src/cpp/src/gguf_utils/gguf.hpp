@@ -6,6 +6,9 @@
 #include <variant>
 #include <cstdarg>
 #include <unordered_map>
+#include <string>
+#include <stdio.h>
+#include <assert.h>
 
 #include "openvino/openvino.hpp"
 
@@ -18,7 +21,8 @@ using GGUFMetaData =
 
 enum class QType { FP16 = 0, INT8 = 1, INT4 = 2 };
 
-std::string format(const std::string fmt_str, ...);
+template<typename... Args>
+std::string format(std::string fmt, Args... args);
 
 ov::Shape get_shape(const gguf_tensor& tensor);
 

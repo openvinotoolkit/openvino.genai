@@ -67,16 +67,16 @@ Output<ov::Node> causal_mask(
 
     // Extract shape of attention mask
     auto t130 = std::make_shared<v3::ShapeOf>(attention_mask, element::i64);
-    auto t131 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1);
-    auto t132 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 0);
+    auto t131 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 1);
+    auto t132 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 0);
     auto t133 = std::make_shared<v8::Gather>(t130, t131, t132);
 
     // Reshape and construct new shapes
     auto t134 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
     auto t135 = std::make_shared<v1::Reshape>(t133, t134, false);
     auto t40 = input_shape;
-    auto index_1 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1);
-    auto axis_0 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 0);
+    auto index_1 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 1);
+    auto axis_0 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 0);
     auto t127 = std::make_shared<v8::Gather>(t40, index_1, axis_0);
     auto t129 = std::make_shared<v1::Reshape>(t127, t134, false);
     auto t136 = std::make_shared<v0::Concat>(OutputVector{t129, t135}, 0);
@@ -87,43 +87,50 @@ Output<ov::Node> causal_mask(
 
     // Create upper triangular mask for causal masking
     auto t139 = std::make_shared<v3::ShapeOf>(t138, element::i32);
-    auto t140 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1);
-    auto t142 = std::make_shared<v8::Gather>(t139, t140, t132);
-    auto t143 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{1}, 1);
-    auto zero_const = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{1}, 0);
+    auto t140 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 1);
+    auto t141 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 0);
+    auto t142 = std::make_shared<v8::Gather>(t139, t140, t141, 0);
+    auto t143 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, 1);
+    auto zero_const = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, 0);
     auto t144 = std::make_shared<v4::Range>(zero_const, t142, t143, element::i32);
     auto axes_zero = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 0);
     auto t145 = std::make_shared<v0::Unsqueeze>(t144, axes_zero);
-    auto t146 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{1}, 1);
-    auto t149 = std::make_shared<v8::Gather>(t139, t132, t132);
+    auto t146 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, 1);
+    auto t147 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, 0);
+    auto t148 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, 0);
+
+    // Broadcast causal mask
+    auto t149 = std::make_shared<v8::Gather>(t139, t147, t148);
     auto t150 = std::make_shared<v1::Add>(t149, t146, AutoBroadcastType::NUMPY);
     auto t151 = std::make_shared<v4::Range>(t146, t150, t143, element::i32);
-    auto axes_one = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
-    auto t152 = std::make_shared<v0::Unsqueeze>(t151, axes_one);
+    auto t152 = std::make_shared<v0::Unsqueeze>(t151, t143);
     auto t153 = std::make_shared<v1::GreaterEqual>(t145, t152, AutoBroadcastType::NUMPY);
+
+    // Create a causal mask using a selective operation
     auto t154 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{1}, 0.0f);
     auto t155 = std::make_shared<v1::Select>(t153, t138, t154, AutoBroadcastType::NUMPY);
 
     // Next branch
-    auto t156 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{1}, 0);
-    auto t157 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{1}, 1);
+    auto t156 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, 0);
+    auto t157 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, 1);
     auto t158 = std::make_shared<v4::Range>(t156, t133, t157, element::f32);
     auto t159 = std::make_shared<v0::Convert>(t158, element::i64);
     auto t160 = std::make_shared<v0::Convert>(t159, element::f32);
     auto t161 = std::make_shared<v3::ShapeOf>(keys, element::i64);
-    auto t162 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 2);
-    auto t164 = std::make_shared<v8::Gather>(t161, t162, axis_0);
+    auto t162 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 2);
+    auto t163 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 0);
+    auto t164 = std::make_shared<v8::Gather>(t161, t162, t163, 0);
     auto t165 = std::make_shared<v1::Add>(t164, t127, AutoBroadcastType::NUMPY);
-    auto t167 = std::make_shared<v4::Range>(t164, t165, t146, element::f32);
+    auto t166 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, 1);
+    auto t167 = std::make_shared<v4::Range>(t164, t165, t166, element::f32);
     auto t168 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{2}, std::vector<int64_t>{-1, 1});
     auto t169 = std::make_shared<v1::Reshape>(t167, t168, false);
     auto t170 = std::make_shared<v1::Greater>(t160, t169, AutoBroadcastType::NUMPY);
     auto t171 = std::make_shared<v0::Convert>(t170, element::f32);
     auto t172 = std::make_shared<v1::Multiply>(t155, t171, AutoBroadcastType::NUMPY);
 
-    auto t173 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 0);
-    auto unsqueeze_axes_0 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
-    auto t174 = std::make_shared<v0::Unsqueeze>(t172, unsqueeze_axes_0);
+    auto t173 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 0);
+    auto t174 = std::make_shared<v0::Unsqueeze>(t172, t173);
     auto t48 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1);
     auto t175 = std::make_shared<v0::Unsqueeze>(t174, t48);
     auto t41 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
@@ -135,10 +142,10 @@ Output<ov::Node> causal_mask(
     auto t180 = std::make_shared<v3::Broadcast>(t175, t179, BroadcastType::BIDIRECTIONAL);
     auto t181 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{-1});
     auto t182 = std::make_shared<v1::Reshape>(t180, t181, false);
-    auto t183 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 0);
+    auto t183 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 0);
     auto t184 = std::make_shared<v3::ShapeOf>(t180, element::i64);
     auto t185 = std::make_shared<v1::ReduceProd>(t184, t183, false);
-    auto t186 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1);
+    auto t186 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 1);
     auto t187 = std::make_shared<v4::Range>(t183, t185, t186, element::i64);
     auto t188 = std::make_shared<v1::Reshape>(t187, t184, false);
     auto t189 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
@@ -459,8 +466,8 @@ ov::Tensor reorder_interleaved_format(const ov::Tensor& weights, int head_size) 
 
     // Calculate row size in bytes
     size_t row_size = weights.get_byte_size() / total_rows;
-    const char* src_data = weights.data<char>();
-    char* dst_data = reordered.data<char>();
+    const char* src_data = (const char*)weights.data();
+    char* dst_data = (char*)reordered.data();
 
     // Perform permutation copy
     for (size_t i = 0; i < total_rows; ++i) {
@@ -615,6 +622,7 @@ ov::Output<ov::Node> make_lm_head(
     QType qtype) {
 
     ov::Output<ov::Node> w_f32;
+    
     if (consts.count(key + ".weight")) {
         QType lm_qtype = qtype;
         if (!consts.count(key + ".scales")) {
@@ -776,7 +784,7 @@ std::tuple<ov::Output<ov::Node>,
 
     std::string name_suffix = ".layer" + std::to_string(layer_idx);
     std::string name_prefix = "model.layers.self_attn";
-    std::string layer_prefix = format("model.layers[{}]", layer_idx);
+    std::string layer_prefix = format("model.layers[%d]", layer_idx);
 
     // LayerNorm
     auto input_layernorm = make_rms_norm(

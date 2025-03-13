@@ -5,6 +5,8 @@
 
 #include "gguf.hpp"
 
+#include <iostream>
+
 // https://github.com/antirez/gguf-tools/blob/af7d88d808a7608a33723fba067036202910acb3/gguflib.h#L102-L108
 constexpr int gguf_array_header_size = 12;
 
@@ -12,14 +14,17 @@ using GGUFLoad = std::pair<
     std::unordered_map<std::string, GGUFMetaData>,
     std::unordered_map<std::string, ov::Tensor>>;
 
-std::string format(const std::string fmt_str, ...) {
-    va_list ap;
-    char *fp = NULL;
-    va_start(ap, fmt_str);
-    vasprintf(&fp, fmt_str.c_str(), ap);
-    va_end(ap);
-    std::unique_ptr<char[]> formatted(fp);
-    return std::string(formatted.get());
+template<typename... Args>
+std::string format(std::string fmt, Args... args)
+{
+    size_t bufferSize = 1000;
+    char *buffer = new char[bufferSize];
+    int n = sprintf(buffer, fmt.c_str(), args...);
+    assert (n >= 0 and n < (int) bufferSize - 1  && "check fmt_str output");
+
+    std::string fmtStr (buffer);
+    delete buffer;
+    return fmtStr;
 }
 
 std::optional<uint32_t> dtype_to_gguf_tensor_type(const ov::element::Type& dtype) {
@@ -367,8 +372,9 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<s
 
     consts["model.embed_tokens.weight"] = weights.at("token_embd.weight");
     consts["model.norm.weight"] = weights.at("output_norm.weight");
-    consts["lm_head.weight"] = weights.count("output.weight") ? 
-        weights.at("output.weight") : ov::Tensor();
+    if (weights.count("output.weight")) {
+        consts["lm_head.weight"] = weights.at("output.weight");
+    }
 
     // Handle quantization scales and biases
     if (weights.count("token_embd.scales")) {
@@ -380,39 +386,41 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<s
         consts["lm_head.biases"] = weights.at("output.biases");
     }
 
+    //for (auto kv : weights) std::cout << "Key: " << kv.first << std::endl;
     // Process layer weights
     for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
-        consts[format("model.layers[{}].input_layernorm.weight", i)] = weights.at(format("blk.{}.attn_norm.weight", i));
-        consts[format("model.layers[{}].post_attention_layernorm.weight", i)] = weights.at(format("blk.{}.ffn_norm.weight", i));
+        std::string key = format("blk.%d.attn_norm.weight", i);
+        consts[format("model.layers[%d].input_layernorm.weight", i)] = weights.at(format("blk.%d.attn_norm.weight", i));
+        consts[format("model.layers[%d].post_attention_layernorm.weight", i)] = weights.at(format("blk.%d.ffn_norm.weight", i));
         
         // Attention weights
-        consts[format("model.layers[{}].self_attn.q_proj.weight", i)] = weights.at(format("blk.{}.attn_q.weight", i));
-        consts[format("model.layers[{}].self_attn.k_proj.weight", i)] = weights.at(format("blk.{}.attn_k.weight", i));
-        consts[format("model.layers[{}].self_attn.v_proj.weight", i)] = weights.at(format("blk.{}.attn_v.weight", i));
-        consts[format("model.layers[{}].self_attn.o_proj.weight", i)] = weights.at(format("blk.{}.attn_output.weight", i));
+        consts[format("model.layers[%d].self_attn.q_proj.weight", i)] = weights.at(format("blk.%d.attn_q.weight", i));
+        consts[format("model.layers[%d].self_attn.k_proj.weight", i)] = weights.at(format("blk.%d.attn_k.weight", i));
+        consts[format("model.layers[%d].self_attn.v_proj.weight", i)] = weights.at(format("blk.%d.attn_v.weight", i));
+        consts[format("model.layers[%d].self_attn.o_proj.weight", i)] = weights.at(format("blk.%d.attn_output.weight", i));
 
         // MLP weights
-        consts[format("model.layers[{}].mlp.gate_proj.weight", i)] = weights.at(format("blk.{}.ffn_gate.weight", i));
-        consts[format("model.layers[{}].mlp.up_proj.weight", i)] = weights.at(format("blk.{}.ffn_up.weight", i));
-        consts[format("model.layers[{}].mlp.down_proj.weight", i)] = weights.at(format("blk.{}.ffn_down.weight", i));
+        consts[format("model.layers[%d].mlp.gate_proj.weight", i)] = weights.at(format("blk.%d.ffn_gate.weight", i));
+        consts[format("model.layers[%d].mlp.up_proj.weight", i)] = weights.at(format("blk.%d.ffn_up.weight", i));
+        consts[format("model.layers[%d].mlp.down_proj.weight", i)] = weights.at(format("blk.%d.ffn_down.weight", i));
 
         // Quantization parameters
         if (QType(std::get<int>(config.at("qtype"))) != QType::FP16) {
-            consts[format("model.layers[{}].self_attn.q_proj.scales", i)] = weights.at(format("blk.{}.attn_q.scales", i));
-            consts[format("model.layers[{}].self_attn.k_proj.scales", i)] = weights.at(format("blk.{}.attn_k.scales", i));
-            consts[format("model.layers[{}].self_attn.v_proj.scales", i)] = weights.at(format("blk.{}.attn_v.scales", i));
-            consts[format("model.layers[{}].self_attn.o_proj.scales", i)] = weights.at(format("blk.{}.attn_output.scales", i));
-            consts[format("model.layers[{}].mlp.gate_proj.scales", i)] = weights.at(format("blk.{}.ffn_gate.scales", i));
-            consts[format("model.layers[{}].mlp.up_proj.scales", i)] = weights.at(format("blk.{}.ffn_up.scales", i));
-            consts[format("model.layers[{}].mlp.down_proj.scales", i)] = weights.at(format("blk.{}.ffn_down.scales", i));
+            consts[format("model.layers[%d].self_attn.q_proj.scales", i)] = weights.at(format("blk.%d.attn_q.scales", i));
+            consts[format("model.layers[%d].self_attn.k_proj.scales", i)] = weights.at(format("blk.%d.attn_k.scales", i));
+            consts[format("model.layers[%d].self_attn.v_proj.scales", i)] = weights.at(format("blk.%d.attn_v.scales", i));
+            consts[format("model.layers[%d].self_attn.o_proj.scales", i)] = weights.at(format("blk.%d.attn_output.scales", i));
+            consts[format("model.layers[%d].mlp.gate_proj.scales", i)] = weights.at(format("blk.%d.ffn_gate.scales", i));
+            consts[format("model.layers[%d].mlp.up_proj.scales", i)] = weights.at(format("blk.%d.ffn_up.scales", i));
+            consts[format("model.layers[%d].mlp.down_proj.scales", i)] = weights.at(format("blk.%d.ffn_down.scales", i));
 
-            consts[format("model.layers[{}].self_attn.q_proj.biases", i)] = weights.at(format("blk.{}.attn_q.biases", i));
-            consts[format("model.layers[{}].self_attn.k_proj.biases", i)] = weights.at(format("blk.{}.attn_k.biases", i));
-            consts[format("model.layers[{}].self_attn.v_proj.biases", i)] = weights.at(format("blk.{}.attn_v.biases", i));
-            consts[format("model.layers[{}].self_attn.o_proj.biases", i)] = weights.at(format("blk.{}.attn_output.biases", i));
-            consts[format("model.layers[{}].mlp.gate_proj.biases", i)] = weights.at(format("blk.{}.ffn_gate.biases", i));
-            consts[format("model.layers[{}].mlp.up_proj.biases", i)] = weights.at(format("blk.{}.ffn_up.biases", i));
-            consts[format("model.layers[{}].mlp.down_proj.biases", i)] = weights.at(format("blk.{}.ffn_down.biases", i));
+            consts[format("model.layers[%d].self_attn.q_proj.biases", i)] = weights.at(format("blk.%d.attn_q.biases", i));
+            consts[format("model.layers[%d].self_attn.k_proj.biases", i)] = weights.at(format("blk.%d.attn_k.biases", i));
+            consts[format("model.layers[%d].self_attn.v_proj.biases", i)] = weights.at(format("blk.%d.attn_v.biases", i));
+            consts[format("model.layers[%d].self_attn.o_proj.biases", i)] = weights.at(format("blk.%d.attn_output.biases", i));
+            consts[format("model.layers[%d].mlp.gate_proj.biases", i)] = weights.at(format("blk.%d.ffn_gate.biases", i));
+            consts[format("model.layers[%d].mlp.up_proj.biases", i)] = weights.at(format("blk.%d.ffn_up.biases", i));
+            consts[format("model.layers[%d].mlp.down_proj.biases", i)] = weights.at(format("blk.%d.ffn_down.biases", i));
         }
     }
 

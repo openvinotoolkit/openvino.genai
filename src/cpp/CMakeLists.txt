@@ -121,6 +121,7 @@ add_library(openvino::genai ALIAS ${TARGET_NAME})
 target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime/include>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                     "$<BUILD_INTERFACE:${OpenVINOGenAI_SOURCE_DIR}/src/c/include>"
+                                                    "$<BUILD_INTERFACE:${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/gguf_utils>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime openvino::runtime::c PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
