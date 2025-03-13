@@ -132,8 +132,8 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build_type }} --verbose
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build_type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
-          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
-          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TESTS_DIR }} --component tests
+          cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
+          cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TESTS_DIR }} --component tests
         env:
           CMAKE_TLS_VERIFY: 0
                           
