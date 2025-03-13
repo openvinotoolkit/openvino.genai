@@ -218,8 +218,10 @@ EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMa
 
     const auto& [pixel_values, image_size] = get_pixel_values_phi3_v(image, config);
     encoder.set_input_tensor(pixel_values);
+    ov::Tensor res{ov::element::f32, encoder.get_output_tensor().get_shape()};
+    encoder.set_output_tensor(res);
     encoder.infer();
-    return {encoder.get_output_tensor(), image_size};
+    return {std::move(res), image_size};
 }
 
 namespace {
