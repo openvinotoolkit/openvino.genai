@@ -472,7 +472,7 @@ jobs:
           SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
   genai_tools_tests:
-    name: Tools ${{ matrix.test.name }} (${{ matrix.build-type }})
+    name: Tools ${{ matrix.build-type }}
     strategy:
       fail-fast: false
       matrix:
@@ -482,7 +482,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ${{ matrix.test.runner }}
+    runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
