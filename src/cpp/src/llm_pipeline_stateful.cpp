@@ -60,7 +60,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     }
 
     if (!m_use_full_chat_history)
-        m_kv_history_trim_manager.kv_cache_seq_length_axis = kv_pos.seq_len;
+        m_kv_cache_state.seq_length_axis = kv_pos.seq_len;
 
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
@@ -143,7 +143,7 @@ DecodedResults StatefulLLMPipeline::generate(
             if (m_use_full_chat_history) {
                 encoded_input = new_chat_tokens;
             } else {
-                ov::genai::align_kv_cache_and_history(m_kv_history_trim_manager, new_chat_tokens.input_ids, m_kv_cache_state);
+                ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_kv_cache_state);
                 encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_kv_cache_state);
             }
             // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
@@ -211,17 +211,22 @@ EncodedResults StatefulLLMPipeline::generate(
     if (!is_chat_conversation) {
         reset_kv_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
+        m_kv_cache_state.reset_state();
     }
 
     auto start_time = std::chrono::steady_clock::now();
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
     if (auto data = std::get_if<ov::Tensor>(&inputs)) {
-        input_ids = *data;
+        input_ids = ov::Tensor(data->get_element_type(), data->get_shape());
+        data->copy_to(input_ids);
         attention_mask = ov::genai::utils::init_attention_mask(input_ids);
     } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
-        input_ids = data->input_ids;
-        attention_mask = data->attention_mask;
+        input_ids = ov::Tensor(data->input_ids.get_element_type(), data->input_ids.get_shape());
+        data->input_ids.copy_to(input_ids);
+
+        attention_mask = ov::Tensor{data->attention_mask.get_element_type(), data->attention_mask.get_shape()};
+        data->attention_mask.copy_to(attention_mask);
     }
 
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) 
@@ -232,7 +237,7 @@ EncodedResults StatefulLLMPipeline::generate(
     // Tail of previous output in chat mode is missing in KV cache.
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
         ov::Tensor new_chat_tokens = ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data()};
-        ov::genai::align_kv_cache_and_history(m_kv_history_trim_manager, new_chat_tokens, m_kv_cache_state);
+        ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
 
         auto encoded_input = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state);
         input_ids = encoded_input.input_ids;
@@ -275,11 +280,10 @@ EncodedResults StatefulLLMPipeline::generate(
                     "but you have '" + std::to_string(num_inputs) + "' inputs");
 
     if (is_chat_conversation) {
-        if (m_kv_cache_state.get_state().empty() || m_use_full_chat_history)
+        if (m_use_full_chat_history)
             reset_kv_state();
         else
-            ov::genai::utils::trim_kv_cache(m_model_runner, m_kv_history_trim_manager.num_tokens_to_trim,
-                                            m_kv_history_trim_manager.kv_cache_seq_length_axis, m_adapter_controller);
+            ov::genai::utils::trim_kv_cache(m_model_runner, m_kv_cache_state, m_adapter_controller);
     }
 
     size_t kv_cache_len = 0;
@@ -347,12 +351,12 @@ EncodedResults StatefulLLMPipeline::generate(
     }
 
     ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,
-                                                                                requests, position_ids, m_kv_cache_state, std::nullopt, std::nullopt, m_max_kv_cache_size);
+                                                                                requests, position_ids, m_kv_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
     ov::genai::EncodedResults& result = finish_info.results;
     m_chat_generation_finish_status = finish_info.streaming_finish_status;
 
     if (is_chat_conversation) {
-        m_kv_history_trim_manager.reset();
+        m_kv_cache_state.num_tokens_to_trim = 0;
 
         if (m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
             if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
@@ -360,11 +364,10 @@ EncodedResults StatefulLLMPipeline::generate(
             } else {
                 std::copy(result.tokens[0].begin(), result.tokens[0].end(), std::back_inserter(m_tokenized_chat_history));
             }
-        } else if (config.is_beam_search()) {
-            m_kv_history_trim_manager.num_tokens_to_trim = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
         }
-    } else {
-        m_kv_cache_state.reset_state();
+        if (config.is_beam_search()) {
+            m_kv_cache_state.num_tokens_to_trim = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
+        }
     }
 
     auto stop_time = std::chrono::steady_clock::now();
@@ -402,7 +405,6 @@ void StatefulLLMPipeline::reset_kv_state() {
 
 void StatefulLLMPipeline::finish_chat() {
     is_chat_conversation = false;
-    m_kv_history_trim_manager.reset();
     m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
     bool have_state = 0 != m_model_runner.get_tensor("attention_mask").get_size();
     if (!m_kv_cache_state.get_state().empty() || have_state) {

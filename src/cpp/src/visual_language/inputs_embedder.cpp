@@ -16,6 +16,13 @@
 #include "visual_language/internvl_chat/classes.hpp"
 
 #include "utils.hpp"
+#include <regex>
+
+namespace {
+
+std::regex UNIVERSAL_PATTERN{R"(<ov_genai_image_(\d+)>)"};
+
+}
 
 namespace ov::genai {
 
@@ -28,8 +35,8 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 }
 
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
+    m_image_id = 0;
     m_is_chat_conversation = true;
-    m_kv_history_trim_manager.reset();
     if (!m_kv_cache_state.get_state().empty()) {
         m_history.clear();
         m_kv_cache_state.reset_state();
@@ -40,19 +47,33 @@ void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_messa
     m_history = {{{"role", "system"}, {"content", system_message}}};
 }
 
-void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results) {
-    // Tail of chat template is missing in KV cache.
-    // Find the tail to concatenate it with the next input prompt.
-    m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
-    m_kv_history_trim_manager.reset();
+void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
+    m_kv_cache_state.num_tokens_to_trim = 0;
+    if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
+        // If chat generation process was cancelled by user, let's rollback to previous state of history
+        m_history.pop_back();
+
+        std::vector<int64_t>& state = m_kv_cache_state.get_state();
+
+        m_kv_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
+        state.resize(m_prev_hist_length);
+        m_kv_cache_state.reset_mem_state = state.empty();
+    } else {
+        // Tail of chat template is missing in KV cache.
+        // Find the tail to concatenate it with the next input prompt.
+        m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
+    }
 }
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
+    m_image_id = 0;
     m_is_chat_conversation = false;
-    m_kv_history_trim_manager.reset();
-
     m_history.clear();
     m_kv_cache_state.reset_state();
+}
+
+bool InputsEmbedder::IInputsEmbedder::prompt_has_image_tag(const std::string& prompt) const {
+    return std::regex_search(prompt, UNIVERSAL_PATTERN);
 }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
@@ -62,7 +83,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
     m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, device_config)),
-    m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
+    m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, device_config)),
     m_tokenizer{model_dir, device_config} { }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
@@ -81,13 +102,13 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         device,
         device_config
     )),
-    m_embedding(
+    m_embedding(EmbeddingsModel::create(
         utils::get_model_weights_pair(models_map, "text_embeddings").first,
         utils::get_model_weights_pair(models_map, "text_embeddings").second,
         m_vlm_config.scale_emb,
         device,
         device_config
-    ),
+    )),
     m_tokenizer(tokenizer) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
@@ -123,7 +144,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
 ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new_chat_tokens) {
     ov::Tensor encoded_inputs;
     if (m_is_chat_conversation) {
-        ov::genai::align_kv_cache_and_history(m_kv_history_trim_manager, new_chat_tokens, m_kv_cache_state);
+        ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
         encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state).input_ids;
     } else {
         encoded_inputs = new_chat_tokens;
@@ -135,6 +156,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new
 ov::Tensor InputsEmbedder::IInputsEmbedder::get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     const auto new_chat_tokens = apply_chat_template_tokenize(prompt, metrics);
     auto new_input_ids = update_history(new_chat_tokens);
+    m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_input_ids);
 
     return new_input_ids;
@@ -163,6 +185,19 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
         }
     }
     return single_image_tensors;
+}
+
+std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
+    std::vector<EncodedImage> embeds;
+    std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+    for (const ov::Tensor& image : single_images) {
+        embeds.emplace_back(m_vision_encoder->encode(image));
+    }
+    return embeds;
+}
+
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+    return get_inputs_embeds(prompt, encode_images(images), metrics);
 }
 
 /// Public InputsEmbedder class
@@ -217,20 +252,24 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
     return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+    return m_impl->get_inputs_embeds(prompt, images, metrics);
+}
+
+std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
+    return m_impl->encode_images(images);
+}
+
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
 }
 
-EmbeddingsModel InputsEmbedder::get_embedding_model() const {
+EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
 }
 
-KVCacheState& InputsEmbedder::get_kv_cache_state() {
+ov::genai::utils::KVCacheState& InputsEmbedder::get_kv_cache_state() {
     return  m_impl->get_kv_cache_state();
-}
-
-size_t InputsEmbedder::get_num_tokens_to_remove_from_hist() const {
-    return m_impl->get_num_tokens_to_remove_from_hist();
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
@@ -241,8 +280,8 @@ void InputsEmbedder::start_chat(const std::string& system_message) {
     return m_impl->start_chat(system_message);
 }
 
-void InputsEmbedder::update_chat_history(const std::string& decoded_results) {
-    return m_impl->update_chat_history(decoded_results);
+void InputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
+    return m_impl->update_chat_history(decoded_results, generation_finish_status);
 }
 
 void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
@@ -251,6 +290,55 @@ void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
 
 void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
+}
+
+bool InputsEmbedder::prompt_has_image_tag(const std::string& prompt) const {
+    return m_impl->prompt_has_image_tag(prompt);
+}
+
+std::pair<std::string, std::vector<size_t>> unify_prompt(
+    const std::string& prompt,
+    const std::string& native_tag,
+    const std::string& unified_tag_to_native_tag,
+    size_t n_new_images,
+    size_t first_new_image_id
+) {
+    bool found_universal_tag = std::regex_search(prompt, UNIVERSAL_PATTERN);
+    bool found_native_tag = prompt.find(native_tag) != std::string::npos;
+    OPENVINO_ASSERT(!(found_universal_tag && found_native_tag), "Prompt can contain only one type of image tags.");
+    std::stringstream images_prompt;
+    if (!found_universal_tag && ! found_native_tag) {
+        for (size_t i = first_new_image_id; i < n_new_images + first_new_image_id; ++i) {
+            images_prompt << "<ov_genai_image_" << i << ">";
+        }
+    }
+    images_prompt << prompt;
+
+    std::vector<size_t> images_sequence;
+    std::string unified_prompt = images_prompt.str();
+    std::sregex_iterator end_it;
+    if (found_native_tag) {
+        size_t pos = 0;
+        while ((pos = unified_prompt.find(native_tag, pos)) != std::string::npos) {
+            images_sequence.push_back(first_new_image_id + images_sequence.size());
+            pos += native_tag.length();
+        }
+        OPENVINO_ASSERT(images_sequence.size() == n_new_images);
+    } else {
+        bool found = true;
+        while (found) {
+            found = false;
+            for (std::sregex_iterator it(unified_prompt.begin(), unified_prompt.end(), UNIVERSAL_PATTERN); it != end_it; ++it) {
+                images_sequence.push_back(std::stoi((*it)[1].str()));
+                OPENVINO_ASSERT(images_sequence.back() < n_new_images + first_new_image_id, "Missing image ", images_sequence.back());
+                OPENVINO_ASSERT(first_new_image_id <= images_sequence.back(), "Referring to older images isn't implemented");
+                unified_prompt.replace(it->position(), it->length(), unified_tag_to_native_tag);
+                found = true;
+                break;
+            }
+        }
+    }
+    return {std::move(unified_prompt), std::move(images_sequence)};
 }
 
 } // namespace ov::genai

@@ -76,7 +76,15 @@ MODELS = {
     "LCM_Dreamshaper_v7-int8-ov": {
         "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
         "convert_args": []
-    }   
+    },
+    "InternVL2-1B": {
+        "name": "OpenGVLab/InternVL2-1B",
+        "convert_args": ['--trust-remote-code']
+    },
+    "Qwen2-VL-2B-Instruct": {
+        "name": "Qwen/Qwen2-VL-2B-Instruct",
+        "convert_args": ['--trust-remote-code']
+    },
 }
 
 TEST_FILES = {
@@ -90,6 +98,7 @@ TEST_FILES = {
 
 SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python")))
 SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
+SAMPLES_C_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_teardown(request, tmp_path_factory):

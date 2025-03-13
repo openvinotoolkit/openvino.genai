@@ -240,6 +240,8 @@ jobs:
         run: |
           chmod +x ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh
           ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh -i ${{ env.INSTALL_DIR }}
+          chmod +x ${{ env.OV_INSTALL_DIR }}/samples/c/build_samples.sh
+          ${{ env.OV_INSTALL_DIR }}/samples/c/build_samples.sh -i ${{ env.INSTALL_DIR }}
 
       - name: Build Samples (${{ matrix.build-type }})
         if: ${{ 'Release' != matrix.build-type }}
@@ -261,20 +263,80 @@ jobs:
           path: ${{ env.INSTALL_DIR }}/*.tar.gz
           if-no-files-found: 'error'
 
+  genai_build_nodejs:
+    name: Build Node.js bindings
+    strategy:
+      fail-fast: false
+      matrix:
+        build-type: [Release]
+    needs: [ openvino_download ]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+
+    env:
+      SRC_DIR: ${{ github.workspace }}/openvino.genai
+      BUILD_DIR: ${{ github.workspace }}/build
+      INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+          path: ${{ env.SRC_DIR }}
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Build GenAI Node.js bindings
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
+            -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
+            -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+
+      - name: Upload Node.js bindings Build Package
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: genai_nodejs_bindings
+          path: ${{ env.INSTALL_DIR }}
+          if-no-files-found: 'error'
+
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ openvino_download, genai_build_wheel ]
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
       matrix:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
+            timeout: 45
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
+            timeout: 60
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_kv_cache_eviction.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
+            timeout: 90
     defaults:
       run:
         shell: bash
@@ -335,7 +397,7 @@ jobs:
           - name: 'Image generation'
             marker: 'image_generation'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-8-cores-64gb'
+            runner: 'aks-linux-16-cores-32gb'
           - name: 'VLM'
             marker: 'vlm'
             cmd: 'tests/python_tests/samples'
@@ -386,35 +448,32 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
         
       - name: Test Samples (Python and C++)
-        run: python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
+          SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
-  genai_build_nodejs_bindings:
-    name: Build Node.js bindings
-    strategy:
-      fail-fast: false
-      matrix:
-        build-type: [Release]
-    needs: [ openvino_download ]
+  genai_nodejs_tests:
+    name: Node.js bindings tests
+    needs: [ openvino_download, genai_build_nodejs ]
     timeout-minutes: 20
     defaults:
       run:
         shell: bash
     runs-on: aks-linux-4-cores-16gb
     container:
-      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
-      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING -v ${{ github.workspace }}:${{ github.workspace }}
+        - ${{ github.workspace }}:${{ github.workspace }}
+
     env:
-      CMAKE_GENERATOR: Unix Makefiles
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/openvino.genai
       INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
-      BUILD_DIR: ${{ github.workspace }}/build
+      NODE_VERSION: 21
 
     steps:
       - name: Clone openvino.genai
@@ -423,34 +482,24 @@ jobs:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
-      - name: Download OpenVINO package
+      - name: Download OpenVINO Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
-      - name: Build GenAI Node.js bindings
-        run: |
-          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-            -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
-            -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
-            -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
-          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
-          
-      - name: Pack Node.js bindings libs
-        run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
-        working-directory: ${{ env.INSTALL_DIR }}
-
-      - name: Upload Archive Package with Node.js bindings
-        if: ${{ always() }}
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+      - name: Download GenAI JS Bildings Artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: genai_nodejs_bindings
-          path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
-          if-no-files-found: 'error'
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       # JS pacakges uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
       # Here we emulate the installation of the openvino-node package from NPM. The latest
@@ -486,7 +535,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_samples_tests, genai_build_nodejs_bindings]
+    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_nodejs_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

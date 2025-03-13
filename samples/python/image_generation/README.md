@@ -58,7 +58,7 @@ Please find the template of the callback usage below.
 pipe = openvino_genai.Text2ImagePipeline(model_dir, device)
 
 def callback(step, num_steps, latent):
-   print(f"Image generation step: {step} / {num_steps}")
+   print(f"Image generation step: {step + 1} / {num_steps}")
    image_tensor = pipe.decode(latent) # get intermediate image tensor
    if your_condition: # return True if you want to interrupt image generation
       return True

@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import logger, MODELS, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR
 from test_utils import run_sample
 
 class TestGreedyCausalLM:
@@ -14,22 +14,51 @@ class TestGreedyCausalLM:
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
-            pytest.param("TinyLlama-1.1B-Chat-v1.0", "test"),
             pytest.param("SmolLM-135M", "return 0"),
-            pytest.param("Qwen2.5-0.5B-Instruct", "69"),
+            pytest.param("Qwen2-0.5B-Instruct", "69"),
+            pytest.param("phi-1_5", "Alan Turing was a"),
+            pytest.param("TinyLlama-1.1B-Chat-v1.0", "Alan Turing was a"),
         ],
         indirect=["convert_model"],
     )
-    def test_sample_greedy_causal_lm(self, convert_model, sample_args):
-        # Test Python sample
+    def test_sample_greedy_causal_lm(self, request, convert_model, sample_args):
+        prompt = sample_args
+        
+        # Python test
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
-        py_command = [sys.executable, py_script, convert_model, sample_args]
+        py_command = [sys.executable, py_script, convert_model, prompt]
         py_result = run_sample(py_command)
+        py_predictions = py_result.stdout
 
-        # Test CPP sample
+        # C++ test
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
-        cpp_command =[cpp_sample, convert_model, sample_args]
+        cpp_command = [cpp_sample, convert_model, prompt]
         cpp_result = run_sample(cpp_command)
+        cpp_predictions = cpp_result.stdout
+
+        # Test C sample
+        c_sample = os.path.join(SAMPLES_C_DIR, "greedy_causal_lm_c")
+        c_command =[c_sample, convert_model, sample_args]
+        c_result = run_sample(c_command)
 
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
+        assert cpp_result.stdout == c_result.stdout, f"Results should match"
+                
+        model_name = request.node.callspec.params['convert_model']
+        model = MODELS[model_name]
+        
+        import transformers
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'])
+                
+        if tokenizer.chat_template:
+            prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+        tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
+    
+        for output in transformers.AutoModelForCausalLM.from_pretrained(model['name']).generate(**tokenized, max_length=100, do_sample=False):
+            ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
+            logger.info(f'Checking for "{ref=}"')
+
+            idx = cpp_predictions.find(ref)
+            assert -1 != idx, f'Missing "{ref=}" from predictions'
+            cpp_predictions = cpp_predictions[:idx] + cpp_predictions[idx + len(ref):]

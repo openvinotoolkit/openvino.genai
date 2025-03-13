@@ -122,10 +122,15 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
         // For special tokens they are Constant/Select, 
         // for the ends input with main tokens sequence it's Add/Subtract.
         // If  Add then it's a right truncation, if Subtract then it's a left truncation.
-        auto tmp_node = combine_seg_node->input_value(3*i + 1).get_node_shared_ptr();
-        if (ov::as_type_ptr<v1::Add>(tmp_node) || ov::as_type_ptr<v1::Subtract>(tmp_node)) {
+        // For left truncation subtract is inserted on 0th input.
+        auto tmp_sub_node = combine_seg_node->input_value(3*i + 0).get_node_shared_ptr();
+        auto tmp_add_node = combine_seg_node->input_value(3*i + 1).get_node_shared_ptr();
+        if (ov::as_type_ptr<v1::Add>(tmp_add_node)) {
             number_of_main_tokens_inputs += 1;
-            add_or_sub_node = tmp_node;
+            add_or_sub_node = tmp_add_node;
+        } else if (ov::as_type_ptr<v1::Subtract>(tmp_sub_node)) {
+            number_of_main_tokens_inputs += 1;
+            add_or_sub_node = tmp_sub_node;
         }
     }
     

@@ -12,6 +12,7 @@
 #include "image_generation/stable_diffusion_xl_pipeline.hpp"
 #include "image_generation/stable_diffusion_3_pipeline.hpp"
 #include "image_generation/flux_pipeline.hpp"
+#include "image_generation/flux_fill_pipeline.hpp"
 
 #include "utils.hpp"
 
@@ -30,6 +31,8 @@ InpaintingPipeline::InpaintingPipeline(const std::filesystem::path& root_dir) {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, root_dir);
     } else if (class_name == "FluxPipeline" || class_name == "FluxInpaintPipeline") {
         m_impl = std::make_shared<FluxPipeline>(PipelineType::INPAINTING, root_dir);
+    } else if (class_name == "FluxFillPipeline") {
+        m_impl = std::make_shared<FluxFillPipeline>(PipelineType::INPAINTING, root_dir);
     } else if (class_name == "StableDiffusion3Pipeline" || class_name == "StableDiffusion3InpaintPipeline") {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::INPAINTING, root_dir);
     } else {
@@ -50,6 +53,8 @@ InpaintingPipeline::InpaintingPipeline(const std::filesystem::path& root_dir, co
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
     } else if (class_name == "FluxPipeline" || class_name == "FluxInpaintPipeline") {
         m_impl = std::make_shared<FluxPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
+    } else if (class_name == "FluxFillPipeline") {
+        m_impl = std::make_shared<FluxFillPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
     } else if (class_name == "StableDiffusion3Pipeline" || class_name == "StableDiffusion3InpaintPipeline") {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::INPAINTING, root_dir, device, properties);
     } else {
@@ -131,6 +136,20 @@ InpaintingPipeline InpaintingPipeline::flux(
     return InpaintingPipeline(impl);
 }
 
+InpaintingPipeline InpaintingPipeline::flux_fill(
+    const std::shared_ptr<Scheduler>& scheduler,
+    const CLIPTextModel& clip_text_model,
+    const T5EncoderModel& t5_text_encoder,
+    const FluxTransformer2DModel& transformer,
+    const AutoencoderKL& vae) {
+    auto impl = std::make_shared<FluxFillPipeline>(PipelineType::INPAINTING, clip_text_model, t5_text_encoder, transformer, vae);
+
+    assert(scheduler != nullptr);
+    impl->set_scheduler(scheduler);
+
+    return InpaintingPipeline(impl);
+}
+
 InpaintingPipeline InpaintingPipeline::stable_diffusion_3(
     const std::shared_ptr<Scheduler>& scheduler,
     const CLIPTextModelWithProjection& clip_text_model_1,
@@ -178,6 +197,13 @@ void InpaintingPipeline::reshape(const int num_images_per_prompt, const int heig
 
 void InpaintingPipeline::compile(const std::string& device, const ov::AnyMap& properties) {
     m_impl->compile(device, properties);
+}
+
+void InpaintingPipeline::compile(const std::string& text_encode_device,
+                                 const std::string& denoise_device,
+                                 const std::string& vae_device,
+                                 const ov::AnyMap& properties) {
+    m_impl->compile(text_encode_device, denoise_device, vae_device, properties);
 }
 
 ov::Tensor InpaintingPipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask, const ov::AnyMap& properties) {
