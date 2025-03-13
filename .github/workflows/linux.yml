@@ -516,6 +516,9 @@ jobs:
           pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
         
+      - name: Fix C++ samples permissions
+        run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
+        
       - name: Install requirements
         run: pip install pytest -r ${{ env.SRC_DIR }}/samples/requirements.txt
         
@@ -525,10 +528,9 @@ jobs:
           chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
         
-      - name: Test Tools (Python and C++)
+      - name: Test C++ Tools
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          chmod +x ${{ env.INSTALL_DIR }}/samples_bin/tools/*
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"

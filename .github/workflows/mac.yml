@@ -494,6 +494,9 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_cpack_${{ matrix.build-type }},genai_tools_${{ matrix.build-type }},genai_tests_${{ matrix.build-type }}}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
+          
+      - name: Fix C++ samples permissions
+        run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
         
       - name: Install requirements
         run: pip install pytest -r ${{ env.SRC_DIR }}/samples/requirements.txt
@@ -504,10 +507,9 @@ jobs:
           chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
         
-      - name: Test Tools (Python and C++)
+      - name: Test C++ Tools
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          chmod +x ${{ env.INSTALL_DIR }}/samples_bin/tools/*
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
