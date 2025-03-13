@@ -518,6 +518,12 @@ jobs:
       - name: Fix C++ samples permissions
         run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
         
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+        
       - name: Install OpenVINO wheel
         run: |
           python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
