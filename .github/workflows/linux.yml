@@ -522,6 +522,7 @@ jobs:
       - name: gtests
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
+          chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
         
       - name: Test Tools (Python and C++)
