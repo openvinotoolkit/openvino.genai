@@ -10,6 +10,7 @@ import time
 import json
 import types
 from llm_bench_utils.hook_common import get_bench_hook
+from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.config_class import (
     OV_MODEL_CLASSES_MAPPING,
     TOKENIZE_CLASSES_MAPPING,
@@ -339,26 +340,30 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
         def get_2nd_unet_latency(self):
             return sum(self.iteration_time[1:]) / (len(self.iteration_time) - 1) * 1000 if len(self.iteration_time) > 1 else 0
 
-        def get_unet_latency(self):
-            return (sum(self.iteration_time) / len(self.iteration_time)) * 1000 if len(self.iteration_time) > 0 else 0
+        def get_first_and_other_unet_infer_duration(self):
+            first = self.get_1st_unet_latency()
+            other = self.get_2nd_unet_latency()
+            return (first, other)
 
-        def get_vae_decoder_latency(self):
+        def get_first_and_other_trans_infer_duration(self):
+            return self.get_first_and_other_unet_infer_duration()
+
+        def get_text_encoder_infer_duration(self):
+            return {}
+
+        def get_unet_infer_duration(self):
+            mean = (sum(self.iteration_time) / len(self.iteration_time)) * 1000 if len(self.iteration_time) > 0 else 0
+            return MeanStdPair(mean=mean)
+
+        def get_vae_decoder_infer_duration(self):
             if self.duration != -1:
                 vae_time = self.duration - sum(self.iteration_time)
                 return vae_time * 1000
             return 0
 
-        def get_text_encoder_latency(self):
-            return -1
-
-        def get_text_encoder_step_count(self):
-            return -1
-
-        def get_unet_step_count(self):
-            return len(self.iteration_time)
-
-        def get_vae_decoder_step_count(self):
-            return 1
+        @property
+        def raw_metrics(self):
+            return RawImGenPerfMetrics(self.iteration_time)
 
     image_gen_pipeline_class = openvino_genai.Text2ImagePipeline
     if (kwargs.get("task") == TASK["inpainting"] or ((kwargs.get("media") or kwargs.get("images")) and kwargs.get("mask_image"))
