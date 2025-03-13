@@ -28,19 +28,19 @@ std::shared_ptr<ov::Model> create_llama_model(
     // Create input parameters
     auto input_ids = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
-    input_ids->set_friendly_name("input_ids");
+    input_ids->output(0).set_names({"input_ids"});
 
     auto attention_mask = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
-    attention_mask->set_friendly_name("attention_mask");
+    attention_mask->output(0).set_names({"attention_mask"});
 
     auto position_ids = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
-    position_ids->set_friendly_name("position_ids");
+    position_ids->output(0).set_names({"position_ids"});
 
     auto beam_idx = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i32, ov::PartialShape{-1});
-    beam_idx->set_friendly_name("beam_idx");
+    beam_idx->output(0).set_names({"beam_idx"});
 
     // Create embedding layer
     auto [inputs_embeds, embeddings] = make_embedding(
@@ -114,7 +114,7 @@ std::shared_ptr<ov::Model> create_llama_model(
 
     // Create results
     auto logits = std::make_shared<ov::op::v0::Result>(embed_out);
-    logits->set_friendly_name("logits");
+    logits->output(0).set_names({"logits"});
 
     // Create model
     ov::ParameterVector inputs{input_ids, attention_mask, position_ids, beam_idx};

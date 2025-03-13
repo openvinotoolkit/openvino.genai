@@ -343,14 +343,14 @@ multi_head_attention(
     // 3. Handle cache
     auto create_cache = [&](const std::string& name, const Output<Node>& init_value) {
         auto var_info = ov::op::util::VariableInfo{
-                ov::PartialShape{-1, num_heads_kv, 0, head_dim},
+                ov::PartialShape{-1, num_heads_kv, -1, head_dim},
                 ov::element::f32,
                 name
             };
         auto var = std::make_shared<ov::op::util::Variable>(var_info);
-        auto read_value = std::make_shared<v6::ReadValue>(var);
+        auto read_value = std::make_shared<v6::ReadValue>(init_value, var);
         auto gathered = std::make_shared<v8::Gather>(read_value, beam_idx, 
-            std::make_shared<v0::Constant>(element::i64, Shape{}, 0));
+            std::make_shared<v0::Constant>(element::i64, Shape{}, 0), 0);
         return std::make_pair(var, gathered);
     };
 
