@@ -52,10 +52,10 @@ jobs:
         revision: 'latest_available_commit'
 
   genai_build_cpack:
-    name: genai cpack (${{ matrix.build_type }})
+    name: genai cpack (${{ matrix.build-type }})
     strategy:
       matrix:
-        build_type: [Release, Debug]
+        build-type: [Release, Debug]
     needs: [ openvino_download ]
     timeout-minutes: 30
     defaults:
@@ -112,9 +112,9 @@ jobs:
         id: ccache-restore
         uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
         with:
-          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build_type }}-${{ github.sha }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build_type }}
+            ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}
           path: ${{ env.CCACHE_DIR }}
             
       - name: Clean ccache stats
@@ -129,9 +129,9 @@ jobs:
         shell: pwsh
         run: |
           ${{ env.OV_INSTALL_DIR }}/setupvars.ps1
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
-          cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build_type }} --verbose
-          cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build_type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build-type }} --verbose
+          cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TESTS_DIR }} --component tests
         env:
@@ -155,7 +155,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: genai_cpack_${{ matrix.build_type }}
+          name: genai_cpack_${{ matrix.build-type }}
           path: ${{ env.GENAI_INSTALL_DIR }}
           if-no-files-found: 'error'
           
