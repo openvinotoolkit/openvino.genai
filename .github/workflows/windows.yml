@@ -570,7 +570,7 @@ jobs:
       - name: gtests
         run: |
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
-          ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
+          ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe
         
       - name: Test C++ Tools
         run: |
