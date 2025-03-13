@@ -40,15 +40,23 @@ class TestChatSample:
         tokenizer = AutoTokenizer.from_pretrained(model['name'])
         model = AutoModelForCausalLM.from_pretrained(model['name'])
         
+        def gen_prompt(prompt):
+            return {'role': 'user', 'content': prompt}
+        def gen_answer(answer):
+            return {'role': 'assistant', 'content': answer}
+       
+        chat_history = []
+     
         for prompt in prompts:
+            chat_history.append(gen_prompt(prompt))
             if tokenizer.chat_template:
-                prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': f'"{prompt}"'}], tokenize=False, add_generation_prompt=True)
-            tokenized = tokenizer(f'"{prompt}"', return_tensors='pt', add_special_tokens=False)
-        
+                prompt = tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
+            tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
             for answer in model.generate(**tokenized, max_length=1000, do_sample=False):
-                ref = ': ' + tokenizer.decode(answer[tokenized['input_ids'].numel():], skip_special_tokens=True)
-                logger.info(f'Checking for "{ref=}"')
+                ref = tokenizer.decode(answer[tokenized['input_ids'].numel():], skip_special_tokens=True)
+                chat_history.append(gen_answer(ref))
                 
-                idx = py_predictions.find(ref)
+                logger.info(f'Checking for "{ref=}"')
+                idx = cpp_predictions.find(ref)
                 assert -1 != idx, f'Missing "{ref=}" from predictions'
-                py_predictions = py_predictions[:idx] + py_predictions[idx + len(ref):]
+                cpp_predictions = cpp_predictions[:idx] + cpp_predictions[idx + len(ref):]
