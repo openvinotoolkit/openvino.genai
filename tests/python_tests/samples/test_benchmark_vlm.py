@@ -14,7 +14,7 @@ class TestBenchmarkVLM:
     @pytest.mark.parametrize(
         "convert_model, download_test_content",
         [
-            pytest.param("tiny-random-minicpmv-2_6", "images/cat.png"),
+            pytest.param("tiny-random-minicpmv-2_6", "images/image.png"),
         ],
         indirect=["convert_model", "download_test_content"],
     )
