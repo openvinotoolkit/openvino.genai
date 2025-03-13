@@ -80,6 +80,7 @@ MODELS = {
     "tiny-random-minicpmv-2_6": {
         "name": "katuni4ka/tiny-random-minicpmv-2_6",
         "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
+    },
     "InternVL2-1B": {
         "name": "OpenGVLab/InternVL2-1B",
         "convert_args": ['--trust-remote-code']
