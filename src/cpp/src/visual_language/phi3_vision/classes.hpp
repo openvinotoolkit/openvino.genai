@@ -28,7 +28,7 @@ public:
         const ov::AnyMap device_config
     );
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) override;
 
     void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) override;
 

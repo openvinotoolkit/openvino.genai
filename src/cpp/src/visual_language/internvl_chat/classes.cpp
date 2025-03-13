@@ -226,19 +226,16 @@ InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
 
-ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
     std::string image_start_token = m_vlm_config.image_start_token;
     std::string image_context_token = m_vlm_config.image_context_token;
     std::string image_end_token = m_vlm_config.image_end_token;
-    
-    std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
     std::string formatted_prompt;
     std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(single_images.size());
+    image_embeds.reserve(images.size());
     
-    for (const auto& image : single_images) {
-        EncodedImage encoded_image = m_vision_encoder->encode(image);
+    for (const auto& encoded_image : images) {
         ov::Tensor single_image_embeds = encoded_image.resized_source;
 
         const size_t num_patches = single_image_embeds.get_shape().at(0);

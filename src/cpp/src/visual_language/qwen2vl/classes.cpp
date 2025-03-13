@@ -281,16 +281,14 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         });
 }
 
-ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
-    std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
-    auto [unified_prompt, images_sequence] = unify_prompt(prompt, NATIVE_TAG, NATIVE_TAG, single_images.size(), m_image_id);
+ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+    auto [unified_prompt, images_sequence] = unify_prompt(prompt, NATIVE_TAG, NATIVE_TAG, images.size(), m_image_id);
     std::vector<ov::Tensor> image_embeds;
     std::vector<std::array<size_t, 3>> images_grid_thw;
-    image_embeds.reserve(single_images.size());
-    images_grid_thw.reserve(single_images.size());
+    image_embeds.reserve(images.size());
+    images_grid_thw.reserve(images.size());
     
-    for (const auto& image : single_images) {
-        EncodedImage encoded_image = m_vision_encoder->encode(image);
+    for (const auto& encoded_image : images) {
         ov::Tensor single_image_embeds = encoded_image.resized_source;
         image_embeds.push_back(std::move(single_image_embeds));
 
