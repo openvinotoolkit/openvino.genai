@@ -65,6 +65,8 @@ jobs:
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       GENAI_INSTALL_DIR: ${{ github.workspace }}\install\genai
+      INSTALL_TOOLS_DIR: ${{ github.workspace }}\tools
+      INSTALL_TESTS_DIR: ${{ github.workspace }}\tests
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
       CCACHE_DIR: ${{ github.workspace }}\ccache
@@ -130,6 +132,8 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build_type }} --verbose
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build_type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TESTS_DIR }} --component tests
         env:
           CMAKE_TLS_VERIFY: 0
                           
@@ -153,6 +157,22 @@ jobs:
         with:
           name: genai_cpack_${{ matrix.build_type }}
           path: ${{ env.GENAI_INSTALL_DIR }}
+          if-no-files-found: 'error'
+          
+      - name: Upload Tools
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: genai_tools_${{ matrix.build-type }}
+          path: ${{ env.INSTALL_TOOLS_DIR }}
+          if-no-files-found: 'error'
+        
+      - name: Upload Tests
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: genai_tests_${{ matrix.build-type }}
+          path: ${{ env.INSTALL_TESTS_DIR }}
           if-no-files-found: 'error'
   
   genai_build_wheel:
