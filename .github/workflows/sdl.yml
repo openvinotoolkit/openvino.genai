@@ -1,4 +1,4 @@
-name: OpenVINO tokenizers sdl tests
+name: SDL tests
 on:
   workflow_dispatch:
   pull_request:
