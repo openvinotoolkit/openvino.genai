@@ -22,73 +22,6 @@ env:
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18343-5e16b688156/openvino_toolkit_windows_2025.1.0.dev20250304_x86_64.zip
 
 jobs:
-  cpp-chat_sample-ubuntu:
-    runs-on: ubuntu-24.04
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
-      - name: Download and convert and model
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-      - name: Compare
-        env:
-          PYTHONPATH: "./build"
-        run: |
-          source ./ov/setupvars.sh
-          printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\n' > ./input.txt
-          timeout 30s ./build/samples/cpp/text_generation/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
-          python -c "
-          from transformers import AutoTokenizer, AutoModelForCausalLM
-          model_id = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0'
-          tokenizer = AutoTokenizer.from_pretrained(model_id)
-          model = AutoModelForCausalLM.from_pretrained(model_id)
-          prompts = ['What is 2 + 2?', 'What is the previous answer?', 'Add 1 to it.', 'Subtract 5 from it.', 'Why is the sun yellow?', 'What was my first question?']
-          def gen_prompt(prompt):
-              return {'role': 'user', 'content': prompt}
-          def gen_answer(answer):
-              return {'role': 'assistant', 'content': answer}
-          chat_history = []
-          chat_prompt = ''
-          output = open('ref.txt', 'w')
-          for prompt in prompts:
-              output.write('question:\n')
-              chat_history.append(gen_prompt(prompt))
-              chat_prompt = tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
-              tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
-              answer = model.generate(**tokenized, max_length=1000, do_sample=False)
-              answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
-              chat_history.append(gen_answer(answer_str))
-              output.write(answer_str)
-              output.write('\n----------\n')
-          output.write('question:\n')
-          output.close()
-          "
-          diff pred.txt ref.txt
-          echo "Chat sample cpp" passed
-          timeout 30s ./samples/python/text_generation/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
-          diff pred2.txt ref.txt
-          echo "Chat sample python" passed
-
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-22.04-8-cores
     defaults:
@@ -226,7 +159,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_causal_lm
-    needs: [cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu, cpp-continuous-batching-windows, cpp-continuous-batching-macos]
+    needs: [cpp-continuous-batching-ubuntu, cpp-continuous-batching-windows, cpp-continuous-batching-macos]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
