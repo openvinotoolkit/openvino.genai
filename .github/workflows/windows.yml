@@ -401,8 +401,14 @@ jobs:
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
             timeout: 60
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_whisper_pipeline_static.py --ignore tests/python_tests/test_kv_cache_eviction.py'
-            timeout: 90
+            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
+            timeout: 60
+          - name: 'Tokenizer tests'
+            cmd: 'tests/python_tests/test_tokenizer.py'
+            timeout: 60
+          - name: 'API tests'
+            cmd: 'tests/python_tests/test_continuous_batching.py tests/python_tests/test_generation_config.py tests/python_tests/test_sampling.py tests/python_tests/test_text_streamer.py'
+            timeout: 60
     defaults:
       run:
         shell: pwsh
