@@ -337,6 +337,9 @@ jobs:
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_kv_cache_eviction.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
             timeout: 90
+          - name: 'WWB tests'
+            cmd: '/tools/who_what_benchmark/tests'
+            timeout: 60
     defaults:
       run:
         shell: bash
