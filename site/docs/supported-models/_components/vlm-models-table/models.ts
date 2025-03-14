@@ -62,6 +62,19 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'Phi3VForCausalLM',
+    models: [
+      {
+        name: 'phi3_v',
+        loraSupport: false,
+        links: [
+          'https://huggingface.co/microsoft/Phi-3-vision-128k-instruct',
+          'https://huggingface.co/microsoft/Phi-3.5-vision-instruct',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'Qwen2-VL',
     models: [
       {

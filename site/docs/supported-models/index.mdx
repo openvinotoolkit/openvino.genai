@@ -1,5 +1,4 @@
 import ImageGenerationModelsTable from './_components/image-generation-models-table';
-import InpaintingModelsTable from './_components/inpainting-models-table';
 import LLMModelsTable from './_components/llm-models-table';
 import VLMModelsTable from './_components/vlm-models-table';
 import WhisperModelsTable from './_components/whisper-models-table';
@@ -46,15 +45,16 @@ Models should belong to the same family and have the same tokenizers.
 
 <ImageGenerationModelsTable />
 
-### Inpainting Models
-
-In addition to image generation models, `InpaintingPipeline` supports specialized inpainting models:
-
-<InpaintingModelsTable />
-
 ## Visual Language Models (VLMs)
 
 <VLMModelsTable />
+
+:::warning Models Notes
+For `phi3_v` model:
+  - GPU isn't supported
+  - Example models' configs aren't consistent. It's required to override the default `eos_token_id` with the one from a tokenizer:
+    `generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())`
+:::
 
 ## Speech Processing Models (Whisper-based)
 
