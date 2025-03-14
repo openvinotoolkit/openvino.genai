@@ -23,7 +23,7 @@ class TestBenchmarkImageGen:
     @pytest.mark.parametrize(
         "download_test_content, download_mask_image",
         [
-            pytest.param("image.png", "mask_image.png"),
+            pytest.param("images/image.png", "mask_image.png"),
         ], indirect=["download_test_content", "download_mask_image"],
     )
     def test_sample_benchmark_image_gen(self, download_model, pipeline_type, prompt, download_test_content, download_mask_image):
