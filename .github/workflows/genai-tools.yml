@@ -90,6 +90,9 @@ jobs:
         run: |
           optimum-cli export openvino --model ./tiny-random-qwen2 --task text-generation-with-past --weight-format fp16 ./ov_models/tiny-random-qwen2
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-qwen2/ -d cpu -n 1 --optimum -ic 10
+      - name: Test Prompt Lookup Decoding via GenAI
+        run: |
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-qwen2 -p "Why is the Sun yellow?" -d cpu -n 1 --max_ngram_size 3 --num_assistant_tokens 5 -ic 20
       - name: Test Speculative Decoding via GenAI
         run: |
           optimum-cli export openvino --model ./tiny-random-qwen2 --task text-generation-with-past --weight-format int8 ./ov_models/tiny-random-qwen2-int8

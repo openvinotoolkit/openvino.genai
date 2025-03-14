@@ -204,6 +204,11 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
             if kwargs.get("draft_cb_config") is not None else {}
         ov_config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
 
+    if kwargs.get('max_ngram_size') and kwargs.get('num_assistant_tokens'):
+        log.info("Prompt Lookup decoding is activated")
+        ov_config['prompt_lookup'] = True
+        use_streamer_metrics = True
+
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None))
     if adapter_config:
         ov_config['adapters'] = adapter_config
