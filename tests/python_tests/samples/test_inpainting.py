@@ -23,7 +23,7 @@ class TestInpainting:
     @pytest.mark.parametrize(
         "download_test_content, download_mask_image",
         [
-            pytest.param("image.png", "mask_image.png"),
+            pytest.param("images/image.png", "mask_image.png"),
         ],
         indirect=["download_test_content", "download_mask_image"],
     )
