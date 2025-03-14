@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <math.h>
+#include <iostream>
 
 #include <openvino/openvino.hpp>
 #include "openvino/runtime/core.hpp"
@@ -531,13 +532,8 @@ ov::Output<ov::Node> make_int8_weights(
 
     // Reshape weight to (num_heads, -1, group_size)
     ov::Shape orig_shape = weight.get_shape();
-    // size_t num_heads = orig_shape[0] / head_size;
-    // size_t reshaped_rows = (orig_shape[1] * orig_shape[2]) / group_size; // Assuming 3D shape
-    // ov::Shape new_shape = {num_heads * head_size, reshaped_rows, group_size};
-    // weight.set_shape(new_shape);
-    size_t num_heads = orig_shape[0] / head_size;
+    orig_shape[1] *= sizeof(uint32_t) / sizeof(uint8_t);
     size_t num_groups = orig_shape[1] / group_size;
-    weight.set_shape(ov::Shape{orig_shape[0], num_groups, group_size});
 
     // Expand dimensions for scales and biases
     auto scale_shape = scales.get_shape();
@@ -553,16 +549,17 @@ ov::Output<ov::Node> make_int8_weights(
     }
 
     // Create graph nodes
-    auto weights_node = std::make_shared<ov::op::v0::Constant>(weight);
-    auto scales_node = std::make_shared<ov::op::v0::Constant>(scales);
+    auto weights_node = std::make_shared<v0::Constant>(ov::element::u8, ov::Shape{orig_shape[0], num_groups, group_size}, static_cast<uint8_t*>(weight.data()), nullptr);
+    weights_node->get_rt_info()["__gguf_tensor_holde"] = weight;
+    auto scales_f16 = std::make_shared<ov::op::v0::Constant>(scales);
     ov::Tensor biases_u8(ov::element::u8, scale_shape);
 
     // Calculate zero point
-    const uint16_t* bias_data = biases.data<uint16_t>();
-    const uint16_t* scale_data = scales.data<uint16_t>();
+    const ov::float16* bias_data = biases.data<ov::element_type_traits<ov::element::f16>::value_type>();
+    const ov::float16* scale_data = scales.data<ov::element_type_traits<ov::element::f16>::value_type>();
     uint8_t* bias_u8_data = biases_u8.data<uint8_t>();
     for (size_t i = 0; i < biases_u8.get_size(); ++i) {
-        bias_u8_data[i] = (uint8_t)(-1.f * from_half(bias_data[i]) / from_half(scale_data[i]));
+        bias_u8_data[i] = (uint8_t)(-1.f * static_cast<float>(bias_data[i]) / static_cast<float>(scale_data[i]));
     }
 
     auto zero_point = std::make_shared<ov::op::v0::Constant>(biases_u8);
@@ -570,7 +567,6 @@ ov::Output<ov::Node> make_int8_weights(
     // Quantization operations
     auto weights_f16 = std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f16);
     auto zero_point_f16 = std::make_shared<ov::op::v0::Convert>(zero_point, ov::element::f16);
-    auto scales_f16 = std::make_shared<ov::op::v0::Convert>(scales_node, ov::element::f16);
 
     auto w_zp = std::make_shared<ov::op::v1::Subtract>(
         weights_f16, zero_point_f16, ov::op::AutoBroadcastType::NUMPY
@@ -584,7 +580,7 @@ ov::Output<ov::Node> make_int8_weights(
         ov::element::i64, ov::Shape{orig_shape.size()}, orig_shape
     );
     auto w_zp_s_r = std::make_shared<ov::op::v1::Reshape>(
-        w_zp_s, final_shape, true
+        w_zp_s, final_shape, false
     );
 
     return std::make_shared<ov::op::v0::Convert>(w_zp_s_r, ov::element::f32);

@@ -80,13 +80,13 @@ void extract_q8_0_data(
   const uint64_t weights_per_block = 32;
   const uint64_t bytes_per_block = 34; // 2 bytes scale, 32x1 byte weights
   auto data = static_cast<uint8_t*>(tensor.weights_data);
-  auto weights = weights_arr.data<int8_t>();
+  auto weights = static_cast<uint8_t*>(weights_arr.data());
   auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   for (int64_t i = 0; i < scales_arr.get_size(); i++) {
     uint8_t* block_data = data + i * bytes_per_block;
-    scales[i] = *((uint16_t*)block_data);
-    biases[i] = -128 * scales[i];
+    scales[i] = ov::float16::from_bits(*(uint16_t*)block_data);
+    biases[i] = ov::float16(-128.f * static_cast<float>(scales[i]));
     for (int64_t j = 0; j < weights_per_block; ++j) {
       uint8_t x = block_data[j + 2]; // j+2 to skip the scale bytes.
       // Original data is in int8_t, so we add a bias of -128 and invert the
