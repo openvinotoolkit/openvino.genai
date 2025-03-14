@@ -181,7 +181,6 @@ void init_vlm_pipeline(py::module_& m) {
             const ov::genai::OptionalGenerationConfig& generation_config,
             const py::kwargs& kwargs
         ) {
-            //return std::make_unique<ov::genai::VLMPipeline>(config_dir_path, device);
             return std::make_unique<ov::genai::VLMPipeline>(models, tokenizer, config_dir_path, device, pyutils::kwargs_to_any_map(kwargs), generation_config.value_or(ov::genai::GenerationConfig()));
         }),
         py::arg("models"), "map with decrypted models",
