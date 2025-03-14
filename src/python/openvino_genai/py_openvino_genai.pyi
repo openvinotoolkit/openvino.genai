@@ -2101,7 +2101,7 @@ class VLMPipeline:
                     kwargs: Device properties
         """
     @typing.overload
-    def __init__(self, models: typing.Dict[str, typing.Tuple[str, openvino.Tensor]], tokenizer: Tokenizer, config_dir_path: os.PathLike, device: str, generation_config : GenerationConfig | None = None, **kwargs) -> None:
+    def __init__(self, models: dict[str, tuple[str, openvino._pyopenvino.Tensor]], tokenizer: Tokenizer, config_dir_path: os.PathLike, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
         """
                     VLMPipeline class constructor.
                     models (typing.Dict[str, typing.Tuple[str, openvino.Tensor]]): Map with decrypted models. It should contains next models: language, resampler, text_embeddings, vision_embeddings.

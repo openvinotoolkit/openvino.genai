@@ -90,8 +90,7 @@ def main():
 
     tokenizer = read_tokenizer(args.model_dir)
 
-    # GPU and NPU can be used as well.
-    # Note: If NPU selected, only language model will be run on NPU
+    # GPU can be used as well.
     device = 'CPU'
     enable_compile_cache = dict()
     if "GPU" == device:
