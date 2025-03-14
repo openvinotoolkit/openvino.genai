@@ -16,7 +16,6 @@ std::pair<std::string, ov::Tensor> decrypt_model(const std::string& model_path, 
 
     // User can add file decryption of model_file and weights_file in memory here.
 
-
     std::string model_str((std::istreambuf_iterator<char>(model_file)), std::istreambuf_iterator<char>());
 
     weights_file.seekg(0, std::ios::end);
@@ -54,22 +53,22 @@ int main(int argc, char* argv[]) try {
 
     //read and encrypt models
     std::string models_path = argv[1];
-    auto language_model = decrypt_model(models_path + "/openvino_language_model.xml", models_path + "/openvino_language_model.bin");
-    auto resampler_model = decrypt_model(models_path + "/openvino_resampler_model.xml", models_path + "/openvino_resampler_model.bin");
-    auto text_embeddings_model = decrypt_model(models_path + "/openvino_text_embeddings_model.xml", models_path + "/openvino_text_embeddings_model.bin");
-    auto vision_embeddings_model = decrypt_model(models_path + "/openvino_vision_embeddings_model.xml", models_path + "/openvino_vision_embeddings_model.bin");
-
     ov::genai::ModelsMap models_map;
-    models_map.emplace("language", std::move(language_model));
-    models_map.emplace("resampler", std::move(resampler_model));
-    models_map.emplace("text_embeddings", std::move(text_embeddings_model));
-    models_map.emplace("vision_embeddings", std::move(vision_embeddings_model));
+
+    std::map<std::string, std::string> model_name_to_file_map = {
+        {"language", "openvino_language_model"},
+        {"resampler", "openvino_resampler_model"},
+        {"text_embeddings", "openvino_text_embeddings_model"},
+        {"vision_embeddings", "openvino_vision_embeddings_model"}};
+
+    for (const auto& [model_name, file_name] : model_name_to_file_map) {
+        auto model_pair = decrypt_model(file_name + model_name + ".xml", file_name + model_name + ".bin");
+        models_map.emplace(model_name, std::move(model_pair));
+    }
+
     ov::genai::Tokenizer tokenizer = decrypt_tokenizer(models_path);
 
-    std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
-
-    // GPU and NPU can be used as well.
-    // Note: If NPU selected, only language model will be run on NPU
+    // GPU can be used as well.
     std::string device = "CPU";
     ov::AnyMap enable_compile_cache;
     if (device == "GPU") {
@@ -81,6 +80,8 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
+
+    std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
     std::string prompt = argv[3];
     pipe.generate(prompt,
