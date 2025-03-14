@@ -40,8 +40,8 @@ void extract_q4_0_data(
   auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   for (int64_t i = 0; i < scales_arr.get_size(); i++) {
-    scales[i] = *((uint16_t*)data);
-    biases[i] = -8 * scales[i];
+    scales[i] = ov::float16::from_bits(*((uint16_t*)data));
+    biases[i] = ov::float16(-8.f * static_cast<float>(scales[i]));
     unpack_32_4(data, weights);
     weights += 16;
     data += bytes_per_block;
@@ -62,8 +62,8 @@ void extract_q4_1_data(
   auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   for (int64_t i = 0; i < scales_arr.get_size(); i++) {
-    scales[i] = *((uint16_t*)data);
-    biases[i] = *((uint16_t*)(data) + 1);
+    scales[i] = ov::float16::from_bits(*((uint16_t*)data));
+    biases[i] = ov::float16::from_bits(*((uint16_t*)data + 1));
     unpack_32_4(data, weights);
     weights += 16;
     data += bytes_per_block;
