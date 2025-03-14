@@ -96,6 +96,7 @@ TEST_FILES = {
     "adapter_model.safetensors": "https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors",
     "monalisa.jpg": "https://llava-vl.github.io/static/images/monalisa.jpg",
     "soulcard.safetensors": "https://civitai.com/api/download/models/72591",
+    "ShareGPT_V3_unfiltered_cleaned_split.json": "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json",
     "images/image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png",
     "mask_image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png",
 }
