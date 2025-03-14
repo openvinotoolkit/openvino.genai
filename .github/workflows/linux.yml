@@ -354,8 +354,6 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      TRANSFORMERS_CACHE: ${{ github.workspace }}/models  # Hugging Face transformers cache
-      HF_HOME: ${{ github.workspace }}/datasets           # Hugging Face datasets cache
 
     steps:
       - name: Clone openvino.genai
