@@ -321,7 +321,7 @@ std::pair<std::string, std::vector<size_t>> normalize_prompt(
         OPENVINO_ASSERT(image_sequence.size() == n_images, "The number of native image tags and provided images must match because it's ambiguous which image should be ignored.");
         return {std::move(image_prompt), std::move(image_sequence)};
     }
-    // Prepend native tags
+    // Prepend automatic tags
     std::stringstream stream;
     for (size_t relative_id = 0; relative_id < n_images; relative_id++) {
         image_sequence.push_back(base_id + relative_id);
