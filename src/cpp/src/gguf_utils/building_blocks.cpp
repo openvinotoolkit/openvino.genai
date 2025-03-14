@@ -187,26 +187,25 @@ Output<ov::Node> causal_mask(
 
 // Rotate half the hidden dimensions of the input tensor
 Output<ov::Node> rotate_half(const Output<ov::Node>& x, int64_t head_size, const Output<Node>& axis) {
-    auto half_head = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, head_size / 2);
-    auto max_int = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 9223372036854775807);
-    auto step = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1);
+    auto t58 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{head_size / 2});
+    auto t59 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{9223372036854775807});
+    auto t60 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
 
     // Slice second half
-    auto second_half = std::make_shared<ov::opset13::Slice>(x, half_head, max_int, step, axis);
+    auto t62 = std::make_shared<ov::opset13::Slice>(x, t58, t59, t60, axis);
     
     // Multiply by -1
-    auto neg_one = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{}, -1.0f);
-    auto rotated_half = std::make_shared<v1::Multiply>(second_half, neg_one);
+    auto t63 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{1,1,1,1}, std::vector<float>{-1.0f});
+    auto t64 = std::make_shared<v1::Multiply>(t62, t63);
     
     // Slice first half
-    auto first_half = std::make_shared<ov::opset13::Slice>(x, 
-        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 0),
-        half_head,
-        step,
-        axis);
-    
-    // Concatenate rotated half and first half
-    return std::make_shared<v0::Concat>(ov::OutputVector{rotated_half, first_half}, -1);
+    auto t65 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
+    auto t66 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{head_size / 2});
+    auto t67 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
+    auto t68 = std::make_shared<ov::opset13::Slice>(x, t65, t66, t67, axis);
+    auto rotated = std::make_shared<v0::Concat>(ov::OutputVector{t64, t68}, -1);
+
+    return rotated;
 }
 
 // Apply Rotary Position Embedding to query and key tensors
