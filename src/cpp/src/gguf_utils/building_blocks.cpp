@@ -82,7 +82,7 @@ Output<ov::Node> causal_mask(
     auto t136 = std::make_shared<v0::Concat>(OutputVector{t129, t135}, 0);
     auto min_shape_val = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{2}, std::vector<int64_t>{1, 1});
     auto t137 = std::make_shared<v1::Maximum>(min_shape_val, t136, AutoBroadcastType::NUMPY);
-    auto const_neg65504 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{1}, -65504);
+    auto const_neg65504 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{}, -65504.0f);
     auto t138 = std::make_shared<v3::Broadcast>(const_neg65504, t137, BroadcastType::NUMPY);
 
     // Create upper triangular mask for causal masking
@@ -91,6 +91,8 @@ Output<ov::Node> causal_mask(
     auto t141 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 0);
     auto t142 = std::make_shared<v8::Gather>(t139, t140, t141, 0);
     auto t143 = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, 1);
+
+    // Define ranges for the causal mask
     auto zero_const = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, 0);
     auto t144 = std::make_shared<v4::Range>(zero_const, t142, t143, element::i32);
     auto axes_zero = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 0);
@@ -107,7 +109,7 @@ Output<ov::Node> causal_mask(
     auto t153 = std::make_shared<v1::GreaterEqual>(t145, t152, AutoBroadcastType::NUMPY);
 
     // Create a causal mask using a selective operation
-    auto t154 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{1}, 0.0f);
+    auto t154 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{}, 0.0f);
     auto t155 = std::make_shared<v1::Select>(t153, t138, t154, AutoBroadcastType::NUMPY);
 
     // Next branch
@@ -127,14 +129,15 @@ Output<ov::Node> causal_mask(
     auto t169 = std::make_shared<v1::Reshape>(t167, t168, false);
     auto t170 = std::make_shared<v1::Greater>(t160, t169, AutoBroadcastType::NUMPY);
     auto t171 = std::make_shared<v0::Convert>(t170, element::f32);
-    auto t172 = std::make_shared<v1::Multiply>(t155, t171, AutoBroadcastType::NUMPY);
 
+    auto t172 = std::make_shared<v1::Multiply>(t155, t171, AutoBroadcastType::NUMPY);
     auto t173 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 0);
     auto t174 = std::make_shared<v0::Unsqueeze>(t172, t173);
-    auto t48 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1);
+    auto t48 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 1);
     auto t175 = std::make_shared<v0::Unsqueeze>(t174, t48);
     auto t41 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
-    auto t43 = std::make_shared<v8::Gather>(input_shape, t41, axis_0);
+    auto t42 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 0);
+    auto t43 = std::make_shared<v8::Gather>(input_shape, t41, t42);
     auto t176 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
     auto t177 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
     auto t178 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
@@ -158,13 +161,13 @@ Output<ov::Node> causal_mask(
     auto t196 = std::make_shared<ov::opset13::Slice>(t180, t194, t135, t195, hidden_dim);
 
     auto t197 = std::make_shared<v0::Unsqueeze>(attention_mask, t48);
-    auto t198 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 2);
+    auto t198 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 2);
     auto t199 = std::make_shared<v0::Unsqueeze>(t197, t198);
     auto t200 = std::make_shared<v0::Convert>(t199, element::f32);
     auto t201 = std::make_shared<v1::Add>(t196, t200, AutoBroadcastType::NUMPY);
-    auto t202 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{1,1,1,1}, std::vector<float>{0.0});
+    auto t202 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{1,1,1,1}, std::vector<float>{0.0f});
     auto t203 = std::make_shared<v1::Equal>(t201, t202, AutoBroadcastType::NUMPY);
-    auto t204 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{1}, -65504.0);
+    auto t204 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{}, -65504.0f);
     auto t205 = std::make_shared<v1::Select>(t203, t204, t196, AutoBroadcastType::NUMPY);
     auto t206 = std::make_shared<v3::ShapeOf>(t196, element::i64);
     auto t207 = std::make_shared<v3::Broadcast>(t205, t206, BroadcastModeSpec(BroadcastType::NUMPY));
@@ -179,7 +182,7 @@ Output<ov::Node> causal_mask(
     auto t216 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
     auto t217 = std::make_shared<ov::opset13::Slice>(t211, t212, t215, t216, hidden_dim);
 
-    return t217->output(0);
+    return t217;
 }
 
 // Rotate half the hidden dimensions of the input tensor

@@ -17,6 +17,11 @@ using namespace ov;
 using namespace ov::op::v13;
 using namespace ov::op;
 
+auto set_name = [](auto node, auto name) {
+        node->output(0).set_names({name});
+        node->set_friendly_name(name);
+};
+
 // Also valid for other models, e.g. SmolLMs
 std::shared_ptr<ov::Model> create_llama_model(
     const std::map<std::string, GGUFMetaData>& configs,
@@ -28,19 +33,19 @@ std::shared_ptr<ov::Model> create_llama_model(
     // Create input parameters
     auto input_ids = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
-    input_ids->output(0).set_names({"input_ids"});
+    set_name(input_ids, "input_ids");
 
     auto attention_mask = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
-    attention_mask->output(0).set_names({"attention_mask"});
+    set_name(attention_mask, "attention_mask");
 
     auto position_ids = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
-    position_ids->output(0).set_names({"position_ids"});
+    set_name(position_ids, "position_ids");
 
     auto beam_idx = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i32, ov::PartialShape{-1});
-    beam_idx->output(0).set_names({"beam_idx"});
+    set_name(beam_idx, "beam_idx");
 
     // Create embedding layer
     auto [inputs_embeds, embeddings] = make_embedding(
@@ -114,7 +119,7 @@ std::shared_ptr<ov::Model> create_llama_model(
 
     // Create results
     auto logits = std::make_shared<ov::op::v0::Result>(embed_out);
-    logits->output(0).set_names({"logits"});
+    set_name(logits, "logits");
 
     // Create model
     ov::ParameterVector inputs{input_ids, attention_mask, position_ids, beam_idx};
@@ -124,9 +129,9 @@ std::shared_ptr<ov::Model> create_llama_model(
     model->set_rt_info("f16", {"runtime_options", "KV_CACHE_PRECISION"});
     model->set_rt_info("8.0", {"runtime_options", "ACTIVATIONS_SCALE_FACTOR"});
 
-    auto duration = std::chrono::duration_cast<std::chrono::seconds>(
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - start_time).count();
-    std::cout << "Model generation done. Time: " << duration << "s" << std::endl;
+    std::cout << "Model generation done. Time: " << duration << "ms" << std::endl;
 
     return model;
 }
@@ -137,7 +142,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     std::shared_ptr<ov::Model> model;
 
     auto model_arch = std::get<std::string>(config.at("architecture"));
-    std::cout << "Creating model with architecture:" << model_arch;
+    std::cout << "Creating model with architecture: " << model_arch << std::endl;
     
 
     if (!model_arch.compare("llama")) {

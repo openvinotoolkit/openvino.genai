@@ -9,8 +9,9 @@
 
 int main(int argc, char* argv[]) {
     std::string models_path = argv[1];
+    std::string output_path = argv[2];
 
     auto model = create_from_gguf(models_path);
 
-    ov::save_model(model, "openvino_model.xml", true);
+    ov::save_model(model, output_path + "/openvino_model.xml", false);
 }
