@@ -210,23 +210,24 @@ Output<ov::Node> rotate_half(const Output<ov::Node>& x, int64_t head_size, const
 
 // Apply Rotary Position Embedding to query and key tensors
 std::tuple<Output<ov::Node>, Output<ov::Node>, std::pair<Output<ov::Node>, Output<ov::Node>>> 
-apply_rotary_pos_emb(
-    const Output<ov::Node>& q, 
-    const Output<ov::Node>& k,
-    const Output<ov::Node>& cos,
-    const Output<ov::Node>& sin,
-    int64_t head_size,
-    const Output<Node>& hidden_dim,
-    const std::pair<Output<ov::Node>, Output<ov::Node>>& cos_sin_cached,
-    int64_t unsqueeze_dim) {
+    apply_rotary_pos_emb(
+        const Output<ov::Node>& q, 
+        const Output<ov::Node>& k,
+        const Output<ov::Node>& cos,
+        const Output<ov::Node>& sin,
+        int64_t head_size,
+        const Output<Node>& hidden_dim,
+        const std::pair<Output<ov::Node>, Output<ov::Node>>& cos_sin_cached,
+        int64_t unsqueeze_dim=1) {
     
     // Handle unsqueeze or cached values
     Output<ov::Node> cos_unsqueezed, sin_unsqueezed;
     
     if (cos_sin_cached.first.get_node() == nullptr) {
-        auto unsqueeze_axes = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, unsqueeze_dim);
-        cos_unsqueezed = std::make_shared<v0::Unsqueeze>(cos, unsqueeze_axes);
-        sin_unsqueezed = std::make_shared<v0::Unsqueeze>(sin, unsqueeze_axes);
+        auto unsqueeze_axes1 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, unsqueeze_dim);
+        cos_unsqueezed = std::make_shared<v0::Unsqueeze>(cos, unsqueeze_axes1);
+        auto unsqueeze_axes2 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, unsqueeze_dim);
+        sin_unsqueezed = std::make_shared<v0::Unsqueeze>(sin, unsqueeze_axes2);
     } else {
         cos_unsqueezed = cos_sin_cached.first;
         sin_unsqueezed = cos_sin_cached.second;
@@ -256,7 +257,7 @@ std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
     // Process position IDs
     auto position_expanded = std::make_shared<v0::Convert>(
         std::make_shared<v0::Unsqueeze>(position_ids, 
-            std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1)),
+            std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 1)),
         element::f32
     );
 
@@ -333,13 +334,10 @@ multi_head_attention(
     Output<Node> cos, sin;
     if (cos_sin_cached.first.get_node() == nullptr) {
         std::tie(cos, sin) = rope_emb(v_split, rope_const, position_ids, batch_dim);
-    } else {
-        cos = cos_sin_cached.first;
-        sin = cos_sin_cached.second;
     }
 
     auto [q_rot, k_rot, new_cos_sin] = apply_rotary_pos_emb(
-        q_split, k_split, cos, sin, head_dim, hidden_dim, cos_sin_cached, 1
+        q_split, k_split, cos, sin, head_dim, hidden_dim, cos_sin_cached
     );
 
     // 3. Handle cache
@@ -393,11 +391,12 @@ multi_head_attention(
     Output<Node> v_reshaped = v_combined;
     if (num_heads != num_heads_kv) {
         int kv_per_head = num_heads / num_heads_kv;
-        auto unsqueeze_axes = std::make_shared<v0::Constant>(element::i64, Shape{1}, 2);
-        auto k_unsq = std::make_shared<v0::Unsqueeze>(k_combined, unsqueeze_axes);
-        auto v_unsq = std::make_shared<v0::Unsqueeze>(v_combined, unsqueeze_axes);
+        auto unsqueeze_axes1 = std::make_shared<v0::Constant>(element::i64, Shape{}, 2);
+        auto k_unsq = std::make_shared<v0::Unsqueeze>(k_combined, unsqueeze_axes1);
+        auto unsqueeze_axes2 = std::make_shared<v0::Constant>(element::i64, Shape{}, 2);
+        auto v_unsq = std::make_shared<v0::Unsqueeze>(v_combined, unsqueeze_axes2);
 
-        auto broadcast_shape = std::make_shared<ov::opset13::Concat>(OutputVector{
+        auto broadcast_shape1 = std::make_shared<ov::opset13::Concat>(OutputVector{
             batch_dim,
             std::make_shared<v0::Constant>(element::i64, Shape{1}, num_heads_kv),
             std::make_shared<v0::Constant>(element::i64, Shape{1}, kv_per_head),
@@ -406,13 +405,21 @@ multi_head_attention(
         }, 0);
 
         k_reshaped = std::make_shared<v1::Reshape>(
-            std::make_shared<v3::Broadcast>(k_unsq, broadcast_shape, BroadcastType::BIDIRECTIONAL),
+            std::make_shared<v3::Broadcast>(k_unsq, broadcast_shape1, BroadcastType::BIDIRECTIONAL),
             std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, num_heads, -1, head_dim}),
             true
         );
 
+
+        auto broadcast_shape2 = std::make_shared<ov::opset13::Concat>(OutputVector{
+            batch_dim,
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, num_heads_kv),
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, kv_per_head),
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, 0),
+            std::make_shared<v0::Constant>(element::i64, Shape{1}, head_dim)
+        }, 0);
         v_reshaped = std::make_shared<v1::Reshape>(
-            std::make_shared<v3::Broadcast>(v_unsq, broadcast_shape, BroadcastType::BIDIRECTIONAL),
+            std::make_shared<v3::Broadcast>(v_unsq, broadcast_shape2, BroadcastType::BIDIRECTIONAL),
             std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, num_heads, -1, head_dim}),
             true
         );
@@ -421,7 +428,7 @@ multi_head_attention(
     // 5. Create causal mask if needed
     Output<Node> final_mask = mask;
     if (mask.get_node() == nullptr) {
-        final_mask = causal_mask(attention_mask, k_combined, hidden_dim, input_shape);
+        final_mask = causal_mask(attention_mask, k_cache.second, hidden_dim, input_shape);
     }
 
     // 6. Scaled dot product attention
