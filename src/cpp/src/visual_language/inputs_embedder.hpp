@@ -35,11 +35,15 @@ public:
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics);
+
+    std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
+
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
 
     // returns embedding model which converts token_id(s) to embedding vectors
-    EmbeddingsModel get_embedding_model() const;
+    EmbeddingsModel::Ptr get_embedding_model() const;
 
     // returns tokenizer
     Tokenizer get_tokenizer() const;
@@ -71,7 +75,7 @@ private:
         // A model to compute token embeddings.
         // Input shape: [N, conversation length].
         // Output shape: [1, conversation length, hidden_size].
-        EmbeddingsModel m_embedding;
+        EmbeddingsModel::Ptr m_embedding;
         // A tokenizer encoding a prompt.
         Tokenizer m_tokenizer;
         // True if chat mode is activated to save conversation
@@ -90,12 +94,17 @@ private:
         // Verifies no previous image is referenced.
         // InputsEmbedderMiniCPM Uses to insert <image_id>i</image_id> per image (not a slice).
         size_t m_image_id = 0;
+
     public:
-        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
+        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
+
+        ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
+
+        virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
     
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
     
-        EmbeddingsModel get_embedding_model() const {
+        EmbeddingsModel::Ptr get_embedding_model() const {
             return m_embedding;
         }
     
@@ -165,6 +174,17 @@ private:
 /// If no any tag, prepend universal image tag.
 /// If native tag, assume incremental image order.
 /// Else replace universal tags with native tags and save image order.
-std::pair<std::string, std::vector<size_t>> unify_prompt(const std::string& prompt, const std::string& native_tag, size_t n_new_images, size_t first_new_image_id);
+/// @param unified_tag_to_native_tag MiniCPM-V-2_6 inserts
+/// (<image>./</image>)\n per image but it only replaces
+/// <image>./</image> leaving ()\n untouched.
+/// unified_tag_to_native_tag allows to handle this by being separated
+/// from native_tag param.
+std::pair<std::string, std::vector<size_t>> unify_prompt(
+    const std::string& prompt,
+    const std::string& native_tag,
+    const std::string& unified_tag_to_native_tag,
+    size_t n_new_images,
+    size_t first_new_image_id
+);
 
 } // namespace ov::genai

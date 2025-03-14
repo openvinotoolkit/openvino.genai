@@ -336,17 +336,20 @@ jobs:
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ openvino_download, genai_build_wheel ]
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
       matrix:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py'
+            timeout: 45
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
+            timeout: 60 
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_kv_cache_eviction.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
+            timeout: 90
     defaults:
       run:
         shell: bash
@@ -355,8 +358,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      TRANSFORMERS_CACHE: ${{ github.workspace }}/models  # Hugging Face transformers cache
-      HF_HOME: ${{ github.workspace }}/datasets           # Hugging Face datasets cache
+      HF_HOME: ${{ github.workspace }}/hf_cache
 
     steps:
       - name: Clone openvino.genai

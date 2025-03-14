@@ -245,6 +245,12 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             gen_config.assistant_confidence_threshold = float(args['assistant_confidence_threshold'])
             config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
         log.info(config_info)
+    if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
+        config_info = "Prompt Lookup decoding config: "
+        gen_config.max_ngram_size = int(args['max_ngram_size'])
+        gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
+        config_info += f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
+        log.info(config_info)
     start = time.perf_counter()
     if streaming:
         text_print_streamer = GenaiChunkStreamer(model.get_tokenizer(), tokens_len)
@@ -406,6 +412,12 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         if args.get("assistant_confidence_threshold", None):
             gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
             config_info += f'assistant_confidence_threshold {args["assistant_confidence_threshold"]}'
+        log.info(config_info)
+    if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
+        config_info = "Prompt Lookup decoding config: "
+        gen_config.max_ngram_size = int(args['max_ngram_size'])
+        gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
+        config_info += f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
         log.info(config_info)
     start = time.perf_counter()
     generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens

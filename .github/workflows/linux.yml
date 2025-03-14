@@ -323,17 +323,20 @@ jobs:
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ openvino_download, genai_build_wheel ]
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
       matrix:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
+            timeout: 45
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
+            timeout: 60
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_kv_cache_eviction.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
+            timeout: 90
     defaults:
       run:
         shell: bash
