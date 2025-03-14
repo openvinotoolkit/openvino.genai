@@ -14,13 +14,13 @@ namespace ov::genai {
 namespace {
 
 constexpr size_t INPUT_IMAGE_SIZE = 336;
-static const std::regex NATIVE_PATTERN{R"(<\|image_(\d+)\|>)"};
+const std::regex NATIVE_PATTERN{R"(<\|image_(\d+)\|>)"};
 
 void write_native(std::ostream& os, size_t idx) {
     os << "<|image_" << idx + 1 << "|>\n";
 }
 
-std::pair<std::string, std::vector<size_t>> normalize_prompt(
+std::string normalize_prompt(
     const std::string& prompt, size_t base_id, size_t n_images
 ) {
     std::smatch match;
@@ -29,7 +29,7 @@ std::pair<std::string, std::vector<size_t>> normalize_prompt(
     if (!image_sequence.empty()) {
         OPENVINO_ASSERT(match.empty(), "Prompt can contain only one type of image tags.");
         verify_ids(image_sequence, base_id, n_images);
-        return {std::move(image_prompt), std::move(image_sequence)};
+        return image_prompt;
     }
     // Restore ids from native tags
     if (!match.empty()) {
@@ -49,7 +49,7 @@ std::pair<std::string, std::vector<size_t>> normalize_prompt(
         }
         if (!image_sequence.empty()) {
             verify_ids(image_sequence, base_id, n_images);
-            return {std::move(image_prompt), std::move(image_sequence)};
+            return image_prompt;
         }
     }
     // Prepend native tags
@@ -59,7 +59,7 @@ std::pair<std::string, std::vector<size_t>> normalize_prompt(
         write_native(stream, image_sequence.back());
     }
     stream << prompt;
-    return {stream.str(), image_sequence};
+    return stream.str();
 }
 
 ov::Tensor padding_336(const ov::Tensor& unpadded) {
@@ -484,21 +484,27 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
     return res;
 }
 
-/// @brief Empty Tensor denotes image placeholder
-std::vector<ov::Tensor> split_tokenize(const std::string& text, ov::genai::Tokenizer& tokenizer) {
-    std::vector<ov::Tensor> tokenized;
+/// @brief ov::Tensor is tokenized text, size_t is image tag
+std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text, ov::genai::Tokenizer& tokenizer) {
+    std::vector<std::variant<ov::Tensor, size_t>> tokenized;
     auto prefix_begin = text.begin();
+    bool is_submatch = false;
     for (std::sregex_token_iterator iter{
         prefix_begin,
         text.end(),
-        NATIVE_PATTERN
+        NATIVE_PATTERN,
+        {0, 1}  // Every match emits two values: whole match and submatch
     }; iter != std::sregex_token_iterator{}; ++iter) {
-        std::string regular_text{prefix_begin, iter->first};
-        if (!regular_text.empty()) {
-            tokenized.push_back(tokenizer.encode(regular_text, ov::genai::add_special_tokens(true)).input_ids);
+        if (is_submatch) {
+            tokenized.push_back(std::stoul(iter->str()) - 1);
+        } else {
+            std::string regular_text{prefix_begin, iter->first};
+            if (!regular_text.empty()) {
+                tokenized.push_back(tokenizer.encode(regular_text, ov::genai::add_special_tokens(true)).input_ids);
+            }
+            prefix_begin = iter->second;
         }
-        tokenized.push_back({});
-        prefix_begin = iter->second;
+        is_submatch = !is_submatch;
     }
     std::string regular_text{prefix_begin, text.end()};
     if (!regular_text.empty()) {
@@ -508,48 +514,48 @@ std::vector<ov::Tensor> split_tokenize(const std::string& text, ov::genai::Token
 }
 
 ov::Tensor insert_image_placeholders(
-    const std::vector<ov::Tensor>& chunks,
-    const std::vector<size_t>& image_sequence,
+    const std::vector<std::variant<ov::Tensor, size_t>>& chunks,
     const std::vector<size_t>& tokens_per_images
 ) {
     size_t merged_length = 0;
-    for (const ov::Tensor& chunk : chunks) {
-        if (chunk) {  // Images are represented with empty tensors
-            merged_length += chunk.get_shape().at(1);
-        }
-    }
-    for (size_t image_id : image_sequence) {
-        merged_length += tokens_per_images.at(image_id);
+    for (const std::variant<ov::Tensor, size_t>& chunk : chunks) {
+        merged_length += std::visit(utils::overloaded{
+            [](const ov::Tensor& chunk) {
+                return chunk.get_shape().at(1);
+            },
+            [&](size_t image_id) {
+                return tokens_per_images.at(image_id);
+            }
+        }, chunk);
     }
     ov::Tensor merged{ov::element::i64, {1, merged_length}};
     size_t offset = 0;
-    size_t image_count = 0;
-    for (const ov::Tensor& chunk : chunks) {
-        if (chunk) {
-            size_t length = chunk.get_shape().at(1);
-            std::copy_n(
-                chunk.data<int64_t>(),
-                length,
-                merged.data<int64_t>() + offset
-            );
-            offset += length;
-        } else {
-            size_t image_id = image_sequence.at(image_count);
-            std::fill_n(
-                merged.data<int64_t>() + offset,
-                tokens_per_images.at(image_id),
-                -image_id - 1  // -1 to distinguish 0 token and 0 image id.
-            );
-            offset += tokens_per_images.at(image_id);
-            ++image_count;
-        }
+    for (const std::variant<ov::Tensor, size_t>& chunk : chunks) {
+        offset += std::visit(utils::overloaded{
+            [&](const ov::Tensor& chunk) {
+                size_t length = chunk.get_shape().at(1);
+                std::copy_n(
+                    chunk.data<int64_t>(),
+                    length,
+                    merged.data<int64_t>() + offset
+                );
+                return length;
+            },
+            [&](size_t image_id) {
+                std::fill_n(
+                    merged.data<int64_t>() + offset,
+                    tokens_per_images.at(image_id),
+                    -image_id - 1  // -1 to distinguish 0 token and 0 image id.
+                );
+                return tokens_per_images.at(image_id);
+            }
+        }, chunk);
     }
-    OPENVINO_ASSERT(image_count == image_sequence.size());
     return merged;
 }
 
-std::vector<ov::Tensor> drop_image_placeholders(const ov::Tensor& tokens) {
-    std::vector<ov::Tensor> chunks;
+std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::Tensor& tokens) {
+    std::vector<std::variant<ov::Tensor, size_t>> chunks;
     int64_t last_token = tokens.data<int64_t>()[0];
     size_t text_start = 0;
     for (size_t offset = 1; offset < tokens.get_shape().at(1); ++offset) {
@@ -561,20 +567,30 @@ std::vector<ov::Tensor> drop_image_placeholders(const ov::Tensor& tokens) {
         int64_t next_token = tokens.data<int64_t>()[offset];
         if (last_token < 0 && next_token >= 0) {
             text_start = offset;
-            chunks.push_back({});
+            chunks.push_back(size_t(-(last_token + 1)));
         } else if (last_token >= 0 && next_token < 0) {
-            chunks.emplace_back(ov::element::i64, ov::Shape{1, offset - text_start}, tokens.data<int64_t>() + text_start);
+            chunks.emplace_back(
+                std::in_place_type<ov::Tensor>,
+                ov::element::i64,
+                ov::Shape{1, offset - text_start},
+                tokens.data<int64_t>() + text_start
+            );
         } else if (last_token < 0 && next_token < 0 && last_token != next_token) {
-            chunks.push_back({});
+            chunks.push_back(size_t(-(last_token + 1)));
         }
         last_token = next_token;
     }
     // Add the last chunk
     size_t full_length = tokens.get_shape().at(1);
     if (last_token >= 0) {
-        chunks.emplace_back(ov::element::i64, ov::Shape{1, full_length - text_start}, tokens.data<int64_t>() + text_start);
+        chunks.emplace_back(
+            std::in_place_type<ov::Tensor>,
+            ov::element::i64,
+            ov::Shape{1, full_length - text_start},
+            tokens.data<int64_t>() + text_start
+        );
     } else {
-        chunks.push_back({});
+        chunks.push_back(size_t(-(last_token + 1)));
     }
     return chunks;
 }
@@ -604,8 +620,7 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
 
 ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
     size_t base_id = m_tokens_per_images.size();
-    auto [image_prompt, image_sequence] = normalize_prompt(prompt, base_id, images.size());
-    m_image_sequence.insert(m_image_sequence.end(), image_sequence.begin(), image_sequence.end());
+    std::string image_prompt = normalize_prompt(prompt, base_id, images.size());
     std::vector<ov::Tensor> images_features_proj;
     CircularBufferQueueElementGuard<ov::InferRequest> hd_feature_transformer_ireq_guard(this->m_ireq_queue_hd_feature_transformer.get());
     CircularBufferQueueElementGuard<ov::InferRequest> vision_projection_ireq_guard(this->m_ireq_queue_vision_projection.get());
@@ -615,7 +630,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
         images_features_proj.push_back(hd_feature_transform(encoded_image, hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, vision_projection));
         m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
     }
-    std::vector<ov::Tensor> new_chat_tokens;
+    std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
     if (m_is_chat_conversation) {
         m_history.push_back({{"role", "user"}, {"content", std::move(image_prompt)}});
         constexpr bool add_generation_prompt = true;
@@ -638,42 +653,41 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     }
-    ov::Tensor new_merged_tokens = insert_image_placeholders(new_chat_tokens, m_image_sequence, m_tokens_per_images);
+    ov::Tensor new_merged_tokens = insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     ov::Tensor new_tokens = update_history(new_merged_tokens);
     m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_tokens);
 
-    std::vector<ov::Tensor> tokens = drop_image_placeholders(new_tokens);
+    std::vector<std::variant<ov::Tensor, size_t>> tokens = drop_image_placeholders(new_tokens);
     ov::Tensor inputs_embeds{ov::element::f32, {1, new_tokens.get_shape().at(1), m_vlm_config.hidden_size}};
-    size_t image_count = 0;
     size_t offset = 0;
-    for (const ov::Tensor& chunk : tokens) {
-        if (chunk) {
-            const ov::Tensor& text_embeds = m_embedding->infer(chunk);
-            size_t text_length = text_embeds.get_shape().at(1);
-            std::copy_n(
-                text_embeds.data<float>(),
-                text_embeds.get_size(),
-                inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
-            );
-            offset += text_length;
-        } else {
-            size_t image_id = image_sequence.at(image_count) - base_id;
-            const ov::Tensor& image_embeds = images_features_proj.at(image_id);
-            size_t im_length = image_embeds.get_shape().at(1);
-            std::copy_n(
-                image_embeds.data<float>(),
-                image_embeds.get_size(),
-                inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
-            );
-            offset += im_length;
-            ++image_count;
-        }
+    for (const std::variant<ov::Tensor, size_t>& chunk : tokens) {
+        offset += std::visit(utils::overloaded{
+            [&](const ov::Tensor& chunk) {
+                const ov::Tensor& text_embeds = m_embedding->infer(chunk);
+                size_t text_length = text_embeds.get_shape().at(1);
+                std::copy_n(
+                    text_embeds.data<float>(),
+                    text_embeds.get_size(),
+                    inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+                );
+                return text_length;
+            },
+            [&](size_t image_id) {
+                const ov::Tensor& image_embeds = images_features_proj.at(image_id - base_id);
+                size_t im_length = image_embeds.get_shape().at(1);
+                std::copy_n(
+                    image_embeds.data<float>(),
+                    image_embeds.get_size(),
+                    inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+                );
+                return im_length;
+            }
+        }, chunk);
     }
 
     if (!m_is_chat_conversation) {
         m_tokens_per_images.clear();
-        m_image_sequence.clear();
     }
 
     return inputs_embeds;
@@ -690,13 +704,11 @@ void InputsEmbedderPhi3V::update_chat_history(const std::string& decoded_results
 void InputsEmbedderPhi3V::start_chat(const std::string& system_message) {
     IInputsEmbedder::start_chat(system_message);
     m_tokens_per_images.clear();
-    m_image_sequence.clear();
 }
 
 void InputsEmbedderPhi3V::finish_chat() {
     IInputsEmbedder::finish_chat();
     m_tokens_per_images.clear();
-    m_image_sequence.clear();
 }
 
 bool InputsEmbedderPhi3V::prompt_has_image_tag(const std::string& prompt) const {

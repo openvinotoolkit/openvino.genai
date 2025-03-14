@@ -43,7 +43,6 @@ private:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_projection;
     std::vector<size_t> m_tokens_per_images;
     std::vector<size_t> m_prev_tokens_per_images;
-    std::vector<size_t> m_image_sequence;
 };
 
 } // namespace ov::genai
