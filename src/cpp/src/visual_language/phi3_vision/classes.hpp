@@ -36,11 +36,14 @@ public:
 
     void finish_chat() override;
 
+    bool prompt_has_image_tag(const std::string& prompt) const override;
+
 private:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_hd_feature_transformer;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_projection;
     std::vector<size_t> m_tokens_per_images;
     std::vector<size_t> m_prev_tokens_per_images;
+    std::vector<size_t> m_image_sequence;
 };
 
 } // namespace ov::genai

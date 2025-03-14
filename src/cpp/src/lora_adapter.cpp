@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 #include <fstream>
-#include <regex>
 #include <optional>
 #include <numeric>
 #include <iostream>

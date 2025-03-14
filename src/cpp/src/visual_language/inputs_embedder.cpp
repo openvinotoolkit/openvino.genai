@@ -16,13 +16,6 @@
 #include "visual_language/internvl_chat/classes.hpp"
 
 #include "utils.hpp"
-#include <regex>
-
-namespace {
-
-std::regex UNIVERSAL_PATTERN{R"(<ov_genai_image_(\d+)>)"};
-
-}
 
 namespace ov::genai {
 
@@ -296,49 +289,46 @@ bool InputsEmbedder::prompt_has_image_tag(const std::string& prompt) const {
     return m_impl->prompt_has_image_tag(prompt);
 }
 
-std::pair<std::string, std::vector<size_t>> unify_prompt(
+void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images) {
+    for (size_t idx : image_ids) {
+        OPENVINO_ASSERT(base_id <= idx, "Referring to older images isn't implemented");
+        OPENVINO_ASSERT(idx < base_id + n_images, "Missing image ", idx);
+    }
+}
+
+std::pair<std::string, std::vector<size_t>> normalize_prompt(
     const std::string& prompt,
     const std::string& native_tag,
-    const std::string& unified_tag_to_native_tag,
-    size_t n_new_images,
-    size_t first_new_image_id
+    const std::string& automatic_tag,
+    size_t base_id,
+    size_t n_images
 ) {
-    bool found_universal_tag = std::regex_search(prompt, UNIVERSAL_PATTERN);
-    bool found_native_tag = prompt.find(native_tag) != std::string::npos;
-    OPENVINO_ASSERT(!(found_universal_tag && found_native_tag), "Prompt can contain only one type of image tags.");
-    std::stringstream images_prompt;
-    if (!found_universal_tag && ! found_native_tag) {
-        for (size_t i = first_new_image_id; i < n_new_images + first_new_image_id; ++i) {
-            images_prompt << "<ov_genai_image_" << i << ">";
-        }
+    size_t pos = prompt.find(native_tag);
+    auto [image_prompt, image_sequence] = universal_to_native(prompt, [&](std::ostream& os, size_t) {
+        os << automatic_tag;
+    });
+    if (!image_sequence.empty()) {
+        OPENVINO_ASSERT(pos == std::string::npos, "Prompt can contain only one type of image tags.");
+        verify_ids(image_sequence, base_id, n_images);
+        return {std::move(image_prompt), std::move(image_sequence)};
     }
-    images_prompt << prompt;
-
-    std::vector<size_t> images_sequence;
-    std::string unified_prompt = images_prompt.str();
-    std::sregex_iterator end_it;
-    if (found_native_tag) {
-        size_t pos = 0;
-        while ((pos = unified_prompt.find(native_tag, pos)) != std::string::npos) {
-            images_sequence.push_back(first_new_image_id + images_sequence.size());
-            pos += native_tag.length();
-        }
-        OPENVINO_ASSERT(images_sequence.size() == n_new_images);
-    } else {
-        bool found = true;
-        while (found) {
-            found = false;
-            for (std::sregex_iterator it(unified_prompt.begin(), unified_prompt.end(), UNIVERSAL_PATTERN); it != end_it; ++it) {
-                images_sequence.push_back(std::stoi((*it)[1].str()));
-                OPENVINO_ASSERT(images_sequence.back() < n_new_images + first_new_image_id, "Missing image ", images_sequence.back());
-                OPENVINO_ASSERT(first_new_image_id <= images_sequence.back(), "Referring to older images isn't implemented");
-                unified_prompt.replace(it->position(), it->length(), unified_tag_to_native_tag);
-                found = true;
-                break;
-            }
-        }
+    // Restore ids from native tags
+    while (pos != std::string::npos) {
+        image_sequence.push_back(base_id + image_sequence.size());
+        pos = prompt.find(native_tag, pos + native_tag.length());
     }
-    return {std::move(unified_prompt), std::move(images_sequence)};
+    if (!image_sequence.empty()) {
+        OPENVINO_ASSERT(image_sequence.size() == n_images, "The number of native image tags and provided images must match because it's ambiguous which image should be ignored.");
+        return {std::move(image_prompt), std::move(image_sequence)};
+    }
+    // Prepend native tags
+    std::stringstream stream;
+    for (size_t relative_id = 0; relative_id < n_images; relative_id++) {
+        image_sequence.push_back(base_id + relative_id);
+        stream << automatic_tag;
+    }
+    stream << prompt;
+    return {stream.str(), std::move(image_sequence)};
 }
 
 } // namespace ov::genai
