@@ -18,7 +18,7 @@ class TestImage2Image:
         ],
         indirect=["download_model"],
     )
-    @pytest.mark.parametrize("download_test_content", ["image.png"], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["images/image.png"], indirect=True)
     def test_sample_image2image(self, download_model, prompt, download_test_content):
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "image_generation/image2image.py")
