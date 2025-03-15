@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "icontinuous_batching.hpp"
+#include "lora_helper.hpp"
 
 namespace {
 std::string add_image_tags_to_prompt(const std::string& prompt, const std::vector<ov::Tensor>& rgbs, size_t history_images_size) {
@@ -48,6 +49,12 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_history_images.clear();
 };
 
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::remove_adapters(const ov::AnyMap& plugin_config) {
+    std::optional<AdapterConfig> adapters;
+    auto filtered_properties = extract_adapters_from_properties(plugin_config, &adapters);
+    remove_adapters(adapters);
+};
+    
 std::vector<GenerationResult>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,

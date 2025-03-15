@@ -90,6 +90,10 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
     }
 }
 
+void ContinuousBatchingPipeline::PromptLookupImpl::remove_adapters(const std::optional<AdapterConfig>& adapters) {
+    m_pipeline->remove_adapters(adapters);
+}
+
 std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                        const std::vector<GenerationConfig>& sampling_params,
