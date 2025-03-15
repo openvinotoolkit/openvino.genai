@@ -140,3 +140,6 @@
 
 'category: WWB':
 - 'tools/who_what_benchmark/**/*'
+
+'category: GH Pages Docs':
+- 'site/**/*'
