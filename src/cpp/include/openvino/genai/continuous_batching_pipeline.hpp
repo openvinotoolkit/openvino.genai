@@ -15,6 +15,8 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
+
 #include "cache_eviction.hpp"
 
 namespace ov::genai {
@@ -164,7 +166,7 @@ public:
     // more high level interface, which can process multiple prompts in continuous batching manner
     std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
     std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
-    std::vector<GenerationResult> generate(
+    std::vector<VLMDecodedResults> generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& images,
              const std::vector<GenerationConfig>& sampling_params,

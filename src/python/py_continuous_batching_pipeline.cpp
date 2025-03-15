@@ -341,7 +341,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const pyutils::PyBindStreamerVariant& py_streamer
             ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
                 ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-                std::vector<ov::genai::GenerationResult> generated_results;
+                std::vector<ov::genai::VLMDecodedResults> generated_results;
                 {
                     py::gil_scoped_release rel;
                     generated_results = pipe.generate(prompts, images, generation_config, streamer);

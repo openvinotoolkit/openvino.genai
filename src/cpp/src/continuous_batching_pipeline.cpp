@@ -284,7 +284,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::ve
     return decoded_results;
 }
 
-std::vector<GenerationResult> ContinuousBatchingPipeline::generate(
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& images,
              const std::vector<GenerationConfig>& sampling_params,
