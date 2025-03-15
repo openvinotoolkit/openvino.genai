@@ -1,0 +1,8 @@
+{
+  "label": "Model Preparation",
+  "position": 1,
+  "link": {
+    "type": "generated-index",
+    "description": "Prepare generative models for inference with OpenVINO GenAI."
+  }
+}
