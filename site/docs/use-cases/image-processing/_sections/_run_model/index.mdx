@@ -1,0 +1,38 @@
+import CodeExampleCPP from './_code_example_cpp.mdx';
+import CodeExamplePython from './_code_example_python.mdx';
+
+## Run Model Using OpenVINO GenAI
+
+OpenVINO GenAI introduces the `VLMPipeline` pipeline for inference of multimodal text-generation Vision Language Models (VLMs).
+With a text prompt and an image as input, `VLMPipeline` can generate text using models such as LLava or MiniCPM-V.
+
+See all supported [visual language models](/docs/supported-models/#visual-language-models-vlms).
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExamplePython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExamplePython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExampleCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExampleCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>
+
+:::tip
+
+Use CPU or GPU as devices without any other code change.
+
+:::

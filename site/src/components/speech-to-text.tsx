@@ -68,8 +68,8 @@ export const SpeechToText = () => {
           <TabItemCpp>{cppCodeBlock}</TabItemCpp>
         </LanguageTabs>
         <hr />
-        <ExploreCodeSamples link={'docs/how-to-guides/speech-to-text'} />
-        <GoToDocumentation link={'https://github.com/openvinotoolkit/openvino.genai'} />
+        <ExploreCodeSamples link="docs/category/samples" />
+        <GoToDocumentation link="docs/use-cases/speech-processing" />
       </Section.Column>
     </Section.Container>
   );
