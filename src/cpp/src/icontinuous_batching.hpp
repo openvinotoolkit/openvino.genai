@@ -133,9 +133,5 @@ public:
      * Ends chat
      */
     void finish_chat();
-
-    void remove_adapters(const ov::AnyMap& plugin_config);
-
-    virtual void remove_adapters(const std::optional<AdapterConfig>& config) = 0;
 };
 }
