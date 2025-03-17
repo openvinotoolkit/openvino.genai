@@ -298,10 +298,6 @@ void ov::genai::LLMPipeline::finish_chat() {
     m_pimpl->finish_chat();
 }
 
-void ov::genai::LLMPipeline::remove_adapters(const ov::AnyMap& config_map) {
-    m_pimpl->remove_adapters(config_map);
-}
-
 void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& config) {
     m_pimpl->set_generation_config(config);
 }
