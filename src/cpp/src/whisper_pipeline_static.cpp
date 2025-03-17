@@ -950,9 +950,6 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
         static_cast<float>(m_feature_extractor.hop_length) / m_feature_extractor.sampling_rate;
 
     for (size_t chunk_offset = 0; chunk_offset < input_features.n_frames; chunk_offset += segment_offset) {
-        if (output_tokens.size() >= max_new_tokens) {
-            break;
-        }
 
         const float chunk_toffset = chunk_offset * chunk_length_in_seconds;
 
