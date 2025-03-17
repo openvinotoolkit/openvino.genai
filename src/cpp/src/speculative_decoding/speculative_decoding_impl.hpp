@@ -69,8 +69,6 @@ public:
              const StreamerVariant& streamer) override;
 
     SpeculativeDecodingMetrics get_speculative_decoding_metrics();
-
-    void remove_adapters(const std::optional<AdapterConfig>& adapters) override;
 };
 
 }
