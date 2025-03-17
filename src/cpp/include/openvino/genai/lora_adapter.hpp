@@ -193,9 +193,6 @@ public:
     // Apply adapters configured in the current config set last time, or set and use new config given as optional `config` argument
     void apply(ov::InferRequest request, const std::optional<AdapterConfig>& config = std::nullopt);
 
-    // Remove LoRA adapters
-    void remove_adapters(const std::optional<AdapterConfig>& config);
-
     // Returns true if a given name is one of the state names created by this adapter controller for dynamic LoRA
     // Helps to distinguish LoRA states from other states (e.g. KV cache state) in the model for a partial state reset.
     bool has_state_name(const std::string& name);
