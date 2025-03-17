@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) try {
         {"vision_embeddings", "openvino_vision_embeddings_model"}};
 
     for (const auto& [model_name, file_name] : model_name_to_file_map) {
-        auto model_pair = decrypt_model(file_name + model_name + ".xml", file_name + model_name + ".bin");
+        auto model_pair = decrypt_model(models_path + file_name + ".xml", models_path + file_name + ".bin");
         models_map.emplace(model_name, std::move(model_pair));
     }
 
