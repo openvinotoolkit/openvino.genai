@@ -209,10 +209,6 @@ public:
     void finish_chat() override {
         m_impl->finish_chat();
     };
-
-    void remove_adapters(const ov::AnyMap& plugin_config) override {
-        m_impl->remove_adapters(plugin_config);
-    };
 };
 
 } // namespace ov::genai
