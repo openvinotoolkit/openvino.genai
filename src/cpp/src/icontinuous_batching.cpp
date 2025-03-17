@@ -40,12 +40,6 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_history.clear();
 };
 
-void ContinuousBatchingPipeline::IContinuousBatchingPipeline::remove_adapters(const ov::AnyMap& plugin_config) {
-    std::optional<AdapterConfig> adapters;
-    auto filtered_properties = extract_adapters_from_properties(plugin_config, &adapters);
-    remove_adapters(adapters);
-};
-    
 std::vector<GenerationResult>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
