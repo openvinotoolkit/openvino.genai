@@ -156,7 +156,5 @@ public:
     * @brief finish chat and clear kv cache.
     */
     void finish_chat();
-
-    void remove_adapters(const ov::AnyMap& config_map);
 };
 }
