@@ -414,12 +414,4 @@ void StatefulLLMPipeline::finish_chat() {
     }
 }
 
-void StatefulLLMPipeline::remove_adapters(const ov::AnyMap& plugin_config) {
-    std::optional<AdapterConfig> adapters;
-    auto filtered_properties = extract_adapters_from_properties(plugin_config, &adapters);
-
-    if (m_adapter_controller) {
-        m_adapter_controller->remove_adapters(adapters);
-    }
-}
 } // namespace ov::genai
