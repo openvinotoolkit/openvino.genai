@@ -599,12 +599,6 @@ ov::Output<ov::Node> make_int4_weights(
     // Convert weight to uint8 view and adjust shape
     ov::Shape orig_weight_shape = weight.get_shape();
     orig_weight_shape[1] *= sizeof(uint32_t) / sizeof(uint8_t) * 2; // Double number of columns for 4-bit representation
-    //std::cout << "Weight: shape: " << weight.get_shape() << ", data: " << std::cout.fill('0') << std::setw(5) << static_cast<uint8_t*>(weight.data())[0] << std::endl;
-
-    // Reshape weight tensor
-    // size_t num_groups = orig_weight_shape[1] / group_size;
-    // ov::Shape new_shape = {orig_weight_shape[0], num_groups, group_size};
-    // weight.set_shape(new_shape);
 
     // Retrieve scales and biases
     ov::Tensor scales = get_tensor(consts, key + ".scales");
@@ -630,15 +624,11 @@ ov::Output<ov::Node> make_int4_weights(
         group_size
     };
 
-    //std::cout << "Weight: shape: " << packed_shape << ", data: " << cout.fill('0') << std::setw(5) << static_cast<uint8_t*>(weight.data())[0] << std::endl;
     auto weights_node = std::make_shared<v0::Constant>(ov::element::u4, packed_shape, static_cast<uint8_t*>(weight.data()), nullptr);
     weights_node->get_rt_info()["__gguf_tensor_holde"] = weight;
-    // ov::Tensor weight_tensor(ov::element::u4, packed_shape);
-    // std::memcpy(weight_tensor.data(), weight.data(), weight.get_byte_size());
-    // auto weights_node = std::make_shared<ov::op::v0::Constant>(weight_tensor);
     auto weights_f16 = std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f16);
 
-    // Calculate zero point
+    // Pack zero points: two subsequent values into one
     const ov::float16* bias_data = biases.data<ov::element_type_traits<ov::element::f16>::value_type>();
     const ov::float16* scale_data = scales.data<ov::element_type_traits<ov::element::f16>::value_type>();
     ov::Tensor zero_point_tensor(ov::element::u4, scale_bias_shape);
@@ -648,20 +638,7 @@ ov::Output<ov::Node> make_int4_weights(
         uint8_t bias2 = (uint8_t)(-1.f * static_cast<float>(bias_data[i*2 + 1]) / static_cast<float>(scale_data[i*2 + 1]));
         zero_point_data[i] = (bias2 << 4) | (bias1 & 0x0F);
     }
-
-    // Pack zero points: two subsequent values into one
-    // ov::Tensor zero_point_tensor(ov::element::u4, scale_bias_shape);
-    // size_t packed_size = zero_point_shape[0] / 2;
-    // std::vector<uint8_t> zero_point_packed(packed_size);
-    // const uint8_t* zero_point_data = static_cast<uint8_t*>(zero_point_tensor->data());
-    // for (size_t i = 0; i < packed_size; ++i) {
-
-    //     zero_point_packed[i] = (zero_point_data[2 * i + 1] << 4) | (zero_point_data[2 * i] & 0x0F);
-    // }
-
-    // ov::Tensor zero_point_tensor(ov::element::u4, zero_point_shape);
-    // std::memcpy(zero_point_tensor.data(), zero_point_packed.data(), zero_point_tensor.get_byte_size());
-
+    
     auto zero_points_node = std::make_shared<ov::op::v0::Constant>(zero_point_tensor);
     auto zero_points_f16 = std::make_shared<ov::op::v0::Convert>(zero_points_node, ov::element::f16);
 

@@ -8,14 +8,14 @@
 
 using namespace std;
 
-void unpack_32_4(uint8_t* data, int8_t* dst) {
+void unpack_32_4(uint8_t* data, uint8_t* dst) {
   std::fill_n(dst, 16, 0);
   for (int j = 0; j < 16; ++j) {
     uint8_t x = (data[j + 2] & 0x0F); // j+2 to skip scale bytes.
     if (j % 2 != 0) {
       x <<= 4;
     }
-    dst[j / 2] += x;
+    dst[j / 2] |= x;
   }
   // Last 16 weights are in the higher bits
   for (int j = 0; j < 16; ++j) {
@@ -23,7 +23,7 @@ void unpack_32_4(uint8_t* data, int8_t* dst) {
     if (j % 2 != 0) {
       x <<= 4;
     }
-    dst[8 + j / 2] += x;
+    dst[8 + j / 2] |= x;
   }
 }
 
@@ -36,7 +36,7 @@ void extract_q4_0_data(
     ov::Tensor& biases_arr) {
   const uint64_t bytes_per_block = 18; // 2 bytes scale, 32x0.5 byte weights
   auto data = static_cast<uint8_t*>(tensor.weights_data);
-  auto weights = static_cast<int8_t*>(weights_arr.data());
+  auto weights = static_cast<uint8_t*>(weights_arr.data());
   auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   for (int64_t i = 0; i < scales_arr.get_size(); i++) {
@@ -58,7 +58,7 @@ void extract_q4_1_data(
   const uint64_t bytes_per_block =
       20; // 2 bytes scale, 2 bytes bias, 32x0.5 byte weights
   auto data = static_cast<uint8_t*>(tensor.weights_data);
-  auto weights = static_cast<int8_t*>(weights_arr.data());
+  auto weights = static_cast<uint8_t*>(weights_arr.data());
   auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   for (int64_t i = 0; i < scales_arr.get_size(); i++) {
@@ -143,7 +143,6 @@ void gguf_load_quantized(
     extract_q8_0_data(tensor, weights, scales, biases);
   }
 
-  //std::cout << "Weight: weights_shape: " << weights_shape << ", data: " << cout.fill('0') << std::setw(5) << static_cast<uint8_t*>(weights.data())[0] << std::endl;
   a.emplace(name, std::move(weights));
 
   auto check_insert = [](const auto& inserted) {
