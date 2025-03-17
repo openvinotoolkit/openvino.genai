@@ -73,7 +73,7 @@ export const ImageProcessing = () => {
         </LanguageTabs>
         <hr />
         <ExploreCodeSamples link={'docs/category/samples'} />
-        <GoToDocumentation link={'docs/how-to-guides/vlm'} />
+        <GoToDocumentation link={'docs/use-cases/Processing-images-using-VLMs'} />
       </Section.Column>
     </Section.Container>
   );

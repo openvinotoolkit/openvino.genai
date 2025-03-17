@@ -196,6 +196,7 @@ def analyze_args(args):
     model_args["draft_cb_config"] = draft_cb_config
     model_args['num_assistant_tokens'] = args.num_assistant_tokens
     model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
+    model_args['max_ngram_size'] = args.max_ngram_size
     return model_path, model_framework, model_args, model_name
 
 

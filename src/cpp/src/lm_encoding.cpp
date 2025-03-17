@@ -6,7 +6,6 @@
 #include <iostream>
 #include <numeric>
 #include <random>
-#include <regex>
 #include <vector>
 
 #include "utils.hpp"

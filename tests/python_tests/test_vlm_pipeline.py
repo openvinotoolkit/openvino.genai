@@ -488,13 +488,14 @@ requests = [
 
 
 image_id_ignorant = [
-    ("katuni4ka/tiny-random-qwen2vl", "<|vision_start|><|image_pad|><|vision_end|>"),
+    ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
 ]
 
 
 models_to_tag = image_id_ignorant + [
     # minicpm tracks image number in expanded tags
-    ("katuni4ka/tiny-random-minicpmv-2_6", "(<image>./</image>)\n"),
+    ("katuni4ka/tiny-random-minicpmv-2_6", lambda idx: "(<image>./</image>)\n"),
+    ("katuni4ka/tiny-random-phi3-vision", lambda idx: "<|image_" + str(idx + 1) + "|>\n"),
 ]
 
 
@@ -541,10 +542,10 @@ class TestImageTags:
             answers = generate(vlm, requests)
 
             vlm.start_chat()
-            native_tag0 = vlm.generate(model_to_tag[1] + requests[0][0], images=requests[0][1])
+            native_tag0 = vlm.generate(model_to_tag[1](0) + requests[0][0], images=requests[0][1])
             assert native_tag0.texts == answers[0].texts
             assert native_tag0.scores == answers[0].scores
-            native_tags1 = vlm.generate(model_to_tag[1] * 2 + requests[1][0], images=requests[1][1])
+            native_tags1 = vlm.generate(model_to_tag[1](1) + model_to_tag[1](2) + requests[1][0], images=requests[1][1])
             assert native_tags1.texts == answers[1].texts
             assert native_tags1.scores == answers[1].scores
             vlm.finish_chat()
@@ -575,8 +576,8 @@ class TestImageTags:
             vlm.set_generation_config(generation_config)
 
             vlm.start_chat()
-            native_tag0 = vlm.generate(requests[0][0] + model_to_tag[1], images=requests[0][1])
-            native_tags1 = vlm.generate(requests[1][0] + model_to_tag[1] * 2, images=requests[1][1])
+            native_tag0 = vlm.generate(requests[0][0] + model_to_tag[1](0), images=requests[0][1])
+            native_tags1 = vlm.generate(requests[1][0] + model_to_tag[1](1) + model_to_tag[1](2), images=requests[1][1])
             vlm.finish_chat()
 
             vlm.start_chat()
@@ -626,4 +627,4 @@ class TestImageTags:
     def test_missing_native(self, model_to_tag, cache):
         vlm = VLMPipeline(get_ov_model(model_to_tag[0], cache), "CPU")
         with pytest.raises(RuntimeError):
-            vlm.generate(model_to_tag[1])
+            vlm.generate(model_to_tag[1](0))
