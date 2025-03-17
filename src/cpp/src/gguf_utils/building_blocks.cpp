@@ -512,6 +512,14 @@ ov::Output<ov::Node> make_fp16_weights(
     return std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f32);
 }
 
+// Retrieve tensors
+ov::Tensor get_tensor(const std::unordered_map<std::string, ov::Tensor>& consts,
+                    const std::string& key) {
+    auto it = consts.find(key);
+    if (it == consts.end()) throw std::runtime_error("Missing tensor: " + key);
+    return it->second;
+};
+
 ov::Output<ov::Node> make_int8_weights(
     const std::string& key,
     const std::unordered_map<std::string, ov::Tensor>& consts,
@@ -519,16 +527,9 @@ ov::Output<ov::Node> make_int8_weights(
     int head_size,
     int group_size = GGML_QUANTIZATION_GROUP_SIZE) {
 
-    // Retrieve tensors
-    auto get_tensor = [&](const std::string& suffix) {
-        auto it = consts.find(key + suffix);
-        if (it == consts.end()) throw std::runtime_error("Missing tensor: " + key + suffix);
-        return it->second;
-    };
-
-    ov::Tensor weight = get_tensor(".weight");
-    ov::Tensor scales = get_tensor(".scales");
-    ov::Tensor biases = get_tensor(".biases");
+    ov::Tensor weight = get_tensor(consts, key + ".weight");
+    ov::Tensor scales = get_tensor(consts, key + ".scales");
+    ov::Tensor biases = get_tensor(consts, key + ".biases");
 
     // Reshape weight to (num_heads, -1, group_size)
     ov::Shape orig_shape = weight.get_shape();
@@ -586,6 +587,103 @@ ov::Output<ov::Node> make_int8_weights(
     return std::make_shared<ov::op::v0::Convert>(w_zp_s_r, ov::element::f32);
 }
 
+ov::Output<ov::Node> make_int4_weights(
+    const std::string& key,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    bool reorder,
+    int head_size,
+    int group_size = 32) { // Assuming GGML_QUANTIZATION_GROUP_SIZE = 32
+
+    ov::Tensor weight = get_tensor(consts, key + ".weight");
+
+    // Convert weight to uint8 view and adjust shape
+    ov::Shape orig_weight_shape = weight.get_shape();
+    orig_weight_shape[1] *= sizeof(uint32_t) / sizeof(uint8_t) * 2; // Double number of columns for 4-bit representation
+    //std::cout << "Weight: shape: " << weight.get_shape() << ", data: " << std::cout.fill('0') << std::setw(5) << static_cast<uint8_t*>(weight.data())[0] << std::endl;
+
+    // Reshape weight tensor
+    // size_t num_groups = orig_weight_shape[1] / group_size;
+    // ov::Shape new_shape = {orig_weight_shape[0], num_groups, group_size};
+    // weight.set_shape(new_shape);
+
+    // Retrieve scales and biases
+    ov::Tensor scales = get_tensor(consts, key + ".scales");
+    ov::Tensor biases = get_tensor(consts, key + ".biases");
+
+    // Expand dimensions for scales and biases
+    ov::Shape scale_bias_shape = scales.get_shape();
+    scale_bias_shape.push_back(1); // Add new axis at the end
+    scales.set_shape(scale_bias_shape);
+    biases.set_shape(scale_bias_shape);
+
+    // Apply reordering if needed
+    if (reorder) {
+        weight = reorder_interleaved_format(weight, head_size);
+        scales = reorder_interleaved_format(scales, head_size);
+        biases = reorder_interleaved_format(biases, head_size);
+    }
+
+    // Create INT4 weight tensor
+    ov::Shape packed_shape = {
+        orig_weight_shape[0],
+        orig_weight_shape[1] / group_size,
+        group_size
+    };
+
+    //std::cout << "Weight: shape: " << packed_shape << ", data: " << cout.fill('0') << std::setw(5) << static_cast<uint8_t*>(weight.data())[0] << std::endl;
+    auto weights_node = std::make_shared<v0::Constant>(ov::element::u4, packed_shape, static_cast<uint8_t*>(weight.data()), nullptr);
+    weights_node->get_rt_info()["__gguf_tensor_holde"] = weight;
+    // ov::Tensor weight_tensor(ov::element::u4, packed_shape);
+    // std::memcpy(weight_tensor.data(), weight.data(), weight.get_byte_size());
+    // auto weights_node = std::make_shared<ov::op::v0::Constant>(weight_tensor);
+    auto weights_f16 = std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f16);
+
+    // Calculate zero point
+    const ov::float16* bias_data = biases.data<ov::element_type_traits<ov::element::f16>::value_type>();
+    const ov::float16* scale_data = scales.data<ov::element_type_traits<ov::element::f16>::value_type>();
+    ov::Tensor zero_point_tensor(ov::element::u4, scale_bias_shape);
+    uint8_t* zero_point_data = static_cast<uint8_t*>(zero_point_tensor.data());
+    for (size_t i = 0; i < zero_point_tensor.get_byte_size(); ++i) {
+        uint8_t bias1 = (uint8_t)(-1.f * static_cast<float>(bias_data[i*2]) / static_cast<float>(scale_data[i*2]));
+        uint8_t bias2 = (uint8_t)(-1.f * static_cast<float>(bias_data[i*2 + 1]) / static_cast<float>(scale_data[i*2 + 1]));
+        zero_point_data[i] = (bias2 << 4) | (bias1 & 0x0F);
+    }
+
+    // Pack zero points: two subsequent values into one
+    // ov::Tensor zero_point_tensor(ov::element::u4, scale_bias_shape);
+    // size_t packed_size = zero_point_shape[0] / 2;
+    // std::vector<uint8_t> zero_point_packed(packed_size);
+    // const uint8_t* zero_point_data = static_cast<uint8_t*>(zero_point_tensor->data());
+    // for (size_t i = 0; i < packed_size; ++i) {
+
+    //     zero_point_packed[i] = (zero_point_data[2 * i + 1] << 4) | (zero_point_data[2 * i] & 0x0F);
+    // }
+
+    // ov::Tensor zero_point_tensor(ov::element::u4, zero_point_shape);
+    // std::memcpy(zero_point_tensor.data(), zero_point_packed.data(), zero_point_tensor.get_byte_size());
+
+    auto zero_points_node = std::make_shared<ov::op::v0::Constant>(zero_point_tensor);
+    auto zero_points_f16 = std::make_shared<ov::op::v0::Convert>(zero_points_node, ov::element::f16);
+
+    auto scales_f16 = std::make_shared<ov::op::v0::Constant>(scales);
+
+    // Perform dequantization
+    auto w_zp = std::make_shared<ov::op::v1::Subtract>(
+        weights_f16, zero_points_f16, ov::op::AutoBroadcastType::NUMPY);
+
+    auto w_zp_s = std::make_shared<ov::op::v1::Multiply>(
+        w_zp, scales_f16, ov::op::AutoBroadcastType::NUMPY);
+
+    // Reshape back to original shape
+    auto final_shape = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64, ov::Shape{orig_weight_shape.size()}, orig_weight_shape);
+
+    auto w_zp_s_r = std::make_shared<ov::op::v1::Reshape>(
+        w_zp_s, final_shape, false);
+
+    return std::make_shared<ov::op::v0::Convert>(w_zp_s_r, ov::element::f32);
+}
+
 ov::Output<ov::Node> make_weights_subgraph(
     const std::string& key,
     const std::unordered_map<std::string, ov::Tensor>& consts,
@@ -598,9 +696,8 @@ ov::Output<ov::Node> make_weights_subgraph(
             return make_fp16_weights(key, consts, reorder, head_size);
         case QType::INT8:
             return make_int8_weights(key, consts, reorder, head_size);
-        // case QType::INT4:
-        //     // Assuming make_int4_weights is implemented similarly
-        //     return make_int4_weights(key, consts, reorder, head_size);
+        case QType::INT4:
+            return make_int4_weights(key, consts, reorder, head_size);
         default:
             throw std::invalid_argument("Unsupported quantization type");
     }

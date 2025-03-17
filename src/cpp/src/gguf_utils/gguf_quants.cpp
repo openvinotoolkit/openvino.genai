@@ -36,7 +36,7 @@ void extract_q4_0_data(
     ov::Tensor& biases_arr) {
   const uint64_t bytes_per_block = 18; // 2 bytes scale, 32x0.5 byte weights
   auto data = static_cast<uint8_t*>(tensor.weights_data);
-  auto weights = weights_arr.data<int8_t>();
+  auto weights = static_cast<int8_t*>(weights_arr.data());
   auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   for (int64_t i = 0; i < scales_arr.get_size(); i++) {
@@ -58,7 +58,7 @@ void extract_q4_1_data(
   const uint64_t bytes_per_block =
       20; // 2 bytes scale, 2 bytes bias, 32x0.5 byte weights
   auto data = static_cast<uint8_t*>(tensor.weights_data);
-  auto weights = weights_arr.data<int8_t>();
+  auto weights = static_cast<int8_t*>(weights_arr.data());
   auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
   for (int64_t i = 0; i < scales_arr.get_size(); i++) {
@@ -143,6 +143,7 @@ void gguf_load_quantized(
     extract_q8_0_data(tensor, weights, scales, biases);
   }
 
+  //std::cout << "Weight: weights_shape: " << weights_shape << ", data: " << cout.fill('0') << std::setw(5) << static_cast<uint8_t*>(weights.data())[0] << std::endl;
   a.emplace(name, std::move(weights));
 
   auto check_insert = [](const auto& inserted) {
