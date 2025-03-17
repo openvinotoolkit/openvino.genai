@@ -139,7 +139,5 @@ public:
      * Updates LoRA adapters for current generation call
      */
     void set_adapters(const std::optional<AdapterConfig>& adapters);
-
-    void remove_adapters(const std::optional<AdapterConfig>& adapters) override;
 };
 } // namespace ov::genai
