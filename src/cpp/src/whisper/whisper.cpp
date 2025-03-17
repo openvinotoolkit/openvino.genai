@@ -5,7 +5,6 @@
 
 #include <iostream>
 #include <openvino/openvino.hpp>
-#include <regex>
 #include <thread>
 
 #include "context_tokens.hpp"

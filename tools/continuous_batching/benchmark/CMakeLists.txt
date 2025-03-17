@@ -29,3 +29,12 @@ find_package(Threads REQUIRED)
 set(TARGET_NAME continuous_batching_benchmark)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai nlohmann_json::nlohmann_json cxxopts::cxxopts Threads::Threads)
+
+set_target_properties(${TARGET_NAME} PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS ${TARGET_NAME} 
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT tools_bin
+        EXCLUDE_FROM_ALL)
