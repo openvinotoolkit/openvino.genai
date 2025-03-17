@@ -278,8 +278,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
     {
         static ManualTimer timer("forward");
+        const auto infer_start = std::chrono::steady_clock::now();
         timer.start();
         logits = m_model_runner->forward(m_requests, scheduler_output);
+        const auto infer_end = std::chrono::steady_clock::now();
+        m_pipeline_metrics.inference_duration = PerfMetrics::get_microsec(infer_end - infer_start);
         timer.end();
     }
 
@@ -403,11 +406,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
+            // The very first prefill step we don't generate new tokens, but still inference took place,
+            // so we need to add this time to the total inference duration.
+            raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
             if (m_batch_size > 0) {
                 const auto infer_end = std::chrono::steady_clock::now();
-                const auto infer_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+                const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
                 raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
-                raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
                 raw_perf_counters.m_new_token_times.emplace_back(infer_end);
                 raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
             }

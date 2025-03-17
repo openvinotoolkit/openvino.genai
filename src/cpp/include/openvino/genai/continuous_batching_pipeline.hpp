@@ -50,6 +50,11 @@ struct PipelineMetrics {
     * Running average of the KV cache usage during the lifetime of the pipeline, with max window size of 1000 steps
     */
     float avg_cache_usage = 0.0;
+
+    /**
+     * Duration of the last generation step in microseconds.
+     */
+    float inference_duration = 0.0;
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
