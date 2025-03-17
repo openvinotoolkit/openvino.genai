@@ -347,15 +347,6 @@ void StatefulLLMPipeline::finish_chat() {
     m_history.clear();
 };
 
-void StatefulLLMPipeline::remove_adapters(const ov::AnyMap& plugin_config) {
-    std::optional<AdapterConfig> adapters;
-    auto filtered_properties = extract_adapters_from_properties(plugin_config, &adapters);
-
-    if (m_adapter_controller) {
-        m_adapter_controller->remove_adapters(adapters);
-    }
-};
-
 std::unique_ptr<LLMPipelineImplBase>
 LLMPipelineFactory::create(const std::filesystem::path& models_path,
                            const ov::AnyMap& config) {
