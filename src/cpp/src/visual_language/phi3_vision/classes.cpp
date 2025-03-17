@@ -542,7 +542,7 @@ ov::Tensor insert_image_placeholders(
                 return length;
             },
             [&](size_t image_id) {
-                int64_t fill_value = -(std::static_cast<int64_t>(image_id)) - 1;
+                int64_t fill_value = -(static_cast<int64_t>(image_id)) - 1;
                 std::fill_n(
                     merged.data<int64_t>() + offset,
                     tokens_per_images.at(image_id),
