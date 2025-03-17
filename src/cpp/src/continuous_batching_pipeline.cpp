@@ -237,7 +237,3 @@ void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
 void ContinuousBatchingPipeline::finish_chat() {
     m_impl->finish_chat();
 };
-
-void ContinuousBatchingPipeline::remove_adapters(const ov::AnyMap& plugin_config){
-    m_impl->remove_adapters(plugin_config);
-};
