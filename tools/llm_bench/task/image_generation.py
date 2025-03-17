@@ -236,7 +236,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     # If --static_reshape is specified, we need to get width, height, and guidance scale to drop into args
     # as genai's create_image_gen_model implementation will need those to reshape the pipeline before compile().
     if args.get("static_reshape", False):
-        static_input_args = collects_input_args(image_list[0], args['model_type'], args['model_name'], args["num_steps"],
+        static_input_args = collects_input_args(image_list[0], args['model_name'], args["num_steps"],
                                                 args.get("height"), args.get("width"), image_as_ov_tensor=False)
         args["height"] = static_input_args["height"]
         args["width"] = static_input_args["width"]
