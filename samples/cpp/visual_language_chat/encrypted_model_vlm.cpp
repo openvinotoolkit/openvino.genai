@@ -7,7 +7,15 @@
 #include "load_image.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 
-std::pair<std::string, ov::Tensor> decrypt_model(const std::string& model_path, const std::string& weights_path) {
+std::pair<std::filesystem::path, std::filesystem::path> create_full_model_path(const std::filesystem::path& path, const std::string model_name) {
+    std::filesystem::path model_path, weight_path;
+    model_path = weight_path = path / model_name;
+    model_path += ".xml";
+    weight_path += ".bin";
+    return {model_path, weight_path};
+}
+
+std::pair<std::string, ov::Tensor> decrypt_model(const std::filesystem::path& model_path, const std::filesystem::path& weights_path) {
     std::ifstream model_file(model_path);
     std::ifstream weights_file(weights_path, std::ios::binary);
     if (!model_file.is_open() || !weights_file.is_open()) {
@@ -29,18 +37,12 @@ std::pair<std::string, ov::Tensor> decrypt_model(const std::string& model_path, 
     return {model_str, weights_tensor};
 }
 
-ov::genai::Tokenizer decrypt_tokenizer(const std::string& models_path) {
-    std::string tok_model_path = models_path + "/openvino_tokenizer.xml";
-    std::string tok_weights_path = models_path + "/openvino_tokenizer.bin";
-    auto [tok_model_str, tok_weights_tensor] = decrypt_model(tok_model_path, tok_weights_path);
-
-    std::string detok_model_path = models_path + "/openvino_detokenizer.xml";
-    std::string detok_weights_path = models_path + "/openvino_detokenizer.bin";
-    auto [detok_model_str, detok_weights_tensor] = decrypt_model(detok_model_path, detok_weights_path);
+ov::genai::Tokenizer decrypt_tokenizer(const std::filesystem::path& models_path) {
+    auto [tok_model_str, tok_weights_tensor] = std::apply(decrypt_model, create_full_model_path(models_path, "openvino_tokenizer"));
+    auto [detok_model_str, detok_weights_tensor] = std::apply(decrypt_model, create_full_model_path(models_path, "openvino_detokenizer"));
 
     return ov::genai::Tokenizer(tok_model_str, tok_weights_tensor, detok_model_str, detok_weights_tensor);
 }
-
 
 bool print_subword(std::string&& subword) {
     return !(std::cout << subword << std::flush);
@@ -52,7 +54,7 @@ int main(int argc, char* argv[]) try {
     }
 
     //read and encrypt models
-    std::string models_path = argv[1];
+    std::filesystem::path models_path = argv[1];
     ov::genai::ModelsMap models_map;
 
     std::map<std::string, std::string> model_name_to_file_map = {
@@ -62,7 +64,7 @@ int main(int argc, char* argv[]) try {
         {"vision_embeddings", "openvino_vision_embeddings_model"}};
 
     for (const auto& [model_name, file_name] : model_name_to_file_map) {
-        auto model_pair = decrypt_model(models_path + file_name + ".xml", models_path + file_name + ".bin");
+        auto model_pair = std::apply(decrypt_model, create_full_model_path(models_path, file_name));
         models_map.emplace(model_name, std::move(model_pair));
     }
 

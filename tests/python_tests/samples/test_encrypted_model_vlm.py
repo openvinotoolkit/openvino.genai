@@ -34,4 +34,6 @@ class TestEncryptedVLM:
 
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
-        assert py_result.stdout == py_common_result.stdout, f"Results should match"
+        # results from visual_language_chat sample contains also additional outputs like "question:".
+        # So just check if results of encrypted_model_vlm sample is a substring of it.
+        assert py_result.stdout in py_common_result.stdout, f"Results should match"
