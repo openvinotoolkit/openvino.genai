@@ -429,12 +429,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std:
     }
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::remove_adapters(const std::optional<AdapterConfig>& adapters) {
-    if (m_adapter_controller) {
-        m_adapter_controller->remove_adapters(adapters);
-    }
-}
-
 std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
