@@ -115,19 +115,14 @@ struct AutoSafetensor: public safetensors_File {
     }
 };
 
-
-// Reads a file with a given filename expecting Safetensors file format.
-// The data is read to a solid memory block and the function returns a map of OV Constants allocated on top of that block.
 // The key in the map is a tensor name and the Constant uses a region of memory from the memory block.
 // Each Constant holds a shared pointer to the block in the runtime info.
 // The memory block will be deallocated when the last Constant is destroyed.
-ConstantMap read_safetensors(const std::filesystem::path& filename) {
-    auto buffer = read_file_helper(filename);
+ConstantMap safetensors_init(const ov::Tensor & safetensor) {
     AutoSafetensor safe_tensors_file{};
 
-    OPENVINO_ASSERT(
-        safetensors_file_init(&(*buffer)[0], buffer->size(), &safe_tensors_file) == nullptr,
-        "Cannot parse ", filename, " as a Safetensors file format. Safetensors file format is supported only"
+    OPENVINO_ASSERT(safetensors_file_init(safetensor.data<char>(), safetensor.get_byte_size(), &safe_tensors_file) == nullptr,
+        "Cannot parse safetensor as a Safetensors file format. Safetensors file format is supported only"
     );
 
     ConstantMap tensors;
@@ -139,18 +134,30 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
 
         OPENVINO_ASSERT(
             ov::shape_size(shape) <= tensor.end_offset_bytes - tensor.begin_offset_bytes,
-            "Tensor shape ", ov::shape_size(shape), " for tensor \"", name, "\" from Safetensors file \"", filename, "\" doesn't match the expected tensor size ",
+            "Tensor shape ", ov::shape_size(shape), " for tensor \"", name, "\" from Safetensors file \"", "safetensor", "\" doesn't match the expected tensor size ",
             tensor.end_offset_bytes - tensor.begin_offset_bytes);
 
         auto type = safetensors_to_ov_element_type(tensor.dtype);
         auto constant =
             std::make_shared<v0::Constant>(type, shape, ptr, nullptr);      // wraps existing memory, no ownership
-        constant->get_rt_info()["__safetensors_buffer_holder"] = buffer;    // to automatically deallocate underlying memory buffer when last constant that holds it is destroyed
+        constant->get_rt_info()["__safetensors_buffer_holder"] = safetensor;    // to automatically deallocate underlying memory buffer when last constant that holds it is destroyed
         tensors[name] = constant;
     }
     return tensors;
 }
 
+// Reads a file with a given filename expecting Safetensors file format.
+// The file data is mmaped to tensor.
+ConstantMap read_safetensors(const std::filesystem::path& filename) {
+    auto safetensor = ov::read_tensor_data(filename);
+
+    return safetensors_init(safetensor);
+}
+
+// Reads a safetensor and creates a constantmap from the memory.
+ConstantMap read_safetensors(const ov::Tensor& safetensor) {
+    return safetensors_init(safetensor);
+}
 
 // Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond to a layer name in the base model
 LoRAPartsParser default_lora_patterns () {
@@ -847,6 +854,9 @@ public:
     SafetensorsAdapterImpl(const std::filesystem::path& path) :
         tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns())) {}
 
+    SafetensorsAdapterImpl(const ov::Tensor& safetensor)
+        : tensors(group_lora_tensors(read_safetensors(safetensor), default_lora_patterns())) {}
+
     const LoRATensors& get_tensors() const override {
         return tensors;
     }
@@ -922,6 +932,10 @@ Adapter::Adapter(const std::filesystem::path& path) :
     m_pimpl(std::make_shared<SafetensorsAdapterImpl>(path)) {
 }
 
+
+Adapter::Adapter(const ov::Tensor& safetensor) :
+    m_pimpl(std::make_shared<SafetensorsAdapterImpl>(safetensor)) {
+}
 
 bool operator== (const Adapter& a, const Adapter& b) {
     return a.m_pimpl->eq(b.m_pimpl.get());
@@ -1064,23 +1078,6 @@ struct AdapterControllerImpl {
                 set_new_adapter_tensors(infer_request);
             } else if(diff.alpha)  {
                 set_new_adapter_alphas(infer_request);
-            }
-        }
-    }
-    void remove_adapters(const AdapterConfig& config) {
-        const auto &adapters1 = current_config.get_adapters(), adapters2 = config.get_adapters();
-
-        if (adapters2.size() > 0) {
-            if (adapters1.size() > 0) {
-                // if current adpater need to remove, remove from current_config.adapters
-                for (const auto& adapter1 : adapters1) {
-                    for (const auto& adapter2 : adapters2) {
-                        if (adapter1 == adapter2) {
-                            current_config.remove(adapter1);
-                            need_full_apply = true;
-                        }
-                    }
-                }
             }
         }
     }
@@ -1396,13 +1393,6 @@ void AdapterController::apply(ov::InferRequest request, const std::optional<Adap
         "Enable using adapters by pass them in the constructor first.");
     if (m_pimpl) {
         m_pimpl->apply(request, config);
-    }
-}
-
-void AdapterController::remove_adapters(const std::optional<AdapterConfig>& config) {
-    OPENVINO_ASSERT(m_pimpl || !config || !*config, "Adapters are removed.");
-    if (m_pimpl) {
-        m_pimpl->remove_adapters(*config);
     }
 }
 
