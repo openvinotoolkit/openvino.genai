@@ -406,8 +406,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
-            // The very first prefill step we don't generate new tokens, but still inference took place,
-            // so we need to add this time to the total inference duration.
+            // During prefill step (or steps if max_batch_size < prompt_len) we don't generate new tokens,
+            // but still inference took place, so we need to add this time to the total inference duration.
             raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
             if (m_batch_size > 0) {
                 const auto infer_end = std::chrono::steady_clock::now();
