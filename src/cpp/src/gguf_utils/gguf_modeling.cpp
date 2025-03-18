@@ -145,7 +145,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     std::cout << "Creating model with architecture: " << model_arch << std::endl;
     
 
-    if (!model_arch.compare("llama")) {
+    if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
         model = create_llama_model(config, consts);
     }
     else {

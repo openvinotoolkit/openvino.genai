@@ -312,24 +312,22 @@ int metadata_to_int(const std::unordered_map<std::string, GGUFMetaData>& metadat
 
 std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<std::string, GGUFMetaData>& metadata) {
     std::map<std::string, GGUFMetaData> config;
-    config["layer_num"] = metadata_to_int(metadata, "llama.block_count");
-    config["head_num"] = metadata_to_int(metadata, "llama.attention.head_count");
-    config["head_size"] = metadata_to_int(metadata, "llama.embedding_length") / 
-                     metadata_to_int(metadata, "llama.attention.head_count");
-    config["head_num_kv"] = metadata.count("llama.attention.head_count_kv") ?
-            metadata_to_int(metadata, "llama.attention.head_count_kv") :
-            metadata_to_int(metadata, "llama.attention.head_count");
-    config["hidden_size"] = metadata_to_int(metadata, "llama.embedding_length");
-    config["max_position_embeddings"] = metadata.count("llama.context_length") ?
-            metadata_to_int(metadata, "llama.context_length") : 2048;
-    config["rotary_dims"] = metadata_to_int(metadata, "llama.rope.dimension_count");
-    config["rms_norm_eps"] = metadata_to_float(metadata, "llama.attention.layer_norm_rms_epsilon");
-    config["rope_freq_base"] = metadata.count("llama.rope.freq_base") ?
-            metadata_to_float(metadata, "llama.rope.freq_base") : 10000.0f;
+    auto arch = std::get<std::string>(metadata.at("general.architecture"));
+    config["architecture"] = arch;
+    config["layer_num"] = metadata_to_int(metadata, arch + ".block_count");
+    config["head_num"] = metadata_to_int(metadata, arch + ".attention.head_count");
+    config["head_size"] = metadata_to_int(metadata, arch + ".embedding_length") / 
+                     metadata_to_int(metadata, arch + ".attention.head_count");
+    config["head_num_kv"] = metadata.count(arch + ".attention.head_count_kv") ?
+            metadata_to_int(metadata, arch + ".attention.head_count_kv") :
+            metadata_to_int(metadata, arch + ".attention.head_count");
+    config["hidden_size"] = metadata_to_int(metadata, arch + ".embedding_length");
+    config["max_position_embeddings"] = metadata.count(arch + ".context_length") ?
+            metadata_to_int(metadata, arch + ".context_length") : 2048;
+    config["rms_norm_eps"] = metadata_to_float(metadata, arch + ".attention.layer_norm_rms_epsilon");
+    config["rope_freq_base"] = metadata.count(arch + ".rope.freq_base") ?
+            metadata_to_float(metadata, arch + ".rope.freq_base") : 10000.0f;
     config["qtype"] = (int)get_quantization_type(metadata_to_int(metadata, "general.file_type"));
-
-    config["architecture"] = std::get<std::string>(metadata.at("general.architecture"));
-
     return config;
 }
 
