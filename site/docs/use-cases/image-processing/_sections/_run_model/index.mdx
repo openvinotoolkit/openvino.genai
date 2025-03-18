@@ -1,5 +1,5 @@
-import Text2ImageCPP from './_text2image_cpp.mdx';
-import Text2ImagePython from './_text2image_python.mdx';
+import CodeExampleCPP from './_code_example_cpp.mdx';
+import CodeExamplePython from './_code_example_python.mdx';
 
 ## Run Model Using OpenVINO GenAI
 
@@ -8,16 +8,14 @@ With a text prompt and an image as input, `VLMPipeline` can generate text using 
 
 See all supported [visual language models](/docs/supported-models/#visual-language-models-vlms).
 
-### `Text2ImagePipeline`
-
 <LanguageTabs>
     <TabItemPython>
         <Tabs groupId="device">
             <TabItem label="CPU" value="cpu">
-                <Text2ImagePython device="CPU" />
+                <CodeExamplePython device="CPU" />
             </TabItem>
             <TabItem label="GPU" value="gpu">
-                <Text2ImagePython device="GPU" />
+                <CodeExamplePython device="GPU" />
             </TabItem>
         </Tabs>
     </TabItemPython>
@@ -27,7 +25,7 @@ See all supported [visual language models](/docs/supported-models/#visual-langua
                 <CodeExampleCPP device="CPU" />
             </TabItem>
             <TabItem label="GPU" value="gpu">
-                <Text2ImageCPP device="GPU" />
+                <CodeExampleCPP device="GPU" />
             </TabItem>
         </Tabs>
     </TabItemCpp>
@@ -38,53 +36,3 @@ See all supported [visual language models](/docs/supported-models/#visual-langua
 Use CPU or GPU as devices without any other code change.
 
 :::
-
-### `Image2ImagePipeline`
-
-<LanguageTabs>
-    <TabItemPython>
-        <Tabs groupId="device">
-            <TabItem label="CPU" value="cpu">
-                <Image2ImagePython device="CPU" />
-            </TabItem>
-            <TabItem label="GPU" value="gpu">
-                <Image2ImagePython device="GPU" />
-            </TabItem>
-        </Tabs>
-    </TabItemPython>
-    <TabItemCpp>
-        <Tabs groupId="device">
-            <TabItem label="CPU" value="cpu">
-                <Image2ImageCPP device="CPU" />
-            </TabItem>
-            <TabItem label="GPU" value="gpu">
-                <Image2ImageCPP device="GPU" />
-            </TabItem>
-        </Tabs>
-    </TabItemCpp>
-</LanguageTabs>
-
-### `InpaintingPipeline`
-
-<LanguageTabs>
-    <TabItemPython>
-        <Tabs groupId="device">
-            <TabItem label="CPU" value="cpu">
-                <InpaintingPython device="CPU" />
-            </TabItem>
-            <TabItem label="GPU" value="gpu">
-                <InpaintingPython device="GPU" />
-            </TabItem>
-        </Tabs>
-    </TabItemPython>
-    <TabItemCpp>
-        <Tabs groupId="device">
-            <TabItem label="CPU" value="cpu">
-                <InpaintingCPP device="CPU" />
-            </TabItem>
-            <TabItem label="GPU" value="gpu">
-                <InpaintingCPP device="GPU" />
-            </TabItem>
-        </Tabs>
-    </TabItemCpp>
-</LanguageTabs>
