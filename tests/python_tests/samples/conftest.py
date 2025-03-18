@@ -77,6 +77,10 @@ MODELS = {
         "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
         "convert_args": []
     },
+    "tiny-random-minicpmv-2_6": {
+        "name": "katuni4ka/tiny-random-minicpmv-2_6",
+        "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
+    },
     "InternVL2-1B": {
         "name": "OpenGVLab/InternVL2-1B",
         "convert_args": ['--trust-remote-code']
@@ -92,8 +96,9 @@ TEST_FILES = {
     "adapter_model.safetensors": "https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors",
     "monalisa.jpg": "https://llava-vl.github.io/static/images/monalisa.jpg",
     "soulcard.safetensors": "https://civitai.com/api/download/models/72591",
-    "image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png",
-    "mask_image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png"
+    "ShareGPT_V3_unfiltered_cleaned_split.json": "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json",
+    "images/image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png",
+    "mask_image.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png",
 }
 
 SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python")))
@@ -198,13 +203,43 @@ def download_test_content(request):
     file_url = TEST_FILES[file_name]
     file_path = os.path.join(test_data, file_name)
     if not os.path.exists(file_path):
-        logger.info(f"Downloading test content from {file_url}...")
+        logger.info(f"Downloading test content from {file_url} to {file_path}...")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
         response = requests.get(file_url, stream=True)
         response.raise_for_status()
         with open(file_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
         logger.info(f"Downloaded test content to {file_path}")
+    else:
+        logger.info(f"Test content already exists at {file_path}")
+    yield file_path
+    # Cleanup the test content after tests
+    if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
+        if os.path.exists(file_path):
+            logger.info(f"Removing test content: {file_path}")
+            os.remove(file_path)
+
+
+@pytest.fixture(scope="session")
+def generate_test_content(request):
+    """Generate an image of lines and return the file path."""
+    
+    test_data = request.config.cache.get("TEST_DATA", None)
+    
+    file_name = request.param
+    file_path = os.path.join(test_data, file_name)
+    if not os.path.exists(file_path):
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        from PIL import Image
+        import numpy as np
+        res = 28, 28
+        lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
+        lines = lines.reshape([*res, 3])
+        lines_image = Image.fromarray(lines)
+        lines_image.save(file_path)
+        logger.info(f"Generated test content {file_path}")
     else:
         logger.info(f"Test content already exists at {file_path}")
     yield file_path

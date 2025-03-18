@@ -7,7 +7,6 @@
 #include "utils.hpp"
 
 #include <fstream>
-#include <regex>
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/core/parallel.hpp"
