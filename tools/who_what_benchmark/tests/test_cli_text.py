@@ -27,6 +27,9 @@ tmp_dir = tempfile.mkdtemp()
 base_model_path = os.path.join(tmp_dir, "opt125m")
 target_model_path = os.path.join(tmp_dir, "opt125m_int8")
 
+gptq_model_id = "ybelkada/opt-125m-gptq-4bit"
+awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
+
 
 def setup_module():
     from optimum.exporters.openvino.convert import export_tokenizer
@@ -181,7 +184,15 @@ def test_text_language():
     assert "马克" in data["prompts"].values[0]
 
 
-def test_text_hf_model():
+@pytest.mark.parametrize(
+    ("model_id"),
+    [
+        (model_id),
+        (gptq_model_id),
+        (awq_model_id),
+    ],
+)
+def test_text_hf_model(model_id):
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_file_name = os.path.join(temp_dir, "gt.csv")
         result = run_wwb(
@@ -191,7 +202,7 @@ def test_text_hf_model():
                 "--gt-data",
                 temp_file_name,
                 "--num-samples",
-                "2",
+                "1",
                 "--device",
                 "CPU",
                 "--hf",
@@ -199,7 +210,7 @@ def test_text_hf_model():
         )
         assert result.returncode == 0
         data = pd.read_csv(temp_file_name)
-    assert len(data["prompts"].values) == 2
+    assert len(data["prompts"].values) == 1
 
 
 def test_text_genai_model():

@@ -5,7 +5,7 @@ import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
 from diffusers import DiffusionPipeline, AutoPipelineForImage2Image, AutoPipelineForInpainting
 
-from .utils import patch_awq_for_inference, mock_torch_cuda_is_available
+from .utils import mock_torch_cuda_is_available
 
 
 logging.basicConfig(level=logging.INFO)
@@ -99,7 +99,7 @@ def load_text_hf_pipeline(model_id, device):
             # infer in FP32
             model_kwargs["torch_dtype"] = torch.float32
         with mock_torch_cuda_is_available(is_gptq or is_awq):
-            model = AutoModelForCausalLM.from_pretrained(model_id, device_map="cpu", **model_kwargs)
+            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map="cpu", **model_kwargs)
         if is_awq:
             model.is_awq = is_awq
     else:
