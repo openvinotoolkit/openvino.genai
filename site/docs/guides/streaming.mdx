@@ -146,7 +146,7 @@ You can also create your custom streamer for more sophisticated processing:
         int main(int argc, char* argv[]) {
             std::string prompt;
             // highlight-next-line
-            CustomStreamer custom_streamer;
+            std::shared_ptr<CustomStreamer> custom_streamer;
 
             std::string model_path = argv[1];
             ov::genai::LLMPipeline pipe(model_path, "CPU");
