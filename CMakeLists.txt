@@ -30,7 +30,7 @@ if(UNIX AND NOT (APPLE OR ANDROID OR CYGWIN))
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2025.1.0.0
+        VERSION 2025.2.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
@@ -107,7 +107,7 @@ if(NOT DEFINED CPACK_ARCHIVE_COMPONENT_INSTALL)
 endif()
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 # Workaround https://gitlab.kitware.com/cmake/cmake/-/issues/2614
-set(CPACK_COMPONENTS_ALL core_genai core_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_docs)
+set(CPACK_COMPONENTS_ALL core_genai core_genai_dev core_c_genai core_c_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_docs)
 if(ENABLE_PYTHON)
     list(APPEND CPACK_COMPONENTS_ALL pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
 endif()

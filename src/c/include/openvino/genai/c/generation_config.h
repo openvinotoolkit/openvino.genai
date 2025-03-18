@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 #include "openvino/c/ov_common.h"
-#include "openvino/genai/visibility.hpp"
+#include "openvino/genai/c/visibility.h"
 
 /**
  * @brief controls the stopping condition for grouped beam search. The following values are possible:

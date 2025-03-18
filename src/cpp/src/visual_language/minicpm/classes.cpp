@@ -7,11 +7,12 @@
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
-#include <regex>
 
 namespace ov::genai {
 
 namespace {
+
+std::string NATIVE_TAG = "<image>./</image>";
 
 int ensure_divide(int length, int patch_size) {
     return std::max(static_cast<int>(std::round(static_cast<float>(length) / patch_size) * patch_size), patch_size);
@@ -403,13 +404,15 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
 } // namespace
 
 EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+    ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     clip_ctx ctx_clip;
     ctx_clip.image_size = config.image_size;
     std::copy(config.norm_mean.begin(), config.norm_mean.end(), ctx_clip.image_mean);
     std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
-    return llava_image_embed_make_with_bytes_slice(ctx_clip, image, m_vision_encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
+    return llava_image_embed_make_with_bytes_slice(ctx_clip, image, encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
 }
 
 namespace {
@@ -537,52 +540,6 @@ void adjust_pos_cache(
     }
 }
 
-/// @brief Check if universal tag is given.
-/// Check if native tag is given.
-/// Assert different tag aren't mixed.
-/// If no any tag, prepend universal image tag.
-/// If native tag, assume incremental image order.
-/// Else replace universal tags with native tags and save image order.
-std::pair<std::string, std::vector<size_t>> unify_prompt(const std::string& prompt, const std::string& native_tag, size_t n_new_images, size_t n_prev_images) {
-    std::regex universal_pattern(R"(<ov_genai_image_(\d+)>)");
-    bool found_universal_tag = std::regex_search(prompt, universal_pattern);
-    bool found_minicpm_tag = prompt.find(native_tag) != std::string::npos;
-    OPENVINO_ASSERT(!(found_universal_tag && found_minicpm_tag), "Prompt can contain only one type of image tags.");
-    std::stringstream images_prompt;
-    if (!found_universal_tag && ! found_minicpm_tag) {
-        for (size_t i = n_prev_images; i < n_new_images + n_prev_images; ++i) {
-            images_prompt << "<ov_genai_image_" << i << ">\n";
-        }
-    }
-    images_prompt << prompt;
-
-    std::vector<size_t> images_sequence;
-    std::string unified_prompt = images_prompt.str();
-    std::sregex_iterator end_it;
-    if (found_minicpm_tag) {
-        size_t pos = 0;
-        while ((pos = unified_prompt.find(native_tag, pos)) != std::string::npos) {
-            images_sequence.push_back(n_prev_images + images_sequence.size());
-            pos += native_tag.length();
-        }
-        OPENVINO_ASSERT(images_sequence.size() == n_new_images);
-    } else {
-        bool found = true;
-        while (found) {
-            found = false;
-            for (std::sregex_iterator it(unified_prompt.begin(), unified_prompt.end(), universal_pattern); it != end_it; ++it) {
-                images_sequence.push_back(std::stoi((*it)[1].str()));
-                OPENVINO_ASSERT(images_sequence.back() < n_new_images + n_prev_images, "Missing image ", images_sequence.back());
-                OPENVINO_ASSERT(n_prev_images <= images_sequence.back(), "Referring to older images isn't implemented");
-                unified_prompt.replace(it->position(), it->length(), native_tag);
-                found = true;
-                break;
-            }
-        }
-    }
-    return {std::move(unified_prompt), std::move(images_sequence)};
-}
-
 } // namespace
 
 InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
@@ -594,7 +551,11 @@ InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     auto compiled_model =
         utils::singleton_core().compile_model(model_dir / "openvino_resampler_model.xml", device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM resampler model");
-    m_resampler = compiled_model.create_infer_request();
+    m_ireq_queue_resampler = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
     m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
 }
 
@@ -606,39 +567,38 @@ InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    m_resampler = utils::singleton_core().compile_model(
+    auto compiled_model = utils::singleton_core().compile_model(
         utils::get_model_weights_pair(models_map, "resampler").first,
         utils::get_model_weights_pair(models_map, "resampler").second,
         device,
-        device_config
-    ).create_infer_request();
+        device_config);
+    m_ireq_queue_resampler = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
     m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
 }
 
-ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
-    std::string images_prompt;
-    std::vector<EncodedImage> embeds;
-
-    std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
-
-    for (const ov::Tensor& image : single_images) {
-        embeds.push_back(m_vision_encoder->encode(image));
-    }
-
-    size_t n_prev_images = m_image_id;
-    std::string native_tag = "<image>./</image>";
-    auto [unified_prompt, images_sequence] = unify_prompt(prompt, native_tag, embeds.size(), n_prev_images);
+ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+    auto [unified_prompt, images_sequence] = normalize_prompt(
+        prompt,
+        NATIVE_TAG,
+        '(' + NATIVE_TAG + ")\n",
+        m_image_id,
+        images.size()
+    );
 
     std::string unk64;
     for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
         unk64 += m_vlm_config.unk;
     }
 
-    for (const EncodedImage& encoded_image : embeds) {
+    for (size_t new_image_id : images_sequence) {
+        const EncodedImage& encoded_image = images.at(new_image_id - m_prev_image_id);
         std::string expanded_tag;
         if (m_vlm_config.use_image_id) {
-            expanded_tag += m_vlm_config.im_id_start + std::to_string(m_image_id) + m_vlm_config.im_id_end;
-            ++m_image_id;
+            expanded_tag += m_vlm_config.im_id_start + std::to_string(new_image_id) + m_vlm_config.im_id_end;
         }
         expanded_tag += m_vlm_config.im_start + unk64 + m_vlm_config.im_end;
         if (encoded_image.slices) {
@@ -651,12 +611,13 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
             }
             expanded_tag.pop_back();  // Equivalent of python "\n".join(slices).
         }
-        unified_prompt.replace(unified_prompt.find(native_tag), native_tag.length(), expanded_tag);
+        unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
     }
+    m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
 
     ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
 
-    ov::Tensor inputs_embeds = m_embedding.infer(encoded_input);
+    ov::Tensor inputs_embeds = m_embedding->infer(encoded_input);
     OPENVINO_ASSERT(
         m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
         "Unexpected embedding size"
@@ -686,7 +647,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     int64_t* end = ids + encoded_input_size;
     float* inputs_embeds_data = inputs_embeds.data<float>();
     for (size_t image_id : images_sequence) {
-        const EncodedImage& encoded_image = embeds.at(image_id - n_prev_images);
+        const EncodedImage& encoded_image = images.at(image_id - m_prev_image_id);
         const ov::Tensor& resampled_source = resample(encoded_image.resized_source, {encoded_image.resized_source_size});
         float* emb = resampled_source.data<float>();
         ids = std::find(ids, end, im_start_id);
@@ -715,6 +676,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
 
     if (!m_is_chat_conversation) {
         m_image_id = 0;
+        m_prev_image_id = 0;
     }
     return inputs_embeds;
 }
@@ -729,12 +691,16 @@ void InputsEmbedderMiniCPM::update_chat_history(const std::string& decoded_resul
 
 void InputsEmbedderMiniCPM::start_chat(const std::string& system_message) {
     IInputsEmbedder::start_chat(system_message);
-    m_image_id = 0;
+    m_prev_image_id = 0;
 }
 
 void InputsEmbedderMiniCPM::finish_chat() {
     IInputsEmbedder::finish_chat();
-    m_image_id = 0;
+    m_prev_image_id = 0;
+}
+
+bool InputsEmbedderMiniCPM::prompt_has_image_tag(const std::string& prompt) const {
+    return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(NATIVE_TAG) != std::string::npos;
 }
 
 ov::Tensor InputsEmbedderMiniCPM::resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes) {
@@ -775,11 +741,13 @@ ov::Tensor InputsEmbedderMiniCPM::resample(const ov::Tensor& encoded_image, cons
         std::fill_n(mask_data + i * max_patch_len, patch_len[i], 0.0f);
         std::fill_n(mask_data + i * max_patch_len + patch_len[i], max_patch_len - patch_len[i], 1.0f);
     }
-    m_resampler.set_tensor("image_feature", encoded_image);  // [N, H*W, old_hidden_size]
-    m_resampler.set_tensor("pos_embed", pos_embed);  // [H*W, N, new_hidden_size]
-    m_resampler.set_tensor("key_padding_mask", key_padding_mask);  // [N, H*W]
-    m_resampler.infer();
-    return m_resampler.get_output_tensor();  // [N, query_num, new_hidden_size]
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_resampler.get());
+    ov::InferRequest& resampler = infer_request_guard.get();
+    resampler.set_tensor("image_feature", encoded_image);  // [N, H*W, old_hidden_size]
+    resampler.set_tensor("pos_embed", pos_embed);  // [H*W, N, new_hidden_size]
+    resampler.set_tensor("key_padding_mask", key_padding_mask);  // [N, H*W]
+    resampler.infer();
+    return resampler.get_output_tensor();  // [N, query_num, new_hidden_size]
 }
 
 } // namespace ov::genai

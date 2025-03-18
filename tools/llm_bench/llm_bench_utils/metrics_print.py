@@ -96,24 +96,44 @@ def print_unicode(text, on_error="Unable print", loglevel="info"):
             log.warning(on_error)
 
 
-def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx=-1):
-    iter_data['first_token_latency'] = stable_diffusion.get_1st_unet_latency()
-    iter_data['other_tokens_avg_latency'] = stable_diffusion.get_2nd_unet_latency()
+def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion=None, prompt_idx=-1):
+    if (len(stable_diffusion.raw_metrics.unet_inference_durations) != 0):
+        main_model_name = "unet"
+        first_token_latency, other_tokens_latency = stable_diffusion.get_first_and_other_unet_infer_duration()
+    else:
+        main_model_name = "transformer"
+        first_token_latency, other_tokens_latency = stable_diffusion.get_first_and_other_trans_infer_duration()
+    iter_data['first_token_latency'] = first_token_latency
+    iter_data['other_tokens_avg_latency'] = other_tokens_latency
     iter_data['first_token_infer_latency'] = iter_data['first_token_latency']
     iter_data['other_tokens_infer_avg_latency'] = iter_data['other_tokens_avg_latency']
+
     prefix = f'[{iter_str}][P{prompt_idx}]'
-    log.info(f"{prefix} First step of {stable_diffusion.main_model_name} latency: {iter_data['first_token_latency']:.2f} ms/step, "
-             f"other steps of {stable_diffusion.main_model_name} latency: {iter_data['other_tokens_avg_latency']:.2f} ms/step",)
-    has_text_encoder_time = stable_diffusion.get_text_encoder_step_count() != -1
-    log_str = (
-        f"{prefix} Text encoder latency: {stable_diffusion.get_text_encoder_latency():.2f}" if has_text_encoder_time else f"{prefix} Text encoder latency: N/A "
-        f"{stable_diffusion.main_model_name} latency: {stable_diffusion.get_unet_latency():.2f} ms/step, "
-        f"vae decoder latency: {stable_diffusion.get_vae_decoder_latency():.2f} ms/step, ")
-    if has_text_encoder_time:
-        log_str += f"text encoder step count: {stable_diffusion.get_text_encoder_step_count()}, "
+    log.info(f"{prefix} First step of {main_model_name} latency: {iter_data['first_token_latency']:.2f} ms/step, "
+             f"other steps of {main_model_name} latency: {iter_data['other_tokens_avg_latency']:.2f} ms/step",)
+
+    log_str = f"{prefix} "
+    if (len(stable_diffusion.get_text_encoder_infer_duration().keys())):
+        log_str += "Text encoder latency: "
+        for text_enc_name, duration in stable_diffusion.get_text_encoder_infer_duration().items():
+            log_str += f"{text_enc_name} {duration:.2f} ms/step, "
+    else:
+        log_str += "Text encoder latency: N/A "
+
     log_str += (
-        f"{stable_diffusion.main_model_name} step count: {stable_diffusion.get_unet_step_count()}, "
-        f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}")
+        f"{main_model_name} latency: {stable_diffusion.get_unet_infer_duration().mean:.2f} ms/step, "
+        f"vae decoder latency: {stable_diffusion.get_vae_decoder_infer_duration():.2f} ms/step, ")
+
+    if hasattr(stable_diffusion, 'get_text_encoder_step_count'):
+        log_str += f"text encoder step count: {stable_diffusion.get_text_encoder_step_count()}, "
+
+    log_str += f"{main_model_name} step count: {len(stable_diffusion.raw_metrics.unet_inference_durations)} , "
+
+    if hasattr(stable_diffusion, 'get_vae_decoder_step_count'):
+        log_str += f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}, "
+    else:
+        log_str += "vae decoder step count: 1 "
+
     log.info(log_str)
 
 

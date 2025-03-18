@@ -438,8 +438,7 @@ public:
         set_state_if_necessary(infer_request_guard, tokenization_params);
         size_t batch_size = 1;
         infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
-        infer_request_guard.get().start_async();
-        infer_request_guard.get().wait();
+        infer_request_guard.get().infer();
 
         return get_copied_results(
             infer_request_guard.get().get_tensor("input_ids"),
@@ -457,8 +456,7 @@ public:
             set_state_if_necessary(infer_request_guard, tokenization_params);
             infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
             auto size_ = infer_request_guard.get().get_input_tensor().get_shape();
-            infer_request_guard.get().start_async();
-            infer_request_guard.get().wait();
+            infer_request_guard.get().infer();
 
             unpadded = get_copied_results(
                 infer_request_guard.get().get_tensor("input_ids"),
@@ -485,8 +483,7 @@ public:
         set_state_if_necessary(infer_request_guard, detokenization_params);
         size_t batch_size = 1;
         infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
-        infer_request_guard.get().start_async();
-        infer_request_guard.get().wait();
+        infer_request_guard.get().infer();
         return infer_request_guard.get().get_output_tensor().data<std::string>()[0];
     }
 
@@ -498,8 +495,7 @@ public:
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
         set_state_if_necessary(infer_request_guard, detokenization_params);
         infer_request_guard.get().set_input_tensor(tokens);
-        infer_request_guard.get().start_async();
-        infer_request_guard.get().wait();
+        infer_request_guard.get().infer();
 
         auto res = infer_request_guard.get().get_output_tensor();
         auto res_data = res.data<std::string>();
@@ -527,8 +523,7 @@ public:
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
         set_state_if_necessary(infer_request_guard, detokenization_params);
         infer_request_guard.get().set_input_tensor(tokens);
-        infer_request_guard.get().start_async();
-        infer_request_guard.get().wait();
+        infer_request_guard.get().infer();
         auto res = infer_request_guard.get().get_output_tensor();
         auto res_data = res.data<std::string>();
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
