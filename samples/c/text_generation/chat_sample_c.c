@@ -8,7 +8,6 @@
 #include "openvino/genai/c/llm_pipeline.h"
 
 #define MAX_PROMPT_LENGTH 64
-#define MAX_OUTPUT_LENGTH 1024
 
 #define CHECK_STATUS(return_status)                                                      \
     if (return_status != OK) {                                                           \
