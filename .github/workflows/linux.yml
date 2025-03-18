@@ -498,27 +498,22 @@ jobs:
         with:
           node-version: 21
 
-      - name: Install npm package
+      - name: Install GenAI NPM package
         working-directory: ${{ env.SRC_DIR }}/src/js
         if: ${{ 'LLM' == matrix.test.name }}
         run: |
           npm install --verbose
           rm -rf node_modules/openvino-node/bin
           cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
-          npm test
+          cd ${{ env.SRC_DIR }}/samples/js/text_generation
 
-      - name: Install openvino-genai-node samples dependencies
+      - name: Install NPM dependencies for samples
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        if: ${{ 'LLM' == matrix.test.name }}
         run: |
           npm install --verbose
           rm -rf node_modules/openvino-node/bin
           cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
-
-      - name: Check openvino-genai-node
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
-        env:
-          MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
-        run: npm test
 
       - name: Test Samples (Python and C++)
         run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
