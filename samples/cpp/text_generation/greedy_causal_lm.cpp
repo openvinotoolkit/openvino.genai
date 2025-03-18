@@ -16,6 +16,7 @@ int main(int argc, char* argv[]) try {
     config.max_new_tokens = 100;
     std::string result = pipe.generate(prompt, config);
     std::cout << result << std::endl;
+
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
