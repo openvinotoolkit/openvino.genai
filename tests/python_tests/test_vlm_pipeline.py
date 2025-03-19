@@ -178,8 +178,8 @@ def test_vlm_continuous_batching_vs_stateful(config, cache):
 
         res_stateful = stateful_pipe.generate(prompts[0], images=images, generation_config=generation_config)
         for out_idx, text in enumerate(res_stateful.texts):
-            assert text == res_cb[idx][0].m_generation_ids[out_idx]
-            assert abs(res_stateful.scores[out_idx] - res_cb[idx][0].m_scores[out_idx]) < eps
+            assert text == res_cb[idx][0].texts[out_idx]
+            assert abs(res_stateful.scores[out_idx] - res_cb[idx][0].scores[out_idx]) < eps
 
 
 
@@ -287,7 +287,8 @@ def test_sampling(config, cache):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_perf_metrics(cache):
+@pytest.mark.parametrize("scheduler_config", [SchedulerConfig(), None])
+def test_perf_metrics(cache, scheduler_config):
     import numpy as np
     from time import perf_counter_ns
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6", cache)
@@ -297,7 +298,11 @@ def test_perf_metrics(cache):
     max_new_tokens = 30
 
     start_time = perf_counter_ns()
-    pipe = VLMPipeline(models_path, "CPU")
+    if scheduler_config:
+        pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config)
+    else:
+        pipe = VLMPipeline(models_path, "CPU")
+    
     start_generate = perf_counter_ns()
     result = pipe.generate(prompts[0], images=images, generation_config=GenerationConfig(max_new_tokens=max_new_tokens))
     generate_time = (perf_counter_ns() - start_generate) / 1_000_000.0
@@ -315,6 +320,7 @@ def test_perf_metrics(cache):
     assert 0 < perf_metrics.get_tpot().mean < generate_time / num_tokens
     assert 0 < perf_metrics.get_ipot().mean < generate_time / num_tokens
     assert num_tokens / (generate_time / 1000.0) < perf_metrics.get_throughput().mean < num_tokens / ((generate_time - perf_metrics.get_ttft().mean) / 1000.0)
+
     assert 0 < perf_metrics.get_inference_duration().mean < generate_time
     assert 0 < perf_metrics.get_generate_duration().mean < generate_time
     assert 0 < perf_metrics.get_tokenization_duration().mean < generate_time
