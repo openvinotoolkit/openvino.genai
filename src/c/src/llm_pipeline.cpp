@@ -90,7 +90,7 @@ void ov_genai_llm_pipeline_free(ov_genai_llm_pipeline* pipe) {
 ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                            const char* inputs,
                                            const ov_genai_generation_config* config,
-                                           const stream_callback* streamer,
+                                           const streamer_callback* streamer,
                                            ov_genai_decoded_results** results) {
     if (!pipe || !(pipe->object) || !inputs || !(streamer || results)) {
         return ov_status_e::INVALID_C_PARAM;
@@ -102,7 +102,7 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
         ov::genai::StringInputs input = {input_str};
         if (streamer) {
             auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
-                return static_cast<ov::genai::StreamingStatus>((*streamer)(word.c_str()));
+                return static_cast<ov::genai::StreamingStatus>((streamer->callback_func)(word.c_str(), streamer->args));
             };
             *(_results->object) = (config && config->object)
                                       ? pipe->object->generate(input, *(config->object), callback)
