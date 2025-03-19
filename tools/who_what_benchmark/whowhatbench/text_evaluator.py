@@ -187,16 +187,20 @@ class TextEvaluator(BaseEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False):
+            device = "cpu"
+            if hasattr(model, "device"):
+                device = model.device
+
             if use_chat_template:
                 message = [{"role": "user", "content": prompt}]
-                inputs = tokenizer.apply_chat_template(message, tokenize=True, add_generation_prompt=True, return_tensors="pt")
+                inputs = tokenizer.apply_chat_template(message, tokenize=True, add_generation_prompt=True, return_tensors="pt").to(device)
                 tokens = model.generate(inputs, do_sample=False, max_new_tokens=max_new_tokens)
                 if crop_question:
                     tokens = tokens[:, inputs.shape[-1]:]
                 res = self.tokenizer.decode(tokens[0], skip_special_tokens=True)
                 return res
             else:
-                inputs = self.tokenizer(prompt, return_tensors="pt")
+                inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
                 tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
                 if crop_question:
                     tokens = tokens[:, inputs["input_ids"].shape[-1] :]
