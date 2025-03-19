@@ -748,6 +748,7 @@ public:
      * @param num_blocks The new number of KV-blocks.
      */
     void increase_kv_blocks_number(size_t num_blocks) {
+        std::cout << "VSHAMPOR: block size increased to " << num_blocks << std::endl;
         m_allocator.increase_kv_blocks_number(num_blocks);
     }
 
