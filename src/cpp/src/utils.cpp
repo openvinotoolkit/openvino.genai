@@ -418,8 +418,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                         const ov::AnyMap& config,
-                        const KVAxesPosition& kv_pos,
-                        const std::filesystem::path& model_path) {
+                        const KVAxesPosition& kv_pos) {
     ov::CompiledModel compiled;
     ov::AnyMap properties = config;
     KVDesc kv_desc;
