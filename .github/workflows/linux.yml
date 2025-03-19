@@ -240,7 +240,7 @@ jobs:
     name: Store build artifacts
     strategy:
       matrix:
-        build_type: [Release]
+        build-type: [Release]
     needs: [openvino_download, genai_build_wheel, genai_build_cmake]
     timeout-minutes: 10
     defaults:
