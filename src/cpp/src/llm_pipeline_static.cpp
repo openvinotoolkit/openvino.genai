@@ -14,7 +14,6 @@
 #include "openvino/genai/text_streamer.hpp"
 
 #include <jinja2cpp/user_callable.h>
-#include "lora_helper.hpp"
 
 namespace {
 
