@@ -1,19 +1,31 @@
-import CodeExampleCPP from './_code_example_cpp.mdx';
-import CodeExamplePython from './_code_example_python.mdx';
+import Text2ImageCPP from './_text2image_cpp.mdx';
+import Text2ImagePython from './_text2image_python.mdx';
 
-## Run Model Using OpenVINO™ GenAI
+import Image2ImageCPP from './_image2image_cpp.mdx';
+import Image2ImagePython from './_image2image_python.mdx';
 
-OpenVINO GenAI introduces `Text2ImagePipeline` for inference of text-to-image models such as Stable Diffusion 1.5, 2.1, XL, LCM, Flux, and more.
+import InpaintingCPP from './_inpainting_cpp.mdx';
+import InpaintingPython from './_inpainting_python.mdx';
+
+## Run Model Using OpenVINO GenAI
+
+OpenVINO GenAI supports the following diffusion model pipelines:
+- `Text2ImagePipeline` for creating images from text prompts.
+- `Image2ImagePipeline` for modifying existing images based on prompts.
+- `InpaintingPipeline` for selectively replacing portions of images using masks.
+
 See all supported [image generation models](/docs/supported-models/#image-generation-models).
+
+### `Text2ImagePipeline`
 
 <LanguageTabs>
     <TabItemPython>
         <Tabs groupId="device">
             <TabItem label="CPU" value="cpu">
-                <CodeExamplePython device="CPU" />
+                <Text2ImagePython device="CPU" />
             </TabItem>
             <TabItem label="GPU" value="gpu">
-                <CodeExamplePython device="GPU" />
+                <Text2ImagePython device="GPU" />
             </TabItem>
         </Tabs>
     </TabItemPython>
@@ -27,10 +39,10 @@ See all supported [image generation models](/docs/supported-models/#image-genera
                 or [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67) blog for full instruction.
 
                 :::
-                <CodeExampleCPP device="CPU" />
+                <Text2ImageCPP device="CPU" />
             </TabItem>
             <TabItem label="GPU" value="gpu">
-                <CodeExampleCPP device="GPU" />
+                <Text2ImageCPP device="GPU" />
             </TabItem>
         </Tabs>
     </TabItemCpp>
@@ -41,3 +53,53 @@ See all supported [image generation models](/docs/supported-models/#image-genera
 Use CPU or GPU as devices without any other code change.
 
 :::
+
+### `Image2ImagePipeline`
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Image2ImagePython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Image2ImagePython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Image2ImageCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Image2ImageCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>
+
+### `InpaintingPipeline`
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <InpaintingPython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <InpaintingPython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <InpaintingCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <InpaintingCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>
