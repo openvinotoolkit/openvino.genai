@@ -116,7 +116,7 @@ jobs:
         with:
           repos: |
             ${{ env.SRC_DIR }}
-          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }})
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
           target_arch: 'x86_64'
           build_type: ${{ matrix.build-type }}
           save_to: ${{ env.MANIFEST_PATH }}
@@ -253,17 +253,29 @@ jobs:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
     env:
+      CPACK_PATH: ${{ github.workspace }}/ov_genai
       CPACK_PACKAGE: ${{ github.workspace }}/ov_genai.tar.gz
       WHEEL_PACKAGE: ${{ github.workspace }}/wheels
       MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
 
     steps:
-      - name: Download genai package & manifest
+      - name: Download genai package
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
-          pattern: "{${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build_type }},manifest_${{ matrix.build_type }}}"
+          name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
+          path: ${{ env.CPACK_PATH }}
+
+      - name: Pack Artifacts
+        run: |
+          pushd ${CPACK_PATH}
+            tar -czvf ${CPACK_PACKAGE} *
+          popd
+
+      - name: Download manifest
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: manifest_${{ matrix.build-type }}
           path: ${{ github.workspace }}
-          merge-multiple: true
 
       - name: Download genai wheels
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9

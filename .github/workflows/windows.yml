@@ -159,6 +159,16 @@ jobs:
       #
       # Upload build artifacts
       #
+
+      - name: Pack Artifacts
+        run: |
+          $file=Get-ChildItem -Path "${{ GENAI_INSTALL_DIR }}"
+          $compress = @{
+            Path = $file
+            CompressionLevel = "Optimal"
+            DestinationPath = "${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip"
+          }
+          Compress-Archive @compress
       
       - name: Save ccache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
@@ -172,9 +182,9 @@ jobs:
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: genai_cpack_${{ matrix.build-type }}
-          path: ${{ env.GENAI_INSTALL_DIR }}
+          path: ${{ env.BUILD_DIR }}/*.zip
           if-no-files-found: 'error'
-          
+
       - name: Upload Tools
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -182,7 +192,7 @@ jobs:
           name: genai_tools_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TOOLS_DIR }}
           if-no-files-found: 'error'
-        
+
       - name: Upload Tests
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -321,17 +331,29 @@ jobs:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
     env:
+      CPACK_PATH: ${{ github.workspace }}/ov_genai
       CPACK_PACKAGE: ${{ github.workspace }}/ov_genai.zip
       WHEEL_PACKAGE: ${{ github.workspace }}/wheels
       MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
 
     steps:
-      - name: Download genai package & manifest
+      - name: Download genai package
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
-          pattern: "{${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }},manifest_${{ matrix.build-type }}}"
+          name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
+          path: ${{ env.CPACK_PATH }}
+
+      - name: Pack Artifacts
+        run: |
+          pushd ${CPACK_PATH}
+            tar -czvf ${CPACK_PACKAGE} *
+          popd
+
+      - name: Download manifest
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: manifest_${{ matrix.build-type }}
           path: ${{ github.workspace }}
-          merge-multiple: true
 
       - name: Download genai wheels
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
