@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 import logging
 import json
+import sys
 
 from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
@@ -184,13 +185,17 @@ def test_text_language():
     assert "马克" in data["prompts"].values[0]
 
 
-@pytest.mark.parametrize(
-    ("model_id"),
-    [
-        (model_id),
+hf_model_scope = [
+    (model_id),
+]
+if sys.platform != 'darwin':
+    hf_model_scope += [
         (gptq_model_id),
         (awq_model_id),
-    ],
+    ]
+@pytest.mark.parametrize(
+    ("model_id"),
+    hf_model_scope,
 )
 def test_text_hf_model(model_id):
     with tempfile.TemporaryDirectory() as temp_dir:
