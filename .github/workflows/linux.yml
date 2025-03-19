@@ -271,6 +271,18 @@ jobs:
           name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
           path: ${{ env.WHEEL_PACKAGE }}
 
+      - name: Store ${{ matrix.build_type }} artifacts to a shared drive
+        id: store_artifacts
+        if: ${{ always() }}
+        uses: openvinotoolkit/openvino/.github/actions/store_artifacts@master
+        with:
+          artifacts: |
+            ${{ env.CPACK_PACKAGE }}
+            ${{ env.WHEEL_PACKAGE }}
+            ${{ env.MANIFEST_PATH }}
+          storage_dir: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          storage_root: ${{ env.ARTIFACTS_SHARE }}
+
   genai_build_samples:
     name: Build Samples - ${{ matrix.build-type }}
     strategy:
