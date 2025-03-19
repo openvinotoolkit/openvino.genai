@@ -27,6 +27,10 @@ env:
   HF_HOME: /mount/caches/huggingface
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
+  ARTIFACTS_SHARE: '/mount/build-artifacts'
+  BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
+  GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
+  GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
 
 jobs:
   openvino_download:
@@ -97,6 +101,7 @@ jobs:
       INSTALL_TESTS_DIR: ${{ github.workspace }}/tests
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
+      MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
 
     steps:
       - name: Clone openvino.genai
@@ -104,6 +109,17 @@ jobs:
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
+
+      - name: Generate product manifest
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: |
+            ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }})
+          target_arch: 'x86_64'
+          build_type: ${{ matrix.build-type }}
+          save_to: ${{ env.MANIFEST_PATH }}
 
       - name: Download OpenVINO package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
@@ -147,6 +163,14 @@ jobs:
         with:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
+          if-no-files-found: 'error'
+
+      - name: Upload manifest
+        if: ${{ always() }}
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: manifest_${{ matrix.build-type }}
+          path: ${{ env.MANIFEST_PATH }}
           if-no-files-found: 'error'
 
   genai_build_wheel:
@@ -208,9 +232,44 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: genai_wheels
+          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
+
+  store_artifacts:
+    name: Store build artifacts
+    strategy:
+      matrix:
+        build_type: [Release]
+    needs: [openvino_download, genai_build_wheel, genai_build_cmake]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-2-cores-8gb
+    container:
+      image: openvinogithubactions.azurecr.io/library/python:3.12-slim
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+    env:
+      CPACK_PACKAGE: ${{ github.workspace }}/ov_genai.tar.gz
+      WHEEL_PACKAGE: ${{ github.workspace }}/wheels
+      MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
+
+    steps:
+      - name: Download genai package & manifest
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          pattern: "{${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build_type }},manifest_${{ matrix.build_type }}}"
+          path: ${{ github.workspace }}
+          merge-multiple: true
+
+      - name: Download genai wheels
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
+          path: ${{ env.WHEEL_PACKAGE }}
 
   genai_build_samples:
     name: Build Samples - ${{ matrix.build-type }}
