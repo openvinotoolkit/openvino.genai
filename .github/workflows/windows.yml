@@ -162,7 +162,7 @@ jobs:
 
       - name: Pack Artifacts
         run: |
-          $file=Get-ChildItem -Path "${{ GENAI_INSTALL_DIR }}"
+          $file=Get-ChildItem -Path "${{ env.GENAI_INSTALL_DIR }}"
           $compress = @{
             Path = $file
             CompressionLevel = "Optimal"
@@ -349,17 +349,12 @@ jobs:
             tar -czvf ${CPACK_PACKAGE} *
           popd
 
-      - name: Download manifest
+      - name: Download manifest and wheels
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
-          name: manifest_${{ matrix.build-type }}
+          pattern: '{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},manifest_${{ matrix.build-type }}}'
           path: ${{ github.workspace }}
-
-      - name: Download genai wheels
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
-          path: ${{ env.WHEEL_PACKAGE }}
+          merge-multiple: true
 
       - name: Store ${{ matrix.build_type }} artifacts to a shared drive
         id: store_artifacts
