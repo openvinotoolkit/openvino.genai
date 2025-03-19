@@ -21,6 +21,12 @@ class Adapter:
                     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
                     path (os.PathLike): Path to adapter file in safetensors format.
         """
+    @typing.overload
+    def __init__(self, safetensor: openvino._pyopenvino.Tensor) -> None:
+        """
+                    Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
+                    safetensor (ov.Tensor): Pre-read LoRA Adapter safetensor.
+        """
 class AdapterConfig:
     """
     Adapter config that defines a combination of LoRA adapters with blending parameters.
