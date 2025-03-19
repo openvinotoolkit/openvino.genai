@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "icontinuous_batching.hpp"
-#include "lora_helper.hpp"
 
 namespace ov::genai {
 
