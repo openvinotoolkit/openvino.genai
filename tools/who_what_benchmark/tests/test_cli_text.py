@@ -193,6 +193,8 @@ if sys.platform != 'darwin':
         (gptq_model_id),
         (awq_model_id),
     ]
+
+
 @pytest.mark.parametrize(
     ("model_id"),
     hf_model_scope,
