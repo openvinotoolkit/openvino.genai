@@ -339,6 +339,9 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<s
     consts["model.norm.weight"] = weights.at("output_norm.weight");
     if (weights.count("output.weight")) {
         consts["lm_head.weight"] = weights.at("output.weight");
+        if (weights.count("output.bias")) {
+          consts["lm_head.bias"] = weights.at("output.bias");
+        }
     }
 
     // Handle quantization scales and biases
@@ -360,14 +363,35 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<s
         
         // Attention weights
         consts[format("model.layers[%d].self_attn.q_proj.weight", i)] = weights.at(format("blk.%d.attn_q.weight", i));
+        if (weights.count(format("blk.%d.attn_q.bias", i))) {
+          consts[format("model.layers[%d].self_attn.q_proj.bias", i)] = weights.at(format("blk.%d.attn_q.bias", i));
+        }
         consts[format("model.layers[%d].self_attn.k_proj.weight", i)] = weights.at(format("blk.%d.attn_k.weight", i));
+        if (weights.count(format("blk.%d.attn_k.bias", i))) {
+          consts[format("model.layers[%d].self_attn.k_proj.bias", i)] = weights.at(format("blk.%d.attn_k.bias", i));
+        }
         consts[format("model.layers[%d].self_attn.v_proj.weight", i)] = weights.at(format("blk.%d.attn_v.weight", i));
+        if (weights.count(format("blk.%d.attn_v.bias", i))) {
+          consts[format("model.layers[%d].self_attn.v_proj.bias", i)] = weights.at(format("blk.%d.attn_v.bias", i));
+        }
         consts[format("model.layers[%d].self_attn.o_proj.weight", i)] = weights.at(format("blk.%d.attn_output.weight", i));
+        if (weights.count(format("blk.%d.attn_output.bias", i))) {
+          consts[format("model.layers[%d].self_attn.o_proj.bias", i)] = weights.at(format("blk.%d.attn_output.bias", i));
+        }
 
         // MLP weights
         consts[format("model.layers[%d].mlp.gate_proj.weight", i)] = weights.at(format("blk.%d.ffn_gate.weight", i));
+        if (weights.count(format("blk.%d.ffn_gate.bias", i))) {
+          consts[format("model.layers[%d].mlp.gate_proj.bias", i)] = weights.at(format("blk.%d.ffn_gate.bias", i));
+        }
         consts[format("model.layers[%d].mlp.up_proj.weight", i)] = weights.at(format("blk.%d.ffn_up.weight", i));
+        if (weights.count(format("blk.%d.ffn_up.bias", i))) {
+          consts[format("model.layers[%d].mlp.up_proj.bias", i)] = weights.at(format("blk.%d.ffn_up.bias", i));
+        }
         consts[format("model.layers[%d].mlp.down_proj.weight", i)] = weights.at(format("blk.%d.ffn_down.weight", i));
+        if (weights.count(format("blk.%d.ffn_down.bias", i))) {
+          consts[format("model.layers[%d].mlp.down_proj.bias", i)] = weights.at(format("blk.%d.ffn_down.bias", i));
+        }
 
         // Quantization parameters
         if (QType(std::get<int>(config.at("qtype"))) != QType::FP16) {

@@ -689,8 +689,18 @@ ov::Output<ov::Node> make_fc(
     int head_size = -1) {
 
     auto w_f32 = make_weights_subgraph(key, consts, qtype, reorder, head_size);
-    return std::make_shared<ov::op::v0::MatMul>(
+    std::shared_ptr<ov::Node> output = std::make_shared<ov::op::v0::MatMul>(
         input, w_f32, false, true);
+
+    // Add post-MatMul Add operation if exists
+    if (consts.count(key + ".bias")) {
+        auto add_tensor = get_tensor(consts, key + ".bias");
+        auto add_const = std::make_shared<v0::Constant>(add_tensor);
+        auto add_convert = std::make_shared<ov::op::v0::Convert>(add_const, ov::element::f32);
+        output = std::make_shared<ov::op::v1::Add>(
+                                    output, add_convert, ov::op::AutoBroadcastType::NUMPY);
+    }
+    return output;
 }
 
 ov::Output<ov::Node> make_lm_head(
