@@ -8,3 +8,5 @@ numpy>=1.23.5
 tqdm>=4.66.1
 diffusers
 datasets<3.2.0
+auto-gptq; sys_platform != "darwin"
+autoawq<0.2.8; sys_platform != "darwin"
