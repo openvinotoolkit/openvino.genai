@@ -11,20 +11,26 @@ int main(int argc, char* argv[]) try {
 
     std::filesystem::path models_path = argv[1];
     std::string wav_file_path = argv[2];
-    std::string device = "CPU";  // GPU, NPU can be used as well
+    std::string device = "NPU";  // GPU, NPU can be used as well
 
-    ov::genai::WhisperPipeline pipeline(models_path, device);
+    ov::AnyMap properties = { {"NPU_USE_NPUW", "YES"}, {"NPUW_DEVICES", "CPU"}, {"NPUW_ONLINE_PIPELINE", "NONE"} };
+    ov::genai::WhisperPipeline pipeline(models_path, device, properties);
 
     ov::genai::WhisperGenerationConfig config = pipeline.get_generation_config();
     config.max_new_tokens = 100;  // increase this based on your speech length
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
     config.task = "transcribe";
-    config.return_timestamps = true;
+    config.return_timestamps = false;
 
     // Pipeline expects normalized audio with Sample Rate of 16kHz
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
-    auto result = pipeline.generate(raw_speech, config);
+    auto streamer = [](std::string word) {
+        std::cout << word << std::flush;
+        // Return flag corresponds whether generation should be stopped.
+        return ov::genai::StreamingStatus::RUNNING;
+    };
+    auto result = pipeline.generate(raw_speech, config, streamer);
 
     std::cout << result << "\n";
 
