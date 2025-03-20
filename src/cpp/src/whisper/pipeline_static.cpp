@@ -33,6 +33,8 @@ using ov::genai::MicroSeconds;
 
 namespace {
 
+constexpr size_t MAX_PROMPT_LEN = 4;
+
 template <typename T>
 void fill_tensor(ov::Tensor tensor, T fill_val) {
     auto* tensor_data = tensor.data<T>();
@@ -125,13 +127,15 @@ void update_past_key_value(ov::InferRequest& source, ov::InferRequest& dest, con
 
 void set_decoder_input_ids(ov::InferRequest& decoder,
                            const std::vector<int64_t>& init_ids) {
+    // NB: input_ids format: [pad, pad, token1, token2]
     auto padded_input_ids = decoder.get_tensor("input_ids");
     OPENVINO_ASSERT(padded_input_ids.get_size() >= init_ids.size());
+    std::fill_n(padded_input_ids.data<int64_t>(), padded_input_ids.get_size(), 0u);
     std::copy_n(
         &init_ids[0], init_ids.size(),
         padded_input_ids.data<int64_t>() + (padded_input_ids.get_size() - init_ids.size())
     );
-
+    // NB: attention_mask format: [0, 0, 1, 1]
     auto padded_attention_mask = decoder.get_tensor("attention_mask");
     auto* padded_mask_data = padded_attention_mask.data<int64_t>();
     std::fill_n(padded_mask_data, padded_attention_mask.get_size(), 0u);
@@ -156,16 +160,6 @@ void process_whisper_logits(ov::Tensor logits,
 
 }
 
-template <typename T>
-void print_tensor(ov::Tensor t) {
-    auto* ptr = t.data<T>();
-    std::cout << "[ ";
-    for (int i = 0; i < t.get_size(); ++i) {
-        std::cout << ptr[i] << " ";
-    }
-    std::cout << " ]" << std::endl;
-}
-
 ov::Tensor decode(ov::Tensor& encoder_hidden_state,
                   ov::InferRequest& decoder,
                   const std::vector<int64_t>& init_ids,
@@ -173,10 +167,6 @@ ov::Tensor decode(ov::Tensor& encoder_hidden_state,
     // NB: Fill decoder inputs
     encoder_hidden_state.copy_to(decoder.get_tensor("encoder_hidden_states"));
     set_decoder_input_ids(decoder, init_ids);
-
-    //print_tensor<int64_t>(decoder.get_tensor("attention_mask"));
-    //print_tensor<int64_t>(decoder.get_tensor("input_ids"));
-
     ov::genai::utils::infer_with_perf_metrics(decoder, raw_metrics);
     return decoder.get_tensor("logits");
 }
@@ -188,11 +178,6 @@ ov::Tensor decode_with_past(ov::InferRequest& decoder_with_past,
     decoder_with_past.get_tensor("input_ids").data<int64_t>()[0] = input_id;
     decoder_with_past.get_tensor("cache_position").data<int64_t>()[0] = position_id;
     decoder_with_past.get_tensor("attention_mask").data<int64_t>()[position_id - 1] = 1u;
-
-    //std::cout << "WITH PAST =====" << std::endl;
-    //print_tensor<int64_t>(decoder_with_past.get_tensor("attention_mask"));
-    //print_tensor<int64_t>(decoder_with_past.get_tensor("input_ids"));
-    //std::cout << "!WITH PAST =====\n" << std::endl;
 
     ov::genai::utils::infer_with_perf_metrics(decoder_with_past, raw_metrics);
     return decoder_with_past.get_tensor("logits");
@@ -216,9 +201,6 @@ void prepare_decoder_with_past(ov::InferRequest& decoder_with_past, ov::InferReq
     std::fill_n(padded_mask_data, init_ids_size-1, 1);
     std::fill_n(padded_mask_data + init_ids_size, padded_attention_mask.get_size() - init_ids_size, 0);
     padded_mask_data[padded_attention_mask.get_size() - 1] = 1;
-
-    //std::cout << "prepare decoder" << std::endl;
-    //print_tensor<int64_t>(padded_attention_mask);
 
     // NB: Zero past_key_values.*.decoder.value tensors
     zero_past_key_values(decoder_with_past);
@@ -385,21 +367,27 @@ bool check_decoder_model_compatibility(const std::shared_ptr<ov::Model>& decoder
     return false;
 }
 
-void add_attention_mask_input(std::shared_ptr<ov::Model> model) {
+void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_cross_attn) {
     using namespace ov::pass::pattern;
     using namespace ov::op;
     class AttentionMaskInput : public ov::pass::MatcherPass {
     public:
         OPENVINO_MATCHER_PASS_RTTI("AttentionMaskInput");
 
-        AttentionMaskInput(std::shared_ptr<ov::Model> model) {
+        AttentionMaskInput(std::shared_ptr<ov::Model> model, bool transform_cross_attn) {
             std::vector<std::shared_ptr<ov::Node>> self_attn_nodes;
+            std::vector<std::shared_ptr<ov::Node>> cross_attn_nodes;
             for (auto node : model->get_ops()) {
-                if (ov::is_type<ov::op::v13::ScaledDotProductAttention>(node) && node->inputs().size() == 4u) {
-                    self_attn_nodes.push_back(node);
+                if (ov::is_type<ov::op::v13::ScaledDotProductAttention>(node)) {
+                    if (node->inputs().size() == 4u) {
+                        self_attn_nodes.push_back(node);
+                    } else {
+                        cross_attn_nodes.push_back(node);
+                    }
                 }
             }
 
+            // Self-attention
             OPENVINO_ASSERT(!self_attn_nodes.empty());
 
             auto attention_mask = std::make_shared<v0::Parameter>(ov::element::i64, ov::PartialShape{-1, -1});
@@ -435,11 +423,47 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model) {
             for (auto self_attn : self_attn_nodes) {
                 self_attn->input(3).replace_source_output(select->output(0));
             }
+
+            if (transform_cross_attn) {
+                // Cross attn
+                OPENVINO_ASSERT(!cross_attn_nodes.empty());
+                // FIXME: Should be taken from topology - don't hardcode!!!
+                auto shape_cst = std::make_shared<v0::Constant>(
+                    ov::element::i64,
+                    ov::Shape{2},
+                    std::vector<float>{MAX_PROMPT_LEN, 1}
+                );
+                // FIXME: Avoid "1500" hardcode!!!
+                auto target_shape = std::make_shared<v0::Constant>(
+                    ov::element::i64,
+                    ov::Shape{2},
+                    std::vector<float>{MAX_PROMPT_LEN, 1500}
+                );
+                // FIXME: Must be transpose if batch present
+                auto reshape = std::make_shared<v1::Reshape>(cvt->output(0), shape_cst->output(0), false);
+                auto equal = std::make_shared<v1::Equal>(reshape->output(0), cst_1->output(0));
+                auto select = std::make_shared<v1::Select>(
+                    equal->output(0), cst_0->output(0), cst_ninf->output(0)
+                );
+                auto broadcast = std::make_shared<v3::Broadcast>(select->output(0), target_shape->output(0));
+                auto unsq1 = std::make_shared<v0::Unsqueeze>(broadcast->output(0), cst_0->output(0));
+                auto unsq2 = std::make_shared<v0::Unsqueeze>(unsq1->output(0), cst_1->output(0));
+                for (auto cross_attn_node : cross_attn_nodes) {
+                    auto sdpa = std::make_shared<v13::ScaledDotProductAttention>(
+                        cross_attn_node->input(0).get_source_output(),
+                        cross_attn_node->input(1).get_source_output(),
+                        cross_attn_node->input(2).get_source_output(),
+                        unsq2->output(0),
+                        false
+                    );
+                    ov::replace_node(cross_attn_node, sdpa);
+                }
+            }
         }
     };
 
     ov::pass::Manager pm;
-    pm.register_pass<AttentionMaskInput>(model);
+    pm.register_pass<AttentionMaskInput>(model, transform_cross_attn);
     pm.run_passes(model);
 }
 
@@ -881,16 +905,18 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     if (!decoder_model || !decoder_with_past_model)
         OPENVINO_THROW("Decoder/decoder_with_past model is not valid !");
 
-    add_attention_mask_input(decoder_model);
-    add_attention_mask_input(decoder_with_past_model);
+    add_attention_mask_input(decoder_model, true /* transform_cross_attn */);
+    // NB: Note, there is no need to transform cross attention for decoder_with_past_model
+    // as it accepts only single token and there can't be any padding.
+    // "attention_mask" for "self-attention" is needed to control actual KV-cache size
+    add_attention_mask_input(decoder_with_past_model, false /* transform_cross_attn */);
 
     size_t max_sequence_length = 448;
 
     reshape_to_static_encoder(encoder_model, m_feature_extractor.feature_size);
 
-    const auto kMaxPromptLen = 4;
     auto last_hidden_state_shape = get_encoder_hidden_state_shape(encoder_model);
-    reshape_to_static(decoder_model, kMaxPromptLen, kMaxPromptLen, last_hidden_state_shape);
+    reshape_to_static(decoder_model, MAX_PROMPT_LEN, MAX_PROMPT_LEN, last_hidden_state_shape);
     reshape_to_static(decoder_with_past_model, 1, max_sequence_length, last_hidden_state_shape);
 
     // Replace KV-tensors for the entire cache to tensors only for new token
@@ -899,6 +925,11 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     preprocess_encoder(encoder_model);
     preprocess_decoder(decoder_model);
     preprocess_decoder(decoder_with_past_model);
+
+    ov::save_model(decoder_model, "decoder_model_attn.xml");
+    std::cout << "[LOG_DEBUG] decoder_model is saved" << std::endl;
+    ov::save_model(decoder_with_past_model, "decoder_model_with_past_attn.xml");
+    std::cout << "[LOG_DEBUG] decoder_model_with_past is saved" << std::endl;
 
     ov::CompiledModel compiled_model;
     compiled_model = core.compile_model(encoder_model, "NPU", properties);
