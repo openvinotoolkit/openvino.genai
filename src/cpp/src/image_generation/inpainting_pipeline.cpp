@@ -192,18 +192,24 @@ void InpaintingPipeline::set_scheduler(std::shared_ptr<Scheduler> scheduler) {
 }
 
 void InpaintingPipeline::reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) {
+    auto start_time = std::chrono::steady_clock::now();
     m_impl->reshape(num_images_per_prompt, height, width, guidance_scale);
+    m_impl->save_load_time(start_time);
 }
 
 void InpaintingPipeline::compile(const std::string& device, const ov::AnyMap& properties) {
+    auto start_time = std::chrono::steady_clock::now();
     m_impl->compile(device, properties);
+    m_impl->save_load_time(start_time);
 }
 
 void InpaintingPipeline::compile(const std::string& text_encode_device,
                                  const std::string& denoise_device,
                                  const std::string& vae_device,
                                  const ov::AnyMap& properties) {
+    auto start_time = std::chrono::steady_clock::now();
     m_impl->compile(text_encode_device, denoise_device, vae_device, properties);
+    m_impl->save_load_time(start_time);
 }
 
 ov::Tensor InpaintingPipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask, const ov::AnyMap& properties) {
