@@ -9,7 +9,7 @@ import llm_bench_utils.model_utils
 from openvino import get_version
 import torch
 import traceback
-from llm_bench_utils.memory_profile import MemMonitorWrapper
+from llm_bench_utils.memory_monitor import MemMonitorWrapper
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
