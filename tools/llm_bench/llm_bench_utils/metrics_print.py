@@ -63,8 +63,12 @@ def print_metrics(
     output_str = ''
     if iter_data['max_rss_mem_consumption'] != '' and iter_data['max_rss_mem_consumption'] > -1:
         output_str += f"Max rss memory cost: {iter_data['max_rss_mem_consumption']:.2f}MBytes, "
+    if iter_data['max_rss_mem_increase'] != '' and iter_data['max_rss_mem_increase'] > -1:
+        output_str += f"rss memory increase: {iter_data['max_rss_mem_increase']:.2f}MBytes, "
     if iter_data['max_sys_mem_consumption'] != '' and iter_data['max_sys_mem_consumption'] > -1:
-        output_str += f"max system memory memory cost: {iter_data['max_sys_mem_consumption']:.2f}MBytes"
+        output_str += f"max system memory memory cost: {iter_data['max_sys_mem_consumption']:.2f}MBytes, "
+    if iter_data['max_sys_mem_increase'] != '' and iter_data['max_sys_mem_increase'] > -1:
+        output_str += f"system memory increase: {iter_data['max_sys_mem_increase']:.2f}MBytes "
     if output_str != '':
         output_str = ' '.join([prefix, output_str])
         log.info(output_str)

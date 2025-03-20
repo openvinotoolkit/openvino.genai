@@ -9,7 +9,7 @@ import llm_bench_utils.model_utils
 from openvino import get_version
 import torch
 import traceback
-from llm_bench_utils.memory_profile import MemMonitorWrapper
+from llm_bench_utils.memory_monitor import MemMonitorWrapper
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
@@ -87,7 +87,7 @@ def get_argprser():
     )
     parser.add_argument(
         "--memory_consumption_delay",
-        default=0.5,
+        default=None,
         required=False,
         type=float,
         help="delay for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance."
@@ -250,7 +250,8 @@ def main():
         memory_monitor.create_monitors()
         if args.memory_consumption_dir:
             memory_monitor.set_dir(args.memory_consumption_dir)
-            memory_monitor.INTERVAL = args.memory_consumption_delay
+            if args.memory_consumption_delay:
+                memory_monitor.interval = args.memory_consumption_delay
     try:
         if model_args['use_case'] in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](

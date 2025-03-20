@@ -34,6 +34,8 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     low_res_img = low_res_img.resize((resize_image_width, resize_image_height))
     max_rss_mem_consumption = ''
     max_sys_mem_consumption = ''
+    max_rss_mem_increase = ''
+    max_sys_mem_increase = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     start = time.perf_counter()
@@ -41,7 +43,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
-        max_rss_mem_consumption, max_sys_mem_consumption = mem_consumption.get_data()
+        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
     result_md5_list = []
     if framework == 'ov':
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(res[0], args, image_id, num, None, proc_id, '.png')
@@ -54,7 +56,9 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         gen_time=generation_time,
         res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
+        max_rss_mem_increase=max_rss_mem_increase,
         max_sys_mem=max_sys_mem_consumption,
+        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)

@@ -8,11 +8,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import argparse
 import atexit
-import logging
 import queue
-import subprocess
 import threading
 import time
 from enum import Enum
@@ -21,12 +18,11 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
+import psutil
 import matplotlib
 import matplotlib.pyplot as plt
-import psutil
-from tabulate import tabulate
+import logging as log
 
-logger = logging.getLogger("memory_monitor")
 
 # CUSTOM FIX TO AVOID ISSUE: RuntimeError: main thread is not in main loop
 matplotlib.use('Agg')
@@ -50,7 +46,7 @@ class MemoryUnit(Enum):
 @lru_cache
 def system_memory_warning():
     # Log once
-    logger.warning(
+    log.warning(
         "Please note that MemoryType.SYSTEM in general is affected by other processes that change RAM availability."
     )
 
@@ -265,7 +261,7 @@ class MemoryMonitor:
 class memory_monitor_context:
     def __init__(
         self,
-        interval: Optional[float] = 0.1,
+        interval: Optional[float] = 0.01,
         memory_unit: Optional[MemoryUnit] = MemoryUnit.MiB,
         return_max_value: Optional[bool] = True,
         save_dir: Optional[Path] = None,
@@ -296,7 +292,7 @@ class memory_monitor_context:
         self.return_max_value = return_max_value
         self.save_dir = save_dir
 
-        self.memory_data = {}
+        self.memory_data = {'full_mem': {}, 'from_zero': {}}
 
     def __enter__(self):
         for mm in self.memory_monitors.values():
@@ -312,16 +308,94 @@ class memory_monitor_context:
             mm.stop()
             for fz in [False, True]:
                 time_values, memory_values = mm.get_data(memory_from_zero=fz)
-                if fz:
-                    self.memory_data[mt] = max(memory_values) if self.return_max_value else (time_values, memory_values)
+
+                mm_measure_type = 'from_zero' if fz else 'full_mem'
+                self.memory_data[mm_measure_type][mt] = max(memory_values) if self.return_max_value else (time_values, memory_values)
 
                 if self.save_dir:
                     mm.save_memory_logs(
                         time_values,
                         memory_values,
                         save_dir=self.save_dir,
-                        filename_suffix="_from-zero" if fz else "",
+                        filename_suffix="_mem_increase" if fz else "",
                     )
+
+
+class MemMonitorWrapper():
+    def __init__(self):
+        self.save_dir = None
+
+        self.interval = 0.01
+        self.memory_unit = MemoryUnit.MiB
+
+        self.memory_types = [MemoryType.RSS, MemoryType.SYSTEM]
+
+        self.memory_monitors = {}
+        self.memory_data = {'full_mem': {}, 'from_zero': {}}
+
+    def create_monitors(self):
+        for memory_type in self.memory_types:
+            self.memory_monitors[memory_type] = MemoryMonitor(
+                interval=self.interval, memory_type=memory_type, memory_unit=self.memory_unit
+            )
+
+    def set_dir(self, dir):
+        if not Path(dir).exists():
+            log.warning(f"Path to dir for memory consamption data is not exists {dir}, run without it.")
+        else:
+            self.save_dir = Path(dir)
+
+    def start(self, delay=None):
+        self.memory_data = {'full_mem': {}, 'from_zero': {}}
+        for mm in self.memory_monitors.values():
+            mm.start()
+
+        # compilation could be very fast, apply delay
+        if delay:
+            time.sleep(delay)
+        else:
+            time.sleep(self.interval * 3)
+
+    def stop_and_collect_data(self, dir_name='mem_monitor_log'):
+        self.stop()
+
+        for mt, mm in self.memory_monitors.items():
+            if not mm._memory_values_queue or len(mm._memory_values_queue.queue) == 0:
+                continue
+
+            for from_zero in [False, True]:
+                time_values, memory_values = mm.get_data(memory_from_zero=from_zero)
+
+                mm_measure_type = 'from_zero' if from_zero else 'full_mem'
+                self.memory_data[mm_measure_type][mt] = max(memory_values)
+
+                if self.save_dir:
+                    mm.save_memory_logs(
+                        time_values,
+                        memory_values,
+                        save_dir=self.save_dir / dir_name,
+                        filename_suffix="_mem_increase" if from_zero else "",
+                    )
+
+    def stop(self):
+        # Stop addition of new values as soon as possible
+        for mm in self.memory_monitors.values():
+            mm._monitoring_thread_should_stop = True
+
+        for mm in self.memory_monitors.values():
+            mm.stop()
+
+    def get_data(self):
+        return (self.memory_data['full_mem'].get(MemoryType.RSS, -1), self.memory_data['from_zero'].get(MemoryType.RSS, -1),
+                self.memory_data['full_mem'].get(MemoryType.SYSTEM, -1), self.memory_data['from_zero'].get(MemoryType.SYSTEM, -1))
+
+    def log_data(self, comment):
+        max_rss_mem, max_rss_increase, max_sys_mem, max_sys_increase = self.get_data()
+        msg = (f"Max rss memory cost {comment}: {max_rss_mem:.2f}{self.memory_unit.value}, "
+               f"rss memory increase {comment}: {max_rss_increase:.2f}{self.memory_unit.value}, "
+               f"max system memory cost {comment}: {max_sys_mem:.2f}{self.memory_unit.value}, "
+               f"system memory increase {comment}: {max_sys_increase:.2f}{self.memory_unit.value}")
+        log.info(msg)
 
 
 def _cast_bytes_to(bytes, memory_unit, round_to_int=False):
@@ -343,44 +417,3 @@ def _subtract_first_element(data):
         data[i] = data[i] - data[0]
     data[0] = 0
     return data
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Memory Monitor Tool. Monitors memory for an executable and saves logs at specified location.",
-        epilog="Examples:\n"
-        "   python memory_monitor.py --log-dir ./allocation_logs python allocate.py\n"
-        "   python memory_monitor.py optimum-cli export openvino ...",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser.add_argument(
-        "--log-dir", type=str, default="memory_logs", help="A directory to save logs at. './memory_logs' by default."
-    )
-    parser.add_argument("executable", type=str, nargs="+", help="Target executable to monitor memory for.")
-    args = parser.parse_args()
-
-    memory_monitors = [
-        MemoryMonitor(memory_type=mt, include_child_processes=True).start()
-        for mt in (MemoryType.RSS, MemoryType.SYSTEM)
-    ]
-
-    with subprocess.Popen(" ".join(args.executable), shell=True) as p:
-        p.wait()
-
-        # Stop addition of new values as soon as possible
-        for mm in memory_monitors:
-            mm._monitoring_thread_should_stop = True
-
-    summary_data = []
-    for mm in memory_monitors:
-        mm.stop()
-        for fz in (True, False):
-            time_values, memory_values = mm.get_data(memory_from_zero=fz)
-            # Most probably the last value is recorded once the child process has already died
-            time_values, memory_values = time_values[:-1], memory_values[:-1]
-            mm.save_memory_logs(
-                time_values, memory_values, save_dir=Path(args.log_dir), filename_suffix="_from-zero" if fz else ""
-            )
-            summary_data.append([mm.memory_type.value, fz, f"{int(max(memory_values))} {mm.memory_unit.value}"])
-    print("\nMemory summary:")
-    print(tabulate(summary_data, headers=["Memory type", "From zero", "Peak value"]))
