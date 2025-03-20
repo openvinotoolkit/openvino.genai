@@ -265,7 +265,8 @@ EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMa
     encoder.set_input_tensor(pixel_values);
     ov::Tensor res{ov::element::f32, encoder.get_output_tensor().get_shape()};
     encoder.set_output_tensor(res);
-    encoder.infer();
+    encoder.start_async();
+    encoder.wait();
     return {std::move(res), image_size};
 }
 
@@ -410,7 +411,8 @@ ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t 
     hd_feature_transformer.set_input_tensor(1, height);
     ov::Tensor width{ov::element::i32, {}, &w_crop};
     hd_feature_transformer.set_input_tensor(2, width);
-    hd_feature_transformer.infer();
+    hd_feature_transformer.start_async();
+    hd_feature_transformer.wait();
     return hd_feature_transformer.get_output_tensor();
 }
 
@@ -477,7 +479,8 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
     ov::Tensor sub_image_features_hd_newline = add_image_newline(sub_image_features_hd, sub_GN);  // [1,h_crop*12*(w_crop*12+1), 4096]
     ov::Tensor image_embeddings = concatenate_2d(sub_image_features_hd_newline, glb_GN, global_image_features_hd_newline);  // [1,l,4096]
     vision_projection.set_input_tensor(image_embeddings);
-    vision_projection.infer();
+    vision_projection.start_async();
+    vision_projection.wait();
     ov::Tensor out = vision_projection.get_output_tensor();
     ov::Tensor res{out.get_element_type(), out.get_shape()};
     out.copy_to(res);
