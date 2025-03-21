@@ -17,13 +17,14 @@ namespace utils {
 
 template <typename T>
 struct LoRAParts {
-    T alpha, A, B;
+    T alpha, A, B, weight;
 
     LoRAParts() = default;
     LoRAParts(const T& alpha, const T& A, const T& B) : alpha(alpha), A(A), B(B) {}
+    LoRAParts(const T& weight) : weight(weight) {}
 
     template <typename Other>
-    LoRAParts(const LoRAParts<Other>& other) : alpha(other.alpha), A(other.A), B(other.B) {}
+    LoRAParts(const LoRAParts<Other>& other) : alpha(other.alpha), A(other.A), B(other.B), weight(other.weight) {}
 };
 
 

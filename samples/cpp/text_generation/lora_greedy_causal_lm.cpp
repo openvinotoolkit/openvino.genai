@@ -25,6 +25,7 @@ int main(int argc, char* argv[]) try {
 
     std::cout << "Generate with LoRA adapter and alpha set to 0.75:" << std::endl;
     std::cout << pipe.generate(prompt, max_new_tokens(100), adapters(adapter, 0.75)) << std::endl;
+    // std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
 
     std::cout << "\n-----------------------------";
     std::cout << "\nGenerate without LoRA adapter:" << std::endl;
