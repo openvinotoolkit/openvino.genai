@@ -1,0 +1,61 @@
+import BasicGenerationConfiguration from '@site/docs/use-cases/_shared/_basic_generation_configuration.mdx';
+import ChatScenario from '@site/docs/use-cases/_shared/_chat_scenario.mdx';
+import Streaming from '@site/docs/use-cases/_shared/_streaming.mdx';
+
+## Additional Usage Options
+
+:::tip
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/visual_language_chat) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/visual_language_chat) visual language chat samples.
+:::
+
+### Use Different Generation Parameters
+
+Similar to [text generation](/docs/use-cases/text-generation/#use-different-generation-parameters), VLM pipelines support various generation parameters to control the text output.
+
+<BasicGenerationConfiguration>
+  <LanguageTabs>
+      <TabItemPython>
+          ```python
+          import openvino_genai as ov_genai
+          pipe = ov_genai.VLMPipeline(model_path, "CPU")
+
+          # Get default configuration
+          config = pipe.get_generation_config()
+
+          # Modify parameters
+          config.max_new_tokens = 100
+          config.temperature = 0.7
+          config.top_k = 50
+          config.top_p = 0.9
+          config.repetition_penalty = 1.2
+
+          # Generate text with custom configuration
+          output = pipe.generate(prompt, images, config)
+          ```
+      </TabItemPython>
+      <TabItemCpp>
+          ```cpp
+          int main() {
+              ov::genai::VLMPipeline pipe(model_path, "CPU");
+
+              // Get default configuration
+              auto config = pipe.get_generation_config();
+
+              // Modify parameters
+              config.max_new_tokens = 100;
+              config.temperature = 0.7f;
+              config.top_k = 50;
+              config.top_p = 0.9f;
+              config.repetition_penalty = 1.2f;
+
+              // Generate text with custom configuration
+              auto output = pipe.generate(prompt, images, config);
+          }
+          ```
+      </TabItemCpp>
+  </LanguageTabs>
+</BasicGenerationConfiguration>
+
+<ChatScenario />
+
+<Streaming />
