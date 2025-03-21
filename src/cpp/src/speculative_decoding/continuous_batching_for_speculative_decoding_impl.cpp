@@ -337,5 +337,16 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             to_generate |= request->can_generate_tokens();
         }
     }
+
+    for (auto& request : m_requests) {
+        const auto& stop_token_ids = request->get_sampling_parameters().stop_token_ids;
+        for (auto& sequence : request->get_running_sequences()) {
+            int stop_token_pos = get_first_stop_token_pos(sequence, stop_token_ids);
+            if (stop_token_pos != -1) {
+                int pos = sequence->get_generated_ids().size() - stop_token_pos;
+                sequence->remove_last_tokens(pos);
+            }
+        }
+    }
 }
 }
