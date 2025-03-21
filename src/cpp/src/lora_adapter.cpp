@@ -59,33 +59,12 @@ using namespace ov::op;
 using namespace ov::genai::utils;
 
 // FIXME: Use ov::AlignedBuffer instead of std::vector. ov::AlignedBuffer is not available in public OV API
-using Buffer = std::vector<char>;
-using BufferPtr = std::shared_ptr<Buffer>;
 using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
 
 // Holds usual LoRA parameters alpha, A and B of a given type.
 using LoRANode = LoRAParts<std::shared_ptr<ov::Node>>;
 using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string& name)>>;
-
-
-// Read binary file to memory.
-BufferPtr read_file_helper(const std::filesystem::path& filename) {
-    std::ifstream file(filename, std::ios::binary | std::ios::ate);
-    OPENVINO_ASSERT(file.is_open(), "Cannot open file with LoRA weights: ", filename);
-
-    size_t filesize = file.tellg();
-    auto buffer = std::make_shared<Buffer>(filesize);
-    file.seekg(0, std::ios::beg);
-    // TODO: Use mmapped AlignedBuffer as ov::Core::read_model can do, necessary functionality is not available in public OV API.
-    // LoRA files do not usually have huge size in comparison to the base models, but it can vary depending on adapter,
-    // and using mmap will help to optimize memory consumption and could be critical
-    // when the application at the edge of available memory that is not really uncommon for applications dealing with LLMs.
-    file.read(&(*buffer)[0], filesize);
-
-    return buffer;
-}
-
 
 // Converts Safetensors element type to OV element type. Only part of the types are supported.
 ov::element::Type safetensors_to_ov_element_type (int dtype) {
@@ -101,9 +80,7 @@ ov::element::Type safetensors_to_ov_element_type (int dtype) {
     }
 }
 
-
 using ConstantMap = std::map<std::string, std::shared_ptr<ov::op::v0::Constant>>;
-
 
 // Safetensor file parser that deallocates temporary buffers automatically.
 // Drop-in replacement for the third party safetensors_File struct.
@@ -114,19 +91,14 @@ struct AutoSafetensor: public safetensors_File {
     }
 };
 
-
-// Reads a file with a given filename expecting Safetensors file format.
-// The data is read to a solid memory block and the function returns a map of OV Constants allocated on top of that block.
 // The key in the map is a tensor name and the Constant uses a region of memory from the memory block.
 // Each Constant holds a shared pointer to the block in the runtime info.
 // The memory block will be deallocated when the last Constant is destroyed.
-ConstantMap read_safetensors(const std::filesystem::path& filename) {
-    auto buffer = read_file_helper(filename);
+ConstantMap safetensor_to_constant_map(const ov::Tensor& safetensor) {
     AutoSafetensor safe_tensors_file{};
 
-    OPENVINO_ASSERT(
-        safetensors_file_init(&(*buffer)[0], buffer->size(), &safe_tensors_file) == nullptr,
-        "Cannot parse ", filename, " as a Safetensors file format. Safetensors file format is supported only"
+    OPENVINO_ASSERT(safetensors_file_init(safetensor.data<char>(), safetensor.get_byte_size(), &safe_tensors_file) == nullptr,
+        "Cannot parse safetensor as a Safetensors file format. Safetensors file format is supported only"
     );
 
     ConstantMap tensors;
@@ -136,20 +108,22 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
         ov::Shape shape(tensor.shape, tensor.shape + tensor.n_dimensions);
         void* ptr = tensor.ptr;     // FIXME: needs a non-constant pointer because Tensor doesn't accept a constant pointer
 
-        OPENVINO_ASSERT(
-            ov::shape_size(shape) <= tensor.end_offset_bytes - tensor.begin_offset_bytes,
-            "Tensor shape ", ov::shape_size(shape), " for tensor \"", name, "\" from Safetensors file \"", filename, "\" doesn't match the expected tensor size ",
-            tensor.end_offset_bytes - tensor.begin_offset_bytes);
-
         auto type = safetensors_to_ov_element_type(tensor.dtype);
         auto constant =
             std::make_shared<v0::Constant>(type, shape, ptr, nullptr);      // wraps existing memory, no ownership
-        constant->get_rt_info()["__safetensors_buffer_holder"] = buffer;    // to automatically deallocate underlying memory buffer when last constant that holds it is destroyed
+        constant->get_rt_info()["__safetensors_buffer_holder"] = safetensor;    // to automatically deallocate underlying memory buffer when last constant that holds it is destroyed
         tensors[name] = constant;
     }
     return tensors;
 }
 
+// Reads a file with a given filename expecting Safetensors file format.
+// The file data is mmaped to tensor.
+ConstantMap read_safetensors(const std::filesystem::path& filename) {
+    auto safetensor = ov::read_tensor_data(filename);
+
+    return safetensor_to_constant_map(safetensor);
+}
 
 // Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond to a layer name in the base model
 LoRAPartsParser default_lora_patterns () {
@@ -846,6 +820,9 @@ public:
     SafetensorsAdapterImpl(const std::filesystem::path& path) :
         tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns())) {}
 
+    SafetensorsAdapterImpl(const ov::Tensor& safetensor)
+        : tensors(group_lora_tensors(safetensor_to_constant_map(safetensor), default_lora_patterns())) {}
+
     const LoRATensors& get_tensors() const override {
         return tensors;
     }
@@ -921,6 +898,10 @@ Adapter::Adapter(const std::filesystem::path& path) :
     m_pimpl(std::make_shared<SafetensorsAdapterImpl>(path)) {
 }
 
+
+Adapter::Adapter(const ov::Tensor& safetensor) :
+    m_pimpl(std::make_shared<SafetensorsAdapterImpl>(safetensor)) {
+}
 
 bool operator== (const Adapter& a, const Adapter& b) {
     return a.m_pimpl->eq(b.m_pimpl.get());
@@ -1380,7 +1361,6 @@ void AdapterController::apply(ov::InferRequest request, const std::optional<Adap
         m_pimpl->apply(request, config);
     }
 }
-
 
 bool AdapterController::has_state_name(const std::string& name) {
     return m_pimpl->has_state_name(name);
