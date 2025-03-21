@@ -124,7 +124,7 @@ public:
 
     void save_load_time(std::chrono::steady_clock::time_point start_time) {
         auto stop_time = std::chrono::steady_clock::now();
-        m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+        m_load_time_ms += std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
     }
 
     virtual ~DiffusionPipeline() = default;
