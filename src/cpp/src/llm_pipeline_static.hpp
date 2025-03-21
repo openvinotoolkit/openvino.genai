@@ -23,8 +23,7 @@ struct LLMPipelineFactory {
     static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Model>& model,
                                                        const ov::genai::Tokenizer& tokenizer,
                                                        const ov::AnyMap& properties,
-                                                       const ov::genai::GenerationConfig& generation_config,
-                                                       const std::filesystem::path& models_path = {});
+                                                       const ov::genai::GenerationConfig& generation_config);
 };
 
 class StatefulLLMPipeline : public LLMPipelineImplBase {
@@ -39,8 +38,7 @@ public:
         const std::shared_ptr<ov::Model>& model,
         const ov::genai::Tokenizer& tokenizer,
         const ov::AnyMap& properties,
-        const ov::genai::GenerationConfig& generation_config,
-        const std::filesystem::path& path = {}
+        const ov::genai::GenerationConfig& generation_config
     );
 
     DecodedResults generate(
