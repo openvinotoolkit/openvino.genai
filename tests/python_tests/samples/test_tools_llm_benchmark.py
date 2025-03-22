@@ -48,6 +48,8 @@ class TestBenchmarkLLM:
             pytest.param("tiny-random-qwen2", ["-d", "cpu", "-n", "1", "-ic", "20", "--max_ngram_size", "3", "--num_assistant_tokens", "5", "-p", "'Why is the Sun yellow?'"]),
             pytest.param("tiny-random-llava", [ "-ic", "4", "-pf", os.path.join(SAMPLES_PY_DIR, "llm_bench/prompts/llava-1.5-7b.jsonl")]),
             pytest.param("tiny-random-llava", [ "-ic", "4", "--optimum", "-pf", os.path.join(SAMPLES_PY_DIR, "llm_bench/prompts/llava-1.5-7b.jsonl")]),
+            pytest.param("tiny-random-latent-consistency", [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "-p", "'an astronaut riding a horse on mars'"]),
+            pytest.param("tiny-random-latent-consistency", [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "-p", "'an astronaut riding a horse on mars'", "--optimum"]),
         ],
         indirect=["convert_model"],
     )
@@ -96,22 +98,14 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("sample_args",
+    @pytest.mark.parametrize("sample_args", 
         [
             ["-d", "cpu", "-n", "1", "--num_steps", "4", "--optimum"],
             ["-d", "cpu", "-n", "1", "--num_steps", "4"],
         ],
     )
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
-    @pytest.mark.parametrize(
-        "generate_image_generation_jsonl",
-        [
-            ("image_generation.jsonl", image_generation_json)
-        ],
-        indirect=True
-    )
-    
-    
+    @pytest.mark.parametrize("generate_image_generation_jsonl", [("image_generation.jsonl", image_generation_json)], indirect=True)  
     def test_python_tool_llm_benchmark_jsonl(self, convert_model, generate_image_generation_jsonl, sample_args):
         """
         Test Speculative Decoding via GenAI with JSONL input
