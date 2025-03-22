@@ -599,7 +599,7 @@ jobs:
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples"
         env:
-          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/samples/tools"
+          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
   
   genai_nodejs_tests:
     name: Node.js bindings tests
