@@ -259,6 +259,18 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Gemma3ForCausalLM',
+    models: [
+      {
+        name: 'Gemma3',
+        links: [
+          'https://huggingface.co/google/gemma-3-1b-it',
+          'https://huggingface.co/google/gemma-3-1b-pt',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'GlmForCausalLM',
     models: [
       {
