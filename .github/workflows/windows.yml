@@ -561,7 +561,7 @@ jobs:
             marker: 'image_generation'
             cmd: 'tests/python_tests/samples'
             runner: 'aks-win-8-cores-16gb'
-    needs: [ openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples ]
+    needs: [ openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 60
     defaults:
       run:
@@ -587,7 +587,14 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_cpack_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
-          
+
+      - name: Download GenAI JS Bildings Artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: genai_nodejs_bindings
+          path: ${{ env.SRC_DIR }}/src/js/bin
+          merge-multiple: true
+
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
@@ -605,11 +612,31 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
+      - name: Setup NodeJS
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: 21
+
+      - name: Install GenAI NPM package
+        working-directory: ${{ env.SRC_DIR }}/src/js
+        run: |
+          npm install --verbose
+          Remove-Item -Recurse -Force node_modules/openvino-node/bin
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+      
+      - name: Install NPM dependencies for samples
+        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        run: |
+          npm install --verbose
+          Remove-Item -Recurse -Force node_modules/openvino-node/bin
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+
       - name: Test Samples (Python and C++)
         run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
+          SAMPLES_JS_DIR: "${{ env.SRC_DIR }}/samples/js"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
           SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
