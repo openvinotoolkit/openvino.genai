@@ -253,6 +253,7 @@ jobs:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
     env:
+      CPACK_PATH: ${{ github.workspace }}/ov_genai
       CPACK_PACKAGE: ${{ github.workspace }}/ov_genai.tar.gz
       WHEEL_PACKAGE: ${{ github.workspace }}/wheels
       MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
@@ -262,11 +263,13 @@ jobs:
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
           name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
-          path: ${{ github.workspace }}/ov_genai
+          path: ${{ env.CPACK_PATH }}
 
       - name: Pack Artifacts
         run: |
-          tar -czvf ${CPACK_PACKAGE} ov_genai
+          pushd ${CPACK_PATH}
+            tar -czvf ${CPACK_PACKAGE} *
+          popd
 
       - name: Download manifest and wheels
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
