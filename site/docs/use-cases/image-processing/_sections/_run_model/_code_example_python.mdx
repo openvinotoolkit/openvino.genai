@@ -1,0 +1,27 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import openvino_genai as ov_genai
+import openvino as ov
+from PIL import Image
+import numpy as np
+from pathlib import Path
+
+def read_image(path: str) -> ov.Tensor:
+    pic = Image.open(path).convert("RGB")
+    image_data = np.array(pic)[None]
+    return ov.Tensor(image_data)
+
+def read_images(path: str) -> list[ov.Tensor]:
+    entry = Path(path)
+    if entry.is_dir():
+        return [read_image(str(file)) for file in sorted(entry.iterdir())]
+    return [read_image(path)]
+
+images = read_images("./images")
+
+pipe = ov_genai.VLMPipeline(model_path, "${props.device || 'CPU'}")
+result = pipe.generate(prompt, images=images, max_new_tokens=100)
+print(result.texts[0])
+`}
+</CodeBlock>

@@ -112,6 +112,10 @@ jobs:
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --optimum --num_steps 4
       - name: Test echarlaix/tiny-random-latent-consistency with GenAI Text to Image
         run: python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --num_steps 4
+      - name: Test echarlaix/tiny-random-latent-consistency with Optimum Intel, static reshape
+        run: python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -p "an astronaut riding a horse on mars" -d cpu -n 1 --num_steps 4 --static_reshape --optimum
+      - name: Test echarlaix/tiny-random-latent-consistency with GenAI Text to Image, static reshape
+        run: python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -p "an astronaut riding a horse on mars" -d cpu -n 1 --num_steps 4 --static_reshape
       - name: Test echarlaix/tiny-random-latent-consistency with GenAI and LoRA
         run: |
           huggingface-cli download katuni4ka/tiny-random-latent-consistency-lora --local-dir ./lora
