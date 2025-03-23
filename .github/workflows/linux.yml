@@ -262,7 +262,7 @@ jobs:
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
           name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
-          path: ${{ github.workspace }}/ov_genai
+          path: ov_genai
 
       - name: Pack Artifacts
         run: |
