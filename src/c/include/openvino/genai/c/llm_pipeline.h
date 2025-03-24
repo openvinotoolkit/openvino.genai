@@ -96,9 +96,17 @@ typedef enum {
 } ov_genai_streamming_status_e;
 
 /**
- * @brief Callback function for streaming output.
+ * @brief Structure for streamer callback functions with arguments.
+ *
+ * The callback function takes two parameters:
+ * - `const char* str`: A constant string extracted from the decoded result for processing
+ * - `void* args`: A pointer to additional arguments, allowing flexible data passing.
  */
-typedef ov_genai_streamming_status_e(OPENVINO_C_API_CALLBACK* stream_callback)(const char*);
+typedef struct {
+    ov_genai_streamming_status_e(
+        OPENVINO_C_API_CALLBACK* callback_func)(const char* str, void* args);  //!< Pointer to the callback function
+    void* args;  //!< Pointer to the arguments passed to the callback function
+} streamer_callback;
 
 /**
  * @brief Generate results by ov_genai_llm_pipeline
@@ -114,7 +122,7 @@ typedef ov_genai_streamming_status_e(OPENVINO_C_API_CALLBACK* stream_callback)(c
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                                                     const char* inputs,
                                                                     const ov_genai_generation_config* config,
-                                                                    const stream_callback* streamer,
+                                                                    const streamer_callback* streamer,
                                                                     ov_genai_decoded_results** results);
 /**
  * @brief Start chat with keeping history in kv cache.

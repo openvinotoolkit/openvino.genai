@@ -32,7 +32,8 @@ size_t Sequence::_make_hash(size_t content_length) {
             }
             if (content_length > prompt_ids.size()) {
                 size_t start = block_start_idx < prompt_ids.size() ? 0 : block_start_idx - prompt_ids.size();
-                content.insert(content.end(), m_generated_ids.begin() + start, m_generated_ids.begin() + content_length - prompt_ids.size());
+                // Use parentheses around (content_length - prompt_ids.size()) to suppress MSVC debug assert: "cannot seek vector iterator after end"
+                content.insert(content.end(), m_generated_ids.begin() + start, m_generated_ids.begin() + (content_length - prompt_ids.size()));
             }
         }
         else if (sequence_group->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS) {

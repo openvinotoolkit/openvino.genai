@@ -1,0 +1,21 @@
+---
+sidebar_position: 1
+---
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import ConvertModelSection from '../_shared/_convert_model.mdx';
+import RunModelSection from './_sections/_run_model/index.mdx';
+import UsageOptionsSection from './_sections/_usage_options/index.mdx';
+
+# Text Generation Using LLMs
+
+<ConvertModelSection>
+    Download and convert model (e.g. [TinyLlama/TinyLlama-1.1B-Chat-v1.0](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0)) to OpenVINO format from Hugging Face:
+
+    <OptimumCLI model='TinyLlama/TinyLlama-1.1B-Chat-v1.0' outputDir='TinyLlama_1_1b_v1_ov' weightFormat='int4' trustRemoteCode />
+
+    See all supported [Large Language Models](/docs/supported-models/#large-language-models-llms).
+</ConvertModelSection>
+
+<RunModelSection />
+
+<UsageOptionsSection />
