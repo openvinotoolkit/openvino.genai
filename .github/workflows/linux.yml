@@ -481,6 +481,12 @@ jobs:
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
 
+      - name: Check HF_HOME
+        run: ls -la ${{ env.HF_HOME }}
+        
+      - name: Check OV_CACHE
+        run: ls -la ${{ env.OV_CACHE }}
+          
       - name: Install OpenVINO wheel
         run: |
           python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
