@@ -31,22 +31,10 @@ inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t
     return false;
 }
 
-inline int get_first_stop_token_pos(Sequence::Ptr sequence, const std::set<int64_t>& stop_token_ids) {
-    const TokenIds& generated_tokens = sequence->get_generated_ids();
-    for (size_t i = 0; i < generated_tokens.size(); i++) {
-        for (auto & stop_token_id : stop_token_ids) {
-            if (generated_tokens[i] == stop_token_id) {
-                return i;
-            }
-        }
-    }
-    return -1;
-}
-
 inline bool is_stop_token_id_hit_in_sequence_group(SequenceGroup::Ptr sequence_group, const std::set<int64_t>& stop_token_ids) {
     for (auto& sequence : sequence_group->get_running_sequences()) {
         const TokenIds& generated_tokens = sequence->get_generated_ids();
-        if (!generated_tokens.empty() and is_stop_token_id_hit(generated_tokens.back(), stop_token_ids)) {
+        if (!generated_tokens.empty() && is_stop_token_id_hit(generated_tokens.back(), stop_token_ids)) {
             return true;
         }
     }
