@@ -49,7 +49,7 @@ jobs:
         - ${{ github.workspace }}:${{ github.workspace }}
 
     steps:
-    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@refs/pull/29650/head
       id: openvino_download
       with:
         platform: ubuntu22
