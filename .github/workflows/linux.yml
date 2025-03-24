@@ -578,7 +578,7 @@ jobs:
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino_tokenizers[transformers];openvino_genai[testing]"
-          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
+          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt;${{ env.SRC_DIR }}/tools/llm_bench/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
         
       - name: gtests
@@ -587,12 +587,19 @@ jobs:
           chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
         
-      - name: Test C++ Tools
+      - name: Test Continuous Batching Tools
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
+          
+      - name: Test LLM Benchmark Tools
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples"
+        env:
+          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
   
   genai_nodejs_tests:
     name: Node.js bindings tests
