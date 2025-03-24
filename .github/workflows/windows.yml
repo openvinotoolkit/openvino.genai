@@ -44,7 +44,7 @@ jobs:
     continue-on-error: true
 
     steps:
-    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@@refs/pull/29650/head
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@refs/pull/29650/head
       id: openvino_download
       with:
         platform: windows
