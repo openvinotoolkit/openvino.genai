@@ -116,7 +116,6 @@ def test_pipeline_from_blob_with_weights(config, model_id):
     del npu_pipe
 
     # Import blob and check accuracy
-    weights_path = os.path.join(model_path,  'openvino_model.bin')
     npu_pipe = LLMPipeline(model_path, "NPU", **(config | {"BLOB_PATH": blob_path }))
     actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
 
@@ -150,7 +149,6 @@ def test_pipeline_cache_dir(config, model_id):
     assert len(os.listdir(cache_dir)) > 0
 
     # Import blob and check accuracy
-    weights_path = os.path.join(model_path,  'openvino_model.bin')
     npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "CACHE_DIR": cache_dir }))
     actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
 
@@ -190,7 +188,6 @@ def test_pipeline_cache_dir_blob_with_weights(config, model_id):
     assert len(os.listdir(cache_dir)) > 0
 
     # Import blob and check accuracy
-    weights_path = os.path.join(model_path,  'openvino_model.bin')
     npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "CACHE_DIR": cache_dir }))
     actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
 
