@@ -47,7 +47,7 @@ jobs:
       with:
         platform: macos_12_6
         commit_packages_to_provide: wheels
-        revision: latest_nightly
+        revision: latest_available_commit
     
     - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@releases/2025/1
       id: openvino_latest_download
