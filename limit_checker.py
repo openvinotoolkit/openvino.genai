@@ -71,7 +71,14 @@ def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
         return {"prompts": [s for s in f]}
 
 def load_samsum_dataset(file_name : str) -> Dict[str, List[str]]:
-    pass
+    import json
+    retval = {"prompts": []}
+    with open(file_name, 'r') as json_file:
+        json_list = list(json_file)
+        for json_str in json_list:
+            result = json.loads(json_str)
+            retval["prompts"].append(result["prompt"])
+    return retval
 
 def get_scheduler_config(num_kv_blocks: Optional[int]) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
@@ -124,6 +131,7 @@ if __name__ == '__main__':
                                                           'If left unspecified, will allocate dynamically to accomodate the generation length.')
     parser.add_argument("--report", type=str, help="File name for CSV-formatted export of limit search data")
     parser.add_argument("--mode", type=str, nargs='?', choices=['gen_length', 'gen_throughput'], required=True)
+    parser.add_argument("--data", type=str, help="Dataset jsonl file")
 
     args = parser.parse_args()
     seqs_per_request = 1
@@ -188,13 +196,46 @@ if __name__ == '__main__':
 
             generation_length *= 2
     elif args.mode == "gen_throughput":
-        pass
+        dataset = load_samsum_dataset(args.data)
+        prompt_throughput = 1
+        prompt_left_bound = prompt_throughput
+        prompt_right_bound = None
+        is_right_bound = False
+
+        while True:
+            gc.collect()
+            generation_config = GenerationConfig()  # expecting default greedy sampling
+            generation_config.num_return_sequences = 1
+            generation_config.apply_chat_template = False
+            prompt_subset = dataset["prompts"][:prompt_throughput]
+            print(f"prompt_throughput {prompt_throughput}")
+            result: GenerationResult = model_cb_opt.generate(prompt_subset, generation_config=[generation_config] * len(prompt_subset))
+
+            pipeline_opt_metrics = model_cb_opt.get_metrics()
+            rss_usage_gb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 3
+            print(f"avg_cache_usage:{pipeline_opt_metrics.avg_cache_usage:.2f}% max_cache_usage:{pipeline_opt_metrics.max_cache_usage:.2f}% rss_usage:{rss_usage_gb:.3f} GB")
+            print()
+
+            max_cache_usage = pipeline_opt_metrics.max_cache_usage
+
+            if max_cache_usage == 100.0 and not is_right_bound:
+                is_right_bound = True
+                prompt_right_bound = prompt_throughput
+
+            if not is_right_bound:
+                prompt_left_bound = prompt_throughput
+                prompt_throughput *= 2
+            else:
+                if max_cache_usage == 100.0:
+                    prompt_right_bound = prompt_throughput
+                elif max_cache_usage < 100.0:
+                    prompt_left_bound = prompt_throughput
+                prompt_throughput = (prompt_left_bound + prompt_right_bound) // 2
+
+                if (prompt_right_bound - prompt_left_bound <= 1):
+                    break
 
 
-    del converted_model
-    del model
-    del evaluator
-    del data_dict
-
-    gc.collect()  # without gc.collect() each case leaks 300 MB of RAM
+        print(f"Approximate highest throughput: {prompt_throughput} prompts")
+        del data_dict
 
