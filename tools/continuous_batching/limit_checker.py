@@ -123,6 +123,23 @@ def get_default_llm_properties():
         hints.kv_cache_precision : ov.Type.f16,
     }
 
+def run_and_write_metrics(model, prompt, generation_config, report_file):
+    result: GenerationResult = model_cb_opt.generate([prompt], generation_config=[generation_config])
+
+    pipeline_opt_metrics = model_cb_opt.get_metrics()
+    rss_usage_gb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 3
+    result_length = len(result[0].m_generation_ids[0])
+    print(f"avg_cache_usage:{pipeline_opt_metrics.avg_cache_usage:.2f}% max_cache_usage:{pipeline_opt_metrics.max_cache_usage:.2f}% rss_usage:{rss_usage_gb:.3f} GB")
+    print(f"result length: {result_length}")
+    print()
+
+    if args.report is not None:
+        with open(args.report, 'a') as f:
+            csv_writer = csv.writer(f)
+            csv_writer.writerow([generation_length, result_length, pipeline_opt_metrics.avg_cache_usage, pipeline_opt_metrics.max_cache_usage, rss_usage_gb])
+    return pipeline_opt_metrics.max_cache_usage
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--eviction_on", action='store_true', help="Whether to apply cache eviction")
@@ -132,6 +149,8 @@ if __name__ == '__main__':
     parser.add_argument("--report", type=str, help="File name for CSV-formatted export of limit search data")
     parser.add_argument("--mode", type=str, nargs='?', choices=['gen_length', 'gen_throughput'], required=True)
     parser.add_argument("--data", type=str, help="Dataset jsonl file")
+    parser.add_argument("--timeout", type=int, help="Maximum time allowed for a single round of generation in the `gen_length` mode", default=120)
+    parser.add_argument("--device", type=str, help="Device for model inference", default="CPU")
 
     args = parser.parse_args()
     seqs_per_request = 1
@@ -140,12 +159,14 @@ if __name__ == '__main__':
     scheduler_config_opt = get_scheduler_config(num_kv_blocks)
     if args.eviction_on:
         scheduler_config_opt.use_cache_eviction = True
-        print("Using eviction")
+        print("Eviction is ON")
+    else:
+        print("Eviction is OFF")
 
     base_model_path = Path("limit_checker_models")
     converted_model = get_converted_model(base_model_path, args.model)
     models_path = converted_model.models_path
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, args.device, {}, get_default_llm_properties())
 
     tokenizer = converted_model.tokenizer
     if args.mode == "gen_length":
@@ -153,12 +174,6 @@ if __name__ == '__main__':
         prompt = data_dict["prompts"][0]
 
         generation_length = 1
-
-        generation_lengths = []
-        result_lengths = []
-        avg_cache_usages = []
-        max_cache_usages = []
-        rss_usages = []
 
         if args.report is not None:
             with open(args.report, 'w') as f:
@@ -174,25 +189,16 @@ if __name__ == '__main__':
             generation_config.apply_chat_template = False
             generation_config.ignore_eos = True
             print(f"generation_length:{generation_length} ", sep='')
-            result: GenerationResult = model_cb_opt.generate([prompt], generation_config=[generation_config])
 
-            pipeline_opt_metrics = model_cb_opt.get_metrics()
-            rss_usage_gb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 3
-            result_length = len(result[0].m_generation_ids[0])
-            print(f"avg_cache_usage:{pipeline_opt_metrics.avg_cache_usage:.2f}% max_cache_usage:{pipeline_opt_metrics.max_cache_usage:.2f}% rss_usage:{rss_usage_gb:.3f} GB")
-            print(f"result length: {result_length}")
-            print()
-
-            if args.report is not None:
-                with open(args.report, 'a') as f:
-                    csv_writer = csv.writer(f)
-                    csv_writer.writerow([generation_length, result_length, pipeline_opt_metrics.avg_cache_usage, pipeline_opt_metrics.max_cache_usage, rss_usage_gb])
-
-            generation_lengths.append(generation_length)
-            result_lengths.append(result_length)
-            avg_cache_usages.append(pipeline_opt_metrics.avg_cache_usage)
-            max_cache_usages.append(pipeline_opt_metrics.max_cache_usage)
-            rss_usages.append(rss_usage_gb)
+            start = time.time()
+            max_cache_usage = run_and_write_metrics(model_cb_opt, prompt, generation_config, args.report)
+            end = time.time()
+            if (end - start) > args.timeout:
+                print("Maximum generation time reached")
+                break
+            elif max_cache_usage == 100:
+                print("Cache size exhausted")
+                break
 
             generation_length *= 2
     elif args.mode == "gen_throughput":
