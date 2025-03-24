@@ -43,6 +43,16 @@ inline int get_first_stop_token_pos(Sequence::Ptr sequence, const std::set<int64
     return -1;
 }
 
+inline bool is_stop_token_id_hit_in_sequence_group(SequenceGroup::Ptr sequence_group, const std::set<int64_t>& stop_token_ids) {
+    for (auto& sequence : sequence_group->get_running_sequences()) {
+        const TokenIds& generated_tokens = sequence->get_generated_ids();
+        if (!generated_tokens.empty() and is_stop_token_id_hit(generated_tokens.back(), stop_token_ids)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
 
 struct SamplerOutput {
