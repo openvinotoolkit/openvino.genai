@@ -400,6 +400,9 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
+      - name: Extract Artifacts
+        run: Expand-Archive -Path ${{ env.OV_INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.OV_INSTALL_DIR }}
+
       - name: Build Samples (Release)
         if: ${{ 'Release' == matrix.build-type }}
         run: |
@@ -589,6 +592,9 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
+      - name: Extract Artifacts
+        run: Expand-Archive -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.INSTALL_DIR }}
+
       - name: Download GenAI JS Bildings Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
@@ -671,7 +677,10 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_cpack_${{ matrix.build-type }},genai_tools_${{ matrix.build-type }},genai_tests_${{ matrix.build-type }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
-          
+
+      - name: Extract Artifacts
+        run: Expand-Archive -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.INSTALL_DIR }}
+
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
