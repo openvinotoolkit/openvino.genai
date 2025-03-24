@@ -85,6 +85,14 @@ def get_argprser():
         help='if the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2,'
         ' output the maximum memory consumption in all iterations.',
     )
+    parser.add_argument(
+        "--memory_consumption_delay",
+        default=0.5,
+        required=False,
+        type=float,
+        help="delay for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance."
+        "It is not recommended to run memory consumption and performance benchmarking in the same time"
+    )
     parser.add_argument('-bs', '--batch_size', type=int, default=1, required=False, help='Batch size value')
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
     parser.add_argument(
@@ -230,6 +238,7 @@ def main():
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
     if args.memory_consumption:
+        mem_consumption.delay = args.memory_consumption_delay
         mem_consumption.start_collect_mem_consumption_thread()
     try:
         if model_args['use_case'] in ['text_gen', 'code_gen']:
