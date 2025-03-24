@@ -24,6 +24,16 @@ auto vlm_generate_docstring = R"(
 
     :param prompt: input prompt
     :type prompt: str
+    The prompt can contain <ov_genai_image_i> with i replaced with
+    an actual zero based index to refer to an image. Reference to
+    images used in previous prompts isn't implemented.
+    A model's native image tag can be used instead of
+    <ov_genai_image_i>. These tags are:
+    MiniCPM-V-2_6: (<image>./</image>)\n
+    Phi-3-vision: <|image_i|>\n - the index starts with one
+    Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+    If the prompt doesn't contain image tags, but images are
+    provided, the tags are prepended to the prompt.
 
     :param images: image or list of images
     :type images: List[ov.Tensor] or ov.Tensor
@@ -45,6 +55,17 @@ auto vlm_generate_kwargs_docstring = R"(
     Generates sequences for VLMs.
 
     :param prompt: input prompt
+    The prompt can contain <ov_genai_image_i> with i replaced with
+    an actual zero based index to refer to an image. Reference to
+    images used in previous prompts isn't implemented.
+    A model's native image tag can be used instead of
+    <ov_genai_image_i>. These tags are:
+    MiniCPM-V-2_6: (<image>./</image>)\n
+    Phi-3-vision: <|image_i|>\n - the index starts with one
+    Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+    If the prompt doesn't contain image tags, but images are
+    provided, the tags are prepended to the prompt.
+
     :type prompt: str
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.

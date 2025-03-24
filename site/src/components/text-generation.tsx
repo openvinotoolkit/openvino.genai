@@ -41,7 +41,7 @@ export const TextGeneration = () => {
         </LanguageTabs>
         <hr />
         <ExploreCodeSamples link={'docs/category/samples'} />
-        <GoToDocumentation link={'docs/how-to-guides/llm'} />
+        <GoToDocumentation link={'docs/use-cases/LLM-pipeline/'} />
       </Section.Column>
     </Section.Container>
   );

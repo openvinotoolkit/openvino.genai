@@ -23,13 +23,11 @@ class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
     // A resampler model to resample image embeddings.
     // [N, H*W, old_hidden_size] is the input shape.
     // [N, query_num, hidden_size] is the output shape.
-    ov::InferRequest m_resampler;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_resampler;
     // Precomputed positional embeddings for the resampler.
     // [70, 70, hidden_size]. 70 is the initial guess of the image
     // height and width after dividing by patch_size.
     ov::Tensor m_pos_embed_cache;
-    // Used to insert <image_id>i</image_id> per image (not a slice).
-    size_t m_image_id = 0;
     size_t m_prev_image_id = 0;
 
 public:
@@ -47,13 +45,15 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) override;
 
     void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) override;
 
     void start_chat(const std::string& system_message) override;
 
     void finish_chat() override;
+
+    bool prompt_has_image_tag(const std::string& prompt) const override;
 
 private:
     ov::Tensor resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes);

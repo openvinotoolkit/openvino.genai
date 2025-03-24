@@ -28,6 +28,7 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 }
 
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
+    m_image_id = 0;
     m_is_chat_conversation = true;
     if (!m_kv_cache_state.get_state().empty()) {
         m_history.clear();
@@ -58,9 +59,14 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
 }
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
+    m_image_id = 0;
     m_is_chat_conversation = false;
     m_history.clear();
     m_kv_cache_state.reset_state();
+}
+
+bool InputsEmbedder::IInputsEmbedder::prompt_has_image_tag(const std::string& prompt) const {
+    return std::regex_search(prompt, UNIVERSAL_PATTERN);
 }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
@@ -70,7 +76,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
     m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, device_config)),
-    m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
+    m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, device_config)),
     m_tokenizer{model_dir, device_config} { }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
@@ -89,13 +95,13 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         device,
         device_config
     )),
-    m_embedding(
+    m_embedding(EmbeddingsModel::create(
         utils::get_model_weights_pair(models_map, "text_embeddings").first,
         utils::get_model_weights_pair(models_map, "text_embeddings").second,
         m_vlm_config.scale_emb,
         device,
         device_config
-    ),
+    )),
     m_tokenizer(tokenizer) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
@@ -174,6 +180,19 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
     return single_image_tensors;
 }
 
+std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
+    std::vector<EncodedImage> embeds;
+    std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+    for (const ov::Tensor& image : single_images) {
+        embeds.emplace_back(m_vision_encoder->encode(image));
+    }
+    return embeds;
+}
+
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+    return get_inputs_embeds(prompt, encode_images(images), metrics);
+}
+
 /// Public InputsEmbedder class
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
@@ -226,11 +245,19 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
     return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+    return m_impl->get_inputs_embeds(prompt, images, metrics);
+}
+
+std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
+    return m_impl->encode_images(images);
+}
+
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
 }
 
-EmbeddingsModel InputsEmbedder::get_embedding_model() const {
+EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
 }
 
@@ -256,6 +283,52 @@ void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
 
 void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
+}
+
+bool InputsEmbedder::prompt_has_image_tag(const std::string& prompt) const {
+    return m_impl->prompt_has_image_tag(prompt);
+}
+
+void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images) {
+    for (size_t idx : image_ids) {
+        OPENVINO_ASSERT(base_id <= idx, "Referring to older images isn't implemented");
+        OPENVINO_ASSERT(idx < base_id + n_images, "Missing image ", idx);
+    }
+}
+
+std::pair<std::string, std::vector<size_t>> normalize_prompt(
+    const std::string& prompt,
+    const std::string& native_tag,
+    const std::string& automatic_tag,
+    size_t base_id,
+    size_t n_images
+) {
+    size_t pos = prompt.find(native_tag);
+    auto [image_prompt, image_sequence] = universal_to_native(prompt, [&](std::ostream& os, size_t) {
+        os << automatic_tag;
+    });
+    if (!image_sequence.empty()) {
+        OPENVINO_ASSERT(pos == std::string::npos, "Prompt can contain only one type of image tags.");
+        verify_ids(image_sequence, base_id, n_images);
+        return {std::move(image_prompt), std::move(image_sequence)};
+    }
+    // Restore ids from native tags
+    while (pos != std::string::npos) {
+        image_sequence.push_back(base_id + image_sequence.size());
+        pos = prompt.find(native_tag, pos + native_tag.length());
+    }
+    if (!image_sequence.empty()) {
+        OPENVINO_ASSERT(image_sequence.size() == n_images, "The number of native image tags and provided images must match because it's ambiguous which image should be ignored.");
+        return {std::move(image_prompt), std::move(image_sequence)};
+    }
+    // Prepend automatic tags
+    std::stringstream stream;
+    for (size_t relative_id = 0; relative_id < n_images; relative_id++) {
+        image_sequence.push_back(base_id + relative_id);
+        stream << automatic_tag;
+    }
+    stream << prompt;
+    return {stream.str(), std::move(image_sequence)};
 }
 
 } // namespace ov::genai

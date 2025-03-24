@@ -15,17 +15,24 @@
 
 namespace {
 
-std::tuple<ov::InferRequest, ov::Tensor, ov::Tensor> init(ov::CompiledModel& compiled) {
-    ov::InferRequest ireq = compiled.create_infer_request();
-    ov::Tensor cpu_tensor = ireq.get_output_tensor();
-    ov::RemoteContext context;
-    try {
-        context = compiled.get_context();
-    } catch (const ov::Exception&) {
-        return {std::move(ireq), cpu_tensor, cpu_tensor};
-    }
-    ov::RemoteTensor remote = context.create_tensor(ov::element::f32, cpu_tensor.get_shape());
-    return {std::move(ireq), std::move(cpu_tensor), std::move(remote)};
+std::unique_ptr<ov::genai::CircularBufferQueue<ov::genai::EmbeddingsRequest>> init(ov::CompiledModel& compiled) {
+    auto embeddings_requests_queue = std::make_unique<ov::genai::CircularBufferQueue<ov::genai::EmbeddingsRequest>>(
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled]() -> ov::genai::EmbeddingsRequest {
+            ov::genai::EmbeddingsRequest req;
+            req.ireq = compiled.create_infer_request();
+            req.cpu_tensor = req.ireq.get_output_tensor();
+            ov::RemoteContext context;
+            try {
+                context = compiled.get_context();
+            } catch (const ov::Exception&) {
+                req.remote_tensor = req.cpu_tensor;
+                return req;
+            }
+            req.remote_tensor = context.create_tensor(ov::element::f32, req.cpu_tensor.get_shape());
+            return req;
+        });
+    return embeddings_requests_queue;
 }
 
 }  // namespace
@@ -44,7 +51,7 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
 
     ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
-    std::tie(m_request, m_cpu_tensor, m_remote_tensor) = init(compiled_model);
+    m_embeddings_requests_queue = init(compiled_model);
 }
 
 EmbeddingsModel::EmbeddingsModel(const std::string& model,
@@ -58,20 +65,21 @@ EmbeddingsModel::EmbeddingsModel(const std::string& model,
     merge_postprocess(m_model, scale_emb);
 
     ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
-    std::tie(m_request, m_cpu_tensor, m_remote_tensor) = init(compiled_model);
+    m_embeddings_requests_queue = init(compiled_model);
 }
 
 ov::Tensor EmbeddingsModel::infer(const ov::Tensor& input_idx, bool return_remote_tensor) {
-    OPENVINO_ASSERT(m_request, "Text embeddings decoder model must be compiled first. Cannot infer non-compiled model");
-
-    m_request.set_input_tensor(input_idx);
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(this->m_embeddings_requests_queue.get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    OPENVINO_ASSERT(req.ireq, "Text embeddings decoder model must be compiled first. Cannot infer non-compiled model");
+    req.ireq.set_input_tensor(input_idx);
     if (return_remote_tensor) {
-        m_request.set_output_tensor(m_remote_tensor);
+        req.ireq.set_output_tensor(req.remote_tensor);
     } else {
-        m_request.set_output_tensor(m_cpu_tensor);
+        req.ireq.set_output_tensor(req.cpu_tensor);
     }
-    m_request.infer();
-    return m_request.get_output_tensor();
+    req.ireq.infer();
+    return req.ireq.get_output_tensor();
 }
 
 void EmbeddingsModel::merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const {

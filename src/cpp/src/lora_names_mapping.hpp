@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <set>
+#include <regex>
 
 #include <openvino/genai/lora_adapter.hpp>
 

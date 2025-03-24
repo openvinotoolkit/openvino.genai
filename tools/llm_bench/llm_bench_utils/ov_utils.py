@@ -10,6 +10,8 @@ import time
 import json
 import types
 from llm_bench_utils.hook_common import get_bench_hook
+from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
+from llm_bench_utils.model_utils import get_version_in_format_to_pars
 from llm_bench_utils.config_class import (
     OV_MODEL_CLASSES_MAPPING,
     TOKENIZE_CLASSES_MAPPING,
@@ -174,6 +176,7 @@ def get_scheduler_config_genai(user_config, config_name="CB config"):
 def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
     from transformers import AutoTokenizer
+    from packaging.version import parse
 
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
         raise ValueError("OpenVINO Tokenizer model is not found in model directory. Please convert tokenizer using following command:\n"
@@ -189,7 +192,8 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
         log.info("Continuous Batching mode activated")
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
-        use_streamer_metrics = not openvino_genai.get_version().startswith("2025.") or draft_model_path
+        version = get_version_in_format_to_pars(openvino_genai.get_version())
+        use_streamer_metrics = parse(version) < parse("2025.0.0") or (draft_model_path and parse(version) < parse("2025.1.0"))
 
     if draft_model_path:
         if not Path(draft_model_path).exists():
@@ -199,6 +203,11 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
         draft_model_load_kwargs = {'scheduler_config': get_scheduler_config_genai(kwargs.get("draft_cb_config"), "draft CB config")}\
             if kwargs.get("draft_cb_config") is not None else {}
         ov_config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
+
+    if kwargs.get('max_ngram_size') and kwargs.get('num_assistant_tokens'):
+        log.info("Prompt Lookup decoding is activated")
+        ov_config['prompt_lookup'] = True
+        use_streamer_metrics = True
 
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None))
     if adapter_config:
@@ -339,26 +348,30 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
         def get_2nd_unet_latency(self):
             return sum(self.iteration_time[1:]) / (len(self.iteration_time) - 1) * 1000 if len(self.iteration_time) > 1 else 0
 
-        def get_unet_latency(self):
-            return (sum(self.iteration_time) / len(self.iteration_time)) * 1000 if len(self.iteration_time) > 0 else 0
+        def get_first_and_other_unet_infer_duration(self):
+            first = self.get_1st_unet_latency()
+            other = self.get_2nd_unet_latency()
+            return (first, other)
 
-        def get_vae_decoder_latency(self):
+        def get_first_and_other_trans_infer_duration(self):
+            return self.get_first_and_other_unet_infer_duration()
+
+        def get_text_encoder_infer_duration(self):
+            return {}
+
+        def get_unet_infer_duration(self):
+            mean = (sum(self.iteration_time) / len(self.iteration_time)) * 1000 if len(self.iteration_time) > 0 else 0
+            return MeanStdPair(mean=mean)
+
+        def get_vae_decoder_infer_duration(self):
             if self.duration != -1:
                 vae_time = self.duration - sum(self.iteration_time)
                 return vae_time * 1000
             return 0
 
-        def get_text_encoder_latency(self):
-            return -1
-
-        def get_text_encoder_step_count(self):
-            return -1
-
-        def get_unet_step_count(self):
-            return len(self.iteration_time)
-
-        def get_vae_decoder_step_count(self):
-            return 1
+        @property
+        def raw_metrics(self):
+            return RawImGenPerfMetrics(self.iteration_time)
 
     image_gen_pipeline_class = openvino_genai.Text2ImagePipeline
     if (kwargs.get("task") == TASK["inpainting"] or ((kwargs.get("media") or kwargs.get("images")) and kwargs.get("mask_image"))
@@ -387,7 +400,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     start = time.perf_counter()
 
     scheduler_type = model_index_data.get("scheduler", ["", ""])[1]
-    if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "PNDMScheduler", "LMSDiscreteScheduler", "EulerDiscreteScheduler",
+    if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "PNDMScheduler", "EulerDiscreteScheduler",
                                "FlowMatchEulerDiscreteScheduler", "EulerAncestralDiscreteScheduler"]):
         scheduler = openvino_genai.Scheduler.from_config(model_path / "scheduler/scheduler_config.json", openvino_genai.Scheduler.Type.DDIM)
         log.warning(f'Type of scheduler {scheduler_type} is unsupported. Please, be aware that it will be replaced to DDIMScheduler')
@@ -516,6 +529,12 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs):
         convert_ov_tokenizer(model_path)
 
     processor_config = get_vlm_processor(model_path)
+
+    cb = kwargs.get("use_cb", False)
+    cb_config = kwargs.get("cb_config")
+    if cb or cb_config is not None:
+        log.info("Continuous Batching mode activated")
+        ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
     start = time.perf_counter()
     llm_pipe = openvino_genai.VLMPipeline(model_path, device.upper(), **ov_config)
