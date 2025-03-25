@@ -483,9 +483,6 @@ jobs:
 
       - name: Check HF_HOME
         run: ls -la ${{ env.HF_HOME }}
-        
-      - name: Check OV_CACHE
-        run: ls -la ${{ env.OV_CACHE }}
           
       - name: Install OpenVINO wheel
         run: |
