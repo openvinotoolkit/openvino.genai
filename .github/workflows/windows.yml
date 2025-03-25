@@ -90,7 +90,7 @@ jobs:
 
       - name: Generate product manifest
         id: create_manifest
-        uses: openvinotoolkit/openvino/.github/actions/create_manifest@refs/pull/29635/head
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
         with:
           repos: |
             ${{ env.SRC_DIR }}
@@ -351,7 +351,7 @@ jobs:
       - name: Store ${{ matrix.build_type }} artifacts to a shared drive
         id: store_artifacts
         if: ${{ always() }}
-        uses: openvinotoolkit/openvino/.github/actions/store_artifacts@refs/pull/29635/head
+        uses: openvinotoolkit/openvino/.github/actions/store_artifacts@master
         with:
           artifacts: |
             ${{ github.workspace }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip
