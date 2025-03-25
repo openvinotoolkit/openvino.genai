@@ -296,12 +296,12 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     size_t segment_offset = 0;
 
     OPENVINO_ASSERT(feature_extractor.sampling_rate != 0, "Sampling Rate for Feature Extractor is 0");
-    const float chunk_length_in_seconds =
+    const float frame_length_in_seconds =
         static_cast<float>(feature_extractor.hop_length) / feature_extractor.sampling_rate;
 
     for (size_t chunk_offset = 0; chunk_offset < input_features.n_frames; chunk_offset += segment_offset) {
 
-        const float chunk_toffset = chunk_offset * chunk_length_in_seconds;
+        const float chunk_time_offset = chunk_offset * frame_length_in_seconds;
 
         auto input_features_chunk = input_features.get_data_with_offset(chunk_offset, feature_extractor.nb_max_frames);
 
@@ -338,7 +338,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                                   config,
                                                                   feature_extractor.nb_max_frames,
                                                                   time_precision,
-                                                                  chunk_toffset);
+                                                                  chunk_time_offset);
 
             utils::filter_non_segment_metrics(raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
 
