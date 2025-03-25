@@ -247,11 +247,11 @@ def main():
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
     if args.memory_consumption:
+        if args.memory_consumption_delay:
+            memory_monitor.interval = args.memory_consumption_delay
         memory_monitor.create_monitors()
         if args.memory_consumption_dir:
             memory_monitor.set_dir(args.memory_consumption_dir)
-            if args.memory_consumption_delay:
-                memory_monitor.interval = args.memory_consumption_delay
     try:
         if model_args['use_case'] in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
