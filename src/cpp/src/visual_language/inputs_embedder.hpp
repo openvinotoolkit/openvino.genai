@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <regex>
 
 #include "utils.hpp"
 #include "lm_encoding.hpp"
@@ -19,6 +20,7 @@
 
 namespace ov::genai {
 struct VLMPerfMetrics;
+const static std::regex UNIVERSAL_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 
 class InputsEmbedder {
 public:
@@ -35,11 +37,15 @@ public:
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics);
+
+    std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
+
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
 
     // returns embedding model which converts token_id(s) to embedding vectors
-    EmbeddingsModel get_embedding_model() const;
+    EmbeddingsModel::Ptr get_embedding_model() const;
 
     // returns tokenizer
     Tokenizer get_tokenizer() const;
@@ -59,6 +65,8 @@ public:
     // finishes chat and clears a chat history 
     void finish_chat();
 
+    bool prompt_has_image_tag(const std::string& prompt) const;
+
 private:
     class IInputsEmbedder {
     protected:
@@ -69,7 +77,7 @@ private:
         // A model to compute token embeddings.
         // Input shape: [N, conversation length].
         // Output shape: [1, conversation length, hidden_size].
-        EmbeddingsModel m_embedding;
+        EmbeddingsModel::Ptr m_embedding;
         // A tokenizer encoding a prompt.
         Tokenizer m_tokenizer;
         // True if chat mode is activated to save conversation
@@ -85,12 +93,20 @@ private:
         utils::KVCacheState m_kv_cache_state;
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
+        // Verifies no previous image is referenced.
+        // InputsEmbedderMiniCPM Uses to insert <image_id>i</image_id> per image (not a slice).
+        size_t m_image_id = 0;
+
     public:
-        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
+        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
+
+        ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
+
+        virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
     
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
     
-        EmbeddingsModel get_embedding_model() const {
+        EmbeddingsModel::Ptr get_embedding_model() const {
             return m_embedding;
         }
     
@@ -111,6 +127,8 @@ private:
         virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
     
         virtual void finish_chat();
+
+        virtual bool prompt_has_image_tag(const std::string& prompt) const;
     
     protected:
         IInputsEmbedder(
@@ -151,5 +169,46 @@ private:
     friend class InputsEmbedderPhi3V;
     friend class InputsEmbedderQwen2VL;
 };
+
+template <typename Func>
+std::pair<std::string, std::vector<size_t>> universal_to_native(
+    const std::string& prompt,
+    const Func& write_native
+) {
+    std::stringstream stream;
+    std::vector<size_t> image_sequence;
+    std::smatch match;
+    std::regex_search(prompt, match, UNIVERSAL_PATTERN);
+    auto search_begin = prompt.begin();
+    while (!match.empty()) {
+        stream.write(&*search_begin, match.position());
+        image_sequence.push_back(std::stoul(match.str(1)));
+        write_native(stream, image_sequence.back());
+        search_begin = match.suffix().first;
+        std::regex_search(search_begin, prompt.end(), match, UNIVERSAL_PATTERN);
+    }
+    stream.write(&*search_begin, prompt.end() - search_begin);
+    return {stream.str(), std::move(image_sequence)};
+}
+
+void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images);
+
+/// @brief 1. Verify native and universal tags aren't mixed.
+/// 2. Replace universal tags with native and save image order.
+/// 3. If there were no universal tags, restore image order from native.
+/// 4. If no tags were found, prepend native tags and assume incremental
+/// ordering.
+/// @param automatic_tag MiniCPM-V-2_6 inserts
+/// (<image>./</image>)\n per image but it only replaces
+/// <image>./</image> leaving ()\n untouched.
+/// automatic_tag allows to handle this by being separated
+/// from native_tag param.
+std::pair<std::string, std::vector<size_t>> normalize_prompt(
+    const std::string& prompt,
+    const std::string& native_tag,
+    const std::string& automatic_tag,
+    size_t base_id,
+    size_t n_images
+);
 
 } // namespace ov::genai

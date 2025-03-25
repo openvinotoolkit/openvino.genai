@@ -1,0 +1,21 @@
+---
+sidebar_position: 2
+---
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import ConvertModelSection from '../_shared/_convert_model.mdx';
+import RunModelSection from './_sections/_run_model/index.mdx';
+import UsageOptionsSection from './_sections/_usage_options/index.mdx';
+
+# Image Generation Using Diffusers
+
+<ConvertModelSection>
+    Download and convert model (e.g. [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)) to OpenVINO format from Hugging Face:
+
+    <OptimumCLI model='stabilityai/stable-diffusion-xl-base-1.0' outputDir='stable_diffusion_xl_base_1_0_ov' weightFormat='int4' trustRemoteCode />
+
+    See all supported [Image Generation Models](/docs/supported-models/#image-generation-models).
+</ConvertModelSection>
+
+<RunModelSection />
+
+<UsageOptionsSection />

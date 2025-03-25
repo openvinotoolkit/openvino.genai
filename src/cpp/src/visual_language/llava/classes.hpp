@@ -35,12 +35,13 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) override;
 
+    std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 protected:
     ov::Tensor merge_text_and_image_embeddings_llava(
         const ov::Tensor& input_ids,
-        const ov::Tensor& text_embeds,
+        ov::Tensor& text_embeds,
         const std::vector<ov::Tensor>& image_embeds,
         int64_t image_token_id);
 };
