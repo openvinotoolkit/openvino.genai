@@ -35,7 +35,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::string& device,
     const ov::AnyMap& properties)
     : StatefulLLMPipeline{
-        utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, properties),
+        utils::read_model(models_path, properties),
         tokenizer,
         device,
         properties,

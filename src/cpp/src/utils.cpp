@@ -16,6 +16,7 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "gguf_utils/gguf_modeling.hpp"
 
 
 #include "sampler.hpp"
@@ -280,6 +281,22 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 ov::Core singleton_core() {
     static ov::Core core;
     return core;
+}
+
+inline bool file_exists(const std::string& name) {
+    std::ifstream f(name.c_str());
+    return f.good();
+}
+
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
+    auto gguf_model_name = model_dir / "openvino_model.gguf";
+
+    if (file_exists(gguf_model_name)) {
+        return create_from_gguf(gguf_model_name);
+    }
+    else {
+        return singleton_core().read_model(model_dir / "openvino_model.xml", {}, config);
+    }
 }
 
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history) {
