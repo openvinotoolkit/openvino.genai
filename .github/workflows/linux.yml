@@ -480,9 +480,6 @@ jobs:
           pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
-
-      - name: Check HF_HOME
-        run: ls -la ${{ env.HF_HOME }}
           
       - name: Install OpenVINO wheel
         run: |
