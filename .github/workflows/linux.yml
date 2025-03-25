@@ -266,10 +266,8 @@ jobs:
           path: ${{ env.CPACK_PATH }}
 
       - name: Pack Artifacts
-        run: |
-          pushd ${CPACK_PATH}
-            tar -czvf ${CPACK_PACKAGE} *
-          popd
+        run: tar -czvf ${{ env.CPACK_PACKAGE }} *
+        working-directory: ${{ env.CPACK_PATH }}
 
       - name: Download manifest and wheels
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
