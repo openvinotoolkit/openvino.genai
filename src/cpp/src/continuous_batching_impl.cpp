@@ -25,71 +25,6 @@ ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model)
     return ir_kv_cache_precision;
 }
 
-void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& plugin_config) {
-    ov::element::Type m_kv_cache_type = ov::element::dynamic, ir_kv_cache_precision = get_model_kv_cache_precision(model);
-    ov::Core core = ov::genai::utils::singleton_core();
-
-    auto inference_precision = core.get_property(device, ov::hint::inference_precision);
-    // if user sets properties affecting KV cache precision
-    const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
-    const auto kv_cache_precision_it = plugin_config.find(ov::hint::kv_cache_precision.name());
-    const auto execution_mode_it = plugin_config.find(ov::hint::execution_mode.name());
-    const bool accuracy_mode = execution_mode_it != plugin_config.end() &&
-        execution_mode_it->second.as<ov::hint::ExecutionMode>() == ov::hint::ExecutionMode::ACCURACY;
-
-    if (device == "CPU") {
-        if (kv_cache_precision_it != plugin_config.end()) {
-            const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
-            m_kv_cache_type = kv_cache_precision;
-        } else if (accuracy_mode) {
-            // ACCURACY mode will use f32 KV cache type
-            m_kv_cache_type = ov::element::f32;
-        } else if (ir_kv_cache_precision != ov::element::dynamic) {
-            // check that kv_cache_precision is set in runtime_info section of OpenVINO IR
-            // but in case it's set to FP16, we need to patch it to be BF16 for Xeon platforms
-            m_kv_cache_type = ir_kv_cache_precision == ov::element::f16 && inference_precision == ov::element::bf16 ?
-                inference_precision : ir_kv_cache_precision;
-        } else {
-            // x86 and ARM have different default kv cache type, take this information from the plugin
-            m_kv_cache_type = core.get_property(device, ov::hint::kv_cache_precision);
-        }
-    } else if (device.find("GPU") != std::string::npos) {
-        if (accuracy_mode) {
-            inference_precision = ov::element::f32;
-        }
-        if (inference_precision_it != plugin_config.end()) {
-            inference_precision = inference_precision_it->second.as<ov::element::Type>();
-        }
-
-        m_kv_cache_type = inference_precision;
-    } else {
-        OPENVINO_THROW(device, " is not supported by OpenVINO Continuous Batching");
-    }
-
-    std::map<std::string, std::shared_ptr<ov::op::v0::Parameter>> key_cache_params, value_cache_params;
-    for (const auto& param_ptr : model->get_parameters()) {
-        const auto& name = param_ptr->get_friendly_name();
-        if (name.find("key_cache.") == 0) {
-            key_cache_params[name] = param_ptr;
-        } else if (name.find("value_cache.") == 0) {
-            value_cache_params[name] = param_ptr;
-        }
-    }
-
-    OPENVINO_ASSERT(key_cache_params.size() == value_cache_params.size() && key_cache_params.size() > 0);
-
-    size_t num_decoder_layers = key_cache_params.size();
-    for (size_t idx = 0; idx < num_decoder_layers; idx++) {
-        auto k = key_cache_params[std::string("key_cache.") + std::to_string(idx)];
-        auto v = value_cache_params[std::string("value_cache.") + std::to_string(idx)];
-
-        k->set_element_type(m_kv_cache_type);
-        v->set_element_type(m_kv_cache_type);
-    }
-
-    model->validate_nodes_and_infer_types();
-}
-
 } // namespace
 
 namespace ov::genai {
@@ -161,11 +96,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     if (sampler_num_threads_it != filtered_properties->end()) {
         sampler_num_threads = sampler_num_threads_it->second.as<size_t>();
         filtered_properties.fork().erase("sampler_num_threads");   // do not use iterator sampler_num_threads_it because a forked container may not be the same container
-    }
-
-    // TODO: remove once GPU plugin automatically set KV cache precisions
-    if (device.find("GPU") != std::string::npos) {
-        apply_kv_cache_precision(model, device, *filtered_properties);
     }
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
@@ -348,8 +278,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
     {
         static ManualTimer timer("forward");
+        const auto infer_start = std::chrono::steady_clock::now();
         timer.start();
         logits = m_model_runner->forward(m_requests, scheduler_output);
+        const auto infer_end = std::chrono::steady_clock::now();
+        m_pipeline_metrics.inference_duration = PerfMetrics::get_microsec(infer_end - infer_start);
         timer.end();
     }
 
@@ -473,11 +406,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
+            // During prefill step (or steps if max_batch_size < prompt_len) we don't generate new tokens,
+            // but still inference took place, so we need to add this time to the total inference duration.
+            raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
             if (m_batch_size > 0) {
                 const auto infer_end = std::chrono::steady_clock::now();
-                const auto infer_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+                const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
                 raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
-                raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
                 raw_perf_counters.m_new_token_times.emplace_back(infer_end);
                 raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
             }

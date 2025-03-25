@@ -40,7 +40,7 @@ clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const Pro
         for (int y = 0; y < crop_height; ++y) {
             for (int x = 0; x < crop_width; ++x) {
                 for (int c = 0; c < 3; ++c) {
-                    cropped_image.buf[(y * crop_width + x) * 3 + c] = 
+                    cropped_image.buf[(y * crop_width + x) * 3 + c] =
                         resized_image.buf[((start_y + y) * resized_image.nx + (start_x + x)) * 3 + c];
                 }
             }
@@ -68,15 +68,18 @@ ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig
 
 } // namespace
 
-EncodedImage VisionEncoderLLaVA::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderLLaVA::encode( const ov::Tensor& image, const ov::AnyMap& config_map) {
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+    ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Tensor pixel_values = get_pixel_values_llava(image, config);
 
-    m_vision_encoder.set_tensor("pixel_values", pixel_values);
-    m_vision_encoder.infer();
+    encoder.set_tensor("pixel_values", pixel_values);
+    encoder.start_async();
+    encoder.wait();
 
-    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+    const ov::Tensor& infer_output = encoder.get_output_tensor();
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
@@ -101,18 +104,25 @@ InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
 
-ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
-    std::string image_token = m_vlm_config.im_start;
-    
+std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const std::vector<ov::Tensor>& images) {
+    std::vector<EncodedImage> embeds;
+    ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+    embeds.reserve(single_images.size());
+    for (const ov::Tensor& image : single_images) {
+        embeds.emplace_back(m_vision_encoder->encode(image, vision_config));
+    }
+    return embeds;
+}
+
+ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+    std::string image_token = m_vlm_config.im_start;
 
     std::string formatted_prompt;
     std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(single_images.size());
+    image_embeds.reserve(images.size());
 
-    for (const auto& image : single_images) {
-        ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
-        EncodedImage encoded_image = m_vision_encoder->encode(image, vision_config);
+    for (const auto& encoded_image : images) {
         for (size_t idx = 0; idx < encoded_image.resized_source.get_shape().at(1); ++idx) {
             formatted_prompt += image_token;
         }
@@ -122,7 +132,7 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
     formatted_prompt += prompt;
 
     ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
-    ov::Tensor text_embeds = m_embedding.infer(input_ids);
+    ov::Tensor text_embeds = m_embedding->infer(input_ids);
 
     if (images.empty()) {
         return text_embeds;
@@ -136,18 +146,17 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
     return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 }
 
-ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(
-    const ov::Tensor& input_ids,
-    const ov::Tensor& text_embeds,
-    const std::vector<ov::Tensor>& image_embeds,
-    int64_t image_token_id) {
+ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids,
+                                                                      ov::Tensor& text_embeds,
+                                                                      const std::vector<ov::Tensor>& image_embeds,
+                                                                      int64_t image_token_id) {
     auto text_embeds_shape = text_embeds.get_shape();
     size_t text_embeds_seq_length = text_embeds_shape[1];
     size_t hidden_size = text_embeds_shape[2];
 
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
     int token_offset = text_embeds_seq_length - 1;
-    float* text_embeds_data = text_embeds.data<float>();
+    auto text_embeds_data = text_embeds.data<float>();
     const float* text_embeds_end = text_embeds_data + text_embeds_seq_length * hidden_size;
 
     // Copy in reversed order because a tokenizer may truncate the input removing the preffix.
@@ -168,7 +177,7 @@ ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(
         }
         size_t n_tokens = std::min(image_embed_it->get_shape().at(1), size_t(token_offset - changed_token_offset));
         size_t n_floats = n_tokens * hidden_size;
-        float* text_embeds_idx = text_embeds_data + (changed_token_offset + 1) * hidden_size;
+        auto text_embeds_idx = text_embeds_data + (changed_token_offset + 1) * hidden_size;
         OPENVINO_ASSERT(text_embeds_idx + n_floats <= text_embeds_end);
         std::copy_n(
             image_embed_it->data<const float>() + image_embed_it->get_size() - n_floats,

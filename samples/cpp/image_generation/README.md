@@ -58,7 +58,7 @@ Please find the template of the callback usage below.
 ov::genai::Text2ImagePipeline pipe(models_path, device);
 
 auto callback = [&](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
-   std::cout << "Image generation step: " << step << " / " << num_steps << std::endl;
+   std::cout << "Image generation step: " << step + 1 << " / " << num_steps << std::endl;
    ov::Tensor img = pipe.decode(latent); // get intermediate image tensor
    if (your_condition) // return true if you want to interrupt image generation
       return true;
@@ -164,7 +164,7 @@ Options:
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
 - `--nw, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-n, --num_iter` (default: `3`): Number of iterations.
-- `-d, --device` (default: `"CPU"`): Device to run the model on.
+- `-d, --device` (default: `"CPU"`): Device(s) to run the pipeline with.
 - `-w, --width` (default: `512`): The width of the output image.
 - `--ht, --height` (default: `512`): The height of the output image.
 - `--is, --num_inference_steps` (default: `20`): The number of inference steps.
@@ -173,6 +173,7 @@ Options:
 - `-i, --image`: Path to input image.
 - `-s, --strength`: Indicates extent to transform the reference `image`. Must be between 0 and 1.
 - `--mi, --mask_image`: Path to mask image.
+- `-r, --reshape': Reshape pipeline before compilation. This can improve image generation performance.
 
 For example:
 

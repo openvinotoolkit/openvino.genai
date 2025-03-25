@@ -122,6 +122,7 @@ def analyze_args(args):
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['media'] = args.media
     model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
+    model_args["static_reshape"] = args.static_reshape
     model_args['mask_image'] = args.mask_image
     model_args['task'] = args.task
     model_args['strength'] = args.strength
@@ -195,6 +196,7 @@ def analyze_args(args):
     model_args["draft_cb_config"] = draft_cb_config
     model_args['num_assistant_tokens'] = args.num_assistant_tokens
     model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
+    model_args['max_ngram_size'] = args.max_ngram_size
     return model_path, model_framework, model_args, model_name
 
 
@@ -320,3 +322,12 @@ def resolve_media_file_path(file_path, prompt_file_path):
     if not (file_path.startswith("http://") or file_path.startswith("https://")):
         return os.path.join(os.path.dirname(prompt_file_path), file_path.replace("./", ""))
     return file_path
+
+
+def get_version_in_format_to_pars(version):
+    processed_version = version
+    if "-" in processed_version:
+        ov_major_version, dev_info = version.split("-", 1)
+        commit_id = dev_info.split("-")[0]
+        processed_version = f"{ov_major_version}-{commit_id}"
+    return processed_version
