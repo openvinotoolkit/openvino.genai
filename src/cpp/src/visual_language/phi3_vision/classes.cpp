@@ -79,7 +79,7 @@ ov::Tensor padding_336(const ov::Tensor& unpadded) {
     ov::Tensor padded{ov::element::u8, {1, s1, tar, 3}};
     uint8_t* padded_data = padded.data<uint8_t>();
     std::fill_n(padded_data, padded.get_size(), 255);
-    uint8_t* unpadded_data = unpadded.data<uint8_t>();
+    auto unpadded_data = unpadded.data<uint8_t>();
     for (size_t row = 0; row < s1; ++row) {
         std::copy_n(unpadded_data + row * s2 * 3, s2 * 3, padded_data + row * tar * 3 + left_padding * 3);
     }
@@ -103,7 +103,7 @@ ov::Tensor HD_transform(const ov::Tensor& uint8, size_t num_crops) {
     size_t new_w = scale * INPUT_IMAGE_SIZE;
     size_t new_h = new_w / ratio;
     clip_image_u8 src{}, dst{};
-    uint8_t* uint8_data = uint8.data<uint8_t>();
+    auto uint8_data = uint8.data<uint8_t>();
     if (trans) {
         src = clip_image_u8{int(height), int(width), {uint8_data, uint8_data + uint8.get_size()}};
         bilinear_resize(src, dst, new_h, new_w);
@@ -115,7 +115,7 @@ ov::Tensor HD_transform(const ov::Tensor& uint8, size_t num_crops) {
 }
 
 ov::Tensor mean_scale(const ov::Tensor& uint8, const ProcessorConfig& config) {
-    uint8_t* uint_8_data = uint8.data<uint8_t>();
+    auto uint_8_data = uint8.data<uint8_t>();
     ov::Tensor float_normalized{ov::element::f32, uint8.get_shape()};
     float* float_data = float_normalized.data<float>();
     OPENVINO_ASSERT(0 == uint8.get_size() % 3, "RGB");
@@ -130,7 +130,7 @@ ov::Tensor mean_scale(const ov::Tensor& uint8, const ProcessorConfig& config) {
 ov::Tensor channels_first(const ov::Tensor& _1hw3) {
     ov::Shape shape = _1hw3.get_shape();
     ov::Tensor _13hw = ov::Tensor{ov::element::f32, {1, 3, shape.at(1), shape.at(2)}};
-    float* _1hw3_data = _1hw3.data<float>();
+    auto _1hw3_data = _1hw3.data<float>();
     float* _13hw_data = _13hw.data<float>();
     for (size_t plane = 0; plane < 3; ++plane) {
         for (size_t row = 0; row < shape.at(1); ++row) {
@@ -156,7 +156,7 @@ ov::Tensor slice_image(const ov::Tensor& image) {
     // Step 1: Define and populate the reshaped tensor in the correct shape order
     ov::Tensor reshaped{ov::element::f32, {N, num_h_slices, num_w_slices, C, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE}};
     float* reshaped_data = reshaped.data<float>();
-    float* image_data = image.data<float>();
+    auto image_data = image.data<float>();
 
     // Populate the reshaped tensor
     for (size_t n = 0; n < N; ++n) {
@@ -217,8 +217,8 @@ ov::Tensor concatenate_batch(const ov::Tensor& float_first, const ov::Tensor& fl
     OPENVINO_ASSERT(shape_first.at(3) == shape_second.at(3), "Width must be the same");
     ov::Tensor concatenated{ov::element::f32, {shape_first.at(0) + shape_second.at(0), shape_first.at(1), shape_first.at(2), shape_first.at(3)}};
     float* concatenated_data = concatenated.data<float>();
-    float* first_data = float_first.data<float>();
-    float* second_data = float_second.data<float>();
+    auto first_data = float_first.data<float>();
+    auto second_data = float_second.data<float>();
     std::copy(first_data, first_data + float_first.get_size(), concatenated_data);
     std::copy(second_data, second_data + float_second.get_size(), concatenated_data + float_first.get_size());
     return concatenated;
@@ -232,7 +232,7 @@ ov::Tensor pad_to_max_num_crops_tensor(const ov::Tensor& nchw, size_t max_crops)
     }
     ov::Tensor padded{ov::element::f32, {max_crops, shape[1], shape[2], shape[3]}};
     float* padded_data = padded.data<float>();
-    float* nchw_data = nchw.data<float>();
+    auto nchw_data = nchw.data<float>();
     std::copy_n(nchw_data, nchw.get_size(), padded_data);
     return padded;
 }
@@ -265,7 +265,8 @@ EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMa
     encoder.set_input_tensor(pixel_values);
     ov::Tensor res{ov::element::f32, encoder.get_output_tensor().get_shape()};
     encoder.set_output_tensor(res);
-    encoder.infer();
+    encoder.start_async();
+    encoder.wait();
     return {std::move(res), image_size};
 }
 
@@ -410,7 +411,8 @@ ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t 
     hd_feature_transformer.set_input_tensor(1, height);
     ov::Tensor width{ov::element::i32, {}, &w_crop};
     hd_feature_transformer.set_input_tensor(2, width);
-    hd_feature_transformer.infer();
+    hd_feature_transformer.start_async();
+    hd_feature_transformer.wait();
     return hd_feature_transformer.get_output_tensor();
 }
 
@@ -477,7 +479,8 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
     ov::Tensor sub_image_features_hd_newline = add_image_newline(sub_image_features_hd, sub_GN);  // [1,h_crop*12*(w_crop*12+1), 4096]
     ov::Tensor image_embeddings = concatenate_2d(sub_image_features_hd_newline, glb_GN, global_image_features_hd_newline);  // [1,l,4096]
     vision_projection.set_input_tensor(image_embeddings);
-    vision_projection.infer();
+    vision_projection.start_async();
+    vision_projection.wait();
     ov::Tensor out = vision_projection.get_output_tensor();
     ov::Tensor res{out.get_element_type(), out.get_shape()};
     out.copy_to(res);
