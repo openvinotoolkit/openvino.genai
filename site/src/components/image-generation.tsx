@@ -19,7 +19,7 @@ export const ImageGeneration = () => {
   return (
     <Section.Container>
       <Section.Column>
-        <Section.Title>Image generation API</Section.Title>
+        <Section.Title>Image Generation API</Section.Title>
         <Section.Description>
           A user-friendly image generation API can be used with generative models to improve
           creative tools and increase productivity. For instance, it can be utilized in furniture
