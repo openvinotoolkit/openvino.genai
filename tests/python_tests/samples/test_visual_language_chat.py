@@ -23,8 +23,6 @@ class TestVisualLanguageChat:
         indirect=["convert_model", "download_test_content"],
     )
     def test_sample_visual_language_chat(self, request, convert_model, download_test_content, questions):
-        model_name = request.node.callspec.params['convert_model']
-        
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
         py_command = [sys.executable, py_script, convert_model, download_test_content]
@@ -36,8 +34,7 @@ class TestVisualLanguageChat:
         cpp_result = run_sample(cpp_command, questions)
 
         # Compare results
-        if model_name != "Qwen2-VL-2B-Instruct": # "Skipping result comparison for Qwen2-VL-2B-Instruct due to CVS-164144"
-            assert py_result.stdout == cpp_result.stdout, f"Results should match"
+        assert py_result.stdout == cpp_result.stdout, f"Results should match"
 
     @pytest.mark.vlm
     @pytest.mark.samples
