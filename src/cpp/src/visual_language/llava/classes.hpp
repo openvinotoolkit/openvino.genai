@@ -41,7 +41,7 @@ public:
 protected:
     ov::Tensor merge_text_and_image_embeddings_llava(
         const ov::Tensor& input_ids,
-        const ov::Tensor& text_embeds,
+        ov::Tensor& text_embeds,
         const std::vector<ov::Tensor>& image_embeds,
         int64_t image_token_id);
 };
