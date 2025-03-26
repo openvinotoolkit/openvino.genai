@@ -782,6 +782,8 @@ public:
      * @param seq_id Identifier of the sequence to free.
      */
     void free_sequence(size_t seq_id) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+
         OPENVINO_ASSERT(m_block_table.find(seq_id) != m_block_table.end(), "sequence with id ", seq_id,
                         " not found in BlockManager, but requested to free");
         auto& block_table = m_block_table[seq_id];
@@ -807,6 +809,7 @@ public:
      * the highest logical block.
      */
     void free_sequence_partially(size_t seq_id, size_t block_num) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         size_t effective_num_layers = m_block_table[seq_id].size();
         for (size_t layer_idx = 0; layer_idx < effective_num_layers; layer_idx++) {
             auto& layer_block_table = m_block_table[seq_id][layer_idx];
@@ -997,6 +1000,7 @@ public:
      * indices into which the source block contents should be copied into separately.
      */
     std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::Ptr seq_group) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         // Will always allocate the identical number of new blocks (if any) to each of the "layers" to keep the
         // number of blocks occupied by each "layer" identical at all times.
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
