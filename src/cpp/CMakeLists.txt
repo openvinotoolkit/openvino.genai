@@ -91,7 +91,7 @@ if(ENABLE_GGUF)
     add_library(gguflib STATIC ${gguflib_SOURCE_DIR}/fp16.c
                                ${gguflib_SOURCE_DIR}/gguflib.c)
     #target_compile_features(gguflib PRIVATE fPIC)
-    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE $<BUILD_INTERFACE:gguflib>) 
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE gguflib) 
     target_sources(${TARGET_NAME_OBJ} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf.cpp
                                ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_quants.cpp
                                ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_modeling.cpp
