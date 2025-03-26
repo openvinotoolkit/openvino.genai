@@ -7,18 +7,20 @@ export default function ImageGenerationModelsTable(): React.JSX.Element {
     'Architecture',
     'Text to Image',
     'Image to Image',
+    'Inpainting',
     'LoRA Support',
     'Example HuggingFace Models',
   ];
 
   const rows = IMAGE_GENERATION_MODELS.map(
-    ({ architecture, textToImage, imageToImage, loraSupport, links }) => (
+    ({ architecture, textToImage, imageToImage, inpainting, loraSupport, links }) => (
       <tr key={architecture}>
         <td>
           <code style={{ whiteSpace: 'pre' }}>{architecture}</code>
         </td>
         <StatusCell value={textToImage} />
         <StatusCell value={imageToImage} />
+        <StatusCell value={inpainting} />
         <StatusCell value={loraSupport} />
         <LinksCell links={links} />
       </tr>
