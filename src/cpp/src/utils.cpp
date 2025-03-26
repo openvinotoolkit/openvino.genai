@@ -291,7 +291,7 @@ inline bool file_exists(const std::string& name) {
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
     auto gguf_model_name = model_dir / "openvino_model.gguf";
 
-    if (file_exists(gguf_model_name)) {
+    if (std::filesystem::exists(gguf_model_name)) {
         return create_from_gguf(gguf_model_name);
     }
     else {
