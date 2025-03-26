@@ -1,3 +1,4 @@
+import Link from '@docusaurus/Link';
 import React from 'react';
 import { BaseModelsTable, LinksCell, StatusCell } from '../base-models-table';
 import { VLM_MODELS } from './models';
@@ -11,7 +12,14 @@ export default function VLMModelsTable(): React.JSX.Element {
         <td rowSpan={models.length}>
           <code>{architecture}</code>
         </td>
-        <td>{models[0].name}</td>
+        <td>
+          {models[0].name}
+          {models[0].notesLink && (
+            <>
+              &nbsp;(<Link href={models[0].notesLink}>Notes</Link>)
+            </>
+          )}
+        </td>
         <StatusCell value={models[0].loraSupport} />
         <LinksCell links={models[0].links} />
       </tr>
