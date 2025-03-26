@@ -56,6 +56,8 @@ std::shared_ptr<ov::Model> create_llama_model(
 
     auto hidden_states = inputs_embeds;
 
+    auto qtype = static_cast<QType>(std::get<int>(configs.at("qtype")));
+
     // Initialize RoPE
     auto rope_const = init_rope(
         std::get<int>(configs.at("head_size")),
@@ -115,7 +117,7 @@ std::shared_ptr<ov::Model> create_llama_model(
         final_norm,
         consts,
         embeddings,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))));
+        qtype);
 
     // Create results
     auto logits = std::make_shared<ov::op::v0::Result>(embed_out);
@@ -126,7 +128,9 @@ std::shared_ptr<ov::Model> create_llama_model(
     auto model = std::make_shared<ov::Model>(ov::OutputVector({logits->output(0)}), sinks, inputs);
 
     // Set runtime options
-    model->set_rt_info("f16", {"runtime_options", "KV_CACHE_PRECISION"});
+    if (qtype == QType::FP16) {
+        model->set_rt_info("f16", {"runtime_options", "KV_CACHE_PRECISION"});
+    }
     model->set_rt_info("8.0", {"runtime_options", "ACTIVATIONS_SCALE_FACTOR"});
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
