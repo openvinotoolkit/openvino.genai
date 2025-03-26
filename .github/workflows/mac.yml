@@ -575,10 +575,9 @@ jobs:
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
         
       - name: Test C++ Tools
-        run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
+        run: python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
+          DYLD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$DYLD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
           
   genai_nodejs_tests:
