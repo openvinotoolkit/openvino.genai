@@ -86,7 +86,7 @@ if(ENABLE_GGUF)
     target_include_directories(${TARGET_NAME_OBJ}
                                PRIVATE "${gguflib_SOURCE_DIR}")
     target_include_directories(${TARGET_NAME_OBJ}
-                              PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils>")
+                              PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils")
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     add_library(gguflib STATIC ${gguflib_SOURCE_DIR}/fp16.c
                                ${gguflib_SOURCE_DIR}/gguflib.c)
