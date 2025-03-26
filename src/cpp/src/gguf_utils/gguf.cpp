@@ -27,7 +27,7 @@ std::string format(std::string fmt, Args... args)
     return fmtStr;
 }
 
-std::optional<uint32_t> dtype_to_gguf_tensor_type(const ov::element::Type& dtype) {
+const std::optional<uint32_t>& dtype_to_gguf_tensor_type(const ov::element::Type& dtype) {
   switch (dtype) {
     case ov::element::f32:
       return GGUF_TYPE_F32;
@@ -40,11 +40,11 @@ std::optional<uint32_t> dtype_to_gguf_tensor_type(const ov::element::Type& dtype
     case ov::element::i32:
       return GGUF_TYPE_I32;
     default:
-      return {};
+      return std::nullopt;
   }
 }
 
-std::optional<ov::element::Type> gguf_type_to_dtype(const uint32_t& gguf_type) {
+const std::optional<ov::element::Type>& gguf_type_to_dtype(const uint32_t& gguf_type) {
   switch (gguf_type) {
     case GGUF_TYPE_F32:
       return ov::element::f32;
@@ -57,7 +57,7 @@ std::optional<ov::element::Type> gguf_type_to_dtype(const uint32_t& gguf_type) {
     case GGUF_TYPE_I32:
       return ov::element::i32;
     default:
-      return {};
+      return std::nullopt;
   }
 }
 
