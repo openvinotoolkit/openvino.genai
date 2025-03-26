@@ -295,7 +295,19 @@ std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  c
         return create_from_gguf(gguf_model_name);
     }
     else {
-        return singleton_core().read_model(model_dir / "openvino_model.xml", {}, config);
+        std::filesystem::path model_path = model_dir;
+
+        if (std::filesystem::exists(model_dir / "openvino_model.xml")) {
+            model_path = model_dir / "openvino_model.xml";
+        }
+        else if (std::filesystem::exists(model_dir / "openvino_language_model.xml")) {
+            model_path = model_path / "openvino_language_model.xml";
+        }
+        else {
+            OPENVINO_THROW("Could not find a model in the directory.");
+        }
+
+        return singleton_core().read_model(model_path, {}, config);
     }
 }
 

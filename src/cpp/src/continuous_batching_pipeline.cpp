@@ -58,17 +58,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     std::filesystem::path model_path = models_path;
     std::filesystem::path directory = models_path;
-    if (std::filesystem::exists(model_path / "openvino_model.xml")) {
-        model_path = model_path / "openvino_model.xml";
-    }
-    else if (std::filesystem::exists(model_path / "openvino_language_model.xml")) {
-        model_path = model_path / "openvino_language_model.xml";
-    }
-    else {
-        OPENVINO_THROW("Could not find a model in the directory.");
-    }
 
-    auto model = utils::singleton_core().read_model(model_path, {}, properties);
+    auto model = utils::read_model(model_path, properties);
     auto tokenizer = ov::genai::Tokenizer(directory, tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(directory);
 

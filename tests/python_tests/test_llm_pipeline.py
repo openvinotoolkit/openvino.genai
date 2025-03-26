@@ -13,11 +13,13 @@ from typing import Tuple, List, Dict
 import openvino as ov
 import openvino_genai as ov_genai
 
+from optimum.intel.openvino.utils import TemporaryDirectory
+
 from utils.constants import get_default_llm_properties
-from utils.hugging_face import generation_config_to_hf, download_and_convert_model
+from utils.hugging_face import generation_config_to_hf, download_and_convert_model, download_gguf_model
 from utils.tokenizers import delete_rt_info, model_tmp_path
-from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType
-from data.models import get_models_list, get_chat_models_list
+from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType, get_gguf_pipeline_types
+from data.models import get_models_list, get_chat_models_list, get_gguf_model_list
 
 #
 # e2e work
@@ -807,3 +809,28 @@ def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
         assert it_cnt == 0
     else:
         assert it_cnt > 0
+
+
+@pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
+@pytest.mark.parametrize("model_ids", get_gguf_model_list())
+@pytest.mark.precommit
+def test_pipelines_generate_with_streaming(pipeline_type, model_ids):
+    hf_model_id = model_ids["hf_model_id"]
+    gguf_model_id = model_ids["gguf_model_id"]
+    gguf_filename = model_ids["gguf_filename"]
+
+    _, _, models_path = download_and_convert_model(hf_model_id)
+    _, _, models_path_gguf = download_and_convert_model(hf_model_id)
+    download_gguf_model(gguf_model_id, gguf_filename, models_path_gguf)
+
+    ov_generation_config = ov_genai.GenerationConfig()
+    ov_generation_config.max_new_tokens = 30
+    ov_generation_config.apply_chat_template = False
+
+    ov_pipe = create_ov_pipeline(models_path, pipeline_type)
+    res_string_input_1 = ov_pipe.generate(questions[0], generation_config=ov_generation_config)
+
+    ov_pipe_gguf = create_ov_pipeline(models_path_gguf, pipeline_type)
+    res_string_input_2 = ov_pipe_gguf.generate(questions[0], generation_config=ov_generation_config)
+
+    assert res_string_input_1 == res_string_input_2
