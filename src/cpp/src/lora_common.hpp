@@ -16,6 +16,17 @@ namespace genai {
 namespace utils {
 
 template <typename T>
+struct LoRAConstant {
+    T tensor;
+
+    LoRAConstant() = default;
+    LoRAConstant(const T& tensor) : tensor(tensor) {}
+
+    template <typename Other>
+    LoRAConstant(const LoRAConstant<Other>& other) : tensor(other.tensor) {}
+};
+
+template <typename T>
 struct LoRAParts {
     T alpha, A, B;
 
