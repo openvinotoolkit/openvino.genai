@@ -2,6 +2,11 @@ name: Deploy Docs to GitHub Pages
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'site/**'
 
 concurrency:
   group: 'pages'
