@@ -115,12 +115,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         normalized_config.num_kv_blocks = size_in_bytes / cache_manager->get_block_size_in_bytes();
     }
 
-    bool can_use_partial_preemption = true;
-    if (device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
-        // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
-        // as it may lead to performance slowdown
-        can_use_partial_preemption = false;
-    }
+    bool can_use_partial_preemption = false;
 
     m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
 
