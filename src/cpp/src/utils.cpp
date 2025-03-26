@@ -283,11 +283,6 @@ ov::Core singleton_core() {
     return core;
 }
 
-inline bool file_exists(const std::string& name) {
-    std::ifstream f(name.c_str());
-    return f.good();
-}
-
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
     auto gguf_model_name = model_dir / "openvino_model.gguf";
 
