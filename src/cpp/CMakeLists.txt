@@ -80,8 +80,8 @@ if(ENABLE_GGUF)
     message(STATUS "Downloading gguflib")
     FetchContent_Declare(
       gguflib
-      GIT_REPOSITORY https://github.com/antirez/gguf-tools/
-      GIT_TAG af7d88d808a7608a33723fba067036202910acb3)
+      URL https://github.com/antirez/gguf-tools/archive/af7d88d808a7608a33723fba067036202910acb3.zip
+      URL_HASH SHA256=d613559c7a398eb4a0919982e6a370055f8466497f0f866d331dc92b735927e7)
     FetchContent_MakeAvailable(gguflib)
     target_include_directories(${TARGET_NAME_OBJ}
                                PRIVATE "${gguflib_SOURCE_DIR}")
