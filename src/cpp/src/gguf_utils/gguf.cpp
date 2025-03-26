@@ -2,6 +2,7 @@
 #include <cstring>
 #include <fstream>
 #include <numeric>
+#include <optional>
 
 #include "gguf.hpp"
 
@@ -27,7 +28,7 @@ std::string format(std::string fmt, Args... args)
     return fmtStr;
 }
 
-const std::optional<uint32_t>& dtype_to_gguf_tensor_type(const ov::element::Type& dtype) {
+std::optional<uint32_t> dtype_to_gguf_tensor_type(const ov::element::Type& dtype) {
   switch (dtype) {
     case ov::element::f32:
       return GGUF_TYPE_F32;
@@ -44,7 +45,7 @@ const std::optional<uint32_t>& dtype_to_gguf_tensor_type(const ov::element::Type
   }
 }
 
-const std::optional<ov::element::Type>& gguf_type_to_dtype(const uint32_t& gguf_type) {
+std::optional<ov::element::Type> gguf_type_to_dtype(const uint32_t& gguf_type) {
   switch (gguf_type) {
     case GGUF_TYPE_F32:
       return ov::element::f32;
