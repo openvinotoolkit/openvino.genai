@@ -20,7 +20,8 @@ struct ExtractedSegments {
 ExtractedSegments extract_segments(const std::vector<int64_t>& tokens,
                                    const ov::genai::WhisperGenerationConfig& config,
                                    const size_t nb_max_frames,
-                                   const float time_precision);
+                                   const float time_precision,
+                                   const float time_offset = 0.f);
 
 }  // namespace genai
 }  // namespace ov
