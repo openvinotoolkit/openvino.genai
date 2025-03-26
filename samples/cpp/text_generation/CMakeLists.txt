@@ -35,7 +35,7 @@ foreach(sample IN LISTS SAMPLE_LIST)
     add_sample_executable(${sample})
 endforeach()
 
-target_include_directories(gguf_example INTERFACE "$<BUILD_INTERFACE:${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/gguf_utils>")
+target_include_directories(gguf_example INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils)
 
 # benchmark_genai
 include(FetchContent)
