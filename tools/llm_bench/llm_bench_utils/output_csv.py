@@ -49,7 +49,7 @@ def output_comments(result, use_case, writer):
         'max_rss_mem: max rss memory consumption;'
     )
     comment_list.append(
-        'max_shared_mem: max shared memory consumption;'
+        'max_sys_mem: max system consumption;'
     )
 
     for comments in comment_list:
@@ -95,8 +95,7 @@ def gen_data_to_csv(result, iter_data, pretrain_time, iter_timestamp):
     first_token_infer_latency = iter_data['first_token_infer_latency']
     other_token_infer_latency = iter_data['other_tokens_infer_avg_latency']
     rss_mem = iter_data['max_rss_mem_consumption']
-    uss_mem = iter_data['max_uss_mem_consumption']
-    shared_mem = iter_data['max_shared_mem_consumption']
+    sys_mem = iter_data['max_sys_mem_consumption']
     token_time = iter_data['tokenization_time']
     detoken_time = iter_data['detokenization_time']
     result['iteration'] = str(iter_data['iteration'])
@@ -124,8 +123,7 @@ def gen_data_to_csv(result, iter_data, pretrain_time, iter_timestamp):
     else:
         result['2nd_infer_avg_latency(ms)'] = round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency
     result['max_rss_mem(MB)'] = round(rss_mem, 5) if rss_mem != '' else rss_mem
-    result['max_uss_mem(MB)'] = round(uss_mem, 5) if uss_mem != '' else uss_mem
-    result['max_shared_mem(MB)'] = round(shared_mem, 5) if shared_mem != '' else shared_mem
+    result['max_sys_mem(MB)'] = round(sys_mem, 5) if sys_mem != '' else sys_mem
     result['prompt_idx'] = iter_data['prompt_idx']
     result['tokenization_time'] = round(token_time, 5) if token_time != '' else token_time
     result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
@@ -148,8 +146,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         '2nd_avg_latency(ms)',
         'precision',
         'max_rss_mem(MB)',
-        'max_uss_mem(MB)',
-        'max_shared_mem(MB)',
+        'max_sys_mem(MB)',
         'prompt_idx',
         '1st_infer_latency(ms)',
         '2nd_infer_avg_latency(ms)',
