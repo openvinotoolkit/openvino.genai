@@ -367,6 +367,7 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer) {
+    _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
     generate_timer.start();
 
@@ -509,6 +510,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_register_step_cache_us
 
 float ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_current_running_average_cache_usage() const {
     return std::accumulate(m_previous_step_cache_usages.begin(), m_previous_step_cache_usages.end(), 0.0) / m_previous_step_cache_usages.size();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reset_cache_usage_statistics() {
+    m_previous_step_cache_usages.clear();
+    m_pipeline_metrics.max_cache_usage = 0.0;
+    m_pipeline_metrics.avg_cache_usage = 0.0;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
