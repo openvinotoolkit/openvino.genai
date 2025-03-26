@@ -58,6 +58,7 @@ model_ids = [
     "katuni4ka/tiny-random-phi3-vision",
     "katuni4ka/tiny-random-llava",
     "katuni4ka/tiny-random-llava-next",
+    "katuni4ka/tiny-random-internvl2",
     "katuni4ka/tiny-random-qwen2vl",
 ]
 
