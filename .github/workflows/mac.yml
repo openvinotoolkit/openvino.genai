@@ -29,7 +29,6 @@ jobs:
       ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
       ov_wheel_source: ${{ steps.openvino_download.outputs.ov_wheel_source }}
       ov_version: ${{ steps.openvino_download.outputs.ov_version }}
-      ov_latest_artifact_name: ${{ steps.openvino_latest_download.outputs.ov_artifact_name }}
     timeout-minutes: 10
     defaults:
       run:
@@ -46,15 +45,9 @@ jobs:
       id: openvino_download
       with:
         platform: macos_12_6
-        commit_packages_to_provide: wheels
-        revision: latest_nightly
-
-    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
-      id: openvino_latest_download
-      with:
-        platform: macos_12_6
-        commit_packages_to_provide: openvino_js_package.tar.gz
-        revision: latest_available_commit
+        commit_packages_to_provide: wheels,openvino_js_package.tar.gz
+        revision: 3efc47cd2654d692c416e0dd16c0f1c281e4d279
+        event_name: pull_request
 
   genai_build_cmake:
     name: Build cpack - ${{ matrix.build-type }}
@@ -328,7 +321,7 @@ jobs:
       - name: Download OpenVINO package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: ${{ needs.openvino_download.outputs.ov_latest_artifact_name }}
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
@@ -464,7 +457,7 @@ jobs:
       - name: Download OpenVINO JS Bildings Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: ${{ needs.openvino_download.outputs.ov_latest_artifact_name }}
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.LATEST_OV_DIR }}
           merge-multiple: true
 
@@ -614,7 +607,7 @@ jobs:
       - name: Download OpenVINO Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: ${{ needs.openvino_download.outputs.ov_latest_artifact_name }}
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
