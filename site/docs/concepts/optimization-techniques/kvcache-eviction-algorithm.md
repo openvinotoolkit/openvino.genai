@@ -11,7 +11,7 @@ The cache eviction algorithm is designed to manage KV (Key-Value) cache memory f
 ## Conceptual Model
 The KV cache for each sequence is divided into three logical areas:
 
-![KV cache layout with cache eviction](./images/kv-cache-areas-diagram.svg)
+![KV cache layout with cache eviction](/img/kv-cache-areas-diagram.svg)
 
 * Start Area: Initial tokens that are never evicted
 * Evictable Area: Tokens that can be evicted based on importance scores
@@ -22,6 +22,7 @@ As the generation starts, the blocks in respective logical areas are filled toke
 The tokens are evicted based on accumulated importance scores following the [H2O](https://arxiv.org/abs/2306.14048) approach.
 The scores are accumulated throughout the entire generation process and their weighting may be changed by adjusting the `CacheEvictionConfig.aggregation_mode` parameter.
 Eviction occurs with a block-wise granularity, and only the completely filled blocks from the "evictable" area are evicted.
+By default the start area is 32 tokens, evictable area is 512 tokens and recent area is 128 tokens, which amounts to a total maximum cache usage by sequence during the generation phase of 672 tokens.
 
 This approach allows LLMs to handle long sequences efficiently by keeping the most contextually important tokens in the cache while evicting those of lesser importance.
 The downside of the eviction procedure is potential loss of generation accuracy, since the cache no longer contains the entire context for the generation, but only the most "important" token blocks.
@@ -52,6 +53,6 @@ The popular RoPE positional embedding is more or less continuous in the linear s
 This may impact the ability of the model to correctly recognize the relative positions of the remaining blocks and degrade the generation accuracy.
 
 Cache rotation seeks to alleviate this by "re-rotating" corresponding blocks so that the blocks that remain after each eviction are once again "continuous" in terms of the effective RoPE embedding. 
-It can be enabled by setting the `CacheEvictionConfig.apply_rotation` field to `true`.
+It can be enabled by setting the `CacheEvictionConfig.apply_rotation` field to `true` (default is `false`).
 
 
