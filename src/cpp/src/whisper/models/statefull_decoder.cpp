@@ -15,7 +15,22 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
 
     utils::apply_slice_before_matmul_transformation(model);
 
-    auto compiled_model = core.compile_model(model, device, properties);
+    if (device.find("NPU") != std::string::npos) {
+        m_is_npu = true;
+    }
+
+    ov::CompiledModel compiled_model;
+    if (m_is_npu) {
+        auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
+
+        utils::KVDesc kv_desc;
+        // Check max_prompt_length and min_response_length
+        std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(
+            model, properties, kv_pos, models_path / "openvino_model.xml"
+        );
+    } else {
+        compiled_model = core.compile_model(model, device, properties);
+    }
 
     utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
     m_request = compiled_model.create_infer_request();

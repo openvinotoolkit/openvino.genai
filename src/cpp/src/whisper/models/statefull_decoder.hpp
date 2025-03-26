@@ -27,5 +27,6 @@ private:
 
 private:
     ov::InferRequest m_request;
+    bool m_is_npu = false;
 };
 }  // namespace ov::genai
