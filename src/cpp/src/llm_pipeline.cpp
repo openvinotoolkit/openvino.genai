@@ -45,8 +45,10 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
 }
 
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
+    auto attention_backend_it = properties.find("ATTENTION_BACKEND");
+
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
-        properties.find("ATTENTION_BACKEND") != properties.end()) {
+        (attention_backend_it != properties.end() && attention_backend_it->second.as<std::string>() == PA_BACKEND)) {
         if (is_paged_attention_available()) {
             return true;
         } else {
