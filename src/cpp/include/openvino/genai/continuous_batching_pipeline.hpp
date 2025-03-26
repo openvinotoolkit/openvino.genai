@@ -42,12 +42,12 @@ struct PipelineMetrics {
     float cache_usage = 0.0;
 
     /**
-    * Max KV cache usage during the lifetime of the pipeline in %
+    * Max KV cache usage during the last .generate() call in %
     */
     float max_cache_usage = 0.0;
 
     /**
-    * Running average of the KV cache usage during the lifetime of the pipeline, with max window size of 1000 steps
+    * Running average of the KV cache usage during the last .generate() call, with max window size of 1000 internal model inferences
     */
     float avg_cache_usage = 0.0;
 
