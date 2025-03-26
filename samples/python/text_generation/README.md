@@ -59,8 +59,8 @@ The following template can be used as a default, but it may not work properly wi
 NPU device is supported with some limitations. See [NPU inference of
 LLMs](https://docs.openvino.ai/2025/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) documentation. In particular:
 
-- Models must be exported with symmetric INT4 quantization (`optimum-cli export openvino --weight-format int4 --sym --model <model> <output_folder>`).
-  For models with more than 4B parameters, channel wise quantization should be used (`--group-size -1`).
+- Models must be exported with symmetric INT4 quantization (`optimum-cli export openvino --task text-generation-with-past --weight-format int4 --sym --model <model> <output_folder>`). Note: [NNCF](https://github.com/openvinotoolkit/nncf) must be installed (`pip install nncf`) to enable model quantization and weight compression.
+  For models with more than 4B parameters, channel wise quantization should be used (`--group-size -1`). 
 - Beam search and parallel sampling are not supported.
 - Use OpenVINO 2025.0 or later (installed by deployment-requirements.txt, see "Common information" section), and the latest NPU driver.
 
