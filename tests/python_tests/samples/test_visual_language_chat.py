@@ -22,7 +22,7 @@ class TestVisualLanguageChat:
         ],
         indirect=["convert_model", "download_test_content"],
     )
-    def test_sample_visual_language_chat(self, request, convert_model, download_test_content, questions):
+    def test_sample_visual_language_chat(self, convert_model, download_test_content, questions):
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
         py_command = [sys.executable, py_script, convert_model, download_test_content]
