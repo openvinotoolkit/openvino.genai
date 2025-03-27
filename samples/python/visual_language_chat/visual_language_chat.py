@@ -11,6 +11,7 @@ from openvino import Tensor
 from pathlib import Path
 
 
+
 def streamer(subword: str) -> bool:
     '''
 
