@@ -80,8 +80,8 @@ if(ENABLE_GGUF)
     message(STATUS "Downloading gguflib")
     FetchContent_Declare(
       gguflib
-      URL https://github.com/antirez/gguf-tools/archive/af7d88d808a7608a33723fba067036202910acb3.zip
-      URL_HASH SHA256=d613559c7a398eb4a0919982e6a370055f8466497f0f866d331dc92b735927e7)
+      URL https://github.com/Lourdle/gguf-tools/archive/bac796ada809ac293e685db59b075971181cb008.zip
+      URL_HASH SHA256=4d6eab5055468d222833f3f83fe2f7909ccd06114278c2c0b468570ef002c22d)
     FetchContent_MakeAvailable(gguflib)
     target_include_directories(${TARGET_NAME_OBJ}
                                PRIVATE "${gguflib_SOURCE_DIR}")
