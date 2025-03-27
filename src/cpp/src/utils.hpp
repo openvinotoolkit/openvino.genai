@@ -93,6 +93,8 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 
 ov::Core singleton_core();
 
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
+
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
 
 struct KVAxesPosition {

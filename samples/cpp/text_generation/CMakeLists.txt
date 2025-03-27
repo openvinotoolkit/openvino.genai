@@ -34,7 +34,6 @@ foreach(sample IN LISTS SAMPLE_LIST)
     add_sample_executable(${sample})
 endforeach()
 
-
 # benchmark_genai
 include(FetchContent)
 
