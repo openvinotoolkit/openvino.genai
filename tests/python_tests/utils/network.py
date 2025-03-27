@@ -35,13 +35,15 @@ def retry_request(func, retries=5):
         try:
             return func()
         except (CalledProcessError, RequestException, HfHubHTTPError) as e:
+            print(f"[{datetime.datetime.now()}] [retry_request] exception occured: {e}")
             if isinstance(e, CalledProcessError):
-                if any(pattern in e.stderr for pattern in network_error_patterns):
-                    logger.warning(f"CalledProcessError occurred: {e.stderr}")
-                    print(f"[{datetime.datetime.now()}] [retry_request] exception catched: {e}")
-                else:
-                    print(f"[{datetime.datetime.now()}] [retry_request] exception re-raised: {e}")
-                    raise e
+                print(f"[{datetime.datetime.now()}] [retry_request] CalledProcessError exception occured: {e.stderr}")
+                # if any(pattern in e.stderr for pattern in network_error_patterns):
+                #     logger.warning(f"CalledProcessError occurred: {e.stderr}")
+                #     print(f"[{datetime.datetime.now()}] [retry_request] exception catched: {e}")
+                # else:
+                #     print(f"[{datetime.datetime.now()}] [retry_request] exception re-raised: {e}")
+                #     raise e
             if attempt < retries - 1:
                 timeout = 2 ** attempt
                 print(f"[{datetime.datetime.now()}] [retry_request] timeout: {timeout}")
