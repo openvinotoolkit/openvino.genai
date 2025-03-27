@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import time
+import datetime
 import logging
 from huggingface_hub.utils import HfHubHTTPError
 from subprocess import CalledProcessError # nosec B404
@@ -37,10 +38,13 @@ def retry_request(func, retries=5):
             if isinstance(e, CalledProcessError):
                 if any(pattern in e.stderr for pattern in network_error_patterns):
                     logger.warning(f"CalledProcessError occurred: {e.stderr}")
+                    print(f"[{datetime.datetime.now()}] [retry_request] exception catched: {e}")
                 else:
+                    print(f"[{datetime.datetime.now()}] [retry_request] exception re-raised: {e}")
                     raise e
             if attempt < retries - 1:
                 timeout = 2 ** attempt
+                print(f"[{datetime.datetime.now()}] [retry_request] timeout: {timeout}")
                 logger.info(f"Attempt {attempt + 1} failed. Retrying in {timeout} seconds.")
                 time.sleep(timeout)
             else:
