@@ -2,10 +2,7 @@
 import gc
 import os
 import psutil
-import sys
 import csv
-import datasets
-import pytest
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -16,7 +13,6 @@ from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, Generati
 from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
-import whowhatbench
 import argparse
 
 import time
@@ -109,9 +105,6 @@ def get_converted_model(base_model_path: Path, model_id: str):
     converted_model = ConvertedModel(model, tokenizer, models_path)
     return converted_model
 
-
-SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
-LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.NORM_SUM)
 
 import openvino.properties.hint as hints
 import openvino.properties as props

@@ -36,7 +36,7 @@ After the prefill phase, however, the maximum cache occupancy for each sequence 
 
 
 ## Sample - impact of cache eviction on possible generation length and prompt throughput
-[limit_checker.py](https://github.com/openvinotoolkit/openvino.genai/tree/master/tools/continuous_batching/limit_checker.py) can be used to visualize the impact of the cache eviction algorithm on the end performance of the generation pipeline.
+[limit_checker.py](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/text_generation/limit_checker.py) can be used to visualize the impact of the cache eviction algorithm on the end performance of the generation pipeline.
 The script is paramaterized to allow specifying own model (by its `huggingface_hub` ID) and the base cache size.
 
 With `--mode gen_length`, the script will run the generation pipeline with increasing requested length of generation until it either hits 100% maximum cache usage or times out. 
