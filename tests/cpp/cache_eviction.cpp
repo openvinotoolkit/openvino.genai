@@ -384,23 +384,27 @@ struct CacheEvictionConfigInitParamsForTest {
     size_t start_size;
     size_t recent_size;
     size_t max_cache_size;
+    size_t snapkv_window_size;
 };
 
 using CacheEvictionConfigInitializationTest = ::testing::TestWithParam<CacheEvictionConfigInitParamsForTest>;
 
 const std::vector<CacheEvictionConfigInitParamsForTest> INVALID_CONFIG_INIT_PARAMS_CASES = {
         // zero area sizes
-        {32, 32, 64},
-        {0, 13, 39},
-        {128, 0, 384},
+        {32, 32, 64, 8},
+        {0, 13, 39, 1},
+        {128, 0, 384, 7},
 
         // max_cache_size less than start_size + recent_size
         {32, 64, 32},
+
+        // zero snapkv window
+        {32, 32, 256, 0},
 };
 
 TEST_P(CacheEvictionConfigInitializationTest, ThrowsForInvalidConfigParams) {
     auto params = GetParam();
-    EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size, params.recent_size, params.max_cache_size, ov::genai::AggregationMode::NORM_SUM), ov::Exception);
+    EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size, params.recent_size, params.max_cache_size, ov::genai::AggregationMode::NORM_SUM, /* apply_rotation = */ false, params.snapkv_window_size), ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionConfigInitializationTest,
