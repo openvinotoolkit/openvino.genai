@@ -685,7 +685,6 @@ public:
      * @param prompt_size Prompt size for this sequence.
      */
     void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, size_t prompt_size = 0) {
-        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
 
         auto sequence_id = sequence->get_id();
@@ -815,7 +814,6 @@ public:
      * the highest logical block.
      */
     void free_sequence_partially(size_t seq_id, size_t block_num) {
-        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         size_t effective_num_layers = m_block_table[seq_id].size();
         for (size_t layer_idx = 0; layer_idx < effective_num_layers; layer_idx++) {
             auto& layer_block_table = m_block_table[seq_id][layer_idx];
