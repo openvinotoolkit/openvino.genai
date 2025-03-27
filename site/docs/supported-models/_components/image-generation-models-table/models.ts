@@ -2,6 +2,7 @@ type ImageGenerationModelType = {
   architecture: string;
   textToImage: boolean;
   imageToImage: boolean;
+  inpainting: boolean;
   loraSupport: boolean;
   links: string[];
 };
@@ -11,6 +12,7 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
     architecture: 'Latent Consistency Model',
     textToImage: true,
     imageToImage: true,
+    inpainting: true,
     loraSupport: true,
     links: ['https://huggingface.co/SimianLuo/LCM_Dreamshaper_v7'],
   },
@@ -18,6 +20,7 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
     architecture: 'Stable Diffusion',
     textToImage: true,
     imageToImage: true,
+    inpainting: true,
     loraSupport: true,
     links: [
       'https://huggingface.co/CompVis/stable-diffusion-v1-1',
@@ -46,20 +49,44 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
     ],
   },
   {
+    architecture: 'Stable Diffusion Inpainting',
+    textToImage: false,
+    imageToImage: false,
+    inpainting: true,
+    loraSupport: true,
+    links: [
+      'https://huggingface.co/stabilityai/stable-diffusion-2-inpainting',
+      'https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-inpainting',
+      'https://huggingface.co/botp/stable-diffusion-v1-5-inpainting',
+      'https://huggingface.co/parlance/dreamlike-diffusion-1.0-inpainting',
+    ],
+  },
+  {
     architecture: 'Stable Diffusion XL',
     textToImage: true,
     imageToImage: true,
+    inpainting: true,
     loraSupport: true,
     links: [
       'https://huggingface.co/stabilityai/stable-diffusion-xl-base-0.9',
       'https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0',
       'https://huggingface.co/stabilityai/sdxl-turbo',
+      'https://huggingface.co/cagliostrolab/animagine-xl-4.0',
     ],
+  },
+  {
+    architecture: 'Stable Diffusion XL Inpainting',
+    textToImage: false,
+    imageToImage: false,
+    inpainting: true,
+    loraSupport: true,
+    links: ['https://huggingface.co/diffusers/stable-diffusion-xl-1.0-inpainting-0.1'],
   },
   {
     architecture: 'Stable Diffusion 3',
     textToImage: true,
-    imageToImage: false,
+    imageToImage: true,
+    inpainting: true,
     loraSupport: false,
     links: [
       'https://huggingface.co/stabilityai/stable-diffusion-3-medium-diffusers',
@@ -71,7 +98,8 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
   {
     architecture: 'Flux',
     textToImage: true,
-    imageToImage: false,
+    imageToImage: true,
+    inpainting: true,
     loraSupport: false,
     links: [
       'https://huggingface.co/black-forest-labs/FLUX.1-schnell',
@@ -79,7 +107,9 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
       'https://huggingface.co/black-forest-labs/FLUX.1-dev',
       'https://huggingface.co/shuttleai/shuttle-3-diffusion',
       'https://huggingface.co/shuttleai/shuttle-3.1-aesthetic',
+      'https://huggingface.co/shuttleai/shuttle-jaguar',
       'https://huggingface.co/Shakker-Labs/AWPortrait-FL',
+      'https://huggingface.co/black-forest-labs/FLUX.1-Fill-dev',
     ],
   },
 ];
