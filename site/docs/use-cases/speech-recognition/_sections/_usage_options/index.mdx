@@ -1,4 +1,5 @@
 import BasicGenerationConfiguration from '@site/docs/use-cases/_shared/_basic_generation_configuration.mdx';
+import BeamSearchGeneration from '@site/docs/use-cases/_shared/_beam_search_generation.mdx';
 import GenerationConfigurationWorkflow from '@site/docs/use-cases/_shared/_generation_configuration_workflow.mdx';
 import Streaming from '@site/docs/use-cases/_shared/_streaming.mdx';
 
@@ -56,6 +57,49 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master
       </TabItemCpp>
   </LanguageTabs>
 </BasicGenerationConfiguration>
+
+<BeamSearchGeneration>
+  <LanguageTabs>
+      <TabItemPython>
+          ```python
+          import openvino_genai as ov_genai
+
+          pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+
+          # Get default generation config
+          config = pipe.get_generation_config()
+
+          # Modify parameters
+          config.max_new_tokens = 256
+          config.num_beams = 15
+          config.num_beam_groups = 3
+          config.diversity_penalty = 1.0
+
+          # Generate text with custom configuration
+          result = pipe.generate(raw_speech, config)
+          ```
+      </TabItemPython>
+      <TabItemCpp>
+          ```cpp
+          int main() {
+              ov::genai::WhisperPipeline pipe(model_path, "CPU");
+
+              // Get default generation config
+              ov::genai::GenerationConfig config = pipe.get_generation_config();
+
+              // Modify parameters
+              config.max_new_tokens = 256;
+              config.num_beams = 15;
+              config.num_beam_groups = 3;
+              config.diversity_penalty = 1.0f;
+
+              // Generate text with custom configuration
+              auto result = pipe.generate(raw_speech, config);
+          }
+          ```
+      </TabItemCpp>
+  </LanguageTabs>
+</BeamSearchGeneration>
 
 ### Transcription
 
