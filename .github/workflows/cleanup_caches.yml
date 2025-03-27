@@ -27,7 +27,7 @@ jobs:
 
       - name: Cleanup cache
         run: |
-          echo "Delete cache files if they have not been used in over 30 days"
+          echo "Delete the cached test data"
             [ ! -z "${{ env.OV_CACHE }}" ] && rm -rf ${{ env.OV_CACHE }}/*
 
       - name: Post-Collecting Cache Info
