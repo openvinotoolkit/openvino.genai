@@ -13,6 +13,7 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
       <TabItemPython>
           ```python
           import openvino_genai as ov_genai
+
           pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
           # Get default configuration
@@ -60,6 +61,7 @@ Beam search helps explore multiple possible text completions simultaneously, oft
     <TabItemPython>
         ```python
         import openvino_genai as ov_genai
+
         pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
         # Get default generation config
