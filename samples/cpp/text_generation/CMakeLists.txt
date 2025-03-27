@@ -12,7 +12,6 @@ function(add_sample_executable target_name)
     add_executable(${target_name} ${target_name}.cpp)
     target_link_libraries(${target_name} PRIVATE openvino::genai)
     set_target_properties(${target_name} PROPERTIES
-    target_include_directories(${target_name} PRIVATE "$<BUILD_INTERFACE:${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/gguf_utils>")
         # Ensure out-of-box LC_RPATH on macOS with SIP
         INSTALL_RPATH_USE_LINK_PATH ON)
     install(TARGETS ${target_name}
@@ -23,7 +22,6 @@ endfunction()
 
 set (SAMPLE_LIST
     greedy_causal_lm
-    gguf_example
     encrypted_model_causal_lm
     beam_search_causal_lm
     chat_sample
