@@ -21,7 +21,7 @@ std::string format(std::string fmt, Args... args)
     size_t bufferSize = 1000;
     char *buffer = new char[bufferSize];
     int n = sprintf(buffer, fmt.c_str(), args...);
-    assert (n >= 0 and n < (int) bufferSize - 1  && "check fmt_str output");
+    assert (n >= 0 && n < (int)bufferSize - 1);
 
     std::string fmtStr (buffer);
     delete buffer;
