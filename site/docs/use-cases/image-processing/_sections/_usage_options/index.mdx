@@ -1,5 +1,6 @@
 import BasicGenerationConfiguration from '@site/docs/use-cases/_shared/_basic_generation_configuration.mdx';
 import ChatScenario from '@site/docs/use-cases/_shared/_chat_scenario.mdx';
+import GenerationConfigurationWorkflow from '@site/docs/use-cases/_shared/_generation_configuration_workflow.mdx';
 import Streaming from '@site/docs/use-cases/_shared/_streaming.mdx';
 
 ## Additional Usage Options
@@ -12,11 +13,14 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master
 
 Similar to [text generation](/docs/use-cases/text-generation/#use-different-generation-parameters), VLM pipelines support various generation parameters to control the text output.
 
+<GenerationConfigurationWorkflow />
+
 <BasicGenerationConfiguration>
   <LanguageTabs>
       <TabItemPython>
           ```python
           import openvino_genai as ov_genai
+
           pipe = ov_genai.VLMPipeline(model_path, "CPU")
 
           # Get default configuration

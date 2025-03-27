@@ -2,30 +2,28 @@ import { ExploreCodeSamples } from '@site/src/components/GoToLink/explore-code-s
 import { GoToDocumentation } from '@site/src/components/GoToLink/go-to-documentation';
 import { LanguageTabs, TabItemCpp, TabItemPython } from '@site/src/components/LanguageTabs';
 import { Section } from '@site/src/components/Section';
-import { SectionImage } from './Section/section-image';
 
 import ImagePlaceholder from '@site/static/img/image-generation-placeholder.webp';
 
-import CodeExampleCpp from '@site/docs/use-cases/image-generation/_sections/_run_model/_text2image_cpp.mdx';
-import CodeExamplePython from '@site/docs/use-cases/image-generation/_sections/_run_model/_text2image_python.mdx';
+import CodeExampleCpp from '@site/docs/use-cases/speech-recognition/_sections/_run_model/_code_example_cpp.mdx';
+import CodeExamplePython from '@site/docs/use-cases/speech-recognition/_sections/_run_model/_code_example_python.mdx';
 
 const FEATURES = [
-  'Alter parameters (width, height, iterations) and compile model for static size',
-  'Load LoRA adapters (in safetensor format) and dynamically switch between them',
-  'Generate multiple images per one request',
+  'Translate transcription to English',
+  'Predict timestamps',
+  'Process Long-Form (>30 seconds) audio',
 ];
 
-export const ImageGeneration = () => {
+export const SpeechRecognition = () => {
   return (
     <Section.Container>
       <Section.Column>
-        <Section.Title>Image Generation API</Section.Title>
+        <Section.Title>Speech Recognition API</Section.Title>
         <Section.Description>
-          A user-friendly image generation API can be used with generative models to improve
-          creative tools and increase productivity. For instance, it can be utilized in furniture
-          design tools to create various design concepts.
+          An intuitive speech-to-text API can work with models like Whisper to enable use cases such
+          as video transcription, enhancing communication tools.
         </Section.Description>
-        <SectionImage url={ImagePlaceholder} alt={'Image generation API'} />
+        <Section.Image url={ImagePlaceholder} alt={'Speech to text'} />
       </Section.Column>
       <Section.Column>
         <Section.Features features={FEATURES} />
@@ -40,7 +38,7 @@ export const ImageGeneration = () => {
         </LanguageTabs>
         <hr />
         <ExploreCodeSamples link="docs/category/samples" />
-        <GoToDocumentation link="docs/use-cases/image-generation/" />
+        <GoToDocumentation link="docs/use-cases/speech-recognition" />
       </Section.Column>
     </Section.Container>
   );

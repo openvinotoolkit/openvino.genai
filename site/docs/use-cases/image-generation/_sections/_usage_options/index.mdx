@@ -1,3 +1,5 @@
+import GenerationConfigurationWorkflow from '@site/docs/use-cases/_shared/_generation_configuration_workflow.mdx';
+
 ## Additional Usage Options
 
 :::tip
@@ -5,6 +7,10 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master
 :::
 
 ### Use Different Generation Parameters
+
+<GenerationConfigurationWorkflow />
+
+#### Image Generation Configuration
 
 You can adjust several parameters to control the image generation process, including dimensions and the number of inference steps:
 
@@ -65,7 +71,7 @@ You can adjust several parameters to control the image generation process, inclu
 - `guidance_scale`: Balances prompt adherence vs. creativity. Higher values follow prompt more strictly, lower values allow more creative freedom.
 - `rng_seed`: Controls randomness for reproducible results. Same seed produces identical images across runs.
 
-For the full list of generation parameters, refer to the [API reference](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.ImageGenerationConfig.html).
+For the full list of generation parameters, refer to the [Image Generation Config API](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.ImageGenerationConfig.html).
 
 :::
 

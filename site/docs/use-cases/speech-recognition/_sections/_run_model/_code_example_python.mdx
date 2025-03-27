@@ -1,0 +1,17 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import openvino_genai as ov_genai
+import librosa
+
+def read_wav(filepath):
+    raw_speech, samplerate = librosa.load(filepath, sr=16000)
+    return raw_speech.tolist()
+
+raw_speech = read_wav('sample.wav')
+
+pipe = ov_genai.WhisperPipeline(model_path, "${props.device || 'CPU'}")
+result = pipe.generate(raw_speech, max_new_tokens=100)
+print(result)
+`}
+</CodeBlock>

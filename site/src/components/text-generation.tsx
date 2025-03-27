@@ -21,7 +21,7 @@ export const TextGeneration = () => {
   return (
     <Section.Container>
       <Section.Column>
-        <Section.Title>Text generation API</Section.Title>
+        <Section.Title>Text Generation API</Section.Title>
         <Section.Description>
           An easy-to-use API for text generation can work with an LLM model to create chatbots, AI
           assistants like financial helpers, and AI tools like legal contract creators.
