@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "image_generation/schedulers/euler_discrete.hpp"
@@ -102,13 +102,14 @@ EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) :
     m_sigmas.push_back(0);
 
     m_step_index = -1;
+    m_begin_index = -1;
 }
 
 void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     // TODO: support `timesteps` and `sigmas` inputs
     m_timesteps.clear();
     m_sigmas.clear();
-    m_step_index = -1;
+    m_step_index = m_begin_index = -1;
 
     m_num_inference_steps = num_inference_steps;
     std::vector<float> sigmas;
@@ -192,6 +193,22 @@ void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float str
         OPENVINO_THROW("Unsupported value for 'final_sigmas_type'");
     }
     m_sigmas.push_back(sigma_last);
+
+    // apply 'strength' used in image generation
+    // in diffusers, it's https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl_img2img.py#L650
+    {
+        size_t init_timestep = std::min<size_t>(num_inference_steps * strength, num_inference_steps);
+        size_t t_start = std::max<size_t>(num_inference_steps - init_timestep, 0);
+        // keep original timesteps
+        m_schedule_timesteps = m_timesteps;
+        // while return patched ones by 'strength' parameter
+        m_timesteps = std::vector<int64_t>(m_timesteps.begin() + t_start, m_timesteps.end());
+        m_begin_index = t_start;
+
+        OPENVINO_ASSERT(!m_timesteps.empty(),
+                        "After adjusting the num_inference_steps by strength parameter: ", strength,
+                        " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
+    }
 }
 
 std::map<std::string, ov::Tensor> EulerDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
@@ -199,10 +216,10 @@ std::map<std::string, ov::Tensor> EulerDiscreteScheduler::step(ov::Tensor noise_
     // latents - sample
     // inference_step
 
-    size_t timestep = get_timesteps()[inference_step];
+    size_t timestep = m_timesteps[inference_step];
 
     if (m_step_index == -1)
-        m_step_index = 0;
+        m_step_index = m_begin_index;
 
     float sigma = m_sigmas[m_step_index];
     // TODO: hardcoded gamma
@@ -253,11 +270,9 @@ std::map<std::string, ov::Tensor> EulerDiscreteScheduler::step(ov::Tensor noise_
 }
 
 std::vector<int64_t> EulerDiscreteScheduler::get_timesteps() const {
-    return m_timesteps;
-}
+    OPENVINO_ASSERT(!m_timesteps.empty(), "'timesteps' have not yet been set.");
 
-std::vector<float> EulerDiscreteScheduler::get_float_timesteps() const {
-    OPENVINO_THROW("EulerDiscreteScheduler doesn't support float timesteps");
+    return m_timesteps;
 }
 
 float EulerDiscreteScheduler::get_init_noise_sigma() const {
@@ -273,7 +288,7 @@ float EulerDiscreteScheduler::get_init_noise_sigma() const {
 
 void EulerDiscreteScheduler::scale_model_input(ov::Tensor sample, size_t inference_step) {
     if (m_step_index == -1)
-        m_step_index = 0;
+        m_step_index = m_begin_index;
 
     float sigma = m_sigmas[m_step_index];
     float* sample_data = sample.data<float>();
@@ -282,9 +297,25 @@ void EulerDiscreteScheduler::scale_model_input(ov::Tensor sample, size_t inferen
     }
 }
 
-void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
-    // use https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_euler_discrete.py#L686
-    OPENVINO_THROW("Not implemented");
+size_t EulerDiscreteScheduler::_index_for_timestep(int64_t timestep) const {
+    for (size_t i = 0; i < m_schedule_timesteps.size(); ++i) {
+        if (timestep == m_schedule_timesteps[i]) {
+            return i;
+        }
+    }
+
+    OPENVINO_THROW("Failed to find index for timestep ", timestep);
+}
+
+void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const {
+    const float sigma = m_sigmas[_index_for_timestep(latent_timestep)];
+
+    float * init_latent_data = init_latent.data<float>();
+    const float * noise_data = noise.data<float>();
+
+    for (size_t i = 0; i < init_latent.get_size(); ++i) {
+        init_latent_data[i] = init_latent_data[i] + sigma * noise_data[i];
+    }
 }
 
 }  // namespace genai

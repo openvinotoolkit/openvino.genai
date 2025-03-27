@@ -26,16 +26,16 @@ class ScopedVar {
 public:
     static constexpr char ENVIRONMENT_VARIABLE_NAME[] = "OPENVINO_TOKENIZERS_PATH_GENAI";
 
-    explicit ScopedVar(const std::string& environment_variable_value) {
+    explicit ScopedVar(const std::filesystem::path& environment_variable_value) {
 #ifdef _WIN32
         char* value = nullptr;
         size_t len = 0;
         _dupenv_s(&value, &len, ENVIRONMENT_VARIABLE_NAME);
         if (value == nullptr)
-            _putenv_s(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.c_str());
+            _putenv_s(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.string().c_str());
 #else
         if (!getenv(ENVIRONMENT_VARIABLE_NAME))
-            setenv(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.c_str(), 1);
+            setenv(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.string().c_str(), 1);
 #endif
         else
             was_already_set = true;

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "timestamps.hpp"
@@ -49,7 +49,7 @@ ov::genai::ExtractedSegments extract_segments(const std::vector<int64_t>& tokens
             extracted_segments.non_timestamp_tokens.insert(extracted_segments.non_timestamp_tokens.end(),
                                                            tokens.begin() + idx_start + 1,
                                                            tokens.begin() + i);
-
+            extracted_segments.segment_ranges.emplace_back(idx_start + 1, i);
             token_start = std::nullopt;
         }
     }
@@ -71,6 +71,8 @@ ov::genai::ExtractedSegments extract_segments(const std::vector<int64_t>& tokens
         extracted_segments.non_timestamp_tokens.insert(extracted_segments.non_timestamp_tokens.end(),
                                                        tokens.begin() + idx_start + 1,
                                                        tokens.end());
+
+        extracted_segments.segment_ranges.emplace_back(idx_start + 1, tokens.size());
     }
 
     // last timestamps generated in pairs <ts><ts><eos> -> speech segment continuation to the next chunk -> token_start

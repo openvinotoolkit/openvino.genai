@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -19,7 +19,7 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS SD3Transformer2DModel {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t sample_size = 128;
         size_t patch_size = 2;
         size_t in_channels = 16;
@@ -34,10 +34,32 @@ public:
                           const std::string& device,
                           const ov::AnyMap& properties = {});
 
+    SD3Transformer2DModel(const std::string& model,
+                          const Tensor& weights,
+                          const Config& config,
+                          const size_t vae_scale_factor);
+
+    SD3Transformer2DModel(const std::string& model,
+                          const Tensor& weights,
+                          const Config& config,
+                          const size_t vae_scale_factor,
+                          const std::string& device,
+                          const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     SD3Transformer2DModel(const std::filesystem::path& root_dir, const std::string& device, Properties&&... properties)
         : SD3Transformer2DModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    SD3Transformer2DModel(const std::string& model,
+                          const Tensor& weights,
+                          const Config& config,
+                          const size_t vae_scale_factor,
+                          const std::string& device,
+                          Properties&&... properties)
+        : SD3Transformer2DModel(model, weights, config, vae_scale_factor, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     SD3Transformer2DModel(const SD3Transformer2DModel&);
 
@@ -58,10 +80,16 @@ public:
     ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep);
 
 private:
+    class Inference;
+    std::shared_ptr<Inference> m_impl;
+
     Config m_config;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
     size_t m_vae_scale_factor;
+
+    class InferenceDynamic;
+    class InferenceStaticBS1;
 };
 
 }  // namespace genai

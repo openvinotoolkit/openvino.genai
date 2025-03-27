@@ -1,0 +1,8 @@
+.vscode
+bin
+bin.*
+build
+dist
+node_modules
+tests/models
+types

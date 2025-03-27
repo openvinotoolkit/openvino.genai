@@ -1,197 +1,23 @@
-from .utils import patch_diffusers
-
-patch_diffusers()
-
 import argparse
 import difflib
-import json
+import numpy as np
 import logging
 import os
 
-import openvino_genai
+from transformers import AutoTokenizer, AutoProcessor, AutoConfig
+import openvino as ov
+
 import pandas as pd
 from datasets import load_dataset
-from diffusers import DiffusionPipeline
-from optimum.exporters.tasks import TasksManager
-from optimum.intel import OVPipelineForText2Image
-from optimum.intel.openvino import OVModelForCausalLM
-from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from PIL import Image
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
-from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
+from whowhatbench.model_loaders import load_model
+from whowhatbench import EVALUATOR_REGISTRY
+from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = (
-    TasksManager._SUPPORTED_MODEL_TYPE["llama"]
-)
-NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args(
-    num_layers="num_hidden_layers",
-    num_attention_heads="num_attention_heads",
-)
-
-
-class GenAIModelWrapper:
-    """
-    A helper class to store additional attributes for GenAI models
-    """
-
-    def __init__(self, model, model_dir, model_type):
-        self.model = model
-        self.model_type = model_type
-
-        if model_type == "text":
-            self.config = AutoConfig.from_pretrained(
-                model_dir, trust_remote_code=True)
-        elif model_type == "text-to-image":
-            self.config = DiffusionPipeline.load_config(
-                model_dir, trust_remote_code=True)
-
-    def __getattr__(self, attr):
-        if attr in self.__dict__:
-            return getattr(self, attr)
-        else:
-            return getattr(self.model, attr)
-
-
-def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
-    try:
-        import openvino_genai
-    except ImportError:
-        logger.error(
-            "Failed to import openvino_genai package. Please install it.")
-        exit(-1)
-    logger.info("Using OpenVINO GenAI API")
-    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device=device, **ov_config), model_dir, "text")
-
-
-def load_text_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
-):
-    if use_hf:
-        logger.info("Using HF Transformers API")
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id, trust_remote_code=True, device_map=device.lower()
-        )
-    elif use_genai:
-        model = load_text_genai_pipeline(model_id, device, ov_config)
-    else:
-        try:
-            model = OVModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
-            )
-        except ValueError:
-            config = AutoConfig.from_pretrained(
-                model_id, trust_remote_code=True)
-            model = OVModelForCausalLM.from_pretrained(
-                model_id,
-                config=config,
-                trust_remote_code=True,
-                use_cache=True,
-                device=device,
-                ov_config=ov_config,
-            )
-
-    return model
-
-
-TEXT2IMAGE_TASK2CLASS = {
-    "text-to-image": OVPipelineForText2Image,
-}
-
-
-def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
-    try:
-        import openvino_genai
-    except ImportError:
-        logger.error(
-            "Failed to import openvino_genai package. Please install it.")
-        exit(-1)
-    logger.info("Using OpenVINO GenAI API")
-    return GenAIModelWrapper(
-        openvino_genai.Text2ImagePipeline(model_dir, device=device, **ov_config),
-        model_dir,
-        "text-to-image"
-    )
-
-
-def load_text2image_model(
-    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
-):
-    if use_genai:
-        model = load_text2image_genai_pipeline(model_id, device, ov_config)
-    elif use_hf:
-        model = DiffusionPipeline.from_pretrained(
-            model_id, trust_remote_code=True)
-    else:
-        TEXT2IMAGEPipeline = TEXT2IMAGE_TASK2CLASS[model_type]
-
-        try:
-            model = TEXT2IMAGEPipeline.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
-            )
-        except ValueError:
-            config = AutoConfig.from_pretrained(
-                model_id, trust_remote_code=True)
-            model = TEXT2IMAGEPipeline.from_pretrained(
-                model_id,
-                config=config,
-                trust_remote_code=True,
-                use_cache=True,
-                device=device,
-                ov_config=ov_config,
-            )
-
-    return model
-
-
-def load_model(
-    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
-):
-    from .registry import MODELTYPE2TASK
-
-    if model_id is None:
-        return None
-
-    if ov_config:
-        with open(ov_config) as f:
-            ov_options = json.load(f)
-    else:
-        ov_options = {}
-
-    if model_type == "text":
-        return load_text_model(model_id, device, ov_options, use_hf, use_genai)
-    elif MODELTYPE2TASK[model_type] == "text-to-image":
-        return load_text2image_model(
-            model_type, model_id, device, ov_options, use_hf, use_genai
-        )
-    else:
-        raise ValueError(f"Unsupported model type: {model_type}")
-
-
-def load_prompts(args):
-    if args.dataset is None:
-        return None
-    split = "validation"
-    if args.split is not None:
-        split = args.split
-    if "," in args.dataset:
-        path_name = args.dataset.split(",")
-        path = path_name[0]
-        name = path_name[1]
-    else:
-        path = args.dataset
-        name = None
-    data = load_dataset(path=path, name=name, split=split)
-
-    res = data[args.dataset_field]
-
-    res = {"prompts": list(res)}
-
-    return res
 
 
 def parse_args():
@@ -215,19 +41,30 @@ def parse_args():
         default=None,
         help="Tokenizer for divergency metric. If not provided, it will be load from base_model or target_model.",
     )
-
+    parser.add_argument(
+        "--chat-template",
+        action="store_true",
+        help="Whether apply the default chat template.",
+    )
     parser.add_argument(
         "--gt-data",
         default=None,
-        help="CSV file containing GT outputs from base_model. If defined and exists then base_model will not used."
-        " If the files does not exist, it will be generated by base_model evaluation.",
+        help="CSV file containing GT outputs from --base-model. If defined and exists then --base-model will not used."
+        " If the files does not exist, it will be generated by --base-model evaluation.",
+    )
+    parser.add_argument(
+        "--target-data",
+        default=None,
+        help="CSV file containing outputs from target model. If defined and exists then --target-model will not used."
+        " If the files does not exist, it will be generated by --target-model evaluation.",
     )
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image"],
+        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting"],
         default="text",
-        help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation.",
+        help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
+        "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt",
     )
     parser.add_argument(
         "--data-encoder",
@@ -293,8 +130,8 @@ def parse_args():
         "--language",
         type=str,
         choices=["en", "cn"],
-        default=None,
-        help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
+        default="en",
+        help="Used to select default prompts based on the primary model language, e.g. 'en', 'cn'.",
     )
     parser.add_argument(
         "--hf",
@@ -307,9 +144,21 @@ def parse_args():
         help="Use LLMPipeline from transformers library to instantiate the model.",
     )
     parser.add_argument(
+        "--cb-config",
+        type=str,
+        default=None,
+        help="Path to the JSON file that contains SchedulerConfig for Continuous Batching Pipeline"
+        "of OpenVINO GenAI API.",
+    )
+    parser.add_argument(
+        "--llamacpp",
+        action="store_true",
+        help="Use llama-cpp-python to instantiate the model.",
+    )
+    parser.add_argument(
         "--image-size",
         type=int,
-        default=512,
+        default=None,
         help="Text-to-image specific parameter that defines the image resolution.",
     )
     parser.add_argument(
@@ -329,32 +178,67 @@ def parse_args():
 
 
 def check_args(args):
-    if args.base_model is None and args.target_model is None:
-        raise ValueError(
-            "Wether --base-model or --target-model should be provided")
     if args.base_model is None and args.gt_data is None:
         raise ValueError("Wether --base-model or --gt-data should be provided")
-    if args.target_model is None and args.gt_data is None:
+    if args.target_model is None and args.gt_data is None and args.target_data:
         raise ValueError(
-            "Wether --target-model or --gt-data should be provided")
+            "Wether --target-model, --target-data or --gt-data should be provided")
+
+
+def load_prompts(args):
+    if args.dataset is None:
+        return None
+    split = "validation"
+    if args.split is not None:
+        split = args.split
+    if "," in args.dataset:
+        path_name = args.dataset.split(",")
+        path = path_name[0]
+        name = path_name[1]
+    else:
+        path = args.dataset
+        name = None
+    data = load_dataset(path=path, name=name, split=split)
+
+    res = data[args.dataset_field]
+    res = {"prompts": list(res)}
+    return res
 
 
 def load_tokenizer(args):
     tokenizer = None
     if args.tokenizer is not None:
-        tokenizer = AutoTokenizer.from_pretrained(
-            args.tokenizer, trust_remote_code=True
-        )
+        if args.llamacpp:
+            from llama_cpp.llama_tokenizer import LlamaHFTokenizer
+            tokenizer = LlamaHFTokenizer.from_pretrained(args.tokenizer)
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.tokenizer, trust_remote_code=True
+            )
     elif args.base_model is not None:
         tokenizer = AutoTokenizer.from_pretrained(
             args.base_model, trust_remote_code=True
         )
-    else:
+    elif args.target_model is not None:
         tokenizer = AutoTokenizer.from_pretrained(
             args.target_model, trust_remote_code=True
         )
 
     return tokenizer
+
+
+def load_processor(args):
+    model_id = args.base_model if args.base_model is not None else args.target_model
+    if model_id is None:
+        return None, None
+
+    config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+    if "llava-qwen" in config.model_type:
+        preprocessor_id = config.mm_vision_tower
+    else:
+        preprocessor_id = model_id
+
+    return AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True), config
 
 
 def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
@@ -384,19 +268,64 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
-    config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = max_new_tokens
-    config.do_sample = False
-    out = model.generate(question, config)
-    return out
+def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
+    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens, apply_chat_template=use_chat_template)
+
+
+def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
+    if use_chat_template:
+        output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
+        text = output["choices"][0]["message"]["content"]
+        if skip_question:
+            text = text[len(question):]
+        return text
+    else:
+        output = model(question, max_tokens=max_new_tokens, echo=True, temperature=0.0)
+        text = output["choices"][0]["text"]
+        if skip_question:
+            text = text[len(question):]
+        return text
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):
+    if model.resolution is not None and model.resolution[0] is not None:
+        image_tensor = model.generate(
+            prompt,
+            width=model.resolution[0],
+            height=model.resolution[1],
+            num_inference_steps=num_inference_steps,
+            generator=generator,
+        )
+    else:
+        image_tensor = model.generate(
+            prompt,
+            num_inference_steps=num_inference_steps,
+            generator=generator,
+        )
+    image = Image.fromarray(image_tensor.data[0])
+    return image
+
+
+def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
+    image_data = ov.Tensor(np.array(image)[None])
     image_tensor = model.generate(
         prompt,
-        width=model.resolution[0],
-        height=model.resolution[1],
+        image=image_data,
+        num_inference_steps=num_inference_steps,
+        strength=0.8,
+        generator=generator,
+    )
+    image = Image.fromarray(image_tensor.data[0])
+    return image
+
+
+def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
+    image_data = ov.Tensor(np.array(image)[None])
+    mask_data = ov.Tensor(np.array(mask)[None])
+    image_tensor = model.generate(
+        prompt,
+        image=image_data,
+        mask_image=mask_data,
         num_inference_steps=num_inference_steps,
         generator=generator,
     )
@@ -404,18 +333,38 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
     return image
 
 
-def get_evaluator(base_model, args):
+def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
+    image_data = ov.Tensor(np.array(image)[None])
+    out = model.generate(
+        prompt,
+        **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
+        image=image_data,
+        do_sample=False,
+        max_new_tokens=max_new_tokens
+    )
+    return out.texts[0]
+
+
+def create_evaluator(base_model, args):
     # config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
     # task = TasksManager.infer_task_from_model(config._name_or_path)
     # TODO: Add logic to auto detect task based on model_id (TaskManager does not work for locally saved models)
-    task = MODELTYPE2TASK[args.model_type]
+    task = args.model_type
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
         prompts = load_prompts(args)
 
-        if task == "text-generation":
-            tokenizer = load_tokenizer(args)
+        if task == "text":
+            tokenizer = load_tokenizer(args) if not args.llamacpp else None
+
+            if args.genai:
+                gen_answer_fn = genai_gen_text
+            elif args.llamacpp:
+                gen_answer_fn = llamacpp_gen_text
+            else:
+                gen_answer_fn = None
+
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -424,7 +373,8 @@ def get_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 num_samples=args.num_samples,
                 language=args.language,
-                gen_answer_fn=genai_gen_answer if args.genai else None,
+                gen_answer_fn=gen_answer_fn,
+                use_chat_template=args.chat_template,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -438,13 +388,54 @@ def get_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
             )
+        elif task == "visual-text":
+            tokenizer = load_tokenizer(args)
+            processor, config = load_processor(args)
+            if config and "internvl" in config.model_type and args.hf:
+                crop_question = False
+            else:
+                crop_question = True
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                tokenizer=tokenizer,
+                num_samples=args.num_samples,
+                similarity_model_id=args.data_encoder,
+                gen_answer_fn=genai_gen_visual_text if args.genai else None,
+                processor=processor,
+                crop_question=crop_question,
+            )
+        elif task == "image-to-image":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                num_inference_steps=args.num_inference_steps,
+                gen_image_fn=genai_gen_image2image if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
+            )
+        elif task == "image-inpainting":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                num_inference_steps=args.num_inference_steps,
+                gen_image_fn=genai_gen_inpainting if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
+            )
         else:
             raise ValueError(f"Unsupported task: {task}")
 
-    except KeyError:
+    except KeyError as e:
         raise ValueError(
             f"Attempted to load evaluator for '{task}', but no evaluator for this model type found!"
-            "Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}"
+            "Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}. Details:\n",
+            e
         )
 
 
@@ -466,32 +457,53 @@ def print_text_results(evaluator):
             diff += diff_strings(l1, l2) + "\n"
 
         logger.info(
-            "--------------------------------------------------------------------------------------"
+            "======================================================================================================="
         )
-        logger.info("## Reference text %d:\n%s", i + 1, ref_text)
-        logger.info("## Actual text %d:\n%s", i + 1, actual_text)
-        logger.info("## Diff %d: ", i + 1)
-        logger.info(diff)
+        logger.info("## Prompt %d:\n%s\n", i + 1, e["prompt"])
+        logger.info("## Metric value:%.4f\n", e[metric_of_interest])
+        logger.info("## Reference text:\n%s\n", ref_text)
+        logger.info("## Actual text:\n%s\n", actual_text)
+        logger.info("## Diff:\n%s\n", diff)
 
 
 def print_image_results(evaluator):
     metric_of_interest = "similarity"
+    pd.set_option('display.max_colwidth', None)
     worst_examples = evaluator.worst_examples(
-        top_k=1, metric=metric_of_interest)
+        top_k=5, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
         logger.info(
-            "--------------------------------------------------------------------------------------"
+            "======================================================================================================="
         )
         logger.info(f"Top-{i+1} example:")
         logger.info(e)
+
+
+def read_cb_config(path):
+    import json
+
+    try:
+        with open(path, 'r') as f:
+            config = json.load(f)
+        return config
+    except FileNotFoundError:
+        logger.error(f"Configuration file not found at: {path}")
+        return {}
+    except json.JSONDecodeError:
+        logger.error(f"Invalid JSON format in configuration file: {path}")
+        return {}
 
 
 def main():
     args = parse_args()
     check_args(args)
 
+    kwargs = {}
+    if args.cb_config:
+        kwargs["cb_config"] = read_cb_config(args.cb_config)
+
     if args.gt_data and os.path.exists(args.gt_data):
-        evaluator = get_evaluator(None, args)
+        evaluator = create_evaluator(None, args)
     else:
         base_model = load_model(
             args.model_type,
@@ -500,25 +512,37 @@ def main():
             args.ov_config,
             args.hf,
             args.genai,
+            **kwargs,
         )
-        evaluator = get_evaluator(base_model, args)
+        evaluator = create_evaluator(base_model, args)
 
         if args.gt_data:
             evaluator.dump_gt(args.gt_data)
         del base_model
 
-    if args.target_model:
-        target_model = load_model(
-            args.model_type,
-            args.target_model,
-            args.device,
-            args.ov_config,
-            args.hf,
-            args.genai,
-        )
-        all_metrics_per_question, all_metrics = evaluator.score(
-            target_model, evaluator.get_generation_fn() if args.genai else None
-        )
+    if args.target_data or args.target_model:
+        if args.target_data and os.path.exists(args.target_data):
+            all_metrics_per_question, all_metrics = evaluator.score(
+                args.target_data,
+                None,
+                output_dir=args.output
+            )
+        else:
+            target_model = load_model(
+                args.model_type,
+                args.target_model,
+                args.device,
+                args.ov_config,
+                args.hf,
+                args.genai,
+                args.llamacpp,
+                **kwargs
+            )
+            all_metrics_per_question, all_metrics = evaluator.score(
+                target_model,
+                evaluator.get_generation_fn() if args.genai or args.llamacpp else None,
+                output_dir=args.output
+            )
         logger.info("Metrics for model: %s", args.target_model)
         logger.info(all_metrics)
 
@@ -529,11 +553,12 @@ def main():
             df.to_csv(os.path.join(args.output, "metrics_per_qustion.csv"))
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
+            evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
-    if args.verbose and args.target_model is not None:
-        if args.model_type == "text":
+    if args.verbose and (args.target_model or args.target_data):
+        if args.model_type == "text" or args.model_type == "visual-text":
             print_text_results(evaluator)
-        elif "text-to-image" in args.model_type:
+        elif "text-to-image" in args.model_type or "image-to-image" in args.model_type:
             print_image_results(evaluator)
 
 

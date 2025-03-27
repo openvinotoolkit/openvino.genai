@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import logging as log
 
 
 def print_metrics(
         iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1,
-        max_uss_mem=-1, stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1
+        max_uss_mem=-1, stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -26,6 +26,8 @@ def print_metrics(
         output_str += 'Tokenization Time: {:.2f}ms, '.format(tokenization_time[0])
         if len(tokenization_time) > 1:
             output_str += 'Detokenization Time: {:.2f}ms, '.format(tokenization_time[1])
+    if iter_data['mm_embeddings_preparation_time'] != '':
+        output_str += ' Multimodal Embeddings Preparation Time: {:.2f}ms, '.format(iter_data['mm_embeddings_preparation_time'])
     if iter_data['generation_time'] != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
     if iter_data['latency'] != '':
@@ -57,6 +59,8 @@ def print_metrics(
             log.warning(f'{prefix} No hook data output for first infer latency and other infers latency')
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx)
+    if whisper is not None:
+        print_whisper_infer_latency(iter_str, whisper, prompt_idx)
     output_str = ''
     if max_rss_mem != '' and max_rss_mem > -1:
         output_str += 'Max rss memory cost: {:.2f}MBytes, '.format(max_rss_mem)
@@ -77,30 +81,60 @@ def print_generated(iter_num, warm_up=False, generated=None, prompt_idx=-1):
         iter_str = 'warm-up'
     prefix = f'[{iter_str}][P{prompt_idx}]'
     if generated is not None:
+        print_unicode(f'{prefix} Generated: {generated}', '{prefix} Unable print generated')
+
+
+def print_unicode(text, on_error="Unable print", loglevel="info"):
+    log_fn = getattr(log, loglevel)
+    try:
+        log_fn(text)
+    except (UnicodeError, UnicodeEncodeError, UnicodeDecodeError):
         try:
-            log.info(f'{prefix} Generated: {generated}')
-        except UnicodeError:
-            try:
-                utf8_generated = generated.encode(encoding="utf-8", errors="replace").decode()
-                log.info(f'{prefix} Generated: {utf8_generated}')
-            except Exception:
-                log.warning(f'{prefix} Unable print generated')
+            utf8_text = text.encode(encoding="utf-8", errors="replace").decode()
+            log_fn(utf8_text)
+        except Exception:
+            log.warning(on_error)
 
 
-def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx=-1):
-    iter_data['first_token_latency'] = stable_diffusion.get_1st_unet_latency()
-    iter_data['other_tokens_avg_latency'] = stable_diffusion.get_2nd_unet_latency()
+def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion=None, prompt_idx=-1):
+    if (len(stable_diffusion.raw_metrics.unet_inference_durations) != 0):
+        main_model_name = "unet"
+        first_token_latency, other_tokens_latency = stable_diffusion.get_first_and_other_unet_infer_duration()
+    else:
+        main_model_name = "transformer"
+        first_token_latency, other_tokens_latency = stable_diffusion.get_first_and_other_trans_infer_duration()
+    iter_data['first_token_latency'] = first_token_latency
+    iter_data['other_tokens_avg_latency'] = other_tokens_latency
     iter_data['first_token_infer_latency'] = iter_data['first_token_latency']
     iter_data['other_tokens_infer_avg_latency'] = iter_data['other_tokens_avg_latency']
+
     prefix = f'[{iter_str}][P{prompt_idx}]'
-    log.info(f"{prefix} First step of unet latency: {iter_data['first_token_latency']:.2f} ms/step, "
-             f"other steps of unet latency: {iter_data['other_tokens_avg_latency']:.2f} ms/step",)
-    log.info(f"{prefix} Text encoder latency: {stable_diffusion.get_text_encoder_latency():.2f} ms/step, "
-             f"unet latency: {stable_diffusion.get_unet_latency():.2f} ms/step, "
-             f"vae decoder latency: {stable_diffusion.get_vae_decoder_latency():.2f} ms/step, "
-             f"text encoder step count: {stable_diffusion.get_text_encoder_step_count()}, "
-             f"unet step count: {stable_diffusion.get_unet_step_count()}, "
-             f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}",)
+    log.info(f"{prefix} First step of {main_model_name} latency: {iter_data['first_token_latency']:.2f} ms/step, "
+             f"other steps of {main_model_name} latency: {iter_data['other_tokens_avg_latency']:.2f} ms/step",)
+
+    log_str = f"{prefix} "
+    if (len(stable_diffusion.get_text_encoder_infer_duration().keys())):
+        log_str += "Text encoder latency: "
+        for text_enc_name, duration in stable_diffusion.get_text_encoder_infer_duration().items():
+            log_str += f"{text_enc_name} {duration:.2f} ms/step, "
+    else:
+        log_str += "Text encoder latency: N/A "
+
+    log_str += (
+        f"{main_model_name} latency: {stable_diffusion.get_unet_infer_duration().mean:.2f} ms/step, "
+        f"vae decoder latency: {stable_diffusion.get_vae_decoder_infer_duration():.2f} ms/step, ")
+
+    if hasattr(stable_diffusion, 'get_text_encoder_step_count'):
+        log_str += f"text encoder step count: {stable_diffusion.get_text_encoder_step_count()}, "
+
+    log_str += f"{main_model_name} step count: {len(stable_diffusion.raw_metrics.unet_inference_durations)} , "
+
+    if hasattr(stable_diffusion, 'get_vae_decoder_step_count'):
+        log_str += f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}, "
+    else:
+        log_str += "vae decoder step count: 1 "
+
+    log.info(log_str)
 
 
 def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=False, prompt_idx=-1):
@@ -147,7 +181,7 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             avg_input_size = int(avg_input_size / index_num)
             if avg_2nd_tokens_latency > 0:
                 avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
-            latency_unit = 'token' if is_text_gen is True else 'step'
+            tput_unit = latency_unit = 'token' if is_text_gen is True else 'step'
             if batch_size > 1:
                 if is_text_gen is True:
                     latency_unit = '{}tokens'.format(batch_size)
@@ -155,7 +189,7 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
                     latency_unit = '{}steps'.format(batch_size)
             avg_1st_token_latency = 'NA' if avg_1st_token_latency < 0 else f'{avg_1st_token_latency:.2f} ms/{latency_unit}'
             avg_2nd_tokens_latency = 'NA' if avg_2nd_tokens_latency < 0 else f'{avg_2nd_tokens_latency:.2f} ms/{latency_unit}'
-            avg_2nd_token_tput = 'NA' if avg_2nd_tokens_latency == 'NA' else f'{avg_2nd_token_tput:.2f} {latency_unit}s/s'
+            avg_2nd_token_tput = 'NA' if avg_2nd_tokens_latency == 'NA' else f'{avg_2nd_token_tput:.2f} {tput_unit}s/s'
             prefix = f'[ INFO ] [Average] P[{p_idx}]L[{loop_idx}]' if loop_idx != -1 else f'[ INFO ] [Average] P[{p_idx}]'
             if is_text_gen is True:
                 output_info = ''
@@ -190,3 +224,7 @@ def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False
         for prompt_key in prompt_dict:
             out_str += prompt_dict[prompt_key]
         log.info(out_str)
+
+
+def print_whisper_infer_latency(iter_str, whisper, prompt_idx=-1):
+    log.debug(f'{whisper.print_whisper_latency(iter_str, prompt_idx)}')

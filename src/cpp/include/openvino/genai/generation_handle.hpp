@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -8,15 +8,19 @@
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 namespace ov::genai {
+
 enum class GenerationStatus {
     RUNNING = 0, // Default status for ongoing generation
     FINISHED = 1, // Status set when generation has been finished
     IGNORED = 2, // Status set when generation run into out-of-memory condition and could not be continued
-    DROPPED_BY_PIPELINE = 3, // Currently not used, TODO: implement abort functionality
-    DROPPED_BY_HANDLE = 4 // Status set when generation handle is dropped
+    CANCEL = 3, // Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
+    STOP = 4, // Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+    DROPPED_BY_HANDLE OPENVINO_ENUM_DEPRECATED("Please, use `STOP` instead of `DROPPED_BY_HANDLE`.") = GenerationStatus::STOP // Status set when generation handle is dropped.
 };
+
 
 struct EncodedGenerationResult {
     // request ID - obsolete when handle API is approved as handle will connect results with prompts.
@@ -30,6 +34,9 @@ struct EncodedGenerationResult {
 
     // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
+    
+    // PerfMetrics but with empty tokenization/detokenization durations.
+    PerfMetrics perf_metrics;
 };
 
 enum class GenerationFinishReason {
@@ -50,6 +57,9 @@ struct GenerationResult {
 
     // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
+
+    // PerfMetrics
+    PerfMetrics perf_metrics;
 };
 
 struct GenerationOutput {
@@ -63,12 +73,10 @@ using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;
 
 class GenerationStream;
 
-class OPENVINO_GENAI_EXPORTS GenerationHandleImpl {
+class OPENVINO_GENAI_EXPORTS 
+GenerationHandleImpl {
     std::shared_ptr<GenerationStream> m_generation_stream;
-    ov::genai::GenerationConfig m_sampling_params;
-
-    bool is_dropped();
- 
+    ov::genai::GenerationConfig m_sampling_params; 
 public:
     GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
     m_generation_stream(std::move(generation_stream)),
@@ -84,9 +92,20 @@ public:
 
     bool can_read();
 
+    OPENVINO_DEPRECATED("Please, use `stop()` instead of `drop()`. Support will be removed in 2026.0.0 release.")
+    bool is_dropped();
+
+    bool is_stopped();
+
+    bool is_cancelled();
+
+    OPENVINO_DEPRECATED("Please, use `stop()` instead of `drop()`. Support will be removed in 2026.0.0 release.")
     void drop();
 
-    GenerationOutputs back();
+    void stop();
+
+    void cancel();
+
     // Reads result of a generation for single iteration
     GenerationOutputs read();
     // Reads all generated tokens for all sequences

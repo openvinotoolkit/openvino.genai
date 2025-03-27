@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from threading import Event, Thread
 import psutil
@@ -18,6 +18,7 @@ class MemConsumption:
         self.g_max_shared_mem_consumption = -1
         self.g_event = Event()
         self.g_data_event = Event()
+        self.delay = 0.5
 
     def collect_memory_consumption(self):
         """Collect the data."""
@@ -54,7 +55,7 @@ class MemConsumption:
                     self.g_event.clear()
                     self.g_end_collect_mem = False
                     break
-                time.sleep(500 / 1000)
+                time.sleep(self.delay)
 
     def start_collect_memory_consumption(self):
         """Start collect."""

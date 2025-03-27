@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -200,6 +200,11 @@ public:
         }
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
+            if (1 == m_unique_prompt_token_ids->count(input_id)) {
+                // repetition_penalty was already accounted by the for
+                // loop above.
+                continue;
+            }
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
             if (logits.m_data[input_id] >= 0) {
                 logits.m_data[input_id] /= m_penalty;

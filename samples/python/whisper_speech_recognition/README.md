@@ -13,6 +13,8 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
 
+If NPU is the inference device, an additional option `--disable-stateful` is required. See [NPU with OpenVINO GenAI](https://docs.openvino.ai/nightly/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) for the detail.
+
 ## Prepare audio file
 
 Download example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
@@ -38,7 +40,94 @@ Output:
 timestamps: [0, 2] text:  How are you doing today?
 ```
 
-See [SUPPORTED_MODELS.md](../../../src/docs/SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
+See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
+
+# Whisper pipeline usage
+
+```python
+import openvino_genai
+import librosa
+
+def read_wav(filepath):
+    raw_speech, samplerate = librosa.load(filepath, sr=16000)
+    return raw_speech.tolist()
+
+pipe = openvino_genai.WhisperPipeline(model_dir, "CPU")
+# Pipeline expects normalized audio with Sample Rate of 16kHz
+raw_speech = read_wav('how_are_you_doing_today.wav')
+result = pipe.generate(raw_speech)
+#  How are you doing today?
+```
+
+### Transcription
+
+Whisper pipeline predicts the language of the source audio automatically.
+
+```python
+raw_speech = read_wav('how_are_you_doing_today.wav')
+result = pipe.generate(raw_speech)
+#  How are you doing today?
+
+raw_speech = read_wav('fr_sample.wav')
+result = pipe.generate(raw_speech)
+#  Il s'agit d'une entité très complexe qui consiste...
+```
+
+If the source audio languange is know in advance, it can be specified as an argument to `generate` method:
+
+```python
+raw_speech = read_wav("how_are_you_doing_today.wav")
+result = pipe.generate(raw_speech, language="<|en|>")
+#  How are you doing today?
+
+raw_speech = read_wav("fr_sample.wav")
+result = pipe.generate(raw_speech, language="<|fr|>")
+#  Il s'agit d'une entité très complexe qui consiste...
+```
+
+### Translation
+
+By default, Whisper performs the task of speech transcription, where the source audio language is the same as the target text language. To perform speech translation, where the target text is in English, set the task to "translate":
+
+```python
+raw_speech = read_wav("fr_sample.wav")
+result = pipe.generate(raw_speech, task="translate")
+# It is a very complex entity that consists...
+```
+
+### Timestamps prediction
+
+The model can predict timestamps. For sentence-level timestamps, pass the `return_timestamps` argument:
+
+```python
+raw_speech = read_wav("how_are_you_doing_today.wav")
+result = pipe.generate(raw_speech, return_timestamps=True)
+
+for chunk in result.chunks:
+    print(f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}")
+# timestamps: [0.00, 2.00] text:  How are you doing today?
+```
+
+### Long-Form audio Transcription
+
+The Whisper model is designed to work on audio samples of up to 30s in duration. Whisper pipeline uses sequential chunking algorithm to transcribe audio samples of arbitrary length.
+Sequential chunking algorithm uses a "sliding window", transcribing 30-second slices one after the other.
+
+### Initial prompt and hotwords
+
+Whisper pipeline has `initial_prompt` and `hotwords` generate arguments:
+* `initial_prompt`: initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing window
+* `hotwords`: hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows
+
+The Whisper model can use that context to better understand the speech and maintain a consistent writing style. However, prompts do not need to be genuine transcripts from prior audio segments. Such prompts can be used to steer the model to use particular spellings or styles:
+
+```python
+result = pipe.generate(raw_speech)
+#  He has gone and gone for good answered Paul Icrom who...
+
+result = pipe.generate(raw_speech, initial_prompt="Polychrome")
+#  He has gone and gone for good answered Polychrome who...
+```
 
 ### Troubleshooting
 

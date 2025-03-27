@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -21,16 +21,20 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS AdapterController;
 struct AdapterControllerImpl;
+class AdapterImpl;
 
 // Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier
 class OPENVINO_GENAI_EXPORTS Adapter {
-    class Impl;
-    std::shared_ptr<Impl> m_pimpl;
+    std::shared_ptr<AdapterImpl> m_pimpl;
 
     friend AdapterController;
     friend AdapterControllerImpl;
     friend bool operator== (const Adapter& a, const Adapter& b);
-    friend bool operator< (const Adapter& a, const Adapter& b);
+
+    friend Adapter flux_adapter_normalization(const Adapter& adapter);
+    friend Adapter diffusers_adapter_normalization(const Adapter& adapter);
+
+    Adapter(const std::shared_ptr<AdapterImpl>& pimpl);
 public:
     explicit Adapter(const std::filesystem::path& path);
     Adapter() = default;
@@ -39,9 +43,6 @@ public:
         return bool(m_pimpl);
     }
 };
-
-// bool OPENVINO_GENAI_EXPORTS operator== (const Adapter& a, const Adapter& b);
-// bool OPENVINO_GENAI_EXPORTS operator< (const Adapter& a, const Adapter& b);
 
 
 struct OPENVINO_GENAI_EXPORTS AdapterConfig {
@@ -87,6 +88,8 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     float get_alpha(const Adapter& adapter) const;
     AdapterConfig& remove(const Adapter&);
     const std::vector<Adapter>& get_adapters() const { return adapters; }
+    std::vector<std::pair<Adapter, float>> get_adapters_and_alphas() const;
+    void set_adapters_and_alphas(const std::vector<std::pair<Adapter, float>>& adapters);
 
     // Update adapters and alphas from other config. Mode and tensor_name_prefix are updated if they are set not to default values in other config.
     // It means that if other.get_mode() == MODE_AUTO, it will not override value in this config. If tensor_name_prefix is not set (== nullopt) then it won't be updated either.
@@ -188,7 +191,7 @@ public:
     AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, std::string device);
 
     // Apply adapters configured in the current config set last time, or set and use new config given as optional `config` argument
-    void apply(ov::InferRequest& request, const std::optional<AdapterConfig>& config = std::nullopt);
+    void apply(ov::InferRequest request, const std::optional<AdapterConfig>& config = std::nullopt);
 
     // Returns true if a given name is one of the state names created by this adapter controller for dynamic LoRA
     // Helps to distinguish LoRA states from other states (e.g. KV cache state) in the model for a partial state reset.

@@ -1,0 +1,15 @@
+bin
+include
+lib
+src
+tests
+thirdparty
+
+CMakeLists.txt
+eslint.config.jt
+tsconfig.json
+*.md
+!README.md
+
+**/*.tsbuildinfo
+*.tgz

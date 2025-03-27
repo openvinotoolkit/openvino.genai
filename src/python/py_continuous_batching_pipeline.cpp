@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -20,6 +20,11 @@ using ov::genai::AggregationMode;
 using ov::genai::CacheEvictionConfig;
 using ov::genai::ContinuousBatchingPipeline;
 using ov::genai::GenerationResult;
+using ov::genai::EncodedGenerationResult;
+using ov::genai::GenerationHandleImpl;
+using ov::genai::GenerationOutput;
+using ov::genai::GenerationFinishReason;
+using ov::genai::GenerationStatus;
 using ov::genai::SchedulerConfig;
 using ov::genai::PipelineMetrics;
 
@@ -38,6 +43,11 @@ auto cache_eviction_config_docstring = R"(
 
     :param aggregation_mode: The mode used to compute the importance of tokens for eviction
     :type aggregation_mode: openvino_genai.AggregationMode
+
+    :param apply_rotation: Whether to apply cache rotation (RoPE-based) after each eviction.
+      Set this to false if your model has different RoPE scheme from the one used in the
+      original llama model and you experience accuracy issues with cache eviction enabled.
+    :type apply_rotation: bool
 )";
 
 auto scheduler_config_docstring = R"(
@@ -73,8 +83,11 @@ auto generation_result_docstring = R"(
         RUNNING = 0 - Default status for ongoing generation.
         FINISHED = 1 - Status set when generation has been finished.
         IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
-        DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
-        DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
+        STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+        DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
+    perf_metrics:
+                        Performance metrics for each generation result.
 
 )";
 
@@ -111,20 +124,58 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
     return stream << std::endl;
 }
 
+py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
+                              const std::variant<std::vector<ov::Tensor>, std::vector<std::string>>& inputs,
+                              const std::vector<ov::genai::GenerationConfig>& sampling_params,
+                              const pyutils::PyBindStreamerVariant& py_streamer) {
+    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    py::object results;
+
+    std::visit(pyutils::overloaded {
+    [&](std::vector<ov::Tensor> input_ids) {
+        std::vector<ov::genai::EncodedGenerationResult> encoded_results;
+        {
+            py::gil_scoped_release rel;
+            encoded_results = pipe.generate(input_ids, sampling_params, streamer);
+        }  
+        results = py::cast(encoded_results);
+    },
+    [&](std::vector<std::string> prompts) {
+        std::vector<ov::genai::GenerationResult> generated_results;
+        {
+            py::gil_scoped_release rel;
+            generated_results = pipe.generate(prompts, sampling_params, streamer);
+        }  
+        results = py::cast(generated_results);
+    }},
+    inputs);
+
+    return results;
+}
+
 } // namespace
 
 void init_continuous_batching_pipeline(py::module_& m) {
+    py::enum_<ov::genai::GenerationStatus>(m, "GenerationStatus")
+        .value("RUNNING", ov::genai::GenerationStatus::RUNNING)
+        .value("FINISHED", ov::genai::GenerationStatus::FINISHED)
+        .value("IGNORED", ov::genai::GenerationStatus::IGNORED)
+        .value("CANCEL", ov::genai::GenerationStatus::CANCEL)
+        .value("STOP", ov::genai::GenerationStatus::STOP);
+
     py::class_<GenerationResult>(m, "GenerationResult", generation_result_docstring)
         .def(py::init<>())
         .def_readonly("m_request_id", &GenerationResult::m_request_id)
         .def_property("m_generation_ids",
-            [](GenerationResult &r) -> py::list {
+            [](GenerationResult &r) -> py::typing::List<py::str> {
                 return pyutils::handle_utf8(r.m_generation_ids);
             },
             [](GenerationResult &r, std::vector<std::string> &generation_ids) {
                 r.m_generation_ids = generation_ids;
             })
         .def_readwrite("m_scores", &GenerationResult::m_scores)
+        .def_readwrite("m_status", &GenerationResult::m_status)
+        .def_readonly("perf_metrics", &GenerationResult::perf_metrics)
         .def("__repr__",
             [](const GenerationResult &r) -> py::str {
                 std::stringstream stream;
@@ -133,27 +184,38 @@ void init_continuous_batching_pipeline(py::module_& m) {
             }
         )
         .def("get_generation_ids",
-        [](GenerationResult &r) -> py::list {
+        [](GenerationResult &r) -> py::typing::List<py::str> {
             return pyutils::handle_utf8(r.m_generation_ids);
         });
 
-    py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
+    py::class_<EncodedGenerationResult>(m, "EncodedGenerationResult", generation_result_docstring)
         .def(py::init<>())
-        .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
-        .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
-        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
-        .def_readwrite("block_size", &SchedulerConfig::block_size)
-        .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
-        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
-        .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)
-        .def_readwrite("use_cache_eviction", &SchedulerConfig::use_cache_eviction)
-        .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config);
+        .def_readonly("m_request_id", &EncodedGenerationResult::m_request_id)
+        .def_readwrite("m_generation_ids", &EncodedGenerationResult::m_generation_ids)
+        .def_readwrite("m_scores", &EncodedGenerationResult::m_scores)
+        .def_readonly("perf_metrics", &EncodedGenerationResult::perf_metrics);
 
-    py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
-            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode) {
-                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode}; }),
-                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"))
-            .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode);
+    py::enum_<ov::genai::GenerationFinishReason>(m, "GenerationFinishReason")
+        .value("NONE", ov::genai::GenerationFinishReason::NONE)
+        .value("STOP", ov::genai::GenerationFinishReason::STOP)
+        .value("LENGTH", ov::genai::GenerationFinishReason::LENGTH);
+
+    py::class_<GenerationOutput, std::shared_ptr<GenerationOutput>>(m, "GenerationOutput")
+        .def_readwrite("generated_ids", &GenerationOutput::generated_ids)
+        .def_readwrite("generated_log_probs", &GenerationOutput::generated_log_probs)
+        .def_readwrite("score", &GenerationOutput::score)
+        .def_readwrite("finish_reason", &GenerationOutput::finish_reason);
+
+    auto generation_handle = py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
+        .def("get_status", &GenerationHandleImpl::get_status)
+        .def("can_read", &GenerationHandleImpl::can_read)
+        .def("stop", &GenerationHandleImpl::stop)
+        .def("cancel", &GenerationHandleImpl::cancel)
+        .def("read", &GenerationHandleImpl::read)
+        .def("read_all", &GenerationHandleImpl::read_all);
+    OPENVINO_SUPPRESS_DEPRECATED_START
+    generation_handle.def("drop", &GenerationHandleImpl::drop);
+    OPENVINO_SUPPRESS_DEPRECATED_END
 
     // Binding for StopCriteria
     py::enum_<AggregationMode>(m, "AggregationMode",
@@ -161,51 +223,29 @@ void init_continuous_batching_pipeline(py::module_& m) {
                                :param AggregationMode.SUM: In this mode the importance scores of each token will be summed after each step of generation
                                :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache)")
             .value("SUM", AggregationMode::SUM)
-            .value("NORM_SUM", AggregationMode::NORM_SUM)
-            .export_values();
+            .value("NORM_SUM", AggregationMode::NORM_SUM);
 
-    py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
-        .def(py::init([](const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
-            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, pyutils::properties_to_any_map(llm_plugin_config), pyutils::properties_to_any_map(tokenizer_plugin_config));
-        }),
-        py::arg("models_path"),
-        py::arg("scheduler_config"),
-        py::arg("device"),
-        py::arg("properties") = ov::AnyMap({}),
-        py::arg("tokenizer_properties") = ov::AnyMap({}))
+    py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
+            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode, bool apply_rotation) {
+                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode, apply_rotation}; }),
+                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"), py::arg("apply_rotation") = false)
+            .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode)
+            .def_readwrite("apply_rotation", &CacheEvictionConfig::apply_rotation)
+            .def("get_start_size", &CacheEvictionConfig::get_start_size)
+            .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
+            .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
+            .def("get_evictable_size", &CacheEvictionConfig::get_evictable_size);
 
-        .def(py::init([](const std::string& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
-            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::properties_to_any_map(plugin_config));
-        }),
-        py::arg("models_path"),
-        py::arg("tokenizer"),
-        py::arg("scheduler_config"),
-        py::arg("device"),
-        py::arg("properties") = ov::AnyMap({}))
-
-        .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
-        .def("get_config", &ContinuousBatchingPipeline::get_config)
-        .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
-        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
-        .def("step", &ContinuousBatchingPipeline::step)
-        .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
-        .def(
-            "generate",
-            py::overload_cast<const std::vector<ov::Tensor>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
-            py::arg("input_ids"),
-            py::arg("sampling_params"),
-            py::arg("streamer") = std::monostate{}
-        )
-        .def(
-            "generate",
-            py::overload_cast<const std::vector<std::string>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
-            py::arg("prompts"),
-            py::arg("sampling_params"),
-            py::arg("streamer") = std::monostate{}
-        );
+    py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
+        .def(py::init<>())
+        .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
+        .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
+        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
+        .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
+        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
+        .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)
+        .def_readwrite("use_cache_eviction", &SchedulerConfig::use_cache_eviction)
+        .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config);
 
     py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)
             .def(py::init<>())
@@ -214,4 +254,103 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
             .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
             .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
+
+    py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
+        .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, 
+                const std::map<std::string, py::object>& tokenizer_plugin_config, const std::map<std::string, py::object>& inputs_embedder_plugin_config) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, pyutils::properties_to_any_map(llm_plugin_config), 
+                pyutils::properties_to_any_map(tokenizer_plugin_config), pyutils::properties_to_any_map(inputs_embedder_plugin_config));
+        }),
+        py::arg("models_path"),
+        py::arg("scheduler_config"),
+        py::arg("device"),
+        py::arg("properties") = ov::AnyMap({}),
+        py::arg("tokenizer_properties") = ov::AnyMap({}),
+        py::arg("vision_encoder_properties") = ov::AnyMap({}))
+
+        .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const py::kwargs& kwargs) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("models_path"),
+        py::arg("tokenizer"),
+        py::arg("scheduler_config"),
+        py::arg("device"))
+
+        .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
+        .def("get_config", &ContinuousBatchingPipeline::get_config)
+        .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
+        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("input_ids"), py::arg("generation_config"))
+        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("generation_config"))
+        .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("generation_config"))
+        .def("step", &ContinuousBatchingPipeline::step)
+        .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
+
+
+        .def(
+            "generate",
+            [](ContinuousBatchingPipeline& pipe,
+               const std::vector<ov::Tensor>& input_ids,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::EncodedGenerationResult>> {
+                return __call_cb_generate(pipe, input_ids, generation_config, streamer);
+            },
+            py::arg("input_ids"),
+            py::arg("generation_config"),
+            py::arg("streamer") = std::monostate{}
+        )
+
+        .def(
+            "generate",
+            [](ContinuousBatchingPipeline& pipe,
+               const std::vector<std::string>& prompts,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+                return __call_cb_generate(pipe, prompts, generation_config, streamer);
+            },
+            py::arg("prompts"),
+            py::arg("generation_config"),
+            py::arg("streamer") = std::monostate{}
+        )
+        
+        .def(
+            "generate",
+            [](ContinuousBatchingPipeline& pipe,
+               const std::string& prompt,
+               const ov::genai::GenerationConfig& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+                std::vector<std::string> prompts = { prompts };
+                std::vector<ov::genai::GenerationConfig> generation_configs = { generation_config };
+                return __call_cb_generate(pipe, prompts, generation_configs, streamer);
+            },
+            py::arg("prompt"),
+            py::arg("generation_config"),
+            py::arg("streamer") = std::monostate{}
+        )
+
+        .def(
+            "generate",
+            [](ContinuousBatchingPipeline& pipe,
+               const std::vector<std::string>& prompts,
+               const std::vector<std::vector<ov::Tensor>>& images,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& py_streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+                ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+                std::vector<ov::genai::VLMDecodedResults> generated_results;
+                {
+                    py::gil_scoped_release rel;
+                    generated_results = pipe.generate(prompts, images, generation_config, streamer);
+                }  
+                return py::cast(generated_results);
+            },
+            py::arg("prompts"),
+            py::arg("images"),
+            py::arg("generation_config"),
+            py::arg("streamer") = std::monostate{}
+        );
 }

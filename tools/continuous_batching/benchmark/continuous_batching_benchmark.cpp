@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <fstream>
@@ -123,11 +123,6 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         ov::genai::GenerationConfig greedy_search = ov::genai::greedy();
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
         greedy_search.ignore_eos = true;
-        greedy_search.repetition_penalty = 1.0;
-        greedy_search.frequency_penalty = 0.0;
-        greedy_search.presence_penalty = 0.0;
-        greedy_search.diversity_penalty = 0.0;
-        greedy_search.length_penalty = 0.0;
 
         dataset.push_data(human_question, greedy_search);
         dataset.push_lens(input_len, output_len);
@@ -485,20 +480,10 @@ int main(int argc, char* argv[]) try {
     // Create requests for generation
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
 
-    auto get_default_block_size = [](const std::string& device) {
-        const size_t cpu_block_size = 32;
-        const size_t gpu_block_size = 16;
-
-        bool is_gpu = device.find("GPU") != std::string::npos;
-
-        return is_gpu ? gpu_block_size : cpu_block_size;
-    };
-
     // Perform the first inference
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = max_batch_size,
     scheduler_config.cache_size = cache_size,
-    scheduler_config.block_size = get_default_block_size(device),
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse,
     scheduler_config.max_num_seqs = 256; // not used if dynamic_split_fuse=True
     if (use_cache_eviction) {

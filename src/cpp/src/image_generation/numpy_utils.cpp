@@ -74,75 +74,79 @@ std::vector<float> interp(const std::vector<std::int64_t>& x, const std::vector<
     return interp_res;
 }
 
-void concat_3d_by_rows(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2) {
-    OPENVINO_ASSERT(shape_1.size() == 3 && shape_2.size() == 3, "Shape dimensions must be 3");
-    OPENVINO_ASSERT(shape_1[0] == shape_2[0] && shape_1[1] == shape_2[1], "Tensors for concatenation must have the same dimensions");
+ov::Tensor concat(ov::Tensor tensor_1, ov::Tensor tensor_2, int axis) {
+    ov::Shape shape_1 = tensor_1.get_shape(), shape_2 = tensor_2.get_shape();
+    size_t rank = shape_1.size();
 
-    for (size_t i = 0; i < shape_1[0]; ++i) {
-        for (size_t j = 0; j < shape_1[1]; ++j) {
-            size_t offset_1 = (i * shape_1[1] + j) * shape_1[2];
-            size_t offset_2 = (i * shape_2[1] + j) * shape_2[2];
+    OPENVINO_ASSERT(rank == shape_2.size(), "Shapes for concatenated tensors must have the same rank");
+    OPENVINO_ASSERT(tensor_1.get_element_type() == ov::element::f32 && tensor_2.get_element_type() == ov::element::f32,
+        "Concat supports only tensor of fp32 data type");
 
-            size_t step = (i * shape_1[1] + j) * (shape_1[2] + shape_2[2]);
-
-            std::memcpy(res + step, data_1 + offset_1, shape_1[2] * sizeof(float));
-            std::memcpy(res + step + shape_1[2], data_2 + offset_2, shape_2[2] * sizeof(float));
-        }
+    if (axis < 0) {
+        axis += rank;
     }
-}
 
-void concat_2d_by_rows(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2) {
-    OPENVINO_ASSERT(shape_1.size() == 2 && shape_2.size() == 2, "Shape dimensions must be 2");
-    OPENVINO_ASSERT(shape_1[0] == shape_2[0], "Tensors for concatenation must have the same dimensions");
-
-    for (size_t i = 0; i < shape_1[0]; ++i) {
-        size_t offset_1 = i * shape_1[1];
-        size_t offset_2 = i * shape_2[1];
-
-        size_t step = i * (shape_1[1] + shape_2[1]);
-
-        std::memcpy(res + step, data_1 + offset_1, shape_1[1] * sizeof(float));
-        std::memcpy(res + step + shape_1[1],
-                    data_2 + offset_2,
-                    shape_2[1] * sizeof(float));
+    ov::Shape dst_shape(rank);
+    for (size_t d = 0; d < rank; ++d) {
+        OPENVINO_ASSERT(d == axis || shape_1[d] == shape_2[d], "Dimension ", d, " must be the same for tensor_1 (", shape_1[d], ") and tensor_2 (", shape_2[d], ")");
+        dst_shape[d] = d == axis ? shape_1[d] + shape_2[d] : shape_1[d];
     }
-}
 
-void concat_3d_by_cols(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2) {
-    OPENVINO_ASSERT(shape_1.size() == 3 && shape_2.size() == 3, "Shape dimensions must be 3");
-    OPENVINO_ASSERT(shape_1[0] == shape_2[0] && shape_1[2] == shape_2[2], "Tensors for concatenation must have the same dimensions");
-
-    for (size_t i = 0; i < shape_1[0]; ++i) {
-        size_t shift_1 = i * shape_1[1] * shape_1[2];
-        size_t shift_2 = i * shape_2[1] * shape_2[2];
-
-        size_t step = shift_1 + shift_2;
-
-        std::memcpy(res + step, data_1 + shift_1, shape_1[1] * shape_1[2] * sizeof(float));
-        std::memcpy(res + step + shape_1[1] * shape_1[2], data_2 + shift_2, shape_2[1] * shape_2[2] * sizeof(float));
+    size_t num_iterations = 1;
+    for (size_t d = 0; d < axis; ++d) {
+        num_iterations *= shape_1[d];
     }
+
+    size_t chunk_1 = 1, chunk_2 = 1;
+    for (size_t d = axis; d < shape_1.size(); ++d) {
+        chunk_1 *= shape_1[d];
+        chunk_2 *= shape_2[d];
+    }
+
+    ov::Tensor dst_tensor(tensor_1.get_element_type(), dst_shape);
+    float * res = dst_tensor.data<float>();
+
+    const float * data_1 = tensor_1.data<const float>();
+    const float * data_2 = tensor_2.data<const float>();
+
+    for (size_t i = 0; i < num_iterations; ++i) {
+        std::memcpy(res          , data_1, chunk_1 * sizeof(float));
+        std::memcpy(res + chunk_1, data_2, chunk_2 * sizeof(float));
+
+        res += chunk_1 + chunk_2;
+        data_1 += chunk_1;
+        data_2 += chunk_2;
+    }
+
+    return dst_tensor;
 }
 
-void concat_3d_by_channels(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2) {
-    OPENVINO_ASSERT(shape_1.size() == 3 && shape_2.size() == 3, "Shape dimensions must be 3");
-    OPENVINO_ASSERT(shape_1[1] == shape_2[1] && shape_1[2] == shape_2[2], "Tensors for concatenation must have the same dimensions");
+void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_batch, size_t batch_size) {
+    const ov::Shape src_shape = src.get_shape(), dst_shape = dst.get_shape();
+    ov::Coordinate src_start(src_shape.size(), 0), src_end = src_shape;
+    ov::Coordinate dst_start(dst_shape.size(), 0), dst_end = dst_shape;
 
-    size_t size_1 = shape_1[0] * shape_1[1] * shape_1[2];
-    size_t size_2 = shape_2[0] * shape_2[1] * shape_2[2];
+    src_start[0] = src_batch;
+    src_end[0] = src_batch + batch_size;
 
-    std::memcpy(res, data_1, size_1 * sizeof(float));
-    std::memcpy(res + size_1, data_2, size_2 * sizeof(float));
+    dst_start[0] = dst_batch;
+    dst_end[0] = dst_batch + batch_size;
+
+    ov::Tensor(src, src_start, src_end).copy_to(ov::Tensor(dst, dst_start, dst_end));
 }
 
-void concat_2d_by_channels(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2) {
-    OPENVINO_ASSERT(shape_1.size() == 2 && shape_2.size() == 2, "Shape dimensions must be 2");
-    OPENVINO_ASSERT(shape_1[1] == shape_2[1], "Tensors for concatenation must have the same dimensions");
+ov::Tensor repeat(const ov::Tensor input, const size_t n_times) {
+    if (n_times == 1)
+        return input;
 
-    size_t size_1 = shape_1[0] * shape_1[1];
-    size_t size_2 = shape_2[0] * shape_2[1];
+    ov::Shape input_shape = input.get_shape(), repeated_shape = input_shape;
+    repeated_shape[0] *= n_times;
 
-    std::memcpy(res, data_1, size_1 * sizeof(float));
-    std::memcpy(res + size_1, data_2, size_2 * sizeof(float));
+    ov::Tensor tensor_repeated(input.get_element_type(), repeated_shape);
+    for (size_t n = 0; n < n_times; ++n) {
+        batch_copy(input, tensor_repeated, 0, n, input_shape[0]);
+    }
+    return tensor_repeated;
 }
 
 

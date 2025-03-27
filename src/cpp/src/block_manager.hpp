@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -11,7 +11,6 @@
 #include <chrono>
 
 #include "sequence_group.hpp"
-
 
 namespace ov::genai {
 
@@ -188,11 +187,15 @@ class CacheStateDumper;
  */
 class BlockAllocator {
     std::vector<std::list<KVCacheBlock::Ptr>> m_free_blocks;
-    int m_total_num_blocks;
+    // We keep m_free_blocks_num instead of m_free_blocks[X].size() to WA old CXX library implementation issue for std::list::size()
+    // see https://stackoverflow.com/questions/13157164/why-isnt-stdlist-size-constant-time
+    std::vector<size_t> m_free_blocks_num;
+    size_t m_total_num_blocks;
     friend class CacheStateDumper;
     size_t m_num_layers;
     bool m_enable_prefix_caching;
     ov::genai::OverwritableBlocksHashStore m_overwriteable_blocks;
+
 public:
     /**
      * Constructs the BlockAllocator.
@@ -202,21 +205,44 @@ public:
      * @param num_layers The number of separate attention layers with KV caches in the LLM associated with the pipeline.
      * Blocks returned will be vectors with this size, each vector entry to be associated with a separate layer's KV cache.
      */
-    BlockAllocator(int num_blocks, bool enable_prefix_caching, size_t num_layers = 1) :
+    BlockAllocator(size_t num_blocks, bool enable_prefix_caching, size_t num_layers = 1) :
             m_total_num_blocks(num_blocks), m_num_layers(num_layers), m_enable_prefix_caching(enable_prefix_caching), m_overwriteable_blocks(num_layers) {
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
         m_free_blocks.resize(m_num_layers);
-        for (auto& per_layer_block_list : m_free_blocks) {
-            for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
-                per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+        if (num_blocks > 0) {
+            m_free_blocks_num = std::vector<size_t>(num_layers, num_blocks);
+            for (auto& per_layer_block_list : m_free_blocks) {
+                for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
+                    per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+                }
             }
+        } else {
+            m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
         }
     }
 
     ~BlockAllocator() {
         // sanity check to validate that all blocks are freed
-        // OPENVINO_ASSERT(m_total_num_blocks == m_free_blocks.size());
+        for (auto& free_block : m_free_blocks_num) {
+            size_t free_and_overwritable_block_cnt = free_block + num_overwriteable_blocks();
+            OPENVINO_ASSERT(m_total_num_blocks == free_and_overwritable_block_cnt, "Expected num free blocks: ", m_total_num_blocks, ", actual: ", free_and_overwritable_block_cnt);
+        }
     }
+
+    void increase_kv_blocks_number(size_t new_kv_blocks_count) {
+        OPENVINO_ASSERT(new_kv_blocks_count > m_total_num_blocks, "New blocks number should be more than previous blocks number.");
+        size_t added_blocks = new_kv_blocks_count - m_total_num_blocks;
+        for (auto idx = 0; idx < m_free_blocks_num.size(); idx++) {
+            m_free_blocks_num[idx] += added_blocks;
+        }
+        for (auto& per_layer_block_list : m_free_blocks) {
+            for (int block_id = m_total_num_blocks; block_id < new_kv_blocks_count; ++block_id) {
+                per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+            }
+        }
+        m_total_num_blocks = new_kv_blocks_count;
+    }
+
 
     /**
      * Returns the number of free blocks for a given layer.
@@ -224,7 +250,7 @@ public:
      * @return Number of free blocks for this layer.
      */
     size_t num_free_blocks(size_t layer_idx) const {
-        return m_free_blocks[layer_idx].size() + m_overwriteable_blocks.num_blocks();
+        return m_free_blocks_num[layer_idx] + num_overwriteable_blocks();
     }
 
     /**
@@ -270,6 +296,7 @@ public:
         block_ptr->release();
         if (block_ptr->is_free()) {
             m_free_blocks[layer_idx].push_back(block_ptr);
+            ++m_free_blocks_num[layer_idx];
         }
     }
 
@@ -325,6 +352,7 @@ public:
                         // actual collision case
                         for (size_t layer_idx = 0; layer_idx < colliding_blocks_per_layer.size(); layer_idx++) {
                             m_free_blocks[layer_idx].push_back(colliding_blocks_per_layer[layer_idx]);
+                            ++m_free_blocks_num[layer_idx];
                         }
                     }
                     m_overwriteable_blocks.add(blocks_for_all_layers);
@@ -333,12 +361,14 @@ public:
                     // TODO (vshampor): more fine-grained hash store control
                     for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
                         m_free_blocks[layer_idx].push_back(blocks_for_all_layers[layer_idx]);
+                        ++m_free_blocks_num[layer_idx];
                     }
                 }
             }
             else {
                 for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
                     m_free_blocks[layer_idx].push_back(blocks_for_all_layers[layer_idx]);
+                    ++m_free_blocks_num[layer_idx];
                 }
             }
         }
@@ -368,6 +398,7 @@ public:
         KVCacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
         allocated_block->increment();
         m_free_blocks[layer_idx].pop_front();
+        --m_free_blocks_num[layer_idx];
         return allocated_block;
     }
 
@@ -386,7 +417,7 @@ public:
         OPENVINO_ASSERT(m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
 
-        if (m_free_blocks[0].size() > 0) {
+        if (m_free_blocks_num[0] > 0) {
             // allocate new empty block
             BlocksPerLayer allocated_blocks;
             allocated_blocks.reserve(m_num_layers);
@@ -396,6 +427,7 @@ public:
                 allocated_block->set_hash(hash);
                 allocated_blocks.push_back(allocated_block);
                 m_free_blocks[i].pop_front();
+                --m_free_blocks_num[i];
             }
             cached_blocks[hash] = allocated_blocks;
             return allocated_blocks;
@@ -451,6 +483,13 @@ public:
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) sum += num_free_blocks(layer_idx);
         return static_cast<float>(m_num_layers * m_total_num_blocks - sum) / (m_num_layers * m_total_num_blocks) * 100;
     }
+
+    /**
+     * @return The total number of KV blocks .
+     */
+    size_t get_total_number_of_kv_blocks() const {
+        return m_total_num_blocks;
+    }
 };
 
 /**
@@ -491,7 +530,7 @@ public:
 
     ~BlockManager() {
         // sanity check that all sequences are freed
-        // OPENVINO_ASSERT(m_block_table.empty());
+        OPENVINO_ASSERT(m_block_table.empty());
     }
 
     /**
@@ -516,6 +555,14 @@ public:
     }
 
     /**
+     * Gets the block size.
+     * @return Block size.
+     */
+    const size_t get_block_size() const {
+        return m_block_size;
+    }
+
+    /**
      * Frees a number of blocks with highest logical index from all sequences within a sequence group.
      * @param sequence_group The sequence group to free blocks from.
      * @param num_required_blocks The number of blocks to be freed. Will free an equal
@@ -524,9 +571,9 @@ public:
      */
     const size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
         size_t blocks_num = std::ceil(num_required_blocks / sequence_group->get_not_finished_sequences().size());
-        auto running_sequences = sequence_group->get_not_finished_sequences();
-        for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
-            auto seq_id = running_sequences[idx]->get_id();
+        auto not_finished_sequences = sequence_group->get_not_finished_sequences();
+        for (size_t idx = 0; idx < not_finished_sequences.size(); ++idx) {
+            auto seq_id = not_finished_sequences[idx]->get_id();
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
             free_sequence_partially(seq_id, blocks_num);
         }
@@ -535,9 +582,9 @@ public:
 
     const size_t free_last_block_from_each_sequence(SequenceGroup::Ptr sequence_group) {
         size_t blocks_released = 0;
-        auto running_sequences = sequence_group->get_not_finished_sequences();
-        for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
-            auto seq_id = running_sequences[idx]->get_id();
+        auto not_finished_sequences = sequence_group->get_not_finished_sequences();
+        for (size_t idx = 0; idx < not_finished_sequences.size(); ++idx) {
+            auto seq_id = not_finished_sequences[idx]->get_id();
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
             if (free_last_block(seq_id)) {
                 blocks_released++;
@@ -630,11 +677,10 @@ public:
      * Allocates a given number of KV cache blocks to a given sequence.
      * @param sequence The sequence for the blocks to be allocated to.
      * @param num_blocks The number of KV cache blocks to be allocated.
-     * @param prompt_ids Raw token values of the prompt for this sequence. Required if prefix caching is enabled.
+     * @param prompt_size Prompt size for this sequence.
      */
-    void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, const ov::genai::TokenIds& prompt_ids = {}) {
+    void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, size_t prompt_size = 0) {
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
-        OPENVINO_ASSERT(!m_enable_prefix_caching || prompt_ids.size() > 0, "prompt_ids should be set for hash calculation.");
 
         auto sequence_id = sequence->get_id();
         if (m_block_table.find(sequence_id) == m_block_table.end()) {
@@ -642,7 +688,7 @@ public:
         }
 
         auto& block_table = m_block_table[sequence_id][0];
-        auto content_length = sequence->get_generated_len() + prompt_ids.size();
+        auto content_length = sequence->get_generated_len() + prompt_size;
         size_t allocated_blocks = block_table.size(); // assuming all layers have the same number of allocated blocks
         size_t num_hashed_tokens = allocated_blocks * m_block_size;
 
@@ -695,6 +741,21 @@ public:
      */
     float get_used_percentage() const {
         return m_allocator.get_used_percentage();
+    }
+
+    /**
+     * Increases the number of KV blocks.
+     * @param num_blocks The new number of KV-blocks.
+     */
+    void increase_kv_blocks_number(size_t num_blocks) {
+        m_allocator.increase_kv_blocks_number(num_blocks);
+    }
+
+    /**
+     * @return The total number of KV blocks .
+     */
+    size_t get_total_number_of_kv_blocks() const {
+        return m_allocator.get_total_number_of_kv_blocks();
     }
 
     /**
@@ -954,7 +1015,7 @@ public:
 
             if (num_logical_blocks > num_physical_blocks) {
                 OPENVINO_ASSERT(can_allocate_blocks(num_logical_blocks - num_physical_blocks));
-                allocate(sequence, num_logical_blocks - num_physical_blocks, seq_group->get_prompt_ids());
+                allocate(sequence, num_logical_blocks - num_physical_blocks, seq_group->get_prompt_len());
             } else {
                 OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks, "A number of physical and logic blocks must be the same in this code path");
 
@@ -1012,7 +1073,7 @@ public:
         // When add_request() is executed in multiple threads accessing to cached_blocks causes segfault.
         // The mutex is needed to prevent such segfaults.
         const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
-        auto prompt_ids = group->get_prompt_ids();
+        auto prompt_len = group->get_prompt_len();
         auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
         auto sequence = sequences[0];
@@ -1024,11 +1085,11 @@ public:
         auto& block_table = m_block_table[seq_id];
 
         size_t content_len = 0;
-        while (content_len < prompt_ids.size()) {
+        while (content_len < prompt_len) {
             size_t prev_iteration_content_len = content_len;
             content_len += m_block_size;
-            if (content_len > prompt_ids.size()) {
-                content_len = prompt_ids.size();
+            if (content_len > prompt_len) {
+                content_len = prompt_len;
             }
             // restore fully filled blocks
             auto full_block_hash = sequence->get_hash(content_len);
@@ -1040,11 +1101,11 @@ public:
                     block->set_timestamp(timestamp);
                     block_table[layer_idx].push_back(block);
                 }
-                group->update_processed_tokens_num(content_len == prompt_ids.size() ? content_len - 1 : content_len);
+                group->update_processed_tokens_num(content_len == prompt_len ? content_len - 1 : content_len);
             } else {
             // restore partially filled block
                 for (size_t i = 1; i < m_block_size; i++) {
-                    if (prev_iteration_content_len + i > prompt_ids.size()) {
+                    if (prev_iteration_content_len + i > prompt_len) {
                         break;
                     }
                     auto hash = sequence->get_hash(prev_iteration_content_len + i);
@@ -1057,8 +1118,7 @@ public:
                             block->set_timestamp(timestamp);
                             block_table[layer_idx].push_back(block);
                         }
-
-                        group->update_processed_tokens_num(prev_iteration_content_len + i == prompt_ids.size() ? prev_iteration_content_len + i - 1 : prev_iteration_content_len + i);
+                        group->update_processed_tokens_num(prev_iteration_content_len + i == prompt_len ? prev_iteration_content_len + i - 1 : prev_iteration_content_len + i);
 
                         break;
                     }

@@ -1,6 +1,8 @@
 
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
+
+#include <sstream>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -30,7 +32,9 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
         image_path.string().c_str(),
         &x, &y, &channels_in_file, desired_channels);
     if (!image) {
-        throw std::runtime_error{"Failed to load the image."};
+        std::stringstream error_message;
+        error_message << "Failed to load the image '" << image_path << "'";
+        throw std::runtime_error{error_message.str()};
     }
     struct SharedImageAllocator {
         unsigned char* image;

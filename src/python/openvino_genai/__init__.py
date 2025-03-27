@@ -5,40 +5,89 @@
 
 import openvino  # add_dll_directory for openvino lib
 import os
-from .__version__ import __version__
-
 
 if hasattr(os, "add_dll_directory"):
     os.add_dll_directory(os.path.dirname(__file__))
 
 from .py_openvino_genai import (
-    ContinuousBatchingPipeline,
     DecodedResults,
     EncodedResults,
-    GenerationConfig,
-    GenerationResult,
-    Adapter,
-    AdapterConfig,
-    CLIPTextModel,
-    CLIPTextModelWithProjection,
-    UNet2DConditionModel,
-    AutoencoderKL,
-    LLMPipeline, 
-    VLMPipeline,
-    Text2ImagePipeline,
-    PerfMetrics,
     RawPerfMetrics,
-    SchedulerConfig,
-    Scheduler,
-    StopCriteria,
+    PerfMetrics,
     StreamerBase,
+    get_version,
+    StreamingStatus,
+    TextStreamer
+)
+
+__version__ = get_version()
+
+# VLM pipeline
+
+from .py_openvino_genai import (
+    VLMPipeline,
+)
+
+# LLM pipeline
+from .py_openvino_genai import (
+    LLMPipeline, 
+    draft_model,
+)
+
+# LoRA
+from .py_openvino_genai import (
+    Adapter,
+    AdapterConfig
+)
+
+# Generation config
+from .py_openvino_genai import (
+    GenerationConfig,
+    StopCriteria
+)
+
+# Tokenizers
+from .py_openvino_genai import (
     TokenizedInputs,
-    Tokenizer,
+    Tokenizer
+)
+
+# Whisper
+from .py_openvino_genai import (
     WhisperGenerationConfig,
     WhisperPipeline,
-    CacheEvictionConfig,
-    AggregationMode,
+    ChunkStreamerBase,
+    WhisperRawPerfMetrics,
+    WhisperPerfMetrics
+)
+
+# Image generation
+from .py_openvino_genai import (
+    CLIPTextModel,
+    CLIPTextModelWithProjection,
+    T5EncoderModel,
+    UNet2DConditionModel,
+    FluxTransformer2DModel,
+    SD3Transformer2DModel,
+    AutoencoderKL,
+    Text2ImagePipeline,
+    Image2ImagePipeline,
+    InpaintingPipeline,
+    Scheduler,
+    ImageGenerationConfig,
     Generator,
     CppStdGenerator,
-    draft_model
+    TorchGenerator,
+    ImageGenerationPerfMetrics,
+    RawImageGenerationPerfMetrics,
+)
+
+# Continuous batching
+from .py_openvino_genai import (
+    ContinuousBatchingPipeline,
+    GenerationResult,
+    GenerationStatus,
+    SchedulerConfig,
+    CacheEvictionConfig,
+    AggregationMode
 )

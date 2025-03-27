@@ -27,17 +27,6 @@ default_data = {
 }
 
 
-class Generator(openvino_genai.Generator):
-    def __init__(self, seed, rng, mu=0.0, sigma=1.0):
-        openvino_genai.Generator.__init__(self)
-        self.mu = mu
-        self.sigma = sigma
-        self.rng = rng
-
-    def next(self):
-        return torch.randn(1, generator=self.rng, dtype=torch.float32).item()
-
-
 @register_evaluator("text-to-image")
 class Text2ImageEvaluator(BaseEvaluator):
     def __init__(
@@ -84,14 +73,20 @@ class Text2ImageEvaluator(BaseEvaluator):
     def get_generation_fn(self):
         return self.generation_fn
 
-    def dump_gt(self, csv_name: str):
-        self.gt_data.to_csv(csv_name)
+    def score(self, model_or_data, gen_image_fn=None, output_dir=None, **kwargs):
+        if output_dir is None:
+            image_folder = os.path.join(self.gt_dir, "target")
+        else:
+            image_folder = os.path.join(output_dir, "target")
 
-    def score(self, model, gen_image_fn=None):
-        model.resolution = self.resolution
-        predictions = self._generate_data(
-            model, gen_image_fn, os.path.join(self.gt_dir, "target")
-        )
+        if isinstance(model_or_data, str) and os.path.exists(model_or_data):
+            predictions = pd.read_csv(model_or_data, keep_default_na=False)
+        else:
+            model_or_data.resolution = self.resolution
+            predictions = self._generate_data(
+                model_or_data, gen_image_fn, image_folder
+            )
+        self.predictions = predictions
 
         all_metrics_per_prompt = {}
         all_metrics = {}
@@ -120,24 +115,16 @@ class Text2ImageEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
-        if hasattr(model, "reshape") and self.resolution is not None:
-            if gen_image_fn is None:
-                model.reshape(
-                    batch_size=1,
-                    height=self.resolution[0],
-                    width=self.resolution[1],
-                    num_images_per_prompt=1,
-                )
-
         def default_gen_image_fn(model, prompt, num_inference_steps, generator=None):
-            output = model(
-                prompt,
-                num_inference_steps=num_inference_steps,
-                output_type="pil",
-                width=self.resolution[0],
-                height=self.resolution[0],
-                generator=generator,
-            )
+            with torch.no_grad():
+                output = model(
+                    prompt,
+                    num_inference_steps=num_inference_steps,
+                    output_type="pil",
+                    width=self.resolution[0],
+                    height=self.resolution[0],
+                    generator=generator,
+                )
             return output.images[0]
 
         generation_fn = gen_image_fn or default_gen_image_fn
@@ -174,7 +161,7 @@ class Text2ImageEvaluator(BaseEvaluator):
                 model,
                 prompt,
                 self.num_inference_steps,
-                generator=Generator(self.seed, rng) if self.is_genai else rng
+                generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng
             )
             image_path = os.path.join(image_dir, f"{i}.png")
             image.save(image_path)

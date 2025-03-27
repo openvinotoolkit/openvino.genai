@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "audio_utils.hpp"
@@ -15,18 +15,20 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::WhisperPipeline pipeline(models_path, device);
 
-    ov::genai::WhisperGenerationConfig config(models_path / "generation_config.json");
+    ov::genai::WhisperGenerationConfig config = pipeline.get_generation_config();
     config.max_new_tokens = 100;  // increase this based on your speech length
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
     config.task = "transcribe";
     config.return_timestamps = true;
 
+    // Pipeline expects normalized audio with Sample Rate of 16kHz
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
     auto result = pipeline.generate(raw_speech, config);
 
     std::cout << result << "\n";
 
+    std::cout << std::fixed << std::setprecision(2);
     for (auto& chunk : *result.chunks) {
         std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
     }

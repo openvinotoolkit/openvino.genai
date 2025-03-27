@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -14,8 +14,6 @@ class GenerationStream {
     GenerationStatus m_status = GenerationStatus::RUNNING;
     SynchronizedQueue<GenerationOutputs> m_output_queue;
 
-    std::vector<uint64_t> last_sequence_ids;
-
 public:
     using Ptr = std::shared_ptr<GenerationStream>;
 
@@ -30,10 +28,6 @@ public:
         m_output_queue.push(std::move(outputs));
     }
 
-    // Retrieving vector of pairs <sequence_id, token_id> as we can generate multiple outputs for a single prompt
-    GenerationOutputs back() {
-        return m_output_queue.back();
-    }
     GenerationOutputs read() {
         return m_output_queue.pull();
     }
@@ -52,9 +46,14 @@ public:
         return m_status;
     }
 
-    void drop() {
+    void stop() {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_status = GenerationStatus::DROPPED_BY_HANDLE;
+        m_status = GenerationStatus::STOP;
+    }
+
+    void cancel() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_status = GenerationStatus::CANCEL;
     }
 };
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -28,6 +28,7 @@ public:
     void update_draft_accepted_tokens(int64_t request_id, size_t num_matches);
 
     void set_generated_len(int64_t request_id, size_t generated_len);
+    size_t get_generated_len(int64_t request_id);
 
     size_t get_iteration_number(int64_t request_id);
 
@@ -35,5 +36,11 @@ public:
     float get_main_duration_percentage();
     float get_inference_duration_percentage();
 
+    std::vector<int64_t> get_requests_id();
+
+    void print_acceptance_rates();
+    void print(bool is_printing_per_request = false);
+
+    void clean_up();
 };
 }

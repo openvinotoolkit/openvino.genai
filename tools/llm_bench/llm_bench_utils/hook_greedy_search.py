@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 # flake8: noqa
 import time
 import torch
+import types
 import warnings
 import logging as log
 import transformers
@@ -50,7 +51,7 @@ GenerateNonBeamOutput = Union[GenerateDecoderOnlyOutput, GenerateEncoderDecoderO
 
 tm_list = []
 tm_infer_list = []
-
+tm_mm_embeddings = []
 # Transformers version: v4.40-release 4fdf58afb72b0754da30037fc800b6044e7d9c99
 # Copied from https://github.com/huggingface/transformers/blob/4fdf58afb72b0754da30037fc800b6044e7d9c99/src/transformers/generation/utils.py#L2310
 # Add the function of collecting latency
@@ -328,6 +329,17 @@ def new_greedy_search(
             return input_ids
 
 
+def new_get_multimodal_embeddings(
+        self, input_ids, pixel_values=None, attention_mask=None, position_ids=None, **kwargs
+    ):
+
+    start = time.perf_counter()
+    result = self._orig_get_multimodal_embeddings(input_ids, pixel_values=pixel_values, attention_mask=attention_mask, position_ids=position_ids, **kwargs)
+    end = time.perf_counter()
+    tm_mm_embeddings.append(end - start)
+    return result
+
+
 class GreedySearchHook:
     def __init__(self):
         """Clear the time list."""
@@ -355,6 +367,16 @@ class GreedySearchHook:
         global tm_infer_list
         return tm_infer_list
 
+
+    def get_mm_embeddings_time_list(self):
+        global tm_mm_embeddings
+        return tm_mm_embeddings
+
+    def clear_mm_embeddins_time_list(self):
+        """Clear the infer time list."""
+        global tm_mm_embeddings
+        tm_mm_embeddings.clear()
+
     def new_forward(self, model):
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
@@ -363,4 +385,8 @@ class GreedySearchHook:
         if trans_version >= version.parse('4.45.0'):
             model._sample = hook_sample_v45.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.43.0'):
-            model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)         
+            model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)  
+       
+    def new_get_multimodal_embeddings(self, model):
+        model._orig_get_multimodal_embeddings = model.get_multimodal_embeddings
+        model.get_multimodal_embeddings = types.MethodType(new_get_multimodal_embeddings, model)

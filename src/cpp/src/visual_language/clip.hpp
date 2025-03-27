@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
+
+#include "openvino/runtime/tensor.hpp"
 
 struct clip_ctx {
     float image_mean[3] = {0.0f, 0.0f, 0.0f};
@@ -21,6 +23,14 @@ struct clip_image_u8 {
     std::vector<uint8_t> buf;
 };
 
+/**
+ * @brief Converts an OpenVINO image tensor (1HWC) to a clip_image_u8 structure.
+ *
+ * @param image_tensor An OpenVINO tensor (1HWC) containing the image data.
+ * @return A clip_image_u8 structure containing the image data.
+ */
+clip_image_u8 tensor_to_clip_image_u8(const ov::Tensor& image_tensor);
+
 // RGB float32 image (NHWC)
 // Memory layout: RGBRGBRGB...
 struct clip_image_f32 {
@@ -30,7 +40,16 @@ struct clip_image_f32 {
     std::vector<float> buf;
 };
 
+/**
+ * @brief Converts a clip_image_f32 structure to an OpenVINO image tensor (1CHW).
+ *
+ * @param image A clip_image_f32 structure containing the image data.
+ * @return An OpenVINO tensor containing the image data (1CHW).
+ */
+ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image);
+
 void bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
+void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height);
 
 /** preprocess img and store the result in res_imgs, pad_to_square may be overridden to false depending on model configuration */
 clip_image_f32 clip_image_preprocess(struct clip_ctx& ctx, const clip_image_u8& img);

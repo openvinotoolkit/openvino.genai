@@ -1,0 +1,18 @@
+name: 'Install OpenVINO'
+inputs:
+  ov_link:
+    description: 'URL to download OpenVINO'
+    required: true
+  ov_dir:
+    description: 'Directory to install OpenVINO'
+    default: './ov'
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: 'Install OpenVINO'
+      shell: bash
+      run: |
+        mkdir ${{ inputs.ov_dir }}
+        curl ${{ inputs.ov_link }} | tar --directory ${{ inputs.ov_dir }} --strip-components 1 -xz
+        sudo ${{ inputs.ov_dir }}/install_dependencies/install_openvino_dependencies.sh

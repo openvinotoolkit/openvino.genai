@@ -1,7 +1,9 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/unet2d_condition_model.hpp"
+#include "image_generation/models/unet_inference_dynamic.hpp"
+#include "image_generation/models/unet_inference_static_bs1.hpp"
 
 #include <fstream>
 
@@ -28,8 +30,7 @@ UNet2DConditionModel::Config::Config(const std::filesystem::path& config_path) {
 
 UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir) :
     m_config(root_dir / "config.json") {
-    ov::Core core = utils::singleton_core();
-    m_model = core.read_model((root_dir / "openvino_model.xml").string());
+    m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
     m_vae_scale_factor = get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
@@ -37,6 +38,24 @@ UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir
                                            const std::string& device,
                                            const ov::AnyMap& properties) :
     UNet2DConditionModel(root_dir) {
+    compile(device, properties);
+}
+
+UNet2DConditionModel::UNet2DConditionModel(const std::string& model,
+                                           const Tensor& weights,
+                                           const Config& config,
+                                           const size_t vae_scale_factor) :
+    m_config(config), m_vae_scale_factor(vae_scale_factor) {
+    m_model = utils::singleton_core().read_model(model, weights);
+}
+
+UNet2DConditionModel::UNet2DConditionModel(const std::string& model,
+                                           const Tensor& weights,
+                                           const Config& config,
+                                           const size_t vae_scale_factor,
+                                           const std::string& device,
+                                           const ov::AnyMap& properties) :
+    UNet2DConditionModel(model, weights, config, vae_scale_factor) {
     compile(device, properties);
 }
 
@@ -52,41 +71,28 @@ UNet2DConditionModel& UNet2DConditionModel::reshape(int batch_size, int height, 
     height /= m_vae_scale_factor;
     width /= m_vae_scale_factor;
 
-    std::map<std::string, ov::PartialShape> name_to_shape;
-
-    for (auto && input : m_model->inputs()) {
-        std::string input_name = input.get_any_name();
-        name_to_shape[input_name] = input.get_partial_shape();
-        if (input_name == "timestep") {
-            name_to_shape[input_name][0] = 1;
-        } else if (input_name == "sample") {
-            name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
-        } else if (input_name == "time_ids" || input_name == "text_embeds") {
-            name_to_shape[input_name][0] = batch_size;
-        } else if (input_name == "encoder_hidden_states") {
-            name_to_shape[input_name][0] = batch_size;
-            name_to_shape[input_name][1] = tokenizer_model_max_length;
-        }
-    }
-
-    m_model->reshape(name_to_shape);
+    UNetInference::reshape(m_model, batch_size, height, width, tokenizer_model_max_length);
 
     return *this;
 }
 
 UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model;
+
+    if (device == "NPU") {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceStaticBS1>();
+    } else {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
+    }
+
     std::optional<AdapterConfig> adapters;
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
         adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("lora_unet"));
         m_adapter_controller = AdapterController(m_model, *adapters, device);
-        compiled_model = core.compile_model(m_model, device, *filtered_properties);
-    } else {
-        compiled_model = core.compile_model(m_model, device, properties);
     }
-    m_request = compiled_model.create_infer_request();
+    m_impl->compile(m_model, device, *filtered_properties);
+
     // release the original model
     m_model.reset();
 
@@ -94,25 +100,20 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
 }
 
 void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
-    OPENVINO_ASSERT(m_request, "UNet model must be compiled first");
-    m_request.set_tensor(tensor_name, encoder_hidden_states);
+    OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
+    m_impl->set_hidden_states(tensor_name, encoder_hidden_states);
 }
 
 void UNet2DConditionModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
-    if (adapters) {
-        m_adapter_controller.apply(m_request, *adapters);
+    OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
+    if(adapters) {
+        m_impl->set_adapters(m_adapter_controller, *adapters);
     }
 }
 
 ov::Tensor UNet2DConditionModel::infer(ov::Tensor sample, ov::Tensor timestep) {
-    OPENVINO_ASSERT(m_request, "UNet model must be compiled first. Cannot infer non-compiled model");
-
-    m_request.set_tensor("sample", sample);
-    m_request.set_tensor("timestep", timestep);
-
-    m_request.infer();
-
-    return m_request.get_output_tensor();
+    OPENVINO_ASSERT(m_impl, "UNet model must be compiled first. Cannot infer non-compiled model");
+    return m_impl->infer(sample, timestep);
 }
 
 } // namespace genai

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -36,12 +36,39 @@ public:
                          const std::string& device,
                          const ov::AnyMap& properties = {});
 
+    UNet2DConditionModel(const std::string& model,
+                         const Tensor& weights,
+                         const Config& config,
+                         const size_t vae_scale_factor);
+
+    UNet2DConditionModel(const std::string& model,
+                         const Tensor& weights,
+                         const Config& config,
+                         const size_t vae_scale_factor,
+                         const std::string& device,
+                         const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     UNet2DConditionModel(const std::filesystem::path& root_dir,
                          const std::string& device,
                          Properties&&... properties)
         : UNet2DConditionModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    UNet2DConditionModel(const std::string& model,
+                         const Tensor& weights,
+                         const Config& config,
+                         const size_t vae_scale_factor,
+                         const std::string& device,
+                         Properties&&... properties)
+        : UNet2DConditionModel(model,
+                               weights,
+                               config,
+                               vae_scale_factor,
+                               device,
+                               ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     UNet2DConditionModel(const UNet2DConditionModel&);
 
@@ -64,12 +91,21 @@ public:
 
     ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep);
 
+    bool do_classifier_free_guidance(float guidance_scale) const {
+        return guidance_scale > 1.0f && m_config.time_cond_proj_dim < 0;
+    }
+
 private:
+    class UNetInference;
+    std::shared_ptr<UNetInference> m_impl;
+
     Config m_config;
     AdapterController m_adapter_controller;
     std::shared_ptr<ov::Model> m_model;
-    ov::InferRequest m_request;
     size_t m_vae_scale_factor;
+
+    class UNetInferenceDynamic;
+    class UNetInferenceStaticBS1;
 };
 
 } // namespace genai

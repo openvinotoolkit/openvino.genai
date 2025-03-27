@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -33,12 +33,39 @@ public:
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
+    CLIPTextModel(const std::string& model,
+                  const Tensor& weights,
+                  const Config& config,
+                  const Tokenizer& clip_tokenizer);
+
+    CLIPTextModel(const std::string& model,
+                  const Tensor& weights,
+                  const Config& config,
+                  const Tokenizer& clip_tokenizer,
+                  const std::string& device,
+                  const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     CLIPTextModel(const std::filesystem::path& root_dir,
                   const std::string& device,
                   Properties&&... properties)
         : CLIPTextModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    CLIPTextModel(const std::string& model,
+                  const Tensor& weights,
+                  const Config& config,
+                  const Tokenizer& clip_tokenizer,
+                  const std::string& device,
+                  Properties&&... properties)
+        : CLIPTextModel(model,
+                        weights,
+                        config,
+                        clip_tokenizer,
+                        device,
+                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     CLIPTextModel(const CLIPTextModel&);
 
@@ -68,6 +95,8 @@ private:
     std::shared_ptr<ov::Model> m_model;
 
     Tokenizer m_clip_tokenizer;
+
+    bool m_slice_batch1_output = false;
 };
 
 } // namespace genai

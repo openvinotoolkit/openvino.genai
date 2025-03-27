@@ -24,7 +24,7 @@ def streamer(subword: str) -> bool:
     print(subword, end='', flush=True)
 
     # No value is returned as in this example we don't want to stop the generation in this method.
-    # "return None" will be treated the same as "return False".
+    # "return None" will be treated the same as "return openvino_genai.StreamingStatus.RUNNING".
 
 
 def read_image(path: str) -> Tensor:
@@ -37,7 +37,7 @@ def read_image(path: str) -> Tensor:
 
     '''
     pic = Image.open(path).convert("RGB")
-    image_data = np.array(pic.getdata()).reshape(1, pic.size[1], pic.size[0], 3).astype(np.byte)
+    image_data = np.array(pic)
     return Tensor(image_data)
 
 
@@ -56,7 +56,9 @@ def main():
 
     rgbs = read_images(args.image_dir)
 
-    device = 'CPU'  # GPU can be used as well
+    # GPU and NPU can be used as well.
+    # Note: If NPU selected, only language model will be run on NPU
+    device = 'CPU'
     enable_compile_cache = dict()
     if "GPU" == device:
         # Cache compiled models on disk for GPU to save time on the

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <numeric>
@@ -93,6 +93,65 @@ void SpeculativeDecodingMetrics::update_draft_accepted_tokens(int64_t request_id
 
 void SpeculativeDecodingMetrics::set_generated_len(int64_t request_id, size_t generated_len) {
     m_generated_len.insert({ request_id, generated_len });
+}
+
+size_t SpeculativeDecodingMetrics::get_generated_len(int64_t request_id) {
+    return m_generated_len.at(request_id);
+}
+
+std::vector<int64_t> SpeculativeDecodingMetrics::get_requests_id() {
+    std::vector<int64_t> result;
+    for (const auto& req : m_generated_len) {
+        result.push_back(req.first);
+    }
+    return result;
+}
+
+void SpeculativeDecodingMetrics::print_acceptance_rates() {
+    for (const auto& a : m_acceptance_rate) {
+        std::cout << "Request_id: " << a.first << " ||| ";
+        for (const auto& b : a.second) {
+            std::cout << b << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+void SpeculativeDecodingMetrics::print(bool is_printing_per_request) {
+    if (total_duration == 0) {
+        total_duration = draft_duration + main_duration;
+    }
+    std::cout << "\n=============================== " << std::endl;
+    std::cout << "Total duration, sec: " << total_duration << std::endl;
+    std::cout << "Draft model duration, sec: " << draft_duration << std::endl;
+    std::cout << "Main model duration, sec: " << main_duration << std::endl;
+    std::cout << "Draft model duration, %: " << get_draft_duration_percentage() << std::endl;
+    std::cout << "Main model duration, %: " << get_main_duration_percentage() << std::endl;
+    std::cout << "AVG acceptance rate, %: " << get_avg_acceptance_rate(-1) << std::endl;
+    std::cout << "=============================== " << std::endl;
+    if (is_printing_per_request) {
+        for (const auto& i : get_requests_id()) {
+            std::cout << "REQUEST_ID: " << i << std::endl;
+            std::cout << "Main model iterations: " << get_iteration_number(i) << std::endl;
+            std::cout << "Token per sec: " << float(get_generated_len(i)) / total_duration << std::endl;
+            std::cout << "AVG acceptance rate, %: " << get_avg_acceptance_rate(i) << std::endl;
+            std::cout << "Accepted tokens by draft model: " << get_draft_accepted_tokens_counter(i) << std::endl;
+            std::cout << "Generated tokens: " << get_generated_len(i) << std::endl;
+            std::cout << "Accepted token rate, %: " << get_draft_accepted_tokens_percentage(i) << std::endl;
+            std::cout << "=============================== " << std::endl;
+        }
+        print_acceptance_rates();
+    }
+
+}
+
+void SpeculativeDecodingMetrics::clean_up() {
+    m_acceptance_rate.clear();
+    m_draft_accepted_tokens.clear();
+    m_generated_len.clear();
+    draft_duration = 0;
+    main_duration = 0;
+    total_duration = 0;
 }
 
 }

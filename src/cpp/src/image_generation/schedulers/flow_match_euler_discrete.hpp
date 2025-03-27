@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -30,9 +30,9 @@ public:
 
     void set_timesteps(size_t num_inference_steps, float strength) override;
 
-    std::vector<int64_t> get_timesteps() const override;
+    void set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength) override;
 
-    std::vector<float> get_float_timesteps() const override;
+    std::vector<float> get_float_timesteps() override;
 
     float get_init_noise_sigma() const override;
 
@@ -40,20 +40,27 @@ public:
 
     std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) override;
 
-    void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const override;
+    void add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const override;
+
+    void scale_noise(ov::Tensor sample, float timestep, ov::Tensor noise) override;
+
+    void set_begin_index(size_t begin_index) override;
 
 private:
     Config m_config;
 
     std::vector<float> m_sigmas;
-    std::vector<float> m_timesteps;
+    std::vector<float> m_timesteps, m_schedule_timesteps;
 
     float m_sigma_min, m_sigma_max;
+    float m_strength;
     size_t m_step_index, m_begin_index;
     size_t m_num_inference_steps;
 
     void init_step_index();
     double sigma_to_t(double simga);
+    size_t _index_for_timestep(float timestep);
+    float calculate_shift(size_t image_seq_len);
 };
 
 } // namespace genai

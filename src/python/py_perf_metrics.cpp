@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -8,6 +8,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/perf_metrics.hpp"
+#include "py_utils.hpp"
 
 namespace py = pybind11;
 
@@ -15,37 +16,39 @@ using ov::genai::MeanStdPair;
 using ov::genai::PerfMetrics;
 using ov::genai::RawPerfMetrics;
 
+namespace pyutils = ov::genai::pybind::utils;
+
 namespace {
 
 auto raw_perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
-    :param generate_durations: Durations for each generate call in microseconds.
-    :type generate_durations: List[MicroSeconds]
+    :param generate_durations: Durations for each generate call in milliseconds.
+    :type generate_durations: List[float]
 
-    :param tokenization_durations: Durations for the tokenization process in microseconds.
-    :type tokenization_durations: List[MicroSeconds]
+    :param tokenization_durations: Durations for the tokenization process in milliseconds.
+    :type tokenization_durations: List[float]
 
-    :param detokenization_durations: Durations for the detokenization process in microseconds.
-    :type detokenization_durations: List[MicroSeconds]
+    :param detokenization_durations: Durations for the detokenization process in milliseconds.
+    :type detokenization_durations: List[float]
 
-    :param m_times_to_first_token: Times to the first token for each call in microseconds.
-    :type m_times_to_first_token: List[MicroSeconds]
+    :param m_times_to_first_token: Times to the first token for each call in milliseconds.
+    :type m_times_to_first_token: List[float]
 
-    :param m_new_token_times: Time points for each new token generated.
-    :type m_new_token_times: List[TimePoint]
+    :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
+    :type m_new_token_times: List[double]
+
+    :param token_infer_durations : Inference time for each token in milliseconds.
+    :type batch_sizes: List[float]
 
     :param m_batch_sizes: Batch sizes for each generate call.
     :type m_batch_sizes: List[int]
 
-    :param m_durations: Total durations for each generate call in microseconds.
-    :type m_durations: List[MicroSeconds]
+    :param m_durations: Total durations for each generate call in milliseconds.
+    :type m_durations: List[float]
 
-    :param num_generated_tokens: Total number of tokens generated.
-    :type num_generated_tokens: int
-
-    :param num_input_tokens: Total number of tokens in the input prompt.
-    :type num_input_tokens: int
+    :param inference_durations : Total inference duration for each generate call in milliseconds.
+    :type batch_sizes: List[float]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -99,13 +102,18 @@ auto perf_metrics_docstring = R"(
 )";
 
 template <typename T, typename U>
-std::vector<float> get_ms(const T& instance, U T::*member) {
-    // Converts c++ duration to float so that it can be used in Python.
-    std::vector<float> res;
-    const auto& durations = instance.*member;
-    res.reserve(durations.size());
-    std::transform(durations.begin(), durations.end(), std::back_inserter(res),
-                   [](const auto& duration) { return duration.count(); });
+std::vector<double> timestamp_to_ms(const T& instance, U T::*member) {
+    // Converts c++ duration to double so that it can be used in Python.
+    // Use double instead of float bacuse timestamp in ms contains 14 digits
+    // while float only allows to store ~7 significant digits.
+    // And the current timestamp (number of secs from 1970) is already 11 digits.
+    std::vector<double> res;
+    const auto& timestamps = instance.*member;
+    res.reserve(timestamps.size());
+    std::transform(timestamps.begin(), timestamps.end(), std::back_inserter(res),
+                   [](const auto& timestamp) { 
+                        return std::chrono::duration<double, std::milli>(timestamp.time_since_epoch()).count(); 
+                    });
     return res;
 }
 
@@ -115,21 +123,30 @@ void init_perf_metrics(py::module_& m) {
     py::class_<RawPerfMetrics>(m, "RawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
         .def_property_readonly("generate_durations", [](const RawPerfMetrics &rw) {
-            return get_ms(rw, &RawPerfMetrics::generate_durations);
+            return pyutils::get_ms(rw, &RawPerfMetrics::generate_durations);
         })
         .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
-            return get_ms(rw, &RawPerfMetrics::tokenization_durations);
+            return pyutils::get_ms(rw, &RawPerfMetrics::tokenization_durations);
         })
         .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
-            return get_ms(rw, &RawPerfMetrics::detokenization_durations); 
+            return pyutils::get_ms(rw, &RawPerfMetrics::detokenization_durations); 
         })
         .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) {
-            return get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
         })
+        .def_property_readonly("m_new_token_times", [](const RawPerfMetrics &rw) {
+            return timestamp_to_ms(rw, &RawPerfMetrics::m_new_token_times);
+        })
+        .def_property_readonly("token_infer_durations", [](const RawPerfMetrics &rw) {
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_token_infer_durations);
+        })
+        .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes)
         .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) {
-            return get_ms(rw, &RawPerfMetrics::m_durations);
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_durations);
         })
-        .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes);
+        .def_property_readonly("inference_durations", [](const RawPerfMetrics &rw) {
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_inference_durations);
+        });
 
     py::class_<MeanStdPair>(m, "MeanStdPair")
         .def(py::init<>())
@@ -152,7 +169,7 @@ void init_perf_metrics(py::module_& m) {
         .def("get_inference_duration", &PerfMetrics::get_inference_duration)
         .def("get_tokenization_duration", &PerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &PerfMetrics::get_detokenization_duration)
-        .def("__add__", &PerfMetrics::operator+)
-        .def("__iadd__", &PerfMetrics::operator+=)
+        .def("__add__", &PerfMetrics::operator+, py::arg("metrics"))
+        .def("__iadd__", &PerfMetrics::operator+=, py::arg("right"))
         .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
 }

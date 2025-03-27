@@ -1,10 +1,10 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 numpy
+--extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino
 openvino-tokenizers
 openvino_genai
-auto-gptq>=0.5.1 # for gptq
 pillow
 torch
 transformers>=4.40.0
@@ -16,7 +16,4 @@ packaging
 psutil
 timm
 tiktoken
-onnx<=1.16.1
-einops
-transformers_stream_generator
-bitsandbytes
+librosa # For Whisper

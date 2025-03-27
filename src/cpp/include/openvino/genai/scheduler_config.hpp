@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -18,9 +18,6 @@ struct SchedulerConfig {
 
     // total size of KV cache in GB
     std::size_t cache_size = 0;
-
-    // block size for KV cache
-    std::size_t block_size = 32;
 
     // whether to split prompt / generate to different scheduling phases
     bool dynamic_split_fuse = true;
@@ -56,7 +53,7 @@ struct SchedulerConfig {
 
     bool operator==(const SchedulerConfig& other) const {
         return max_num_batched_tokens == other.max_num_batched_tokens && num_kv_blocks == other.num_kv_blocks &&
-               cache_size == other.cache_size && block_size == other.block_size &&
+               cache_size == other.cache_size &&
                dynamic_split_fuse == other.dynamic_split_fuse && use_cache_eviction == other.use_cache_eviction &&
                max_num_seqs == other.max_num_seqs && enable_prefix_caching == other.enable_prefix_caching;
     }

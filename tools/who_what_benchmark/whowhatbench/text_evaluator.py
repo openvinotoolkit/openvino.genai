@@ -1,10 +1,12 @@
 from typing import Any, Union
 
+import os
 import pandas as pd
 from tqdm import tqdm
 
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
+from .utils import patch_awq_for_inference
 
 default_data = {
     "en": {
@@ -72,23 +74,8 @@ default_data = {
 }
 
 
-def autodetect_language(model):
-    model2language = {
-        "chatglm": "cn",
-        "qwen2": "cn",
-        "qwen": "cn",
-        "baichuan": "cn",
-        "minicpmv": "cn",
-        "internlm": "cn",
-    }
-
-    if not hasattr(model, "config"):
-        return "en"
-    return model2language.get(model.config.model_type, "en")
-
-
 @register_evaluator(
-    "text-generation", "text-generation-with-past", "text2text-generation"
+    "text"
 )
 class TextEvaluator(BaseEvaluator):
     def __init__(
@@ -97,16 +84,17 @@ class TextEvaluator(BaseEvaluator):
         tokenizer: Any = None,
         gt_data: str = None,
         test_data: Union[str, list] = None,
-        metrics=("similarity", "divergency"),
+        metrics="similarity",
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
         max_new_tokens=128,
         crop_question=True,
         num_samples=None,
-        language=None,
+        language="en",
         gen_answer_fn=None,
         generation_config=None,
         generation_config_base=None,
         seqs_per_request=None,
+        use_chat_template=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -122,14 +110,12 @@ class TextEvaluator(BaseEvaluator):
         self.generation_config_base = generation_config
         self.seqs_per_request = seqs_per_request
         self.generation_fn = gen_answer_fn
+        self.use_chat_template = use_chat_template
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
 
         # Take language from the base model if provided
         self.language = language
-        if self.language is None:
-            if base_model is not None:
-                self.language = autodetect_language(base_model)
 
         if base_model:
             self.gt_data = self._generate_data(
@@ -155,11 +141,12 @@ class TextEvaluator(BaseEvaluator):
     def get_generation_fn(self):
         return self.generation_fn
 
-    def dump_gt(self, csv_name: str):
-        self.gt_data.to_csv(csv_name)
-
-    def score(self, model, gen_answer_fn=None):
-        predictions = self._generate_data(model, gen_answer_fn, self.generation_config)
+    def score(self, model_or_data, gen_answer_fn=None, **kwargs):
+        if isinstance(model_or_data, str) and os.path.exists(model_or_data):
+            predictions = pd.read_csv(model_or_data, keep_default_na=False)
+        else:
+            predictions = self._generate_data(model_or_data, gen_answer_fn, self.generation_config)
+        self.predictions = predictions
 
         all_metrics_per_prompt = {}
         all_metrics = {}
@@ -200,14 +187,25 @@ class TextEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question):
-            inputs = self.tokenizer(prompt, return_tensors="pt")
+        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False):
+            is_awq = getattr(model, "is_awq", None) is not None
+            device = "cpu"
+            if hasattr(model, "device"):
+                device = model.device
 
-            tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
+            if use_chat_template:
+                message = [{"role": "user", "content": prompt}]
+                inputs = tokenizer.apply_chat_template(message, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_dict=True).to(device)
+            else:
+                inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
 
+            if is_awq:
+                with patch_awq_for_inference(is_awq):
+                    tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
+            else:
+                tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
             if crop_question:
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
-
             return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
@@ -223,11 +221,6 @@ class TextEvaluator(BaseEvaluator):
                     data = {"prompts": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
-            if self.language is None:
-                print(
-                    "No language detecting in the base model or ground truth data. Taking language from target model."
-                )
-                self.language = autodetect_language(model)
             data = pd.DataFrame.from_dict(default_data[self.language])
 
         prompt_data = data["prompts"]
@@ -248,6 +241,7 @@ class TextEvaluator(BaseEvaluator):
                         p,
                         self.max_new_tokens,
                         self._crop_question,
+                        self.use_chat_template
                     )
                 )
         else:

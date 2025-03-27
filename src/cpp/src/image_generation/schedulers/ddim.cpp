@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cassert>
@@ -114,6 +114,18 @@ void DDIMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
         default:
             OPENVINO_THROW("Unsupported value for 'timestep_spacing'");
     }
+
+    // apply 'strength' used in image generation
+    // in diffusers, it's https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_img2img.py#L711
+    {
+        size_t init_timestep = std::min<size_t>(num_inference_steps * strength, num_inference_steps);
+        size_t t_start = std::max<size_t>(num_inference_steps - init_timestep, 0);
+        m_timesteps = std::vector<int64_t>(m_timesteps.begin() + t_start, m_timesteps.end());
+
+        OPENVINO_ASSERT(!m_timesteps.empty(),
+                        "After adjusting the num_inference_steps by strength parameter: ", strength,
+                        " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
+    }
 }
 
 std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
@@ -121,7 +133,7 @@ std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov:
     // latents - sample
     // inference_step
 
-    size_t timestep = get_timesteps()[inference_step];
+    size_t timestep = m_timesteps[inference_step];
 
     // get previous step value (=t-1)
     int prev_timestep = timestep - m_config.num_train_timesteps / m_num_inference_steps;
@@ -186,11 +198,9 @@ std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov:
 }
 
 std::vector<int64_t> DDIMScheduler::get_timesteps() const {
-    return m_timesteps;
-}
+    OPENVINO_ASSERT(!m_timesteps.empty(), "'timesteps' have not yet been set.");
 
-std::vector<float> DDIMScheduler::get_float_timesteps() const {
-    OPENVINO_THROW("DDIMScheduler doesn't support float timesteps");
+    return m_timesteps;
 }
 
 float DDIMScheduler::get_init_noise_sigma() const {
@@ -201,21 +211,18 @@ void DDIMScheduler::scale_model_input(ov::Tensor sample, size_t inference_step) 
     return;
 }
 
-void DDIMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
-    int64_t latent_timestep = m_timesteps.front();
-
+void DDIMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const {
     float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
-    float sqrt_one_minus_alpha_prod = std::sqrt(1.0f - m_alphas_cumprod[latent_timestep]);
-
-    ov::Tensor rand_tensor = generator->randn_tensor(init_latent.get_shape());
+    float sqrt_one_minus_alpha_prod = std::sqrt(1.0 - m_alphas_cumprod[latent_timestep]);
 
     float * init_latent_data = init_latent.data<float>();
-    const float * rand_tensor_data = rand_tensor.data<float>();
+    const float * noise_data = noise.data<float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
-        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rand_tensor_data[i];
+        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * noise_data[i];
     }
 }
+
 
 } // namespace genai
 } // namespace ov

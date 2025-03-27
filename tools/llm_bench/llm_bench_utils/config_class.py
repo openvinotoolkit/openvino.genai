@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM, T5ForConditionalGeneration, BlenderbotForConditionalGeneration, AutoModel
@@ -7,9 +7,11 @@ from diffusers.pipelines import DiffusionPipeline, LDMSuperResolutionPipeline
 from optimum.intel.openvino import (
     OVModelForCausalLM,
     OVModelForSeq2SeqLM,
-    OVStableDiffusionPipeline,
-    OVLatentConsistencyModelPipeline,
-    OVStableDiffusionXLPipeline
+    OVDiffusionPipeline,
+    OVModelForSpeechSeq2Seq,
+    OVModelForVisualCausalLM,
+    OVPipelineForInpainting,
+    OVPipelineForImage2Image
 )
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 
@@ -21,19 +23,18 @@ TOKENIZE_CLASSES_MAPPING = {
     'falcon': AutoTokenizer,
 }
 
+IMAGE_GEN_CLS = OVDiffusionPipeline
+
+INPAINTING_IMAGE_GEN_CLS = OVPipelineForInpainting
+
+IMAGE_TO_IMAGE_GEN_CLS = OVPipelineForImage2Image
+
 OV_MODEL_CLASSES_MAPPING = {
     'decoder': OVModelForCausalLM,
     't5': OVModelForSeq2SeqLM,
     'blenderbot': OVModelForSeq2SeqLM,
     'falcon': OVModelForCausalLM,
     'mpt': OVMPTModel,
-    'stable-diffusion-xl': OVStableDiffusionXLPipeline,
-    'sdxl': OVStableDiffusionXLPipeline,
-    'lcm-sdxl': OVStableDiffusionXLPipeline,
-    'ssd-': OVStableDiffusionXLPipeline,
-    'lcm-ssd-': OVStableDiffusionXLPipeline,
-    'stable_diffusion': OVStableDiffusionPipeline,
-    'lcm': OVLatentConsistencyModelPipeline,
     'replit': OVMPTModel,
     'codet5': OVModelForSeq2SeqLM,
     'codegen2': OVModelForCausalLM,
@@ -41,6 +42,8 @@ OV_MODEL_CLASSES_MAPPING = {
     'chatglm2': OVModelForCausalLM,
     'chatglm3': OVModelForCausalLM,
     'chatglm': OVChatGLMModel,
+    'whisper': OVModelForSpeechSeq2Seq,
+    "vlm": OVModelForVisualCausalLM,
 }
 
 PT_MODEL_CLASSES_MAPPING = {
@@ -55,8 +58,9 @@ PT_MODEL_CLASSES_MAPPING = {
 }
 
 USE_CASES = {
-    'image_gen': ['stable-diffusion-', 'ssd-', 'deepfloyd-if', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl'],
-    'text2speech': ['whisper'],
+    'image_gen': ['stable-diffusion-', 'ssd-', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl', 'dreamlike', "flux"],
+    "vlm": ["llava", "llava-next", "qwen2-vl", "llava-qwen2", "internvl-chat", "minicpmv", "phi3-v", "minicpm-v", "maira2", "qwen2-5-vl"],
+    'speech2text': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5', "stable-code"],
     'text_gen': [
@@ -64,6 +68,7 @@ USE_CASES = {
         't5',
         'falcon',
         "glm",
+        "gpt",
         'gpt-',
         'gpt2',
         'aquila',
@@ -74,6 +79,7 @@ USE_CASES = {
         'llama',
         'tiny-llama',
         'tinyllama',
+        "opt",
         'opt-',
         'pythia-',
         'stablelm-',
@@ -95,6 +101,7 @@ USE_CASES = {
         'mistral',
         'mixtral',
         'yi-',
+        "phi",
         'phi-',
         'phi2-',
         'minicpm',
@@ -104,7 +111,10 @@ USE_CASES = {
         "olmo",
         "phi3",
         "starcoder",
-        "instruct-gpt"
+        "instruct-gpt",
+        "granite",
+        "granitemoe",
+        "gptj"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
@@ -116,4 +126,11 @@ DEFAULT_MODEL_CLASSES = {
     'speech2text': 'whisper',
     'code_gen': 'decoder',
     'ldm_super_resolution': 'ldm_super_resolution',
+    "vlm": "vlm"
+}
+
+TASK = {
+    "img2img": "image-to-image",
+    "text2img": "text-to-image",
+    "inpainting": "inpainting"
 }

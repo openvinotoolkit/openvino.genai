@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "openvino/genai/visibility.hpp"
+#include "openvino/core/deprecated.hpp"
 
 namespace ov {
 namespace genai {
@@ -15,10 +16,12 @@ public:
     enum Type {
         AUTO,
         LCM,
-        LMS_DISCRETE,
         DDIM,
+        LMS_DISCRETE OPENVINO_ENUM_DEPRECATED("LMS_DISCRETE is deprecated. Please, select different scheduler type") = DDIM,
         EULER_DISCRETE,
-        FLOW_MATCH_EULER_DISCRETE
+        FLOW_MATCH_EULER_DISCRETE,
+        PNDM,
+        EULER_ANCESTRAL_DISCRETE
     };
 
     static std::shared_ptr<Scheduler> from_config(const std::filesystem::path& scheduler_config_path,

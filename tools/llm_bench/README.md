@@ -31,8 +31,8 @@ huggingface-cli login
    
 The `optimum-cli` tool simplifies converting Hugging Face models to OpenVINO IR format. 
 - Detailed documentation can be found in the [Optimum-Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export). 
-- To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2024/openvino-workflow/model-optimization-guide/weight-compression.html).
-- For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html).
+- To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2025/openvino-workflow/model-optimization-guide/weight-compression.html).
+- For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html).
 
 **Usage:**
 
@@ -42,7 +42,7 @@ optimum-cli export openvino --model <MODEL_ID> --weight-format <PRECISION> <OUTP
 optimum-cli export openvino -h # For detailed information
 ```
 
-* `--model <MODEL_ID>` : model_id for downloading from [huggngface_hub](https://huggingface.co/models) or path with directory where pytorch model located. 
+* `--model <MODEL_ID>` : model_id for downloading from [huggingface_hub](https://huggingface.co/models) or path with directory where pytorch model located. 
 * `--weight-format <PRECISION>` : precision for model conversion. Available options: `fp32, fp16, int8, int4, mxfp4`
 * `<OUTPUT_DIR>`: output directory for saving generated OpenVINO model.
 
@@ -161,13 +161,12 @@ For example, `--load_config config.json` as following will result in streams.num
 
 ## 6. Execution on CPU device
 
-OpenVINO is by default built with [oneTBB](https://github.com/oneapi-src/oneTBB/) threading library, while Torch uses [OpenMP](https://www.openmp.org/). Both threading libraries have ['busy-wait spin'](https://gcc.gnu.org/onlinedocs/libgomp/GOMP_005fSPINCOUNT.html) by default. When running LLM pipeline on CPU device, there is threading overhead in the switching between inference on CPU with OpenVINO (oneTBB) and postprocessing (For example: greedy search or beam search) with Torch (OpenMP).
+OpenVINO is by default built with [oneTBB](https://github.com/oneapi-src/oneTBB/) threading library, while Torch uses [OpenMP](https://www.openmp.org/). Both threading libraries have ['busy-wait spin'](https://gcc.gnu.org/onlinedocs/libgomp/GOMP_005fSPINCOUNT.html) by default. When running LLM pipeline on CPU device, there is threading overhead in the switching between inference on CPU with OpenVINO (oneTBB) and postprocessing (For example: greedy search or beam search) with Torch (OpenMP). The default benchmarking scenarion uses OpenVINO GenAI that implements own postprocessing api without additional dependencies.
 
 **Alternative solutions**
-1. Use --genai option which uses OpenVINO genai API instead of optimum-intel API. In this case postprocessing is executed with OpenVINO genai API.
-2. Without --genai option which uses optimum-intel API, set environment variable [OMP_WAIT_POLICY](https://gcc.gnu.org/onlinedocs/libgomp/OMP_005fWAIT_005fPOLICY.html) to PASSIVE which will disable OpenMP 'busy-wait', and benchmark.py will limit the Torch thread number by default to avoid using CPU cores which is in 'busy-wait' by OpenVINO inference. Users can also set the number with --set_torch_thread option.
+1. With --optimum option which uses optimum-intel API, set environment variable [OMP_WAIT_POLICY](https://gcc.gnu.org/onlinedocs/libgomp/OMP_005fWAIT_005fPOLICY.html) to PASSIVE which will disable OpenMP 'busy-wait', and benchmark.py will limit the Torch thread number by default to avoid using CPU cores which is in 'busy-wait' by OpenVINO inference. Users can also set the number with --set_torch_thread option.
 
 ## 7. Additional Resources
 
 - **Error Troubleshooting:** Check the [NOTES.md](./doc/NOTES.md) for solutions to known issues.
-- **Image Generation Configuration:** Refer to [IMAGE_GEN.md](./doc/IMAGE_GEN.md) for setting parameters for image generation models.
+- **Syntax and attributes of prompt file:** Refer to [PROMPT.md](./doc/PROMPT.md) for writing a prompt file.

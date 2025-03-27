@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
@@ -96,22 +96,11 @@ int main(int argc, char* argv[]) try {
         prompts[i] = prompt_examples[i % prompt_examples.size()];
     }
 
-    // Perform the inference
-    auto get_default_block_size = [](const std::string& device) {
-        const size_t cpu_block_size = 32;
-        const size_t gpu_block_size = 16;
-
-        bool is_gpu = device.find("GPU") != std::string::npos;
-
-        return is_gpu ? gpu_block_size : cpu_block_size;
-    };
-
     ov::genai::SchedulerConfig scheduler_config;
     // batch size
     scheduler_config.max_num_batched_tokens = 32;
     // cache params
     scheduler_config.num_kv_blocks = 364;
-    scheduler_config.block_size = get_default_block_size(device);
     // mode - vLLM or dynamic_split_fuse
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     // vLLM specific params
@@ -135,7 +124,8 @@ int main(int argc, char* argv[]) try {
                 print_cb_generation_result(generation_result);
             }
             break;
-        case ov::genai::GenerationStatus::DROPPED_BY_PIPELINE:
+        case ov::genai::GenerationStatus::STOP:
+        case ov::genai::GenerationStatus::CANCEL:
             std::cout << "Request was aborted." <<std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;
