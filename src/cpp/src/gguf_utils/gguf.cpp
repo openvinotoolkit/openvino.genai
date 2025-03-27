@@ -155,7 +155,7 @@ void set_value_from_gguf(
     case GGUF_VALUE_TYPE_ARRAY: {
       ctx->off += gguf_array_header_size; // Skip header
       char* data = reinterpret_cast<char*>(val) + gguf_array_header_size;
-      auto size = static_cast<int>(val->array.len);
+      auto size = static_cast<size_t>(val->array.len);
       if (val->array.type == GGUF_VALUE_TYPE_ARRAY) {
         throw std::invalid_argument(
             "[load_gguf] Only supports loading 1-layer of nested arrays.");

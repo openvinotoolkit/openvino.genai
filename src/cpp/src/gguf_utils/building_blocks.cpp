@@ -525,7 +525,7 @@ ov::Output<ov::Node> make_int8_weights(
     const std::unordered_map<std::string, ov::Tensor>& consts,
     bool reorder,
     int head_size,
-    int group_size = GGML_QUANTIZATION_GROUP_SIZE) {
+    size_t group_size = GGML_QUANTIZATION_GROUP_SIZE) {
 
     ov::Tensor weight = get_tensor(consts, key + ".weight");
     ov::Tensor scales = get_tensor(consts, key + ".scales");
@@ -592,7 +592,7 @@ ov::Output<ov::Node> make_int4_weights(
     const std::unordered_map<std::string, ov::Tensor>& consts,
     bool reorder,
     int head_size,
-    int group_size = 32) { // Assuming GGML_QUANTIZATION_GROUP_SIZE = 32
+    size_t group_size = 32) { // Assuming GGML_QUANTIZATION_GROUP_SIZE = 32
 
     ov::Tensor weight = get_tensor(consts, key + ".weight");
 
