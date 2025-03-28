@@ -179,7 +179,7 @@ def convert_model(request):
         command = [
             "optimum-cli", "export", "openvino",
             "--model", model_name, 
-            # "--cache_dir", model_hf_cache, 
+            "--cache_dir", model_hf_cache, 
             model_path
         ]
         if model_args:
