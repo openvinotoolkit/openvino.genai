@@ -333,6 +333,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == request->get_prompt_len()) {
                 request->pause_generation(true);
+            } else if (is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
+                request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();
         }

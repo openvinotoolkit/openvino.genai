@@ -306,7 +306,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     ov::Tensor pixel_values{ov::element::f32, {n_images, channels, patch_size, max_size / patch_size}};
     size_t d3_all_pixel = pixel_values.get_shape().at(3);
     float* pixel_value_data = pixel_values.data<float>();
-    
+
     //image chw to 1*c*kernel*hw/kernel and padding zero
     clip_image_f32& resized_preprocessed = preprocessed.at(0).at(0);
     size_t img_h = resized_preprocessed.ny;
@@ -321,7 +321,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
         for (size_t k_idx = 0; k_idx < patch_size; k_idx++) {
             std::copy(clip_value_data, clip_value_data + d3_clip_pixel, pixel_value_data);
             clip_value_data += d3_clip_pixel;
-            pixel_value_data += d3_all_pixel; 
+            pixel_value_data += d3_all_pixel;
         }
     }
 
@@ -334,7 +334,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
                 img_w = elem.nx;
                 ov::Tensor clip_img{ov::element::f32, {1, channels, img_h, img_w}, elem.buf.data()};
                 ov::Tensor clip_pixel_values = preprocess_for_encoder(clip_img, patch_size);
-                
+
                 d3_clip_pixel = clip_pixel_values.get_shape().at(3);
                 clip_value_data = clip_pixel_values.data<float>();
                 pixel_value_data = pixel_values.data<float>() + batch_pixel * channels * patch_size * d3_all_pixel;
@@ -425,8 +425,8 @@ ov::Tensor concatenate_last_dim(const ov::Tensor& first, const ov::Tensor& secon
     OPENVINO_ASSERT(second.get_shape().at(1) == res_d_1);
     size_t res_d_2 = first.get_shape().at(2) + second.get_shape().at(2);
     ov::Tensor res{first.get_element_type(), {res_d_0, res_d_1, res_d_2}};
-    float* first_data = first.data<float>();
-    float* second_data = second.data<float>();
+    auto first_data = first.data<float>();
+    auto second_data = second.data<float>();
     float* res_data = res.data<float>();
     for (size_t i = 0; i < res_d_0; ++i) {
         for (size_t j = 0; j < res_d_1; ++j) {
@@ -461,8 +461,8 @@ ov::Tensor get_1d_sincos_pos_embed_from_grid_new(size_t embed_dim, const ov::Ten
     std::vector<size_t> out_shape = {H, W, embed_dim};
     ov::Tensor emb(ov::element::f32, out_shape);
 
-    float* pos_data = pos.data<float>();
-    float* emb_data = emb.data<float>();
+    auto pos_data = pos.data<float>();
+    auto emb_data = emb.data<float>();
 
     size_t counter = 0;
     for (size_t h = 0; h < H; ++h) {
@@ -481,7 +481,7 @@ ov::Tensor get_1d_sincos_pos_embed_from_grid_new(size_t embed_dim, const ov::Ten
 ov::Tensor get_2d_sincos_pos_embed_from_grid(size_t embed_dim, const ov::Tensor& grid) {
     OPENVINO_ASSERT(embed_dim % 2 == 0);
     ov::Shape grid_shape = grid.get_shape();
-    float* grid_data = grid.data<float>();
+    auto grid_data = grid.data<float>();
     ov::Shape plane_shape{grid_shape.at(1), grid_shape.at(2)};
     ov::Tensor emb_h = get_1d_sincos_pos_embed_from_grid_new(embed_dim / 2, ov::Tensor{
         ov::element::f32,
@@ -652,7 +652,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     for (size_t image_id : images_sequence) {
         const EncodedImage& encoded_image = images.at(image_id - m_prev_image_id);
         const ov::Tensor& resampled_source = resample(encoded_image.resized_source, {encoded_image.resized_source_size});
-        float* emb = resampled_source.data<float>();
+        auto emb = resampled_source.data<float>();
         ids = std::find(ids, end, im_start_id);
         OPENVINO_ASSERT(end != ids);
         ++ids;
