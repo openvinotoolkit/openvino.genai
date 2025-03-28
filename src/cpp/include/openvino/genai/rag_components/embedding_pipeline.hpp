@@ -38,7 +38,7 @@ public:
      */
     TextEmbeddingPipeline(const std::filesystem::path& models_path,
                           const std::string& device,
-                          const std::optional<Config>& config,
+                          const std::optional<Config>& config = std::nullopt,
                           const ov::AnyMap& properties = {});
 
     template <typename... Properties,

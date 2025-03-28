@@ -35,24 +35,15 @@ public:
 
         // [batch_size, seq_len, hidden_size]
         const Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
-        const auto last_hidden_state_data = last_hidden_state.data<float>();
 
         // todo: implement mean_pooling
         // todo: implement l2 norm
 
-        std::vector<std::vector<float>> result;
-        const auto shape = last_hidden_state.get_shape();
-        const size_t batch_size = shape[0];
-        const size_t seq_len = shape[1];
-        const size_t hidden_size = shape[2];
-
-        for (size_t batch = 0; batch < batch_size; batch++) {
-            const auto batch_offset = batch * seq_len * hidden_size;
-            const auto batch_data = last_hidden_state_data + batch_offset;
-            result.emplace_back(batch_data, batch_data + hidden_size);
+        if (m_config.pooling_type == PoolingType::CLS) {
+            return cls_pooling(last_hidden_state);
+        } else {
+            OPENVINO_THROW("Only PoolingType::CLS is supported");
         }
-
-        return result;
     };
 
     EmbeddingResult embed_query(const std::string& text) {
@@ -63,6 +54,25 @@ private:
     Tokenizer m_tokenizer;
     InferRequest m_request;
     Config m_config;
+
+    std::vector<EmbeddingResult> cls_pooling(Tensor last_hidden_state) {
+        const auto last_hidden_state_data = last_hidden_state.data<float>();
+
+        std::vector<EmbeddingResult> result;
+        const auto shape = last_hidden_state.get_shape();
+        const size_t batch_size = shape[0];
+        const size_t seq_len = shape[1];
+        const size_t hidden_size = shape[2];
+
+        for (size_t batch = 0; batch < batch_size; batch++) {
+            const auto batch_offset = batch * seq_len * hidden_size;
+            const auto batch_data = last_hidden_state_data + batch_offset;
+            const std::vector<float> batch_result(batch_data, batch_data + hidden_size);
+            result.push_back(batch_result);
+        }
+
+        return result;
+    }
 };
 
 TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models_path,
