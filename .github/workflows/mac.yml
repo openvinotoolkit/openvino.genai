@@ -1,4 +1,4 @@
-name: macOS (13, Python 3.10)
+name: macOS (13, Python 3.11)
 on:
   workflow_dispatch:
   pull_request:
@@ -17,7 +17,7 @@ concurrency:
 
 env:
   MACOSX_DEPLOYMENT_TARGET: '11.0'
-  PYTHON_VERSION: '3.10'
+  PYTHON_VERSION: '3.11'
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   CCACHE_MAXSIZE: 500Mi
 
@@ -46,7 +46,8 @@ jobs:
       with:
         platform: macos_12_6
         commit_packages_to_provide: wheels,openvino_js_package.tar.gz
-        revision: latest_available_commit
+        revision: 3efc47cd2654d692c416e0dd16c0f1c281e4d279
+        event_name: pull_request
 
   genai_build_cmake:
     name: Build cpack - ${{ matrix.build-type }}
@@ -473,15 +474,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
-      - name: Install OpenVINO wheel
-        run: |
-          python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
-        working-directory: ${{ env.INSTALL_DIR }}
-
       - name: Install GenAI wheels
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino_tokenizers[transformers];openvino_genai[testing]"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
@@ -508,9 +504,10 @@ jobs:
           cp -R ${{ env.LATEST_OV_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Test Samples (Python and C++)
-        run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
-          DYLD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$DYLD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_JS_DIR: "${{ env.SRC_DIR }}/samples/js"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
@@ -555,16 +552,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-        
-      - name: Install OpenVINO wheel
-        run: |
-          python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
-        working-directory: ${{ env.INSTALL_DIR }}
 
       - name: Install GenAI wheels
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino_tokenizers[transformers];openvino_genai[testing]"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
         
@@ -575,9 +567,10 @@ jobs:
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
         
       - name: Test C++ Tools
-        run: python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
-          DYLD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$DYLD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
           
   genai_nodejs_tests:
