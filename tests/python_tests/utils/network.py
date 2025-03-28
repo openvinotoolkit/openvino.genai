@@ -12,7 +12,7 @@ from requests.exceptions import RequestException
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def retry_request(func, retries=5):
+def retry_request(func, retries=7):
     """
     Retries a function that makes a request up to a specified number of times.
 
