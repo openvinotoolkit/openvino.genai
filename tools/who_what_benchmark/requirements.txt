@@ -7,6 +7,6 @@ pandas>=2.0.3
 numpy>=1.23.5
 tqdm>=4.66.1
 diffusers
-datasets<3.2.0
+datasets<3.6.0
 auto-gptq; sys_platform == "linux"
 autoawq<0.2.8; sys_platform == "linux"
