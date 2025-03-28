@@ -28,5 +28,6 @@ def main():
     image.save("image.bmp")
 
 
+
 if '__main__' == __name__:
     main()
