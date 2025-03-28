@@ -15,7 +15,7 @@ The KV cache for each sequence is divided into three logical areas:
 
 * Start Area: Initial tokens that are never evicted
 * Evictable Area: Tokens that can be evicted based on importance scores
-* Recent Area: Most recent tokens that are preserved (never evicted)
+* Recent Area: Most recent tokens that are preserved (not evicted while in this area, but naturally migrating toward the evictable area as the text generation goes on)
 
 The sizes of all three areas can be configured by modifying corresponding fields in a `CacheEvictionConfig` struct, which itself is a part of the pipeline-wide `SchedulerConfig`.
 As the generation starts, the blocks in respective logical areas are filled token-by-token, and once at least one block past the "recent" area is filled, eviction may take place. 
@@ -55,4 +55,8 @@ This may impact the ability of the model to correctly recognize the relative pos
 Cache rotation seeks to alleviate this by "re-rotating" corresponding blocks so that the blocks that remain after each eviction are once again "continuous" in terms of the effective RoPE embedding. 
 It can be enabled by setting the `CacheEvictionConfig.apply_rotation` field to `true` (default is `false`).
 
+## Current limitations
 
+* Cache rotation is only targeted for the regular, linear LLaMa-like RoPE application and may degrade accuracy on models that use other RoPE schemes.
+
+* Cache rotation is currently only supported for the models with uniform V embedding sizes across the layers.

@@ -43,7 +43,7 @@ def retry_request(func, retries=5):
         "ServiceUnavailable",
         "InternalServerError"
     ]
-    
+
     for attempt in range(retries):
         try:
             return func()
@@ -126,10 +126,10 @@ def run_and_write_metrics(model, prompt, generation_config, report_file):
     print(f"result length: {result_length}")
     print()
 
-    if args.report is not None:
-        with open(args.report, 'a') as f:
+    if report_file is not None:
+        with open(report_file, 'a') as f:
             csv_writer = csv.writer(f)
-            csv_writer.writerow([generation_length, result_length, pipeline_opt_metrics.avg_cache_usage, pipeline_opt_metrics.max_cache_usage, rss_usage_gb])
+            csv_writer.writerow([generation_config.max_new_tokens - 1, result_length, pipeline_opt_metrics.avg_cache_usage, pipeline_opt_metrics.max_cache_usage, rss_usage_gb])
     return pipeline_opt_metrics.max_cache_usage
 
 
@@ -194,6 +194,8 @@ if __name__ == '__main__':
                 break
 
             generation_length *= 2
+
+        del data_dict
     elif args.mode == "gen_throughput":
         dataset = load_samsum_dataset(args.data)
         prompt_throughput = 1
@@ -236,5 +238,4 @@ if __name__ == '__main__':
 
 
         print(f"Approximate highest throughput: {prompt_throughput} prompts")
-        del data_dict
 
