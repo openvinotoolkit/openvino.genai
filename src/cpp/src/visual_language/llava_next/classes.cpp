@@ -373,7 +373,9 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt,
     ov::Tensor text_embeds = m_embedding->infer(input_ids);
 
     if (images.empty()) {
-        return text_embeds;
+        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+        return inputs_embeds;
     }
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
