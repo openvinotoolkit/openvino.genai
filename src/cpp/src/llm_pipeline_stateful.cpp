@@ -75,7 +75,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         );
         m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
     } else {
-       compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
+        auto device_config = *filtered_properties;
+        ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, device_config, "stateful LLM model");
+        compiled_model = utils::singleton_core().compile_model(model, device, device_config);
     }
     m_model_runner = compiled_model.create_infer_request();
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Stateful LLM model");

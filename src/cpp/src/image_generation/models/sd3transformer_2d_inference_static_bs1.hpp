@@ -37,7 +37,9 @@ public:
         Inference::reshape(model, 1);
 
         ov::Core core = utils::singleton_core();
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+        auto device_config = properties;
+        ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, device_config, "SD3 Transformer 2D batch-1 model");
+        ov::CompiledModel compiled_model = core.compile_model(model, device, device_config);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "SD3 Transformer 2D batch-1 model");
 
         for (int i = 0; i < m_native_batch_size; i++) {

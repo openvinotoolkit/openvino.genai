@@ -85,7 +85,9 @@ public:
             );
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
         } else {
-            compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
+            auto device_config = lm_properties;
+            ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, device_config, "VLM language model");
+            compiled_language_model = utils::singleton_core().compile_model(language_model, device, device_config);
         }
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
 

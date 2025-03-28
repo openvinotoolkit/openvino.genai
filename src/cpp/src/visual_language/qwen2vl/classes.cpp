@@ -251,7 +251,9 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_merger_model.xml", device, device_config);
+    auto properties = device_config;
+    ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, properties, "VLM vision embeddings merger model");
+    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_merger_model.xml", device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
     m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -268,11 +270,13 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    auto properties = device_config;
+    ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, properties, "VLM vision embeddings merger model");
     auto compiled_model = utils::singleton_core().compile_model(
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second,
         device,
-        device_config
+        properties
     );
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
     m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(

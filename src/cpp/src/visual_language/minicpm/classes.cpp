@@ -549,8 +549,10 @@ InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+    auto properties = device_config;
+    ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, properties, "VLM resampler model");
     auto compiled_model =
-        utils::singleton_core().compile_model(model_dir / "openvino_resampler_model.xml", device, device_config);
+        utils::singleton_core().compile_model(model_dir / "openvino_resampler_model.xml", device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM resampler model");
     m_ireq_queue_resampler = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
