@@ -214,15 +214,19 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
     ov::Core core = utils::singleton_core();
 
     if (m_encoder_model) {
-        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, properties));
-        ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
+        auto device_config = properties;
+        ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, device_config, "Auto_encoder_KL encoder model");
+        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, device_config));
+        ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto_encoder_KL encoder model");
         m_encoder_request = encoder_compiled_model.create_infer_request();
         // release the original model
         m_encoder_model.reset();
     }
 
-    ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, handle_scale_factor(m_decoder_model, device, properties));
-    ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL decoder model");
+    auto device_config = properties;
+    ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, device_config, "Auto_encoder_KL decoder model");
+    ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, handle_scale_factor(m_decoder_model, device, device_config));
+    ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto_encoder_KL decoder model");
     m_decoder_request = decoder_compiled_model.create_infer_request();
     // release the original model
     m_decoder_model.reset();

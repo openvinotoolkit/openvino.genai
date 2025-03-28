@@ -56,12 +56,14 @@ public:
           m_sampler(m_tokenizer) {
         ov::Core core = utils::singleton_core();
 
+        auto device_config = properties;
+        ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, device_config, "whisper encoder model");
         ov::CompiledModel compiled_model =
-            core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
+            core.compile_model(models_path / "openvino_encoder_model.xml", device, device_config);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper encoder model");
         m_encoder = init_model(compiled_model);
 
-        m_decoder = WhisperDecoder::from_path(models_path, device, properties);
+        m_decoder = WhisperDecoder::from_path(models_path, device, device_config);
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {

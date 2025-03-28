@@ -224,6 +224,8 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
 
+void disable_cpu_acceleration_in_AUTO(const std::string& device, ov::AnyMap& properties, const std::string& model_name);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

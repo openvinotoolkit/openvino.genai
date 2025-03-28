@@ -16,6 +16,7 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/runtime/auto/properties.hpp"
 
 
 #include "sampler.hpp"
@@ -412,6 +413,22 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         for (const auto& device : exeTargets) {
             std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
         }
+    }
+}
+
+void disable_cpu_acceleration_in_AUTO(const std::string& device, ov::AnyMap& properties, const std::string& model_name) {
+    //Disable CPU acceleration and runtime fallback in AUTO when the model is LLM
+    if (device.find("AUTO") != std::string::npos) {
+        // Specify the name of the environment variable
+        const char* env_var_name = "OPENVINO_LOG_LEVEL";
+        const char* env_var_value = std::getenv(env_var_name);
+
+        // Check if the environment variable was found
+        if (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING)) {
+            std::cout << "For " << model_name << ", disabled cpu helper and runtime fallback in AUTO" << std::endl;
+        }
+        properties[ov::intel_auto::enable_startup_fallback.name()] = false;
+        properties[ov::intel_auto::enable_runtime_fallback.name()] = false;
     }
 }
 

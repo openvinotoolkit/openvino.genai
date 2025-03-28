@@ -98,7 +98,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         filtered_properties.fork().erase("sampler_num_threads");   // do not use iterator sampler_num_threads_it because a forked container may not be the same container
     }
 
-    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
+    auto device_config = *filtered_properties;
+    ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, device_config, "LLM with Paged Attention");
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, device_config);
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();

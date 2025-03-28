@@ -16,7 +16,10 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
 
     utils::apply_slice_before_matmul_transformation(model);
 
-    auto compiled_model = core.compile_model(model, device, properties);
+    auto device_config = properties;
+    ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, device_config, "whisper decoder model");
+
+    auto compiled_model = core.compile_model(model, device, device_config);
 
     utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
     m_request = compiled_model.create_infer_request();
