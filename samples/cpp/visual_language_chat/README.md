@@ -43,7 +43,7 @@ benchmark_vlm [OPTIONS]
 - `-p, --prompt` (default: `What is on the image?`): The prompt to generate text.
 - `-i, --image` (default: `image.jpg`): Path to the image.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `-mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
+- `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 
