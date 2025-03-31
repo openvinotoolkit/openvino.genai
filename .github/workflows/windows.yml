@@ -22,10 +22,13 @@ env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
+  HF_HOME: C:/mount/caches/huggingface
+  OV_CACHE: C:/mount/caches/huggingface/ov_cache
   ARTIFACTS_SHARE: '/mount/build-artifacts'
   BASE_PRODUCT_TYPE: public_windows_vs2022
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_cpack'
+
 
 jobs:
   openvino_download:
@@ -501,7 +504,6 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      HF_HOME: ${{ github.workspace }}/hf_cache
 
     steps:
       - name: Clone openvino.genai
@@ -567,9 +569,6 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      HF_HOME: C:/mount/caches/huggingface
-      OV_CACHE: ${{ github.workspace }}/ov_cache
-      CLEANUP_CACHE: 1
 
     steps:
       - name: Clone openvino.genai
@@ -655,7 +654,6 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      HF_HOME: C:/mount/caches/huggingface
 
     steps:
       - name: Clone openvino.genai
