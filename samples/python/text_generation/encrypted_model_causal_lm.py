@@ -46,6 +46,7 @@ def get_config_for_cache_encryption(cache_dir, is_gpu):
     if is_gpu:
         # set CACHE_MODE to OPTIMIZE_SIZE only for GPU to enable weightless cache
         config_cache["CACHE_MODE"] = "OPTIMIZE_SIZE"
+    return config_cache
 
 def main():
     parser = argparse.ArgumentParser(description="Help command")

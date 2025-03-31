@@ -17,12 +17,12 @@ class TestEncryptedLM:
     def test_sample_encrypted_lm(self, convert_model, prompt, tmp_path):
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/encrypted_model_causal_lm.py")
-        py_command = [sys.executable, py_script, '-m', convert_model, '-p', prompt, '-c', tmp_path]
+        py_command = [sys.executable, py_script, '-m', convert_model, '-p', prompt, '-c', str(tmp_path)]
         py_result = run_sample(py_command)
 
         # Test CPP sample
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'encrypted_model_causal_lm')
-        cpp_command =[cpp_sample, '-m', convert_model, '-p', prompt, '-c', tmp_path]
+        cpp_command =[cpp_sample, '-m', convert_model, '-p', prompt, '-c', str(tmp_path)]
         cpp_result = run_sample(cpp_command)
 
         # Compare results
