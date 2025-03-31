@@ -1,8 +1,10 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/llm_pipeline.hpp"
 #include <fstream>
+#include <cxxopts.hpp>
+
+#include "openvino/genai/llm_pipeline.hpp"
 
 std::pair<std::string, ov::Tensor> decrypt_model(const std::string& model_path, const std::string& weights_path) {
     std::ifstream model_file(model_path);
@@ -12,7 +14,6 @@ std::pair<std::string, ov::Tensor> decrypt_model(const std::string& model_path, 
     }
 
     // User can add file decryption of model_file and weights_file in memory here.
-
 
     std::string model_str((std::istreambuf_iterator<char>(model_file)), std::istreambuf_iterator<char>());
 
@@ -39,18 +40,80 @@ ov::genai::Tokenizer decrypt_tokenizer(const std::string& models_path) {
     return ov::genai::Tokenizer(tok_model_str, tok_weights_tensor, detok_model_str, detok_weights_tensor);
 }
 
-int main(int argc, char* argv[]) try {
-    if (3 > argc)
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> \"<PROMPT>\"");
+static const char codec_key[] = {0x30, 0x60, 0x70, 0x02, 0x04, 0x08, 0x3F, 0x6F, 0x72, 0x74, 0x78, 0x7F};
 
-    std::string device = "CPU";  // GPU, NPU can be used as well
-    std::string models_path = argv[1];
-    std::string prompt = argv[2];
+std::string codec_xor(const std::string& source_str) {
+    auto key_size = sizeof(codec_key);
+    int key_idx = 0;
+    std::string dst_str = source_str;
+    for (char& c : dst_str) {
+        c ^= codec_key[key_idx % key_size];
+        key_idx++;
+    }
+    return dst_str;
+}
+
+std::string encryption_callback(const std::string& source_str) {
+    return codec_xor(source_str);
+}
+
+std::string decryption_callback(const std::string& source_str) {
+    return codec_xor(source_str);
+}
+
+auto get_config_for_cache_encryption(const std::string& cache_dir, bool gpu) {
+    ov::AnyMap config;
+    config.insert(ov::cache_dir(cache_dir));
+    ov::EncryptionCallbacks encryption_callbacks;
+    //use XOR-based encryption as an example
+    encryption_callbacks.encrypt = encryption_callback;
+    encryption_callbacks.decrypt = decryption_callback;
+    config.insert(ov::cache_encryption_callbacks(encryption_callbacks));
+    if (gpu) {
+        //set ov::CacheMode::OPTIMIZE_SIZE only for GPU to enable weightless cache
+        config.insert(ov::cache_mode(ov::CacheMode::OPTIMIZE_SIZE));
+    }
+    return config;
+}
+
+int main(int argc, char* argv[]) try {
+    cxxopts::Options options("encrypted_model_causal_lm", "Help command");
+
+    options.add_options()
+    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())
+    ("p,prompt", "Prompt", cxxopts::value<std::string>())
+    ("d,device", "Device", cxxopts::value<std::string>()->default_value("CPU"))
+    ("c,cache_dir", "Path to cache dir (optional)", cxxopts::value<std::string>())
+    ("h,help", "Print usage");
+
+    cxxopts::ParseResult parsed_result;
+    try {
+        parsed_result = options.parse(argc, argv);
+    } catch (const cxxopts::exceptions::exception& e) {
+        std::cout << e.what() << "\n\n";
+        std::cout << options.help() << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    if (parsed_result.count("help")) {
+        std::cout << options.help() << std::endl;
+        return EXIT_SUCCESS;
+    }
+
+    auto device = parsed_result["device"].as<std::string>();
+    auto models_path = parsed_result["model"].as<std::string>();
+    auto prompt = parsed_result["prompt"].as<std::string>();
+    ov::AnyMap config;
+    if (parsed_result.count("cache_dir")) {
+        //enable model caching only if path to cache directory is provided.
+        auto cache_dir = parsed_result["cache_dir"].as<std::string>();
+        config = std::move(get_config_for_cache_encryption(cache_dir, device.compare("GPU") == 0));
+    }
 
     auto [model_str, model_weights] = decrypt_model(models_path + "/openvino_model.xml", models_path + "/openvino_model.bin");
     ov::genai::Tokenizer tokenizer = decrypt_tokenizer(models_path);
     
-    ov::genai::LLMPipeline pipe(model_str, model_weights, tokenizer, device);
+    ov::genai::LLMPipeline pipe(model_str, model_weights, tokenizer, device, config);
 
     std::string result = pipe.generate(prompt, ov::genai::max_new_tokens(100));
     std::cout << result << std::endl;
