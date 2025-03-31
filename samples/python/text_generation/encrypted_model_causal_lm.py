@@ -31,23 +31,44 @@ def read_tokenizer(model_dir):
 
     return openvino_genai.Tokenizer(tokenizer_model, tokenizer_weights, detokenizer_model, detokenizer_weights)
 
+import base64
+
+def encrypt_base64(src: bytes):
+    return base64.b64encode(src)
+
+def decrypt_base64(src: bytes):
+    return base64.b64decode(src)
+
+def get_config_for_cache_encryption(cache_dir, is_gpu):
+    config_cache = dict()
+    config_cache["CACHE_DIR"] = cache_dir
+    config_cache["CACHE_ENCRYPTION_CALLBACKS"] = [encrypt_base64, decrypt_base64]
+    if is_gpu:
+        # set CACHE_MODE to OPTIMIZE_SIZE only for GPU to enable weightless cache
+        config_cache["CACHE_MODE"] = "OPTIMIZE_SIZE"
+
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
-    parser.add_argument('prompt')
+    parser = argparse.ArgumentParser(description="Help command")
+    parser.add_argument("-m", "--model", type=str, required=True, help="Path to model and tokenizers base directory")
+    parser.add_argument("-p", "--prompt", type=str, required=True, help="Prompt")
+    parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
+    parser.add_argument("-c", "--cache_dir", type=str, help="Path to cache dir (optional)")
     args = parser.parse_args()
 
-    model, weights = decrypt_model(args.model_dir, 'openvino_model.xml', 'openvino_model.bin')
-    tokenizer = read_tokenizer(args.model_dir)
+    model, weights = decrypt_model(args.model, 'openvino_model.xml', 'openvino_model.bin')
+    tokenizer = read_tokenizer(args.model)
 
-    device = 'CPU'  # GPU can be used as well
-    pipe = openvino_genai.LLMPipeline(model, weights, tokenizer, device)
+    device = args.device
+    config = dict()
+    if args.cache_dir is not None:
+        config = get_config_for_cache_encryption(args.cache_dir, device == 'GPU')
+
+    pipe = openvino_genai.LLMPipeline(model, weights, tokenizer, device, {}, **config)
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
 
     print(pipe.generate(args.prompt, config))
-
 
 if '__main__' == __name__:
     main()
