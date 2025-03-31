@@ -375,6 +375,7 @@ jobs:
       volumes:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e HF_TOKEN
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -446,6 +447,7 @@ jobs:
       volumes:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e HF_TOKEN
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
@@ -541,6 +543,7 @@ jobs:
       volumes:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e HF_TOKEN
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
@@ -614,6 +617,7 @@ jobs:
       volumes:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e HF_TOKEN
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
