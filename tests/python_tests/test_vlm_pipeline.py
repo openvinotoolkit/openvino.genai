@@ -68,7 +68,12 @@ def get_image_by_link(link):
     from openvino import Tensor
     import numpy as np
 
-    image = Image.open(requests.get(link, stream=True).raw)
+    try:
+        response = requests.get(link, stream=True)
+        response.raise_for_status()
+        image = Image.open(response.raw)
+    except (requests.RequestException, Image.UnidentifiedImageError) as e:
+        raise ValueError(f"Failed to load image from {link}: {e}")
     if image.mode != 'RGB':
         image = image.convert('RGB')
     image_data = np.array(image)
