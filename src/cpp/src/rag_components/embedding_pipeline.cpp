@@ -5,10 +5,16 @@
 
 #include "debug_utils.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/normalize_l2.hpp"
+#include "openvino/op/slice.hpp"
+#include "openvino/op/squeeze.hpp"
 #include "utils.hpp"
 
 namespace ov {
 namespace genai {
+
+using namespace ov::op;
 
 class TextEmbeddingPipeline::TextEmbeddingPipelineImpl {
 public:
@@ -17,9 +23,18 @@ public:
                               const std::optional<Config>& config,
                               const ov::AnyMap& properties = {})
         : m_tokenizer{models_path} {
+        if (config.has_value()) {
+            m_config = *config;
+        }
+
         ov::Core core = utils::singleton_core();
 
-        ov::CompiledModel compiled_model = core.compile_model(models_path / "openvino_model.xml", device, properties);
+        auto model = core.read_model(models_path / "openvino_model.xml");
+
+        model = apply_postprocessing(model, m_config);
+
+        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+
         ov::genai::utils::print_compiled_model_properties(compiled_model, "embedding model");
         m_request = compiled_model.create_infer_request();
     };
@@ -36,14 +51,7 @@ public:
         // [batch_size, seq_len, hidden_size]
         const Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
 
-        // todo: implement mean_pooling
-        // todo: implement l2 norm
-
-        if (m_config.pooling_type == PoolingType::CLS) {
-            return cls_pooling(last_hidden_state);
-        } else {
-            OPENVINO_THROW("Only PoolingType::CLS is supported");
-        }
+        return to_embedding_result(last_hidden_state);
     };
 
     EmbeddingResult embed_query(const std::string& text) {
@@ -55,23 +63,63 @@ private:
     InferRequest m_request;
     Config m_config;
 
-    std::vector<EmbeddingResult> cls_pooling(Tensor last_hidden_state) {
+    std::vector<EmbeddingResult> to_embedding_result(const Tensor last_hidden_state) {
         const auto last_hidden_state_data = last_hidden_state.data<float>();
 
         std::vector<EmbeddingResult> result;
         const auto shape = last_hidden_state.get_shape();
+
         const size_t batch_size = shape[0];
-        const size_t seq_len = shape[1];
-        const size_t hidden_size = shape[2];
+        const size_t hidden_size = shape[1];
 
         for (size_t batch = 0; batch < batch_size; batch++) {
-            const auto batch_offset = batch * seq_len * hidden_size;
+            const auto batch_offset = batch * hidden_size;
             const auto batch_data = last_hidden_state_data + batch_offset;
             const std::vector<float> batch_result(batch_data, batch_data + hidden_size);
             result.push_back(batch_result);
         }
 
         return result;
+    }
+
+    std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const Config& config) {
+        ov::preprocess::PrePostProcessor processor(model);
+
+        processor.output().postprocess().custom([this, &config](const ov::Output<ov::Node>& node) {
+            const auto pooling_op = get_pooling_op(node, config.pooling_type);
+
+            // [10, 1, 768] -> [10, 768]
+            auto squeeze_axis =
+                std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+            return std::make_shared<ov::op::v15::Squeeze>(pooling_op, squeeze_axis);
+        });
+
+        if (config.normalize) {
+            processor.output().postprocess().custom([](const ov::Output<ov::Node>& node) {
+                auto axis_const = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
+                return std::make_shared<v0::NormalizeL2>(node, axis_const, 1e-12, EpsMode::ADD);
+            });
+        }
+
+        return processor.build();
+    }
+
+    std::shared_ptr<ov::op::Op> get_pooling_op(const ov::Output<ov::Node>& node, const PoolingType& pooling_type) {
+        // todo: implement mean_pooling
+        if (pooling_type != PoolingType::CLS) {
+            OPENVINO_THROW("Only PoolingType::CLS is supported");
+        }
+
+        // CLS pooling slices first element from seq_length dimension
+        // [batch_size, seq_length, hidden_size] -> [batch_size, seq_length[0], hidden_size]
+        // [10, 5, 768] -> [10, 1, 768]
+
+        auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
+        auto stop = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto step = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+
+        return std::make_shared<ov::op::v8::Slice>(node, start, stop, step, axis);
     }
 };
 

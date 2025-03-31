@@ -46,7 +46,7 @@ public:
     TextEmbeddingPipeline(const std::filesystem::path& models_path,
                           const std::string& device,
                           Properties&&... properties)
-        : TextEmbeddingPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+        : TextEmbeddingPipeline(models_path, device, Config{}, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     /**
      * @brief Compute embeddings for a vector of texts
@@ -70,6 +70,8 @@ private:
     class TextEmbeddingPipelineImpl;
     std::unique_ptr<TextEmbeddingPipelineImpl> m_impl;
 };
+
+static constexpr ov::Property<bool> normalize{"normalize"};
 
 }  // namespace genai
 }  // namespace ov
