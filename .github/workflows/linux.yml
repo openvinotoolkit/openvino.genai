@@ -423,19 +423,19 @@ jobs:
           - name: 'LLM'
             marker: 'llm'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb'
+            runner: 'aks-linux-4-cores-16gb-staging'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb'
+            runner: 'aks-linux-4-cores-16gb-staging'
           - name: 'Image generation'
             marker: 'image_generation'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-16-cores-32gb'
+            runner: 'aks-linux-16-cores-32gb-staging'
           - name: 'VLM'
             marker: 'vlm'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-8-cores-64gb'
+            runner: 'aks-linux-8-cores-64gb-staging'
 
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 60
