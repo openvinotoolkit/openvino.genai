@@ -114,7 +114,7 @@ private:
     /**
      * CLS pooling slices first element from seq_length dimension
      * [batch_size, seq_length, hidden_size] -> [batch_size, seq_length[0], hidden_size]
-     * [10, 5, 768] -> [10, 1, 768]
+     * [10, 5, 768] -> [10, 768]
      */
     std::shared_ptr<ov::op::Op> get_cls_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node) {
         auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
@@ -124,7 +124,6 @@ private:
 
         auto slice = std::make_shared<ov::op::v8::Slice>(last_hidden_state_node, start, stop, step, axis);
 
-        // [10, 1, 768] -> [10, 768]
         auto squeeze_axis =
             std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
         return std::make_shared<ov::op::v15::Squeeze>(slice, squeeze_axis);
@@ -165,7 +164,7 @@ private:
         auto mean_axis =
             std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
 
-        // shape: [batch_size, 1, hidden_state_size]
+        // shape: [batch_size, hidden_state_size]
         return std::make_shared<ov::op::v1::ReduceMean>(attention_mask_multiply, mean_axis);
     }
 };
