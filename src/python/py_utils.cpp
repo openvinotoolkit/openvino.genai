@@ -93,50 +93,81 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if (py::isinstance<py::none>(py_obj)) {
         return {};
     } else if (py::isinstance<py::list>(py_obj)) {
-        auto _list = py_obj.cast<py::list>();
-        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR};
-        PY_TYPE detected_type = PY_TYPE::UNKNOWN;
-        for (const auto& it : _list) {
-            auto check_type = [&](PY_TYPE type) {
-                if (detected_type == PY_TYPE::UNKNOWN || detected_type == type) {
-                    detected_type = type;
-                    return;
-                }
-                OPENVINO_THROW("Incorrect value in \"" + property_name + "\". Mixed types in the list are not allowed.");
+        if (property_name == ov::cache_encryption_callbacks.name()) {
+            auto property_list = py_obj.cast<py::list>();
+            // Wrapped to sp due-to we need to hold GIL upon destruction of python function
+            auto py_encrypt = std::shared_ptr<py::function>(new py::function(std::move(property_list[0])),
+                                                            [](py::function* py_encrypt) {
+                                                                py::gil_scoped_acquire acquire;
+                                                                delete py_encrypt;
+                                                            });
+            auto py_decrypt = std::shared_ptr<py::function>(new py::function(std::move(property_list[1])),
+                                                            [](py::function* py_decrypt) {
+                                                                py::gil_scoped_acquire acquire;
+                                                                delete py_decrypt;
+                                                            });
+
+            std::function<std::string(const std::string&)> encrypt_func =
+                [py_encrypt](const std::string& in_str) -> std::string {
+                // Acquire GIL, execute Python function
+                py::gil_scoped_acquire acquire;
+                return (*py_encrypt)(py::bytes(in_str)).cast<std::string>();
             };
-            if (py::isinstance<py::str>(it)) {
-                check_type(PY_TYPE::STR);
-            } else if (py::isinstance<py::int_>(it)) {
-                check_type(PY_TYPE::INT);
-            } else if (py::isinstance<py::float_>(it)) {
-                check_type(PY_TYPE::FLOAT);
-            } else if (py::isinstance<py::bool_>(it)) {
-                check_type(PY_TYPE::BOOL);
-            } else if (py::isinstance<ov::PartialShape>(it)) {
-                check_type(PY_TYPE::PARTIAL_SHAPE);
-            } else if (py::isinstance<ov::Tensor>(it)) {
-                check_type(PY_TYPE::TENSOR);
+
+            std::function<std::string(const std::string&)> decrypt_func =
+                [py_decrypt](const std::string& in_str) -> std::string {
+                // Acquire GIL, execute Python function
+                py::gil_scoped_acquire acquire;
+                return (*py_decrypt)(py::bytes(in_str)).cast<std::string>();
+            };
+            ov::EncryptionCallbacks encryption_callbacks{encrypt_func, decrypt_func};
+            return encryption_callbacks;
+        } else {
+            auto _list = py_obj.cast<py::list>();
+            enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR};
+            PY_TYPE detected_type = PY_TYPE::UNKNOWN;
+            for (const auto& it : _list) {
+                auto check_type = [&](PY_TYPE type) {
+                    if (detected_type == PY_TYPE::UNKNOWN || detected_type == type) {
+                        detected_type = type;
+                        return;
+                    }
+                    OPENVINO_THROW("Incorrect value in \"" + property_name + "\". Mixed types in the list are not allowed.");
+                };
+                if (py::isinstance<py::str>(it)) {
+                    check_type(PY_TYPE::STR);
+                } else if (py::isinstance<py::int_>(it)) {
+                    check_type(PY_TYPE::INT);
+                } else if (py::isinstance<py::float_>(it)) {
+                    check_type(PY_TYPE::FLOAT);
+                } else if (py::isinstance<py::bool_>(it)) {
+                    check_type(PY_TYPE::BOOL);
+                } else if (py::isinstance<ov::PartialShape>(it)) {
+                    check_type(PY_TYPE::PARTIAL_SHAPE);
+                } else if (py::isinstance<ov::Tensor>(it)) {
+                    check_type(PY_TYPE::TENSOR);
+                }
             }
-        }
 
-        if (_list.empty())
-            return ov::Any();
+            if (_list.empty())
+                return ov::Any();
 
-        switch (detected_type) {
-        case PY_TYPE::STR:
-            return _list.cast<std::vector<std::string>>();
-        case PY_TYPE::FLOAT:
-            return _list.cast<std::vector<double>>();
-        case PY_TYPE::INT:
-            return _list.cast<std::vector<int64_t>>();
-        case PY_TYPE::BOOL:
-            return _list.cast<std::vector<bool>>();
-        case PY_TYPE::PARTIAL_SHAPE:
-            return _list.cast<std::vector<ov::PartialShape>>();
-        case PY_TYPE::TENSOR:
-            return _list.cast<std::vector<ov::Tensor>>();
-        default:
-            OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
+            switch (detected_type) {
+            case PY_TYPE::STR:
+                return _list.cast<std::vector<std::string>>();
+            case PY_TYPE::FLOAT:
+                return _list.cast<std::vector<double>>();
+            case PY_TYPE::INT:
+                return _list.cast<std::vector<int64_t>>();
+            case PY_TYPE::BOOL:
+                return _list.cast<std::vector<bool>>();
+            case PY_TYPE::PARTIAL_SHAPE:
+                return _list.cast<std::vector<ov::PartialShape>>();
+            case PY_TYPE::TENSOR:
+                return _list.cast<std::vector<ov::Tensor>>();
+            default:
+                OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
+            }
         }
 
     } else if (py::isinstance<py::dict>(py_obj) && any_map_properties.find(property_name) == any_map_properties.end()) {
