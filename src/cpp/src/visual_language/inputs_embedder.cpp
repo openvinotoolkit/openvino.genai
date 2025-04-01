@@ -95,8 +95,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
     m_vision_encoder(VisionEncoder::create(
-        utils::get_model_weights_pair(models_map, "vision_embeddings").first,
-        utils::get_model_weights_pair(models_map, "vision_embeddings").second,
+        models_map,
         config_dir_path,
         m_vlm_config.model_type,
         device,

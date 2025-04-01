@@ -5,6 +5,7 @@
 #include <memory>
 #include "openvino/runtime/infer_request.hpp"
 
+#include "openvino/genai/common_types.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
 #include "circular_buffer_queue.hpp"
@@ -16,6 +17,12 @@ struct ImageSize {
     size_t height;
     /// @brief Width of a corresponding image.
     size_t width;
+};
+
+
+struct ResampledImage {
+    ov::Tensor resampled_sourse;
+    std::vector<std::vector<ov::Tensor>> vision_embed_tensor;
 };
 
 /// @brief Embeddings of a given image. The number of slices is no
@@ -45,6 +52,8 @@ struct EncodedImage {
     
     /// @brief Original size of the image
     ImageSize original_image_size;
+
+    ResampledImage resampled_image;
 };
 
 /// @brief A class used to infer embeddings of an image using
@@ -67,16 +76,14 @@ public:
         const ov::AnyMap properties = {});
 
     /// @brief Constructs the encoder from models map.
-    /// @param model Model IR as string (openvino_vision_embeddings_model.xml)
-    /// @param weights Model weights as tensor (openvino_vision_embeddings_model.bin)
+    /// @param models_map Models map
     /// @param config_dir_path A path to directory containing preprocessor_config.json.
     /// @param model_type A type of VLM model.
     /// @param device A device to compile the encoder for.
     /// @param properties A config to be passed to
     /// ov::Core::compile_model().
     static VisionEncoder::Ptr create(
-        const std::string& model,
-        const ov::Tensor& weights,
+        const ModelsMap& models_map,
         const std::filesystem::path& config_dir_path,
         const VLMModelType model_type,
         const std::string& device,
@@ -110,8 +117,7 @@ public:
         const ov::AnyMap properties);
 
     VisionEncoder(
-        const std::string& model,
-        const ov::Tensor& weights,
+        const ModelsMap& models_map,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap properties);
