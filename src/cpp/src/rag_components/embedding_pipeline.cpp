@@ -5,10 +5,17 @@
 
 #include "debug_utils.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/op/broadcast.hpp"
+#include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/convert.hpp"
+#include "openvino/op/multiply.hpp"
 #include "openvino/op/normalize_l2.hpp"
+#include "openvino/op/reduce_mean.hpp"
+#include "openvino/op/shape_of.hpp"
 #include "openvino/op/slice.hpp"
 #include "openvino/op/squeeze.hpp"
+#include "openvino/op/unsqueeze.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -45,10 +52,9 @@ public:
 
         m_request.set_tensor("input_ids", tokenized_inputs.input_ids);
         m_request.set_tensor("attention_mask", tokenized_inputs.attention_mask);
-
         m_request.infer();
 
-        // [batch_size, seq_len, hidden_size]
+        // [batch_size, hidden_size]
         const Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
 
         return to_embedding_result(last_hidden_state);
@@ -85,13 +91,14 @@ private:
     std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const Config& config) {
         ov::preprocess::PrePostProcessor processor(model);
 
-        processor.output().postprocess().custom([this, &config](const ov::Output<ov::Node>& node) {
-            const auto pooling_op = get_pooling_op(node, config.pooling_type);
+        processor.output().postprocess().custom([this, model, &config](const ov::Output<ov::Node>& node) {
+            if (config.pooling_type == PoolingType::CLS) {
+                return get_cls_pooling_op(node);
+            } else if (config.pooling_type == PoolingType::MEAN) {
+                return get_mean_pooling_op(model, node);
+            }
 
-            // [10, 1, 768] -> [10, 768]
-            auto squeeze_axis =
-                std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-            return std::make_shared<ov::op::v15::Squeeze>(pooling_op, squeeze_axis);
+            OPENVINO_THROW("Pooling type is not supported");
         });
 
         if (config.normalize) {
@@ -104,22 +111,62 @@ private:
         return processor.build();
     }
 
-    std::shared_ptr<ov::op::Op> get_pooling_op(const ov::Output<ov::Node>& node, const PoolingType& pooling_type) {
-        // todo: implement mean_pooling
-        if (pooling_type != PoolingType::CLS) {
-            OPENVINO_THROW("Only PoolingType::CLS is supported");
-        }
-
-        // CLS pooling slices first element from seq_length dimension
-        // [batch_size, seq_length, hidden_size] -> [batch_size, seq_length[0], hidden_size]
-        // [10, 5, 768] -> [10, 1, 768]
-
+    /**
+     * CLS pooling slices first element from seq_length dimension
+     * [batch_size, seq_length, hidden_size] -> [batch_size, seq_length[0], hidden_size]
+     * [10, 5, 768] -> [10, 1, 768]
+     */
+    std::shared_ptr<ov::op::Op> get_cls_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node) {
         auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
         auto stop = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
         auto step = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
         auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
 
-        return std::make_shared<ov::op::v8::Slice>(node, start, stop, step, axis);
+        auto slice = std::make_shared<ov::op::v8::Slice>(last_hidden_state_node, start, stop, step, axis);
+
+        // [10, 1, 768] -> [10, 768]
+        auto squeeze_axis =
+            std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        return std::make_shared<ov::op::v15::Squeeze>(slice, squeeze_axis);
+    }
+
+    std::shared_ptr<ov::op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
+                                                    const ov::Output<ov::Node>& last_hiddent_state_node) {
+        const auto hidden_state_size = last_hiddent_state_node.get_partial_shape()[2].get_length();
+
+        // shape: [batch_size, seq_length]
+        auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
+
+        auto unsqueze_axis =
+            std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
+
+        // shape: [batch_size, seq_length, 1]
+        auto unsqueze = std::make_shared<ov::op::v0::Unsqueeze>(attention_mask, unsqueze_axis);
+
+        auto shape_of = std::make_shared<ov::op::v3::ShapeOf>(attention_mask);
+
+        auto hidden_state_size_const = std::make_shared<ov::op::v0::Constant>(ov::element::i64,
+                                                                              ov::Shape{1},
+                                                                              std::vector<int64_t>{hidden_state_size});
+
+        // value: [batch_size, seq_length, hidden_state_size]
+        auto broadcast_shape =
+            std::make_shared<ov::op::v0::Concat>(ov::OutputVector{shape_of, hidden_state_size_const}, 0);
+
+        // shape: [batch_size, seq_length, hidden_state_size]
+        auto input_mask_expanded = std::make_shared<ov::op::v3::Broadcast>(unsqueze, broadcast_shape);
+        auto input_mask_expanded_convert =
+            std::make_shared<ov::op::v0::Convert>(input_mask_expanded, last_hiddent_state_node.get_element_type());
+
+        // shape: [batch_size, seq_length, hidden_state_size]
+        auto attention_mask_multiply =
+            std::make_shared<ov::op::v1::Multiply>(last_hiddent_state_node, input_mask_expanded_convert->outputs()[0]);
+
+        auto mean_axis =
+            std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+
+        // shape: [batch_size, 1, hidden_state_size]
+        return std::make_shared<ov::op::v1::ReduceMean>(attention_mask_multiply, mean_axis);
     }
 };
 
