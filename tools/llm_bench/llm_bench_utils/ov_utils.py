@@ -204,6 +204,11 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
             if kwargs.get("draft_cb_config") is not None else {}
         ov_config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
 
+    if kwargs.get('max_ngram_size') and kwargs.get('num_assistant_tokens'):
+        log.info("Prompt Lookup decoding is activated")
+        ov_config['prompt_lookup'] = True
+        use_streamer_metrics = True
+
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None))
     if adapter_config:
         ov_config['adapters'] = adapter_config
@@ -277,7 +282,16 @@ def create_image_gen_model(model_path, device, **kwargs):
 
         log.info("Selected Optimum Intel for benchmarking")
         start = time.perf_counter()
-        ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
+        if kwargs.get("static_reshape", False):
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config, compile=False)
+            num_images_per_prompt = kwargs.get("batch_size", 1)
+            height = kwargs.get("height", 512)
+            width = kwargs.get("width", 512)
+            log.info(f"Image Pipeline reshape(batch_size=1, height={height}, width={width}, num_images_per_prompt={num_images_per_prompt})")
+            ov_model.reshape(batch_size=1, height=height, width=width, num_images_per_prompt=num_images_per_prompt)
+            ov_model.compile()
+        else:
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
         end = time.perf_counter()
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -397,6 +411,11 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     scheduler_type = model_index_data.get("scheduler", ["", ""])[1]
     if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "PNDMScheduler", "EulerDiscreteScheduler",
                                "FlowMatchEulerDiscreteScheduler", "EulerAncestralDiscreteScheduler"]):
+        # It's possible we could support --static_reshape here, but initially it seems too complicated to be worth it..
+        # (as we'd need to refactor each get_*_model calls below to perform explicit reshape + compile)
+        if kwargs.get("static_reshape", False):
+            raise RuntimeError(f'Type of scheduler {scheduler_type} is unsupported. Right now this is unsupported if --static_reshape is also specified. ')
+
         scheduler = openvino_genai.Scheduler.from_config(model_path / "scheduler/scheduler_config.json", openvino_genai.Scheduler.Type.DDIM)
         log.warning(f'Type of scheduler {scheduler_type} is unsupported. Please, be aware that it will be replaced to DDIMScheduler')
 
@@ -422,7 +441,17 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
         else:
             raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported _class_name {model_class_name}')
     else:
-        image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
+        if kwargs.get("static_reshape", False):
+            image_gen_pipe = image_gen_pipeline_class(model_path)
+            guidance_scale = kwargs.get("guidance_scale", image_gen_pipe.get_generation_config().guidance_scale)
+            num_images_per_prompt = kwargs.get("batch_size", 1)
+            height = kwargs.get("height", 512)
+            width = kwargs.get("width", 512)
+            log.info(f"Image Pipeline reshape(num_images_per_prompt={num_images_per_prompt}, height={height}, width={width}, guidance_scale={guidance_scale})")
+            image_gen_pipe.reshape(num_images_per_prompt=num_images_per_prompt, height=height, width=width, guidance_scale=guidance_scale)
+            image_gen_pipe.compile(device.upper(), **ov_config)
+        else:
+            image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
 
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')

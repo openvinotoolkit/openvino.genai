@@ -6,7 +6,6 @@
 #include <iostream>
 #include <numeric>
 #include <random>
-#include <regex>
 #include <vector>
 
 #include "utils.hpp"
@@ -28,7 +27,7 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
     position_ids.set_shape({batch_size, 1});
 
     for (size_t batch = 0; batch < batch_size; batch++) {
-        int64_t* mask_start = attention_mask.data<int64_t>() + batch * sequence_length;
+        auto mask_start = attention_mask.data<int64_t>() + batch * sequence_length;
         position_ids.data<int64_t>()[batch] = std::accumulate(mask_start, mask_start + sequence_length - 1, 0);
     }
 }

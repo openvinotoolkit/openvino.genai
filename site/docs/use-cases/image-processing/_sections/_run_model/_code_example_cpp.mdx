@@ -1,0 +1,21 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="cpp" showLineNumbers>
+{`#include "openvino/genai/visual_language/pipeline.hpp"
+#include "load_image.hpp"
+#include <iostream>
+
+int main(int argc, char* argv[]) {
+    std::string models_path = argv[1], images_path = argv[2];;
+    std::vector<ov::Tensor> images = utils::load_images(images_path);
+
+    ov::genai::VLMPipeline pipe(models_path, "${props.device || 'CPU'}");
+    ov::genai::VLMDecodedResults result = pipe.generate(
+        prompt,
+        ov::genai::images(images),
+        ov::genai::max_new_tokens(100)
+    );
+    std::cout << result.texts[0] << std::endl;
+}
+`}
+</CodeBlock>

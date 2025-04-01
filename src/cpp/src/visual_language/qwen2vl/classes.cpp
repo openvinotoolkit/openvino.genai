@@ -233,7 +233,8 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     std::memcpy(flattened_patches.data(), transposed_patches.data(), transposed_patches.get_byte_size());
 
     encoder.set_tensor("hidden_states", flattened_patches);
-    encoder.infer();
+    encoder.start_async();
+    encoder.wait();
 
     const ov::Tensor& infer_output = encoder.get_output_tensor();
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
@@ -282,7 +283,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
 }
 
 ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
-    auto [unified_prompt, images_sequence] = unify_prompt(prompt, NATIVE_TAG, NATIVE_TAG, images.size(), m_image_id);
+    auto [unified_prompt, images_sequence] = normalize_prompt(prompt, NATIVE_TAG, NATIVE_TAG, m_image_id, images.size());
     std::vector<ov::Tensor> image_embeds;
     std::vector<std::array<size_t, 3>> images_grid_thw;
     image_embeds.reserve(images.size());
@@ -435,7 +436,8 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_images);
     vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
     vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
-    vision_embeddings_merger.infer();
+    vision_embeddings_merger.start_async();
+    vision_embeddings_merger.wait();
     ov::Tensor processed_vision_embeds = vision_embeddings_merger.get_output_tensor();
 
     ov::Tensor merged_embeds(text_embeds.get_element_type(), text_embeds.get_shape());

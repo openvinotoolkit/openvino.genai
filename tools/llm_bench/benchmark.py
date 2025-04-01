@@ -85,6 +85,14 @@ def get_argprser():
         help='if the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2,'
         ' output the maximum memory consumption in all iterations.',
     )
+    parser.add_argument(
+        "--memory_consumption_delay",
+        default=0.5,
+        required=False,
+        type=float,
+        help="delay for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance."
+        "It is not recommended to run memory consumption and performance benchmarking in the same time"
+    )
     parser.add_argument('-bs', '--batch_size', type=int, default=1, required=False, help='Batch size value')
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
     parser.add_argument(
@@ -137,9 +145,12 @@ def get_argprser():
     parser.add_argument("--draft_device", required=False, default=None, help="Inference device for Speculative decoding of draft model")
     parser.add_argument("--draft_cb_config", required=False, default=None,
                         help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model")
-    parser.add_argument("--num_assistant_tokens", required=False, default=None, help="Config option num_assistant_tokens for Speculative decoding", type=int)
+    parser.add_argument("--num_assistant_tokens", required=False, default=None,
+                        help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding", type=int)
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
                         help="Config option assistant_confidence_threshold for Speculative decoding", type=float)
+    parser.add_argument("--max_ngram_size", required=False, default=None,
+                        help="Config option assistant_confidence_threshold for Prompt Lookup decoding", type=int)
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',
@@ -151,6 +162,10 @@ def get_argprser():
     parser.add_argument("--num_steps", type=int, required=False, help="Number of inference steps for image generation")
     parser.add_argument("--height", type=int, required=False, help="Generated image height. Applicable only for Image Generation.")
     parser.add_argument("--width", type=int, required=False, help="Generated image width. Applicable only for Image Generation.")
+    parser.add_argument(
+        "--static_reshape",
+        action="store_true",
+        help="Reshape image generation pipeline to specific width & height at pipline creation time. Applicable for Image Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,
@@ -223,6 +238,7 @@ def main():
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
     if args.memory_consumption:
+        mem_consumption.delay = args.memory_consumption_delay
         mem_consumption.start_collect_mem_consumption_thread()
     try:
         if model_args['use_case'] in ['text_gen', 'code_gen']:
