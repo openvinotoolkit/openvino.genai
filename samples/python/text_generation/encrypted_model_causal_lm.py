@@ -31,6 +31,8 @@ def read_tokenizer(model_dir):
 
     return openvino_genai.Tokenizer(tokenizer_model, tokenizer_weights, detokenizer_model, detokenizer_weights)
 
+
+# here is example how to make cache de-encryption based on base64
 import base64
 
 def encrypt_base64(src: bytes):
@@ -64,7 +66,7 @@ def main():
     if args.cache_dir is not None:
         config = get_config_for_cache_encryption(args.cache_dir, device == 'GPU')
 
-    pipe = openvino_genai.LLMPipeline(model, weights, tokenizer, device, {}, **config)
+    pipe = openvino_genai.LLMPipeline(model, weights, tokenizer, device, **config)
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
