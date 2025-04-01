@@ -746,7 +746,12 @@ ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image, const
     resampler.set_tensor("pos_embed", pos_embed);  // [H*W, N, new_hidden_size]
     resampler.set_tensor("key_padding_mask", key_padding_mask);  // [N, H*W]
     resampler.infer();
-    return resampler.get_output_tensor();  // [N, query_num, new_hidden_size]
+    auto resampler_out = resampler.get_output_tensor();
+    // resampler_out is bound to infer request and the data may become corrupted after next resampler inference 
+    // so we need to return a copy to make sure data does not get corrupted 
+    ov::Tensor res(resampler_out.get_element_type(), resampler_out.get_shape());
+    std::memcpy(res.data(), resampler_out.data(), resampler_out.get_byte_size());
+    return res;  // [N, query_num, new_hidden_size]
 }
 
 VisionEncoderMiniCPM::VisionEncoderMiniCPM(
