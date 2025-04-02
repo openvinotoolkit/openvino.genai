@@ -115,7 +115,7 @@ public:
              std::vector<GenerationConfig> sampling_params,
              const StreamerVariant& streamer);
 
-    virtual std::vector<GenerationResult>
+    virtual std::vector<VLMDecodedResults>
     generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& rgbs,

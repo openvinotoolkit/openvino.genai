@@ -6,8 +6,8 @@ import { SectionImage } from './Section/section-image';
 
 import ImagePlaceholder from '@site/static/img/image-generation-placeholder.webp';
 
-import CodeExampleCpp from '@site/docs/use-cases/2-Image-Generation/_sections/_run_model/_code_example_cpp.mdx';
-import CodeExamplePython from '@site/docs/use-cases/2-Image-Generation/_sections/_run_model/_code_example_python.mdx';
+import CodeExampleCpp from '@site/docs/use-cases/image-generation/_sections/_run_model/_text2image_cpp.mdx';
+import CodeExamplePython from '@site/docs/use-cases/image-generation/_sections/_run_model/_text2image_python.mdx';
 
 const FEATURES = [
   'Alter parameters (width, height, iterations) and compile model for static size',
@@ -39,8 +39,8 @@ export const ImageGeneration = () => {
           </TabItemCpp>
         </LanguageTabs>
         <hr />
-        <ExploreCodeSamples link={'docs/category/samples'} />
-        <GoToDocumentation link={'docs/how-to-guides/image-generation'} />
+        <ExploreCodeSamples link="docs/category/samples" />
+        <GoToDocumentation link="docs/use-cases/image-generation/" />
       </Section.Column>
     </Section.Container>
   );
