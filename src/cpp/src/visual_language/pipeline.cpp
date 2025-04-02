@@ -81,6 +81,7 @@ public:
         if (m_is_npu) {
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
+            lm_properties["MAX_PROMPT_LEN"] = 3072;
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
                 language_model, lm_properties, kv_pos, language_model_path
             );
@@ -190,9 +191,9 @@ public:
         if (m_is_npu) {
             // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
             if (inputs_embeds.get_size() > m_max_prompt_len) {
-                OPENVINO_THROW("VLM pipeline on NPU may only process input embeddings or hold "
-                    "chat history up to " + std::to_string(m_max_prompt_len) + " tokens. " +
-                    "Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+                OPENVINO_THROW("VLM pipeline on NPU may only process input embeddings up to ",
+                    m_max_prompt_len, " tokens. Set the \"MAX_PROMPT_LEN\" config option to "
+                    "increase the limit.");
             }
         }
 

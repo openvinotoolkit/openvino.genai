@@ -166,9 +166,9 @@ DecodedResults StatefulLLMPipeline::generate(
     if (m_is_npu) {
         // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
         if (encoded_input.input_ids.get_size() > m_max_prompt_len) {
-            OPENVINO_THROW("Stateful LLM pipeline on NPU may only process prompts or hold "
-                "chat history up to " + std::to_string(m_max_prompt_len) + " tokens. " +
-                "Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+            OPENVINO_THROW("Stateful LLM pipeline on NPU may only process prompts or hold chat "
+                "history up to ", m_max_prompt_len, " tokens. Set the \"MAX_PROMPT_LEN\" config "
+                "option to increase the limit.");
         }
     }
 
