@@ -23,8 +23,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (execution_devices[0].find("NPU") != std::string::npos) {
         OPENVINO_ASSERT(execution_devices.size() == 1u);
         m_is_npu = true;
-        const auto max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
-        m_max_prompt_len = max_prompt_len;
+        m_max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
         const auto min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
         m_max_kv_cache_size = m_max_prompt_len + min_response_len;
     }
@@ -161,11 +160,10 @@ DecodedResults StatefulLLMPipeline::generate(
 
     if (m_is_npu) {
         // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
-        if (encoded_input.input_ids.get_size() > m_max_prompt_len) {
-            OPENVINO_THROW("Stateful LLM pipeline on NPU may only process prompts or hold chat "
-                "history up to ", m_max_prompt_len, " tokens. Set the \"MAX_PROMPT_LEN\" config "
-                "option to increase the limit.");
-        }
+        OPENVINO_ASSERT(encoded_input.input_ids.get_size() <= m_max_prompt_len,
+            "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
+            m_max_prompt_len, " tokens. ", encoded_input.input_ids.get_size(), " is passed.\n"
+            "Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
     }
 
     auto encode_stop_time =  std::chrono::steady_clock::now();
