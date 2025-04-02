@@ -51,7 +51,7 @@ ov::Tensor get_tensor_batch(const ov::Tensor input, size_t batch_id) {
     OPENVINO_ASSERT(target_shape.at(0) > batch_id, "Cannot get batch with id ", batch_id, ", total batch size is ", target_shape.at(0));
     target_shape[0] = 1;
 
-    void * target_data = input.data<float>() + batch_id * ov::shape_size(target_shape);
+    auto target_data = input.data<float>() + batch_id * ov::shape_size(target_shape);
     ov::Tensor target_tensor(input.get_element_type(), target_shape, target_data);
 
     return target_tensor;
@@ -377,7 +377,7 @@ public:
             ov::Tensor negative_pooled_prompt_2_embed_out = get_tensor_batch(text_encoder_2_output, 0);
             ov::Tensor negative_prompt_2_embed_out = get_tensor_batch(text_encoder_2_hidden_state, 0);
             ov::Tensor negative_t5_prompt_embed_out = get_tensor_batch(text_encoder_3_output, 0);
-            
+
             ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed,
                 negative_prompt_2_embed, negative_t5_prompt_embed;
             if (generation_config.num_images_per_prompt == 1) {

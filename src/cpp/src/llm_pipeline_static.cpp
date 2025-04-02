@@ -23,7 +23,7 @@ void fill_tensor(ov::Tensor tensor, T fill_val, size_t offset = 0u) {
 }
 
 void copy_with_offset(const ov::Tensor& orig, const std::size_t offset, ov::Tensor& padded) {
-    int64_t* orig_data = orig.data<int64_t>();
+    auto orig_data = orig.data<int64_t>();
     int64_t* padded_data = padded.data<int64_t>();
     std::copy(orig_data, orig_data + orig.get_size(), padded_data + offset);
 }
@@ -56,8 +56,8 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
 
     const size_t chunk_byte_size = W * elem_size;
 
-    const auto* src_p  = static_cast<uint8_t*>(src.data());
-          auto* dst_p  = static_cast<uint8_t*>(dst.data());
+    const auto* src_p = static_cast<const uint8_t*>(src.data());
+    auto* dst_p = static_cast<uint8_t*>(dst.data());
 
     for (size_t i = 0; i < C*H; ++i) {
         const size_t src_offset = i * IS_H;

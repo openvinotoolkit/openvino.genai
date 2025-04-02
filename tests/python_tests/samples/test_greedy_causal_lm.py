@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import logger, MODELS, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR
+from conftest import logger, MODELS, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, SAMPLES_JS_DIR
 from test_utils import run_sample
 
 class TestGreedyCausalLM:
@@ -41,9 +41,15 @@ class TestGreedyCausalLM:
         c_command =[c_sample, convert_model, sample_args]
         c_result = run_sample(c_command)
 
+        # Test JS sample
+        js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/greedy_causal_lm.js")
+        js_command =['node', js_sample, convert_model, sample_args]
+        js_result = run_sample(js_command)
+
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
         assert cpp_result.stdout == c_result.stdout, f"Results should match"
+        assert c_result.stdout == js_result.stdout, f"Results should match"
                 
         model_name = request.node.callspec.params['convert_model']
         model = MODELS[model_name]

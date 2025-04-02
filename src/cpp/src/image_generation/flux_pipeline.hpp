@@ -22,7 +22,7 @@ ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_
 
     OPENVINO_ASSERT(latents.get_size() == permuted_latents.get_size(), "Incorrect target shape, tensors must have the same sizes");
 
-    float* src_data = latents.data<float>();
+    auto src_data = latents.data<float>();
     float* dst_data = permuted_latents.data<float>();
 
     // Permute to (0, 2, 4, 1, 3, 5)

@@ -278,8 +278,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
     {
         static ManualTimer timer("forward");
+        const auto infer_start = std::chrono::steady_clock::now();
         timer.start();
         logits = m_model_runner->forward(m_requests, scheduler_output);
+        const auto infer_end = std::chrono::steady_clock::now();
+        m_pipeline_metrics.inference_duration = PerfMetrics::get_microsec(infer_end - infer_start);
         timer.end();
     }
 
@@ -364,6 +367,7 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer) {
+    _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
     generate_timer.start();
 
@@ -403,11 +407,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
+            // During prefill step (or steps if max_batch_size < prompt_len) we don't generate new tokens,
+            // but still inference took place, so we need to add this time to the total inference duration.
+            raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
             if (m_batch_size > 0) {
                 const auto infer_end = std::chrono::steady_clock::now();
-                const auto infer_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+                const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
                 raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
-                raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
                 raw_perf_counters.m_new_token_times.emplace_back(infer_end);
                 raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
             }
@@ -504,6 +510,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_register_step_cache_us
 
 float ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_current_running_average_cache_usage() const {
     return std::accumulate(m_previous_step_cache_usages.begin(), m_previous_step_cache_usages.end(), 0.0) / m_previous_step_cache_usages.size();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reset_cache_usage_statistics() {
+    m_previous_step_cache_usages.clear();
+    m_pipeline_metrics.max_cache_usage = 0.0;
+    m_pipeline_metrics.avg_cache_usage = 0.0;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
