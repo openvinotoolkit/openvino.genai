@@ -26,8 +26,6 @@ class VisionEncoderMiniCPM : public VisionEncoder {
 
     ov::Tensor resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes);
 public:
-    using VisionEncoder::VisionEncoder;
-
     VisionEncoderMiniCPM(
         const std::filesystem::path& model_dir,
         const std::string& device,
@@ -36,7 +34,6 @@ public:
 
     VisionEncoderMiniCPM(
         const ModelsMap& models_map,
-        const VLMConfig& vlm_config,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap device_config);
@@ -48,19 +45,7 @@ class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
     size_t m_prev_image_id = 0;
 
 public:
-    InputsEmbedderMiniCPM(
-        const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
-        const std::string& device,
-        const ov::AnyMap device_config);
-
-    InputsEmbedderMiniCPM(
-        const VLMConfig& vlm_config,
-        const ModelsMap& models_map,
-        const Tokenizer& tokenizer,
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap device_config);
+    using IInputsEmbedder::IInputsEmbedder;
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) override;
 
