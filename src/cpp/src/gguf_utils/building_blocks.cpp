@@ -883,12 +883,17 @@ std::tuple<ov::Output<ov::Node>,
         std::get<float>(configs.at("rms_norm_eps")));
 
     // Attention projections
+    // check if it's llama structure, if so, reorder= true
+    bool reorder = false;
+    if (std::get<std::string>(configs.at("architecture")).find("llama") != std::string::npos) {
+        reorder = true;
+    }
     auto q = make_fc(
         layer_prefix + ".self_attn.q_proj",
         input_layernorm,
         consts,
         static_cast<QType>(std::get<int>(configs.at("qtype"))),
-        true,
+        reorder,
         std::get<int>(configs.at("head_size")));
 
     auto k = make_fc(
@@ -896,7 +901,7 @@ std::tuple<ov::Output<ov::Node>,
         input_layernorm,
         consts,
         static_cast<QType>(std::get<int>(configs.at("qtype"))),
-        true,
+        reorder,
         std::get<int>(configs.at("head_size")));
 
     auto v = make_fc(
