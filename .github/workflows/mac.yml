@@ -55,7 +55,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download ]
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -153,7 +153,7 @@ jobs:
   genai_build_wheel:
     name: Build Wheel
     needs: [ openvino_download ]
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -438,6 +438,8 @@ jobs:
       LATEST_OV_DIR: ${{ github.workspace }}/ov_latest
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      HF_HOME: ${{ github.workspace }}/hf_cache
+      OV_CACHE: ${{ github.workspace }}/ov_cache
 
     steps:
       - name: Clone openvino.genai
@@ -532,6 +534,8 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      HF_HOME: ${{ github.workspace }}/hf_cache
+      OV_CACHE: ${{ github.workspace }}/ov_cache
         
     steps:
       - name: Clone openvino.genai
