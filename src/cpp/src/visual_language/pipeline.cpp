@@ -81,10 +81,6 @@ public:
         if (m_is_npu) {
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
-            if (auto it = lm_properties.find("MAX_PROMPT_LEN"); it == lm_properties.end()) {
-                // Let default value be 3072 for context length, if not specified by user.
-                lm_properties["MAX_PROMPT_LEN"] = 3072;
-            }
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
                 language_model, lm_properties, kv_pos, language_model_path
             );
