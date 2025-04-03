@@ -50,7 +50,7 @@ jobs:
       id: openvino_download
       with:
         platform: windows
-        commit_packages_to_provide: wheels,openvino_js_package.zip
+        commit_packages_to_provide: wheels,developer_package.zip,openvino_js_package.zip
         revision: 'latest_available_commit'
 
   genai_build_cpack:
@@ -131,7 +131,7 @@ jobs:
         shell: pwsh
         run: |
           ${{ env.OV_INSTALL_DIR }}/setupvars.ps1
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build-type }} --verbose
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
@@ -192,6 +192,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}\install\genai
       WHEELS_DIR: ${{ github.workspace }}\install\genai\wheels
       CCACHE_DIR: ${{ github.workspace }}\\ccache
+      OpenVINODeveloperPackage_DIR: ${{ github.workspace }}\install\ov\developer_package\cmake
 
     steps:
       - name: Clone openvino.genai
