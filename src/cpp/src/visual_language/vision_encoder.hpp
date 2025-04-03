@@ -21,8 +21,8 @@ struct ImageSize {
 
 
 struct ResampledImage {
-    ov::Tensor resampled_sourse;
-    std::vector<std::vector<ov::Tensor>> vision_embed_tensor;
+    ov::Tensor resampled_source;
+    std::vector<std::vector<ov::Tensor>> vision_embed_tensors;
 };
 
 /// @brief Embeddings of a given image. The number of slices is no
@@ -53,6 +53,7 @@ struct EncodedImage {
     /// @brief Original size of the image
     ImageSize original_image_size;
 
+    /// @brief Resampled image, used only by MiniCPM.
     ResampledImage resampled_image;
 };
 

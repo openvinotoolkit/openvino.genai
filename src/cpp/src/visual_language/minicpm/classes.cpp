@@ -420,11 +420,11 @@ EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::Any
 
 ResampledImage VisionEncoderMiniCPM::resample_encoded_image(const EncodedImage& encoded_image) {
     const ov::Tensor& resampled_source = resample(encoded_image.resized_source, {encoded_image.resized_source_size});
-    std::vector<std::vector<ov::Tensor>> vision_embed_tensor;
+    std::vector<std::vector<ov::Tensor>> vision_embed_tensors;
     if (encoded_image.slices) {
         size_t token_idx = 0;
         const ov::Shape& slices_shape = encoded_image.slices.get_shape();
-        vision_embed_tensor.resize(slices_shape.at(0));
+        vision_embed_tensors.resize(slices_shape.at(0));
         for (size_t i = 0; i < slices_shape.at(0); ++i) {
             std::vector<ov::Tensor> vision_embeds;
             vision_embeds.resize(slices_shape.at(1));
@@ -434,10 +434,10 @@ ResampledImage VisionEncoderMiniCPM::resample_encoded_image(const EncodedImage& 
                 ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, encoded_image.slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
                 vision_embeds[ja] = resample(encoded_view, {encoded_image.slices_size});
             }
-            vision_embed_tensor[i] = vision_embeds;
+            vision_embed_tensors[i] = vision_embeds;
         }
     }
-    return {resampled_source, vision_embed_tensor};
+    return {resampled_source, vision_embed_tensors};
 }
 
 namespace {
@@ -635,7 +635,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     float* inputs_embeds_data = inputs_embeds.data<float>();
     for (size_t image_id : images_sequence) {
         const EncodedImage& encoded_image = images.at(image_id - m_prev_image_id);
-        const ov::Tensor& resampled_source = encoded_image.resampled_image.resampled_sourse;
+        const ov::Tensor& resampled_source = encoded_image.resampled_image.resampled_source;
         auto emb = resampled_source.data<float>();
         ids = std::find(ids, end, im_start_id);
         OPENVINO_ASSERT(end != ids);
@@ -647,7 +647,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
             const ov::Shape& slices_shape = encoded_image.slices.get_shape();
             for (size_t i = 0; i < slices_shape.at(0); ++i) {
                 for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
-                    const ov::Tensor& vision_embed_tensor_i_j = encoded_image.resampled_image.vision_embed_tensor[i][ja];
+                    const ov::Tensor& vision_embed_tensor_i_j = encoded_image.resampled_image.vision_embed_tensors[i][ja];
                     ids = std::find(ids, end, slice_start_id);
                     OPENVINO_ASSERT(end != ids);
                     ++ids;
