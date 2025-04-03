@@ -80,11 +80,6 @@ public:
         auto embedder_device = device;
         if (m_is_npu) {
             embedder_device = "CPU";
-            utils::KVDesc kv_desc;
-            if (auto it = lm_properties.find("MAX_PROMPT_LEN"); it == lm_properties.end()) {
-                // Let default value be 3072 for context length, if not specified by user.
-                lm_properties["MAX_PROMPT_LEN"] = 3072;
-            }
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
