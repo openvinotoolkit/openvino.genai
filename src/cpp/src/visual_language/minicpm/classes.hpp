@@ -45,7 +45,19 @@ class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
     size_t m_prev_image_id = 0;
 
 public:
-    using IInputsEmbedder::IInputsEmbedder;
+    InputsEmbedderMiniCPM(
+        const VLMConfig& vlm_config,
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap device_config);
+    
+    InputsEmbedderMiniCPM(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config);
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) override;
 

@@ -130,6 +130,7 @@ private:
 
         virtual bool prompt_has_image_tag(const std::string& prompt) const;
     
+    protected:
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,
@@ -143,7 +144,6 @@ private:
             const std::filesystem::path& config_dir_path,
             const std::string& device,
             const ov::AnyMap device_config);
-    protected:
     
         ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
     

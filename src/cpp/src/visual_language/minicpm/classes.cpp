@@ -773,4 +773,21 @@ VisionEncoderMiniCPM::VisionEncoderMiniCPM(
     m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
 }
 
+
+InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
+    const VLMConfig& vlm_config,
+    const std::filesystem::path& model_dir,
+    const std::string& device,
+    const ov::AnyMap device_config) :
+    IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
+
+InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
+    const VLMConfig& vlm_config,
+    const ModelsMap& models_map,
+    const Tokenizer& tokenizer,
+    const std::filesystem::path& config_dir_path,
+    const std::string& device,
+    const ov::AnyMap device_config) :
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+
 } // namespace ov::genai
