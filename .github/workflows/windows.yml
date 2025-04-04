@@ -189,9 +189,8 @@ jobs:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
-      CMAKE_GENERATOR: 'Ninja' # Ninja is the only generator supported by ccache
-      CMAKE_C_COMPILER: cl
-      CMAKE_CXX_COMPILER: cl
+      CC: 'ccache cl'
+      CXX: 'ccache cl'
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
