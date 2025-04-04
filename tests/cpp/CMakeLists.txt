@@ -4,6 +4,7 @@
 
 if(NOT TARGET gtest)
   set(INSTALL_GTEST OFF CACHE BOOL "")
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "")
 
   FetchContent_Declare(
     googletest
