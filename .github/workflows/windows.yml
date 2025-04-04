@@ -65,6 +65,7 @@ jobs:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
+      CMAKE_GENERATOR: 'Ninja'
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       GENAI_INSTALL_DIR: ${{ github.workspace }}\install\genai
       INSTALL_TOOLS_DIR: ${{ github.workspace }}\tools
