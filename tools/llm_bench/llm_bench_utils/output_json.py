@@ -60,7 +60,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
     ]
     results_averaged = {}
     for key in keys_to_average:
-        values = [x[key] for x in result if x[key] != '']
+        values = [x[key] for x in result[1:] if x[key] != '']
         if len(values) > 0:
             results_averaged[key] = round(sum(values) / len(values), 5)
 

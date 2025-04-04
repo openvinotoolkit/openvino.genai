@@ -29,7 +29,6 @@ jobs:
       ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
       ov_wheel_source: ${{ steps.openvino_download.outputs.ov_wheel_source }}
       ov_version: ${{ steps.openvino_download.outputs.ov_version }}
-      ov_latest_artifact_name: ${{ steps.openvino_latest_download.outputs.ov_artifact_name }}
     timeout-minutes: 10
     defaults:
       run:
@@ -46,14 +45,7 @@ jobs:
       id: openvino_download
       with:
         platform: macos_12_6
-        commit_packages_to_provide: wheels
-        revision: latest_nightly
-
-    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
-      id: openvino_latest_download
-      with:
-        platform: macos_12_6
-        commit_packages_to_provide: openvino_js_package.tar.gz
+        commit_packages_to_provide: wheels,openvino_js_package.tar.gz
         revision: latest_available_commit
 
   genai_build_cmake:
@@ -63,7 +55,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download ]
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -161,7 +153,7 @@ jobs:
   genai_build_wheel:
     name: Build Wheel
     needs: [ openvino_download ]
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -328,7 +320,7 @@ jobs:
       - name: Download OpenVINO package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: ${{ needs.openvino_download.outputs.ov_latest_artifact_name }}
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
@@ -446,6 +438,8 @@ jobs:
       LATEST_OV_DIR: ${{ github.workspace }}/ov_latest
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      HF_HOME: ${{ github.workspace }}/hf_cache
+      OV_CACHE: ${{ github.workspace }}/ov_cache
 
     steps:
       - name: Clone openvino.genai
@@ -464,7 +458,7 @@ jobs:
       - name: Download OpenVINO JS Bildings Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: ${{ needs.openvino_download.outputs.ov_latest_artifact_name }}
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.LATEST_OV_DIR }}
           merge-multiple: true
 
@@ -516,10 +510,9 @@ jobs:
           cp -R ${{ env.LATEST_OV_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Test Samples (Python and C++)
-        run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
+          DYLD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$DYLD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_JS_DIR: "${{ env.SRC_DIR }}/samples/js"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
@@ -541,6 +534,8 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      HF_HOME: ${{ github.workspace }}/hf_cache
+      OV_CACHE: ${{ github.workspace }}/ov_cache
         
     steps:
       - name: Clone openvino.genai
@@ -584,10 +579,9 @@ jobs:
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
         
       - name: Test C++ Tools
-        run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
+        run: python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
+          DYLD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$DYLD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
           
   genai_nodejs_tests:
@@ -614,7 +608,7 @@ jobs:
       - name: Download OpenVINO Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: ${{ needs.openvino_download.outputs.ov_latest_artifact_name }}
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
