@@ -10,7 +10,7 @@ from test_utils import run_sample
 
 class TestBenchmarkGenAI:
     @pytest.mark.llm
-    @pytest.mark.xfail("CVS-165581")
+    @pytest.mark.xfail(reason="CVS-165581")
     @pytest.mark.samples
     @pytest.mark.parametrize(
         "convert_model, prompt, sample_args",
