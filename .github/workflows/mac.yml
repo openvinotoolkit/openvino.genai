@@ -120,7 +120,7 @@ jobs:
         run: ccache --show-stats
 
       - name: Save ccache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
@@ -221,7 +221,7 @@ jobs:
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Save ccache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
