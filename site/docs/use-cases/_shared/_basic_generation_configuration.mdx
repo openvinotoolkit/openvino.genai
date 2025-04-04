@@ -1,12 +1,5 @@
 #### Basic Generation Configuration
 
-1. Get the model default config with `get_generation_config()`
-2. Modify parameters
-3. Apply the updated config using one of the following methods:
-    - Use `set_generation_config(config)`
-    - Pass config directly to `generate()` (e.g. `generate(prompt, config)`)
-    - Specify options as inputs in the `generate()` method (e.g. `generate(prompt, max_new_tokens=100)`)
-
 {/* Python and C++ code examples */}
 {props.children}
 
@@ -21,6 +14,6 @@
 - `top_p`: Selects from the smallest set of tokens whose cumulative probability exceeds p. Helps balance diversity and quality.
 - `repetition_penalty`: Reduces the likelihood of repeating tokens. Values above 1.0 discourage repetition.
 
-For the full list of generation parameters, refer to the [API reference](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.GenerationConfig.html#openvino-genai-generationconfig).
+For the full list of generation parameters, refer to the [Generation Config API](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.GenerationConfig.html#openvino-genai-generationconfig).
 
 :::
