@@ -23,7 +23,7 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface
-  OV_CACHE: C:/mount/caches/huggingface/ov_cache/${{ format('yyyy-MM-dd', github.event.created_at) }}
+  OV_CACHE: C:/mount/caches/huggingface/ov_cache
 
 jobs:
   openvino_download:
