@@ -93,7 +93,7 @@ jobs:
           cache: 'pip'
 
       - name: Install build dependencies
-        run: brew install coreutils ninja ccache
+        run: brew install coreutils ccache
 
       - name: Setup ccache
         id: ccache-restore
