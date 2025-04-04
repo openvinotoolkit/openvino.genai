@@ -190,6 +190,7 @@ jobs:
     runs-on: aks-win-8-cores-16gb
     env:
       CMAKE_GENERATOR: 'Ninja' # Ninja is the only generator supported by ccache
+      CMAKE_GENERATOR_PLATFORM: ""
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
