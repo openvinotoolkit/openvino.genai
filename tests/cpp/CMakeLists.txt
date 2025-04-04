@@ -4,6 +4,7 @@
 
 if(NOT TARGET gtest)
   set(INSTALL_GTEST OFF CACHE BOOL "")
+  set(BUILD_SHARED_LIBS OFF)
   
   FetchContent_Declare(
     googletest
@@ -22,8 +23,6 @@ endif()
 file(GLOB tests_src "*.cpp")
 
 set(TEST_TARGET_NAME "tests_continuous_batching")
-
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "")
 
 add_executable(${TEST_TARGET_NAME} ${tests_src} $<TARGET_OBJECTS:openvino_genai_obj>)
 
