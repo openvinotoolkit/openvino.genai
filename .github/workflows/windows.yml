@@ -65,7 +65,7 @@ jobs:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
-      CMAKE_GENERATOR: 'Ninja'
+      CMAKE_GENERATOR: 'Ninja' # Ninja is the only generator supported by ccache
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       GENAI_INSTALL_DIR: ${{ github.workspace }}\install\genai
       INSTALL_TOOLS_DIR: ${{ github.workspace }}\tools
@@ -97,7 +97,7 @@ jobs:
       # Build
       #
 
-      - name: Install build dependencies
+      - name: Download and install ninja
         run: |
           Invoke-WebRequest https://github.com/ninja-build/ninja/releases/download/v1.11.1/ninja-win.zip -OutFile ninja-win.zip -MaximumRetryCount 10
           Expand-Archive -Force ninja-win.zip
@@ -189,6 +189,7 @@ jobs:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
+      CMAKE_GENERATOR: 'Ninja' # Ninja is the only generator supported by ccache
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
@@ -215,6 +216,13 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
+          
+      - name: Download and install ninja
+        run: |
+          Invoke-WebRequest https://github.com/ninja-build/ninja/releases/download/v1.11.1/ninja-win.zip -OutFile ninja-win.zip -MaximumRetryCount 10
+          Expand-Archive -Force ninja-win.zip
+          # Add it to the GitHub Path so it would be available in the subsequent steps
+          Add-Content -Path $env:GITHUB_PATH -Value "${{ github.workspace }}/ninja-win"
 
       - name: Download and install ccache
         run: |
