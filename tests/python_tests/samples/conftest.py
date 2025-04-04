@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 MODELS = {
     "TinyLlama-1.1B-Chat-v1.0": { 
         "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        "convert_args": []
+        "convert_args": ['--weight-format', 'fp16']
     },
     "SmolLM-135M": {
         "name": "HuggingFaceTB/SmolLM-135M",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ['--trust-remote-code']
     },
     "SmolLM2-135M": {
         "name": "HuggingFaceTB/SmolLM2-135M",
@@ -36,15 +36,15 @@ MODELS = {
     },  
     "WhisperTiny": {
         "name": "openai/whisper-tiny",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "Qwen2.5-0.5B-Instruct": {
         "name": "Qwen/Qwen2.5-0.5B-Instruct",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ['--trust-remote-code']
     },
     "Qwen2-0.5B-Instruct": {
         "name": "Qwen/Qwen2-0.5B-Instruct",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ['--trust-remote-code']
     },
     "phi-1_5": {
         "name": "microsoft/phi-1_5",
@@ -52,7 +52,7 @@ MODELS = {
     },
     "TinyStories-1M": {
         "name": "roneneldan/TinyStories-1M",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ['--trust-remote-code']
     },
     "dreamlike-anime-1.0": {
         "name": "dreamlike-art/dreamlike-anime-1.0",
@@ -64,11 +64,11 @@ MODELS = {
     },   
     "llava-1.5-7b-hf": {
         "name": "llava-hf/llava-1.5-7b-hf",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },    
     "llava-v1.6-mistral-7b-hf": {
         "name": "llava-hf/llava-v1.6-mistral-7b-hf",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "dreamlike-anime-1.0": {
         "name": "dreamlike-art/dreamlike-anime-1.0",
@@ -84,11 +84,11 @@ MODELS = {
     },
     "InternVL2-1B": {
         "name": "OpenGVLab/InternVL2-1B",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "Qwen2-VL-2B-Instruct": {
         "name": "Qwen/Qwen2-VL-2B-Instruct",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "tiny-dummy-qwen2": {
         "name": "fxmarty/tiny-dummy-qwen2",
