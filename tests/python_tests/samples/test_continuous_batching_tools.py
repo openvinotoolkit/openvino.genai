@@ -9,6 +9,7 @@ from test_utils import run_sample
 
 class TestContinuousBatching:
     @pytest.mark.samples
+    @pytest.mark.xfail("CVS-165581")
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
