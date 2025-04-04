@@ -377,8 +377,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     }
     ov::Tensor position_ids = prepare_vis_position_ids(pixel_values, patch_attention_mask, tgt_sizes, patch_size, ctx_clip.image_size / patch_size);
     encoder.set_tensor("position_ids", position_ids);
-    encoder.start_async();
-    encoder.wait();
+    encoder.infer();
     const ov::Tensor& output_tensor = encoder.get_output_tensor();
 
     if (1 == preprocessed.size()) {
@@ -730,8 +729,7 @@ ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image, const
     resampler.set_tensor("image_feature", encoded_image);  // [N, H*W, old_hidden_size]
     resampler.set_tensor("pos_embed", pos_embed);  // [H*W, N, new_hidden_size]
     resampler.set_tensor("key_padding_mask", key_padding_mask);  // [N, H*W]
-    resampler.start_async();
-    resampler.wait();
+    resampler.infer();
     auto resampler_out = resampler.get_output_tensor();
     // resampler_out is bound to infer request and the data may become corrupted after next resampler inference 
     // so we need to return a copy to make sure data does not get corrupted 
