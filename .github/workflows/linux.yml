@@ -54,7 +54,7 @@ jobs:
       id: openvino_download
       with:
         platform: ubuntu22
-        commit_packages_to_provide: wheels,openvino_js_package.tar.gz
+        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_js_package.tar.gz
         revision: latest_available_commit
 
     - name: Clone docker tag from OpenVINO repo
@@ -116,7 +116,7 @@ jobs:
       - name: CMake Build
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR}} -B ${{ env.BUILD_DIR }}
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR}} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
@@ -170,6 +170,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
       SRC_DIR: ${{ github.workspace }}/src
+      OpenVINODeveloperPackage_DIR: ${{ github.workspace }}/ov/developer_package/cmake
 
     steps:
       - name: Clone openvino.genai
