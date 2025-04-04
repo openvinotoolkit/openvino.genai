@@ -1,0 +1,19 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="cpp" showLineNumbers>
+{`#include "openvino/genai/whisper_pipeline.hpp"
+#include "audio_utils.hpp"
+#include <iostream>
+
+int main(int argc, char* argv[]) {
+    std::filesystem::path models_path = argv[1];
+    std::string wav_file_path = argv[2];
+
+    ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
+
+    ov::genai::WhisperPipeline pipe(models_path, "${props.device || 'CPU'}");
+    auto result = pipe.generate(raw_speech, ov::genai::max_new_tokens(100));
+    std::cout << result << std::endl;
+}
+`}
+</CodeBlock>
