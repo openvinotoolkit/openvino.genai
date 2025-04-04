@@ -23,7 +23,7 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface
-  OV_CACHE: C:/mount/caches/huggingface/ov_cache
+  OV_CACHE: C:/mount/caches/huggingface/ov_cache/${{ format('yyyy-MM-dd', github.event.created_at) }}
 
 jobs:
   openvino_download:
@@ -71,7 +71,7 @@ jobs:
       INSTALL_TESTS_DIR: ${{ github.workspace }}\tests
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
-      CCACHE_DIR: ${{ github.workspace }}\ccache
+      CCACHE_DIR: ${{ github.workspace }}\\ccache
 
     steps:
       - name: Clone genai
@@ -120,7 +120,9 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
             
       - name: Clean ccache stats
-        run: ccache --zero-stats --show-config
+        run: |
+          ccache -p
+          ccache --zero-stats --show-config
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
