@@ -1,0 +1,260 @@
+import BasicGenerationConfiguration from '@site/docs/use-cases/_shared/_basic_generation_configuration.mdx';
+import BeamSearchGeneration from '@site/docs/use-cases/_shared/_beam_search_generation.mdx';
+import GenerationConfigurationWorkflow from '@site/docs/use-cases/_shared/_generation_configuration_workflow.mdx';
+import Streaming from '@site/docs/use-cases/_shared/_streaming.mdx';
+
+## Additional Usage Options
+
+:::tip
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/whisper_speech_recognition) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/whisper_speech_recognition) Whisper speech recognition samples.
+:::
+
+### Use Different Generation Parameters
+
+<GenerationConfigurationWorkflow />
+
+<BasicGenerationConfiguration>
+  <LanguageTabs>
+      <TabItemPython>
+          ```python
+          import openvino_genai as ov_genai
+
+          pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+
+          # Get default configuration
+          config = pipe.get_generation_config()
+
+          # Modify parameters
+          config.max_new_tokens = 100
+          config.temperature = 0.7
+          config.top_k = 50
+          config.top_p = 0.9
+          config.repetition_penalty = 1.2
+
+          # Generate text with custom configuration
+          result = pipe.generate(raw_speech, config)
+          ```
+      </TabItemPython>
+      <TabItemCpp>
+          ```cpp
+          int main() {
+              ov::genai::WhisperPipeline pipe(model_path, "CPU");
+
+              // Get default configuration
+              auto config = pipe.get_generation_config();
+
+              // Modify parameters
+              config.max_new_tokens = 100;
+              config.temperature = 0.7f;
+              config.top_k = 50;
+              config.top_p = 0.9f;
+              config.repetition_penalty = 1.2f;
+
+              // Generate text with custom configuration
+              auto result = pipe.generate(raw_speech, config);
+          }
+          ```
+      </TabItemCpp>
+  </LanguageTabs>
+</BasicGenerationConfiguration>
+
+<BeamSearchGeneration>
+  <LanguageTabs>
+      <TabItemPython>
+          ```python
+          import openvino_genai as ov_genai
+
+          pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+
+          # Get default generation config
+          config = pipe.get_generation_config()
+
+          # Modify parameters
+          config.max_new_tokens = 256
+          config.num_beams = 15
+          config.num_beam_groups = 3
+          config.diversity_penalty = 1.0
+
+          # Generate text with custom configuration
+          result = pipe.generate(raw_speech, config)
+          ```
+      </TabItemPython>
+      <TabItemCpp>
+          ```cpp
+          int main() {
+              ov::genai::WhisperPipeline pipe(model_path, "CPU");
+
+              // Get default generation config
+              ov::genai::GenerationConfig config = pipe.get_generation_config();
+
+              // Modify parameters
+              config.max_new_tokens = 256;
+              config.num_beams = 15;
+              config.num_beam_groups = 3;
+              config.diversity_penalty = 1.0f;
+
+              // Generate text with custom configuration
+              auto result = pipe.generate(raw_speech, config);
+          }
+          ```
+      </TabItemCpp>
+  </LanguageTabs>
+</BeamSearchGeneration>
+
+### Transcription
+
+Whisper models can automatically detect the language of the input audio, or you can specify the language to improve accuracy:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+
+        # Automatic language detection
+        raw_speech = read_wav("speech_sample.wav")
+        result = pipe.generate(raw_speech)
+
+        # Explicitly specify language (English)
+        result = pipe.generate(raw_speech, language="<|en|>")
+
+        # French speech sample
+        raw_speech = read_wav("french_sample.wav")
+        result = pipe.generate(raw_speech, language="<|fr|>")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        int main() {
+            ov::genai::WhisperPipeline pipe(model_path, "CPU");
+
+            // Automatic language detection
+            auto result = pipe.generate(raw_speech);
+
+            // Explicitly specify language (English)
+            result = pipe.generate(raw_speech, ov::genai::language("<|en|>"));
+
+            // French speech sample
+            raw_speech = utils::audio::read_wav("french_sample.wav");
+            result = pipe.generate(raw_speech, ov::genai::language("<|fr|>"));
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+### Translation
+
+By default, Whisper performs transcription, keeping the output in the same language as the input.
+To translate non-English speech to English, use the `translate` task:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+
+        # Translate French audio to English
+        raw_speech = read_wav("french_sample.wav")
+        result = pipe.generate(raw_speech, task="translate")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        int main() {
+            ov::genai::WhisperPipeline pipe(model_path, "CPU");
+
+            // Translate French audio to English
+            raw_speech = utils::audio::read_wav("french_sample.wav");
+            result = pipe.generate(raw_speech, ov::genai::task("translate"));
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+### Timestamps Prediction
+
+Whisper can predict timestamps for each segment of speech, which is useful for synchronization or creating subtitles:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+
+        # Enable timestamp prediction
+        result = pipe.generate(raw_speech, return_timestamps=True)
+
+        # Print timestamps and text segments
+        for chunk in result.chunks:
+            print(f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        int main() {
+            ov::genai::WhisperPipeline pipe(model_path, "CPU");
+
+            // Enable timestamp prediction
+            result = pipe.generate(raw_speech, ov::genai::return_timestamps(true));
+
+            // Print timestamps and text segments
+            for (auto& chunk : *result.chunks) {
+                std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts
+                          << "] text: " << chunk.text << "\n";
+            }
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+### Long-Form Audio Processing
+
+Whisper models are designed for audio segments up to 30 seconds in length.
+For longer audio, the OpenVINO GenAI Whisper pipeline automatically handles the processing using a sequential chunking algorithm ("sliding window"):
+
+1. The audio is divided into 30-second segments
+2. Each segment is processed sequentially
+3. Results are combined to produce the complete transcription
+
+This happens automatically when you input longer audio files.
+
+### Using Initial Prompts and Hotwords
+
+You can improve transcription quality and guide the model's output style by providing initial prompts or hotwords using the following parameters:
+
+- `initial_prompt`: initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing window.
+- `hotwords`: hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+
+Whisper models can use that context to better understand the speech and maintain a consistent writing style.
+However, prompts do not need to be genuine transcripts from prior audio segments.
+Such prompts can be used to steer the model to use particular spellings or styles:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+
+        result = pipe.generate(raw_speech)
+        # He has gone and gone for good answered Paul Icrom who...
+
+        result = pipe.generate(raw_speech, initial_prompt="Polychrome")
+        # He has gone and gone for good answered Polychrome who...
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        int main() {
+            ov::genai::WhisperPipeline pipe(model_path, "CPU");
+
+            auto result = pipeline.generate(raw_speech);
+            // He has gone and gone for good answered Paul Icrom who...
+
+            result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+            // He has gone and gone for good answered Polychrome who...
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+:::info
+For the full list of Whisper generation parameters, refer to the [Whisper Generation Config API](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.WhisperGenerationConfig.html).
+:::
+
+<Streaming />
