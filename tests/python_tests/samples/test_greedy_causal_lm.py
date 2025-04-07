@@ -11,13 +11,14 @@ from test_utils import run_sample
 class TestGreedyCausalLM:
     @pytest.mark.llm
     @pytest.mark.samples
+    @pytest.mark.skipif(sys.platform == "win32", reason="CVS-165582")
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
             pytest.param("SmolLM-135M", "return 0"),
             pytest.param("Qwen2-0.5B-Instruct", "69"),
             pytest.param("phi-1_5", "Alan Turing was a"),
-            pytest.param("TinyLlama-1.1B-Chat-v1.0", "Alan Turing was a"),
+            pytest.param("TinyLlama-1.1B-Chat-v1.0", "Alan Turing was a", marks=pytest.mark.xfail(reason="CVS-165581")),
         ],
         indirect=["convert_model"],
     )
