@@ -356,10 +356,9 @@ public:
         if (pos > 0) {
             generated_ids_embeds = m_embedding->infer(generated_ids);
             generated_ids_embeds_data = generated_ids_embeds.data<float>();
-
+            size_t embeds_pos = 0;
             for (size_t i = 0; i < num_sequence_groups; ++i) {
                 size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-                size_t embeds_pos = 0;
                 SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
                 for (auto seq: sequence_group->get_running_sequences()) {
                     auto generated_ids = seq->get_generated_ids();
