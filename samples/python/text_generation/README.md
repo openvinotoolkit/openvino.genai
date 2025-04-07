@@ -138,13 +138,8 @@ LLMPipeline and Tokenizer objects can be initialized directly from the memory bu
 - **Main Feature:** Read model directly from memory buffer
 - **Run Command:**
   ```bash
-  python encrypted_model_causal_lm.py [-h] -m MODEL -p PROMPT [-d DEVICE] [-c CACHE_DIR]
+  python encrypted_model_causal_lm.py model_dir prompt
   ```
-  #### Options
-- `-m, --model`: Path to model and tokenizers base directory.
-- `-p, --prompt` Prompt.
-- `-d, --device` Device (default: `CPU`)
-- `-c, --cache_dir` Path to cache dir (optional).
 
 ### 9. LLMs benchmarking sample (`benchmark_genai`)
 - **Description:** 

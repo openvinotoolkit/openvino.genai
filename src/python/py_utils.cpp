@@ -94,6 +94,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return {};
     } else if (py::isinstance<py::list>(py_obj)) {
         if (property_name == ov::cache_encryption_callbacks.name()) {
+            // this impl is based on OpenVINO python bindings impl.
             auto property_list = py_obj.cast<py::list>();
             // Wrapped to sp due-to we need to hold GIL upon destruction of python function
             auto py_encrypt = std::shared_ptr<py::function>(new py::function(std::move(property_list[0])),

@@ -146,13 +146,8 @@ The sample also demonstrates how to enable user defined encryption for plugin ca
 - **Main Feature:** Read model directly from memory buffer
 - **Run Command:**
   ```bash
-  ./encrypted_model_causal_lm [OPTION...]
+  ./encrypted_model_causal_lm <MODEL_DIR> "<PROMPT>"
   ```
-  #### Options
-- `-m, --model`: Path to model and tokenizers base directory.
-- `-p, --prompt` Prompt.
-- `-d, --device` Device (default: `CPU`)
-- `-c, --cache_dir` Path to cache dir (optional).
 
 ### 9. LLMs benchmarking sample (`benchmark_genai`)
 - **Description:** 

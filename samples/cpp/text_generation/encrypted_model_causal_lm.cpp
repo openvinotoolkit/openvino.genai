@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <fstream>
-#include <cxxopts.hpp>
 
 #include "openvino/genai/llm_pipeline.hpp"
 
@@ -61,54 +60,34 @@ std::string decryption_callback(const std::string& source_str) {
     return codec_xor(source_str);
 }
 
-auto get_config_for_cache_encryption(const std::string& cache_dir, bool gpu) {
+auto get_config_for_cache_encryption() {
     ov::AnyMap config;
-    config.insert(ov::cache_dir(cache_dir));
+    config.insert({ov::cache_dir("llm_cache")});
     ov::EncryptionCallbacks encryption_callbacks;
     //use XOR-based encryption as an example
     encryption_callbacks.encrypt = encryption_callback;
     encryption_callbacks.decrypt = decryption_callback;
     config.insert(ov::cache_encryption_callbacks(encryption_callbacks));
-    if (gpu) {
-        //set ov::CacheMode::OPTIMIZE_SIZE only for GPU to enable weightless cache
-        config.insert(ov::cache_mode(ov::CacheMode::OPTIMIZE_SIZE));
-    }
+    //set ov::CacheMode::OPTIMIZE_SIZE only for GPU to enable weightless cache
+    config.insert(ov::cache_mode(ov::CacheMode::OPTIMIZE_SIZE));
     return config;
 }
 
 int main(int argc, char* argv[]) try {
-    cxxopts::Options options("encrypted_model_causal_lm", "Help command");
+    if (3 > argc)
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> \"<PROMPT>\"");
 
-    options.add_options()
-    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())
-    ("p,prompt", "Prompt", cxxopts::value<std::string>())
-    ("d,device", "Device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("c,cache_dir", "Path to cache dir (optional)", cxxopts::value<std::string>())
-    ("h,help", "Print usage");
+    std::string models_path = argv[1];
+    std::string prompt = argv[2];
 
-    cxxopts::ParseResult parsed_result;
-    try {
-        parsed_result = options.parse(argc, argv);
-    } catch (const cxxopts::exceptions::exception& e) {
-        std::cout << e.what() << "\n\n";
-        std::cout << options.help() << std::endl;
-        return EXIT_FAILURE;
-    }
+    std::string device = "CPU";  // GPU, NPU can be used as well
 
-    if (parsed_result.count("help")) {
-        std::cout << options.help() << std::endl;
-        return EXIT_SUCCESS;
-    }
-
-    auto device = parsed_result["device"].as<std::string>();
-    auto models_path = parsed_result["model"].as<std::string>();
-    auto prompt = parsed_result["prompt"].as<std::string>();
     ov::AnyMap config;
-    if (parsed_result.count("cache_dir")) {
-        //enable model caching only if path to cache directory is provided.
-        auto cache_dir = parsed_result["cache_dir"].as<std::string>();
-        config = std::move(get_config_for_cache_encryption(cache_dir, device.compare("GPU") == 0));
-    }
+    if (device == "GPU") {
+        // Cache compiled models on disk for GPU to save time on the
+        // next run. It's not beneficial for CPU.
+        config = get_config_for_cache_encryption();
+    } 
 
     auto [model_str, model_weights] = decrypt_model(models_path + "/openvino_model.xml", models_path + "/openvino_model.bin");
     ov::genai::Tokenizer tokenizer = decrypt_tokenizer(models_path);

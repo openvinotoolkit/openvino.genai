@@ -41,30 +41,30 @@ def encrypt_base64(src: bytes):
 def decrypt_base64(src: bytes):
     return base64.b64decode(src)
 
-def get_config_for_cache_encryption(cache_dir, is_gpu):
+def get_config_for_cache_encryption():
     config_cache = dict()
-    config_cache["CACHE_DIR"] = cache_dir
+    config_cache["CACHE_DIR"] = "llm_cache"
     config_cache["CACHE_ENCRYPTION_CALLBACKS"] = [encrypt_base64, decrypt_base64]
-    if is_gpu:
-        # set CACHE_MODE to OPTIMIZE_SIZE only for GPU to enable weightless cache
-        config_cache["CACHE_MODE"] = "OPTIMIZE_SIZE"
+    # set CACHE_MODE to OPTIMIZE_SIZE only for GPU to enable weightless cache
+    config_cache["CACHE_MODE"] = "OPTIMIZE_SIZE"
     return config_cache
 
 def main():
-    parser = argparse.ArgumentParser(description="Help command")
-    parser.add_argument("-m", "--model", type=str, required=True, help="Path to model and tokenizers base directory")
-    parser.add_argument("-p", "--prompt", type=str, required=True, help="Prompt")
-    parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
-    parser.add_argument("-c", "--cache_dir", type=str, help="Path to cache dir (optional)")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('model_dir')
+    parser.add_argument('prompt')
     args = parser.parse_args()
+
+    device = args.device
 
     model, weights = decrypt_model(args.model, 'openvino_model.xml', 'openvino_model.bin')
     tokenizer = read_tokenizer(args.model)
 
-    device = args.device
     config = dict()
-    if args.cache_dir is not None:
-        config = get_config_for_cache_encryption(args.cache_dir, device == 'GPU')
+    if device is "GPU":
+        # Cache compiled models on disk for GPU to save time on the
+        # next run. It's not beneficial for CPU.
+        config = get_config_for_cache_encryption()
 
     pipe = openvino_genai.LLMPipeline(model, weights, tokenizer, device, **config)
 
