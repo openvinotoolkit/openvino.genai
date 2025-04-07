@@ -136,8 +136,7 @@ EncodedImage VisionEncoderInternVLChat::encode(const ov::Tensor& image, const ov
     ov::Tensor pixel_values = get_pixel_values_internvl(image, config);
 
     encoder.set_tensor("pixel_values", pixel_values);
-    encoder.start_async();
-    encoder.wait();
+    encoder.infer();
 
     const ov::Tensor& infer_output = encoder.get_output_tensor();
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());

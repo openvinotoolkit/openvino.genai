@@ -1,15 +1,20 @@
 import BasicGenerationConfiguration from '@site/docs/use-cases/_shared/_basic_generation_configuration.mdx';
+import BeamSearchGeneration from '@site/docs/use-cases/_shared/_beam_search_generation.mdx';
+import GenerationConfigurationWorkflow from '@site/docs/use-cases/_shared/_generation_configuration_workflow.mdx';
 
 ### Use Different Generation Parameters
 
 Fine-tune your LLM's output by adjusting various generation parameters.
 OpenVINO GenAI supports multiple sampling strategies and generation configurations to help you achieve the desired balance between deterministic and creative outputs.
 
+<GenerationConfigurationWorkflow />
+
 <BasicGenerationConfiguration>
   <LanguageTabs>
       <TabItemPython>
           ```python
           import openvino_genai as ov_genai
+
           pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
           # Get default configuration
@@ -23,7 +28,7 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
           config.repetition_penalty = 1.2
 
           # Generate text with custom configuration
-          output = pipe.generate("The Sun is yellow because", config)
+          output = pipe.generate(prompt, config)
           ```
       </TabItemPython>
       <TabItemCpp>
@@ -42,65 +47,53 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
               config.repetition_penalty = 1.2f;
 
               // Generate text with custom configuration
-              auto output = pipe.generate("The Sun is yellow because", config);
+              auto output = pipe.generate(prompt, config);
           }
           ```
       </TabItemCpp>
   </LanguageTabs>
 </BasicGenerationConfiguration>
 
-#### Optimizing Generation with Grouped Beam Search
+<BeamSearchGeneration>
+  <LanguageTabs>
+      <TabItemPython>
+          ```python
+          import openvino_genai as ov_genai
 
-Beam search helps explore multiple possible text completions simultaneously, often leading to higher quality outputs.
+          pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
-<LanguageTabs>
-    <TabItemPython>
-        ```python
-        import openvino_genai as ov_genai
-        pipe = ov_genai.LLMPipeline(model_path, "CPU")
+          # Get default generation config
+          config = pipe.get_generation_config()
 
-        # Get default generation config
-        config = pipe.get_generation_config()
+          # Modify parameters
+          config.max_new_tokens = 256
+          config.num_beams = 15
+          config.num_beam_groups = 3
+          config.diversity_penalty = 1.0
 
-        # Modify parameters
-        config.max_new_tokens = 256
-        config.num_beams = 15
-        config.num_beam_groups = 3
-        config.diversity_penalty = 1.0
+          # Generate text with custom configuration
+          output = pipe.generate(prompt, config)
+          ```
+      </TabItemPython>
+      <TabItemCpp>
+          ```cpp
+          int main(int argc, char* argv[]) {
+              std::string model_path = argv[1];
+              ov::genai::LLMPipeline pipe(model_path, "CPU");
 
-        # Generate text with custom configuration
-        print(pipe.generate("The Sun is yellow because", config))
-        ```
-    </TabItemPython>
-    <TabItemCpp>
-        ```cpp
-        int main(int argc, char* argv[]) {
-            std::string model_path = argv[1];
-            ov::genai::LLMPipeline pipe(model_path, "CPU");
+              // Get default generation config
+              ov::genai::GenerationConfig config = pipe.get_generation_config();
 
-            // Get default generation config
-            ov::genai::GenerationConfig config = pipe.get_generation_config();
+              // Modify parameters
+              config.max_new_tokens = 256;
+              config.num_beams = 15;
+              config.num_beam_groups = 3;
+              config.diversity_penalty = 1.0f;
 
-            // Modify parameters
-            config.max_new_tokens = 256;
-            config.num_beams = 15;
-            config.num_beam_groups = 3;
-            config.diversity_penalty = 1.0f;
-
-            // Generate text with custom configuration
-            cout << pipe.generate("The Sun is yellow because", config);
-        }
-        ```
-    </TabItemCpp>
-</LanguageTabs>
-
-:::info Understanding Beam Search Generation Parameters
-
-- `max_new_tokens`: The maximum numbers of tokens to generate, excluding the number of tokens in the prompt. `max_new_tokens` has priority over `max_length`.
-- `num_beams`: The number of beams for beam search. 1 disables beam search.
-- `num_beam_groups`: The number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
-- `diversity_penalty`: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
-
-For the full list of generation parameters, refer to the [API reference](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.GenerationConfig.html#openvino-genai-generationconfig).
-
-:::
+              // Generate text with custom configuration
+              auto output = pipe.generate(prompt, config);
+          }
+          ```
+      </TabItemCpp>
+  </LanguageTabs>
+</BeamSearchGeneration>
