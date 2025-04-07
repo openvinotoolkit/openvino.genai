@@ -36,6 +36,7 @@ class TestBeamSearchCausalLM:
 
     @pytest.mark.llm
     @pytest.mark.samples
+    @pytest.mark.skipif(sys.platform == "win32", reason="CVS-165582")
     @pytest.mark.parametrize("convert_model", ["SmolLM2-135M"], indirect=True)
     @pytest.mark.parametrize("sample_args",
         [
