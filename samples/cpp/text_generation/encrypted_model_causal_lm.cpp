@@ -57,7 +57,6 @@ auto get_config_for_cache_encryption() {
     encryption_callbacks.encrypt = encryption_callback;
     encryption_callbacks.decrypt = decryption_callback;
     config.insert(ov::cache_encryption_callbacks(encryption_callbacks));
-    //set ov::CacheMode::OPTIMIZE_SIZE only for GPU to enable weightless cache
     config.insert(ov::cache_mode(ov::CacheMode::OPTIMIZE_SIZE));
     return config;
 }

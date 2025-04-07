@@ -45,7 +45,6 @@ def get_config_for_cache_encryption():
     config_cache = dict()
     config_cache["CACHE_DIR"] = "llm_cache"
     config_cache["CACHE_ENCRYPTION_CALLBACKS"] = [encrypt_base64, decrypt_base64]
-    # set CACHE_MODE to OPTIMIZE_SIZE only for GPU to enable weightless cache
     config_cache["CACHE_MODE"] = "OPTIMIZE_SIZE"
     return config_cache
 
