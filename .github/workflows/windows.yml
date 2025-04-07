@@ -189,12 +189,12 @@ jobs:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
-      OV_INSTALL_DIR: D:\a\ov
-      SRC_DIR: D:\a\src
-      BUILD_DIR: D:\a\b
-      INSTALL_DIR: D:\a\genai
-      WHEELS_DIR: D:\a\genai\wheels
-      CCACHE_DIR: D:\a\ccache
+      OV_INSTALL_DIR: ${{ github.workspace }}\ov
+      SRC_DIR: ${{ github.workspace }}\src
+      BUILD_DIR: ${{ github.workspace }}\build
+      INSTALL_DIR: ${{ github.workspace }}\genai
+      WHEELS_DIR: ${{ github.workspace }}\genai\wheels
+      CCACHE_DIR: ${{ github.workspace }}\ccache
 
     steps:
       - name: Clone openvino.genai
