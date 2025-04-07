@@ -83,8 +83,7 @@ ov::Tensor EmbeddingsModel::infer(const ov::Tensor& input_idx, bool return_remot
     } else {
         req.ireq.set_output_tensor(req.cpu_tensor);
     }
-    req.ireq.start_async();
-    req.ireq.wait();
+    req.ireq.infer();
     return req.ireq.get_output_tensor();
 }
 

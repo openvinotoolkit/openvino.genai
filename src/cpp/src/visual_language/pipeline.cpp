@@ -80,9 +80,7 @@ public:
         if (m_is_npu) {
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
-            std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
-                language_model, lm_properties, kv_pos, language_model_path
-            );
+            std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
         } else {
             auto device_config = lm_properties;
