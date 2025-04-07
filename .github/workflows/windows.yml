@@ -252,11 +252,9 @@ jobs:
         
       - name: Build Tokenizers Wheel
         run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} --config-settings=override=cmake.generator='Ninja' `
+          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} --config-settings=override=cmake.generator='Ninja' --build_path='D:\a\b'`
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
-        env:
-          CMAKE_BUILD_DIR: 'D:\a\b' # w/a for long path issue
         working-directory: ${{ env.OV_INSTALL_DIR }}
         
       - name: Build genai wheel
