@@ -254,7 +254,7 @@ jobs:
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
             --config-settings=override=cmake.generator='Ninja' `
-            --config-settings=override=cmake.build_path='D:\a\b' `
+            --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}' `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
@@ -262,10 +262,10 @@ jobs:
       - name: Build genai wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
+            --config-settings=override=cmake.generator='Ninja' `
+            --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}' `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}
-        env:
-          CMAKE_BUILD_DIR: 'D:\a\b' # w/a for long path issue
         working-directory: ${{ env.OV_INSTALL_DIR }}
         
       - name: Build WWB Wheel
