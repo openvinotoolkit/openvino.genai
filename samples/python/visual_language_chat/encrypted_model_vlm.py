@@ -12,6 +12,7 @@ from openvino import Tensor
 from pathlib import Path
 import typing
 
+
 def decrypt_model(model_dir, model_file_name, weights_file_name):
     with open(model_dir + '/' + model_file_name, "r") as file:
         model = file.read()
@@ -24,6 +25,7 @@ def decrypt_model(model_dir, model_file_name, weights_file_name):
 
     return model, Tensor(weights)
 
+
 def read_tokenizer(model_dir):
     tokenizer_model_name = 'openvino_tokenizer.xml'
     tokenizer_weights_name = 'openvino_tokenizer.bin'
@@ -34,6 +36,7 @@ def read_tokenizer(model_dir):
     detokenizer_model, detokenizer_weights = decrypt_model(model_dir, detokenizer_model_name, detokenizer_weights_name)
 
     return openvino_genai.Tokenizer(tokenizer_model, tokenizer_weights, detokenizer_model, detokenizer_weights)
+
 
 def streamer(subword: str) -> bool:
     '''
@@ -69,6 +72,7 @@ def read_images(path: str) -> list[Tensor]:
     if entry.is_dir():
         return [read_image(str(file)) for file in sorted(entry.iterdir())]
     return [read_image(path)]
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -106,6 +110,7 @@ def main():
     rgbs = read_images(args.image_dir)
 
     pipe.generate(args.prompt, images=rgbs, generation_config=config, streamer=streamer)
+
 
 if '__main__' == __name__:
     main()
