@@ -1,0 +1,17 @@
+#### Optimizing Generation with Grouped Beam Search
+
+Beam search helps explore multiple possible text completions simultaneously, often leading to higher quality outputs.
+
+{/* Python and C++ code examples */}
+{props.children}
+
+:::info Understanding Beam Search Generation Parameters
+
+- `max_new_tokens`: The maximum numbers of tokens to generate, excluding the number of tokens in the prompt. `max_new_tokens` has priority over `max_length`.
+- `num_beams`: The number of beams for beam search. 1 disables beam search.
+- `num_beam_groups`: The number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
+- `diversity_penalty`: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
+
+For the full list of generation parameters, refer to the [Generation Config API](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.GenerationConfig.html#openvino-genai-generationconfig).
+
+:::
