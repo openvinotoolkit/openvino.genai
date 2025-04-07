@@ -1,0 +1,21 @@
+---
+sidebar_position: 3
+---
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import ConvertModelSection from '../_shared/_convert_model.mdx';
+import RunModelSection from './_sections/_run_model/index.mdx';
+import UsageOptionsSection from './_sections/_usage_options/index.mdx';
+
+# Speech Recognition Using Whisper
+
+<ConvertModelSection>
+    Download and convert model (e.g. [openai/whisper-base](https://huggingface.co/openai/whisper-base)) to OpenVINO format from Hugging Face:
+
+    <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov' trustRemoteCode />
+
+    See all supported [Speech Recognition Models](/docs/supported-models/#speech-recognition-models-whisper-based).
+</ConvertModelSection>
+
+<RunModelSection />
+
+<UsageOptionsSection />

@@ -10,7 +10,7 @@ permissions: read-all
 jobs:
   Cleanup_OV_CACHE:
     name: Cleanup OV_CACHE
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-4-cores-16gb
     if: ${{ github.repository_owner == 'openvinotoolkit' }}
     container:
       image: openvinogithubactions.azurecr.io/dockerhub/ubuntu:20.04
