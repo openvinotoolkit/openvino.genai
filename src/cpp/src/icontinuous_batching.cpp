@@ -174,13 +174,22 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             prompt_with_tags = add_image_tags_to_prompt(prompt_with_tags, rgbs, m_history_images.size());
         }
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
+
+        auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+        std::cout << "encode time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end_get_inputs_embeds - start_get_inputs_embeds).count() << "ms" <<std::endl;
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
-        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0]));
+        auto start_get_embeds = std::chrono::steady_clock::now();
+        auto embeds = m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0]);
+        auto end_get_embeds = std::chrono::steady_clock::now();
+        std::cout << "get_inputs_embeds time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end_get_embeds - start_get_embeds).count() << "ms" <<std::endl;
+
+        input_embeds_list.push_back(embeds);
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];

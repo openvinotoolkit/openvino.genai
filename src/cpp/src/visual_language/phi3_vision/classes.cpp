@@ -254,23 +254,6 @@ std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& imag
     return {std::move(pixel_values), image_size};
 }
 
-} // namespace
-
-EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
-    ov::InferRequest& encoder = infer_request_guard.get();
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
-
-    const auto& [pixel_values, image_size] = get_pixel_values_phi3_v(image, config);
-    encoder.set_input_tensor(pixel_values);
-    ov::Tensor res{ov::element::f32, encoder.get_output_tensor().get_shape()};
-    encoder.set_output_tensor(res);
-    encoder.infer();
-    return {std::move(res), image_size};
-}
-
-namespace {
-
 // Reimplementation of python
 // N, L, C = image_features.shape
 // assert L == 24 * 24 and C == 1024 and N % (h_crop * w_crop) == 0
@@ -598,37 +581,93 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
 
 } // namespace
 
+EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+    ov::InferRequest& encoder = infer_request_guard.get();
+    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+
+    const auto& [pixel_values, image_size] = get_pixel_values_phi3_v(image, config);
+    encoder.set_input_tensor(pixel_values);
+    ov::Tensor res{ov::element::f32, encoder.get_output_tensor().get_shape()};
+    encoder.set_output_tensor(res);
+    encoder.infer();
+
+    EncodedImage encoded_image = {std::move(res), image_size};
+
+    CircularBufferQueueElementGuard<ov::InferRequest> hd_feature_transformer_ireq_guard(this->m_ireq_queue_hd_feature_transformer.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> vision_projection_ireq_guard(this->m_ireq_queue_vision_projection.get());
+    ov::InferRequest& hd_feature_transformer = hd_feature_transformer_ireq_guard.get();
+    ov::InferRequest& vision_projection = vision_projection_ireq_guard.get();
+    encoded_image.images_features_projection =  hd_feature_transform(encoded_image, hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, vision_projection);
+    return encoded_image;
+}
+
+VisionEncoderPhi3V::VisionEncoderPhi3V(
+    const std::filesystem::path& model_dir,
+    const std::string& device,
+    const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
+    auto compiled_model = create_hd_feature_transformer();
+    m_ireq_queue_hd_feature_transformer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+
+    compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
+    m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+    m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
+}
+
+VisionEncoderPhi3V::VisionEncoderPhi3V(
+    const ModelsMap& models_map,
+    const std::filesystem::path& config_dir_path,
+    const std::string& device,
+    const ov::AnyMap properties) : VisionEncoder(models_map, config_dir_path, device, properties) {
+    auto compiled_model = create_hd_feature_transformer();
+    m_ireq_queue_hd_feature_transformer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+
+    const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_projection").first;
+    const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_projection").second;
+    compiled_model = utils::singleton_core().compile_model(vision_encoder_model, vision_encoder_weights, device, properties);
+    m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+    m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
+}
+
 InputsEmbedderPhi3V::InputsEmbedderPhi3V(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap device_config
-) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-        auto compiled_model = create_hd_feature_transformer();
-        m_ireq_queue_hd_feature_transformer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-            compiled_model.get_property(ov::optimal_number_of_infer_requests),
-            [&compiled_model]() -> ov::InferRequest {
-                return compiled_model.create_infer_request();
-            });
+) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
 
-        compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
-        m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-            compiled_model.get_property(ov::optimal_number_of_infer_requests),
-            [&compiled_model]() -> ov::InferRequest {
-                return compiled_model.create_infer_request();
-            });
-    }
+
+InputsEmbedderPhi3V::InputsEmbedderPhi3V(
+    const VLMConfig& vlm_config,
+    const ModelsMap& models_map,
+    const Tokenizer& tokenizer,
+    const std::filesystem::path& config_dir_path,
+    const std::string& device,
+    const ov::AnyMap device_config) :
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
 ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
     size_t base_id = m_tokens_per_images.size();
     std::string image_prompt = normalize_prompt(prompt, base_id, images.size());
     std::vector<ov::Tensor> images_features_proj;
-    CircularBufferQueueElementGuard<ov::InferRequest> hd_feature_transformer_ireq_guard(this->m_ireq_queue_hd_feature_transformer.get());
-    CircularBufferQueueElementGuard<ov::InferRequest> vision_projection_ireq_guard(this->m_ireq_queue_vision_projection.get());
-    ov::InferRequest& hd_feature_transformer = hd_feature_transformer_ireq_guard.get();
-    ov::InferRequest& vision_projection = vision_projection_ireq_guard.get();
     for (const ov::genai::EncodedImage& encoded_image : images) {
-        images_features_proj.push_back(hd_feature_transform(encoded_image, hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, vision_projection));
+        images_features_proj.push_back(encoded_image.images_features_projection);
         m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
     }
     std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
