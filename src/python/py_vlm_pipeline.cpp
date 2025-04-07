@@ -190,7 +190,7 @@ void init_vlm_pipeline(py::module_& m) {
         py::arg("generation_config")  = std::nullopt, "generation config",
         R"(
             VLMPipeline class constructor.
-            models (typing.Dict[str, typing.Tuple[str, openvino.Tensor]]): Map with decrypted models. It should contains next models: language, resampler, text_embeddings, vision_embeddings.
+            models (typing.Dict[str, typing.Tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
             tokenizer (Tokenizer): Genai Tokenizers.
             config_dir_path (os.PathLike): Path to folder with model configs.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.

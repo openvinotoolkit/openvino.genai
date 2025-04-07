@@ -7,39 +7,25 @@
 #include "load_image.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 
-std::pair<std::filesystem::path, std::filesystem::path> create_full_model_path(const std::filesystem::path& path, const std::string model_name) {
-    std::filesystem::path model_path, weight_path;
-    model_path = weight_path = path / model_name;
-    model_path += ".xml";
-    weight_path += ".bin";
-    return {model_path, weight_path};
-}
-
-std::pair<std::string, ov::Tensor> decrypt_model(const std::filesystem::path& model_path, const std::filesystem::path& weights_path) {
-    std::ifstream model_file(model_path);
-    std::ifstream weights_file(weights_path, std::ios::binary);
-    if (!model_file.is_open() || !weights_file.is_open()) {
+std::pair<std::string, ov::Tensor> decrypt_model(const std::filesystem::path& model_dir, const std::string& model_file_name, const std::string& weights_file_name) {
+    std::ifstream model_file(model_dir / model_file_name);
+    std::ifstream weights_file();
+    if (!model_file.is_open()) {
         throw std::runtime_error("Cannot open model or weights file");
     }
-
-    // User can add file decryption of model_file and weights_file in memory here.
-
     std::string model_str((std::istreambuf_iterator<char>(model_file)), std::istreambuf_iterator<char>());
 
-    weights_file.seekg(0, std::ios::end);
-    auto weight_size = static_cast<unsigned>(weights_file.tellg());
-    weights_file.seekg(0, std::ios::beg);
-    auto weights_tensor = ov::Tensor(ov::element::u8, {weight_size});
-    if (!weights_file.read(static_cast<char*>(weights_tensor.data()), weight_size)) {
-        throw std::runtime_error("Cannot read weights file");
-    }
+    // read weights file using mmap to reduce memory consumption
+    auto weights_tensor = ov::read_tensor_data(model_dir / weights_file_name);
+
+    // User can add file decryption of model_file and weights_file in memory here.
 
     return {model_str, weights_tensor};
 }
 
 ov::genai::Tokenizer decrypt_tokenizer(const std::filesystem::path& models_path) {
-    auto [tok_model_str, tok_weights_tensor] = std::apply(decrypt_model, create_full_model_path(models_path, "openvino_tokenizer"));
-    auto [detok_model_str, detok_weights_tensor] = std::apply(decrypt_model, create_full_model_path(models_path, "openvino_detokenizer"));
+    auto [tok_model_str, tok_weights_tensor] = decrypt_model(models_path, "openvino_tokenizer.xml", "openvino_tokenizer.bin");
+    auto [detok_model_str, detok_weights_tensor] = decrypt_model(models_path, "openvino_detokenizer.xml", "openvino_detokenizer.bin");
 
     return ov::genai::Tokenizer(tok_model_str, tok_weights_tensor, detok_model_str, detok_weights_tensor);
 }
@@ -64,8 +50,7 @@ int main(int argc, char* argv[]) try {
         {"vision_embeddings", "openvino_vision_embeddings_model"}};
 
     for (const auto& [model_name, file_name] : model_name_to_file_map) {
-        auto model_pair = std::apply(decrypt_model, create_full_model_path(models_path, file_name));
-        models_map.emplace(model_name, std::move(model_pair));
+        models_map.emplace(model_name, decrypt_model(models_path, file_name + ".xml", file_name + ".bin"));
     }
 
     ov::genai::Tokenizer tokenizer = decrypt_tokenizer(models_path);
