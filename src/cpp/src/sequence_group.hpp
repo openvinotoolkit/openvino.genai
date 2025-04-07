@@ -299,7 +299,6 @@ public:
             prompt_len = input_ids.get_size();
         }
         OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
-        std::cout << "Prompt length: " << prompt_len << std::endl;
 
         if (input_ids.get_element_type() == ov::element::i64) {
             m_prompt_ids.resize(prompt_len);
