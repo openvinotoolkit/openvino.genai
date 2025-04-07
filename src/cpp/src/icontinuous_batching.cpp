@@ -219,6 +219,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
+        std::cout << "Inputs shape: ";
+        for (const auto& dim : inputs.get_shape()) {
+            std::cout << dim << " ";
+        }
+        std::cout << std::endl;
     }
     return add_request(request_id, inputs, sampling_params);
 }
