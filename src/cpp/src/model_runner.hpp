@@ -354,7 +354,9 @@ public:
             }
         }
         if (pos > 0) {
-            generated_ids_embeds = m_embedding->infer(generated_ids);
+            CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+            EmbeddingsRequest& req = embeddings_request_guard.get();
+            generated_ids_embeds = m_embedding->infer(req, generated_ids);
             generated_ids_embeds_data = generated_ids_embeds.data<float>();
             size_t embeds_pos = 0;
             for (size_t i = 0; i < num_sequence_groups; ++i) {
