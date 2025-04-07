@@ -6,7 +6,7 @@ updates:
   # Github actions - CI
   #
   - package-ecosystem: github-actions
-    directory: "/"
+    directory: ".github/"
     schedule:
       interval: "daily"
       time: "09:00"
