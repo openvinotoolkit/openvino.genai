@@ -189,8 +189,6 @@ jobs:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
-      CC: 'ccache cl'
-      CXX: 'ccache cl'
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
@@ -254,7 +252,7 @@ jobs:
         
       - name: Build Tokenizers Wheel
         run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
+          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} --config-settings=override=cmake.generator='Ninja' `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
