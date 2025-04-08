@@ -4,10 +4,24 @@
 #include <openvino/openvino.hpp>
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include <fstream>
+#include <sstream>
+
+std::string read_prompt(const std::string& file_path) {
+    std::string prompt;
+    std::ifstream file(file_path);
+    if (file.is_open()) {
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        prompt = buffer.str();
+        file.close();
+    }
+    return prompt;
+}
 
 int main(int argc, char* argv[]) try {
     if (4 != argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DRAFT_MODEL_DIR> '<PROMPT>'");
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DRAFT_MODEL_DIR> '<PROMPT_FILE_PATH>'");
     }
 
     ov::genai::GenerationConfig config;
@@ -20,7 +34,10 @@ int main(int argc, char* argv[]) try {
 
     std::string main_model_path = argv[1];
     std::string draft_model_path = argv[2];
-    std::string prompt = argv[3];
+    // std::string prompt = argv[3];
+    std::string prompt_path = argv[3];
+    std::string prompt = read_prompt(prompt_path);
+
     size_t num_warmup = 1;
     size_t num_iter = 3;
 
