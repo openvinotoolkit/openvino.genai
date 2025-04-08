@@ -93,6 +93,8 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
       'https://huggingface.co/stabilityai/stable-diffusion-3.5-medium',
       'https://huggingface.co/stabilityai/stable-diffusion-3.5-large',
       'https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo',
+      'https://huggingface.co/tensorart/stable-diffusion-3.5-medium-turbo',
+      'https://huggingface.co/tensorart/stable-diffusion-3.5-large-TurboX'
     ],
   },
   {
