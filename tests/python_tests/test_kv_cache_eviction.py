@@ -9,9 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from tqdm import tqdm
 
-from optimum.intel.openvino import OVModelForCausalLM
 from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode
-from transformers import AutoTokenizer
 
 from utils.ov_genai_pipelines import PipelineType, generate_and_compare
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
@@ -34,13 +32,6 @@ def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
     scheduler_config.max_num_seqs = 256
     scheduler_config.use_cache_eviction = False
     return scheduler_config
-
-@dataclass
-class ConvertedModel:
-    model: OVModelForCausalLM
-    tokenizer: AutoTokenizer
-    models_path: Path
-
 
 @dataclass
 class CacheOptTestStruct:
