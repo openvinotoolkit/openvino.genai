@@ -13,7 +13,6 @@ from data.models import get_models_list
 
 @pytest.fixture(scope="module")
 def model_tmp_path(tmpdir_factory):
-    print(f'\nmodel_tmp_path!!!!!!!!!!!!!!!!!!')
     model_id = get_models_list()[0]
     _, _, models_path = download_and_convert_model(model_id)
 
