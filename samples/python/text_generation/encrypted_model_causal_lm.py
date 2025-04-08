@@ -54,16 +54,16 @@ def main():
     parser.add_argument('prompt')
     args = parser.parse_args()
 
-    device = args.device
-
-    model, weights = decrypt_model(args.model, 'openvino_model.xml', 'openvino_model.bin')
-    tokenizer = read_tokenizer(args.model)
+    device = "CPU"
 
     config = dict()
-    if device is "GPU":
+    if device == "GPU":
         # Cache compiled models on disk for GPU to save time on the
         # next run. It's not beneficial for CPU.
         config = get_config_for_cache_encryption()
+
+    model, weights = decrypt_model(args.model_dir, 'openvino_model.xml', 'openvino_model.bin')
+    tokenizer = read_tokenizer(args.model_dir)
 
     pipe = openvino_genai.LLMPipeline(model, weights, tokenizer, device, **config)
 
