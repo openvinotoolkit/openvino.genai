@@ -140,8 +140,6 @@ SAMPLES_JS_DIR = os.environ.get("SAMPLES_JS_DIR", os.path.abspath(os.path.join(o
 def setup_and_teardown(request, tmp_path_factory):
     """Fixture to set up and tear down the temporary directories."""
     
-    # tmp_path_factory creates new dir for each session. /tmp/pytest-of-suvorova/pytest-19/ov_cache0/test_models
-    # prev cache doesn't seems to be reused
     ov_cache = os.environ.get("OV_CACHE", tmp_path_factory.mktemp("ov_cache"))
     models_dir = os.path.join(ov_cache, "test_models")
     test_data = os.path.join(ov_cache, "test_data")

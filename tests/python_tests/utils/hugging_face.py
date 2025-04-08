@@ -194,10 +194,8 @@ def download_and_convert_model(model_id: str, **tokenizer_kwargs):
 
     from utils.constants import OV_MODEL_FILENAME
     if (models_path / OV_MODEL_FILENAME).exists():
-        print(f"\nmodels_path exist: {models_path}")
         opt_model, hf_tokenizer = get_hugging_face_models(models_path, local_files_only=True)
     else:
-        print(f"\nmodels_path not exists, converting: {models_path}")
         opt_model, hf_tokenizer = get_hugging_face_models(model_id, local_files_only=False)
         convert_models(opt_model, hf_tokenizer, models_path)
 
