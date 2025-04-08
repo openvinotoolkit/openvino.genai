@@ -88,11 +88,13 @@ WhisperWithPastDecoder::WhisperWithPastDecoder(const std::filesystem::path& mode
                  "optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny");
     ov::Core core = utils::singleton_core();
 
-    auto compiled_model = core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
+    auto device_config = properties;
+    ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, device_config, "whisper decoder model");
+    auto compiled_model = core.compile_model(models_path / "openvino_decoder_model.xml", device, device_config);
     utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
     m_request_decoder = compiled_model.create_infer_request();
 
-    compiled_model = core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, properties);
+    compiled_model = core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, device_config);
     utils::print_compiled_model_properties(compiled_model, "whisper decoder with past model");
     m_request_decoder_with_past = compiled_model.create_infer_request();
 }

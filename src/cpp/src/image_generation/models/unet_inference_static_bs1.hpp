@@ -38,8 +38,10 @@ public:
         //reshape to batch-1
         UNetInference::reshape(model, 1);
 
+        auto device_config = properties;
+        ov::genai::utils::disable_cpu_acceleration_in_AUTO(device, device_config, "UNet 2D Condition batch-1 model");
         ov::Core core = utils::singleton_core();
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+        ov::CompiledModel compiled_model = core.compile_model(model, device, device_config);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
 
         for (int i = 0; i < m_native_batch_size; i++) {
