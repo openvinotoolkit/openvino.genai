@@ -14,6 +14,7 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"
+#include "openvino/genai/common_types.hpp"
 
 namespace ov {
 namespace genai {
@@ -25,11 +26,6 @@ using StreamerVariant = std::variant<std::function<bool(std::string)>, std::func
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
-
-/// @brief A map of models for VLMPipeline constructor. 
-/// Key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
-/// and value is a pair of model IR as string and weights as tensor.
-using ModelsMap = std::map<std::string, std::pair<std::string, ov::Tensor>>;
 
 /**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
