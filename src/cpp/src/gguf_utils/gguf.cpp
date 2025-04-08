@@ -11,9 +11,10 @@
 // https://github.com/antirez/gguf-tools/blob/af7d88d808a7608a33723fba067036202910acb3/gguflib.h#L102-L108
 constexpr int gguf_array_header_size = 12;
 
-using GGUFLoad = std::pair<
+using GGUFLoad = std::tuple<
     std::unordered_map<std::string, GGUFMetaData>,
-    std::unordered_map<std::string, ov::Tensor>>;
+    std::unordered_map<std::string, ov::Tensor>, 
+    std::unordered_map<std::string, gguf_tensor_type>>;
 
 template<typename... Args>
 std::string format(std::string fmt, Args... args)
@@ -233,8 +234,9 @@ std::unordered_map<std::string, GGUFMetaData> load_metadata(gguf_ctx* ctx) {
   return metadata;
 }
 
-std::unordered_map<std::string, ov::Tensor> load_arrays(gguf_ctx* ctx) {
+std::pair<std::unordered_map<std::string, ov::Tensor>, std::unordered_map<std::string, gguf_tensor_type>> load_arrays(gguf_ctx* ctx) {
   std::unordered_map<std::string, ov::Tensor> array_map;
+  std::unordered_map<std::string, gguf_tensor_type> qtype_map;
   gguf_tensor tensor;
 
   auto check_insert = [](const auto& inserted) {
@@ -247,16 +249,20 @@ std::unordered_map<std::string, ov::Tensor> load_arrays(gguf_ctx* ctx) {
   };
 
   while (gguf_get_tensor(ctx, &tensor)) {
+
+    std::string name(tensor.name, tensor.namelen);
+    check_insert(qtype_map.insert({name, static_cast<gguf_tensor_type>(tensor.type)}));
+
     if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 ||
-        tensor.type == GGUF_TYPE_Q8_0) {
+        tensor.type == GGUF_TYPE_Q8_0 || tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K){
       gguf_load_quantized(array_map, tensor);
     } else {
-      std::string name(tensor.name, tensor.namelen);
       ov::Tensor loaded_array = extract_tensor_data(&tensor); 
       check_insert(array_map.insert({name, loaded_array}));
     }
   }
-  return array_map;
+
+  return {array_map, qtype_map};
 }
 
 GGUFLoad get_gguf_data(const std::string& file) {
@@ -275,8 +281,8 @@ GGUFLoad get_gguf_data(const std::string& file) {
     throw std::runtime_error("[load_gguf] gguf_init failed");
   }
   auto metadata = load_metadata(ctx.get());
-  auto arrays = load_arrays(ctx.get());
-  return {metadata, arrays};
+  auto [arrays, qtype] = load_arrays(ctx.get());
+  return {metadata, arrays, qtype};
 }
 
 QType get_quantization_type(int gguf_type) {
@@ -417,11 +423,11 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<s
     return consts;
 }
 
-std::pair<std::map<std::string, GGUFMetaData>, std::unordered_map<std::string, ov::Tensor>> load_gguf(const std::string& file) {
-    auto [metadata, weights] = get_gguf_data(file);
+std::tuple<std::map<std::string, GGUFMetaData>, std::unordered_map<std::string, ov::Tensor>, std::unordered_map<std::string, gguf_tensor_type>> load_gguf(const std::string& file) {
+    auto [metadata, weights, qtype] = get_gguf_data(file);
 
     auto config = config_from_meta(metadata);
     auto consts = consts_from_weights(config, weights);
 
-    return {config, consts};
+    return {config, consts, qtype};
 }

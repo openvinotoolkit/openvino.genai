@@ -29,4 +29,4 @@ ov::Shape get_shape(const gguf_tensor& tensor);
 void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
     const gguf_tensor& tensor);
 
-std::pair<std::map<std::string, GGUFMetaData>, std::unordered_map<std::string, ov::Tensor>> load_gguf(const std::string& file);
+std::tuple<std::map<std::string, GGUFMetaData>, std::unordered_map<std::string, ov::Tensor>, std::unordered_map<std::string, gguf_tensor_type>> load_gguf(const std::string& file);
