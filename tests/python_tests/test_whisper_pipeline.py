@@ -68,9 +68,14 @@ def read_whisper_model(params, stateful=True):
         compile=False,
         device="CPU",
         load_in_8bit=False,
+        local_files_only=True,
     ))
 
-    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
+    processor = retry_request(lambda: WhisperProcessor.from_pretrained(
+        path,
+        trust_remote_code=True,
+        local_files_only=True,
+    ))
 
     hf_pipe = pipeline(
         "automatic-speech-recognition",
