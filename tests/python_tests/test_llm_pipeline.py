@@ -7,15 +7,14 @@ import torch
 import os
 import json
 import numpy as np
-from pathlib import Path
-from typing import Tuple, List, Dict
+from typing import Tuple, List
 
 import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model
-from utils.tokenizers import delete_rt_info, model_tmp_path
+from utils.tokenizers import delete_rt_info
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType
 from data.models import get_models_list, get_chat_models_list
 

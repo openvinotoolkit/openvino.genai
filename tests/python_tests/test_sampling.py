@@ -9,8 +9,8 @@ from typing import List, TypedDict
 
 from openvino_genai import GenerationConfig, StopCriteria
 
-from utils.ov_genai_pipelines import PipelineType, generate_and_compare, run_ov_pipeline, get_main_pipeline_types
-from utils.hugging_face import get_hugging_face_models, convert_models
+from utils.ov_genai_pipelines import generate_and_compare, run_ov_pipeline, get_main_pipeline_types
+from utils.hugging_face import download_and_convert_model
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("generation_config,prompt",
@@ -76,8 +76,7 @@ def test_greedy(generation_config, prompt):
 
     generate_and_compare(model=model_id, 
                          prompts=prompt, 
-                         generation_config=generation_config, 
-                         tmp_path=tmp_path)
+                         generation_config=generation_config)
 
 
 @pytest.mark.precommit
@@ -326,18 +325,14 @@ RANDOM_SAMPLING_TEST_CASES = [
              "multinomial_temperature_and_frequence_penalty",
              "greedy_with_penalties",
              "multinomial_max_and_min_token"])
-def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSamplingTestStruct):
+def test_multinomial_sampling_against_reference(test_struct: RandomSamplingTestStruct):
     generation_config = test_struct.generation_config
 
     prompts = test_struct.prompts
     generation_config.rng_seed = 0
-    generation_configs = generation_config
 
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_hugging_face_models(model_id)
-
-    models_path : Path = tmp_path / model_id
-    convert_models(model, hf_tokenizer, models_path)
+    _, _, models_path = download_and_convert_model(model_id)
 
     # Run multinomial without comparison with HF reference.
     _ = run_ov_pipeline(models_path=models_path,
