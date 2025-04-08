@@ -171,21 +171,21 @@ def convert_model(request):
     model_cache = os.path.join(models_cache, model_id)
     model_path = os.path.join(model_cache, model_name)
     model_args = MODELS[model_id]["convert_args"]
-    model_hf_cache = os.environ.get("HF_HOME", os.path.join(model_cache, "hf_cache"))
     logger.info(f"Preparing model: {model_name}")
     # Convert the model if not already converted
     if not os.path.exists(model_path):
         logger.info(f"Converting model: {model_name}")
+        sub_env=os.environ.copy()
+        sub_env["HF_HUB_OFFLINE"] = "1"
         command = [
             "optimum-cli", "export", "openvino",
             "--model", model_name, 
-            "--cache_dir", model_hf_cache, 
             model_path
         ]
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
+        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
             
     yield model_path
     
@@ -203,18 +203,15 @@ def download_model(request):
     model_name = MODELS[model_id]["name"]
     model_cache = os.path.join(models_cache, model_id)
     model_path = os.path.join(model_cache, model_name)
-    model_hf_cache = os.environ.get("HF_HOME", os.path.join(model_cache, "hf_cache"))
     logger.info(f"Preparing model: {model_name}")
     # Download the model if not already downloaded
     if not os.path.exists(model_path):
         logger.info(f"Downloading the model: {model_name}")
-        command = [
-            "huggingface-cli", "download", model_name, 
-            "--cache-dir", model_hf_cache, 
-            "--local-dir", model_path
-        ]
+        sub_env=os.environ.copy()
+        sub_env["HF_HUB_OFFLINE"] = "1"
+        command = ["huggingface-cli", "download", model_name, "--local-dir", model_path]
         logger.info(f"Downloading command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
+        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
             
     yield model_path
     
