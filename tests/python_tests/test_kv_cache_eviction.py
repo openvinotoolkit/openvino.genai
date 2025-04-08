@@ -99,13 +99,10 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, enabl
         scheduler_config_opt.cache_eviction_config.apply_rotation = apply_rotation
     scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
 
-    # models_path = converted_model.models_path
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     _, tokenizer, models_path = download_and_convert_model(model_id)
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
-
-    # tokenizer = converted_model.tokenizer
 
     data_dict = load_prompts_dataset(test_struct.prompt_file)
 
