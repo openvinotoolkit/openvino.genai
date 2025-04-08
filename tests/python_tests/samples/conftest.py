@@ -176,7 +176,6 @@ def convert_model(request):
     if not os.path.exists(model_path):
         logger.info(f"Converting model: {model_name}")
         sub_env=os.environ.copy()
-        sub_env["HF_HUB_OFFLINE"] = "1"
         command = [
             "optimum-cli", "export", "openvino",
             "--model", model_name, 
@@ -208,7 +207,6 @@ def download_model(request):
     if not os.path.exists(model_path):
         logger.info(f"Downloading the model: {model_name}")
         sub_env=os.environ.copy()
-        sub_env["HF_HUB_OFFLINE"] = "1"
         command = ["huggingface-cli", "download", model_name, "--local-dir", model_path]
         logger.info(f"Downloading command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
