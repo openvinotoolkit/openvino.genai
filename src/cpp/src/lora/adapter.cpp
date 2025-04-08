@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+//replace if to add ?
+
 #include <algorithm>
 #include <set>
 #include <map>
@@ -478,7 +480,7 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
         if (auto params = getter(name)) {
             // FIXME: Potential name conflict if LoRA is applied multiple times by using this infrastructure independently each time (not a recommended approach).
             // TODO: Check for name collisions searching for existing variables with the same names.
-            std::string variable_id_prefix = "lora_constant_" + std::to_string(model->get_sinks().size()) + name;
+            std::string variable_id_name = "lora_constant_" + std::to_string(model->get_sinks().size()) + "_" +name;
             LoRAConstantNode result;
             ov::op::util::VariableInfo variable_info;
 
@@ -486,7 +488,7 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
             variable_info = ov::op::util::VariableInfo{
                 params->tensor->get_output_shape(0),
                 params->tensor->get_output_element_type(0),
-                variable_id_prefix
+                variable_id_name
             };
             result.tensor = add_variable(variable_info);
             variable_ids.emplace(name, variable_info);
@@ -499,7 +501,7 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
 
     NodePtr create_if_input() {
         auto variable_info = ov::op::util::VariableInfo{
-            ov::Shape{1},  // Will be used with transpose_b == true
+            ov::Shape{1},
             ov::element::Type_t::boolean,
             if_variable_id
         };
@@ -613,11 +615,20 @@ protected:
     bool apply(NodePtr node, const LoRAConstantNode& lora_weight) override {
         auto consumers = node->get_output_target_inputs(0);
 
+        // std::cout << lora_weight.tensor->get_output_shape(0) << std::endl;
+        // std::cout << node->get_output_shape(0) << std::endl;
+
         std::shared_ptr<ov::Model> then_body = std::make_shared<ov::Model>(lora_weight.tensor, ov::ParameterVector{}),
                                    else_body = std::make_shared<ov::Model>(node, ov::ParameterVector{});
         std::shared_ptr<ov::op::v8::If> if_node = std::make_shared<ov::op::v8::If>(if_input);
         if_node->set_then_body(then_body);
         if_node->set_else_body(else_body);
+        if_node->set_output(then_body->get_results()[0], else_body->get_results()[0]);
+        
+        // std::cout << if_node->outputs().size() << std::endl;
+
+        // std::cout << if_node->output(0).get_shape() << std::endl;
+
 
         for (auto& consumer : consumers) {
             consumer.replace_source_output(if_node->output(0));
@@ -1344,6 +1355,25 @@ struct AdapterControllerImpl {
             lora_indices.A = state_name_to_index.at(lora_var_ids.second.A.variable_id);
             lora_indices.B = state_name_to_index.at(lora_var_ids.second.B.variable_id);
             set_lora_tensors(state, lora_var_ids.first, lora_var_ids.second, lora_indices, weight_getters, alpha_only);
+        }
+
+        for (const auto& constant_variable_id : constant_variable_ids) {
+            auto b = constant_variable_id.second.variable_id;
+            // variable_info
+            if (constant_variable_id.first.find("const") != std::string::npos) {
+                auto a = std::vector<bool>{true};
+                ov::Tensor if_input_true = ov::Tensor(ov::element::boolean, ov::Shape(1), a);
+                // ov::Tensor if_input_true = ov::Tensor(ov::element::boolean, ov::Shape{1});
+                size_t lora_index = state_name_to_index.at(b);
+                // NodePtr node = const_getter[0](constant_variable_id.first)->tensor;
+                // // auto a = std::dynamic_pointer_cast<ov::op::v0::Constant>(node);
+                state[lora_index].set_state(if_input_true);
+            }
+            size_t lora_index = state_name_to_index.at(b);
+            NodePtr node = const_getter[0](constant_variable_id.first)->tensor;
+            auto a = std::dynamic_pointer_cast<ov::op::v0::Constant>(node);
+            state[lora_index].set_state(a->get_tensor_view());
+            // set_lora_tensors(state, constant_variable_id.first, constant_variable_id.second, lora_indices, weight_getters, alpha_only);
         }
     }
 

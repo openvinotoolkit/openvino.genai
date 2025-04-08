@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) try {
     using namespace ov::genai;
 
     Adapter adapter(adapter_path);
-    LLMPipeline pipe(models_path, device, adapters(adapter, AdapterConfig::MODE_STATIC));    // register all required adapters here
+    LLMPipeline pipe(models_path, device, adapters(adapter, 0.75, AdapterConfig::MODE_FUSE));    // register all required adapters here
 
     // Resetting config to set greedy behaviour ignoring generation config from model directory.
     // It helps to compare two generations with and without LoRA adapter.
@@ -29,8 +29,8 @@ int main(int argc, char* argv[]) try {
 
     std::cout << "\n-----------------------------";
     std::cout << "\nGenerate without LoRA adapter:" << std::endl;
-    LLMPipeline pipe1(models_path, device);    // register all required adapters here
-    std::cout << pipe1.generate(prompt, max_new_tokens(100)) << std::endl;
+    // LLMPipeline pipe1(models_path, device);    // register all required adapters here
+    std::cout << pipe.generate(prompt, max_new_tokens(100), adapters()) << std::endl;
 
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
