@@ -688,6 +688,17 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: "PhimoeForCausalLM",
+    models: [
+      {
+        name: "Phi-3.5-MoE",
+        links: [
+          "https://huggingface.co/microsoft/Phi-3.5-MoE-instruct"
+        ]
+      }
+    ]
+  },
+  {
     architecture: 'QWenLMHeadModel',
     models: [
       {
