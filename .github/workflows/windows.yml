@@ -65,14 +65,14 @@ jobs:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
-      CMAKE_GENERATOR: 'Ninja' # Ninja is the only generator supported by ccache
+      CMAKE_GENERATOR: 'Ninja' # Ninja is the only Windows native generator supported by ccache
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       GENAI_INSTALL_DIR: ${{ github.workspace }}\install\genai
       INSTALL_TOOLS_DIR: ${{ github.workspace }}\tools
       INSTALL_TESTS_DIR: ${{ github.workspace }}\tests
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
-      CCACHE_DIR: ${{ github.workspace }}\\ccache
+      CCACHE_DIR: ${{ github.workspace }}\ccache
 
     steps:
       - name: Clone genai
@@ -148,7 +148,7 @@ jobs:
       #
       
       - name: Save ccache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'  && github.event_name == 'push'
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
@@ -278,7 +278,7 @@ jobs:
       #
 
       - name: Save ccache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'  && github.event_name == 'push'
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
