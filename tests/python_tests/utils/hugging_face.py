@@ -3,18 +3,16 @@
 
 from os.path import sep
 from pathlib import Path
-from typing import List, Tuple
-
+from typing import List
 from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
 
 from optimum.intel import OVModelForCausalLM
-from optimum.intel.openvino.utils import TemporaryDirectory
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
-from utils.constants import get_default_llm_properties
+from utils.constants import get_default_llm_properties, get_ov_cache_models_dir
 from utils.network import retry_request
 
 def generation_config_to_hf(
@@ -158,9 +156,9 @@ def run_hugging_face(
 
 
 # download HF model or read converted model
-def get_hugging_face_models(model_id: str | Path):
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
-    opt_model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=isinstance(model_id, str), ov_config=get_default_llm_properties()))
+def get_hugging_face_models(model_id: str | Path, local_files_only=False):
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, local_files_only=local_files_only))
+    opt_model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=isinstance(model_id, str), ov_config=get_default_llm_properties(), local_files_only=local_files_only))
     return opt_model, hf_tokenizer
 
 
@@ -189,17 +187,18 @@ def convert_models(opt_model : OVModelForCausalLM,
     convert_and_save_tokenizer(hf_tokenizer, models_path)
 
 
-def download_and_convert_model(model_id: str,
-                               tmp_path: Path | TemporaryDirectory = TemporaryDirectory(),
-                               **tokenizer_kwargs):
+def download_and_convert_model(model_id: str, **tokenizer_kwargs):
     dir_name = str(model_id).replace(sep, "_")
-    models_path = (TemporaryDirectory() if tmp_path == None else Path(tmp_path.name)) / dir_name
+    ov_cache_models_dir = get_ov_cache_models_dir()
+    models_path = ov_cache_models_dir / dir_name
 
     from utils.constants import OV_MODEL_FILENAME
     if (models_path / OV_MODEL_FILENAME).exists():
-        opt_model, hf_tokenizer = get_hugging_face_models(models_path)
+        print(f"\nmodels_path exist: {models_path}")
+        opt_model, hf_tokenizer = get_hugging_face_models(models_path, local_files_only=True)
     else:
-        opt_model, hf_tokenizer = get_hugging_face_models(model_id)
+        print(f"\nmodels_path not exists, converting: {models_path}")
+        opt_model, hf_tokenizer = get_hugging_face_models(model_id, local_files_only=False)
         convert_models(opt_model, hf_tokenizer, models_path)
 
     if "padding_side" in tokenizer_kwargs:
