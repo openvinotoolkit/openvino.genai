@@ -11,7 +11,7 @@ int main(int argc, char* argv[]) try {
     }
 
     ov::genai::GenerationConfig config;
-    config.max_new_tokens = 100;
+    config.max_new_tokens = 128;
     // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
     // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
     config.num_assistant_tokens = 5;
@@ -21,10 +21,12 @@ int main(int argc, char* argv[]) try {
     std::string main_model_path = argv[1];
     std::string draft_model_path = argv[2];
     std::string prompt = argv[3];
+    size_t num_warmup = 1;
+    size_t num_iter = 3;
 
     // User can run main and draft model on different devices.
     // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
-    std::string main_device = "CPU", draft_device = "CPU";
+    std::string main_device = "GPU", draft_device = "GPU";
 
     ov::genai::LLMPipeline pipe(
         main_model_path,
@@ -38,8 +40,31 @@ int main(int argc, char* argv[]) try {
 
     // Since the streamer is set, the results will
     // be printed each time a new token is generated.
-    pipe.generate(prompt, config, streamer);
-    std::cout << std::endl;
+    // pipe.generate(prompt, config, streamer);
+    // std::cout << std::endl;
+
+    for (size_t i = 0; i < num_warmup; i++)
+        pipe.generate(prompt, config, streamer);
+
+    ov::genai::DecodedResults res = pipe.generate(prompt, config, streamer);
+    ov::genai::PerfMetrics metrics = res.perf_metrics;
+    for (size_t i = 0; i < num_iter - 1; i++) {
+        res = pipe.generate(prompt, config, streamer);
+        metrics = metrics + res.perf_metrics;
+    }
+
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "Load time: " << metrics.get_load_time() << " ms" << std::endl;
+    std::cout << "Generate time: " << metrics.get_generate_duration().mean << " ± "
+              << metrics.get_generate_duration().std << " ms" << std::endl;
+    std::cout << "Tokenization time: " << metrics.get_tokenization_duration().mean << " ± "
+              << metrics.get_tokenization_duration().std << " ms" << std::endl;
+    std::cout << "Detokenization time: " << metrics.get_detokenization_duration().mean << " ± "
+              << metrics.get_detokenization_duration().std << " ms" << std::endl;
+    std::cout << "TTFT: " << metrics.get_ttft().mean << " ± " << metrics.get_ttft().std << " ms" << std::endl;
+    std::cout << "TPOT: " << metrics.get_tpot().mean << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
+    std::cout << "Throughput: " << metrics.get_throughput().mean << " ± " << metrics.get_throughput().std << " tokens/s"
+              << std::endl;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

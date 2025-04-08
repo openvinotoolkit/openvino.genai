@@ -210,7 +210,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
     }
 
-    if (main_generated_requests.empty() && 0) {
+    if (main_generated_requests.empty() && 1) {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
@@ -257,6 +257,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params)});
     }
     auto all_requests = get_awaiting_requests();
+    for (size_t request_id = 0; request_id < all_requests.size(); ++request_id) {
+        const auto& request = all_requests[request_id];
+        m_sd_metrics.set_input_token_num(request_id, request->get_prompt_len());
+    }
 
     GenerationHandle& generation = main_generations.at(0);
 
