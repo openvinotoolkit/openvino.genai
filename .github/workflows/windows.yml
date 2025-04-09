@@ -132,7 +132,7 @@ jobs:
         shell: pwsh
         run: |
           ${{ env.OV_INSTALL_DIR }}/setupvars.ps1
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build-type }} --verbose
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
@@ -193,6 +193,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}\genai
       WHEELS_DIR: ${{ github.workspace }}\genai\wheels
       CCACHE_DIR: ${{ github.workspace }}\ccache
+      OpenVINODeveloperPackage_DIR: ${{ github.workspace }}\install\ov\developer_package\cmake
 
     steps:
       - name: Clone openvino.genai
@@ -462,7 +463,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Tests
-        run: python -m pytest -v ${{ matrix.test.cmd }}
+        run: python -m pytest -s -v ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
           
   genai_samples_tests:
