@@ -38,29 +38,27 @@ def read_models_list(file_name: str):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
-def test_e2e_precommit(tmp_path, model_id):
+def test_e2e_precommit(model_id):
     prompts, generation_configs = get_test_dataset()
     generate_and_compare(prompts=prompts,
                          generation_config=generation_configs,
-                         tmp_path=tmp_path,
                          model=model_id,
                          pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
-def test_e2e_nightly(tmp_path, model_id):
+def test_e2e_nightly(model_id):
     prompts, generation_config = get_test_dataset()
     generate_and_compare(prompts=prompts,
                          generation_config=generation_config,
-                         tmp_path=tmp_path,
                          model=model_id, 
                          pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
 
 @pytest.mark.real_models
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
-def test_e2e_real_models(tmp_path, model_id):
+def test_e2e_real_models(model_id):
     prompts, generation_config = get_test_dataset()
     generate_and_compare(prompts=prompts,
                          generation_config=generation_config,
@@ -168,7 +166,7 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict, pip
 @pytest.mark.precommit
 @pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()],
                          ids=["greedy", "beam_search", "multinomial_all_parameters"])
-def test_post_oom_health(tmp_path, sampling_config):
+def test_post_oom_health(sampling_config):
     generation_config = sampling_config
     generation_config.ignore_eos = True
     generation_config.max_new_tokens = 1000000
@@ -177,7 +175,7 @@ def test_post_oom_health(tmp_path, sampling_config):
     scheduler_config.num_kv_blocks = 10 # Low cache size to trigger OOM quickly
 
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
 
     cb_pipe = create_ov_pipeline(models_path,
                                  pipeline_type=PipelineType.CONTINIOUS_BATCHING,
@@ -227,7 +225,7 @@ scheduler_params_list = [({"num_kv_blocks": 2, "dynamic_split_fuse": True, "max_
                          ({"num_kv_blocks": 100, "dynamic_split_fuse": False}, get_beam_search_seq_len_300())]
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
-def test_preemption(tmp_path, params):
+def test_preemption(params):
     model_id = "facebook/opt-125m"
     scheduler_params = params[0]
     generation_config = params[1]
@@ -235,7 +233,6 @@ def test_preemption(tmp_path, params):
     prompts, _ = get_test_dataset()
     generate_and_compare(prompts=prompts,
                          pipeline_type=PipelineType.CONTINIOUS_BATCHING,
-                         tmp_path=tmp_path,
                          model=model_id,
                          scheduler_config=scheduler_params,
                          generation_config=generation_config)
@@ -282,12 +279,12 @@ multinomial_params = RandomSamplingTestStruct(
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
-def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
+def test_preemption_with_multinomial(dynamic_split_fuse):
     generation_configs = multinomial_params.generation_config
     for config in generation_configs:
         config.max_new_tokens = 30
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    model, hf_tokenizer, models_path = download_and_convert_model(model_id)
 
     scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare(model=models_path,
@@ -365,9 +362,9 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
-def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
+def test_preemption_with_multinomial_n_seq(dynamic_split_fuse):
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
 
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
     scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})

@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 MODELS = {
     "TinyLlama-1.1B-Chat-v1.0": { 
         "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        "convert_args": []
+        "convert_args": ['--weight-format', 'fp16']
     },
     "SmolLM-135M": {
         "name": "HuggingFaceTB/SmolLM-135M",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ['--trust-remote-code']
     },
     "SmolLM2-135M": {
         "name": "HuggingFaceTB/SmolLM2-135M",
@@ -36,15 +36,15 @@ MODELS = {
     },  
     "WhisperTiny": {
         "name": "openai/whisper-tiny",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "Qwen2.5-0.5B-Instruct": {
         "name": "Qwen/Qwen2.5-0.5B-Instruct",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ['--trust-remote-code']
     },
     "Qwen2-0.5B-Instruct": {
         "name": "Qwen/Qwen2-0.5B-Instruct",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ['--trust-remote-code']
     },
     "phi-1_5": {
         "name": "microsoft/phi-1_5",
@@ -52,7 +52,7 @@ MODELS = {
     },
     "TinyStories-1M": {
         "name": "roneneldan/TinyStories-1M",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ['--trust-remote-code']
     },
     "dreamlike-anime-1.0": {
         "name": "dreamlike-art/dreamlike-anime-1.0",
@@ -64,11 +64,11 @@ MODELS = {
     },   
     "llava-1.5-7b-hf": {
         "name": "llava-hf/llava-1.5-7b-hf",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },    
     "llava-v1.6-mistral-7b-hf": {
         "name": "llava-hf/llava-v1.6-mistral-7b-hf",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "dreamlike-anime-1.0": {
         "name": "dreamlike-art/dreamlike-anime-1.0",
@@ -84,11 +84,11 @@ MODELS = {
     },
     "InternVL2-1B": {
         "name": "OpenGVLab/InternVL2-1B",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "Qwen2-VL-2B-Instruct": {
         "name": "Qwen/Qwen2-VL-2B-Instruct",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "tiny-dummy-qwen2": {
         "name": "fxmarty/tiny-dummy-qwen2",
@@ -171,21 +171,20 @@ def convert_model(request):
     model_cache = os.path.join(models_cache, model_id)
     model_path = os.path.join(model_cache, model_name)
     model_args = MODELS[model_id]["convert_args"]
-    model_hf_cache = os.environ.get("HF_HOME", os.path.join(model_cache, "hf_cache"))
     logger.info(f"Preparing model: {model_name}")
     # Convert the model if not already converted
     if not os.path.exists(model_path):
         logger.info(f"Converting model: {model_name}")
+        sub_env=os.environ.copy()
         command = [
             "optimum-cli", "export", "openvino",
             "--model", model_name, 
-            "--cache_dir", model_hf_cache, 
             model_path
         ]
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
+        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
             
     yield model_path
     
@@ -203,18 +202,14 @@ def download_model(request):
     model_name = MODELS[model_id]["name"]
     model_cache = os.path.join(models_cache, model_id)
     model_path = os.path.join(model_cache, model_name)
-    model_hf_cache = os.environ.get("HF_HOME", os.path.join(model_cache, "hf_cache"))
     logger.info(f"Preparing model: {model_name}")
     # Download the model if not already downloaded
     if not os.path.exists(model_path):
         logger.info(f"Downloading the model: {model_name}")
-        command = [
-            "huggingface-cli", "download", model_name, 
-            "--cache-dir", model_hf_cache, 
-            "--local-dir", model_path
-        ]
+        sub_env=os.environ.copy()
+        command = ["huggingface-cli", "download", model_name, "--local-dir", model_path]
         logger.info(f"Downloading command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
+        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
             
     yield model_path
     
