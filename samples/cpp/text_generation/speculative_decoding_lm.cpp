@@ -45,10 +45,10 @@ int main(int argc, char* argv[]) try {
     // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
     std::string main_device = "GPU", draft_device = "GPU";
 
-    ov::genai::LLMPipeline pipe(
-        main_model_path,
-        main_device,
-        ov::genai::draft_model(draft_model_path, draft_device));
+    ov::genai::LLMPipeline pipe(main_model_path,
+                                main_device,
+                                ov::genai::draft_model(draft_model_path, draft_device),
+                                ov::hint::enable_cpu_reservation(true));
 
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;
@@ -61,13 +61,19 @@ int main(int argc, char* argv[]) try {
     // std::cout << std::endl;
 
     for (size_t i = 0; i < num_warmup; i++)
-        pipe.generate(prompt, config, streamer);
+        pipe.generate(prompt, config);
 
-    ov::genai::DecodedResults res = pipe.generate(prompt, config, streamer);
+    ov::genai::DecodedResults res = pipe.generate(prompt, config);
     ov::genai::PerfMetrics metrics = res.perf_metrics;
+    for (auto i = 0; i < res.texts.size(); i++) {
+        std::cout << "generate text is:" << res.texts[0] << std::endl;
+    }
     for (size_t i = 0; i < num_iter - 1; i++) {
-        res = pipe.generate(prompt, config, streamer);
+        res = pipe.generate(prompt, config);
         metrics = metrics + res.perf_metrics;
+        for (auto i = 0; i < res.texts.size(); i++) {
+            std::cout << "generate text is:" << res.texts[0] << std::endl;
+        }
     }
 
     std::cout << std::fixed << std::setprecision(2);
