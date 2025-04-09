@@ -1,6 +1,7 @@
 import type * as Preset from '@docusaurus/preset-classic';
 import type { Config } from '@docusaurus/types';
 import { themes as prismThemes } from 'prism-react-renderer';
+import GenAISamplesDocsPlugin from './src/plugins/genai-samples-docs-plugin';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
@@ -159,6 +160,7 @@ const config: Config = {
       },
     ],
   ],
+  plugins: [GenAISamplesDocsPlugin],
 };
 
 export default config;
