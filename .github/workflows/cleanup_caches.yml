@@ -17,7 +17,7 @@ jobs:
       volumes:
         - /mount:/mount
     env:
-      OV_CACHE: /mount/caches/huggingface/ov_cache
+      OV_CACHE: ${{ vars.OV_CACHE_LIN }}
 
     steps:
       - name: Pre-Collecting Cache Info
