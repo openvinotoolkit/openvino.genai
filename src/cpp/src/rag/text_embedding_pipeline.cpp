@@ -43,7 +43,6 @@ std::pair<TextEmbeddingPipeline::Config, ov::AnyMap&> extract_config(const ov::A
 namespace ov {
 namespace genai {
 
-// todo: move to anonymous namespace
 class TextEmbeddingPipeline::TextEmbeddingPipelineImpl {
 public:
     TextEmbeddingPipelineImpl(const std::filesystem::path& models_path,
@@ -63,7 +62,7 @@ public:
 
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
 
-        ov::genai::utils::print_compiled_model_properties(compiled_model, "text embedding model");
+        utils::print_compiled_model_properties(compiled_model, "text embedding model");
         m_request = compiled_model.create_infer_request();
     };
 
@@ -123,9 +122,8 @@ private:
 
         if (config.normalize) {
             processor.output().postprocess().custom([](const ov::Output<ov::Node>& node) {
-                auto axis_const =
-                    std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
-                return std::make_shared<ov::op::v0::NormalizeL2>(node, axis_const, 1e-12, ov::op::EpsMode::ADD);
+                auto axis_const = std::make_shared<op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
+                return std::make_shared<op::v0::NormalizeL2>(node, axis_const, 1e-12, op::EpsMode::ADD);
             });
         }
 
@@ -137,56 +135,52 @@ private:
      * [batch_size, seq_length, hidden_size] -> [batch_size, seq_length[0], hidden_size]
      * [10, 5, 768] -> [10, 768]
      */
-    std::shared_ptr<ov::op::Op> get_cls_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node) {
-        auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
-        auto stop = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        auto step = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+    std::shared_ptr<op::Op> get_cls_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node) {
+        auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
+        auto stop = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
 
-        auto slice = std::make_shared<ov::op::v8::Slice>(last_hidden_state_node, start, stop, step, axis);
+        auto slice = std::make_shared<op::v8::Slice>(last_hidden_state_node, start, stop, step, axis);
 
-        auto squeeze_axis =
-            std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        return std::make_shared<ov::op::v15::Squeeze>(slice, squeeze_axis);
+        auto squeeze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        return std::make_shared<op::v15::Squeeze>(slice, squeeze_axis);
     }
 
-    std::shared_ptr<ov::op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
-                                                    const ov::Output<ov::Node>& last_hidden_state_node) {
+    std::shared_ptr<op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
+                                                const ov::Output<ov::Node>& last_hidden_state_node) {
         const auto hidden_state_size = last_hidden_state_node.get_partial_shape()[2].get_length();
 
         // shape: [batch_size, seq_length]
         auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
 
         auto unsqueze_axis =
-            std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
+            std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
 
         // shape: [batch_size, seq_length, 1]
-        auto unsqueze = std::make_shared<ov::op::v0::Unsqueeze>(attention_mask, unsqueze_axis);
+        auto unsqueze = std::make_shared<op::v0::Unsqueeze>(attention_mask, unsqueze_axis);
 
-        auto shape_of = std::make_shared<ov::op::v3::ShapeOf>(attention_mask);
+        auto shape_of = std::make_shared<op::v3::ShapeOf>(attention_mask);
 
-        auto hidden_state_size_const = std::make_shared<ov::op::v0::Constant>(ov::element::i64,
-                                                                              ov::Shape{1},
-                                                                              std::vector<int64_t>{hidden_state_size});
+        auto hidden_state_size_const =
+            std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{hidden_state_size});
 
         // value: [batch_size, seq_length, hidden_state_size]
-        auto broadcast_shape =
-            std::make_shared<ov::op::v0::Concat>(ov::OutputVector{shape_of, hidden_state_size_const}, 0);
+        auto broadcast_shape = std::make_shared<op::v0::Concat>(ov::OutputVector{shape_of, hidden_state_size_const}, 0);
 
         // shape: [batch_size, seq_length, hidden_state_size]
-        auto input_mask_expanded = std::make_shared<ov::op::v3::Broadcast>(unsqueze, broadcast_shape);
+        auto input_mask_expanded = std::make_shared<op::v3::Broadcast>(unsqueze, broadcast_shape);
         auto input_mask_expanded_convert =
-            std::make_shared<ov::op::v0::Convert>(input_mask_expanded, last_hidden_state_node.get_element_type());
+            std::make_shared<op::v0::Convert>(input_mask_expanded, last_hidden_state_node.get_element_type());
 
         // shape: [batch_size, seq_length, hidden_state_size]
         auto attention_mask_multiply =
-            std::make_shared<ov::op::v1::Multiply>(last_hidden_state_node, input_mask_expanded_convert->outputs()[0]);
+            std::make_shared<op::v1::Multiply>(last_hidden_state_node, input_mask_expanded_convert->outputs()[0]);
 
-        auto mean_axis =
-            std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto mean_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
 
         // shape: [batch_size, hidden_state_size]
-        return std::make_shared<ov::op::v1::ReduceMean>(attention_mask_multiply, mean_axis);
+        return std::make_shared<op::v1::ReduceMean>(attention_mask_multiply, mean_axis);
     }
 };
 
