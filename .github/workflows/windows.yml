@@ -462,7 +462,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Tests
-        run: python -m pytest -v ${{ matrix.test.cmd }}
+        run: python -m pytest -s -v ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
           
   genai_samples_tests:
