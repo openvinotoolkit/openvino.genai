@@ -51,7 +51,7 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_js_package.zip
-        revision: 'latest_available_commit'
+        revision: '99da40ab64e4ef18565362e0442663c9266087c6'
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build-type }})
