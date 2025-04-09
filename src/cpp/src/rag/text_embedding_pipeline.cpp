@@ -56,7 +56,7 @@ public:
 
         ov::Core core = utils::singleton_core();
 
-        auto model = core.read_model(models_path / "openvino_model.xml");
+        auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
         model = apply_postprocessing(model, m_config);
 
@@ -67,7 +67,7 @@ public:
     };
 
     std::vector<EmbeddingResult> embed_documents(const std::vector<std::string>& texts) {
-        const auto tokenized_inputs = m_tokenizer.encode(std::vector<std::string>{texts});
+        const auto tokenized_inputs = encode(texts);
 
         m_request.set_tensor("input_ids", tokenized_inputs.input_ids);
         m_request.set_tensor("attention_mask", tokenized_inputs.attention_mask);
@@ -87,6 +87,15 @@ private:
     Tokenizer m_tokenizer;
     InferRequest m_request;
     Config m_config;
+
+    TokenizedInputs encode(const std::vector<std::string>& texts) {
+        if (!m_config.max_length.has_value()) {
+            return m_tokenizer.encode(std::vector<std::string>{texts});
+        }
+
+        const ov::AnyMap tokenization_params{{ov::genai::max_length.name(), *m_config.max_length}};
+        return m_tokenizer.encode(std::vector<std::string>{texts}, tokenization_params);
+    }
 
     std::vector<EmbeddingResult> to_embedding_result(const Tensor last_hidden_state) {
         const auto last_hidden_state_data = last_hidden_state.data<float>();

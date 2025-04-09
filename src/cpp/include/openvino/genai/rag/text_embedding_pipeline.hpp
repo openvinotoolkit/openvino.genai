@@ -22,7 +22,6 @@ public:
     };
 
     struct Config {
-        // todo: apply max_length for tokenizers
         std::optional<size_t> max_length;
         PoolingType pooling_type = PoolingType::CLS;
         bool normalize = false;
