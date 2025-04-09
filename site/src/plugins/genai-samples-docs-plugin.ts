@@ -122,8 +122,12 @@ export default async function GenAISamplesDocsPlugin(): Promise<Plugin> {
         .command('generate-samples-docs')
         .description('Generate documentation pages for samples from `{repositoryRoot}/samples`')
         .action(async () => {
+          console.info(
+            'Generating documentation pages for samples from `{repositoryRoot}/samples`...'
+          );
           const samplesMap = await findSamples();
           await generateSamplesDocs(samplesMap);
+          console.info('Documentation pages for samples generated successfully.');
         });
     },
   };
