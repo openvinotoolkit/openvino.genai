@@ -178,7 +178,6 @@ def run_ov_pipeline(models_path: Path,
     
     # cleanup test artifacts
     del ov_pipe
-    rmtree(models_path)
 
     # compare streaming results with generated results
     if isinstance(streamer, StreamerWithResults):
@@ -209,8 +208,7 @@ def generate_and_compare(model: str,
                          pipeline_type: PipelineType = PipelineType.AUTO,
                          scheduler_config: SchedulerConfig | dict = SchedulerConfig(),
                          ref : List[List[str]] = None,
-                         streamer: StreamerWithResults | Callable | StreamerBase = None,
-                         tmp_path: Path | TemporaryDirectory = TemporaryDirectory()) :
+                         streamer: StreamerWithResults | Callable | StreamerBase = None):
     ov_prompts = prompts if type(prompts) is list else [prompts]
 
     ov_gen_config = GenerationConfig(**generation_config) if type(generation_config) is dict else generation_config
@@ -225,7 +223,7 @@ def generate_and_compare(model: str,
         ov_gen_config = [ov_gen_config] * len(ov_prompts)
 
     ov_scheduler_config = scheduler_config if isinstance(scheduler_config, SchedulerConfig) else dict_to_scheduler_config(scheduler_config)
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model, Path(tmp_path.name))
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model)
 
     # w/a to align different API between CB and LLM
     run_cnt = len(ov_gen_config) if pipeline_type != PipelineType.CONTINIOUS_BATCHING and type(ov_gen_config) is list else 1
