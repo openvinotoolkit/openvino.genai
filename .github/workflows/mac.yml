@@ -41,7 +41,7 @@ jobs:
         - ${{ github.workspace }}:${{ github.workspace }}
 
     steps:
-    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@3ceeeb52d643e564f50d9a6f400561104528e828
       id: openvino_download
       with:
         platform: macos_12_6
