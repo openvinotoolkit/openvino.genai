@@ -598,7 +598,7 @@ EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMa
     CircularBufferQueueElementGuard<ov::InferRequest> vision_projection_ireq_guard(this->m_ireq_queue_vision_projection.get());
     ov::InferRequest& hd_feature_transformer = hd_feature_transformer_ireq_guard.get();
     ov::InferRequest& vision_projection = vision_projection_ireq_guard.get();
-    encoded_image.images_features_projection =  hd_feature_transform(encoded_image, hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, vision_projection);
+    encoded_image.images_features_projection = hd_feature_transform(encoded_image, hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, vision_projection);
     return encoded_image;
 }
 
