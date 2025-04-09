@@ -99,6 +99,7 @@ void extract_q8_0_data(
 
 void gguf_load_quantized(
     std::unordered_map<std::string, ov::Tensor>& a,
+    std::unordered_map<std::string, gguf_tensor_type>& qtype_map,
     const gguf_tensor& tensor) {
   uint64_t weights_per_byte;
   if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1) {
@@ -159,4 +160,6 @@ void gguf_load_quantized(
       name.substr(0, name.length() - weight_suffix.length());
   check_insert(a.emplace(name_prefix + ".scales", std::move(scales)));
   check_insert(a.emplace(name_prefix + ".biases", std::move(biases)));
+
+  qtype_map.insert({name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type)});
 }

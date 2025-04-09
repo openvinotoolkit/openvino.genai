@@ -250,13 +250,14 @@ std::pair<std::unordered_map<std::string, ov::Tensor>, std::unordered_map<std::s
 
   while (gguf_get_tensor(ctx, &tensor)) {
 
-    std::string name(tensor.name, tensor.namelen);
-    check_insert(qtype_map.insert({name, static_cast<gguf_tensor_type>(tensor.type)}));
+    
+    // check_insert(qtype_map.insert({name, static_cast<gguf_tensor_type>(tensor.type)}));
 
     if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 ||
         tensor.type == GGUF_TYPE_Q8_0 || tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K){
-      gguf_load_quantized(array_map, tensor);
+      gguf_load_quantized(array_map, qtype_map, tensor);
     } else {
+      std::string name(tensor.name, tensor.namelen);
       ov::Tensor loaded_array = extract_tensor_data(&tensor); 
       check_insert(array_map.insert({name, loaded_array}));
     }
@@ -361,10 +362,8 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<s
         consts["lm_head.biases"] = weights.at("output.biases");
     }
 
-    //for (auto kv : weights) std::cout << "Key: " << kv.first << std::endl;
     // Process layer weights
     for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
-        std::string key = format("blk.%d.attn_norm.weight", i);
         consts[format("model.layers[%d].input_layernorm.weight", i)] = weights.at(format("blk.%d.attn_norm.weight", i));
         consts[format("model.layers[%d].post_attention_layernorm.weight", i)] = weights.at(format("blk.%d.ffn_norm.weight", i));
         
@@ -423,11 +422,68 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<s
     return consts;
 }
 
+std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(const std::map<std::string, GGUFMetaData>& config, 
+                                                      const std::unordered_map<std::string, gguf_tensor_type>& qtype) {
+
+    std::unordered_map<std::string, gguf_tensor_type> qtype_map;
+
+    if (qtype.count("token_embd.qtype")) {
+      qtype_map["model.embed_tokens.qtype"] = qtype.at("token_embd.qtype");
+    }
+    if (qtype.count("output_norm.qtype")) {
+      qtype_map["model.norm.qtype"] = qtype.at("output_norm.qtype");
+    }
+    if (qtype.count("output.qtype")) {
+      qtype_map["lm_head.qtype"] = qtype.at("output.qtype");
+    }
+    std::cout << std::get<int>(config.at("layer_num")) << std::endl;
+    for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
+      if (qtype.count(format("blk.%d.attn_norm.qtype", i))) {
+        qtype_map[format("model.layers[%d].input_layernorm.qtype", i)] = qtype.at(format("blk.%d.attn_norm.qtype", i));
+      }
+
+      if (qtype.count(format("blk.%d.ffn_norm.qtype", i))){
+        qtype_map[format("model.layers[%d].post_attention_layernorm.qtype", i)] = qtype.at(format("blk.%d.ffn_norm.qtype", i));
+      }
+
+      // Attention weights
+      if (qtype.count(format("blk.%d.attn_q.qtype", i))) {
+        qtype_map[format("model.layers[%d].self_attn.q_proj.qtype", i)] = qtype.at(format("blk.%d.attn_q.qtype", i));
+      }
+      if (qtype.count(format("blk.%d.attn_k.qtype", i))) {
+        qtype_map[format("model.layers[%d].self_attn.k_proj.qtype", i)] = qtype.at(format("blk.%d.attn_k.qtype", i));
+      }
+      if (qtype.count(format("blk.%d.attn_v.qtype", i))) {
+        qtype_map[format("model.layers[%d].self_attn.v_proj.qtype", i)] = qtype.at(format("blk.%d.attn_v.qtype", i));
+      }
+      if (qtype.count(format("blk.%d.attn_output.qtype", i))) {
+        qtype_map[format("model.layers[%d].self_attn.o_proj.qtype", i)] = qtype.at(format("blk.%d.attn_output.qtype", i));
+      }
+
+      // MLP weights
+      if (qtype.count(format("blk.%d.ffn_gate.qtype", i))) {
+        qtype_map[format("model.layers[%d].mlp.gate_proj.qtype", i)] = qtype.at(format("blk.%d.ffn_gate.qtype", i));
+      }
+      if (qtype.count(format("blk.%d.ffn_up.qtype", i))) {
+        qtype_map[format("model.layers[%d].mlp.up_proj.qtype", i)] = qtype.at(format("blk.%d.ffn_up.qtype", i));
+      }
+      if (qtype.count(format("blk.%d.ffn_down.qtype", i))) {
+        qtype_map[format("model.layers[%d].mlp.down_proj.qtype", i)] = qtype.at(format("blk.%d.ffn_down.qtype", i));
+      }
+    }
+
+    return qtype_map;
+}
+
 std::tuple<std::map<std::string, GGUFMetaData>, std::unordered_map<std::string, ov::Tensor>, std::unordered_map<std::string, gguf_tensor_type>> load_gguf(const std::string& file) {
     auto [metadata, weights, qtype] = get_gguf_data(file);
 
     auto config = config_from_meta(metadata);
     auto consts = consts_from_weights(config, weights);
-
-    return {config, consts, qtype};
+    auto qtype_map = get_qtype_map(config, qtype);
+    for (auto& [key, val] : qtype_map) {
+        std::cout << key << " : " << val << std::endl;
+    }
+    
+    return {config, consts, qtype_map};
 }

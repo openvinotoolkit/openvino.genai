@@ -25,7 +25,8 @@ auto set_name = [](auto node, auto name) {
 // Also valid for other models, e.g. SmolLMs
 std::shared_ptr<ov::Model> create_llama_model(
     const std::map<std::string, GGUFMetaData>& configs,
-    std::unordered_map<std::string, ov::Tensor>& consts) {
+    std::unordered_map<std::string, ov::Tensor>& consts,
+    std::unordered_map<std::string, gguf_tensor_type>& qtype_map) {
 
     auto start_time = std::chrono::high_resolution_clock::now();
     std::cout << "Start generating OV model..." << std::endl;
@@ -150,7 +151,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     
 
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
-        model = create_llama_model(config, consts);
+        model = create_llama_model(config, consts, qtype);
     }
     else {
         throw std::runtime_error(std::string("Unsupported model architecture") + model_arch);
