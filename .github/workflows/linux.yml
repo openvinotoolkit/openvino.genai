@@ -518,7 +518,7 @@ jobs:
           cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Test Samples (Python and C++)
-        run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        run: python -m pytest -vvs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
