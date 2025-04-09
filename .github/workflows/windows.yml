@@ -46,12 +46,12 @@ jobs:
     continue-on-error: true
 
     steps:
-    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@3ceeeb52d643e564f50d9a6f400561104528e828
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
       id: openvino_download
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_js_package.zip
-        revision: 'latest_available_commit'
+        revision: '3ceeeb52d643e564f50d9a6f400561104528e828'
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build-type }})

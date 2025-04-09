@@ -41,12 +41,12 @@ jobs:
         - ${{ github.workspace }}:${{ github.workspace }}
 
     steps:
-    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@3ceeeb52d643e564f50d9a6f400561104528e828
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
       id: openvino_download
       with:
         platform: macos_12_6
         commit_packages_to_provide: wheels,openvino_js_package.tar.gz
-        revision: latest_available_commit
+        revision: '3ceeeb52d643e564f50d9a6f400561104528e828'
 
   genai_build_cmake:
     name: Build cpack - ${{ matrix.build-type }}
