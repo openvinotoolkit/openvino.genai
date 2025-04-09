@@ -14,14 +14,12 @@ public:
 
     ContinuousBatchingForPromptLookupImpl(
         const std::shared_ptr<ov::Model>& model,
-        const Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& properties,
         const ov::genai::GenerationConfig& generation_config,
         bool is_validation_mode_enabled = false) :
     ContinuousBatchingImpl{ model,
-                            tokenizer,
                             scheduler_config,
                             device,
                             properties,
