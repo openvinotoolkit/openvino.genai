@@ -172,7 +172,7 @@ LoRATensors group_lora_tensors(const ConstantMap& tensors, const LoRAPartsParser
         } else if(auto parsed = parts_parser.alpha(named_tensor.first)) {
             result[*parsed].alpha = named_tensor.second;
         } else {
-            DEBUG_PRINT("Ignored LoRA tensor \"" << named_tensor.first << "\" because couldn't recognize expected name pattern." );
+            std::cerr << "[ WARNING ] Ignored LoRA tensor \"" << named_tensor.first << "\" because couldn't recognize expected name pattern.\n";
         }
     }
 
