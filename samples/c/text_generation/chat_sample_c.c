@@ -8,17 +8,16 @@
 #include "openvino/genai/c/llm_pipeline.h"
 
 #define MAX_PROMPT_LENGTH 64
-#define MAX_OUTPUT_LENGTH 1024
 
 #define CHECK_STATUS(return_status)                                                      \
     if (return_status != OK) {                                                           \
         fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
         goto err;                                                                        \
     }
-
-ov_genai_streamming_status_e print_callback(const char* args) {
-    if (args) {
-        fprintf(stdout, "%s", args);
+ov_genai_streamming_status_e print_callback(const char* str, void* args) {
+    if (str) {
+        // If args is not null, it needs to be cast to its actual type.
+        fprintf(stdout, "%s", str);
         fflush(stdout);
         return OV_GENAI_STREAMMING_STATUS_RUNNING;
     } else {
@@ -37,7 +36,8 @@ int main(int argc, char* argv[]) {
 
     ov_genai_generation_config* config = NULL;
     ov_genai_llm_pipeline* pipeline = NULL;
-    stream_callback streamer = &print_callback;
+    streamer_callback streamer;
+    streamer.callback_func = print_callback;
     char prompt[MAX_PROMPT_LENGTH];
 
     CHECK_STATUS(ov_genai_llm_pipeline_create(models_path, device, &pipeline));

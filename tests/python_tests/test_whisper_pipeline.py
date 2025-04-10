@@ -17,6 +17,7 @@ import os
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
+from utils.constants import get_ov_cache_models_dir
 
 from utils.network import retry_request
 from typing import Any, List, Dict
@@ -47,7 +48,7 @@ def get_whisper_models_list(tiny_only=False):
             if model_id in pytest.selected_model_ids.split(" ")
         ]
 
-    prefix = pathlib.Path(os.getenv("GENAI_MODELS_PATH_PREFIX", ""))
+    prefix = get_ov_cache_models_dir()
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
@@ -68,9 +69,14 @@ def read_whisper_model(params, stateful=True):
         compile=False,
         device="CPU",
         load_in_8bit=False,
+        local_files_only=True,
     ))
 
-    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
+    processor = retry_request(lambda: WhisperProcessor.from_pretrained(
+        path,
+        trust_remote_code=True,
+        local_files_only=True,
+    ))
 
     hf_pipe = pipeline(
         "automatic-speech-recognition",

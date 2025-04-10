@@ -50,8 +50,7 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& config,
-        const ov::genai::GenerationConfig& generation_config,
-        const std::filesystem::path& models_path = {}
+        const ov::genai::GenerationConfig& generation_config
     );
 
     StatefulLLMPipeline(

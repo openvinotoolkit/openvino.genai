@@ -41,9 +41,9 @@ int32_t main(int32_t argc, char* argv[]) try {
     ov::genai::Text2ImagePipeline pipe(models_path);
 
     //
-    // Step 2: Reshape the pipeline given number of images, width, height, and guidance scale.
+    // Step 2: Reshape the pipeline given number of images, height, width and guidance scale.
     //
-    pipe.reshape(1, width, height, pipe.get_generation_config().guidance_scale);
+    pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale);
 
     //
     // Step 3: Compile the pipeline with the specified devices, and properties (like cache dir)

@@ -1,0 +1,105 @@
+### Accelerate Generation via Speculative Decoding
+
+Speculative decoding (or [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) in Hugging Face terminology) is a recent technique, that allows to speed up token generation when an additional smaller draft model is used alongside with the main model.
+This reduces the number of infer requests to the main model, increasing performance.
+
+<details>
+    <summary>How Speculative Decoding Works</summary>
+
+    The draft model predicts the next K tokens one by one in an autoregressive manner, while the main model validates these predictions and corrects them if necessary.
+    We go through each predicted token, and if a difference is detected between the draft and main model, we stop and keep the last token predicted by the main model.
+    Then the draft model gets the latest main prediction and again tries to predict the next K tokens, repeating the cycle.
+
+    This approach reduces the need for multiple infer requests to the main model, enhancing performance.
+    For instance, in more predictable parts of text generation, the draft model can, in best-case scenarios, generate the next K tokens that exactly match the target.
+    In that case they are validated in a single inference request to the main model (which is bigger, more accurate but slower) instead of running K subsequent requests.
+
+    More details can be found in the original papers:
+    - https://arxiv.org/pdf/2211.17192.pdf
+    - https://arxiv.org/pdf/2302.01318.pdf
+</details>
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai
+        import queue
+        import threading
+
+        def streamer(subword):
+            print(subword, end='', flush=True)
+            return openvino_genai.StreamingStatus.RUNNING
+
+        def infer(model_dir: str, draft_model_dir: str, prompt: str):
+            main_device = 'CPU'  # GPU can be used as well.
+            draft_device = 'CPU'
+
+            # Configure cache for better performance
+            scheduler_config = openvino_genai.SchedulerConfig()
+            scheduler_config.cache_size = 2 # in GB
+
+            # Initialize draft model
+            draft_model = openvino_genai.draft_model(
+                draft_model_dir,
+                draft_device
+            )
+
+            # Create pipeline with draft model
+            pipe = openvino_genai.LLMPipeline(
+                model_dir,
+                main_device,
+                scheduler_config=scheduler_config,
+                draft_model=draft_model
+            )
+
+            # Configure speculative decoding
+            config = openvino_genai.GenerationConfig()
+            config.max_new_tokens = 100
+            config.num_assistant_tokens = 5 # Number of tokens to predict speculatively
+
+            pipe.generate("The Sun is yellow because", config, streamer)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include <openvino/openvino.hpp>
+        #include "openvino/genai/llm_pipeline.hpp"
+
+        int main(int argc, char* argv[]) {
+            if (4 != argc) {
+                throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DRAFT_MODEL_DIR> '<PROMPT>'");
+            }
+
+            ov::genai::GenerationConfig config;
+            config.max_new_tokens = 100;
+            config.num_assistant_tokens = 5; // Number of tokens to predict speculatively
+
+            std::string main_model_path = argv[1];
+            std::string draft_model_path = argv[2];
+            std::string prompt = argv[3];
+
+            std::string main_device = "CPU", draft_device = "CPU";
+
+            ov::genai::SchedulerConfig scheduler_config;
+            scheduler_config.cache_size = 5; // in GB
+
+            ov::genai::LLMPipeline pipe(
+                main_model_path,
+                main_device,
+                ov::genai::draft_model(draft_model_path, draft_device),
+                ov::genai::scheduler_config(scheduler_config));
+
+            auto streamer = [](std::string word) {
+                std::cout << word << std::flush;
+                return ov::genai::StreamingStatus::RUNNING;
+            };
+
+            pipe.generate("The Sun is yellow because", config, streamer);
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+:::info
+For more information, refer to [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/speculative_decoding_lm.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/speculative_decoding_lm.cpp) speculative decoding samples.
+:::
