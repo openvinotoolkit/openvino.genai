@@ -2092,12 +2092,23 @@ class VLMPipeline:
     """
     This class is used for generation with VLMs
     """
+    @typing.overload
     def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
         """
-        device on which inference will be done
                     VLMPipeline class constructor.
                     models_path (os.PathLike): Path to the folder with exported model files.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+                    kwargs: Device properties
+        """
+    @typing.overload
+    def __init__(self, models: dict[str, tuple[str, openvino._pyopenvino.Tensor]], tokenizer: Tokenizer, config_dir_path: os.PathLike, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
+        """
+                    VLMPipeline class constructor.
+                    models (typing.Dict[str, typing.Tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+                    tokenizer (Tokenizer): Genai Tokenizers.
+                    config_dir_path (os.PathLike): Path to folder with model configs.
+                    device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+                    generation_config (GenerationConfig | None): Device properties.
                     kwargs: Device properties
         """
     def finish_chat(self) -> None:
