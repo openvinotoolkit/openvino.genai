@@ -1,5 +1,5 @@
 import { Plugin } from '@docusaurus/types';
-import fs from 'fs';
+import { access, mkdir, opendir, writeFile } from 'fs/promises';
 import path from 'path';
 
 type GenAISample = {
@@ -25,31 +25,32 @@ async function findSamples(): Promise<GenAISamples> {
   const samplesMap: GenAISamples = {};
   const samplesPath = path.join('..', 'samples'); // Relative to docusaurus.config.ts
 
-  for await (const dir of await fs.promises.opendir(samplesPath)) {
+  for await (const dir of await opendir(samplesPath)) {
     const dirPath = path.join(samplesPath, dir.name);
-    if (dir.isDirectory()) {
-      const language = dir.name;
-      for await (const subdir of await fs.promises.opendir(dirPath)) {
-        if (subdir.isDirectory()) {
-          if (!samplesMap[language]) {
-            samplesMap[language] = [];
-          }
-          const hasReadme = await fs.promises
-            .access(path.join(dirPath, subdir.name, 'README.md'))
-            .then(() => true)
-            .catch(() => false);
-
-          const githubLink = `https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/${language}/${subdir.name}`;
-
-          samplesMap[language].push({
-            language,
-            languageTitle: LANGUAGE_TITLES[language] || language,
-            name: subdir.name,
-            hasReadme,
-            githubLink,
-          });
-        }
+    if (!dir.isDirectory()) {
+      continue;
+    }
+    const language = dir.name;
+    for await (const subdir of await opendir(dirPath)) {
+      if (!subdir.isDirectory()) {
+        continue;
       }
+      if (!samplesMap[language]) {
+        samplesMap[language] = [];
+      }
+      const hasReadme = await access(path.join(dirPath, subdir.name, 'README.md'))
+        .then(() => true)
+        .catch(() => false);
+
+      const githubLink = `https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/${language}/${subdir.name}`;
+
+      samplesMap[language].push({
+        language,
+        languageTitle: LANGUAGE_TITLES[language] || language,
+        name: subdir.name,
+        hasReadme,
+        githubLink,
+      });
     }
   }
   return samplesMap;
@@ -60,7 +61,7 @@ async function generateSamplesDocs(samplesMap: GenAISamples): Promise<void> {
   for (const [language, samples] of Object.entries(samplesMap)) {
     const languageDirPath = path.join(docsSamplesPath, language);
     const languageTitle = samples[0]?.languageTitle;
-    await fs.promises.mkdir(languageDirPath, { recursive: true });
+    await mkdir(languageDirPath, { recursive: true });
     await generateCategory(languageTitle, languageDirPath);
     for (const sample of samples) {
       await generateSampleDocFile(sample, languageDirPath);
@@ -77,10 +78,7 @@ async function generateCategory(language: string, dirPath: string): Promise<void
     },
   };
 
-  await fs.promises.writeFile(
-    path.join(dirPath, '_category_.json'),
-    JSON.stringify(content, null, 2)
-  );
+  await writeFile(path.join(dirPath, '_category_.json'), JSON.stringify(content, null, 2));
 }
 
 async function generateSampleDocFile(sample: GenAISample, dirPath: string): Promise<void> {
@@ -105,7 +103,7 @@ sidebar_label: ${sample.name}
 ---
 ${sample.hasReadme ? readmeImportContent : fallbackContent}`;
 
-  await fs.promises.writeFile(sampleDocPath, content);
+  await writeFile(sampleDocPath, content);
 }
 
 export default async function GenAISamplesDocsPlugin(): Promise<Plugin> {
