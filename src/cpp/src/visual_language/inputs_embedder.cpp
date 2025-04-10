@@ -244,8 +244,8 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
     return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
-ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
-    return m_impl->get_inputs_embeds(prompt, images, metrics);
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, std::optional<ov::Tensor> merged_image_embeddings) {
+    return m_impl->get_inputs_embeds(prompt, images, metrics, merged_image_embeddings);
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
@@ -266,6 +266,10 @@ ov::genai::utils::KVCacheState& InputsEmbedder::get_kv_cache_state() {
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
     return m_impl->get_tokenizer();
+}
+
+VisionEncoder::Ptr InputsEmbedder::get_vision_encoder() const {
+    return m_impl->get_vision_encoder();
 }
 
 void InputsEmbedder::start_chat(const std::string& system_message) {

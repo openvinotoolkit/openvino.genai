@@ -50,6 +50,7 @@ protected:
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
     std::vector<ov::genai::EncodedImage> m_history_images;
+    ov::Tensor m_merged_image_embeddings; // Used by Qwen2VL only
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms

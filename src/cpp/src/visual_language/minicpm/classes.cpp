@@ -566,7 +566,7 @@ void adjust_pos_cache(
 
 } // namespace
 
-ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, std::optional<ov::Tensor> merged_image_embeddings) {
     auto [unified_prompt, images_sequence] = normalize_prompt(
         prompt,
         NATIVE_TAG,

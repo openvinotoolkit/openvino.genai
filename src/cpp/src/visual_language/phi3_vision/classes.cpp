@@ -619,7 +619,7 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
             });
     }
 
-ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, std::optional<ov::Tensor> merged_image_embeddings) {
     size_t base_id = m_tokens_per_images.size();
     std::string image_prompt = normalize_prompt(prompt, base_id, images.size());
     std::vector<ov::Tensor> images_features_proj;

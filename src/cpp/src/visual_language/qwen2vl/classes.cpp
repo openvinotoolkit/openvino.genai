@@ -169,6 +169,41 @@ ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
 
 } // namespace
 
+
+VisionEncoderQwen2VL::VisionEncoderQwen2VL(
+    const std::filesystem::path& model_dir,
+    const std::string& device,
+    const ov::AnyMap properties) : VisionEncoder{model_dir, device, properties} {
+    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_merger_model.xml", device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
+    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+}
+
+
+VisionEncoderQwen2VL::VisionEncoderQwen2VL(
+    const ModelsMap& models_map,
+    const std::filesystem::path& config_dir_path,
+    const std::string& device,
+    const ov::AnyMap device_config) : VisionEncoder{models_map, config_dir_path, device, device_config}  {
+    auto compiled_model = utils::singleton_core().compile_model(
+        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
+        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second,
+        device,
+        device_config
+    );
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
+    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+
+}
+
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
@@ -249,15 +284,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_merger_model.xml", device, device_config);
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
-    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
-}
+    IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const VLMConfig& vlm_config,
@@ -266,22 +293,14 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    auto compiled_model = utils::singleton_core().compile_model(
-        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
-        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second,
-        device,
-        device_config
-    );
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
-    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+
+ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(const std::vector<EncodedImage>& images) {
+    auto qwen2vl_vision_encoder = std::dynamic_pointer_cast<VisionEncoderQwen2VL>(m_vision_encoder);
+    return qwen2vl_vision_encoder->run_image_embeddings_merger(images);
 }
 
-ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, std::optional<ov::Tensor> merged_image_embeddings) {
     auto [unified_prompt, images_sequence] = normalize_prompt(prompt, NATIVE_TAG, NATIVE_TAG, m_image_id, images.size());
     std::vector<ov::Tensor> image_embeds;
     std::vector<std::array<size_t, 3>> images_grid_thw;
@@ -339,8 +358,14 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     if (images.empty()) {
         return text_embeds;
     }
-
-    return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, reordered_image_embeds, reordered_images_grid_thw, image_pad_token_id);
+    ov::Tensor merged_image_embeddings_tensor;
+    if (merged_image_embeddings.has_value()) {
+        merged_image_embeddings_tensor = merged_image_embeddings.value();
+    }
+    else {
+        merged_image_embeddings_tensor = run_image_embeddings_merger(images);
+    }
+    return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, merged_image_embeddings_tensor, image_pad_token_id);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
@@ -372,12 +397,24 @@ bool InputsEmbedderQwen2VL::prompt_has_image_tag(const std::string& prompt) cons
     return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(NATIVE_TAG) != std::string::npos;
 }
 
-ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
-    const ov::Tensor& input_ids,
-    const ov::Tensor& text_embeds,
-    const std::vector<ov::Tensor>& image_embeds,
-    const std::vector<std::array<size_t, 3>> images_grid_thw,
-    const int64_t image_pad_token_id) {
+ov::Tensor VisionEncoderQwen2VL::run_image_embeddings_merger(
+    const std::vector<EncodedImage>& images) {
+
+    std::vector<ov::Tensor> image_embeds;
+    std::vector<std::array<size_t, 3>> images_grid_thw;
+    image_embeds.reserve(images.size());
+    images_grid_thw.reserve(images.size());
+    
+    for (const auto& encoded_image : images) {
+        ov::Tensor single_image_embeds = encoded_image.resized_source;
+        image_embeds.push_back(std::move(single_image_embeds));
+
+        size_t grid_t = 1;
+        size_t grid_h = encoded_image.resized_source_size.height;
+        size_t grid_w = encoded_image.resized_source_size.width;
+        images_grid_thw.push_back({grid_t, grid_h, grid_w});
+    }
+
     // Calculate cumulative sequence lengths for attention mask
     std::vector<int32_t> cu_seqlens;
     cu_seqlens.push_back(0);
@@ -429,7 +466,6 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
     }
 
     ov::Tensor rotary_pos_emb = get_rotary_pos_emb(images_grid_thw);
-
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_images);
@@ -438,6 +474,16 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
     vision_embeddings_merger.infer();
     ov::Tensor processed_vision_embeds = vision_embeddings_merger.get_output_tensor();
 
+    ov::Tensor res = ov::Tensor(processed_vision_embeds.get_element_type(), processed_vision_embeds.get_shape());
+    std::memcpy(res.data(), processed_vision_embeds.data(), processed_vision_embeds.get_byte_size());
+    return res;
+}
+
+ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
+    const ov::Tensor& input_ids,
+    const ov::Tensor& text_embeds, 
+    const ov::Tensor& processed_vision_embeds,
+    const int64_t image_pad_token_id) {
     ov::Tensor merged_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
     std::memcpy(merged_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
 
@@ -467,8 +513,8 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
     return merged_embeds;
 }
 
-ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {  
-    const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
+ov::Tensor VisionEncoderQwen2VL::get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {  
+    const size_t spatial_merge_size = get_processor_config().merge_size;
 
     std::vector<std::vector<size_t>> all_pos_ids;
     size_t total_positions = 0;
