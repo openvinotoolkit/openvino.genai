@@ -27,7 +27,7 @@ from data.test_dataset import get_test_dataset
 
 def read_models_list(file_name: str):
     models = []
-    with open(file_name) as f:
+    with open(file_name, encoding="utf-8") as f:
         for model_name in f:
             model_name = model_name.strip()
             # skip comment in model scope file

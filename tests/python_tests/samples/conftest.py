@@ -234,7 +234,7 @@ def download_test_content(request):
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         response = requests.get(file_url, stream=True)
         response.raise_for_status()
-        with open(file_path, 'wb') as f:
+        with open(file_path, 'wb', encoding="utf-8") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
         logger.info(f"Downloaded test content to {file_path}")
@@ -304,7 +304,7 @@ def generate_image_generation_jsonl(request):
     if not os.path.exists(file_path):
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             for entry in json_entries:
                 f.write(json.dumps(entry) + "\n")
         
