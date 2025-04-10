@@ -662,10 +662,12 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
     std::vector<std::variant<ov::Tensor, size_t>> tokens = drop_image_placeholders(new_tokens);
     ov::Tensor inputs_embeds{ov::element::f32, {1, new_tokens.get_shape().at(1), m_vlm_config.hidden_size}};
     size_t offset = 0;
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
     for (const std::variant<ov::Tensor, size_t>& chunk : tokens) {
         offset += std::visit(utils::overloaded{
             [&](const ov::Tensor& chunk) {
-                const ov::Tensor& text_embeds = m_embedding->infer(chunk);
+                const ov::Tensor& text_embeds = m_embedding->infer(req, chunk);
                 size_t text_length = text_embeds.get_shape().at(1);
                 std::copy_n(
                     text_embeds.data<float>(),
