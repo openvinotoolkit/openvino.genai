@@ -13,13 +13,6 @@
 namespace ov::genai {
 
 class VisionEncoderMiniCPM : public VisionEncoder {
-public:
-    using VisionEncoder::VisionEncoder;
-
-    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
-};
-
-class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
     // A resampler model to resample image embeddings.
     // [N, H*W, old_hidden_size] is the input shape.
     // [N, query_num, hidden_size] is the output shape.
@@ -28,6 +21,27 @@ class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
     // [70, 70, hidden_size]. 70 is the initial guess of the image
     // height and width after dividing by patch_size.
     ov::Tensor m_pos_embed_cache;
+    // VLM config
+    VLMConfig m_vlm_config;
+
+    ov::Tensor resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes);
+public:
+    VisionEncoderMiniCPM(
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap properties);
+
+
+    VisionEncoderMiniCPM(
+        const ModelsMap& models_map,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config);
+    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+    ResampledImage resample_encoded_image(const EncodedImage& image);
+};
+
+class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
     size_t m_prev_image_id = 0;
 
 public:
@@ -36,7 +50,7 @@ public:
         const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap device_config);
-
+    
     InputsEmbedderMiniCPM(
         const VLMConfig& vlm_config,
         const ModelsMap& models_map,
@@ -55,8 +69,6 @@ public:
 
     bool prompt_has_image_tag(const std::string& prompt) const override;
 
-private:
-    ov::Tensor resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes);
 };
 
 } // namespace ov::genai
