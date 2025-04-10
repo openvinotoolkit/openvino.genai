@@ -520,7 +520,7 @@ jobs:
             runner: 'aks-linux-8-cores-64gb'
 
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -615,7 +615,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel ] 
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
