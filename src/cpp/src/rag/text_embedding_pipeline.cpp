@@ -35,6 +35,8 @@ std::pair<TextEmbeddingPipeline::Config, ov::AnyMap&> extract_config(const ov::A
     set_and_erase(properties_copy, max_length.name(), config.max_length);
     set_and_erase(properties_copy, pooling_type.name(), config.pooling_type);
     set_and_erase(properties_copy, normalize.name(), config.normalize);
+    set_and_erase(properties_copy, embed_instruction.name(), config.embed_instruction);
+    set_and_erase(properties_copy, query_instruction.name(), config.query_instruction);
 
     return {config, properties_copy};
 }
@@ -67,6 +69,29 @@ public:
     };
 
     std::vector<EmbeddingResult> embed_documents(const std::vector<std::string>& texts) {
+        auto formatted_texts = format_texts(texts);
+        return embed(formatted_texts);
+    };
+
+    EmbeddingResult embed_query(const std::string& text) {
+        std::vector<std::string> formatted_query{format_query(text)};
+        return embed(formatted_query)[0];
+    };
+
+private:
+    Tokenizer m_tokenizer;
+    InferRequest m_request;
+    Config m_config;
+
+    TokenizedInputs encode(std::vector<std::string>& texts) {
+        if (!m_config.max_length.has_value()) {
+            return m_tokenizer.encode(texts);
+        }
+
+        return m_tokenizer.encode(texts, {{ov::genai::max_length.name(), *m_config.max_length}});
+    }
+
+    std::vector<EmbeddingResult> embed(std::vector<std::string>& texts) {
         const auto tokenized_inputs = encode(texts);
 
         m_request.set_tensor("input_ids", tokenized_inputs.input_ids);
@@ -79,22 +104,26 @@ public:
         return to_embedding_result(last_hidden_state);
     };
 
-    EmbeddingResult embed_query(const std::string& text) {
-        return embed_documents({text})[0];
-    };
-
-private:
-    Tokenizer m_tokenizer;
-    InferRequest m_request;
-    Config m_config;
-
-    TokenizedInputs encode(const std::vector<std::string>& texts) {
-        if (!m_config.max_length.has_value()) {
-            return m_tokenizer.encode(std::vector<std::string>{texts});
+    std::vector<std::string> format_texts(const std::vector<std::string>& texts) {
+        if (!m_config.embed_instruction) {
+            return texts;
         }
 
-        const ov::AnyMap tokenization_params{{ov::genai::max_length.name(), *m_config.max_length}};
-        return m_tokenizer.encode(std::vector<std::string>{texts}, tokenization_params);
+        std::vector<std::string> formatted;
+        formatted.reserve(texts.size());
+
+        for (auto& text : texts) {
+            formatted.emplace_back(*m_config.embed_instruction + text);
+        }
+        return formatted;
+    }
+
+    std::string format_query(const std::string& text) {
+        if (!m_config.query_instruction) {
+            return text;
+        }
+
+        return *m_config.query_instruction + text;
     }
 
     std::vector<EmbeddingResult> to_embedding_result(const Tensor last_hidden_state) {

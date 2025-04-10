@@ -25,9 +25,8 @@ public:
         std::optional<size_t> max_length;
         PoolingType pooling_type = PoolingType::CLS;
         bool normalize = false;
-        // todo: enable
-        // std::optional<std::string> query_instruction;
-        // std::optional<std::string> embed_instruction;
+        std::optional<std::string> query_instruction;
+        std::optional<std::string> embed_instruction;
     };
 
     /**
@@ -78,6 +77,8 @@ private:
 
 static constexpr ov::Property<bool> normalize{"normalize"};
 static constexpr ov::Property<TextEmbeddingPipeline::PoolingType> pooling_type{"pooling_type"};
+static constexpr ov::Property<std::string> query_instruction{"query_instruction"};
+static constexpr ov::Property<std::string> embed_instruction{"embed_instruction"};
 
 }  // namespace genai
 }  // namespace ov
