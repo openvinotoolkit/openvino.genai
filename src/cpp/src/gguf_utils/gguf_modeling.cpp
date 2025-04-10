@@ -26,7 +26,7 @@ auto set_name = [](auto node, auto name) {
 std::shared_ptr<ov::Model> create_llama_model(
     const std::map<std::string, GGUFMetaData>& configs,
     std::unordered_map<std::string, ov::Tensor>& consts,
-    std::unordered_map<std::string, gguf_tensor_type>& qtype_map) {
+    std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
 
     auto start_time = std::chrono::high_resolution_clock::now();
     std::cout << "Start generating OV model..." << std::endl;
@@ -53,11 +53,9 @@ std::shared_ptr<ov::Model> create_llama_model(
         "model.embed_tokens",
         input_ids->output(0),
         consts,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))));
+        qtypes.at("model.embed_tokens.qtype"));
 
     auto hidden_states = inputs_embeds;
-
-    auto qtype = static_cast<QType>(std::get<int>(configs.at("qtype")));
 
     // Initialize RoPE
     auto rope_const = init_rope(
@@ -85,6 +83,7 @@ std::shared_ptr<ov::Model> create_llama_model(
         auto [new_hidden, layer_sinks, new_mask, new_cos_sin, new_shape] = layer(
             configs,
             consts,
+            qtypes,
             i,
             hidden_states,
             attention_mask,
@@ -118,7 +117,7 @@ std::shared_ptr<ov::Model> create_llama_model(
         final_norm,
         consts,
         embeddings,
-        qtype);
+        qtypes.at("lm_head.qtype"));
 
     // Create results
     auto logits = std::make_shared<ov::op::v0::Result>(embed_out);
@@ -129,7 +128,7 @@ std::shared_ptr<ov::Model> create_llama_model(
     auto model = std::make_shared<ov::Model>(ov::OutputVector({logits->output(0)}), sinks, inputs);
 
     // Set runtime options
-    if (qtype == QType::FP16) {
+    if (std::get<int>(configs.at("file_type")) == 1 || std::get<int>(configs.at("file_type")) == 0) {
         model->set_rt_info("f16", {"runtime_options", "KV_CACHE_PRECISION"});
     }
     model->set_rt_info("8.0", {"runtime_options", "ACTIVATIONS_SCALE_FACTOR"});
@@ -142,7 +141,7 @@ std::shared_ptr<ov::Model> create_llama_model(
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
-    auto [config, consts, qtype] = load_gguf(model_path);
+    auto [config, consts, qtypes] = load_gguf(model_path);
 
     std::shared_ptr<ov::Model> model;
 
@@ -151,7 +150,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     
 
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
-        model = create_llama_model(config, consts, qtype);
+        model = create_llama_model(config, consts, qtypes);
     }
     else {
         throw std::runtime_error(std::string("Unsupported model architecture") + model_arch);

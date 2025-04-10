@@ -286,27 +286,27 @@ GGUFLoad get_gguf_data(const std::string& file) {
   return {metadata, arrays, qtype};
 }
 
-QType get_quantization_type(int gguf_type) {
-    switch(gguf_type) {
-        case 0:
-        case 1:
-            std::cout << "Working with FP16 model" << std::endl;
-            return QType::FP16;
+// QType get_quantization_type(int gguf_type) {
+//     switch(gguf_type) {
+//         case 0:
+//         case 1:
+//             std::cout << "Working with FP16 model" << std::endl;
+//             return QType::FP16;
             
-        case 2:
-        case 3:
-            std::cout << "Working with INT4 quantized model" << std::endl;
-            return QType::INT4;
+//         case 2:
+//         case 3:
+//             std::cout << "Working with INT4 quantized model" << std::endl;
+//             return QType::INT4;
             
-        case 7:
-            std::cout << "Working with INT8 quantized model" << std::endl;
-            return QType::INT8;
+//         case 7:
+//             std::cout << "Working with INT8 quantized model" << std::endl;
+//             return QType::INT8;
             
-        default:
-            throw std::invalid_argument(
-                "Unsupported GGUF quantization type: " + std::to_string(gguf_type));
-    }
-}
+//         default:
+//             throw std::invalid_argument(
+//                 "Unsupported GGUF quantization type: " + std::to_string(gguf_type));
+//     }
+// }
 
 float metadata_to_float(const std::unordered_map<std::string, GGUFMetaData>& metadata, const std::string& key) {
     auto tensor = std::get<ov::Tensor>(metadata.at(key));
@@ -335,7 +335,7 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     config["rms_norm_eps"] = metadata_to_float(metadata, arch + ".attention.layer_norm_rms_epsilon");
     config["rope_freq_base"] = metadata.count(arch + ".rope.freq_base") ?
             metadata_to_float(metadata, arch + ".rope.freq_base") : 10000.0f;
-    config["qtype"] = (int)get_quantization_type(metadata_to_int(metadata, "general.file_type"));
+    config["file_type"] = metadata_to_int(metadata, "general.file_type");
     return config;
 }
 
@@ -400,7 +400,7 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<s
         }
 
         // Quantization parameters
-        if (QType(std::get<int>(config.at("qtype"))) != QType::FP16) {
+        if (std::get<int>(config.at("file_type")) != 0 && std::get<int>(config.at("file_type")) != 1) { //ALL_F32 = 0 MOSTLY_F16 = 1
             consts[format("model.layers[%d].self_attn.q_proj.scales", i)] = weights.at(format("blk.%d.attn_q.scales", i));
             consts[format("model.layers[%d].self_attn.k_proj.scales", i)] = weights.at(format("blk.%d.attn_k.scales", i));
             consts[format("model.layers[%d].self_attn.v_proj.scales", i)] = weights.at(format("blk.%d.attn_v.scales", i));
@@ -436,7 +436,7 @@ std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(const std::map<s
     if (qtype.count("output.qtype")) {
       qtype_map["lm_head.qtype"] = qtype.at("output.qtype");
     }
-    std::cout << std::get<int>(config.at("layer_num")) << std::endl;
+
     for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
       if (qtype.count(format("blk.%d.attn_norm.qtype", i))) {
         qtype_map[format("model.layers[%d].input_layernorm.qtype", i)] = qtype.at(format("blk.%d.attn_norm.qtype", i));
@@ -480,10 +480,7 @@ std::tuple<std::map<std::string, GGUFMetaData>, std::unordered_map<std::string, 
 
     auto config = config_from_meta(metadata);
     auto consts = consts_from_weights(config, weights);
-    auto qtype_map = get_qtype_map(config, qtype);
-    for (auto& [key, val] : qtype_map) {
-        std::cout << key << " : " << val << std::endl;
-    }
-    
-    return {config, consts, qtype_map};
+    auto qtypes = get_qtype_map(config, qtype);
+
+    return {config, consts, qtypes};
 }

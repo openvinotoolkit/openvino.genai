@@ -664,17 +664,26 @@ ov::Output<ov::Node> make_int4_weights(
 ov::Output<ov::Node> make_weights_subgraph(
     const std::string& key,
     const std::unordered_map<std::string, ov::Tensor>& consts,
-    QType qtype,
+    gguf_tensor_type qtype,
     bool reorder,
     int head_size) {
 
     switch(qtype) {
-        case QType::FP16:
+        case gguf_tensor_type::GGUF_TYPE_F16:
             return make_fp16_weights(key, consts, reorder, head_size);
-        case QType::INT8:
+        case gguf_tensor_type::GGUF_TYPE_Q8_0:
             return make_int8_weights(key, consts, reorder, head_size);
-        case QType::INT4:
+        // case gguf_tensor_type::GGUF_TYPE_Q8_1:
+        //     return make_int8_weights(key, consts, reorder, head_size);
+        case gguf_tensor_type::GGUF_TYPE_Q4_0:
             return make_int4_weights(key, consts, reorder, head_size);
+        // case gguf_tensor_type::GGUF_TYPE_Q4_1:
+        //     return make_int4_weights(key, consts, reorder, head_size);
+        case gguf_tensor_type::GGUF_TYPE_Q4_K:
+            return make_int4_weights(key, consts, reorder, head_size);
+        case gguf_tensor_type::GGUF_TYPE_Q6_K:
+            return make_int4_weights(key, consts, reorder, head_size, 16);
+            
         default:
             throw std::invalid_argument("Unsupported quantization type");
     }
@@ -684,7 +693,7 @@ ov::Output<ov::Node> make_fc(
     const std::string& key,
     const ov::Output<ov::Node>& input,
     const std::unordered_map<std::string, ov::Tensor>& consts,
-    QType qtype,
+    gguf_tensor_type qtype,
     bool reorder = false,
     int head_size = -1) {
 
@@ -708,14 +717,14 @@ ov::Output<ov::Node> make_lm_head(
     const ov::Output<ov::Node>& input,
     const std::unordered_map<std::string, ov::Tensor>& consts,
     const ov::Output<ov::Node>& embeddings_node,
-    QType qtype) {
+    gguf_tensor_type qtype) {
 
     ov::Output<ov::Node> w_f32;
     
     if (consts.count(key + ".weight")) {
-        QType lm_qtype = qtype;
+        gguf_tensor_type lm_qtype = qtype;
         if (!consts.count(key + ".scales")) {
-            lm_qtype = QType::FP16;
+            lm_qtype = gguf_tensor_type::GGUF_TYPE_F16;
         }
         w_f32 = make_weights_subgraph(key, consts, lm_qtype, false, -1);
     } else {
@@ -831,12 +840,12 @@ std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_embedding(
     const std::string& key,
     const ov::Output<ov::Node>& input,
     const std::unordered_map<std::string, ov::Tensor>& consts,
-    QType qtype) {
+    gguf_tensor_type qtype) {
 
     auto embedding_type = qtype;
     // Detmbedding_type = qtype;
     if (consts.count(key + ".scales") == 0) {
-        embedding_type = QType::FP16;
+        embedding_type = gguf_tensor_type::GGUF_TYPE_F16;
     }
 
     // Create embedding weights
@@ -859,6 +868,7 @@ std::tuple<ov::Output<ov::Node>,
            std::shared_ptr<ov::Node>> 
     layer(const std::map<std::string, GGUFMetaData>& configs,
         std::unordered_map<std::string, ov::Tensor>& consts,
+        std::unordered_map<std::string, gguf_tensor_type>& qtypes,
         int layer_idx,
         const ov::Output<ov::Node>& hidden_states,
         const ov::Output<ov::Node>& attn_mask,
@@ -892,7 +902,7 @@ std::tuple<ov::Output<ov::Node>,
         layer_prefix + ".self_attn.q_proj",
         input_layernorm,
         consts,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))),
+        qtypes.at(layer_prefix + ".self_attn.q_proj.qtype"),
         reorder,
         std::get<int>(configs.at("head_size")));
 
@@ -900,7 +910,7 @@ std::tuple<ov::Output<ov::Node>,
         layer_prefix + ".self_attn.k_proj",
         input_layernorm,
         consts,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))),
+        qtypes.at(layer_prefix + ".self_attn.k_proj.qtype"),
         reorder,
         std::get<int>(configs.at("head_size")));
 
@@ -908,7 +918,7 @@ std::tuple<ov::Output<ov::Node>,
         layer_prefix + ".self_attn.v_proj",
         input_layernorm,
         consts,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))));
+        qtypes.at(layer_prefix + ".self_attn.v_proj.qtype"));
 
     // Handle output shape
     std::shared_ptr<ov::Node> final_output_shape = output_shape;
@@ -946,7 +956,7 @@ std::tuple<ov::Output<ov::Node>,
         layer_prefix + ".self_attn.o_proj",
         attn_output,
         consts,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))));
+        qtypes.at(layer_prefix + ".self_attn.o_proj.qtype"));
 
     // Residual connection
     auto attn_add = std::make_shared<ov::op::v1::Add>(
@@ -965,13 +975,13 @@ std::tuple<ov::Output<ov::Node>,
         layer_prefix + ".mlp.gate_proj",
         post_attn_norm,
         consts,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))));
+        qtypes.at(layer_prefix + ".mlp.gate_proj.qtype"));
     auto silu = std::make_shared<ov::op::v4::Swish>(gate_proj);
     auto up_proj = make_fc(
         layer_prefix + ".mlp.up_proj",
         post_attn_norm,
         consts,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))));
+        qtypes.at(layer_prefix + ".mlp.up_proj.qtype"));
     auto mul = std::make_shared<ov::op::v1::Multiply>(
         silu, up_proj, ov::op::AutoBroadcastType::NUMPY);
     mul->set_friendly_name(name_prefix + ".mlp.mul" + name_suffix);
@@ -979,7 +989,7 @@ std::tuple<ov::Output<ov::Node>,
         layer_prefix + ".mlp.down_proj",
         mul,
         consts,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))));
+        qtypes.at(layer_prefix + ".mlp.down_proj.qtype"));
 
     // Final residual connection
     auto output = std::make_shared<ov::op::v1::Add>(
