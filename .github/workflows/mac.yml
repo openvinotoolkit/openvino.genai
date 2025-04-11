@@ -438,7 +438,6 @@ jobs:
     runs-on: macos-13
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
-      LATEST_OV_DIR: ${{ github.workspace }}/ov_latest
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       HF_HOME: ${{ github.workspace }}/hf_cache
@@ -456,13 +455,6 @@ jobs:
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_cpack_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
-          merge-multiple: true
-
-      - name: Download OpenVINO JS Bildings Artifacts
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
-          path: ${{ env.LATEST_OV_DIR }}
           merge-multiple: true
 
       - name: Download GenAI JS Bildings Artifacts
@@ -496,16 +488,15 @@ jobs:
       - name: Install GenAI NPM package
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_js_package/openvino-node-*
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.LATEST_OV_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Install NPM dependencies for samples
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_js_package/openvino-node-*
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.LATEST_OV_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Test Samples (Python and C++)
         run: |
@@ -626,9 +617,8 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_js_package/openvino-node-*
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
@@ -637,9 +627,9 @@ jobs:
       - name: Install openvino-genai-node samples dependencies
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_js_package/openvino-node-*
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Run samples tests
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
