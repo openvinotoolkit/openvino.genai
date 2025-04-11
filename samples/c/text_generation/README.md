@@ -7,24 +7,24 @@
 4. [Sample Descriptions](#sample-descriptions)
 5. [Support and Contribution](#support-and-contribution)
 
-### Download OpenVINO GenAI
+## Download OpenVINO GenAI
 
 Download and extract [OpenVINO GenAI Archive](https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/download.html?PACKAGE=OPENVINO_GENAI&VERSION=NIGHTLY&OP_SYSTEM=WINDOWS&DISTRIBUTION=ARCHIVE) Visit the OpenVINO Download Page.
 
 
-### Build Samples
+## Build Samples
 Set up the environment and build the samples Linux and macOS
-```
+```sh
 source <INSTALL_DIR>/setupvars.sh
 ./<INSTALL_DIR>/samples/c/build_samples.sh
 ```
 Windows Command Prompt:
-```
+```sh
 <INSTALL_DIR>\setupvars.bat
 <INSTALL_DIR>\samples\c\build_samples_msvc.bat
 ```
 Windows PowerShell
-```
+```sh
 .<INSTALL_DIR>\setupvars.ps1
 .<INSTALL_DIR>\samples\c\build_samples.ps1
 ```
@@ -36,7 +36,7 @@ Install [../../export-requirements.txt](../../export-requirements.txt) if model 
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --model <model> <output_folder>
 ```
-If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
+If a converted model in OpenVINO IR format is available in the [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) collection on Hugging Face, you can download it directly via huggingface-cli.
 ```sh
 pip install huggingface-hub
 huggingface-cli download <model> --local-dir <output_folder>
@@ -47,17 +47,18 @@ huggingface-cli download <model> --local-dir <output_folder>
 
 #### Chat Sample (`chat_sample_c`)
 Multi-turn conversations with an interactive chat interface powered by OpenVINO.
-```
+- **Run Command:**
+```sh
 chat_sample_c model_dir
 ```
 
 #### LLMs benchamrking sample(`benchmark_genai_c`)
 The sample demonstrates how to benchmark LLMs in OpenVINO GenAI by using C language. 
-* Run Command
-```
+- **Run Command:**
+```sh
 benchmark_gena_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
 ```
-* Options
+- **Options:**
 - `-m, --model`: Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
@@ -69,7 +70,8 @@ benchmark_gena_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX
 #### Greedy Causal LM(`greedy_causal_lm`)
 
 Basic text generation using a causal language model. 
-```
+- **Run Command:**
+```sh
 greedy_causal_lm_c  model_dir prompt
 ```
 
