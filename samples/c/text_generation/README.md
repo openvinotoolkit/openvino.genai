@@ -49,14 +49,14 @@ huggingface-cli download <model> --local-dir <output_folder>
 Multi-turn conversations with an interactive chat interface powered by OpenVINO.
 - **Run Command:**
 ```sh
-chat_sample_c model_dir
+./chat_sample_c model_dir
 ```
 
 #### LLMs benchamrking sample(`benchmark_genai_c`)
 The sample demonstrates how to benchmark LLMs in OpenVINO GenAI by using C language. 
 - **Run Command:**
 ```sh
-benchmark_gena_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
+./benchmark_gena_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
 ```
 - **Options:**
 - `-m, --model`: Path to the model and tokenizers base directory.
@@ -72,7 +72,7 @@ benchmark_gena_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX
 Basic text generation using a causal language model. 
 - **Run Command:**
 ```sh
-greedy_causal_lm_c  model_dir prompt
+./greedy_causal_lm_c  model_dir prompt
 ```
 
 
