@@ -8,7 +8,7 @@ import platform
 import sys
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
-from openvino_genai import VLMPipeline, GenerationConfig, SchedulerConfig, ContinuousBatchingPipeline, GenerationStatus, StreamingStatus
+from openvino_genai import VLMPipeline, GenerationConfig, SchedulerConfig, ContinuousBatchingPipeline, GenerationStatus, StreamingStatus, GenerationFinishReason
 
 from utils.network import retry_request
 from utils.generation_config import get_beam_search, get_multinomial_all_parameters, get_greedy
@@ -143,6 +143,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cache):
             text = tokenizer.decode(output.generated_ids)
             assert text == res_generate[idx].texts[out_idx]
             assert abs(output.score - res_generate[idx].scores[out_idx]) < eps
+            assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
 
 
 @pytest.mark.precommit
