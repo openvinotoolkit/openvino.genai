@@ -296,7 +296,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
 ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(const std::vector<EncodedImage>& images) {
-    auto qwen2vl_vision_encoder = std::dynamic_pointer_cast<VisionEncoderQwen2VL>(m_vision_encoder);
+    auto qwen2vl_vision_encoder = std::static_pointer_cast<VisionEncoderQwen2VL>(m_vision_encoder);
     return qwen2vl_vision_encoder->run_image_embeddings_merger(images);
 }
 

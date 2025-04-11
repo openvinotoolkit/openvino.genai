@@ -193,8 +193,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         if (qwen2vl_vision_encoder && m_history_images.size() > 0) {
             // If m_merged_image_embeddings is not passed it will be recalculated each time
             embeds = m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], m_merged_image_embeddings);
-        }
-        else {
+        } else {
             embeds = m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0]);
         }
         input_embeds_list.push_back(embeds);
