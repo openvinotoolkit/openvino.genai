@@ -80,6 +80,3 @@ Basic text generation using a causal language model.
 - For troubleshooting, consult the [OpenVINO documentation](https://docs.openvino.ai).
 - To report issues or contribute, visit the [GitHub repository](https://github.com/openvinotoolkit/openvino.genai).
 
-
-
-
