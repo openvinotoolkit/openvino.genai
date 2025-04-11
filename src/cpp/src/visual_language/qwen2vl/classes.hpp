@@ -62,7 +62,12 @@ public:
 
     ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, std::optional<ov::Tensor> merged_image_embeddings = std::nullopt) override;
+    ov::Tensor get_inputs_embeds(
+        const std::string& prompt,
+        const std::vector<ov::genai::EncodedImage>& images,
+        ov::genai::VLMPerfMetrics& metrics,
+        std::optional<ov::Tensor> merged_image_embeddings = std::nullopt // The result of image embeddings merger, can be passed to avoid redundant recalculation.
+    ) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 
