@@ -4,7 +4,7 @@ Examples in this folder showcase inference of text to image models like Stable D
 
 There are several sample files:
  - [`text2image.py`](./text2image.py) demonstrates basic usage of the text to image pipeline
- - [`lora_text2image.py`](./lora.py) shows how to apply LoRA adapters to the pipeline
+ - [`lora_text2image.py`](./lora_text2image.py) shows how to apply LoRA adapters to the pipeline
  - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous text2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.py`](./image2image.py) demonstrates basic usage of the image to image pipeline
  - [`inpainting.py`](./inpainting.py) demonstrates basic usage of the inpainting pipeline
