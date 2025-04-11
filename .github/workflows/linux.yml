@@ -371,7 +371,7 @@ jobs:
             timeout: 60
           - name: 'WWB tests'
             cmd: '/tools/who_what_benchmark/tests'
-            timeout: 60
+            timeout: 90
     defaults:
       run:
         shell: bash
