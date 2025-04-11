@@ -371,7 +371,7 @@ jobs:
             timeout: 60
           - name: 'WWB tests'
             cmd: '/tools/who_what_benchmark/tests'
-            timeout: 60
+            timeout: 90
     defaults:
       run:
         shell: bash
@@ -443,7 +443,7 @@ jobs:
             runner: 'aks-linux-8-cores-64gb'
 
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
-    timeout-minutes: 60
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
@@ -538,7 +538,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel ] 
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash

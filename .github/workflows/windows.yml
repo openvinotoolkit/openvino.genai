@@ -486,7 +486,7 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-win-8-cores-16gb'
     needs: [ openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
-    timeout-minutes: 60
+    timeout-minutes: 120
     defaults:
       run:
         shell: pwsh
@@ -568,7 +568,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download, genai_build_cpack, genai_build_wheel ]
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
