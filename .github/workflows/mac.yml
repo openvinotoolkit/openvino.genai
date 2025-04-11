@@ -20,6 +20,8 @@ env:
   PYTHON_VERSION: '3.10'
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   CCACHE_MAXSIZE: 500Mi
+  HF_HOME: ~/.cache/hf
+  OV_CACHE: ~/.cache/ov_cache
 
 jobs:
   openvino_download:
@@ -440,8 +442,6 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      HF_HOME: ${{ github.workspace }}/hf_cache
-      OV_CACHE: ${{ github.workspace }}/ov_cache
 
     steps:
       - name: Clone openvino.genai
@@ -524,8 +524,6 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      HF_HOME: ${{ github.workspace }}/hf_cache
-      OV_CACHE: ${{ github.workspace }}/ov_cache
         
     steps:
       - name: Clone openvino.genai
