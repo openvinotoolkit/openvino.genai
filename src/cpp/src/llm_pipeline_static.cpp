@@ -343,7 +343,6 @@ void StatefulLLMPipeline::finish_chat() {
     m_history.clear();
 };
 
-
 std::unique_ptr<LLMPipelineImplBase>
 LLMPipelineFactory::create(const std::filesystem::path& models_path,
                            const ov::AnyMap& config) {
