@@ -18,12 +18,12 @@ concurrency:
 env:
   PYTHON_VERSION: '3.11'
   TARGET_BRANCH: 'master'
-  PYTHONIOENCODING: "utf8"
+  PYTHONIOENCODING: utf8
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
-  HF_HOME: C:/mount/caches/huggingface
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache
+  HF_HOME: C:/mount/caches/huggingface/win
+  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win
 
 jobs:
   openvino_download:
@@ -425,7 +425,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-16-cores-32gb
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
