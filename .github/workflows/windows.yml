@@ -541,16 +541,15 @@ jobs:
       - name: Install GenAI NPM package
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_js_package/openvino-node-*
           npm install --verbose
-          Remove-Item -Recurse -Force node_modules/openvino-node/bin
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
       
       - name: Install NPM dependencies for samples
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_js_package/openvino-node-*
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          Remove-Item -Recurse -Force node_modules/openvino-node/bin
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Test Samples (Python and C++)
         run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
@@ -667,9 +666,8 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_js_package/openvino-node-*
           npm install --verbose
-          Remove-Item -Recurse -Force node_modules/openvino-node/bin
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Check lint
         working-directory: ${{ env.SRC_DIR }}/src/js
@@ -682,9 +680,9 @@ jobs:
       - name: Install openvino-genai-node samples dependencies
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_js_package/openvino-node-*
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          Remove-Item -Recurse -Force node_modules/openvino-node/bin
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Run samples tests
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
