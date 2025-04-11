@@ -731,7 +731,6 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
     if (!m_is_chat_conversation) {
         m_tokens_per_images.clear();
     }
-
     return inputs_embeds;
 }
 

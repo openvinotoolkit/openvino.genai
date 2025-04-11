@@ -136,7 +136,9 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     if (images.empty()) {
-        return text_embeds;
+        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+        return inputs_embeds;
     }
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
@@ -187,7 +189,11 @@ ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(const ov::
         );
         token_offset -= n_tokens + 1;
     }
-    return text_embeds;
+    // text_embeds is bound to infer request that can be used by another thread after leaving embeddings calculation scope
+    // so we need to return a copy to make sure data does not get corrupted 
+    ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+    std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+    return inputs_embeds;
 }
 
 } // namespace ov::genai

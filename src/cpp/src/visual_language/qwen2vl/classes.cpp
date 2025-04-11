@@ -339,7 +339,9 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
         m_image_id = 0;
     }
     if (images.empty()) {
-        return text_embeds;
+        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+        return inputs_embeds;
     }
 
     return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, reordered_image_embeds, reordered_images_grid_thw, image_pad_token_id);
