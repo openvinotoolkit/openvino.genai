@@ -131,7 +131,9 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
     formatted_prompt += prompt;
 
     ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
-    ov::Tensor text_embeds = m_embedding->infer(input_ids);
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     if (images.empty()) {
         return text_embeds;
