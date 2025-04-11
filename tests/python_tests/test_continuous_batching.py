@@ -9,7 +9,7 @@ from pathlib import Path
 from shutil import rmtree
 from typing import Dict
 
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model, GenerationFinishReason
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
@@ -157,6 +157,45 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict, pip
 
     # Test that finish_chat() doesn't fail just in case.
     cb_pipe.finish_chat()
+
+
+generation_configs = [
+    dict(do_sample=False, max_new_tokens=20),
+    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0, repetition_penalty=1.0)
+]
+questions = [
+    '1+1=',
+    'What is the previous answer?',
+    'Why is the Sun yellow?',
+    'What was my first question?'
+]
+@pytest.mark.parametrize("generation_config_kwargs", generation_configs[1:])
+@pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING] )
+@pytest.mark.precommit
+def test_continuous_batching_add_request_health_check(model_id, generation_config_kwargs: Dict, pipeline_type):
+    _, _, models_path = download_and_convert_model(model_id)
+
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
+
+    generation_config = GenerationConfig(**generation_config_kwargs)
+    # assisted generation is not supported for beam search
+    if generation_config.is_beam_search() and pipeline_type != PipelineType.PAGED_ATTENTION:
+        return
+
+    generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
+    handles = []
+    for idx, question in enumerate(questions):
+        handle = cb_pipe.add_request(idx, question, generation_config=generation_config)
+        handles.append(handle)
+
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+        
+    for handle in handles:
+        output = handle.read_all()
+        assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
+
 
 #
 # Stress tests to check OOM case
