@@ -134,6 +134,7 @@ public:
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
+    TokenizedInputs encode(const std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
     TokenizedInputs encode(std::vector<std::string>&& prompts, const ov::AnyMap& tokenization_params = {});
     TokenizedInputs encode(std::initializer_list<std::string>& prompts, const ov::AnyMap& tokenization_params = {});
 
