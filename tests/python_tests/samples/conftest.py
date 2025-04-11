@@ -234,7 +234,7 @@ def download_test_content(request):
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         response = requests.get(file_url, stream=True)
         response.raise_for_status()
-        with open(file_path, 'wb', encoding="utf-8") as f:
+        with open(file_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
         logger.info(f"Downloaded test content to {file_path}")
