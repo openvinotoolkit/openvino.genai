@@ -67,8 +67,9 @@ public:
 
     bool prompt_has_image_tag(const std::string& prompt) const;
 
-    // returns vision encoder
     VisionEncoder::Ptr get_vision_encoder() const;
+
+    ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const;
 
 private:
     class IInputsEmbedder {
@@ -136,6 +137,8 @@ private:
         virtual void finish_chat();
 
         virtual bool prompt_has_image_tag(const std::string& prompt) const;
+
+        virtual ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const;
     
     protected:
         IInputsEmbedder(

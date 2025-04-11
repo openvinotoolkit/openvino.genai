@@ -179,15 +179,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
         auto qwen2vl_vision_encoder = std::dynamic_pointer_cast<ov::genai::VisionEncoderQwen2VL>(m_inputs_embedder->get_vision_encoder());
 
+        std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
+        m_inputs_embedder->set_apply_chat_template_status(false);
+
         // In Qwen2VL image embeddings are merged using a separate image embeddings merger model.
         // In order to optimize the usage of image embeddings merger, the merging result is stored and reused on next chat iterations.
         if (rgbs.size() > 0 && qwen2vl_vision_encoder) {
             // If new images are passed m_merged_image_embeddings needs to be updated
-            m_merged_image_embeddings = qwen2vl_vision_encoder->run_image_embeddings_merger(m_history_images);
+            m_merged_image_embeddings = m_inputs_embedder->run_image_embeddings_merger(m_history_images, templated_history);
         }
-        std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
-
-        m_inputs_embedder->set_apply_chat_template_status(false);
 
         ov::Tensor embeds;
         if (qwen2vl_vision_encoder && m_history_images.size() > 0) {

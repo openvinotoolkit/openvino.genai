@@ -36,7 +36,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images);
+    ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt, size_t image_id, const VLMConfig& vlm_config);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 };
@@ -60,7 +60,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images);
+    ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const override;
 
     ov::Tensor get_inputs_embeds(
         const std::string& prompt,

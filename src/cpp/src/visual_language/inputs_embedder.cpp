@@ -69,6 +69,10 @@ bool InputsEmbedder::IInputsEmbedder::prompt_has_image_tag(const std::string& pr
     return std::regex_search(prompt, UNIVERSAL_PATTERN);
 }
 
+ov::Tensor InputsEmbedder::IInputsEmbedder::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const {
+    OPENVINO_THROW("Image embedding merger is not supported for this model type.");
+}
+
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
@@ -270,6 +274,10 @@ Tokenizer InputsEmbedder::get_tokenizer() const {
 
 VisionEncoder::Ptr InputsEmbedder::get_vision_encoder() const {
     return m_impl->get_vision_encoder();
+}
+
+ov::Tensor InputsEmbedder::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const {
+    return m_impl->run_image_embeddings_merger(images, prompt);
 }
 
 void InputsEmbedder::start_chat(const std::string& system_message) {
