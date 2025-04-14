@@ -16,6 +16,7 @@ namespace ov {
 namespace genai {
 
 using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
+using Vocab = std::unordered_map<std::string, int64_t>;
 
 struct TokenizedInputs {
     ov::Tensor input_ids;
@@ -252,6 +253,8 @@ public:
     std::string get_bos_token() const;
     std::string get_eos_token() const;
     std::string get_pad_token() const;
+
+    Vocab get_vocab() const;
 
     Tokenizer() = default;
     ~Tokenizer();

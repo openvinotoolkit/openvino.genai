@@ -710,6 +710,12 @@ void Tokenizer::set_chat_template(const std::string& chat_template) {
     m_pimpl->set_chat_template(chat_template);
 }
 
+Vocab Tokenizer::get_vocab() const {
+    Vocab vocab;
+    vocab["a"] = 1;
+    return vocab;
+}
+
 Tokenizer::~Tokenizer() = default;
 }  // namespace genai
 }  // namespace ov
