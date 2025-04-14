@@ -68,7 +68,7 @@ public:
         m_request = compiled_model.create_infer_request();
     };
 
-    std::vector<EmbeddingResult> embed_documents(const std::vector<std::string>& texts) {
+    std::vector<EmbeddingResult> embed_documents(std::vector<std::string>& texts) {
         if (!m_config.embed_instruction) {
             return embed(texts);
         }
@@ -77,7 +77,7 @@ public:
         return embed(formatted_texts);
     };
 
-    EmbeddingResult embed_query(const std::string& text) {
+    EmbeddingResult embed_query(std::string& text) {
         std::vector<std::string> formatted_query{format_query(text)};
         return embed(formatted_query)[0];
     };
@@ -87,7 +87,7 @@ private:
     InferRequest m_request;
     Config m_config;
 
-    TokenizedInputs encode(const std::vector<std::string>& texts) {
+    TokenizedInputs encode(std::vector<std::string>& texts) {
         if (!m_config.max_length.has_value()) {
             return m_tokenizer.encode(texts);
         }
@@ -95,7 +95,7 @@ private:
         return m_tokenizer.encode(texts, {{ov::genai::max_length.name(), *m_config.max_length}});
     }
 
-    std::vector<EmbeddingResult> embed(const std::vector<std::string>& texts) {
+    std::vector<EmbeddingResult> embed(std::vector<std::string>& texts) {
         const auto tokenized_inputs = encode(texts);
 
         m_request.set_tensor("input_ids", tokenized_inputs.input_ids);
@@ -241,11 +241,11 @@ TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models
     m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, config, plugin_properties);
 };
 
-std::vector<EmbeddingResult> TextEmbeddingPipeline::embed_documents(const std::vector<std::string>& texts) {
+std::vector<EmbeddingResult> TextEmbeddingPipeline::embed_documents(std::vector<std::string>& texts) {
     return m_impl->embed_documents(texts);
 }
 
-EmbeddingResult TextEmbeddingPipeline::embed_query(const std::string& text) {
+EmbeddingResult TextEmbeddingPipeline::embed_query(std::string& text) {
     return m_impl->embed_query(text);
 }
 

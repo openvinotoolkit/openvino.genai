@@ -53,19 +53,19 @@ public:
         : TextEmbeddingPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     /**
-     * @brief Compute embeddings for a vector of texts
+     * @brief Computes embeddings for a vector of texts
      */
-    std::vector<EmbeddingResult> embed_documents(const std::vector<std::string>& texts);
+    std::vector<EmbeddingResult> embed_documents(std::vector<std::string>& texts);
 
-    void start_embed_documents_async(const std::vector<std::string>& texts);
+    void start_embed_documents_async(std::vector<std::string>& texts);
     std::vector<std::vector<float>> wait_embed_documents();
 
     /**
-     * @brief Compute embedding for a query
+     * @brief Computes embedding for a query
      */
-    EmbeddingResult embed_query(const std::string& text);
+    EmbeddingResult embed_query(std::string& text);
 
-    void start_embed_query_async(const std::string& text);
+    void start_embed_query_async(std::string& text);
     EmbeddingResult wait_embed_query();
 
     ~TextEmbeddingPipeline();
