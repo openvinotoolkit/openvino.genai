@@ -142,6 +142,7 @@ ov::genai::Tokenizer tokenizer(models_path);
 ov::genai::LLMPipeline pipe(model_str, weights_tensor, tokenizer, device);
 ```
 For the sake of brevity the code above does not include Tokenizer decryption. For more details look to encrypted_model_causal_lm sample.
+The sample also demonstrates how to enable user defined encryption for plugin cache.
 - **Main Feature:** Read model directly from memory buffer
 - **Run Command:**
   ```bash

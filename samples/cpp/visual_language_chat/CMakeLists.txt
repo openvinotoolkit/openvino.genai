@@ -28,6 +28,21 @@ install(TARGETS visual_language_chat
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create encrypted model sample executable
+
+add_executable(encrypted_model_vlm encrypted_model_vlm.cpp load_image.cpp)
+target_include_directories(encrypted_model_vlm PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
+target_link_libraries(encrypted_model_vlm PRIVATE openvino::genai)
+
+set_target_properties(encrypted_model_vlm PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS encrypted_model_vlm
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # create benchmark executable
 
 add_executable(benchmark_vlm benchmark_vlm.cpp load_image.cpp)
