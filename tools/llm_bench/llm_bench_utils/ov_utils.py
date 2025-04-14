@@ -627,6 +627,7 @@ def is_genai_available(log_msg=False):
             return False
     return True
 
+
 def get_genai_chunk_streamer():
     import openvino_genai as ov_genai
 
