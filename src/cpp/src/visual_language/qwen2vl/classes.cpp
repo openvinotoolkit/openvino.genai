@@ -324,7 +324,6 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
         expanded_tag += m_vlm_config.vision_end_token;
         unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
     }
-    m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
@@ -345,9 +344,6 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
     m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
 
-    if (!m_is_chat_conversation) {
-        m_image_id = 0;
-    }
     if (images.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
@@ -359,6 +355,12 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     }
     else {
         merged_image_embeddings_tensor = run_image_embeddings_merger(images, prompt);
+    }
+    if (m_is_chat_conversation) {
+        m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
+    }
+    else {
+        m_image_id = 0;
     }
     return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, merged_image_embeddings_tensor, image_pad_token_id);
 }
