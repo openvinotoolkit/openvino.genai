@@ -28,7 +28,7 @@ def patch_diffusers():
 def mock_torch_cuda_is_available(to_patch):
     try:
         # import bnb before patching for avoid attempt to load cuda extension during first import
-        import bitsandbytes as bnb # noqa: F401
+        import bitsandbytes as bnb  # noqa: F401
     except ImportError:
         pass
     original_is_available = torch.cuda.is_available
