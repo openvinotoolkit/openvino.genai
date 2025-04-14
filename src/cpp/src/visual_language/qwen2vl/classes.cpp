@@ -423,7 +423,6 @@ ov::Tensor VisionEncoderQwen2VL::run_image_embeddings_merger(const std::vector<E
             expanded_tag += vlm_config.image_pad_token;
         }
         expanded_tag += vlm_config.vision_end_token;
-        unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
         reordered_image_embeds.push_back(image_embeds.at(new_image_id - image_id));
         reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id - image_id));
     }
