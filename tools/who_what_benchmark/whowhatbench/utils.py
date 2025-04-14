@@ -2,8 +2,6 @@ from typing import Union, Tuple, List, Optional
 import torch
 from contextlib import contextmanager
 
-from diffusers.utils import torch_utils
-
 
 def new_randn_tensor(
     shape: Union[Tuple, List],
@@ -22,6 +20,7 @@ def new_randn_tensor(
 
 
 def patch_diffusers():
+    from diffusers.utils import torch_utils
     torch_utils.randn_tensor = new_randn_tensor
 
 

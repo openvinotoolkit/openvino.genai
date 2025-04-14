@@ -3,7 +3,7 @@ from typing import Any, Union
 import os
 import datasets
 import pandas as pd
-from diffusers.utils.loading_utils import load_image
+from transformers.image_utils import load_image
 from tqdm import tqdm
 from transformers import set_seed
 
