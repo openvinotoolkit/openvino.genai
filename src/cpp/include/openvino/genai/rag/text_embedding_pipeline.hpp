@@ -27,6 +27,9 @@ public:
         bool normalize = false;
         std::optional<std::string> query_instruction;
         std::optional<std::string> embed_instruction;
+
+        Config() = default;
+        explicit Config(const ov::AnyMap& properties);
     };
 
     /**

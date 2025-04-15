@@ -20,30 +20,31 @@
 
 namespace {
 using namespace ov::genai;
-using utils::read_anymap_param;
 
-template <typename T>
-void set_and_erase(ov::AnyMap& properties, const char* name, T& param) {
-    read_anymap_param(properties, name, param);
-    properties.erase(name);
-}
-
-std::pair<TextEmbeddingPipeline::Config, ov::AnyMap&> extract_config(const ov::AnyMap& properties) {
+ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     auto properties_copy = properties;
-    TextEmbeddingPipeline::Config config{};
 
-    set_and_erase(properties_copy, max_length.name(), config.max_length);
-    set_and_erase(properties_copy, pooling_type.name(), config.pooling_type);
-    set_and_erase(properties_copy, normalize.name(), config.normalize);
-    set_and_erase(properties_copy, embed_instruction.name(), config.embed_instruction);
-    set_and_erase(properties_copy, query_instruction.name(), config.query_instruction);
+    properties_copy.erase(max_length.name());
+    properties_copy.erase(pooling_type.name());
+    properties_copy.erase(normalize.name());
+    properties_copy.erase(embed_instruction.name());
+    properties_copy.erase(query_instruction.name());
 
-    return {config, properties_copy};
+    return properties_copy;
 }
 }  // namespace
 
 namespace ov {
 namespace genai {
+using utils::read_anymap_param;
+
+TextEmbeddingPipeline::Config::Config(const ov::AnyMap& properties) {
+    read_anymap_param(properties, ov::genai::max_length.name(), max_length);
+    read_anymap_param(properties, ov::genai::pooling_type.name(), pooling_type);
+    read_anymap_param(properties, ov::genai::normalize.name(), normalize);
+    read_anymap_param(properties, ov::genai::embed_instruction.name(), embed_instruction);
+    read_anymap_param(properties, ov::genai::query_instruction.name(), query_instruction);
+};
 
 class TextEmbeddingPipeline::TextEmbeddingPipelineImpl {
 public:
@@ -61,6 +62,9 @@ public:
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
         model = apply_postprocessing(model, m_config);
+        if (m_config.max_length) {
+            m_tokenization_params.insert({ov::genai::max_length.name(), *m_config.max_length});
+        }
 
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
 
@@ -86,17 +90,10 @@ private:
     Tokenizer m_tokenizer;
     InferRequest m_request;
     Config m_config;
-
-    TokenizedInputs encode(std::vector<std::string>& texts) {
-        if (!m_config.max_length.has_value()) {
-            return m_tokenizer.encode(texts);
-        }
-
-        return m_tokenizer.encode(texts, {{ov::genai::max_length.name(), *m_config.max_length}});
-    }
+    AnyMap m_tokenization_params;
 
     std::vector<EmbeddingResult> embed(std::vector<std::string>& texts) {
-        const auto tokenized_inputs = encode(texts);
+        const auto tokenized_inputs = m_tokenizer.encode(texts, m_tokenization_params);
 
         m_request.set_tensor("input_ids", tokenized_inputs.input_ids);
         m_request.set_tensor("attention_mask", tokenized_inputs.attention_mask);
@@ -236,9 +233,9 @@ TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models
 TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models_path,
                                              const std::string& device,
                                              const ov::AnyMap& properties) {
-    const auto [config, plugin_properties] = extract_config(properties);
+    const auto& plugin_properties = remove_config_properties(properties);
 
-    m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, config, plugin_properties);
+    m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, Config(properties), plugin_properties);
 };
 
 std::vector<EmbeddingResult> TextEmbeddingPipeline::embed_documents(std::vector<std::string>& texts) {

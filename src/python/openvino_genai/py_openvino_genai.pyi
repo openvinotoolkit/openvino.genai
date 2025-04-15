@@ -1903,6 +1903,12 @@ class TextEmbeddingPipeline:
         normalize: bool
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
+        @typing.overload
+        def __init__(self) -> None:
+            ...
+        @typing.overload
+        def __init__(self, **kwargs) -> None:
+            ...
     class PoolingType:
         """
         Members:
@@ -1940,12 +1946,13 @@ class TextEmbeddingPipeline:
         @property
         def value(self) -> int:
             ...
-    def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike, device: str, config: TextEmbeddingPipeline.Config | None = None, **kwargs) -> None:
         """
-                TextEmbeddingPipeline class constructor.
-                models_path (os.PathLike): Path to the model file.
-                device (str): Device to run the model on (e.g., CPU, GPU).
-                kwargs: Config or device properties.
+        TextEmbeddingPipeline class constructor.
+        models_path (os.PathLike): Path to the model file.
+        device (str): Device to run the model on (e.g., CPU, GPU).
+        config: (TextEmbeddingPipeline.Config): optional Config
+        kwargs: Config or device properties.
         """
     def embed_documents(self, texts: list[str]) -> list[list[float] | list[int] | list[int]]:
         """
