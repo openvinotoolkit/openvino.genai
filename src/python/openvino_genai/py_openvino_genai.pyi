@@ -1,5 +1,5 @@
 """
-Pybind11 binding for OpenVINO GenAI
+Pybind11 binding for RAG Pipelines
 """
 from __future__ import annotations
 import openvino._pyopenvino
