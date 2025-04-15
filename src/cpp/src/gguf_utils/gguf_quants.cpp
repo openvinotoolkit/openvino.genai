@@ -135,23 +135,23 @@ void extract_q4_k_data(const gguf_tensor& tensor,
         uint8_t* qs1 = block_data + 4;
         uint8_t* qs2 = block_data + 16;
 
-        scales[i*16] = ov::float16(scale_scales * static_cast<float>((*(qs1) & 0b111111)));
-        scales[i*16 + 1] = ov::float16(scale_scales * static_cast<float>((*(qs1+1) & 0b111111)));
-        scales[i*16 + 2] = ov::float16(scale_scales * static_cast<float>((*(qs1+2) & 0b111111)));
-        scales[i*16 + 3] = ov::float16(scale_scales * static_cast<float>((*(qs1+3) & 0b111111)));
-        scales[i*16 + 4] = ov::float16(scale_scales * static_cast<float>((*(qs1+8) & 0b00001111) | ((*(qs1) >> 6) << 4)));
-        scales[i*16 + 5] = ov::float16(scale_scales * static_cast<float>((*(qs1+9) & 0b00001111) | ((*(qs1+1)>> 6) << 4)));
-        scales[i*16 + 6] = ov::float16(scale_scales * static_cast<float>((*(qs1+10) & 0b00001111) | ((*(qs1+2) >> 6) << 4)));
-        scales[i*16 + 7] = ov::float16(scale_scales * static_cast<float>((*(qs1+11) & 0b00001111) | ((*(qs1+3) >> 6) << 4)));
+        scales[i*8] = ov::float16(scale_scales * static_cast<float>((*(qs1) & 0b111111)));
+        scales[i*8 + 1] = ov::float16(scale_scales * static_cast<float>((*(qs1+1) & 0b111111)));
+        scales[i*8 + 2] = ov::float16(scale_scales * static_cast<float>((*(qs1+2) & 0b111111)));
+        scales[i*8 + 3] = ov::float16(scale_scales * static_cast<float>((*(qs1+3) & 0b111111)));
+        scales[i*8 + 4] = ov::float16(scale_scales * static_cast<float>((*(qs1+8) & 0b00001111) | ((*(qs1) >> 6) << 4)));
+        scales[i*8 + 5] = ov::float16(scale_scales * static_cast<float>((*(qs1+9) & 0b00001111) | ((*(qs1+1)>> 6) << 4)));
+        scales[i*8 + 6] = ov::float16(scale_scales * static_cast<float>((*(qs1+10) & 0b00001111) | ((*(qs1+2) >> 6) << 4)));
+        scales[i*8 + 7] = ov::float16(scale_scales * static_cast<float>((*(qs1+11) & 0b00001111) | ((*(qs1+3) >> 6) << 4)));
         
-        biases[i*16] = ov::float16(scale_biases * static_cast<float>((*(qs1+4) & 0b111111)));
-        biases[i*16 + 1] = ov::float16(scale_biases * static_cast<float>((*(qs1+5) & 0b111111)));
-        biases[i*16 + 2] = ov::float16(scale_biases * static_cast<float>((*(qs1+6) & 0b111111)));
-        biases[i*16 + 3] = ov::float16(scale_biases * static_cast<float>((*(qs1+7) & 0b111111)));
-        biases[i*16 + 4] = ov::float16(scale_biases * static_cast<float>((*(qs1+8) >> 4) | ((*(qs1+4) >> 6) << 4)));
-        biases[i*16 + 5] = ov::float16(scale_biases * static_cast<float>((*(qs1+9) >> 4) | ((*(qs1+5) >> 6) << 4)));
-        biases[i*16 + 6] = ov::float16(scale_biases * static_cast<float>((*(qs1+10) >> 4) | ((*(qs1+6) >> 6) << 4)));
-        biases[i*16 + 7] = ov::float16(scale_biases * static_cast<float>((*(qs1+11) >> 4) | ((*(qs1+7) >> 6) << 4)));
+        biases[i*8] = ov::float16(scale_biases * static_cast<float>((*(qs1+4) & 0b111111)));
+        biases[i*8 + 1] = ov::float16(scale_biases * static_cast<float>((*(qs1+5) & 0b111111)));
+        biases[i*8 + 2] = ov::float16(scale_biases * static_cast<float>((*(qs1+6) & 0b111111)));
+        biases[i*8 + 3] = ov::float16(scale_biases * static_cast<float>((*(qs1+7) & 0b111111)));
+        biases[i*8 + 4] = ov::float16(scale_biases * static_cast<float>((*(qs1+8) >> 4) | ((*(qs1+4) >> 6) << 4)));
+        biases[i*8 + 5] = ov::float16(scale_biases * static_cast<float>((*(qs1+9) >> 4) | ((*(qs1+5) >> 6) << 4)));
+        biases[i*8 + 6] = ov::float16(scale_biases * static_cast<float>((*(qs1+10) >> 4) | ((*(qs1+6) >> 6) << 4)));
+        biases[i*8 + 7] = ov::float16(scale_biases * static_cast<float>((*(qs1+11) >> 4) | ((*(qs1+7) >> 6) << 4)));
 
         unpack_256_4(qs2, weights);
         weights += 128;
