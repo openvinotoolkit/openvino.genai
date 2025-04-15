@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_JS_DIR
 from test_utils import run_sample
 
 class TestMultinomialCausalLM:
@@ -34,5 +34,11 @@ class TestMultinomialCausalLM:
         cpp_command = [cpp_sample, convert_model, sample_args]
         cpp_result = run_sample(cpp_command)
 
+        # Test JS sample
+        js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/multinomial_causal_lm.js")
+        js_command =['node', js_sample, convert_model, sample_args]
+        js_result = run_sample(js_command)
+
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
+        assert py_result.stdout == js_result.stdout, "Python and JS results should match"

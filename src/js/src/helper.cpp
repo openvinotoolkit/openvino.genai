@@ -42,9 +42,34 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
             return ov::Any(num.DoubleValue());
         }
     } else if (value.IsBoolean()) {
-        return ov::Any(value.ToBoolean());
+        return ov::Any(static_cast<bool>(value.ToBoolean()));
     } else {
         OPENVINO_THROW("Cannot convert to ov::Any");
+    }
+}
+
+template <>
+ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value) {
+    const auto elem = value;
+    if (elem.IsString()) {
+        return elem.As<Napi::String>();
+    } else if (elem.IsArray()) {
+        auto array = elem.As<Napi::Array>();
+        size_t arrayLength = array.Length();
+
+        std::vector<std::string> nativeArray;
+
+        for (uint32_t i = 0; i < arrayLength; ++i) {
+            Napi::Value arrayItem = array[i];
+            if (!arrayItem.IsString()) {
+                OPENVINO_THROW(std::string("Passed array must contain only strings."));
+            }
+            nativeArray.push_back(arrayItem.As<Napi::String>());
+        }
+        return nativeArray;
+
+    } else {
+        OPENVINO_THROW("Passed argument must be of type Array or TypedArray.");
     }
 }
 
