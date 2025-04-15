@@ -40,7 +40,7 @@ export const TextGeneration = () => {
           </TabItemCpp>
         </LanguageTabs>
         <hr />
-        <ExploreCodeSamples link="docs/category/samples" />
+        <ExploreCodeSamples link="docs/samples" />
         <GoToDocumentation link="docs/use-cases/text-generation/" />
       </Section.Column>
     </Section.Container>

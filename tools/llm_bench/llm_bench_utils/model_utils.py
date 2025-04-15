@@ -131,8 +131,12 @@ def analyze_args(args):
 
     if optimum and args.genai:
         raise RuntimeError("`--genai` and `--optimum` can not be selected in the same time")
+    if args.from_onnx and not optimum:
+        log.warning("ONNX model initialization supported only using Optimum. Benchmarking will be switched to this backend")
+        optimum = True
     model_args["optimum"] = optimum
     model_args["genai"] = not optimum
+    model_args["from_onnx"] = args.from_onnx
 
     has_torch_compile_options = any([args.torch_compile_options is not None, args.torch_compile_options is not None, args.torch_compile_dynamic])
     if model_args["torch_compile_backend"] is None and has_torch_compile_options:

@@ -33,7 +33,7 @@ def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
         json_file.unlink()
 
     for config_json, config_name in configs:
-        with (temp_path / config_name).open('w') as f:
+        with (temp_path / config_name).open('w', encoding="utf-8") as f:
             json.dump(config_json, f)
 
     ov_tokenizer = Tokenizer(temp_path)
@@ -510,13 +510,13 @@ def generate_tokenizer(tmp_path, chat_templates):
     if chat_templates.rt_template is not None:
         model.set_rt_info(chat_templates.rt_template, "chat_template")
     if chat_templates.chat_template_json is not None:
-        with open(tmp_path / "chat_template.json", "w") as file:
+        with open(tmp_path / "chat_template.json", "w", encoding="utf-8") as file:
             json.dump({"chat_template": chat_templates.chat_template_json}, file)
     if chat_templates.processor_config_json is not None:
-        with open(tmp_path / "processor_config.json", "w") as file:
+        with open(tmp_path / "processor_config.json", "w", encoding="utf-8") as file:
             json.dump({"chat_template": chat_templates.processor_config_json}, file)
     if chat_templates.tokenizer_config_json is not None:
-        with open(tmp_path / "tokenizer_config.json", "w") as file:
+        with open(tmp_path / "tokenizer_config.json", "w", encoding="utf-8") as file:
             json.dump({"chat_template": chat_templates.tokenizer_config_json}, file)
     openvino.save_model(model, tmp_path / "openvino_tokenizer.xml")
     return Tokenizer(tmp_path)
