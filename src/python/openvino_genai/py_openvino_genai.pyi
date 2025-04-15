@@ -1982,7 +1982,7 @@ class Tokenizer:
         """
         Returns the vocabulary as a Python dictionary with bytes keys and integer values.
         
-        Bytes are used for keys because not all vocabulary entries are might be valid UTF-8 strings.
+        Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
         """
     def set_chat_template(self, chat_template: str) -> None:
         """
