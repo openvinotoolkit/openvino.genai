@@ -137,7 +137,8 @@ public:
                     ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
                     // copy current cache data
                     if (key_precision == ov::element::u4) {
-                        size_t key_roi_size_byte = std::accumulate(end_key.begin(), end_key.end(), 1, std::multiplies<size_t>()) / sub_byte_data_type_multiplier(key_precision);
+                        size_t key_stride = std::accumulate(end_key.begin(), end_key.end(), 1, std::multiplies<size_t>());
+                        size_t key_roi_size_byte = key_stride + (key_stride & 1) / sub_byte_data_type_multiplier(key_precision);
                         std::memcpy(reinterpret_cast<uint8_t*>(key_cache.data()), reinterpret_cast<uint8_t*>(m_key_cache[decoder_layer_id].data()), key_roi_size_byte);
                     } else {
                         key_roi_size_byte = m_key_cache[decoder_layer_id].get_byte_size();
@@ -147,7 +148,8 @@ public:
                     }
 
                     if (value_precision == ov::element::u4) {
-                        size_t value_roi_size_byte = std::accumulate(end_value.begin(), end_value.end(), 1, std::multiplies<size_t>()) / sub_byte_data_type_multiplier(value_precision);
+                        size_t value_stride = std::accumulate(end_value.begin(), end_value.end(), 1, std::multiplies<size_t>());
+                        size_t value_roi_size_byte = value_stride + (value_stride & 1) / sub_byte_data_type_multiplier(value_precision);
                         std::memcpy(reinterpret_cast<uint8_t*>(value_cache.data()), reinterpret_cast<uint8_t*>(m_value_cache[decoder_layer_id].data()), value_roi_size_byte);
                     } else {
                         value_roi_size_byte = m_value_cache[decoder_layer_id].get_byte_size();
@@ -237,6 +239,10 @@ public:
                     value_dst_end_roi[0] = (value_dst_start_roi[0] = dst_block_id) + 1;
 
                     auto copy_one_block = [&](ov::Tensor& dst, const ov::Tensor& src, size_t src_start, size_t dst_start, size_t stride) {
+                        const bool is_remote = dst.is<ov::RemoteTensor>() || src.is<ov::RemoteTensor>();
+                        if (is_remote) {
+                            return;
+                        }
                         auto sub_byte_multipyer = sub_byte_data_type_multiplier(dst.get_element_type());
                         const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(src.data()) + src_start * stride;
                         uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(dst.data()) + dst_start * stride;
