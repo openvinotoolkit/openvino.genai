@@ -169,41 +169,6 @@ ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
 
 } // namespace
 
-
-VisionEncoderQwen2VL::VisionEncoderQwen2VL(
-    const std::filesystem::path& model_dir,
-    const std::string& device,
-    const ov::AnyMap properties) : VisionEncoder{model_dir, device, properties} {
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_merger_model.xml", device, properties);
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
-    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
-}
-
-
-VisionEncoderQwen2VL::VisionEncoderQwen2VL(
-    const ModelsMap& models_map,
-    const std::filesystem::path& config_dir_path,
-    const std::string& device,
-    const ov::AnyMap device_config) : VisionEncoder{models_map, config_dir_path, device, device_config}  {
-    auto compiled_model = utils::singleton_core().compile_model(
-        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
-        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second,
-        device,
-        device_config
-    );
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
-    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
-
-}
-
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
@@ -284,7 +249,15 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
+    IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_merger_model.xml", device, device_config);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
+    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+}
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const VLMConfig& vlm_config,
@@ -293,7 +266,20 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    auto compiled_model = utils::singleton_core().compile_model(
+        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
+        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second,
+        device,
+        device_config
+    );
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
+    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+}
 
 ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
     auto [unified_prompt, images_sequence] = normalize_prompt(prompt, NATIVE_TAG, NATIVE_TAG, m_image_id, images.size());
@@ -346,8 +332,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     }
     ov::Tensor merged_image_embeddings_tensor;
     if (recalculate_merged_embeddings) {
-        auto qwen2vl_vision_encoder = std::static_pointer_cast<VisionEncoderQwen2VL>(m_vision_encoder);
-        m_merged_image_embeddings = qwen2vl_vision_encoder->run_image_embeddings_merger(images, images_sequence, m_image_id, m_vlm_config);
+        m_merged_image_embeddings = run_image_embeddings_merger(images, images_sequence, m_image_id, m_vlm_config);
     }
     merged_image_embeddings_tensor = m_merged_image_embeddings;
 
@@ -389,7 +374,7 @@ bool InputsEmbedderQwen2VL::prompt_has_image_tag(const std::string& prompt) cons
     return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(NATIVE_TAG) != std::string::npos;
 }
 
-ov::Tensor VisionEncoderQwen2VL::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::vector<size_t>& images_sequence, size_t image_id, const VLMConfig& vlm_config) {
+ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::vector<size_t>& images_sequence, size_t image_id, const VLMConfig& vlm_config) {
     std::vector<ov::Tensor> image_embeds;
     std::vector<std::array<size_t, 3>> images_grid_thw;
     image_embeds.reserve(images.size());
@@ -510,8 +495,8 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
     return merged_embeds;
 }
 
-ov::Tensor VisionEncoderQwen2VL::get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {  
-    const size_t spatial_merge_size = get_processor_config().merge_size;
+ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {  
+    const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
 
     std::vector<std::vector<size_t>> all_pos_ids;
     size_t total_positions = 0;
