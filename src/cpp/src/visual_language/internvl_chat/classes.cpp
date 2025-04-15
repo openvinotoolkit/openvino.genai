@@ -226,7 +226,7 @@ InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
 
-ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, std::optional<ov::Tensor> merged_image_embeddings) {
+ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
     std::string image_start_token = m_vlm_config.image_start_token;
     std::string image_context_token = m_vlm_config.image_context_token;
     std::string image_end_token = m_vlm_config.image_end_token;

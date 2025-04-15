@@ -37,7 +37,7 @@ public:
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, std::optional<ov::Tensor> merged_image_embeddings = std::nullopt);
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true);
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -66,10 +66,6 @@ public:
     void finish_chat();
 
     bool prompt_has_image_tag(const std::string& prompt) const;
-
-    VisionEncoder::Ptr get_vision_encoder() const;
-
-    ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const;
 
 private:
     class IInputsEmbedder {
@@ -102,7 +98,7 @@ private:
         size_t m_image_id = 0;
 
     public:
-        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, std::optional<ov::Tensor> merged_image_embeddings = std::nullopt) = 0;
+        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) = 0;
 
         ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
@@ -116,10 +112,6 @@ private:
     
         Tokenizer get_tokenizer() const {
             return m_tokenizer;
-        }
-
-        VisionEncoder::Ptr get_vision_encoder() const {
-            return m_vision_encoder;
         }
     
         utils::KVCacheState& get_kv_cache_state() {
@@ -137,8 +129,6 @@ private:
         virtual void finish_chat();
 
         virtual bool prompt_has_image_tag(const std::string& prompt) const;
-
-        virtual ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const;
     
     protected:
         IInputsEmbedder(

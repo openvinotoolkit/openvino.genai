@@ -36,7 +36,11 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt, size_t image_id, const VLMConfig& vlm_config);
+    ov::Tensor run_image_embeddings_merger(
+        const std::vector<EncodedImage>& images, 
+        const std::vector<size_t>& images_sequence, 
+        size_t image_id, 
+        const VLMConfig& vlm_config);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 };
@@ -44,6 +48,7 @@ public:
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
     ov::Tensor m_position_ids;
     int64_t m_rope_delta = 0;
+    ov::Tensor m_merged_image_embeddings;
 
 public:
     InputsEmbedderQwen2VL(
@@ -60,14 +65,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const override;
-
-    ov::Tensor get_inputs_embeds(
-        const std::string& prompt,
-        const std::vector<ov::genai::EncodedImage>& images,
-        ov::genai::VLMPerfMetrics& metrics,
-        std::optional<ov::Tensor> merged_image_embeddings = std::nullopt // The result of image embeddings merger, can be passed to avoid redundant recalculation.
-    ) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 

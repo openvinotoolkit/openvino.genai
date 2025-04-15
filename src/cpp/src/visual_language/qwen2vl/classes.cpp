@@ -295,12 +295,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const {
-    auto qwen2vl_vision_encoder = std::static_pointer_cast<VisionEncoderQwen2VL>(m_vision_encoder);
-    return qwen2vl_vision_encoder->run_image_embeddings_merger(images, prompt, m_image_id, m_vlm_config);
-}
-
-ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, std::optional<ov::Tensor> merged_image_embeddings) {
+ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
     auto [unified_prompt, images_sequence] = normalize_prompt(prompt, NATIVE_TAG, NATIVE_TAG, m_image_id, images.size());
     std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
@@ -350,12 +345,12 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
         return inputs_embeds;
     }
     ov::Tensor merged_image_embeddings_tensor;
-    if (merged_image_embeddings.has_value()) {
-        merged_image_embeddings_tensor = merged_image_embeddings.value();
+    if (recalculate_merged_embeddings) {
+        auto qwen2vl_vision_encoder = std::static_pointer_cast<VisionEncoderQwen2VL>(m_vision_encoder);
+        m_merged_image_embeddings = qwen2vl_vision_encoder->run_image_embeddings_merger(images, images_sequence, m_image_id, m_vlm_config);
     }
-    else {
-        merged_image_embeddings_tensor = run_image_embeddings_merger(images, prompt);
-    }
+    merged_image_embeddings_tensor = m_merged_image_embeddings;
+
     if (m_is_chat_conversation) {
         m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
     }
@@ -394,8 +389,7 @@ bool InputsEmbedderQwen2VL::prompt_has_image_tag(const std::string& prompt) cons
     return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(NATIVE_TAG) != std::string::npos;
 }
 
-ov::Tensor VisionEncoderQwen2VL::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt, size_t image_id, const VLMConfig& vlm_config) {
-    auto [unified_prompt, images_sequence] = normalize_prompt(prompt, NATIVE_TAG, NATIVE_TAG, image_id, images.size());
+ov::Tensor VisionEncoderQwen2VL::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::vector<size_t>& images_sequence, size_t image_id, const VLMConfig& vlm_config) {
     std::vector<ov::Tensor> image_embeds;
     std::vector<std::array<size_t, 3>> images_grid_thw;
     image_embeds.reserve(images.size());
@@ -414,15 +408,6 @@ ov::Tensor VisionEncoderQwen2VL::run_image_embeddings_merger(const std::vector<E
     std::vector<ov::Tensor> reordered_image_embeds;
     std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
     for (size_t new_image_id : images_sequence) {
-        auto [grid_t, grid_h, grid_w] = images_grid_thw.at(new_image_id - image_id);
-        size_t merge_length = std::pow(get_processor_config().merge_size, 2);
-        size_t num_image_pad_tokens = grid_t * grid_h * grid_w / merge_length;
-
-        std::string expanded_tag = vlm_config.vision_start_token;
-        for (int i = 0; i < num_image_pad_tokens; i++) {
-            expanded_tag += vlm_config.image_pad_token;
-        }
-        expanded_tag += vlm_config.vision_end_token;
         reordered_image_embeds.push_back(image_embeds.at(new_image_id - image_id));
         reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id - image_id));
     }

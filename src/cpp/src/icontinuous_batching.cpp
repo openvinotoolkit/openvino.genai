@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "icontinuous_batching.hpp"
-#include "visual_language/qwen2vl/classes.hpp"
 
 namespace {
 std::string add_image_tags_to_prompt(const std::string& prompt, const std::vector<ov::Tensor>& rgbs, size_t history_images_size) {
@@ -177,25 +176,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
-        auto qwen2vl_vision_encoder = std::dynamic_pointer_cast<ov::genai::VisionEncoderQwen2VL>(m_inputs_embedder->get_vision_encoder());
 
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
         m_inputs_embedder->set_apply_chat_template_status(false);
 
-        // In Qwen2VL image embeddings are merged using a separate image embeddings merger model.
-        // In order to optimize the usage of image embeddings merger, the merging result is stored and reused on next chat iterations.
-        if (rgbs.size() > 0 && qwen2vl_vision_encoder) {
-            // If new images are passed m_merged_image_embeddings needs to be updated
-            m_merged_image_embeddings = m_inputs_embedder->run_image_embeddings_merger(m_history_images, templated_history);
-        }
-
-        ov::Tensor embeds;
-        if (qwen2vl_vision_encoder && m_history_images.size() > 0) {
-            embeds = m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], m_merged_image_embeddings);
-        } else {
-            embeds = m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0]);
-        }
-        input_embeds_list.push_back(embeds);
+        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0));
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];

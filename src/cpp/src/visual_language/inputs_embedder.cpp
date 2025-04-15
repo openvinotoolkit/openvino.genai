@@ -69,10 +69,6 @@ bool InputsEmbedder::IInputsEmbedder::prompt_has_image_tag(const std::string& pr
     return std::regex_search(prompt, UNIVERSAL_PATTERN);
 }
 
-ov::Tensor InputsEmbedder::IInputsEmbedder::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const {
-    OPENVINO_THROW("Image embedding merger is not supported for this model type.");
-}
-
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
@@ -193,7 +189,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_ima
 }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
-    return get_inputs_embeds(prompt, encode_images(images), metrics);
+    return get_inputs_embeds(prompt, encode_images(images), metrics, true);
 }
 
 /// Public InputsEmbedder class
@@ -248,8 +244,8 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
     return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
-ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, std::optional<ov::Tensor> merged_image_embeddings) {
-    return m_impl->get_inputs_embeds(prompt, images, metrics, merged_image_embeddings);
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
+    return m_impl->get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings);
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
@@ -270,14 +266,6 @@ ov::genai::utils::KVCacheState& InputsEmbedder::get_kv_cache_state() {
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
     return m_impl->get_tokenizer();
-}
-
-VisionEncoder::Ptr InputsEmbedder::get_vision_encoder() const {
-    return m_impl->get_vision_encoder();
-}
-
-ov::Tensor InputsEmbedder::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::string& prompt) const {
-    return m_impl->run_image_embeddings_merger(images, prompt);
 }
 
 void InputsEmbedder::start_chat(const std::string& system_message) {
