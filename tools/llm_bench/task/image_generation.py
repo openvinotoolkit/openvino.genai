@@ -90,10 +90,11 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
 
     result_md5_list = []
     max_rss_mem_consumption = ''
-    max_uss_mem_consumption = ''
-    max_shared_mem_consumption = ''
+    max_sys_mem_consumption = ''
+    max_rss_mem_increase = ''
+    max_sys_mem_increase = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start_collect_memory_consumption()
+        mem_consumption.start()
 
     input_text_list = [input_text] * args['batch_size']
     input_data = pipe.tokenizer(input_text, return_tensors='pt')
@@ -108,9 +109,8 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     res = pipe(input_text_list, **input_args, num_images_per_prompt=args['batch_size']).images
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.end_collect_momory_consumption()
-        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
-        mem_consumption.clear_max_memory_consumption()
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
     for bs_idx in range(args['batch_size']):
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
@@ -122,8 +122,9 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         gen_time=generation_time,
         res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
+        max_rss_mem_increase=max_rss_mem_increase,
+        max_sys_mem=max_sys_mem_consumption,
+        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)
@@ -131,9 +132,6 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         num,
         iter_data,
         warm_up=(num == 0),
-        max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
         stable_diffusion=stable_diffusion_hook,
         prompt_idx=image_id
     )
@@ -160,10 +158,11 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
 
     result_md5_list = []
     max_rss_mem_consumption = ''
-    max_uss_mem_consumption = ''
-    max_shared_mem_consumption = ''
+    max_sys_mem_consumption = ''
+    max_rss_mem_increase = ''
+    max_sys_mem_increase = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start_collect_memory_consumption()
+        mem_consumption.start()
 
     input_text_list = [input_text] * args['batch_size']
     if num == 0 and args["output_dir"] is not None:
@@ -183,9 +182,8 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         performance_metrics = callback
 
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.end_collect_momory_consumption()
-        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
-        mem_consumption.clear_max_memory_consumption()
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
     for bs_idx in range(args['batch_size']):
         image = Image.fromarray(res[bs_idx])
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(image, args, image_id, num, bs_idx, proc_id, '.png')
@@ -198,8 +196,9 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         gen_time=generation_time,
         res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
+        max_rss_mem_increase=max_rss_mem_increase,
+        max_sys_mem=max_sys_mem_consumption,
+        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)
@@ -207,9 +206,6 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         num,
         iter_data,
         warm_up=(num == 0),
-        max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
         stable_diffusion=performance_metrics,
         prompt_idx=image_id
     )
@@ -218,7 +214,6 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-
     input_image_list = get_image_prompt(args)
     if args['prompt_index'] is None:
         prompt_idx_list = [image_id for image_id, input_text in enumerate(input_image_list)]
@@ -243,7 +238,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         if "guidance_scale" in static_input_args:
             args["guidance_scale"] = static_input_args["guidance_scale"]
 
-    pipe, pretrain_time, use_genai, callback = FW_UTILS[framework].create_image_gen_model(model_path, device, **args)
+    pipe, pretrain_time, use_genai, callback = FW_UTILS[framework].create_image_gen_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
 
     if framework == "ov" and not use_genai:
