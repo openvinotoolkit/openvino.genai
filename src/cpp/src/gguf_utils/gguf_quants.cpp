@@ -194,7 +194,7 @@ void extract_q6_k_data(const gguf_tensor& tensor,
             uint8_t q3 = (ql[j] >> 4) | (((qh[j] >> 4) & 3) << 4);
             uint8_t q4 = (ql[32 + j] >> 4) | (((qh[j] >> 6) & 3) << 4);
             uint8_t q5 = (ql[64 + j] & 0xF) | (((qh[32 + j] >> 0) & 3) << 4);
-            uint8_t q6 = (ql[96 + j] & 0xF) | (((qh[32 + j] >> 4) & 3) << 4);
+            uint8_t q6 = (ql[96 + j] & 0xF) | (((qh[32 + j] >> 2) & 3) << 4);
             uint8_t q7 = (ql[64 + j] >> 4) | (((qh[32 + j] >> 4) & 3) << 4);
             uint8_t q8 = (ql[96 + j] >> 4) | (((qh[32 + j] >> 6) & 3) << 4);       
             weights[i*256 + j] = q1 ;
