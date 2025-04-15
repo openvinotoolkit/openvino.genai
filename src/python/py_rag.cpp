@@ -22,7 +22,6 @@ void init_rag_pipelines(py::module_& m) {
 
     auto text_embedding_pipeline =
         py::class_<TextEmbeddingPipeline>(m, "TextEmbeddingPipeline", "Text embedding pipeline")
-
             .def(
                 "embed_documents",
                 [](TextEmbeddingPipeline& pipe,
