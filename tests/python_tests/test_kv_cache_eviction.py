@@ -21,7 +21,7 @@ from data.test_dataset import get_test_dataset
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
     TESTS_ROOT = Path(__file__).parent
     file_path = TESTS_ROOT / 'data' / file_name
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding="utf-8") as f:
         return {"prompts": [s for s in f]}
 
 def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:

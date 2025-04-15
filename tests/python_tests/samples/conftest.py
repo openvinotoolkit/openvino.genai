@@ -304,7 +304,7 @@ def generate_image_generation_jsonl(request):
     if not os.path.exists(file_path):
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             for entry in json_entries:
                 f.write(json.dumps(entry) + "\n")
         

@@ -37,7 +37,7 @@ export const SpeechRecognition = () => {
           </TabItemCpp>
         </LanguageTabs>
         <hr />
-        <ExploreCodeSamples link="docs/category/samples" />
+        <ExploreCodeSamples link="docs/samples" />
         <GoToDocumentation link="docs/use-cases/speech-recognition" />
       </Section.Column>
     </Section.Container>

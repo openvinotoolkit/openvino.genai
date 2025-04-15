@@ -3,7 +3,6 @@ import json
 import torch
 
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
-from diffusers import DiffusionPipeline, AutoPipelineForImage2Image, AutoPipelineForInpainting
 
 from .utils import mock_torch_cuda_is_available
 
@@ -27,6 +26,7 @@ class GenAIModelWrapper:
             except Exception:
                 self.config = AutoConfig.from_pretrained(model_dir)
         elif model_type == "text-to-image":
+            from diffusers import DiffusionPipeline
             self.config = DiffusionPipeline.load_config(
                 model_dir, trust_remote_code=True)
 
@@ -175,6 +175,7 @@ def load_text2image_model(
         logger.info("Using OpenvINO GenAI API")
         model = load_text2image_genai_pipeline(model_id, device, ov_config)
     elif use_hf:
+        from diffusers import DiffusionPipeline
         logger.info("Using HF Transformers API")
         model = DiffusionPipeline.from_pretrained(
             model_id, trust_remote_code=True)
@@ -287,6 +288,7 @@ def load_imagetext2image_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
 ):
     if use_hf:
+        from diffusers import AutoPipelineForImage2Image
         logger.info("Using HF Transformers API")
         model = AutoPipelineForImage2Image.from_pretrained(
             model_id, trust_remote_code=True
@@ -333,6 +335,7 @@ def load_inpainting_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
 ):
     if use_hf:
+        from diffusers import AutoPipelineForInpainting
         logger.info("Using HF Transformers API")
         model = AutoPipelineForInpainting.from_pretrained(
             model_id, trust_remote_code=True
