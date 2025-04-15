@@ -188,23 +188,15 @@ void extract_q6_k_data(const gguf_tensor& tensor,
         uint8_t* qh = block_data + 128;       
 
         // Extract weights
-        for (int64_t j = 0; j < 32; ++j) {  
-            uint8_t q1 = (ql[j] & 0xF) | (((qh[j] >> 0) & 3) << 4);
-            uint8_t q2 = (ql[32 + j] & 0xF) | (((qh[j] >> 2) & 3) << 4);
-            uint8_t q3 = (ql[j] >> 4) | (((qh[j] >> 4) & 3) << 4);
-            uint8_t q4 = (ql[32 + j] >> 4) | (((qh[j] >> 6) & 3) << 4);
-            uint8_t q5 = (ql[64 + j] & 0xF) | (((qh[32 + j] >> 0) & 3) << 4);
-            uint8_t q6 = (ql[96 + j] & 0xF) | (((qh[32 + j] >> 2) & 3) << 4);
-            uint8_t q7 = (ql[64 + j] >> 4) | (((qh[32 + j] >> 4) & 3) << 4);
-            uint8_t q8 = (ql[96 + j] >> 4) | (((qh[32 + j] >> 6) & 3) << 4);       
-            weights[i*256 + j] = q1 ;
-            weights[i*256 + j + 31] = q2 ;
-            weights[i*256 + j + 63] = q3 ;
-            weights[i*256 + j + 95] = q4 ;
-            weights[i*256 + j + 127] = q5 ;
-            weights[i*256 + j + 159] = q6 ;
-            weights[i*256 + j + 191] = q7 ;
-            weights[i*256 + j + 223] = q8 ;
+        for (int64_t j = 0; j < 32; ++j) {   
+            weights[i*256 + j] = (ql[j] & 0xF) | (((qh[j] >> 0) & 3) << 4);
+            weights[i*256 + j + 32] = (ql[32 + j] & 0xF) | (((qh[j] >> 2) & 3) << 4);
+            weights[i*256 + j + 64] = (ql[j] >> 4) | (((qh[j] >> 4) & 3) << 4);
+            weights[i*256 + j + 96] = (ql[32 + j] >> 4) | (((qh[j] >> 6) & 3) << 4);
+            weights[i*256 + j + 128] = (ql[64 + j] & 0xF) | (((qh[32 + j] >> 0) & 3) << 4);
+            weights[i*256 + j + 160] = (ql[96 + j] & 0xF) | (((qh[32 + j] >> 2) & 3) << 4);
+            weights[i*256 + j + 192] = (ql[64 + j] >> 4) | (((qh[32 + j] >> 4) & 3) << 4);
+            weights[i*256 + j + 224] = (ql[96 + j] >> 4) | (((qh[32 + j] >> 6) & 3) << 4); 
         }
         
     }

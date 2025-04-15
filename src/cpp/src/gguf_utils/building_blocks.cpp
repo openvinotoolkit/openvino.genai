@@ -460,7 +460,6 @@ ov::Output<ov::Node> make_fp16_weights(const std::string& key,
                                        const std::unordered_map<std::string, ov::Tensor>& consts,
                                        bool reorder,
                                        int head_size) {
-    std::cout << "Debug: Making FP16 weights for " << key << std::endl;
     auto it = consts.find(key + ".weight");
     if (it == consts.end()) {
         throw std::runtime_error("Weight not found: " + key);
@@ -490,8 +489,7 @@ ov::Output<ov::Node> make_int8_weights(const std::string& key,
                                        const std::unordered_map<std::string, ov::Tensor>& consts,
                                        bool reorder,
                                        int head_size,
-                                       size_t group_size = GGML_QUANTIZATION_GROUP_SIZE) {
-    std::cout << "Debug: Making INT8 weights for " << key << std::endl;                                    
+                                       size_t group_size = GGML_QUANTIZATION_GROUP_SIZE) {                              
     ov::Tensor weight = get_tensor(consts, key + ".weight");
     ov::Tensor scales = get_tensor(consts, key + ".scales");
     ov::Tensor biases = get_tensor(consts, key + ".biases");
@@ -553,7 +551,6 @@ ov::Output<ov::Node> make_int4_weights(const std::string& key,
                                        bool reorder,
                                        int head_size,
                                        size_t group_size = 32) {  // Assuming GGML_QUANTIZATION_GROUP_SIZE = 32
-    std::cout << "Debug: Making INT4 weights for " << key << std::endl;
     ov::Tensor weight = get_tensor(consts, key + ".weight");
 
     // Convert weight to uint8 view and adjust shape
@@ -637,7 +634,6 @@ ov::Output<ov::Node> make_weights_subgraph(const std::string& key,
     case gguf_tensor_type::GGUF_TYPE_Q4_K:
         return make_int4_weights(key, consts, reorder, head_size);
     case gguf_tensor_type::GGUF_TYPE_Q6_K:
-        std::cout << "Debug, Q6_K" << std::endl;
         return make_int8_weights(key, consts, reorder, head_size, 16);
 
     default:
