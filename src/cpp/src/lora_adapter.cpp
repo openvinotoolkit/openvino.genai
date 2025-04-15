@@ -16,6 +16,9 @@
 #include <memory>
 #include <cmath>
 
+#include "openvino/op/shape_of.hpp"
+#include "openvino/op/gather.hpp"
+#include "openvino/op/divide.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/matmul.hpp"
@@ -148,6 +151,26 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
         tensors[name] = constant;
     }
     return tensors;
+}
+
+size_t calculate_lora_rank(ConstantMap& tensors) {
+    ov::Shape shape_A, shape_B;
+
+    std::regex pattern_A("(.*)(lora[_.](A))(.*)");
+    std::regex pattern_B("(.*)(lora[_.](B))(.*)");
+
+    for (auto& tensor: tensors) {
+        if (std::regex_match(tensor.first, pattern_A) && shape_A.empty()) {
+            shape_A = tensor.second->get_output_shape(0);
+        } else if (std::regex_match(tensor.first, pattern_B) && shape_A.empty()) {
+            shape_B = tensor.second->get_output_shape(0);
+        } else if (!shape_A.empty() && !shape_A.empty()) {
+            break;
+        }
+    }
+    size_t lora_rank = shape_A[1] == shape_B[0] ? shape_A[1] : 0;
+    
+    return lora_rank;
 }
 
 
@@ -493,11 +516,17 @@ private:
 
 // Builds LoRA subgraph that consists of several matrix and element-wise multiplications with optional data type conversions and reshapes
 // to build a consistent graph.
+// NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::Output<ov::Node> target, bool transpose_weights, size_t alpha_pos, bool transpose_in_end, size_t rank) {
 NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::Output<ov::Node> target, bool transpose_weights, size_t alpha_pos, bool transpose_in_end) {
     const auto target_type = target.get_element_type();
     const auto target_shape = target.get_partial_shape();
     const auto target_rank = target_shape.rank().get_length();
+
+
     for(size_t i = 0; i < multipliers.size(); ++i) {
+        // if(i != alpha_pos) {
+        //     std::cout << "multipliers shape " <<  multipliers[i]->get_output_partial_shape(0) << std::endl;
+        // }
         NodePtr normalized = multipliers[i];
         if(normalized->get_output_element_type(0) != target_type) {
             normalized = std::make_shared<v0::Convert>(normalized, target_type);
@@ -510,10 +539,31 @@ NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::
             normalized = squeeze_2d(normalized);
         }
         if(input) {
+            // if(i == alpha_pos) {
+            //     // TODO: Apply alpha multiplication separately
+            //     if (rank > 0) {
+            //         std::shared_ptr<v0::Constant> lora_rank = v0::Constant::create(ov::element::i32, ov::Shape{1}, std::vector<int>{rank});
+            //         normalized =  std::make_shared<v1::Divide>(normalized, lora_rank);
+            //     } // TODO: else warning
+            //     input = std::make_shared<v1::Multiply>(input, normalized);
+            // }
+
             if(i == alpha_pos) {
-                // TODO: Apply alpha multiplication separately
+                // A is multipliers[0] and has shape [r, in_dim]
+                // TODO: add A pos
+                auto A_shape = std::make_shared<v3::ShapeOf>(multipliers[0]);
+                NodePtr lora_rank = std::make_shared<v8::Gather>(
+                    A_shape,
+                    v0::Constant::create(ov::element::i32, {1}, {0}), // dim 0
+                    v0::Constant::create(ov::element::i32, {}, {0})   // axis 0
+                );
+                lora_rank = std::make_shared<v0::Convert>(lora_rank, target_type);
+
+                normalized = std::make_shared<v1::Divide>(normalized, lora_rank);
                 input = std::make_shared<v1::Multiply>(input, normalized);
-            } else {
+            }
+            
+            else {
                 input = std::make_shared<v0::MatMul>(input, normalized, /*transpose_a = */false, transpose_weights);  // FIXME: verify transpose_a == true
             }
         } else {
@@ -838,13 +888,23 @@ public:
 
     virtual const LoRATensors& get_tensors() const = 0;
     virtual bool eq(const AdapterImpl* other) const = 0;
+
+    // size_t get_lora_rank() {
+    //     return lora_rank;
+    // }
+    
+protected:
+    // size_t lora_rank; // same to self.r[adapter_name] in PEFT and "r" from adapter_config.json
 };
 
 class SafetensorsAdapterImpl : public AdapterImpl {
 public:
 
-    SafetensorsAdapterImpl(const std::filesystem::path& path) :
-        tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns())) {}
+    SafetensorsAdapterImpl(const std::filesystem::path& path) {
+        auto tensors_map = read_safetensors(path);
+        // lora_rank = calculate_lora_rank(tensors_map);
+        tensors = group_lora_tensors(tensors_map, default_lora_patterns());
+    }
 
     const LoRATensors& get_tensors() const override {
         return tensors;
@@ -858,7 +918,6 @@ public:
     }
 
 private:
-
     LoRATensors tensors;
 };
 
@@ -943,6 +1002,8 @@ struct AdapterControllerImpl {
 
         for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
+            // size_t lora_rank = adapter_impl->get_lora_rank();
+
             params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->get_tensors(), config.get_tensor_name_prefix().value_or("")));
             if(params_getter.type != ov::element::f32) {
                 for(auto const& tensor : adapter_impl->get_tensors()) {
@@ -976,6 +1037,7 @@ struct AdapterControllerImpl {
                     std::make_shared<v0::Constant>(lora_weight.alpha),
                     std::make_shared<v0::Constant>(lora_weight.A),
                     std::make_shared<v0::Constant>(lora_weight.B)
+                    // std::make_shared<v0::Constant>(lora_weight.rank)
                 );
             } else {
                 return std::nullopt;
