@@ -857,6 +857,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     auto sampling_params = sequence_group->get_sampling_parameters();
                     if (is_stop_token_id_hit(sampled_token.m_index, sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
                         running_sequence->set_status(SequenceStatus::FINISHED);
+                        running_sequence->set_finish_reason(GenerationFinishReason::STOP);
                         sg_sampling_info.sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
                     }
                 }
