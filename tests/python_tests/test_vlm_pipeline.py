@@ -24,13 +24,19 @@ def get_ov_model(model_id, cache):
         trust_remote_code=True,
         **align_with_optimum_cli,
     ))
-    processor.tokenizer.save_pretrained(model_dir)
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
+    # For tiny-random-internvl2 processor is actually tokenizer
+    if isinstance(processor, transformers.Qwen2TokenizerFast):
+        tokenizer = processor
+        processor = transformers.AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
+    else:
+        tokenizer = processor.tokenizer
+    tokenizer.save_pretrained(model_dir)
+    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
     model = retry_request(lambda: OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_llm_properties()))
-    if processor.tokenizer.chat_template is not None:
-        processor.chat_template = processor.tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
+    if tokenizer.chat_template is not None:
+        processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
     return model_dir
