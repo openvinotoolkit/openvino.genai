@@ -550,6 +550,7 @@ public:
      * @return A vector of blocks (one for each layer) occupied by this sequence for this layer.
      */
     const std::vector<KVCacheBlock::Ptr>& get_block_table(uint64_t seq_id, size_t layer_idx) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         OPENVINO_ASSERT(m_block_table.count(seq_id) == 1);
         return m_block_table[seq_id][layer_idx];
     }
@@ -570,6 +571,7 @@ public:
      * @return Number of blocks freed in each sequence in the group.
      */
     const size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         size_t blocks_num = std::ceil(num_required_blocks / sequence_group->get_not_finished_sequences().size());
         auto not_finished_sequences = sequence_group->get_not_finished_sequences();
         for (size_t idx = 0; idx < not_finished_sequences.size(); ++idx) {
@@ -613,6 +615,7 @@ public:
     }
 
     const size_t free_partially_beam_search_group(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         size_t physical_blocks_released = 0;
         size_t logical_blocks_released = 0;
         while (num_required_blocks > physical_blocks_released) {
@@ -632,6 +635,7 @@ public:
      * @return The number of distinct physical blocks occupied by this sequence group.
      */
     const size_t get_number_of_blocks_occupied_by_sequence(SequenceGroup::Ptr sequence_group) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         auto running_sequences = sequence_group->get_not_finished_sequences();
         std::set<size_t> indices;
         for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
@@ -652,6 +656,7 @@ public:
      * @return Whether or not this BlockManager is managing this sequence group.
      */
     const bool has_block_table(uint64_t seq_id) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         return m_block_table.count(seq_id) > 0;
     }
 
@@ -766,6 +771,7 @@ public:
      * other sequences tracked by this BlockManager.
      */
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         OPENVINO_ASSERT(m_block_table.count(child_id) == 0);
         m_block_table[child_id].resize(m_num_layers);
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
@@ -782,6 +788,7 @@ public:
      * @param seq_id Identifier of the sequence to free.
      */
     void free_sequence(size_t seq_id) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         OPENVINO_ASSERT(m_block_table.find(seq_id) != m_block_table.end(), "sequence with id ", seq_id,
                         " not found in BlockManager, but requested to free");
         auto& block_table = m_block_table[seq_id];
@@ -846,6 +853,7 @@ public:
      * @param logical_block_index_sets_to_free Sets (one for each layer) of logical block indices to be freed from this sequence.
      */
     void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& logical_block_index_sets_to_free) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         std::vector<std::vector<size_t>> logical_block_indices_to_free(logical_block_index_sets_to_free.size());
         for (size_t i = 0; i < logical_block_index_sets_to_free.size(); i++) {
             const auto& index_set = logical_block_index_sets_to_free[i];
@@ -916,6 +924,7 @@ public:
      * allocated ones.
      */
     size_t required_blocks_count(SequenceGroup::CPtr seq_group) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
         size_t blocks_count = 0; // total number of needed blocks for sequence group
         std::set<size_t> last_block_ids; // unique last block indices
@@ -973,6 +982,7 @@ public:
      * @param seq_group Pointer to a sequence group.
      */
     void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
         if (num_logical_blocks == 0) {
             return;
@@ -997,6 +1007,7 @@ public:
      * indices into which the source block contents should be copied into separately.
      */
     std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::Ptr seq_group) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         // Will always allocate the identical number of new blocks (if any) to each of the "layers" to keep the
         // number of blocks occupied by each "layer" identical at all times.
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
@@ -1073,7 +1084,7 @@ public:
         // When add_request() is executed in multiple threads accessing to cached_blocks causes segfault.
         // The mutex is needed to prevent such segfaults.
         const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
-        auto prompt_ids = group->get_prompt_ids();
+        auto prompt_len = group->get_prompt_len();
         auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
         auto sequence = sequences[0];
@@ -1085,11 +1096,11 @@ public:
         auto& block_table = m_block_table[seq_id];
 
         size_t content_len = 0;
-        while (content_len < prompt_ids.size()) {
+        while (content_len < prompt_len) {
             size_t prev_iteration_content_len = content_len;
             content_len += m_block_size;
-            if (content_len > prompt_ids.size()) {
-                content_len = prompt_ids.size();
+            if (content_len > prompt_len) {
+                content_len = prompt_len;
             }
             // restore fully filled blocks
             auto full_block_hash = sequence->get_hash(content_len);
@@ -1101,11 +1112,11 @@ public:
                     block->set_timestamp(timestamp);
                     block_table[layer_idx].push_back(block);
                 }
-                group->update_processed_tokens_num(content_len == prompt_ids.size() ? content_len - 1 : content_len);
+                group->update_processed_tokens_num(content_len == prompt_len ? content_len - 1 : content_len);
             } else {
             // restore partially filled block
                 for (size_t i = 1; i < m_block_size; i++) {
-                    if (prev_iteration_content_len + i > prompt_ids.size()) {
+                    if (prev_iteration_content_len + i > prompt_len) {
                         break;
                     }
                     auto hash = sequence->get_hash(prev_iteration_content_len + i);
@@ -1118,8 +1129,7 @@ public:
                             block->set_timestamp(timestamp);
                             block_table[layer_idx].push_back(block);
                         }
-
-                        group->update_processed_tokens_num(prev_iteration_content_len + i == prompt_ids.size() ? prev_iteration_content_len + i - 1 : prev_iteration_content_len + i);
+                        group->update_processed_tokens_num(prev_iteration_content_len + i == prompt_len ? prev_iteration_content_len + i - 1 : prev_iteration_content_len + i);
 
                         break;
                     }

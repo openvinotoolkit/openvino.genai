@@ -1,0 +1,82 @@
+import GenerationConfigurationWorkflow from '@site/docs/use-cases/_shared/_generation_configuration_workflow.mdx';
+
+## Additional Usage Options
+
+:::tip
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/image_generation) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/image_generation) image generation samples.
+:::
+
+### Use Different Generation Parameters
+
+<GenerationConfigurationWorkflow />
+
+#### Image Generation Configuration
+
+You can adjust several parameters to control the image generation process, including dimensions and the number of inference steps:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+        from PIL import Image
+
+        pipe = ov_genai.Text2ImagePipeline(model_path, "CPU")
+        image_tensor = pipe.generate(
+          prompt,
+          # highlight-start
+          width=512,
+          height=512,
+          num_images_per_prompt=1,
+          num_inference_steps=30,
+          guidance_scale=7.5
+          # highlight-end
+        )
+
+        image = Image.fromarray(image_tensor.data[0])
+        image.save("image.bmp")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include "openvino/genai/image_generation/text2image_pipeline.hpp"
+        #include "imwrite.hpp"
+
+        int main(int argc, char* argv[]) {
+            const std::string models_path = argv[1], prompt = argv[2];
+
+            ov::genai::Text2ImagePipeline pipe(models_path, "CPU");
+            ov::Tensor image = pipe.generate(
+                prompt,
+                // highlight-start
+                ov::genai::width(512),
+                ov::genai::height(512),
+                ov::genai::num_images_per_prompt(1),
+                ov::genai::num_inference_steps(30),
+                ov::genai::guidance_scale(7.5f)
+                // highlight-end
+            );
+
+            imwrite("image.bmp", image, true);
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+:::info Understanding Image Generation Parameters
+
+- `width`: The width of resulting image(s).
+- `height`: The height of resulting image(s).
+- `num_images_per_prompt`: Specifies how many image variations to generate in a single request for the same prompt.
+- `num_inference_steps`: Defines denoising iteration count. Higher values increase quality and generation time, lower values generate faster with less detail.
+- `guidance_scale`: Balances prompt adherence vs. creativity. Higher values follow prompt more strictly, lower values allow more creative freedom.
+- `rng_seed`: Controls randomness for reproducible results. Same seed produces identical images across runs.
+
+For the full list of generation parameters, refer to the [Image Generation Config API](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.ImageGenerationConfig.html).
+
+:::
+
+### Working with LoRA Adapters
+
+For image generation models like Stable Diffusion, LoRA adapters can modify the generation process to produce images with specific artistic styles, content types, or quality enhancements.
+
+Refer to the [LoRA Adapters](/docs/guides/lora-adapters.mdx) for more details on working with LoRA adapters.

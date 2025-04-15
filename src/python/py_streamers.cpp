@@ -35,6 +35,7 @@ callback: User-defined callback function to process the decoded text, callback s
 )";
 
 class ConstructableStreamer: public StreamerBase {
+    OPENVINO_SUPPRESS_DEPRECATED_START
     bool put(int64_t token) override {
         PYBIND11_OVERRIDE(
             bool,  // Return type
@@ -43,6 +44,7 @@ class ConstructableStreamer: public StreamerBase {
             token  // Argument(s)
         );
     }
+    OPENVINO_SUPPRESS_DEPRECATED_END
     StreamingStatus write(int64_t token) override {
         PYBIND11_OVERRIDE(
             StreamingStatus,  // Return type

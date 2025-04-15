@@ -260,7 +260,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         const size_t num_processed_tokens = request->get_num_processed_tokens(),
                      prompt_len = request->get_prompt_len(),
                      updated_context_len = min_candidate_len + prompt_len,
-                     max_new_tokens = request->get_sampling_parameters().max_new_tokens;
+                     max_new_tokens = request->get_max_new_tokens();
         size_t generated_len = request->get_context_len() >= request->get_prompt_len() ? request->get_context_len() - request->get_prompt_len() + 1 : 0;
         if (generated_len > 0 && result.removed_tokens_cnt > 0) {
             request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1);
@@ -323,15 +323,17 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 // generate only one token in case of non speculative decoding
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() >= request->get_prompt_len() &&
-                (request->get_num_processed_tokens() - request->get_prompt_len() + 1) >= sampling_params.max_new_tokens - 1) {
+                (request->get_num_processed_tokens() - request->get_prompt_len() + 1) >= request->get_max_new_tokens() - 1) {
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == 0 && sampling_params.num_return_sequences > 1) {
                 request->pause_generation(true);
             } else if (sampling_params.num_assistant_tokens <= generated_tokens_cnt && sampling_params.assistant_confidence_threshold == 0.f) {
                 request->pause_generation(true);
-            } else if (sampling_params.max_new_tokens == 0) {
+            } else if (request->get_max_new_tokens() == 0) {
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == request->get_prompt_len()) {
+                request->pause_generation(true);
+            } else if (is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();

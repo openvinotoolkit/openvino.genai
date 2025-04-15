@@ -3,8 +3,8 @@
 Examples in this folder showcase inference of text to image models like Stable Diffusion 1.5, 2.1, LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::Text2ImagePipeline` and uses a text prompt as input source.
 
 There are several sample files:
- - [`text2image.cpp`](./main.cpp) demonstrates basic usage of the text to image pipeline
- - [`text2image_lora.cpp`](./lora.cpp) shows how to apply LoRA adapters to the pipeline
+ - [`text2image.cpp`](./text2image.cpp) demonstrates basic usage of the text to image pipeline
+ - [`lora_text2image.cpp`](./lora_text2image.cpp) shows how to apply LoRA adapters to the pipeline
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
@@ -58,7 +58,7 @@ Please find the template of the callback usage below.
 ov::genai::Text2ImagePipeline pipe(models_path, device);
 
 auto callback = [&](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
-   std::cout << "Image generation step: " << step << " / " << num_steps << std::endl;
+   std::cout << "Image generation step: " << step + 1 << " / " << num_steps << std::endl;
    ov::Tensor img = pipe.decode(latent); // get intermediate image tensor
    if (your_condition) // return true if you want to interrupt image generation
       return true;
@@ -164,7 +164,7 @@ Options:
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
 - `--nw, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-n, --num_iter` (default: `3`): Number of iterations.
-- `-d, --device` (default: `"CPU"`): Device to run the model on.
+- `-d, --device` (default: `"CPU"`): Device(s) to run the pipeline with.
 - `-w, --width` (default: `512`): The width of the output image.
 - `--ht, --height` (default: `512`): The height of the output image.
 - `--is, --num_inference_steps` (default: `20`): The number of inference steps.
@@ -173,6 +173,7 @@ Options:
 - `-i, --image`: Path to input image.
 - `-s, --strength`: Indicates extent to transform the reference `image`. Must be between 0 and 1.
 - `--mi, --mask_image`: Path to mask image.
+- `-r, --reshape': Reshape pipeline before compilation. This can improve image generation performance.
 
 For example:
 

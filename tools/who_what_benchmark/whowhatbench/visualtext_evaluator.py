@@ -3,7 +3,7 @@ from typing import Any, Union
 import os
 import datasets
 import pandas as pd
-from diffusers.utils.loading_utils import load_image
+from transformers.image_utils import load_image
 from tqdm import tqdm
 from transformers import set_seed
 
@@ -28,6 +28,19 @@ def prepare_default_data(num_samples=None):
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )
+
+
+def fix_phi3_v_eos_token_id(model_type, tokenizer):
+    """
+    phi3_v configs aren't consistent. Override the default
+    eos_token_id with the one from a tokenizer similar to
+    an example in
+    https://huggingface.co/microsoft/Phi-3.5-vision-instruct
+    """
+    if 'phi3_v' == model_type:
+        return {"eos_token_id": tokenizer.eos_token_id}
+    else:
+        return dict()
 
 
 @register_evaluator("visual-text")
@@ -121,6 +134,7 @@ class VisualTextEvaluator(TextEvaluator):
             inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config)
             tokens = model.generate(
                 **inputs,
+                **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
                 do_sample=False,
                 max_new_tokens=max_new_tokens,
                 tokenizer=tokenizer,

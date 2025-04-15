@@ -12,6 +12,9 @@ namespace ov::genai {
 
 namespace {
 
+// Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
+std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
+
 ImageSize smart_resize_qwen2vl(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
     if (height < factor || width < factor) {
         OPENVINO_THROW("Height (" + std::to_string(height) + ") and width (" + std::to_string(width) + ") must be greater than factor (" + std::to_string(factor) + ")");
@@ -167,6 +170,8 @@ ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
 } // namespace
 
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+    ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Shape image_shape = image.get_shape();
@@ -227,10 +232,10 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     ov::Tensor flattened_patches(transposed_patches.get_element_type(), flattened_patches_shape);
     std::memcpy(flattened_patches.data(), transposed_patches.data(), transposed_patches.get_byte_size());
 
-    m_vision_encoder.set_tensor("hidden_states", flattened_patches);
-    m_vision_encoder.infer();
+    encoder.set_tensor("hidden_states", flattened_patches);
+    encoder.infer();
 
-    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+    const ov::Tensor& infer_output = encoder.get_output_tensor();
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
@@ -247,7 +252,11 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     IInputsEmbedder(vlm_config, model_dir, device, device_config) {
     auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_merger_model.xml", device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
-    m_vision_embeddings_merger = compiled_model.create_infer_request();
+    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
 }
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
@@ -265,20 +274,21 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         device_config
     );
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
-    m_vision_embeddings_merger = compiled_model.create_infer_request();
+    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
 }
 
-ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
-    std::string formatted_prompt;
-
-    std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+    auto [unified_prompt, images_sequence] = normalize_prompt(prompt, NATIVE_TAG, NATIVE_TAG, m_image_id, images.size());
     std::vector<ov::Tensor> image_embeds;
     std::vector<std::array<size_t, 3>> images_grid_thw;
-    image_embeds.reserve(single_images.size());
-    images_grid_thw.reserve(single_images.size());
+    image_embeds.reserve(images.size());
+    images_grid_thw.reserve(images.size());
     
-    for (const auto& image : single_images) {
-        EncodedImage encoded_image = m_vision_encoder->encode(image);
+    for (const auto& encoded_image : images) {
         ov::Tensor single_image_embeds = encoded_image.resized_source;
         image_embeds.push_back(std::move(single_image_embeds));
 
@@ -286,20 +296,30 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
         size_t grid_h = encoded_image.resized_source_size.height;
         size_t grid_w = encoded_image.resized_source_size.width;
         images_grid_thw.push_back({grid_t, grid_h, grid_w});
+    }
 
+    std::vector<ov::Tensor> reordered_image_embeds;
+    std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
+    for (size_t new_image_id : images_sequence) {
+        auto [grid_t, grid_h, grid_w] = images_grid_thw.at(new_image_id - m_image_id);
         size_t merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
         size_t num_image_pad_tokens = grid_t * grid_h * grid_w / merge_length;
 
-        formatted_prompt += m_vlm_config.vision_start_token;
+        std::string expanded_tag = m_vlm_config.vision_start_token;
         for (int i = 0; i < num_image_pad_tokens; i++) {
-            formatted_prompt += m_vlm_config.image_pad_token;
+            expanded_tag += m_vlm_config.image_pad_token;
         }
-        formatted_prompt += m_vlm_config.vision_end_token;
+        expanded_tag += m_vlm_config.vision_end_token;
+        unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
+        reordered_image_embeds.push_back(image_embeds.at(new_image_id - m_image_id));
+        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id - m_image_id));
     }
-    formatted_prompt += prompt;
+    m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
 
-    ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
-    ov::Tensor text_embeds = m_embedding.infer(input_ids);
+    ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_vision_start_token = m_tokenizer.encode(m_vlm_config.vision_start_token, ov::genai::add_special_tokens(false)).input_ids;
@@ -315,11 +335,16 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
     m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
 
+    if (!m_is_chat_conversation) {
+        m_image_id = 0;
+    }
     if (images.empty()) {
-        return text_embeds;
+        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+        return inputs_embeds;
     }
 
-    return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, image_embeds, images_grid_thw, image_pad_token_id);
+    return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, reordered_image_embeds, reordered_images_grid_thw, image_pad_token_id);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
@@ -345,6 +370,10 @@ void InputsEmbedderQwen2VL::finish_chat() {
     IInputsEmbedder::finish_chat();
     m_position_ids = ov::Tensor();
     m_rope_delta = 0;
+}
+
+bool InputsEmbedderQwen2VL::prompt_has_image_tag(const std::string& prompt) const {
+    return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(NATIVE_TAG) != std::string::npos;
 }
 
 ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
@@ -405,11 +434,13 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
 
     ov::Tensor rotary_pos_emb = get_rotary_pos_emb(images_grid_thw);
 
-    m_vision_embeddings_merger.set_tensor("hidden_states", concatenated_images);
-    m_vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
-    m_vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
-    m_vision_embeddings_merger.infer();
-    ov::Tensor processed_vision_embeds = m_vision_embeddings_merger.get_output_tensor();
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
+    ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
+    vision_embeddings_merger.set_tensor("hidden_states", concatenated_images);
+    vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
+    vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
+    vision_embeddings_merger.infer();
+    ov::Tensor processed_vision_embeds = vision_embeddings_merger.get_output_tensor();
 
     ov::Tensor merged_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
     std::memcpy(merged_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
@@ -512,7 +543,9 @@ ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::arra
     }
 
     // Calculate rotary embeddings for max_grid_size
-    const size_t dim = m_vision_embeddings_merger.get_tensor("rotary_pos_emb").get_shape().at(1);
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
+    ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
+    const size_t dim = vision_embeddings_merger.get_tensor("rotary_pos_emb").get_shape().at(1);
     const float theta = 10000.0f;
     
     std::vector<float> inv_freq(dim / 2);

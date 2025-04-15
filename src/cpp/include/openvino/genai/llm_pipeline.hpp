@@ -14,6 +14,7 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"
+#include "openvino/genai/common_types.hpp"
 
 namespace ov {
 namespace genai {

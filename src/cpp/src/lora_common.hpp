@@ -7,7 +7,6 @@
 #include <memory>
 #include <string>
 #include <optional>
-#include <regex>
 #include <vector>
 
 #include "openvino/op/constant.hpp"

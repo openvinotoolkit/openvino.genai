@@ -7,7 +7,6 @@
 #include "utils.hpp"
 
 #include <fstream>
-#include <regex>
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/core/parallel.hpp"
@@ -24,7 +23,7 @@ void fill_tensor(ov::Tensor tensor, T fill_val, size_t offset = 0u) {
 }
 
 void copy_with_offset(const ov::Tensor& orig, const std::size_t offset, ov::Tensor& padded) {
-    int64_t* orig_data = orig.data<int64_t>();
+    auto orig_data = orig.data<int64_t>();
     int64_t* padded_data = padded.data<int64_t>();
     std::copy(orig_data, orig_data + orig.get_size(), padded_data + offset);
 }
@@ -57,8 +56,8 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
 
     const size_t chunk_byte_size = W * elem_size;
 
-    const auto* src_p  = static_cast<uint8_t*>(src.data());
-          auto* dst_p  = static_cast<uint8_t*>(dst.data());
+    const auto* src_p = static_cast<const uint8_t*>(src.data());
+    auto* dst_p = static_cast<uint8_t*>(dst.data());
 
     for (size_t i = 0; i < C*H; ++i) {
         const size_t src_offset = i * IS_H;
@@ -102,8 +101,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
 ): StatefulLLMPipeline(
        genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config),
        tokenizer, config,
-       utils::from_config_json_if_exists(models_path),
-       models_path
+       utils::from_config_json_if_exists(models_path)
    ) {
 }
 
@@ -111,12 +109,11 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::shared_ptr<ov::Model>& model,
     const ov::genai::Tokenizer& tokenizer,
     const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config,
-    const std::filesystem::path& models_path
+    const ov::genai::GenerationConfig& generation_config
 ) : LLMPipelineImplBase(tokenizer, generation_config),
     m_sampler(m_tokenizer) {
     auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
-    auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model, properties, kv_pos, models_path);
+    auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model, properties, kv_pos);
     m_max_prompt_len = kv_desc.max_prompt_len;
     m_kvcache_total = kv_desc.max_prompt_len + kv_desc.min_response_len;
     m_request = compiled.create_infer_request();
@@ -355,16 +352,14 @@ LLMPipelineFactory::create(const std::filesystem::path& models_path,
 std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(const std::shared_ptr<ov::Model>& model,
                                                                 const ov::genai::Tokenizer& tokenizer,
                                                                 const ov::AnyMap& properties,
-                                                                const ov::genai::GenerationConfig& generation_config,
-                                                                const std::filesystem::path& models_path) {
+                                                                const ov::genai::GenerationConfig& generation_config) {
     auto properties_copy = properties;
     const auto pipeline_mode = str_to_pipeline(utils::pop_or_default(properties_copy, "STATIC_PIPELINE", std::string("STATEFUL")));
     if (pipeline_mode == StaticPipelineKind::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(model,
                                                                             tokenizer,
                                                                             properties_copy,
-                                                                            generation_config,
-                                                                            models_path);
+                                                                            generation_config);
     }
     OPENVINO_ASSERT(false);
 }

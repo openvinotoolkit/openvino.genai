@@ -1,0 +1,67 @@
+---
+sidebar_position: 2
+description: How to convert models to OpenVINO format
+---
+
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import UseCasesNote from './_use_cases_note.mdx';
+
+# Convert Models to OpenVINO Format
+
+This page explains how to convert various generative AI models from [Hugging Face](https://huggingface.co/) and [ModelScope](https://modelscope.cn/) to OpenVINO IR format.
+Refer to the [Supported Models](../../supported-models/index.mdx) for a list of available models.
+
+For downloading pre-converted models, see [Download Pre-Converted OpenVINO Models](./download-openvino-models.mdx).
+
+## Converting Models from Hugging Face
+
+1. Install `optimum-intel` package to download, convert and optimize models:
+    ```bash
+    pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git
+    ```
+2. Download and convert a model to the OpenVINO IR format using `optimum-cli` tool from Hugging Face:
+    <OptimumCLI />
+
+    :::tip
+
+    For better performance with minimal accuracy impact, convert the model to lower precision by using `--weight-format` argument:
+
+    <Tabs groupId="export-precision">
+        <TabItem label="INT4" value="int4">
+            <OptimumCLI weightFormat='int4' />
+        </TabItem>
+        <TabItem label="INT8" value="int8">
+            <OptimumCLI weightFormat='int8' />
+        </TabItem>
+        <TabItem label="FP16" value="fp16">
+            <OptimumCLI weightFormat='fp16' />
+        </TabItem>
+    </Tabs>
+
+    :::
+
+    :::info
+
+    The `--trust-remote-code` flag is required for some models that use custom code.
+
+    Check a full list of conversion options [here](https://huggingface.co/docs/optimum/en/intel/openvino/export).
+
+    :::
+
+## Converting Models from ModelScope
+
+ModelScope models need to be downloaded first, then converted to OpenVINO IR format.
+
+1. Install `modelscope` and `optimum-intel` packages to download, convert and optimize models:
+    ```bash
+    pip install modelscope
+    pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git
+    ```
+2. Download the required model (e.g. `Qwen/Qwen2-7b`) to a local directory using `modelscope` tool:
+    ```bash
+    modelscope download --model 'Qwen/Qwen2-7b' --local_dir <model_path>
+    ```
+3. Convert the model (and optionally compress weights) using `optimum-cli` tool:
+    <OptimumCLI model='<model_path>' weightFormat='int4' />
+
+<UseCasesNote />
