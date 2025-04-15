@@ -156,7 +156,7 @@ private:
             if (config.pooling_type == PoolingType::CLS) {
                 return get_cls_pooling_op(node);
             } else if (config.pooling_type == PoolingType::MEAN) {
-                return get_mean_pooling_op_v2(model, node);
+                return get_mean_pooling_op(model, node);
             }
 
             OPENVINO_THROW("Pooling type is not supported");
