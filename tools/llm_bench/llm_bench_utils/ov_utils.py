@@ -21,7 +21,6 @@ from llm_bench_utils.config_class import (
     IMAGE_TO_IMAGE_GEN_CLS
 )
 from transformers import pipeline
-import openvino_genai as ov_genai
 import queue
 from transformers.generation.streamers import BaseStreamer
 from llm_bench_utils.config_class import TASK
@@ -148,7 +147,8 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
             ov_config=ov_config,
             config=model_config,
             stateful=kwargs.get("stateful", None),
-            trust_remote_code=remote_code
+            trust_remote_code=remote_code,
+            from_onnx=kwargs.get("from_onnx", False)
         )
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
@@ -674,120 +674,125 @@ def is_genai_available(log_msg=False):
     return True
 
 
-class GenaiChunkStreamer(ov_genai.StreamerBase):
-    """
-    A custom streamer class for handling token streaming and detokenization with buffering.
+def get_genai_chunk_streamer():
+    import openvino_genai as ov_genai
 
-    Attributes:
-        tokenizer (Tokenizer): The tokenizer used for encoding and decoding tokens.
-        tokens_cache (list): A buffer to accumulate tokens for detokenization.
-        text_queue (Queue): A synchronized queue for storing decoded text chunks.
-        print_len (int): The length of the printed text to manage incremental decoding.
-    """
-
-    def __init__(self, tokenizer, tokens_len=1):
+    class GenaiChunkStreamer(ov_genai.StreamerBase):
         """
-        Initializes the IterableStreamer with the given tokenizer.
+        A custom streamer class for handling token streaming and detokenization with buffering.
 
-        Args:
-            tokenizer (Tokenizer): The tokenizer to use for encoding and decoding tokens.
+        Attributes:
+            tokenizer (Tokenizer): The tokenizer used for encoding and decoding tokens.
+            tokens_cache (list): A buffer to accumulate tokens for detokenization.
+            text_queue (Queue): A synchronized queue for storing decoded text chunks.
+            print_len (int): The length of the printed text to manage incremental decoding.
         """
-        super().__init__()
-        self.tokenizer = tokenizer
-        self.tokens_cache = []
-        self.text_queue = queue.Queue()
-        self.print_len = 0
-        self.tokens_len = tokens_len
 
-    def __iter__(self):
-        """
-        Returns the iterator object itself.
-        """
-        return self
+        def __init__(self, tokenizer, tokens_len=1):
+            """
+            Initializes the IterableStreamer with the given tokenizer.
 
-    def __next__(self):
-        """
-        Returns the next value from the text queue.
+            Args:
+                tokenizer (Tokenizer): The tokenizer to use for encoding and decoding tokens.
+            """
+            super().__init__()
+            self.tokenizer = tokenizer
+            self.tokens_cache = []
+            self.text_queue = queue.Queue()
+            self.print_len = 0
+            self.tokens_len = tokens_len
 
-        Returns:
-            str: The next decoded text chunk.
+        def __iter__(self):
+            """
+            Returns the iterator object itself.
+            """
+            return self
 
-        Raises:
-            StopIteration: If there are no more elements in the queue.
-        """
-        value = self.text_queue.get()  # get() will be blocked until a token is available.
-        if value is None:
-            raise StopIteration
-        return value
+        def __next__(self):
+            """
+            Returns the next value from the text queue.
 
-    def get_stop_flag(self):
-        """
-        Checks whether the generation process should be stopped.
+            Returns:
+                str: The next decoded text chunk.
 
-        Returns:
-            bool: Always returns False in this implementation.
-        """
-        return False
+            Raises:
+                StopIteration: If there are no more elements in the queue.
+            """
+            value = self.text_queue.get()  # get() will be blocked until a token is available.
+            if value is None:
+                raise StopIteration
+            return value
 
-    def put_word(self, word: str):
-        """
-        Puts a word into the text queue.
+        def get_stop_flag(self):
+            """
+            Checks whether the generation process should be stopped.
 
-        Args:
-            word (str): The word to put into the queue.
-        """
-        self.text_queue.put(word)
-
-    def put(self, token_id: int) -> bool:
-        """
-        Processes a token and manages the decoding buffer. Adds decoded text to the queue.
-
-        Args:
-            token_id (int): The token_id to process.
-
-        Returns:
-            bool: True if generation should be stopped, False otherwise.
-        """
-        self.tokens_cache.append(token_id)
-        if len(self.tokens_cache) % self.tokens_len == 0:
-            text = self.tokenizer.decode(self.tokens_cache)
-
-            word = ''
-            if len(text) > self.print_len and '\n' == text[-1]:
-                # Flush the cache after the new line symbol.
-                word = text[self.print_len:]
-                self.tokens_cache = []
-                self.print_len = 0
-            elif len(text) >= 3 and text[-1] == chr(65533):
-                # Don't print incomplete text.
-                pass
-            elif len(text) > self.print_len:
-                # It is possible to have a shorter text after adding new token.
-                # Print to output only if text lengh is increaesed.
-                word = text[self.print_len:]
-                self.print_len = len(text)
-            self.put_word(word)
-
-            if self.get_stop_flag():
-                # When generation is stopped from streamer then end is not called, need to call it here manually.
-                self.end()
-                return True  # True means stop  generation
-            else:
-                return False  # False means continue generation
-        else:
+            Returns:
+                bool: Always returns False in this implementation.
+            """
             return False
 
-    def end(self):
-        """
-        Flushes residual tokens from the buffer and puts a None value in the queue to signal the end.
-        """
-        text = self.tokenizer.decode(self.tokens_cache)
-        if len(text) > self.print_len:
-            word = text[self.print_len:]
-            self.put_word(word)
-            self.tokens_cache = []
-            self.print_len = 0
-        self.put_word(None)
+        def put_word(self, word: str):
+            """
+            Puts a word into the text queue.
+
+            Args:
+                word (str): The word to put into the queue.
+            """
+            self.text_queue.put(word)
+
+        def put(self, token_id: int) -> bool:
+            """
+            Processes a token and manages the decoding buffer. Adds decoded text to the queue.
+
+            Args:
+                token_id (int): The token_id to process.
+
+            Returns:
+                bool: True if generation should be stopped, False otherwise.
+            """
+            self.tokens_cache.append(token_id)
+            if len(self.tokens_cache) % self.tokens_len == 0:
+                text = self.tokenizer.decode(self.tokens_cache)
+
+                word = ''
+                if len(text) > self.print_len and '\n' == text[-1]:
+                    # Flush the cache after the new line symbol.
+                    word = text[self.print_len:]
+                    self.tokens_cache = []
+                    self.print_len = 0
+                elif len(text) >= 3 and text[-1] == chr(65533):
+                    # Don't print incomplete text.
+                    pass
+                elif len(text) > self.print_len:
+                    # It is possible to have a shorter text after adding new token.
+                    # Print to output only if text lengh is increaesed.
+                    word = text[self.print_len:]
+                    self.print_len = len(text)
+                self.put_word(word)
+
+                if self.get_stop_flag():
+                    # When generation is stopped from streamer then end is not called, need to call it here manually.
+                    self.end()
+                    return True  # True means stop  generation
+                else:
+                    return False  # False means continue generation
+            else:
+                return False
+
+        def end(self):
+            """
+            Flushes residual tokens from the buffer and puts a None value in the queue to signal the end.
+            """
+            text = self.tokenizer.decode(self.tokens_cache)
+            if len(text) > self.print_len:
+                word = text[self.print_len:]
+                self.put_word(word)
+                self.tokens_cache = []
+                self.print_len = 0
+            self.put_word(None)
+
+    return GenaiChunkStreamer
 
 
 class OptimumChunkStreamer(BaseStreamer):

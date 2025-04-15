@@ -14,7 +14,7 @@ import threading
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.output_csv
 from transformers import set_seed
-from llm_bench_utils.ov_utils import GenaiChunkStreamer, OptimumChunkStreamer
+from llm_bench_utils.ov_utils import get_genai_chunk_streamer, OptimumChunkStreamer
 import llm_bench_utils.output_json
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
@@ -253,7 +253,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         log.info(config_info)
     start = time.perf_counter()
     if streaming:
-        text_print_streamer = GenaiChunkStreamer(model.get_tokenizer(), tokens_len)
+        text_print_streamer = get_genai_chunk_streamer()(model.get_tokenizer(), tokens_len)
 
         def token_printer():
             # Getting next elements from iterable will be blocked until a new token is available.
