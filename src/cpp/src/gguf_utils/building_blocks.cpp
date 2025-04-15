@@ -528,7 +528,7 @@ ov::Output<ov::Node> make_int8_weights(const std::string& key,
     const ov::float16* scale_data = scales.data<ov::element_type_traits<ov::element::f16>::value_type>();
     uint8_t* bias_u8_data = biases_u8.data<uint8_t>();
     for (size_t i = 0; i < biases_u8.get_size(); ++i) {
-        bias_u8_data[i] = (uint8_t)(-1.f * static_cast<float>(bias_data[i]) / static_cast<float>(scale_data[i]));
+        bias_u8_data[i] = (uint8_t)std::round(-1.f * static_cast<float>(bias_data[i]) / static_cast<float>(scale_data[i]));
     }
 
     auto zero_point = std::make_shared<ov::op::v0::Constant>(biases_u8);
@@ -592,9 +592,9 @@ ov::Output<ov::Node> make_int4_weights(const std::string& key,
     ov::Tensor zero_point_tensor(ov::element::u4, scale_bias_shape);
     uint8_t* zero_point_data = static_cast<uint8_t*>(zero_point_tensor.data());
     for (size_t i = 0; i < zero_point_tensor.get_byte_size(); ++i) {
-        uint8_t bias1 = (uint8_t)(-1.f * static_cast<float>(bias_data[i * 2]) / static_cast<float>(scale_data[i * 2]));
+        uint8_t bias1 = (uint8_t)std::round(-1.f * static_cast<float>(bias_data[i * 2]) / static_cast<float>(scale_data[i * 2]));
         uint8_t bias2 =
-            (uint8_t)(-1.f * static_cast<float>(bias_data[i * 2 + 1]) / static_cast<float>(scale_data[i * 2 + 1]));
+            (uint8_t)std::round(-1.f * static_cast<float>(bias_data[i * 2 + 1]) / static_cast<float>(scale_data[i * 2 + 1]));
         zero_point_data[i] = (bias2 << 4) | (bias1 & 0x0F);
     }
 
