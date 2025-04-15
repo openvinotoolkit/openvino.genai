@@ -44,7 +44,7 @@ def parse_args():
     parser.add_argument(
         "--omit-chat-template",
         action="store_true",
-        help="Do not apply the default chat template.",
+        help="Do not apply the default chat template if it's present.",
     )
     parser.add_argument(
         "--gt-data",
@@ -268,11 +268,11 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=True):
+def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
     return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens, apply_chat_template=use_chat_template)
 
 
-def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=True):
+def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         text = output["choices"][0]["message"]["content"]
@@ -365,6 +365,7 @@ def create_evaluator(base_model, args):
             else:
                 gen_answer_fn = None
 
+            use_chat_template = not args.omit_chat_template and tokenizer.chat_template is not None
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -374,7 +375,7 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
-                use_chat_template=not args.omit_chat_template,
+                use_chat_template=use_chat_template,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
