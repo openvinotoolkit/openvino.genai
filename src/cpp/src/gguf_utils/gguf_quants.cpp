@@ -93,30 +93,23 @@ void extract_q8_0_data(const gguf_tensor& tensor,
     }
 }
 
-void unpack_128_4(const uint8_t* qs, uint8_t* dst, int num_blocks) {
+void unpack_256_4(const uint8_t* data, uint8_t* dst) {
     // Initialize the output array with zeros
-    std::fill(dst, dst + num_blocks * 128, 0);
-
-    for (int block = 0; block < num_blocks; ++block) {
-        for (int i = 0; i < 4; ++i) {
-            // Process the lower 4 bits
-            for (int j = 0; j < 32; ++j) {
-                uint8_t x = qs[block * 128 + i * 32 + j] & 0x0F;  // Extract lower 4 bits
-                if (j % 2 != 0) {
-                    x <<= 4;  // Shift left by 4 if j is odd
-                }
-                dst[block * 128 + i * 32 + j / 2] += x;
-            }
-
-            // Process the higher 4 bits
-            for (int j = 0; j < 32; ++j) {
-                uint8_t x = qs[block * 128 + i * 32 + j] >> 4;  // Extract higher 4 bits
-                if (j % 2 != 0) {
-                    x <<= 4;  // Shift left by 4 if j is odd
-                }
-                dst[block * 128 + i * 32 + 16 + j / 2] += x;
-            }
+    std::fill_n(dst, 16, 0);
+    for (int j = 0; j < 128; ++j) {
+        uint8_t x = (data[j] & 0x0F); 
+        if (j % 2 != 0) {
+            x <<= 4;
         }
+        dst[j / 2] |= x;
+    }
+    // Last 16 weights are in the higher bits
+    for (int j = 0; j < 128; ++j) {
+        uint8_t x = (data[j] >> 4);
+        if (j % 2 != 0) {
+            x <<= 4;
+        }
+        dst[64 + j / 2] |= x;
     }
 }
 
@@ -124,39 +117,45 @@ void extract_q4_k_data(const gguf_tensor& tensor,
                        ov::Tensor& weights_arr,
                        ov::Tensor& scales_arr,
                        ov::Tensor& biases_arr) {
-    const uint64_t weights_per_block = 128;
     const uint64_t bytes_per_block = 2 + 2 + 12 + 128;
+    const uint64_t n_super_block = tensor.bsize / bytes_per_block;
     auto data = static_cast<uint8_t*>(tensor.weights_data);
     auto weights = static_cast<uint8_t*>(weights_arr.data());
     auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
     auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
 
-    for (int64_t i = 0; i < scales_arr.get_size(); i++) {
+    for (int64_t i = 0; i < n_super_block; i++) {
         uint8_t* block_data = data + i * bytes_per_block;
 
         // Extract scale factors and offsets
-        float scale_factor = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data)));
-        float scale_offset = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data + 1)));
+        float scale_scales = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data)));
+        float scale_biases = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data + 1)));
 
         // Extract qs1 and qs2
         uint8_t* qs1 = block_data + 4;
         uint8_t* qs2 = block_data + 16;
 
-        // Dequantize scales and offsets
-        for (int j = 0; j < 4; j++) {
-            uint8_t scale_bits_low = qs1[j] & 0b111111;
-            uint8_t scale_bits_high = (qs1[j + 8] & 0b00001111) | ((qs1[j] >> 6) << 4);
-            scales[i * 8 + j] = scale_factor * static_cast<float>(scale_bits_low);
-            scales[i * 8 + j + 4] = scale_factor * static_cast<float>(scale_bits_high);
+        scales[i*16] = ov::float16(scale_scales * static_cast<float>((*(qs1) & 0b111111)));
+        scales[i*16 + 1] = ov::float16(scale_scales * static_cast<float>((*(qs1+1) & 0b111111)));
+        scales[i*16 + 2] = ov::float16(scale_scales * static_cast<float>((*(qs1+2) & 0b111111)));
+        scales[i*16 + 3] = ov::float16(scale_scales * static_cast<float>((*(qs1+3) & 0b111111)));
+        scales[i*16 + 4] = ov::float16(scale_scales * static_cast<float>((*(qs1+8) & 0b00001111) | ((*(qs1) >> 6) << 4)));
+        scales[i*16 + 5] = ov::float16(scale_scales * static_cast<float>((*(qs1+9) & 0b00001111) | ((*(qs1+1)>> 6) << 4)));
+        scales[i*16 + 6] = ov::float16(scale_scales * static_cast<float>((*(qs1+10) & 0b00001111) | ((*(qs1+2) >> 6) << 4)));
+        scales[i*16 + 7] = ov::float16(scale_scales * static_cast<float>((*(qs1+11) & 0b00001111) | ((*(qs1+3) >> 6) << 4)));
+        
+        biases[i*16] = ov::float16(scale_biases * static_cast<float>((*(qs1+4) & 0b111111)));
+        biases[i*16 + 1] = ov::float16(scale_biases * static_cast<float>((*(qs1+5) & 0b111111)));
+        biases[i*16 + 2] = ov::float16(scale_biases * static_cast<float>((*(qs1+6) & 0b111111)));
+        biases[i*16 + 3] = ov::float16(scale_biases * static_cast<float>((*(qs1+7) & 0b111111)));
+        biases[i*16 + 4] = ov::float16(scale_biases * static_cast<float>((*(qs1+8) >> 4) | ((*(qs1+4) >> 6) << 4)));
+        biases[i*16 + 5] = ov::float16(scale_biases * static_cast<float>((*(qs1+9) >> 4) | ((*(qs1+5) >> 6) << 4)));
+        biases[i*16 + 6] = ov::float16(scale_biases * static_cast<float>((*(qs1+10) >> 4) | ((*(qs1+6) >> 6) << 4)));
+        biases[i*16 + 7] = ov::float16(scale_biases * static_cast<float>((*(qs1+11) >> 4) | ((*(qs1+7) >> 6) << 4)));
 
-            uint8_t offset_bits_low = qs1[j + 4] & 0b111111;
-            uint8_t offset_bits_high = (qs1[j + 8] >> 4) | ((qs1[j + 4] >> 6) << 4);
-            biases[i * 8 + j] = -scale_offset * static_cast<float>(offset_bits_low);
-            biases[i * 8 + j + 4] = -scale_offset * static_cast<float>(offset_bits_high);
-        }
-
-        // Dequantize final weights using scales and offsets
-        unpack_128_4(qs2, weights + i * weights_per_block, 1);
+        unpack_256_4(qs2, weights);
+        weights += 128;
+        data += bytes_per_block;
     }
 }
 
@@ -217,9 +216,8 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
     auto shape = get_shape(tensor);
 
     uint64_t weights_per_block;
-    if (tensor.type == GGUF_TYPE_Q4_K ){
-        weights_per_block = 16;
-    } else if (tensor.type == GGUF_TYPE_Q6_K){
+    // here we only consider sub block, q6k:16 q4k:32
+    if (tensor.type == GGUF_TYPE_Q6_K){
         weights_per_block = 16;
     } else {
         weights_per_block = 32;
