@@ -9,9 +9,12 @@
 #include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/convert.hpp"
+#include "openvino/op/divide.hpp"
+#include "openvino/op/maximum.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/normalize_l2.hpp"
 #include "openvino/op/reduce_mean.hpp"
+#include "openvino/op/reduce_sum.hpp"
 #include "openvino/op/shape_of.hpp"
 #include "openvino/op/slice.hpp"
 #include "openvino/op/squeeze.hpp"
@@ -153,7 +156,7 @@ private:
             if (config.pooling_type == PoolingType::CLS) {
                 return get_cls_pooling_op(node);
             } else if (config.pooling_type == PoolingType::MEAN) {
-                return get_mean_pooling_op(model, node);
+                return get_mean_pooling_op_v2(model, node);
             }
 
             OPENVINO_THROW("Pooling type is not supported");
@@ -188,38 +191,35 @@ private:
 
     std::shared_ptr<op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
                                                 const ov::Output<ov::Node>& last_hidden_state_node) {
-        const auto hidden_state_size = last_hidden_state_node.get_partial_shape()[2].get_length();
+        auto shape_of = std::make_shared<op::v3::ShapeOf>(last_hidden_state_node);
 
-        // shape: [batch_size, seq_length]
         auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
 
         auto unsqueze_axis =
             std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
 
-        // shape: [batch_size, seq_length, 1]
         auto unsqueze = std::make_shared<op::v0::Unsqueeze>(attention_mask, unsqueze_axis);
 
-        auto shape_of = std::make_shared<op::v3::ShapeOf>(attention_mask);
+        auto input_mask_expanded = std::make_shared<op::v3::Broadcast>(unsqueze, shape_of);
 
-        auto hidden_state_size_const =
-            std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{hidden_state_size});
-
-        // value: [batch_size, seq_length, hidden_state_size]
-        auto broadcast_shape = std::make_shared<op::v0::Concat>(ov::OutputVector{shape_of, hidden_state_size_const}, 0);
-
-        // shape: [batch_size, seq_length, hidden_state_size]
-        auto input_mask_expanded = std::make_shared<op::v3::Broadcast>(unsqueze, broadcast_shape);
         auto input_mask_expanded_convert =
             std::make_shared<op::v0::Convert>(input_mask_expanded, last_hidden_state_node.get_element_type());
 
-        // shape: [batch_size, seq_length, hidden_state_size]
-        auto attention_mask_multiply =
+        auto last_hidden_node_with_applied_attention_mask =
             std::make_shared<op::v1::Multiply>(last_hidden_state_node, input_mask_expanded_convert->outputs()[0]);
 
-        auto mean_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto axis_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto sum_hidden_state =
+            std::make_shared<op::v1::ReduceSum>(last_hidden_node_with_applied_attention_mask, axis_1);
+
+        auto sum_expanded_mask = std::make_shared<op::v1::ReduceSum>(input_mask_expanded_convert, axis_1);
+
+        auto nearest_to_zero =
+            std::make_shared<op::v0::Constant>(ov::element::f32, ov::Shape{1}, std::vector<float>{1e-12});
+        auto max_expanded_mask = std::make_shared<op::v1::Maximum>(sum_expanded_mask, nearest_to_zero);
 
         // shape: [batch_size, hidden_state_size]
-        return std::make_shared<op::v1::ReduceMean>(attention_mask_multiply, mean_axis);
+        return std::make_shared<op::v1::Divide>(sum_hidden_state, max_expanded_mask);
     }
 };
 
