@@ -18,12 +18,12 @@ concurrency:
 env:
   PYTHON_VERSION: '3.11'
   TARGET_BRANCH: 'master'
-  PYTHONIOENCODING: "utf8"
+  PYTHONIOENCODING: utf8
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
-  HF_HOME: C:/mount/caches/huggingface
-  OV_CACHE: C:/mount/caches/huggingface/ov_cache
+  HF_HOME: C:/mount/caches/huggingface/win
+  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win
 
 jobs:
   openvino_download:
@@ -37,7 +37,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-2-cores-8gb
+    runs-on: aks-linux-medium
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -51,7 +51,7 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_js_package.zip
-        revision: 'latest_available_commit'
+        revision: latest_available_commit
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build-type }})
@@ -59,12 +59,13 @@ jobs:
       matrix:
         build-type: [Release, Debug]
     needs: [ openvino_download ]
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
+      CMAKE_GENERATOR: 'Ninja' # Ninja is the only Windows native generator supported by ccache
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       GENAI_INSTALL_DIR: ${{ github.workspace }}\install\genai
       INSTALL_TOOLS_DIR: ${{ github.workspace }}\tools
@@ -96,7 +97,7 @@ jobs:
       # Build
       #
 
-      - name: Install build dependencies
+      - name: Download and install ninja
         run: |
           Invoke-WebRequest https://github.com/ninja-build/ninja/releases/download/v1.11.1/ninja-win.zip -OutFile ninja-win.zip -MaximumRetryCount 10
           Expand-Archive -Force ninja-win.zip
@@ -112,11 +113,11 @@ jobs:
 
       - name: Setup ccache
         id: ccache-restore
-        uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-${{ github.sha }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}
+            ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack
           path: ${{ env.CCACHE_DIR }}
             
       - name: Clean ccache stats
@@ -131,7 +132,7 @@ jobs:
         shell: pwsh
         run: |
           ${{ env.OV_INSTALL_DIR }}/setupvars.ps1
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build-type }} --verbose
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
@@ -148,7 +149,7 @@ jobs:
       
       - name: Save ccache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
-        uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
           path: ${{ env.CCACHE_DIR }}
@@ -180,18 +181,19 @@ jobs:
   genai_build_wheel:
     name: genai wheel
     needs: [ openvino_download ]
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
-      OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
-      SRC_DIR: ${{ github.workspace }}\src\genai
-      BUILD_DIR: ${{ github.workspace }}\build\genai
-      INSTALL_DIR: ${{ github.workspace }}\install\genai
-      WHEELS_DIR: ${{ github.workspace }}\install\genai\wheels
-      CCACHE_DIR: ${{ github.workspace }}\\ccache
+      OV_INSTALL_DIR: ${{ github.workspace }}\ov
+      SRC_DIR: ${{ github.workspace }}\src
+      BUILD_DIR: ${{ github.workspace }}\build
+      INSTALL_DIR: ${{ github.workspace }}\genai
+      WHEELS_DIR: ${{ github.workspace }}\genai\wheels
+      CCACHE_DIR: ${{ github.workspace }}\ccache
+      OpenVINODeveloperPackage_DIR: ${{ github.workspace }}\install\ov\developer_package\cmake
 
     steps:
       - name: Clone openvino.genai
@@ -212,6 +214,13 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
+          
+      - name: Download and install ninja
+        run: |
+          Invoke-WebRequest https://github.com/ninja-build/ninja/releases/download/v1.11.1/ninja-win.zip -OutFile ninja-win.zip -MaximumRetryCount 10
+          Expand-Archive -Force ninja-win.zip
+          # Add it to the GitHub Path so it would be available in the subsequent steps
+          Add-Content -Path $env:GITHUB_PATH -Value "${{ github.workspace }}/ninja-win"
 
       - name: Download and install ccache
         run: |
@@ -222,11 +231,11 @@ jobs:
 
       - name: Setup ccache
         id: ccache-restore
-        uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-${{ github.sha }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-wheel-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release
+            ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-wheel
           path: ${{ env.CCACHE_DIR }}
 
       #
@@ -243,6 +252,8 @@ jobs:
       - name: Build Tokenizers Wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
+            --config-settings=override=cmake.generator='Ninja' `
+            --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/tokenizers' `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
@@ -250,10 +261,10 @@ jobs:
       - name: Build genai wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
+            --config-settings=override=cmake.generator='Ninja' `
+            --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}
-        env:
-          CMAKE_BUILD_DIR: 'D:\a\b' # w/a for long path issue
         working-directory: ${{ env.OV_INSTALL_DIR }}
         
       - name: Build WWB Wheel
@@ -269,7 +280,7 @@ jobs:
 
       - name: Save ccache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
-        uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
           path: ${{ env.CCACHE_DIR }}
@@ -414,7 +425,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-16-cores-32gb
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -452,7 +463,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Tests
-        run: python -m pytest -v ${{ matrix.test.cmd }}
+        run: python -m pytest -s -v ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
           
   genai_samples_tests:
@@ -475,7 +486,7 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-win-8-cores-16gb'
     needs: [ openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
-    timeout-minutes: 60
+    timeout-minutes: 120
     defaults:
       run:
         shell: pwsh
@@ -557,7 +568,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download, genai_build_cpack, genai_build_wheel ]
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
