@@ -24,8 +24,8 @@ env:
   SCCACHE_SERVER_PORT: 35555
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
-  HF_HOME: /mount/caches/huggingface/lin
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin
+  # HF_HOME: /mount/caches/huggingface/lin
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin_tmp
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
 
