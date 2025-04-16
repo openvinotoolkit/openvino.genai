@@ -46,6 +46,17 @@ public:
         const bool is_gpu = m_device.find("GPU") != std::string::npos;
         m_block_size = is_gpu ? gpu_block_size : cpu_block_size;
 
+        if (is_gpu) {
+            auto can_get_context = [&]() {
+                try {
+                    auto remote_context = m_request.get_compiled_model().get_context();
+                } catch (const std::exception& ex) {
+                    return false;
+                }
+                return true;
+            };
+            OPENVINO_ASSERT(can_get_context(), "Can not get context");
+        }
         // extract information about KV cache precisions and shapes
         size_t kv_input_index = 0;
         for (const auto& input : compiled_model.inputs()) {
