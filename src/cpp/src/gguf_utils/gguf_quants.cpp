@@ -95,23 +95,27 @@ void extract_q8_0_data(const gguf_tensor& tensor,
 
 void unpack_256_4(const uint8_t* data, uint8_t* dst) {
     // Initialize the output array with zeros
-    std::fill_n(dst, 16, 0);
-    for (int j = 0; j < 128; ++j) {
-        uint8_t x = (data[j] & 0x0F); 
-        if (j % 2 != 0) {
-            x <<= 4;
+    std::fill_n(dst, 128, 0);
+
+    for(size_t i = 0; i < 4; ++i){
+        for (int j = 0; j < 32; ++j) {
+            uint8_t x = (data[i * 32 + j] & 0x0F); 
+            if (j % 2 != 0) {
+                x <<= 4;
+            }
+            dst[i * 32 + j / 2] |= x;
         }
-        dst[j / 2] |= x;
-    }
-    // Last 16 weights are in the higher bits
-    for (int j = 0; j < 128; ++j) {
-        uint8_t x = (data[j] >> 4);
-        if (j % 2 != 0) {
-            x <<= 4;
+        // Last 16 weights are in the higher bits
+        for (int j = 0; j < 32; ++j) {
+            uint8_t x = (data[i * 32 + j] >> 4);
+            if (j % 2 != 0) {
+                x <<= 4;
+            }
+            dst[i * 32 + 16 + j / 2] |= x;
         }
-        dst[64 + j / 2] |= x;
     }
 }
+
 
 void extract_q4_k_data(const gguf_tensor& tensor,
                        ov::Tensor& weights_arr,
@@ -144,18 +148,17 @@ void extract_q4_k_data(const gguf_tensor& tensor,
         scales[i*8 + 6] = ov::float16(scale_scales * static_cast<float>((*(qs1+10) & 0b00001111) | ((*(qs1+2) >> 6) << 4)));
         scales[i*8 + 7] = ov::float16(scale_scales * static_cast<float>((*(qs1+11) & 0b00001111) | ((*(qs1+3) >> 6) << 4)));
         
-        biases[i*8] = ov::float16(scale_biases * static_cast<float>((*(qs1+4) & 0b111111)));
-        biases[i*8 + 1] = ov::float16(scale_biases * static_cast<float>((*(qs1+5) & 0b111111)));
-        biases[i*8 + 2] = ov::float16(scale_biases * static_cast<float>((*(qs1+6) & 0b111111)));
-        biases[i*8 + 3] = ov::float16(scale_biases * static_cast<float>((*(qs1+7) & 0b111111)));
-        biases[i*8 + 4] = ov::float16(scale_biases * static_cast<float>((*(qs1+8) >> 4) | ((*(qs1+4) >> 6) << 4)));
-        biases[i*8 + 5] = ov::float16(scale_biases * static_cast<float>((*(qs1+9) >> 4) | ((*(qs1+5) >> 6) << 4)));
-        biases[i*8 + 6] = ov::float16(scale_biases * static_cast<float>((*(qs1+10) >> 4) | ((*(qs1+6) >> 6) << 4)));
-        biases[i*8 + 7] = ov::float16(scale_biases * static_cast<float>((*(qs1+11) >> 4) | ((*(qs1+7) >> 6) << 4)));
+        biases[i*8] = ov::float16(-1.f * scale_biases * static_cast<float>((*(qs1+4) & 0b111111)));
+        biases[i*8 + 1] = ov::float16(-1.f * scale_biases * static_cast<float>((*(qs1+5) & 0b111111)));
+        biases[i*8 + 2] = ov::float16(-1.f * scale_biases * static_cast<float>((*(qs1+6) & 0b111111)));
+        biases[i*8 + 3] = ov::float16(-1.f * scale_biases * static_cast<float>((*(qs1+7) & 0b111111)));
+        biases[i*8 + 4] = ov::float16(-1.f * scale_biases * static_cast<float>((*(qs1+8) >> 4) | ((*(qs1+4) >> 6) << 4)));
+        biases[i*8 + 5] = ov::float16(-1.f * scale_biases * static_cast<float>((*(qs1+9) >> 4) | ((*(qs1+5) >> 6) << 4)));
+        biases[i*8 + 6] = ov::float16(-1.f * scale_biases * static_cast<float>((*(qs1+10) >> 4) | ((*(qs1+6) >> 6) << 4)));
+        biases[i*8 + 7] = ov::float16(-1.f * scale_biases * static_cast<float>((*(qs1+11) >> 4) | ((*(qs1+7) >> 6) << 4)));
 
         unpack_256_4(qs2, weights);
         weights += 128;
-        data += bytes_per_block;
     }
 }
 
@@ -210,7 +213,7 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
     } else {  // tensor.type == GGUF_TYPE_Q8_0 || tensor.type == GGUF_TYPE_Q6_K
         weights_per_byte = 1;
     }
-
+    
     std::string name(tensor.name, tensor.namelen);
 
     auto shape = get_shape(tensor);

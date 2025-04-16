@@ -590,8 +590,7 @@ ov::Output<ov::Node> make_int4_weights(const std::string& key,
     uint8_t* zero_point_data = static_cast<uint8_t*>(zero_point_tensor.data());
     for (size_t i = 0; i < zero_point_tensor.get_byte_size(); ++i) {
         uint8_t bias1 = (uint8_t)std::round(-1.f * static_cast<float>(bias_data[i * 2]) / static_cast<float>(scale_data[i * 2]));
-        uint8_t bias2 =
-            (uint8_t)std::round(-1.f * static_cast<float>(bias_data[i * 2 + 1]) / static_cast<float>(scale_data[i * 2 + 1]));
+        uint8_t bias2 = (uint8_t)std::round(-1.f * static_cast<float>(bias_data[i * 2 + 1]) / static_cast<float>(scale_data[i * 2 + 1]));
         zero_point_data[i] = (bias2 << 4) | (bias1 & 0x0F);
     }
 

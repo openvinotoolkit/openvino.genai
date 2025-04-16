@@ -141,6 +141,7 @@ std::shared_ptr<ov::Model> create_llama_model(
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
+    std::cout << "Loading model from: " << model_path << std::endl;
     auto [config, consts, qtypes] = load_gguf(model_path);
 
     std::shared_ptr<ov::Model> model;
