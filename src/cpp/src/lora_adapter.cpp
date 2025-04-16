@@ -155,27 +155,6 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
     return tensors;
 }
 
-size_t calculate_lora_rank(ConstantMap& tensors) {
-    ov::Shape shape_A, shape_B;
-
-    std::regex pattern_A("(.*)(lora[_.](A))(.*)");
-    std::regex pattern_B("(.*)(lora[_.](B))(.*)");
-
-    for (auto& tensor: tensors) {
-        if (std::regex_match(tensor.first, pattern_A) && shape_A.empty()) {
-            shape_A = tensor.second->get_output_shape(0);
-        } else if (std::regex_match(tensor.first, pattern_B) && shape_A.empty()) {
-            shape_B = tensor.second->get_output_shape(0);
-        } else if (!shape_A.empty() && !shape_A.empty()) {
-            break;
-        }
-    }
-    size_t lora_rank = shape_A[1] == shape_B[0] ? shape_A[1] : 0;
-    
-    return lora_rank;
-}
-
-
 // Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond to a layer name in the base model
 LoRAPartsParser default_lora_patterns () {
     return LoRAPartsParser(
@@ -557,9 +536,6 @@ NodePtr tensors_multiplication(NodePtr input,
     const size_t alpha_pos = 1; 
 
     for(size_t i = 0; i < multipliers.size(); ++i) {
-        // if(i != alpha_pos) {
-        //     std::cout << "multipliers shape " <<  multipliers[i]->get_output_partial_shape(0) << std::endl;
-        // }
         NodePtr normalized = multipliers[i];
         if(normalized->get_output_element_type(0) != target_type) {
             normalized = std::make_shared<v0::Convert>(normalized, target_type);
