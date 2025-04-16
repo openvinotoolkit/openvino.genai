@@ -21,6 +21,7 @@ class CacheManager {
     size_t m_num_allocated_kv_blocks = 0, m_block_size_in_bytes = 0;
     ov::InferRequest m_request;
     size_t m_k_head_size = 0;
+    ov::RemoteContext m_context;
 
     static ov::Shape set_kv_blocks(ov::PartialShape pshape, size_t num_kv_blocks) {
         pshape[0] = num_kv_blocks;
@@ -47,15 +48,7 @@ public:
         m_block_size = is_gpu ? gpu_block_size : cpu_block_size;
 
         if (is_gpu) {
-            auto can_get_context = [&]() {
-                try {
-                    auto remote_context = m_request.get_compiled_model().get_context();
-                } catch (const std::exception& ex) {
-                    return false;
-                }
-                return true;
-            };
-            OPENVINO_ASSERT(can_get_context(), "Can not get context");
+            auto m_context = m_request.get_compiled_model().get_context();
         }
         // extract information about KV cache precisions and shapes
         size_t kv_input_index = 0;
@@ -167,14 +160,12 @@ public:
                 update_request_tensor(decoder_layer_id);
             }
         } else {
-            auto remote_context = m_request.get_compiled_model().get_context();
-
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
                 ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], num_kv_blocks);
                 ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], num_kv_blocks);
 
-                ov::Tensor key_cache = remote_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_cache_shape);
-                ov::Tensor value_cache = remote_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_cache_shape);
+                ov::Tensor key_cache = m_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_cache_shape);
+                ov::Tensor value_cache = m_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_cache_shape);
 
                 if (m_key_cache.size() > decoder_layer_id) {
                     ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
