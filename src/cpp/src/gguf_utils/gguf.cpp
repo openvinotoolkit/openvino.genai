@@ -246,6 +246,10 @@ std::pair<std::unordered_map<std::string, ov::Tensor>, std::unordered_map<std::s
             std::string name(tensor.name, tensor.namelen);
             ov::Tensor loaded_array = extract_tensor_data(&tensor);
             check_insert(array_map.insert({name, loaded_array}));
+
+            constexpr std::string_view weight_suffix = ".weight";
+            const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
+            qtype_map.insert({name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type)});
         }
     }
 
