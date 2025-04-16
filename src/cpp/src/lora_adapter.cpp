@@ -572,30 +572,11 @@ NodePtr tensors_multiplication(NodePtr input,
             normalized = squeeze_2d(normalized);
         }
         if(input) {
-            // if(i == alpha_pos) {
-            //     // TODO: Apply alpha multiplication separately
-            //     if (rank > 0) {
-            //         std::shared_ptr<v0::Constant> lora_rank = v0::Constant::create(ov::element::i32, ov::Shape{1}, std::vector<int>{rank});
-            //         normalized =  std::make_shared<v1::Divide>(normalized, lora_rank);
-            //     } // TODO: else warning
-            //     input = std::make_shared<v1::Multiply>(input, normalized);
-            // }
-            if(i == alpha_pos) { // Multiply for alpha
-                // TODO: add A pos
-
-                // auto A_shape = std::make_shared<v3::ShapeOf>(multipliers[0]); // A is multipliers[0] and has shape [r, in_dim]
-                // NodePtr lora_rank = std::make_shared<v8::Gather>(
-                //     A_shape,
-                //     v0::Constant::create(ov::element::i32, {1}, {0}), // dim 0
-                //     v0::Constant::create(ov::element::i32, {}, {0})   // axis 0
-                // );
-                // lora_rank = std::make_shared<v0::Convert>(lora_rank, target_type);
-                // normalized = std::make_shared<v1::Divide>(normalized, lora_rank);
-
+            if(i == alpha_pos) {    // Multiply for alpha
                 // to align with Peft: result = result + lora_B(lora_A(dropout(x))) * scaling
                 normalized = scale_alpha(tensor_A, tensor_B, alpha, target_type);
                 input = std::make_shared<v1::Multiply>(input, normalized);
-            } else {
+            } else {    // MatMul for A and B
                 input = std::make_shared<v0::MatMul>(input, normalized, /*transpose_a = */false, transpose_weights);  // FIXME: verify transpose_a == true
             }
         } else {
@@ -1085,7 +1066,6 @@ struct AdapterControllerImpl {
                     std::make_shared<v0::Constant>(lora_weight.alpha),
                     std::make_shared<v0::Constant>(lora_weight.A),
                     std::make_shared<v0::Constant>(lora_weight.B)
-                    // std::make_shared<v0::Constant>(lora_weight.rank)
                 );
             } else {
                 return std::nullopt;

@@ -18,15 +18,12 @@ namespace utils {
 template <typename T>
 struct LoRAParts {
     T alpha, A, B;
-    // rank;
 
     LoRAParts() = default;
     LoRAParts(const T& alpha, const T& A, const T& B) : alpha(alpha), A(A), B(B) {}
-    // LoRAParts(const T& alpha, const T& A, const T& B, const T& rank) : alpha(alpha), A(A), B(B), rank(rank) {}
 
     template <typename Other>
     LoRAParts(const LoRAParts<Other>& other) : alpha(other.alpha), A(other.A), B(other.B) {}
-    // LoRAParts(const LoRAParts<Other>& other) : alpha(other.alpha), A(other.A), B(other.B), rank(other.rank) {}
 };
 
 
