@@ -840,7 +840,6 @@ public:
             transpose_in_end = true;
         }
 
-        // NodeVector lora_variables{lora_weight.A, lora_weight.alpha, lora_weight.B};
         replacement = tensors_multiplication(activations.get_node_shared_ptr(),
                                              lora_weight.A,
                                              lora_weight.B,
@@ -917,23 +916,13 @@ public:
 
     virtual const LoRATensors& get_tensors() const = 0;
     virtual bool eq(const AdapterImpl* other) const = 0;
-
-    // size_t get_lora_rank() {
-    //     return lora_rank;
-    // }
-    
-protected:
-    // size_t lora_rank; // same to self.r[adapter_name] in PEFT and "r" from adapter_config.json
 };
 
 class SafetensorsAdapterImpl : public AdapterImpl {
 public:
 
-    SafetensorsAdapterImpl(const std::filesystem::path& path) {
-        auto tensors_map = read_safetensors(path);
-        // lora_rank = calculate_lora_rank(tensors_map);
-        tensors = group_lora_tensors(tensors_map, default_lora_patterns());
-    }
+    SafetensorsAdapterImpl(const std::filesystem::path& path) :
+        tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns())) {}
 
     const LoRATensors& get_tensors() const override {
         return tensors;
@@ -1031,8 +1020,6 @@ struct AdapterControllerImpl {
 
         for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
-            // size_t lora_rank = adapter_impl->get_lora_rank();
-
             params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->get_tensors(), config.get_tensor_name_prefix().value_or("")));
             if(params_getter.type != ov::element::f32) {
                 for(auto const& tensor : adapter_impl->get_tensors()) {
