@@ -11,7 +11,7 @@ async function main() {
                     + 'Run command must be: `node chat_sample.js *path_to_model_dir* *prompt*`');
         process.exit(1);
     }
-    if (!modelPath) {
+    if (!prompt) {
         console.error('Please specify prompt\n'
                       + 'Run command must be: `node chat_sample.js *path_to_model_dir* *prompt*`');
         process.exit(1);

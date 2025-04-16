@@ -32,7 +32,7 @@ class TestBeamSearchCausalLM:
 
         # Test JS sample
         js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/beam_search_causal_lm.js")
-        js_command =['node', js_sample, convert_model, sample_args]
+        js_command =['node', js_sample, convert_model, f'"{sample_args}"']
         js_result = run_sample(js_command)
 
         # Compare results

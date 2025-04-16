@@ -50,11 +50,10 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
 
 template <>
 ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value) {
-    const auto elem = value;
-    if (elem.IsString()) {
-        return elem.As<Napi::String>();
-    } else if (elem.IsArray()) {
-        auto array = elem.As<Napi::Array>();
+    if (value.IsString()) {
+        return value.As<Napi::String>();
+    } else if (value.IsArray()) {
+        auto array = value.As<Napi::Array>();
         size_t arrayLength = array.Length();
 
         std::vector<std::string> nativeArray;
