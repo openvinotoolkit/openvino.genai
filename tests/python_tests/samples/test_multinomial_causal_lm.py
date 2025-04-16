@@ -14,7 +14,7 @@ class TestMultinomialCausalLM:
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
-            pytest.param("SmolLM-135M", "return 0"),
+            pytest.param("SmolLM-135M", '"return 0"'),
             pytest.param(
                 "TinyLlama-1.1B-Chat-v1.0", 
                 "0", 
