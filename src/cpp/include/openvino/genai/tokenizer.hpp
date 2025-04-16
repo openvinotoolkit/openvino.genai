@@ -254,6 +254,18 @@ public:
     std::string get_eos_token() const;
     std::string get_pad_token() const;
 
+    /**
+     * @brief Get the vocabulary of the tokenizer.
+     *
+     * This function retrieves the vocabulary from the detokenizer, which maps
+     * token strings to their corresponding integer IDs. Note that some token strings
+     * may not be valid UTF-8 encoded. The resulting vocabulary may differ from the
+     * original tokenizer's vocabulary due to optimizations during conversion (space symbol
+     * swaps, byte fallback reverse, and other preprocessing changes).
+     *
+     * @return A map of string tokens to int64_t IDs.
+     * @throws Exception if the detokenizer is not available.
+     */
     Vocab get_vocab() const;
 
     Tokenizer() = default;
