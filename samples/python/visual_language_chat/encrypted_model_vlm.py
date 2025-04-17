@@ -74,6 +74,25 @@ def read_images(path: str) -> list[Tensor]:
     return [read_image(path)]
 
 
+# here is example how to make cache de-encryption based on base64
+import base64
+
+def encrypt_base64(src: bytes):
+    return base64.b64encode(src)
+
+
+def decrypt_base64(src: bytes):
+    return base64.b64decode(src)
+
+
+def get_config_for_cache_encryption():
+    config_cache = dict()
+    config_cache["CACHE_DIR"] = "llm_cache"
+    config_cache["CACHE_ENCRYPTION_CALLBACKS"] = [encrypt_base64, decrypt_base64]
+    config_cache["CACHE_MODE"] = "OPTIMIZE_SIZE"
+    return config_cache
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir')
@@ -100,7 +119,7 @@ def main():
     if "GPU" == device:
         # Cache compiled models on disk for GPU to save time on the
         # next run. It's not beneficial for CPU.
-        enable_compile_cache["CACHE_DIR"] = "vlm_cache"
+        enable_compile_cache = get_config_for_cache_encryption()
 
     pipe = openvino_genai.VLMPipeline(models_map, tokenizer, args.model_dir, device, **enable_compile_cache)
 

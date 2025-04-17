@@ -603,7 +603,9 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
 
     ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
 
-    ov::Tensor inputs_embeds = m_embedding->infer(encoded_input);
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor inputs_embeds = m_embedding->infer(req, encoded_input);
     OPENVINO_ASSERT(
         m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
         "Unexpected embedding size"
@@ -661,7 +663,11 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
         m_image_id = 0;
         m_prev_image_id = 0;
     }
-    return inputs_embeds;
+    // inputs_embeds is bound to infer request that can be used by another thread after leaving this scope
+    // so we need to return a copy to make sure data does not get corrupted 
+    ov::Tensor inputs_embeds_copy(inputs_embeds.get_element_type(), inputs_embeds.get_shape());
+    std::memcpy(inputs_embeds_copy.data(), inputs_embeds.data(), inputs_embeds.get_byte_size());
+    return inputs_embeds_copy;
 }
 
 void InputsEmbedderMiniCPM::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {

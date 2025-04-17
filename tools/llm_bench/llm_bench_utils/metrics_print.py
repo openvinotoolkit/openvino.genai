@@ -5,8 +5,7 @@ import logging as log
 
 
 def print_metrics(
-        iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1,
-        max_uss_mem=-1, stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None
+        iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -62,12 +61,14 @@ def print_metrics(
     if whisper is not None:
         print_whisper_infer_latency(iter_str, whisper, prompt_idx)
     output_str = ''
-    if max_rss_mem != '' and max_rss_mem > -1:
-        output_str += 'Max rss memory cost: {:.2f}MBytes, '.format(max_rss_mem)
-    if max_uss_mem != '' and max_uss_mem > -1:
-        output_str += 'max uss memory cost: {:.2f}MBytes, '.format(max_uss_mem)
-    if max_shared_mem != '' and max_shared_mem > -1:
-        output_str += 'max shared memory cost: {:.2f}MBytes'.format(max_shared_mem)
+    if iter_data['max_rss_mem_consumption'] != '' and iter_data['max_rss_mem_consumption'] > -1:
+        output_str += f"Max rss memory cost: {iter_data['max_rss_mem_consumption']:.2f}MBytes, "
+    if iter_data['max_rss_mem_increase'] != '' and iter_data['max_rss_mem_increase'] > -1:
+        output_str += f"rss memory increase: {iter_data['max_rss_mem_increase']:.2f}MBytes, "
+    if iter_data['max_sys_mem_consumption'] != '' and iter_data['max_sys_mem_consumption'] > -1:
+        output_str += f"max system memory memory cost: {iter_data['max_sys_mem_consumption']:.2f}MBytes, "
+    if iter_data['max_sys_mem_increase'] != '' and iter_data['max_sys_mem_increase'] > -1:
+        output_str += f"system memory increase: {iter_data['max_sys_mem_increase']:.2f}MBytes "
     if output_str != '':
         output_str = ' '.join([prefix, output_str])
         log.info(output_str)

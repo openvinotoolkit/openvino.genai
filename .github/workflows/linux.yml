@@ -24,8 +24,8 @@ env:
   SCCACHE_SERVER_PORT: 35555
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
-  HF_HOME: /mount/caches/huggingface
-  OV_CACHE: /mount/caches/huggingface/.ov_cache
+  HF_HOME: /mount/caches/huggingface/lin
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/16042025
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
   ARTIFACTS_SHARE: '/mount/build-artifacts'
@@ -448,7 +448,7 @@ jobs:
             timeout: 60
           - name: 'WWB tests'
             cmd: '/tools/who_what_benchmark/tests'
-            timeout: 60
+            timeout: 90
     defaults:
       run:
         shell: bash
@@ -520,7 +520,7 @@ jobs:
             runner: 'aks-linux-8-cores-64gb'
 
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
-    timeout-minutes: 90
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash

@@ -278,7 +278,7 @@ def test_whisper_config_constructor(model_descr):
 
     config = ov_genai.WhisperGenerationConfig(path / "generation_config.json")
 
-    with open(path / "generation_config.json") as f:
+    with open(path / "generation_config.json", encoding="utf-8") as f:
         original_config = json.load(f)
 
     assert original_config["decoder_start_token_id"] == config.decoder_start_token_id
