@@ -25,7 +25,7 @@ env:
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   HF_HOME: /mount/caches/huggingface/lin
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/b2ab590da6452d52cede0cc3cea0134c3eaf4e2b
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/96ab762558b75d437aa899c7bcb8d6bbe3a29ff0
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
 
