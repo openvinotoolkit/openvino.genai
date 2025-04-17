@@ -11,7 +11,6 @@
 
 #include "building_blocks.hpp"
 #include "gguf_modeling.hpp"
-#include "openvino/genai/visibility.hpp"
 
 using namespace ov;
 using namespace ov::op::v13;
