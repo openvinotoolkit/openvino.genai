@@ -2,8 +2,6 @@ from typing import Union, Tuple, List, Optional
 import torch
 from contextlib import contextmanager
 
-from diffusers.utils import torch_utils
-
 
 def new_randn_tensor(
     shape: Union[Tuple, List],
@@ -22,11 +20,17 @@ def new_randn_tensor(
 
 
 def patch_diffusers():
+    from diffusers.utils import torch_utils
     torch_utils.randn_tensor = new_randn_tensor
 
 
 @contextmanager
 def mock_torch_cuda_is_available(to_patch):
+    try:
+        # import bnb before patching for avoid attempt to load cuda extension during first import
+        import bitsandbytes as bnb  # noqa: F401
+    except ImportError:
+        pass
     original_is_available = torch.cuda.is_available
     if to_patch:
         torch.cuda.is_available = lambda: True

@@ -17,3 +17,4 @@ psutil
 timm
 tiktoken
 librosa # For Whisper
+matplotlib
