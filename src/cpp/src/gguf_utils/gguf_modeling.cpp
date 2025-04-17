@@ -28,7 +28,7 @@ std::shared_ptr<ov::Model> create_llama_model(
     std::unordered_map<std::string, ov::Tensor>& consts,
     std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
 
-    auto start_time = std::chrono::high_resolution_clock::now();
+    // auto start_time = std::chrono::high_resolution_clock::now();
     std::cout << "Start generating OV model..." << std::endl;
 
     // Create input parameters
@@ -133,16 +133,19 @@ std::shared_ptr<ov::Model> create_llama_model(
     }
     model->set_rt_info("8.0", {"runtime_options", "ACTIVATIONS_SCALE_FACTOR"});
 
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::high_resolution_clock::now() - start_time).count();
-    std::cout << "Model generation done. Time: " << duration << "ms" << std::endl;
+    // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+    //     std::chrono::high_resolution_clock::now() - start_time).count();
+    // std::cout << "Model generation done. Time: " << duration << "ms" << std::endl;
 
     return model;
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
-    std::cout << "Loading model from: " << model_path << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Loading and unpacking model from: " << model_path << std::endl;
     auto [config, consts, qtypes] = load_gguf(model_path);
+    auto load_finish_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Loading and unpacking model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms" << std::endl;
 
     std::shared_ptr<ov::Model> model;
 
@@ -156,6 +159,8 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     else {
         throw std::runtime_error(std::string("Unsupported model architecture") + model_arch);
     }
-
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - load_finish_time).count();
+    std::cout << "Model generation done. Time: " << duration << "ms" << std::endl;
     return model;
 }
