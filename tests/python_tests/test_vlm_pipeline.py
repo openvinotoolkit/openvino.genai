@@ -8,6 +8,7 @@ import platform
 import sys
 import os
 import transformers
+import functools
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline, GenerationConfig, SchedulerConfig, ContinuousBatchingPipeline, GenerationStatus, StreamingStatus, GenerationFinishReason
 
@@ -498,10 +499,12 @@ def generate(vlm, requests):
     return answers
 
 
-requests = [
-    ("Describe", [get_image_by_link(image_links[0]),]),
-    ("How many images are there?", [get_image_by_link(image_links[1]), get_image_by_link(image_links[2])])
-]
+@functools.lru_cache(maxsize=1)
+def requests():
+    return [
+        ("Describe", [get_image_by_link(image_links[0]),]),
+        ("How many images are there?", [get_image_by_link(image_links[1]), get_image_by_link(image_links[2])])
+    ]
 
 
 image_id_ignorant = [
@@ -556,13 +559,13 @@ class TestImageTags:
     def test_prepend_native(self, model_to_tag):
         def workaround_inconsistent_inference():
             vlm = VLMPipeline(get_ov_model(model_to_tag[0]), "CPU")
-            answers = generate(vlm, requests)
+            answers = generate(vlm, requests())
 
             vlm.start_chat()
-            native_tag0 = vlm.generate(model_to_tag[1](0) + requests[0][0], images=requests[0][1])
+            native_tag0 = vlm.generate(model_to_tag[1](0) + requests()[0][0], images=requests()[0][1])
             assert native_tag0.texts == answers[0].texts
             assert native_tag0.scores == answers[0].scores
-            native_tags1 = vlm.generate(model_to_tag[1](1) + model_to_tag[1](2) + requests[1][0], images=requests[1][1])
+            native_tags1 = vlm.generate(model_to_tag[1](1) + model_to_tag[1](2) + requests()[1][0], images=requests()[1][1])
             assert native_tags1.texts == answers[1].texts
             assert native_tags1.scores == answers[1].scores
             vlm.finish_chat()
@@ -572,13 +575,13 @@ class TestImageTags:
     def test_prepend_universal(self, model_to_tag):
         def workaround_inconsistent_inference():
             vlm = VLMPipeline(get_ov_model(model_to_tag[0]), "CPU")
-            answers = generate(vlm, requests)
+            answers = generate(vlm, requests())
 
             vlm.start_chat()
-            universal_tag0 = vlm.generate("<ov_genai_image_0>" + requests[0][0], images=requests[0][1])
+            universal_tag0 = vlm.generate("<ov_genai_image_0>" + requests()[0][0], images=requests()[0][1])
             assert universal_tag0.texts == answers[0].texts
             assert universal_tag0.scores == answers[0].scores
-            universal_tags1 = vlm.generate("<ov_genai_image_1><ov_genai_image_2>" + requests[1][0], images=requests[1][1])
+            universal_tags1 = vlm.generate("<ov_genai_image_1><ov_genai_image_2>" + requests()[1][0], images=requests()[1][1])
             assert universal_tags1.texts == answers[1].texts
             assert universal_tags1.scores == answers[1].scores
             vlm.finish_chat()
@@ -593,15 +596,15 @@ class TestImageTags:
             vlm.set_generation_config(generation_config)
 
             vlm.start_chat()
-            native_tag0 = vlm.generate(requests[0][0] + model_to_tag[1](0), images=requests[0][1])
-            native_tags1 = vlm.generate(requests[1][0] + model_to_tag[1](1) + model_to_tag[1](2), images=requests[1][1])
+            native_tag0 = vlm.generate(requests()[0][0] + model_to_tag[1](0), images=requests()[0][1])
+            native_tags1 = vlm.generate(requests()[1][0] + model_to_tag[1](1) + model_to_tag[1](2), images=requests()[1][1])
             vlm.finish_chat()
 
             vlm.start_chat()
-            universal_tag0 = vlm.generate(requests[0][0] + "<ov_genai_image_0>" , images=requests[0][1])
+            universal_tag0 = vlm.generate(requests()[0][0] + "<ov_genai_image_0>" , images=requests()[0][1])
             assert universal_tag0.texts == native_tag0.texts
             assert universal_tag0.scores == native_tag0.scores
-            universal_tags1 = vlm.generate(requests[1][0] + "<ov_genai_image_1><ov_genai_image_2>" , images=requests[1][1])
+            universal_tags1 = vlm.generate(requests()[1][0] + "<ov_genai_image_1><ov_genai_image_2>" , images=requests()[1][1])
             assert universal_tags1.texts == native_tags1.texts
             assert universal_tags1.scores == native_tags1.scores
             vlm.finish_chat()
