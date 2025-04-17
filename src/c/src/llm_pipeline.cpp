@@ -84,7 +84,7 @@ ov_status_e ov_genai_llm_pipeline_create(const char* models_path, const char* de
 
         std::unique_ptr<ov_genai_llm_pipeline> _pipe = std::make_unique<ov_genai_llm_pipeline>();
         _pipe->object =
-            std::make_shared<ov::genai::LLMPipeline>(std::filesystem::path(models_path), std::string(device),property);
+            std::make_shared<ov::genai::LLMPipeline>(std::filesystem::path(models_path), std::string(device), property);
         *pipe = _pipe.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
