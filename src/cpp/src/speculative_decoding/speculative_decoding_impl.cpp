@@ -210,12 +210,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
     }
 
-#ifdef LOG_LEVEL_DEBUG
-    if (main_generated_requests.empty()) {
+    if (main_generated_requests.empty() && utils::env_setup_for_print_debug_info()) {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
-#endif
+
     step_timer.end();
 }
 
