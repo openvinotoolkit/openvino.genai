@@ -616,7 +616,7 @@ def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
     delete_rt_info(configs, temp_path)
 
     for config_json, config_name in configs:
-        with (temp_path / config_name).open('w') as f:
+        with (temp_path / config_name).open('w', encoding="utf-8") as f:
             json.dump(config_json, f)
 
     ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU', **get_default_llm_properties())
