@@ -1,4 +1,5 @@
 import { LLMPipeline } from 'openvino-genai-node';
+import { basename } from 'node:path';
 
 main();
 
@@ -8,12 +9,12 @@ async function main() {
     
     if (!modelPath) {
         console.error('Please specify path to model directory\n'
-                    + 'Run command must be: `node chat_sample.js *path_to_model_dir* *prompt*`');
+                    + `Run command must be: 'node ${basename(process.argv[1])} *path_to_model_dir* *prompts*'`);
         process.exit(1);
     }
     if (!prompts) {
         console.error('Please specify prompts\n'
-                      + 'Run command must be: `node chat_sample.js *path_to_model_dir* *prompts*`');
+                      + `Run command must be: 'node ${basename(process.argv[1])} *path_to_model_dir* *prompts*'`);
         process.exit(1);
     }
 
