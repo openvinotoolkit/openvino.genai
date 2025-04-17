@@ -11,7 +11,7 @@
 
 #include "building_blocks.hpp"
 #include "gguf_modeling.hpp"
-
+#include "openvino/genai/visibility.hpp"
 
 using namespace ov;
 using namespace ov::op::v13;
@@ -140,7 +140,7 @@ std::shared_ptr<ov::Model> create_llama_model(
     return model;
 }
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
+std::shared_ptr<ov::Model> OPENVINO_GENAI_EXPORTS create_from_gguf(const std::string& model_path) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::cout << "Loading and unpacking model from: " << model_path << std::endl;
     auto [config, consts, qtypes] = load_gguf(model_path);
