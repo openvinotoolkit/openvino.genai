@@ -7,8 +7,7 @@ import torch
 import os
 import json
 import numpy as np
-from pathlib import Path
-from typing import Tuple, List, Dict
+from typing import Tuple, List
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -17,6 +16,7 @@ from optimum.intel.openvino.utils import TemporaryDirectory
 
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model, download_gguf_model
+# model_tmp_path fixture import required
 from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType, get_gguf_pipeline_types
 from data.models import get_models_list, get_chat_models_list, get_gguf_model_list
@@ -618,7 +618,7 @@ def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
     delete_rt_info(configs, temp_path)
 
     for config_json, config_name in configs:
-        with (temp_path / config_name).open('w') as f:
+        with (temp_path / config_name).open('w', encoding="utf-8") as f:
             json.dump(config_json, f)
 
     ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU', **get_default_llm_properties())
@@ -814,7 +814,7 @@ def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
 @pytest.mark.precommit
-def test_pipelines_generate_with_streaming(pipeline_type, model_ids):
+def test_pipelines_with_gguf_generate_with_streaming(pipeline_type, model_ids):
     hf_model_id = model_ids["hf_model_id"]
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]

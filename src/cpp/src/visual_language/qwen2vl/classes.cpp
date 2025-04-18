@@ -233,8 +233,7 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     std::memcpy(flattened_patches.data(), transposed_patches.data(), transposed_patches.get_byte_size());
 
     encoder.set_tensor("hidden_states", flattened_patches);
-    encoder.start_async();
-    encoder.wait();
+    encoder.infer();
 
     const ov::Tensor& infer_output = encoder.get_output_tensor();
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
@@ -318,7 +317,9 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
-    ov::Tensor text_embeds = m_embedding->infer(input_ids);
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_vision_start_token = m_tokenizer.encode(m_vlm_config.vision_start_token, ov::genai::add_special_tokens(false)).input_ids;
@@ -338,7 +339,9 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
         m_image_id = 0;
     }
     if (images.empty()) {
-        return text_embeds;
+        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+        return inputs_embeds;
     }
 
     return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, reordered_image_embeds, reordered_images_grid_thw, image_pad_token_id);
@@ -436,8 +439,7 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_images);
     vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
     vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
-    vision_embeddings_merger.start_async();
-    vision_embeddings_merger.wait();
+    vision_embeddings_merger.infer();
     ov::Tensor processed_vision_embeds = vision_embeddings_merger.get_output_tensor();
 
     ov::Tensor merged_embeds(text_embeds.get_element_type(), text_embeds.get_shape());

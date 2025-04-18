@@ -2,7 +2,7 @@ import util from 'node:util';
 import addon from '../addon.js';
 
 export type ResolveFunction = (arg: { value: string, done: boolean }) => void;
-export type Options = {[key: string]: string};
+export type Options = {[key: string]: string | boolean | number | BigInt};
 
 export class LLMPipeline {
   modelPath: string | null = null;
@@ -57,16 +57,7 @@ export class LLMPipeline {
     return result;
   }
 
-  static castOptionsToString(options: Options) {
-    const castedOptions: Options = {};
-
-    for (const key in options)
-      castedOptions[key] = String(options[key]);
-
-    return castedOptions;
-  }
-
-  getAsyncGenerator(prompt: string, generationOptions: Options = {}) {
+  stream(prompt: string, generationOptions: Options = {}) {
     if (!this.isInitialized)
       throw new Error('Pipeline is not initialized');
 
@@ -74,8 +65,6 @@ export class LLMPipeline {
       throw new Error('Prompt must be a string');
     if (typeof generationOptions !== 'object')
       throw new Error('Options must be an object');
-
-    const castedOptions = LLMPipeline.castOptionsToString(generationOptions);
 
     const queue: { isDone: boolean; subword: string; }[] = [];
     let resolvePromise: ResolveFunction | null;
@@ -92,7 +81,7 @@ export class LLMPipeline {
       }
     }
 
-    this.pipeline.generate(prompt, chunkOutput, castedOptions);
+    this.pipeline.generate(prompt, chunkOutput, generationOptions);
 
     return {
       async next() {
@@ -115,24 +104,32 @@ export class LLMPipeline {
   }
 
   async generate(
-    prompt: string,
-    generationOptions: Options,
-    generationCallback: (chunk: string)=>void | undefined,
+    prompt: string | string[],
+    options: Options,
+    callback: (chunk: string)=>void | undefined,
   ) {
+    if (typeof prompt !== 'string'
+      && !(Array.isArray(prompt)
+      && prompt.every(item => typeof item === 'string')))
+      throw new Error('Prompt must be a string or string[]');
+    if (typeof options !== 'object')
+      throw new Error('Options must be an object');
+    if (callback !== undefined && typeof callback !== 'function')
+      throw new Error('Callback must be a function');
 
-    if (generationCallback !== undefined
-      && typeof generationCallback !== 'function')
-      throw new Error('Generation callback must be a function');
-
-    const g = this.getAsyncGenerator(prompt, generationOptions);
-    const result = [];
-
-    for await (const chunk of g) {
-      result.push(chunk);
-
-      if (generationCallback) generationCallback(chunk);
+    if (!callback) {
+      options['disableStreamer'] = true;
     }
 
-    return result.join('');
+    return new Promise(
+      (resolve: (value: string) => void) => {
+        const chunkOutput = (isDone: boolean, subword: string) => {
+          if (isDone) {
+            resolve(subword);
+          } else if (callback) callback(subword);
+        };
+        this.pipeline.generate(prompt, chunkOutput, options);
+      },
+    );
   }
 }

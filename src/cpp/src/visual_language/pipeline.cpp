@@ -80,9 +80,7 @@ public:
         if (m_is_npu) {
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
-            std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
-                language_model, lm_properties, kv_pos, language_model_path
-            );
+            std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
         } else {
             compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
@@ -122,7 +120,7 @@ public:
     ) :
         m_generation_config{generation_config} {
         m_is_npu = device.find("NPU") != std::string::npos;
-        OPENVINO_ASSERT(m_is_npu,
+        OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
