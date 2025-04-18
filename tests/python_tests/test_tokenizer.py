@@ -388,10 +388,6 @@ def test_padding(
     prompt,
 ):
     hf_tokenizer, genai_tokenzier = hf_ov_genai_models
-    #     model_id,
-    #     subfolder=hf_tok_load_params.get("subfolder", None),
-    #     padding_side=hf_tok_load_params.get("padding_side", None),
-    # )
 
     # In openvino_tokenizers if sequences are of different length by default padding is applied
     # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor
