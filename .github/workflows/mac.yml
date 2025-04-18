@@ -415,6 +415,8 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
+      - run: python3 -m pip install -U --no-deps git+https://github.com/huggingface/optimum.git@27dae509b9d22daa29ef33b7ba4f6bd2c1982233
+
       - name: Tests
         run: python -m pytest -v ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
@@ -484,6 +486,8 @@ jobs:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+
+      - run: python3 -m pip install -U --no-deps git+https://github.com/huggingface/optimum.git@27dae509b9d22daa29ef33b7ba4f6bd2c1982233
 
       - name: Fix C++ samples permissions
         run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
@@ -564,6 +568,8 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
         
+      - run: python3 -m pip install -U --no-deps git+https://github.com/huggingface/optimum.git@27dae509b9d22daa29ef33b7ba4f6bd2c1982233
+
       - name: gtests
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
