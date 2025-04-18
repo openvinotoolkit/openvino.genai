@@ -1,6 +1,7 @@
 #pragma once
 #include <napi.h>
 
+#include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/openvino.hpp"
 
@@ -19,5 +20,8 @@ TargetType js_to_cpp(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::Any */
 template <>
 ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType oov::genai::StringInputs */
+template <>
+ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value);
 
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);
