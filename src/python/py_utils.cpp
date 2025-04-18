@@ -17,6 +17,7 @@
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+#include "openvino/genai/rag/text_embedding_pipeline.hpp"
 
 namespace py = pybind11;
 namespace ov::genai::pybind::utils {
@@ -289,6 +290,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::ImageGenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::WhisperGenerationConfig>(py_obj)) {
         return py::cast<ov::genai::WhisperGenerationConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::TextEmbeddingPipeline::PoolingType>(py_obj)) {
+        return py::cast<ov::genai::TextEmbeddingPipeline::PoolingType>(py_obj);
     } else if (py::isinstance<ov::genai::StopCriteria>(py_obj)) {
         return py::cast<ov::genai::StopCriteria>(py_obj);
     } else if (py::isinstance<ov::genai::Generator>(py_obj)) {
