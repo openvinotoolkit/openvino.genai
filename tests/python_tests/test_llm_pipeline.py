@@ -812,6 +812,7 @@ def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
+@pytest.mark.skip("PA transformation does not work with GGUF FE modeling")
 @pytest.mark.precommit
 def test_pipelines_with_gguf_generate_with_streaming(pipeline_type, model_ids):
     hf_model_id = model_ids["hf_model_id"]
