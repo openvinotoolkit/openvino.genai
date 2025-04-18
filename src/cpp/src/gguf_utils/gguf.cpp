@@ -295,16 +295,13 @@ QType get_quantization_type(int gguf_type) {
     switch(gguf_type) {
         case 0:
         case 1:
-            std::cout << "Working with FP16 model" << std::endl;
             return QType::FP16;
             
         case 2:
         case 3:
-            std::cout << "Working with INT4 quantized model" << std::endl;
             return QType::INT4;
             
         case 7:
-            std::cout << "Working with INT8 quantized model" << std::endl;
             return QType::INT8;
             
         default:

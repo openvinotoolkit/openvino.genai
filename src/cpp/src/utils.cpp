@@ -286,7 +286,6 @@ ov::Core singleton_core() {
 namespace {
 
 bool is_gguf_model(const std::filesystem::path& file_path) {
-    std::cout << file_path.extension() << std::endl;
     return file_path.extension() == ".gguf";
 }
 
