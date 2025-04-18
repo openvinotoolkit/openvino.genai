@@ -16,6 +16,7 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "gguf_utils/gguf_modeling.hpp"
 
 
 #include "sampler.hpp"
@@ -280,6 +281,36 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 ov::Core singleton_core() {
     static ov::Core core;
     return core;
+}
+
+namespace {
+
+bool is_gguf_model(const std::filesystem::path& file_path) {
+    return file_path.extension() == ".gguf";
+}
+
+} // namespace
+
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
+    if (is_gguf_model(model_dir)) {
+#ifdef ENABLE_GGUF
+        return create_from_gguf(model_dir.string());
+#else
+        OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
+#endif
+    } else {
+        std::filesystem::path model_path = model_dir;
+
+        if (std::filesystem::exists(model_dir / "openvino_model.xml")) {
+            model_path = model_dir / "openvino_model.xml";
+        } else if (std::filesystem::exists(model_dir / "openvino_language_model.xml")) {
+            model_path = model_path / "openvino_language_model.xml";
+        } else {
+            OPENVINO_THROW("Could not find a model in the directory '", model_dir, "'");
+        }
+
+        return singleton_core().read_model(model_path, {}, config);
+    }
 }
 
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history) {

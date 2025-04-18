@@ -6,6 +6,7 @@ onnx==1.17.0
 pytest
 pytest-html
 hf_transfer
+gguf>=0.10.0
 
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
