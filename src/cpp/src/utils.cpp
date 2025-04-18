@@ -496,38 +496,6 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
     return {plugin_config, scheduler_config};
 };
 
-void read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model, std::vector<std::string>& vocab_vector) {
-    vocab_vector.clear();
-
-    std::shared_ptr<ov::Node> vocab_decoder_node;
-        for (auto node: model->get_ordered_ops()) {
-            if (node->get_friendly_name().find("VocabDecoder") != std::string::npos) {
-                vocab_decoder_node = node;
-            }
-        }
-        if (!vocab_decoder_node) {
-            return;
-        }
-
-    auto begins_node = as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(1));
-    auto ends_node = as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(2));
-    auto chars_node = as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(3));
-    if (!begins_node || !ends_node || !chars_node) {
-        return;
-    }
-
-    auto begins = begins_node->cast_vector<int32_t>();
-    auto ends = ends_node->cast_vector<int32_t>();
-    auto chars = chars_node->cast_vector<uint8_t>();
-
-    vocab_vector.resize(begins.size());
-    for (size_t i = 0; i < begins.size(); ++i) {
-        const auto begin = begins[i];
-        const auto end = ends[i];
-        vocab_vector[i] = std::string(chars.begin() + begin, chars.begin() + end);
-    };
-}
-
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

@@ -105,15 +105,19 @@ prompts = [
 ]
 
 
+@pytest.fixture(scope="module")
+def ov_hf_tokenizers(request):
+    _, hf_tokenizer, models_path = download_and_convert_model(request.param)
+    ov_tokenizer = Tokenizer(models_path)
+    return ov_tokenizer, hf_tokenizer
+
+
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_encode(model_id, prompt):
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(models_path=models_path)
-
-    ov_tokenizer = ov_pipe.get_tokenizer()
+def test_encode(ov_hf_tokenizers, prompt):
+    ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
 
     encoded_ov = ov_tokenizer.encode(prompt).input_ids.data
     if isinstance(prompt, list):
@@ -141,14 +145,11 @@ encoded_prompts = [
 ]
 
 
-@pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list())
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 @pytest.mark.precommit
-def test_decode(model_id, encoded_prompt):
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(models_path=models_path)
-
-    ov_tokenizer = ov_pipe.get_tokenizer()
+def test_decode(ov_hf_tokenizers, encoded_prompt):
+    ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
     decoded_ov = ov_tokenizer.decode(encoded_prompt)
 
     if isinstance(encoded_prompt[0], list):
@@ -213,17 +214,14 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict], mode
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_set_chat_template(model_id):
-    _, _, models_path = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(models_path=models_path)
+@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list())
+def test_set_chat_template(ov_hf_tokenizers):
+    ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
 
     prompt = "how are you?"
     dummy_conversation = [
         {"role": "user", "content": prompt},
     ]
-
-    ov_tokenizer = ov_pipe.get_tokenizer()
     identity_chat_template = (
         "{% for message in messages %}{{ message['content'] }}{% endfor %}"
     )

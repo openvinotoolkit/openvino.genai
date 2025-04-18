@@ -223,8 +223,6 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
 
-void read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model, std::vector<std::string>& vocab_vector);
-
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
