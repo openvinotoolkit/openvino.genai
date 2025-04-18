@@ -22,7 +22,7 @@ and:
 - Number of tokens in the input prompt
 
 Performance metrics are stored either in the [`DecodedResults`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.DecodedResults.html) or [`EncodedResults`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.EncodedResults.html) in `perf_metric` field.
-Additionally to the fields mentioned above, `PerfMetrics` has a member `raw_metrics` of type [`openvino_genai.RawPerfMetrics`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.RawPerfMetrics.html) (referred to as `RawPerfMetrics` for simplicity) that contains raw values for the durations of each batch of new token generation, tokenization durations, detokenization durations, and more.
+Additionally to the fields mentioned above, `PerfMetrics` has a member `raw_metrics` of type [`openvino_genai.RawPerfMetrics`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.RawPerfMetrics.html) that contains raw values for the durations of each batch of new token generation, tokenization durations, detokenization durations, and more.
 These raw metrics are accessible if you wish to calculate your own statistical values such as median or percentiles.
 However, since mean and standard deviation values are usually sufficient, we will focus on `PerfMetrics`.
 
@@ -126,7 +126,7 @@ This field stores raw data, including:
 - Detokenization durations
 - Other relevant metrics
 
-These metrics can be use for more fine grained analysis, such as getting exact calculating median values, percentiles, etc.
+These metrics can be use for more fine grained analysis, such as calculating exact median values, percentiles, etc.
 
 Below are a few examples of how to use raw metrics.
 
