@@ -48,7 +48,7 @@ public:
         m_block_size = is_gpu ? gpu_block_size : cpu_block_size;
 
         if (is_gpu) {
-            auto m_context = m_request.get_compiled_model().get_context();
+            m_context = m_request.get_compiled_model().get_context();
         }
         // extract information about KV cache precisions and shapes
         size_t kv_input_index = 0;
@@ -114,7 +114,34 @@ public:
         ov::Coordinate start_key{0,0,0,0};
         ov::Coordinate start_value{0,0,0,0};
 
-        if (m_device.find("GPU") == std::string::npos) {// Allocate KV caches
+        if (m_context) {// Allocate KV caches
+            for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
+                ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], num_kv_blocks);
+                ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], num_kv_blocks);
+
+                ov::Tensor key_cache = m_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_cache_shape);
+                ov::Tensor value_cache = m_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_cache_shape);
+
+                if (m_key_cache.size() > decoder_layer_id) {
+                    ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
+                    ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
+
+                    // copy current cache data
+                    ov::RemoteTensor dst_key_roi(key_cache, start_key, end_key);
+                    ov::RemoteTensor dst_value_roi(value_cache, start_value, end_value);
+                    dst_key_roi.copy_from(m_key_cache[decoder_layer_id]);
+                    dst_value_roi.copy_from(m_value_cache[decoder_layer_id]);
+
+                    m_key_cache[decoder_layer_id] = key_cache;
+                    m_value_cache[decoder_layer_id] = value_cache;
+                } else {
+                    m_key_cache.emplace_back(key_cache);
+                    m_value_cache.emplace_back(value_cache);
+                }
+
+                update_request_tensor(decoder_layer_id);
+            }
+        } else {
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
                 ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], num_kv_blocks);
                 ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], num_kv_blocks);
@@ -150,33 +177,6 @@ public:
 
                 // set new cache tensors
                 if (m_key_cache.size() > decoder_layer_id) {
-                    m_key_cache[decoder_layer_id] = key_cache;
-                    m_value_cache[decoder_layer_id] = value_cache;
-                } else {
-                    m_key_cache.emplace_back(key_cache);
-                    m_value_cache.emplace_back(value_cache);
-                }
-
-                update_request_tensor(decoder_layer_id);
-            }
-        } else {
-            for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
-                ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], num_kv_blocks);
-                ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], num_kv_blocks);
-
-                ov::Tensor key_cache = m_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_cache_shape);
-                ov::Tensor value_cache = m_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_cache_shape);
-
-                if (m_key_cache.size() > decoder_layer_id) {
-                    ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
-                    ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
-
-                    // copy current cache data
-                    ov::RemoteTensor dst_key_roi(key_cache, start_key, end_key);
-                    ov::RemoteTensor dst_value_roi(value_cache, start_value, end_value);
-                    dst_key_roi.copy_from(m_key_cache[decoder_layer_id]);
-                    dst_value_roi.copy_from(m_value_cache[decoder_layer_id]);
-
                     m_key_cache[decoder_layer_id] = key_cache;
                     m_value_cache[decoder_layer_id] = value_cache;
                 } else {
