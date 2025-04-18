@@ -405,6 +405,40 @@ def test_padding(
     assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
     assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
 
+@pytest.mark.parametrize("model_id", [
+    "katuni4ka/tiny-random-phi3",
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+])
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("input_pair", [
+    [["hi"], ["sun in yellow"]],
+    [["Eng... test, string?!" * 100], ["Multiline\nstring!\nWow!"]],
+    [["Eng... test, string?!"], ["Multiline\nstring!\nWow!" * 100]],
+    [["Eng... test, string?!" * 100], ["Multiline\nstring!\nWow!" * 100]],
+    [["hi" * 20], ["buy" * 90]],
+    [["What is the capital of Great Britain"] * 4, ["London is capital of Great Britain"]],
+    [["What is the capital of Great Britain"], ["London is capital of Great Britain"] * 4],
+])
+def test_two_inputs_string(model_id, input_pair, tmp_path):
+    model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
+    
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models(model_id, 
+                                                       subfolder=hf_tok_load_params.get("subfolder", None),
+                                                       padding_side=hf_tok_load_params.get("padding_side", None))
+    
+    input_1, input_2 = input_pair
+
+    # broadcast ([N], [1]) and ([1], [N]) to ([N], [N]) for HF
+    if len(input_pair[0]) > len(input_pair[1]):
+        input_pair_hf = [[input_pair[0][i], input_pair[1][0]] for i in range(len(input_pair[0]))]
+    else:
+        input_pair_hf = [[input_pair[0][0], input_pair[1][i]] for i in range(len(input_pair[1]))]
+
+    ov_encoded = genai_tokenzier.encode(input_1, input_2).input_ids.data
+    hf_encoded = hf_tokenizer(input_pair_hf, return_tensors="np")["input_ids"]
+
+    assert np.all(ov_encoded == hf_encoded)
 
 @pytest.mark.precommit
 @pytest.mark.nightly
@@ -609,3 +643,4 @@ def test_set_special_runtime_template(tmp_path):
 def test_template_priorities(tmp_path, chat_templates):
     tokenizer = generate_tokenizer(tmp_path, chat_templates)
     assert tokenizer.chat_template == chat_templates.reference
+

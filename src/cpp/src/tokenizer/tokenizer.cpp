@@ -460,15 +460,65 @@ public:
                                                 "Tokenizer::encode is not available");
 
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_tokenizer.get());
-        set_state_if_necessary(infer_request_guard, tokenization_params);
+        // set_state_if_necessary(infer_request_guard, tokenization_params);
         size_t batch_size = 1;
-        infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
+        infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {batch_size}, &prompt});
         infer_request_guard.get().infer();
 
         return get_copied_results(
             infer_request_guard.get().get_tensor("input_ids"),
             infer_request_guard.get().get_tensor("attention_mask")
         );
+    }
+
+    TokenizedInputs encode(std::vector<std::pair<std::string, std::string>> prompts_pairs, const ov::AnyMap& tokenization_params = {}) {
+        OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
+                                                "Tokenizer::encode is not available");
+        std::vector<ov::Tensor> inputs(2);
+        size_t batch_size = prompts_pairs.size();
+        std::vector<std::string> prompts_0(batch_size);
+        std::vector<std::string> prompts_1(batch_size);
+
+        for(size_t i = 0; i < batch_size; ++i) {
+            prompts_0[i] = prompts_pairs[i].first;
+            prompts_1[i] = prompts_pairs[i].second;
+        }
+        inputs[0] = ov::Tensor{ov::element::string, {batch_size}, prompts_0.data()};
+        inputs[1] = ov::Tensor{ov::element::string, {batch_size}, prompts_1.data()};
+        return encode(inputs, tokenization_params);
+    }
+
+    TokenizedInputs encode(std::vector<std::string> prompts_1, std::vector<std::string> prompts_2, const ov::AnyMap& tokenization_params = {}) {
+        OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
+                                                "Tokenizer::encode is not available");
+        std::vector<ov::Tensor> inputs(2);
+        size_t batch_size = prompts_1.size();
+        OPENVINO_ASSERT(prompts_1.size() == prompts_2.size() || prompts_1.size() == 1 | prompts_2.size() == 1, 
+                        "prompts_1 and prompts_2 should be of the same size or one of them should be of size 1");
+
+        inputs[0] = ov::Tensor{ov::element::string, {batch_size}, prompts_1.data()};
+        inputs[1] = ov::Tensor{ov::element::string, {batch_size}, prompts_2.data()};
+        return encode(inputs, tokenization_params);
+    }
+
+    TokenizedInputs encode(std::vector<ov::Tensor> prompts, const ov::AnyMap& tokenization_params = {}) {
+        OPENVINO_ASSERT(prompts.size() <= 2, "Two inputs are expected for encode method");
+        TokenizedInputs unpadded;
+        {
+            CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
+            set_state_if_necessary(infer_request_guard, tokenization_params);
+            for (size_t i = 0; i < prompts.size(); ++i) {
+                infer_request_guard.get().set_input_tensor(i, prompts[i]);
+            }
+    
+            infer_request_guard.get().infer();
+
+            unpadded = get_copied_results(
+                infer_request_guard.get().get_tensor("input_ids"),
+                infer_request_guard.get().get_tensor("attention_mask")
+            );
+        }
+        return {unpadded.input_ids, unpadded.attention_mask};
     }
 
     TokenizedInputs encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params = {}) {
@@ -479,8 +529,7 @@ public:
         {
             CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
             set_state_if_necessary(infer_request_guard, tokenization_params);
-            infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
-            auto size_ = infer_request_guard.get().get_input_tensor().get_shape();
+            infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
             infer_request_guard.get().infer();
 
             unpadded = get_copied_results(
@@ -507,7 +556,7 @@ public:
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
         set_state_if_necessary(infer_request_guard, detokenization_params);
         size_t batch_size = 1;
-        infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
+        infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
         infer_request_guard.get().infer();
         return infer_request_guard.get().get_output_tensor().data<std::string>()[0];
     }
@@ -519,7 +568,7 @@ public:
 
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
         set_state_if_necessary(infer_request_guard, detokenization_params);
-        infer_request_guard.get().set_input_tensor(tokens);
+        infer_request_guard.get().set_input_tensor(0, tokens);
         infer_request_guard.get().infer();
 
         auto res = infer_request_guard.get().get_output_tensor();
@@ -547,7 +596,7 @@ public:
 
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
         set_state_if_necessary(infer_request_guard, detokenization_params);
-        infer_request_guard.get().set_input_tensor(tokens);
+        infer_request_guard.get().set_input_tensor(0, tokens);
         infer_request_guard.get().infer();
         auto res = infer_request_guard.get().get_output_tensor();
         auto res_data = res.data<std::string>();
@@ -664,6 +713,16 @@ Tokenizer::Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, c
 TokenizedInputs Tokenizer::encode(const std::string prompt, const ov::AnyMap& tokenization_params) {
     check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
     return m_pimpl->encode(std::move(prompt), tokenization_params);
+}
+
+TokenizedInputs Tokenizer::encode(std::vector<std::pair<std::string, std::string>>& prompt, const ov::AnyMap& tokenization_params) {
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    return m_pimpl->encode(std::move(prompt), tokenization_params);
+}
+
+TokenizedInputs Tokenizer::encode(std::vector<std::string>& prompts_1, std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params) {
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    return m_pimpl->encode(std::move(prompts_1), std::move(prompts_2), tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {

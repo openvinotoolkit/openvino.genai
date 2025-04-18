@@ -135,6 +135,15 @@ public:
     TokenizedInputs encode(std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
     TokenizedInputs encode(std::vector<std::string>&& prompts, const ov::AnyMap& tokenization_params = {});
     TokenizedInputs encode(std::initializer_list<std::string>& prompts, const ov::AnyMap& tokenization_params = {});
+   
+    /**
+    * @brief encode paired prompts. Left padding will be applied by default
+    * @param prompts vector storing batch of prompts
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
+    * @return pair of [input_ids, attention_mask]
+    */
+    TokenizedInputs encode(std::vector<std::pair<std::string, std::string>>& prompt, const ov::AnyMap& tokenization_params = {});
+    TokenizedInputs encode(std::vector<std::string>& prompts_1, std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params = {});
 
     /**
     * @brief encode a single prompt
