@@ -70,19 +70,30 @@ typedef struct ov_genai_llm_pipeline_opaque ov_genai_llm_pipeline;
 
 /**
  * @brief Construct ov_genai_llm_pipeline.
+ *
+ * Initializes a ov_genai_llm_pipeline instance from the specified model directory and device. Optional property
+ * parameters can be passed as key-value pairs.
+ *
  * @param models_path Path to the directory containing the model files.
  * @param device Name of a device to load a model to.
  * @param property_args_size How many properties args will be passed, each property contains 2 args: key and value.
  * @param ov_genai_llm_pipeline A pointer to the newly created ov_genai_llm_pipeline.
  * @param ... property paramater: Optional pack of pairs: <char* property_key, char* property_value> relevant only
  * @return ov_status_e A status code, return OK(0) if successful.
+ *
+ * @example
+ * Example with no properties:
+ * ov_genai_llm_pipeline_create(model_path, "CPU", 0, &pipe);
+ *
+ * Example with properties:
+ * ov_genai_llm_pipeline_create(model_path, "GPU", 2, &pipe,
+ *                             "CACHE_DIR", "cache_dir");
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_create(const char* models_path,
                                                                   const char* device,
                                                                   const size_t property_args_size,
                                                                   ov_genai_llm_pipeline** pipe,
                                                                   ...);
-
 
 /**
  * @brief Release the memory allocated by ov_genai_llm_pipeline.
