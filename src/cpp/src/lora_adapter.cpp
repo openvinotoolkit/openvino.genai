@@ -16,6 +16,11 @@
 #include <memory>
 #include <cmath>
 
+#include "openvino/op/select.hpp"
+#include "openvino/op/equal.hpp"
+#include "openvino/op/shape_of.hpp"
+#include "openvino/op/gather.hpp"
+#include "openvino/op/divide.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/matmul.hpp"
@@ -149,7 +154,6 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
     }
     return tensors;
 }
-
 
 // Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond to a layer name in the base model
 LoRAPartsParser default_lora_patterns () {
@@ -490,13 +494,47 @@ private:
 
 };
 
+// Replaces alpha with scale using LoRA rank, if the rank could be computed -
+// to align with PEFT:self.scaling[active_adapter] = self.lora_alpha[active_adapter] / self.r[active_adapter]
+std::shared_ptr<ov::Node> scale_alpha(
+    const std::shared_ptr<ov::Node>& A,
+    const std::shared_ptr<ov::Node>& B,
+    const std::shared_ptr<ov::Node>& alpha,
+    const ov::element::Type& element_type)
+{
+    using namespace ov::op;
+
+    // rank_A = A_shape[0] and rank_B = B_shape[1]
+    auto axis_0 = v0::Constant::create(ov::element::i32, {}, {0});
+    auto rank_A = std::make_shared<v8::Gather>(std::make_shared<v3::ShapeOf>(A), v0::Constant::create(ov::element::i32, {1}, {0}), axis_0);
+    auto rank_B = std::make_shared<v8::Gather>(std::make_shared<v3::ShapeOf>(B), v0::Constant::create(ov::element::i32, {1}, {1}), axis_0);
+
+    // scaled_alpha = alpha / rank
+    auto lora_rank = std::make_shared<v0::Convert>(rank_A, element_type);
+    auto scaled_alpha = std::make_shared<v1::Divide>(alpha, lora_rank);
+
+    // result = ranks_equal ? scaled_alpha : alpha
+    auto ranks_equal = std::make_shared<v1::Equal>(rank_A, rank_B);
+    return std::make_shared<v1::Select>(ranks_equal, scaled_alpha, alpha);
+}
+
 
 // Builds LoRA subgraph that consists of several matrix and element-wise multiplications with optional data type conversions and reshapes
 // to build a consistent graph.
-NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::Output<ov::Node> target, bool transpose_weights, size_t alpha_pos, bool transpose_in_end) {
+NodePtr tensors_multiplication(NodePtr input,
+                               const std::shared_ptr<ov::Node> tensor_A,
+                               const std::shared_ptr<ov::Node> tensor_B,
+                               const std::shared_ptr<ov::Node> alpha,
+                               ov::Output<ov::Node> target,
+                               bool transpose_weights,
+                               bool transpose_in_end) {
     const auto target_type = target.get_element_type();
     const auto target_shape = target.get_partial_shape();
     const auto target_rank = target_shape.rank().get_length();
+
+    NodeVector multipliers = {tensor_A, alpha, tensor_B};
+    const size_t alpha_pos = 1; 
+
     for(size_t i = 0; i < multipliers.size(); ++i) {
         NodePtr normalized = multipliers[i];
         if(normalized->get_output_element_type(0) != target_type) {
@@ -510,10 +548,11 @@ NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::
             normalized = squeeze_2d(normalized);
         }
         if(input) {
-            if(i == alpha_pos) {
-                // TODO: Apply alpha multiplication separately
+            if(i == alpha_pos) {    // Multiply for alpha
+                // to align with Peft: result = result + lora_B(lora_A(dropout(x))) * scaling
+                normalized = scale_alpha(tensor_A, tensor_B, alpha, target_type);
                 input = std::make_shared<v1::Multiply>(input, normalized);
-            } else {
+            } else {    // MatMul for A and B
                 input = std::make_shared<v0::MatMul>(input, normalized, /*transpose_a = */false, transpose_weights);  // FIXME: verify transpose_a == true
             }
         } else {
@@ -705,7 +744,17 @@ public:
             for(auto multiplier : adapter) {
                 parameters.push_back(std::make_shared<v0::Parameter>(multiplier->get_output_element_type(0), multiplier->get_output_partial_shape(0)));
             }
-            auto result = std::make_shared<v0::Result>(tensors_multiplication(nullptr, NodeVector{parameters.begin() + 1, parameters.end()}, target, false, 1, false));
+            auto result = std::make_shared<v0::Result>(
+                tensors_multiplication(
+                    nullptr,       // input
+                    parameters[3], // A
+                    parameters[2], // B
+                    parameters[1], // alpha
+                    target,
+                    false,         // transpose_weights
+                    false          // transpose_in_end
+                )
+            );
             ov::ResultVector results{result};
             fusers.insert(signature, results, parameters);
         }
@@ -767,8 +816,13 @@ public:
             transpose_in_end = true;
         }
 
-        NodeVector lora_variables{lora_weight.A, lora_weight.alpha, lora_weight.B};
-        replacement = tensors_multiplication(activations.get_node_shared_ptr(), lora_variables, target, true, 1, transpose_in_end);
+        replacement = tensors_multiplication(activations.get_node_shared_ptr(),
+                                             lora_weight.A,
+                                             lora_weight.B,
+                                             lora_weight.alpha,
+                                             target,
+                                             true,
+                                             transpose_in_end);
 
         replacement->get_output_tensor(0).add_names(target.get_names());
         for (auto consumer : consumers) {
@@ -858,7 +912,6 @@ public:
     }
 
 private:
-
     LoRATensors tensors;
 };
 
