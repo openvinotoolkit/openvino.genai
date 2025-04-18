@@ -80,6 +80,7 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
     rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
 }
@@ -126,61 +127,6 @@ void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attenti
             }
         }
     }
-}
-
-void initialize_beam_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_mask, ov::InferRequest& request) {
-    request.set_tensor("input_ids", input_ids);
-    request.set_tensor("attention_mask", attention_mask);
-
-    ov::Shape input_shape = input_ids.get_shape();
-
-    ov::Tensor position_ids = request.get_tensor("position_ids");
-    position_ids.set_shape(input_shape);
-    initialize_position_ids(position_ids, attention_mask);
-
-    ov::Tensor beam_idx = request.get_tensor("beam_idx");
-    beam_idx.set_shape({input_shape.at(0)});
-    std::fill_n(beam_idx.data<int32_t>(), input_shape.at(0), 0);
-}
-
-void set_attention_mask(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
-    ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
-    ov::Shape original_shape = original_mask.get_shape();
-    attention_mask.copy_to(original_mask);
-
-    ov::Shape new_shape{next_beams.size(), original_mask.get_shape().at(1) + 1};
-    attention_mask.set_shape(new_shape);
-
-    for (size_t beam_id = 0; beam_id < next_beams.size(); beam_id++) {
-        const size_t original_prompt_offset = next_beams.at(beam_id) * original_shape.at(1);
-        const size_t result_prompt_offset = beam_id * new_shape.at(1);
-
-        int64_t* dest = attention_mask.data<int64_t>() + result_prompt_offset;
-        const int64_t* src = original_mask.data<int64_t>() + original_prompt_offset;
-
-        std::memcpy(dest, src, original_shape.at(1) * sizeof(int64_t));
-        attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
-    }
-}
-
-/**
- * Get attention mask tensor for next token inference
- * Supports multi batch
- * Supports sparse attention_mask
- */
-ov::Tensor extend_attention(ov::Tensor attention_mask) {
-    auto shape = attention_mask.get_shape();
-    auto batch_size = shape[0];
-    auto seq_len = shape[1];
-
-    ov::Tensor new_atten_mask = ov::Tensor{attention_mask.get_element_type(), {batch_size, seq_len + 1}};
-    auto old_data = attention_mask.data<int64_t>();
-    auto new_data = new_atten_mask.data<int64_t>();
-    for (size_t batch = 0; batch < batch_size; ++batch) {
-        std::memcpy(new_data + batch * (seq_len + 1), old_data + batch * seq_len, seq_len * sizeof(int64_t));
-        new_data[batch * (seq_len + 1) + seq_len] = 1;
-    }
-    return new_atten_mask;
 }
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
@@ -402,13 +348,27 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     return kv_pos;
 }
 
-void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller) {
+void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller) {
+    if (kv_cache_state.reset_mem_state) {
+        if (adapter_controller) {
+            for(auto& state: request.query_state()) {
+                if(!adapter_controller->has_state_name(state.get_name())) {
+                    state.reset();
+                }
+            }
+        } else {
+            request.reset_state();
+        }
+
+        return;
+    }
+
     // nothing to trim in this case
-    if (remove_from_end == 0)
+    if (kv_cache_state.num_tokens_to_trim == 0)
         return;
 
     auto states = request.query_state();
-    
+
     OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");
 
     for (auto& state : states) {
@@ -418,7 +378,7 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
         ov::Tensor old_tensor = state.get_state();
         // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
         auto shape = old_tensor.get_shape();
-        shape[seq_length_axis] -= remove_from_end;
+        shape[kv_cache_state.seq_length_axis] -= kv_cache_state.num_tokens_to_trim;
 
         ov::Coordinate new_shape_begin{0, 0, 0, 0};
         ov::Coordinate new_shape_end{shape};
@@ -480,8 +440,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                         const ov::AnyMap& config,
-                        const KVAxesPosition& kv_pos,
-                        const std::filesystem::path& model_path) {
+                        const KVAxesPosition& kv_pos) {
     ov::CompiledModel compiled;
     ov::AnyMap properties = config;
     KVDesc kv_desc;
@@ -505,17 +464,7 @@ compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
         kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
         kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
         update_npu_config(properties, model, kv_pos, kv_desc);
-        auto cache_mode = get_option<CacheMode>(config, ov::cache_mode.name());
-        // NB: Select OPTIMIZE_SPEED with model_path isn't provided
-        if ((cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SPEED)) {
-            compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
-        } else if (model_path.empty()) {
-            // Set config to OPTIMIZE_SPEED
-            properties[ov::cache_mode.name()] = CacheMode::OPTIMIZE_SPEED;
-            compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
-        } else {
-            compiled = ov::genai::utils::singleton_core().compile_model(model_path, "NPU", properties);
-        }
+        compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
         // Also export compiled model if required
         if (export_blob) {
             if (blob_path.empty()) {

@@ -29,7 +29,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
-    EmbeddingsModel m_embedding;
+    EmbeddingsModel::Ptr m_embedding;
     // A language model used to generate a response.
     // Input shapes: inputs_embeds[N, conversation length, hidden_size],
     // position_ids[N, conversation length], beam_idx[N].
@@ -40,8 +40,6 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     bool m_is_chat_conversation = false;
     // InputsEmbedder
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
-    // Axis num in kv cache from m_language model, which contains information about history len
-    size_t m_kv_cache_seq_length_axis = 2;
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
@@ -63,7 +61,6 @@ public:
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
-        m_kv_cache_seq_length_axis = kv_pos.seq_len;
 
         // In case user provided properties per-device
         // {
@@ -83,9 +80,7 @@ public:
         if (m_is_npu) {
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
-            std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
-                language_model, lm_properties, kv_pos, language_model_path
-            );
+            std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
         } else {
             compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
@@ -93,7 +88,6 @@ public:
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
 
         m_language = compiled_language_model.create_infer_request();
-        m_kv_cache_seq_length_axis = utils::get_kv_axes_pos(language_model).seq_len;
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
         auto embedder_properties = device_propertes.empty()
@@ -102,6 +96,9 @@ public:
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
+
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        kv_cache_state.seq_length_axis = kv_pos.seq_len;
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -123,7 +120,7 @@ public:
     ) :
         m_generation_config{generation_config} {
         m_is_npu = device.find("NPU") != std::string::npos;
-        OPENVINO_ASSERT(m_is_npu,
+        OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
@@ -186,17 +183,17 @@ public:
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        auto to_remove_from_hist = m_inputs_embedder->get_num_tokens_to_remove_from_hist();
-        utils::trim_kv_cache(m_language, to_remove_from_hist, m_kv_cache_seq_length_axis, std::nullopt);
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        if (m_is_chat_conversation)
+            utils::trim_kv_cache(m_language, kv_cache_state, std::nullopt);
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
         size_t block_size = 1; // not used
 
-        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - to_remove_from_hist;
+        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - kv_cache_state.num_tokens_to_trim;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
-        KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         std::vector<int64_t> tokenized_history = kv_cache_state.get_state();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
@@ -237,7 +234,7 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation)
-            m_inputs_embedder->update_chat_history(decoded_results);
+            m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
         else
             kv_cache_state.reset_state();
 

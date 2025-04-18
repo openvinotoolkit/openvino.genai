@@ -1,0 +1,21 @@
+---
+sidebar_position: 4
+---
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import ConvertModelSection from '../_shared/_convert_model.mdx';
+import RunModelSection from './_sections/_run_model/index.mdx';
+import UsageOptionsSection from './_sections/_usage_options/index.mdx';
+
+# Image Processing Using VLMs
+
+<ConvertModelSection>
+    Download and convert model (e.g. [openbmb/MiniCPM-V-2_6](https://huggingface.co/openbmb/MiniCPM-V-2_6)) to OpenVINO format from Hugging Face:
+
+    <OptimumCLI model='openbmb/MiniCPM-V-2_6' outputDir='MiniCPM_V_2_6_ov' weightFormat='int4' trustRemoteCode />
+
+    See all supported [Visual Language Models](/docs/supported-models/#visual-language-models-vlms).
+</ConvertModelSection>
+
+<RunModelSection />
+
+<UsageOptionsSection />

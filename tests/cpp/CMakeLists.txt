@@ -4,7 +4,8 @@
 
 if(NOT TARGET gtest)
   set(INSTALL_GTEST OFF CACHE BOOL "")
-
+  set(BUILD_SHARED_LIBS OFF)
+  
   FetchContent_Declare(
     googletest
     URL       https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
@@ -32,3 +33,8 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_D
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   target_link_options(${TEST_TARGET_NAME} PRIVATE /IGNORE:4207,4286)
 endif()
+
+install(TARGETS ${TEST_TARGET_NAME}
+        RUNTIME DESTINATION tests/
+        COMPONENT tests
+        EXCLUDE_FROM_ALL)

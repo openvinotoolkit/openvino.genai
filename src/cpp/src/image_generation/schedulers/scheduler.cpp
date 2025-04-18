@@ -6,7 +6,6 @@
 #include "json_utils.hpp"
 
 #include "image_generation/schedulers/lcm.hpp"
-#include "image_generation/schedulers/lms_discrete.hpp"
 #include "image_generation/schedulers/ddim.hpp"
 #include "image_generation/schedulers/euler_discrete.hpp"
 #include "image_generation/schedulers/flow_match_euler_discrete.hpp"
@@ -32,8 +31,6 @@ std::shared_ptr<Scheduler> Scheduler::from_config(const std::filesystem::path& s
     std::shared_ptr<Scheduler> scheduler = nullptr;
     if (scheduler_type == Scheduler::Type::LCM) {
         scheduler = std::make_shared<LCMScheduler>(scheduler_config_path);
-    } else if (scheduler_type == Scheduler::Type::LMS_DISCRETE) {
-        scheduler = std::make_shared<LMSDiscreteScheduler>(scheduler_config_path);
     } else if (scheduler_type == Scheduler::Type::DDIM) {
         scheduler = std::make_shared<DDIMScheduler>(scheduler_config_path);
     } else if (scheduler_type == Scheduler::Type::EULER_DISCRETE) {

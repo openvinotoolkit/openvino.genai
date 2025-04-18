@@ -45,7 +45,10 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
 }
 
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
-    if (properties.find(ov::genai::scheduler_config.name()) != properties.end()) {
+    auto attention_backend_it = properties.find("ATTENTION_BACKEND");
+
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
+        (attention_backend_it != properties.end() && attention_backend_it->second.as<std::string>() == PA_BACKEND)) {
         if (is_paged_attention_available()) {
             return true;
         } else {
@@ -81,7 +84,7 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
         properties.erase(it);
     }
 
-    if (explicitly_requires_paged_attention(properties)) {
+    if (explicitly_requires_paged_attention(external_properties)) {
         OPENVINO_ASSERT(attention_backend == PA_BACKEND,
             "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
     }
@@ -155,7 +158,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (explicitly_requires_paged_attention(properties)) {
+    if (explicitly_requires_paged_attention(user_properties)) {
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
     }
@@ -196,7 +199,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (explicitly_requires_paged_attention(properties)) {
+    if (explicitly_requires_paged_attention(user_properties)) {
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
     }
@@ -240,7 +243,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (explicitly_requires_paged_attention(properties)) {
+    if (explicitly_requires_paged_attention(user_properties)) {
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
                                                               tokenizer, scheduler_config, device, device_properties, generation_config);

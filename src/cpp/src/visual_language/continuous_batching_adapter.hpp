@@ -32,12 +32,13 @@ public:
         const ov::AnyMap& properties,
         const ov::genai::GenerationConfig& generation_config
     ): m_impl{
-        "./", 
-        scheduler_config, 
-        device, 
-        properties} {
-        // TODO: Implement the constructor of ContinuousBatchingPipeline from ModelsMap
-        OPENVINO_THROW("Not implemented.");
+        models_map,
+        tokenizer,
+        scheduler_config,
+        device,
+        config_dir_path,
+        properties,
+        generation_config} {
     }
 
     VLMDecodedResults generate(
@@ -46,11 +47,22 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+        auto start_time = std::chrono::steady_clock::now();
         auto result = m_impl.generate({prompt}, {rgbs}, {generation_config}, streamer)[0];
+        auto stop_time = std::chrono::steady_clock::now();
+        
         VLMDecodedResults decoded;
-        for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
-            decoded.texts.push_back(result.m_generation_ids.at(idx));
-            decoded.scores.push_back(result.m_scores.at(idx));
+        decoded.perf_metrics = result.perf_metrics;
+        decoded.perf_metrics.load_time = get_load_time();
+
+        decoded.perf_metrics.raw_metrics.generate_durations.clear();
+        decoded.perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+        decoded.perf_metrics.m_evaluated = false;
+        decoded.perf_metrics.evaluate_statistics(start_time);
+        
+        for (size_t idx = 0; idx < result.texts.size(); ++idx) {
+            decoded.texts.push_back(result.texts.at(idx));
+            decoded.scores.push_back(result.scores.at(idx));
         }
         return decoded;
     }

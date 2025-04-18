@@ -92,6 +92,7 @@ protected:
     void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
 
     void _register_step_cache_usage(float step_cache_usage);
+    void _reset_cache_usage_statistics();
     float _get_current_running_average_cache_usage() const;
     void _compute_cache_rotation_data(const std::vector<SequenceGroup::Ptr>& sequence_groups, const Scheduler::Output& scheduler_output);
 

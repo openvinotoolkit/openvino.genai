@@ -51,6 +51,7 @@ protected:
 
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
+    std::vector<ov::genai::EncodedImage> m_history_images;
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms
@@ -58,7 +59,7 @@ protected:
 
     ModelInputType m_model_input_type = ModelInputType::TOKENS;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
-    std::mutex m_inputs_embedder_mutex;
+    std::mutex m_embeddings_mutex;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 public:
@@ -119,7 +120,7 @@ public:
              std::vector<GenerationConfig> sampling_params,
              const StreamerVariant& streamer);
 
-    virtual std::vector<GenerationResult>
+    virtual std::vector<VLMDecodedResults>
     generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& rgbs,

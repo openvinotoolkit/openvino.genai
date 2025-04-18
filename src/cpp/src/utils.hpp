@@ -46,8 +46,6 @@ Tensor init_attention_mask(const Tensor& position_ids);
 
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0);
 
-ov::Tensor extend_attention(ov::Tensor attention_mask);
-
 template <typename T> struct OmitOptional { using value = T; };
 template <typename T> struct OmitOptional<std::optional<T>> { using value = T; };
 
@@ -106,7 +104,29 @@ struct KVAxesPosition {
 
 KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model);
 
-void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller);
+class KVCacheState {
+    std::vector<int64_t> state;
+public:
+    size_t num_tokens_to_trim = 0;
+    size_t seq_length_axis = 2;
+    bool reset_mem_state = false;
+
+    std::vector<int64_t>& get_state() {
+        return state;
+    }
+
+    void add_inputs(const ov::Tensor& inputs_ids) {
+        std::copy_n(inputs_ids.data<int64_t>(), inputs_ids.get_size(), std::back_inserter(state));
+    }
+
+    void reset_state() {
+        reset_mem_state = false;
+        num_tokens_to_trim = 0;
+        state.clear();
+    }
+};
+
+void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller);
 
 ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
 
@@ -119,8 +139,7 @@ struct KVDesc {
 
 std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                                                              const ov::AnyMap& config,
-                                                             const KVAxesPosition& kv_pos,
-                                                             const std::filesystem::path& path = {});
+                                                             const KVAxesPosition& kv_pos);
 
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.

@@ -1,0 +1,13 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import openvino_genai as ov_genai
+from PIL import Image
+
+pipe = ov_genai.Text2ImagePipeline(model_path, "${props.device || 'CPU'}")
+image_tensor = pipe.generate(prompt)
+
+image = Image.fromarray(image_tensor.data[0])
+image.save("image.bmp")
+`}
+</CodeBlock>

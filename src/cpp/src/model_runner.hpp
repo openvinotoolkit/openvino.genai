@@ -44,7 +44,7 @@ class ModelRunner {
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
-    EmbeddingsModel m_embedding;
+    EmbeddingsModel::Ptr m_embedding;
 
 public:
     /**
@@ -81,7 +81,7 @@ public:
         return m_request;
     }
 
-    void set_embedding_model(const EmbeddingsModel& embedder) {
+    void set_embedding_model(const EmbeddingsModel::Ptr& embedder) {
         m_embedding = embedder;
     }
 
@@ -157,7 +157,6 @@ public:
         int64_t *input_ids_data = nullptr;
         
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-            OPENVINO_ASSERT(m_embedding.get_request(), "Got sequence group with embeddings, but embeddings model wasn't set.");
             inputs_embeds_data = inputs_embeds.data<float>();
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
@@ -330,8 +329,6 @@ public:
 
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
-        
-        OPENVINO_ASSERT(m_embedding.get_request(), "Got sequence group with embeddings, but embeddings model wasn't set.");
 
         ov::Tensor generated_ids = ov::Tensor(ov::element::i64, {1, num_generated_ids_without_embeddings});
         int64_t *generated_ids_data = generated_ids.data<int64_t>();
@@ -348,12 +345,13 @@ public:
             }
         }
         if (pos > 0) {
-            generated_ids_embeds = m_embedding.infer(generated_ids);
+            CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+            EmbeddingsRequest& req = embeddings_request_guard.get();
+            generated_ids_embeds = m_embedding->infer(req, generated_ids);
             generated_ids_embeds_data = generated_ids_embeds.data<float>();
-
+            size_t embeds_pos = 0;
             for (size_t i = 0; i < num_sequence_groups; ++i) {
                 size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-                size_t embeds_pos = 0;
                 SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
                 for (auto seq: sequence_group->get_running_sequences()) {
                     auto generated_ids = seq->get_generated_ids();

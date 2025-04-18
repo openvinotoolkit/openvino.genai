@@ -287,6 +287,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
           <li><a href="https://huggingface.co/shuttleai/shuttle-3.1-aesthetic"><code>shuttleai/shuttle-3.1-aesthetic</code></a></li>
           <li><a href="https://huggingface.co/shuttleai/shuttle-jaguar"><code>shuttleai/shuttle-jaguar</code></a></li>
           <li><a href="https://huggingface.co/Shakker-Labs/AWPortrait-FL"><code>Shakker-Labs/AWPortrait-FL</code></a></li>
+          <li><a href="https://huggingface.co/black-forest-labs/FLUX.1-Fill-dev"><code>black-forest-labs/FLUX.1-Fill-dev</code></a></li>
         </ul>
       </td>
     </tr>
@@ -369,7 +370,6 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
         </ul>
       </td>
       <td>
-          <li>GPU isn't supported</li>
           <li>These models' configs aren't consistent. It's required to override the default <code>eos_token_id</code> with the one from a tokenizer: <code>generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())</code>.</li>
       </td>
     </tr>
