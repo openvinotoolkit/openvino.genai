@@ -12,7 +12,8 @@
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/read_value.hpp"
 #include "openvino/op/assign.hpp"
-
+#include "openvino/op/constant.hpp"
+#include <openvino/pass/manager.hpp>
 
 using namespace ov;
 using namespace ov::op;
@@ -107,7 +108,7 @@ bool ov::genai::MakeVocabDecoderSatateful::run_on_model(const std::shared_ptr<ov
 bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Model>& model) {
     std::shared_ptr<ov::Node> combine_seg_node;
     for (auto node: model->get_ordered_ops()) {
-        if (strcmp(node->get_type_info().name, "CombineSegments") == 0) {
+        if (strcmp(node->get_type_name(), "CombineSegments") == 0) {
             combine_seg_node = node;
         }
     }
@@ -117,6 +118,7 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     size_t num_segments = (combine_seg_node->get_input_size() - 1) / 3;
     size_t number_of_main_tokens_inputs = 0;
     std::shared_ptr<Node> add_or_sub_node;
+    std::shared_ptr<Node> trunc_node;
     for (size_t i = 0; i < num_segments; i++) {
         // Check all ends inputs of CombineSegments node.
         // For special tokens they are Constant/Select, 
@@ -131,21 +133,38 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
         } else if (ov::as_type_ptr<v1::Subtract>(tmp_sub_node)) {
             number_of_main_tokens_inputs += 1;
             add_or_sub_node = tmp_sub_node;
+        } else if (strcmp(tmp_add_node->get_type_name(), "Truncate") == 0) {
+            number_of_main_tokens_inputs += 1;
+            trunc_node = tmp_add_node;
+            // If it't truncate as a single operation
         }
     }
     
     // Exit if couldn't find main input or there are several.
     if (number_of_main_tokens_inputs != 1) { return false; }
-
-    // Minimum between max_length and length of token sequence.
-    auto min_node = ov::as_type_ptr<v1::Minimum>(add_or_sub_node->get_input_node_shared_ptr(1));
-    if (!min_node) { return false; }
     
-    // constant containing final max_length - num_added tokens at the end of pipeline.
-    auto const_node = ov::as_type_ptr<v0::Constant>(min_node->get_input_node_shared_ptr(1));
-    if (!const_node) { return false; }
+    std::shared_ptr<ov::op::v0::Constant> const_node;
+    if (add_or_sub_node) {
+        // Minimum between max_length and length of token sequence.
+        auto min_node = ov::as_type_ptr<v1::Minimum>(add_or_sub_node->get_input_node_shared_ptr(1));
+        if (!min_node) { 
+            return false; 
+        }
+        // constant containing final max_length - num_added tokens at the end of pipeline.
+        const_node = ov::as_type_ptr<v0::Constant>(min_node->get_input_node_shared_ptr(1));
+        if (!const_node) { 
+            return false; 
+        }
 
-    op::util::VariableInfo var_info{const_node->get_output_shape(0), const_node->get_output_element_type(0), MAX_LENGTH_VAR_ID};
+    } else if (trunc_node) {
+        // If truncation is done by Truncate node then we need to check if it has a constant input.
+        const_node = ov::as_type_ptr<v0::Constant>(trunc_node->get_input_node_shared_ptr(number_of_main_tokens_inputs*3 + 1));
+
+    } else {
+        return false;
+    }
+
+    op::util::VariableInfo var_info{const_node->get_output_shape(0), const_node->get_output_element_type(0), ov::genai::MAX_LENGTH_VAR_ID};
     auto max_length_var = std::make_shared<op::util::Variable>(var_info);
 
     size_t num_added_tokens = num_segments - number_of_main_tokens_inputs;
@@ -176,7 +195,7 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     for (const auto& sink : model->get_sinks()) {
         // Check if sink accepts input from Assign, and if that't the case get the ReadValus node input.
         if (auto read_value = ov::as_type_ptr<v6::ReadValue>(sink->get_input_node_shared_ptr(0))) {
-            if (read_value->get_variable()->get_info().variable_id == ADD_SPECIAL_TOKENS_VAR_ID) {
+            if (read_value->get_variable()->get_info().variable_id == ov::genai::ADD_SPECIAL_TOKENS_VAR_ID) {
                 read_value_spec_tokens = read_value;
                 break;
             }
@@ -206,7 +225,7 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     }
     
     // By default do not pad to max_length
-    auto pad_to_max_length_var = std::make_shared<op::util::Variable>(op::util::VariableInfo{ov::Shape{1}, ov::element::boolean, PAD_TO_MAX_LENGTH_VAR_ID});
+    auto pad_to_max_length_var = std::make_shared<op::util::Variable>(op::util::VariableInfo{ov::Shape{1}, ov::element::boolean, ov::genai::PAD_TO_MAX_LENGTH_VAR_ID});
     auto default_false_const = std::make_shared<v0::Constant>(ov::element::boolean, ov::Shape{1}, std::vector{false});
     auto pad_to_max_length_rv = std::make_shared<v6::ReadValue>(default_false_const, pad_to_max_length_var);
     model->add_sinks({std::make_shared<v6::Assign>(pad_to_max_length_rv, pad_to_max_length_var)});
