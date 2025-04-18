@@ -17,18 +17,17 @@ using namespace ov;
 using namespace ov::op::v13;
 using namespace ov::op;
 
-auto set_name = [](auto node, auto name) {
-        node->output(0).set_names({name});
-        node->set_friendly_name(name);
+namespace {
+
+auto set_name = [](auto node, const std::string& name) {
+    node->output(0).set_names({name});
+    node->set_friendly_name(name);
 };
 
 // Also valid for other models, e.g. SmolLMs
 std::shared_ptr<ov::Model> create_llama_model(
     const std::map<std::string, GGUFMetaData>& configs,
     std::unordered_map<std::string, ov::Tensor>& consts) {
-
-    auto start_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Start generating OV model..." << std::endl;
 
     // Create input parameters
     auto input_ids = std::make_shared<ov::op::v0::Parameter>(
@@ -133,27 +132,21 @@ std::shared_ptr<ov::Model> create_llama_model(
     }
     model->set_rt_info("8.0", {"runtime_options", "ACTIVATIONS_SCALE_FACTOR"});
 
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::high_resolution_clock::now() - start_time).count();
-    std::cout << "Model generation done. Time: " << duration << "ms" << std::endl;
-
     return model;
 }
+
+} // namespace
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     auto [config, consts] = load_gguf(model_path);
 
     std::shared_ptr<ov::Model> model;
 
-    auto model_arch = std::get<std::string>(config.at("architecture"));
-    std::cout << "Creating model with architecture: " << model_arch << std::endl;
-    
-
+    const std::string model_arch = std::get<std::string>(config.at("architecture"));
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
         model = create_llama_model(config, consts);
-    }
-    else {
-        throw std::runtime_error(std::string("Unsupported model architecture") + model_arch);
+    } else {
+        OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }
 
     return model;

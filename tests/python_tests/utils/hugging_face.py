@@ -4,7 +4,6 @@
 from os.path import sep
 from pathlib import Path
 from typing import List
-import os
 
 from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
@@ -209,17 +208,16 @@ def download_and_convert_model(model_id: str, **tokenizer_kwargs):
     return opt_model, hf_tokenizer, models_path
 
 
-def download_gguf_model(model_id: str,
-                        filename: str,
-                        tmp_path: Path | TemporaryDirectory = TemporaryDirectory()):
+def download_gguf_model(gguf_model_id: str,
+                        gguf_filename: str):
+    gguf_dir_name = str(gguf_model_id).replace(sep, "_")
+    ov_cache_models_dir = get_ov_cache_models_dir()
+    models_path_gguf = ov_cache_models_dir / gguf_dir_name
+
     gguf_path = hf_hub_download(
-        repo_id=model_id,
-        filename=filename,
-        local_dir=tmp_path # Optional: Specify download directory
+        repo_id=gguf_model_id,
+        filename=gguf_filename,
+        local_dir=models_path_gguf # Optional: Specify download directory
     )
 
-    renamed_gguf_path = Path(gguf_path).parent / "openvino_model.gguf"
-    if not os.path.islink(renamed_gguf_path):
-        os.symlink(gguf_path, renamed_gguf_path)
-
-    return renamed_gguf_path
+    return gguf_path

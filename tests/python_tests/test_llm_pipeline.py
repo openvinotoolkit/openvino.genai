@@ -8,11 +8,10 @@ import os
 import json
 import numpy as np
 from typing import Tuple, List
+from pathlib import Path
 
 import openvino as ov
 import openvino_genai as ov_genai
-
-from optimum.intel.openvino.utils import TemporaryDirectory
 
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model, download_gguf_model
@@ -818,19 +817,40 @@ def test_pipelines_with_gguf_generate_with_streaming(pipeline_type, model_ids):
     hf_model_id = model_ids["hf_model_id"]
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
+    prompt = 'Why is the Sun yellow?'
 
+    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
     _, _, models_path = download_and_convert_model(hf_model_id)
-    _, _, models_path_gguf = download_and_convert_model(hf_model_id)
-    download_gguf_model(gguf_model_id, gguf_filename, models_path_gguf)
+
+    ov_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
+
+    # current version of GGUF support in GenAI does not imply tokenizer
+    # so, perform tokenization explicitly and pass tokens to GGUF-based pipeline
+    tokenizer = ov_pipe.get_tokenizer()
+    tokenized_inputs = tokenizer.encode(prompt)
 
     ov_generation_config = ov_genai.GenerationConfig()
     ov_generation_config.max_new_tokens = 30
     ov_generation_config.apply_chat_template = False
+    ov_generation_config.set_eos_token_id(tokenizer.get_eos_token_id())
 
-    ov_pipe = create_ov_pipeline(models_path, pipeline_type)
-    res_string_input_1 = ov_pipe.generate(questions[0], generation_config=ov_generation_config)
+    from utils.network import retry_request
+    from transformers import AutoTokenizer, AutoModelForCausalLM
 
-    ov_pipe_gguf = create_ov_pipeline(models_path_gguf, pipeline_type)
-    res_string_input_2 = ov_pipe_gguf.generate(questions[0], generation_config=ov_generation_config)
+    opt_model = retry_request(lambda: AutoModelForCausalLM.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+    inputs = hf_tokenizer(prompt, return_tensors="pt")
+    input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
+    hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
+    generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+    prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
+    all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
+    res_string_input_1 = all_text_batch[0]
+    print(f'HF = {res_string_input_1}')
+
+    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
+    encoded_result  = ov_pipe_gguf.generate(tokenized_inputs.input_ids, generation_config=ov_generation_config)
+    res_string_input_2 = tokenizer.decode(encoded_result.tokens[0])
+    print(f'OpenVINO GenAI = {res_string_input_2}')
 
     assert res_string_input_1 == res_string_input_2

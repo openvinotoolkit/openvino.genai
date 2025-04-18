@@ -283,23 +283,27 @@ ov::Core singleton_core() {
     return core;
 }
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
-    auto gguf_model_name = model_dir / "openvino_model.gguf";
+namespace {
 
-    if (std::filesystem::exists(gguf_model_name)) {
-        return create_from_gguf(gguf_model_name.string());
-    }
-    else {
+bool is_gguf_model(const std::filesystem::path& file_path) {
+    std::cout << file_path.extension() << std::endl;
+    return file_path.extension() == ".gguf";
+}
+
+} // namespace
+
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
+    if (is_gguf_model(model_dir)) {
+        return create_from_gguf(model_dir.string());
+    } else {
         std::filesystem::path model_path = model_dir;
 
         if (std::filesystem::exists(model_dir / "openvino_model.xml")) {
             model_path = model_dir / "openvino_model.xml";
-        }
-        else if (std::filesystem::exists(model_dir / "openvino_language_model.xml")) {
+        } else if (std::filesystem::exists(model_dir / "openvino_language_model.xml")) {
             model_path = model_path / "openvino_language_model.xml";
-        }
-        else {
-            OPENVINO_THROW("Could not find a model in the directory.");
+        } else {
+            OPENVINO_THROW("Could not find a model in the directory '", model_dir, "'");
         }
 
         return singleton_core().read_model(model_path, {}, config);

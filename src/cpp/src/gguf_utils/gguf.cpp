@@ -30,16 +30,22 @@ std::string format(std::string fmt, Args... args)
 
 std::optional<uint32_t> dtype_to_gguf_tensor_type(const ov::element::Type& dtype) {
   switch (dtype) {
+    case ov::element::f64:
+      return GGUF_TYPE_F64;
     case ov::element::f32:
       return GGUF_TYPE_F32;
     case ov::element::f16:
       return GGUF_TYPE_F16;
+    case ov::element::bf16:
+      return GGUF_TYPE_BF16;
     case ov::element::i8:
       return GGUF_TYPE_I8;
     case ov::element::i16:
       return GGUF_TYPE_I16;
     case ov::element::i32:
       return GGUF_TYPE_I32;
+      case ov::element::i64:
+        return GGUF_TYPE_I64;
     default:
       return std::nullopt;
   }
@@ -47,16 +53,22 @@ std::optional<uint32_t> dtype_to_gguf_tensor_type(const ov::element::Type& dtype
 
 std::optional<ov::element::Type> gguf_type_to_dtype(const uint32_t& gguf_type) {
   switch (gguf_type) {
+    case GGUF_TYPE_F64:
+      return ov::element::f64;
     case GGUF_TYPE_F32:
       return ov::element::f32;
     case GGUF_TYPE_F16:
       return ov::element::f16;
+    case GGUF_TYPE_BF16:
+      return ov::element::bf16;
     case GGUF_TYPE_I8:
       return ov::element::i8;
     case GGUF_TYPE_I16:
       return ov::element::i16;
     case GGUF_TYPE_I32:
       return ov::element::i32;
+      case GGUF_TYPE_I64:
+        return ov::element::i64;
     default:
       return std::nullopt;
   }
@@ -333,7 +345,7 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
 }
 
 std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<std::string, GGUFMetaData>& config,
-                                                            const std::unordered_map<std::string, ov::Tensor>& weights) {
+                                                                const std::unordered_map<std::string, ov::Tensor>& weights) {
     std::unordered_map<std::string, ov::Tensor> consts;
 
     consts["model.embed_tokens.weight"] = weights.at("token_embd.weight");
@@ -355,7 +367,6 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<s
         consts["lm_head.biases"] = weights.at("output.biases");
     }
 
-    //for (auto kv : weights) std::cout << "Key: " << kv.first << std::endl;
     // Process layer weights
     for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
         std::string key = format("blk.%d.attn_norm.weight", i);
