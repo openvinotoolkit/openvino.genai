@@ -17,7 +17,6 @@ from openvino_genai import Tokenizer
 
 from utils.tokenizers import delete_rt_info
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline
 from data.models import get_models_list
 
 
@@ -145,7 +144,7 @@ encoded_prompts = [
 ]
 
 
-@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list())
+@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 @pytest.mark.precommit
 def test_decode(ov_hf_tokenizers, encoded_prompt):
@@ -214,7 +213,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict], mode
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list())
+@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 def test_set_chat_template(ov_hf_tokenizers):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
 
