@@ -17,7 +17,7 @@
             std::string out_str;                                                                               \
             encrypt_func(in.c_str(), in.length(), nullptr, &out_size);                                         \
             if (out_size > 0) {                                                                                \
-                std::unique_ptr<char[]> output_ptr(new char[out_size]);                                        \
+                std::unique_ptr<char[]> output_ptr = std::make_unique<char[]>(out_size);                       \
                 if (output_ptr) {                                                                              \
                     char* output = output_ptr.get();                                                           \
                     encrypt_func(in.c_str(), in.length(), output, &out_size);                                  \
@@ -31,7 +31,7 @@
             std::string out_str;                                                                               \
             decrypt_func(in.c_str(), in.length(), nullptr, &out_size);                                         \
             if (out_size > 0) {                                                                                \
-                std::unique_ptr<char[]> output_ptr(new char[out_size]);                                        \
+                std::unique_ptr<char[]> output_ptr = std::make_unique<char[]>(out_size);                       \
                 if (output_ptr) {                                                                              \
                     char* output = output_ptr.get();                                                           \
                     decrypt_func(in.c_str(), in.length(), output, &out_size);                                  \
