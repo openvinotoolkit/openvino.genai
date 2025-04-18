@@ -125,9 +125,7 @@ std::string remap_and_patch(const std::string& chat_template) {
     );
 }
 
-void read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model, std::vector<std::string>& vocab_vector) {
-    vocab_vector.clear();
-
+std::vector<std::string> read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model) {
     std::shared_ptr<ov::Node> vocab_decoder_node;
     for (auto node: model->get_ordered_ops()) {
         if (node->get_friendly_name().find("VocabDecoder") != std::string::npos) {
@@ -135,26 +133,28 @@ void read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model, 
         }
     }
     if (!vocab_decoder_node) {
-        return;
+        return {};
     }
 
     auto begins_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(1));
     auto ends_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(2));
     auto chars_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(3));
     if (!begins_node || !ends_node || !chars_node) {
-        return;
+        return {};
     }
 
     auto begins = begins_node->cast_vector<int32_t>();
     auto ends = ends_node->cast_vector<int32_t>();
     auto chars = chars_node->cast_vector<uint8_t>();
 
+    std::vector<std::string> vocab_vector;
     vocab_vector.resize(begins.size());
     for (size_t i = 0; i < begins.size(); ++i) {
         const auto begin = begins[i];
         const auto end = ends[i];
         vocab_vector[i] = std::string(chars.begin() + begin, chars.begin() + end);
     };
+    return vocab_vector;
 }
 
 }  // namespace
@@ -342,7 +342,7 @@ public:
             // Initialize detokenizer's cache to save time later.
             decode({1, 33, 199, 42, 42});
 
-            read_vocab_from_detokenizer_model(ov_detokenizer, m_vocab);
+            m_vocab = read_vocab_from_detokenizer_model(ov_detokenizer);
         }
     }
 
