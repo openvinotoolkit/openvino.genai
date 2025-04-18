@@ -2,7 +2,6 @@
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino-tokenizers~=2025.2.0.0.dev
-optimum @ git+https://github.com/huggingface/optimum.git@27dae509b9d22daa29ef33b7ba4f6bd2c1982233
 optimum-intel[nncf] @ git+https://github.com/huggingface/optimum-intel.git@96ab762558b75d437aa899c7bcb8d6bbe3a29ff0
 numpy<2.0.0; sys_platform == 'darwin'
 einops==0.8.1  # For Qwen
