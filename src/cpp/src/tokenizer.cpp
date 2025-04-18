@@ -129,14 +129,14 @@ void read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model, 
     vocab_vector.clear();
 
     std::shared_ptr<ov::Node> vocab_decoder_node;
-        for (auto node: model->get_ordered_ops()) {
-            if (node->get_friendly_name().find("VocabDecoder") != std::string::npos) {
-                vocab_decoder_node = node;
-            }
+    for (auto node: model->get_ordered_ops()) {
+        if (node->get_friendly_name().find("VocabDecoder") != std::string::npos) {
+            vocab_decoder_node = node;
         }
-        if (!vocab_decoder_node) {
-            return;
-        }
+    }
+    if (!vocab_decoder_node) {
+        return;
+    }
 
     auto begins_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(1));
     auto ends_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(2));
