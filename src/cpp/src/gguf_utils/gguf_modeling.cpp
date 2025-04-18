@@ -1,3 +1,6 @@
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include <map>
 #include <vector>
 #include <string>
@@ -9,8 +12,8 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
 
-#include "building_blocks.hpp"
-#include "gguf_modeling.hpp"
+#include "gguf_utils/building_blocks.hpp"
+#include "gguf_utils/gguf_modeling.hpp"
 
 
 using namespace ov;

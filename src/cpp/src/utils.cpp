@@ -293,7 +293,11 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
     if (is_gguf_model(model_dir)) {
+#ifdef ENABLE_GGUF
         return create_from_gguf(model_dir.string());
+#else
+        OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
+#endif
     } else {
         std::filesystem::path model_path = model_dir;
 

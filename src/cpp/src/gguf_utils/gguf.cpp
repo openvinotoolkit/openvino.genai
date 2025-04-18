@@ -1,10 +1,13 @@
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <numeric>
 #include <optional>
 
-#include "gguf.hpp"
+#include "gguf_utils/gguf.hpp"
 
 #include <iostream>
 

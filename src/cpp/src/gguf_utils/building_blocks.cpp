@@ -1,3 +1,6 @@
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include <vector>
 #include <stdexcept>
 #include <algorithm>
@@ -9,9 +12,7 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
 
-//#include "fp16.h"
-
-#include "building_blocks.hpp"
+#include "gguf_utils/building_blocks.hpp"
 
 using namespace ov;
 using namespace ov::op::v13;
