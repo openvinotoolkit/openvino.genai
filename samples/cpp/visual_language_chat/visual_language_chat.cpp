@@ -10,15 +10,15 @@ bool print_subword(std::string&& subword) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (3 != argc) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES>");
+    if (argc < 3 || argc > 4) {
+        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE>");
     }
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
     // GPU and NPU can be used as well.
-    // Note: If NPU selected, only language model will be run on NPU
-    std::string device = "CPU";
+    // Note: If NPU is selected, only language model will be run on NPU
+    std::string device = (argc == 4) ? argv[3] : "CPU";
     ov::AnyMap enable_compile_cache;
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the

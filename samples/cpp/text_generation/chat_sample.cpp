@@ -4,13 +4,14 @@
 #include "openvino/genai/llm_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (2 != argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR>");
+    if (argc < 2 || argc > 3) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DEVICE>");
     }
     std::string prompt;
     std::string models_path = argv[1];
 
-    std::string device = "CPU";  // GPU, NPU can be used as well
+    // Default device is CPU; can be overridden by the second argument
+    std::string device = (argc == 3) ? argv[2] : "CPU";  // GPU, NPU can be used as well
     ov::genai::LLMPipeline pipe(models_path, device);
     
     ov::genai::GenerationConfig config;

@@ -13,10 +13,11 @@ def streamer(subword):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
+    parser.add_argument('model_dir', help='Path to the model directory')
+    parser.add_argument('device', nargs='?', default='CPU', help='Device to run the model on (default: CPU)')
     args = parser.parse_args()
 
-    device = 'CPU'  # GPU can be used as well
+    device = args.device
     pipe = openvino_genai.LLMPipeline(args.model_dir, device)
 
     config = openvino_genai.GenerationConfig()
