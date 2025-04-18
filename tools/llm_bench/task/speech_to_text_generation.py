@@ -14,11 +14,46 @@ import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
 import llm_bench_utils.parse_json_data as parse_json_data
 from llm_bench_utils.hook_forward_whisper import WhisperHook
+from openvino_genai import WhisperPerfMetrics
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 whisper_hook = WhisperHook()
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 1000
+
+
+def print_perf_pair(name: str, pair) -> None:
+    print(f"{name}: {pair.mean:.2f} +- {pair.std:.2f}")
+
+
+def print_raw_metrics(name: str, values: list) -> None:
+    values = [float(f"{v:.2f}") for v in values]
+    print(f"{name} [{len(values)}]: {values}")
+
+
+def print_genai_whisper_metrics(metrics: WhisperPerfMetrics):
+    print("=== WhisperPerfMetrics ===")
+    print(f"load_time: {metrics.get_load_time():.2f}")
+    print_perf_pair("features_extraction_duration", metrics.get_features_extraction_duration())
+    print_perf_pair("generate_duration", metrics.get_generate_duration())
+    print_perf_pair("inference_duration", metrics.get_inference_duration())
+    print_perf_pair("ttft", metrics.get_ttft())
+    print_perf_pair("tpot", metrics.get_tpot())
+    print_perf_pair("ipot", metrics.get_ipot())
+    print_perf_pair("throughput", metrics.get_throughput())
+    print(f"num_generated_tokens: {metrics.get_num_generated_tokens():.2f}")
+    print_perf_pair("tokenization_duration", metrics.get_tokenization_duration())
+    print_perf_pair("detokenization_duration", metrics.get_detokenization_duration())
+    print("=== WhisperPerfMetrics ===")
+    print("=== RawPerfMetrics ===")
+    raw_metrics = metrics.raw_metrics
+    print_raw_metrics("generate_durations", raw_metrics.generate_durations)
+    print_raw_metrics("m_durations", raw_metrics.m_durations)
+    print_raw_metrics("m_new_token_times", raw_metrics.m_new_token_times)
+    print_raw_metrics("m_times_to_first_token", raw_metrics.m_times_to_first_token)
+    print_raw_metrics("token_infer_durations", raw_metrics.token_infer_durations)
+    print_raw_metrics("tokenization_durations", raw_metrics.tokenization_durations)
+    print("=== RawPerfMetrics ===")
 
 
 def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
@@ -42,7 +77,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         mem_consumption.start()
     if use_genai:
         start = time.perf_counter()
-        result_text = pipe.generate(
+        result = pipe.generate(
             raw_speech,
             max_new_tokens=max_gen_tokens,
             # 'task' and 'language' parameters are supported for multilingual models only
@@ -51,7 +86,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             return_timestamps=ret_timestamps
         )
         end = time.perf_counter()
-        perf_metrics = result_text.perf_metrics
+        perf_metrics: WhisperPerfMetrics = result.perf_metrics
+        print_genai_whisper_metrics(perf_metrics)
         first_token_time = perf_metrics.get_ttft().mean
         second_tokens_durations = (
             np.array(perf_metrics.raw_metrics.m_new_token_times[1:])
@@ -59,7 +95,10 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         ).tolist()
         tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
         tm_infer_list = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
-        result_text = result_text.texts[0]
+        result_text = result.texts[0]
+        if result.chunks:
+            for chunk in result.chunks:
+                print(f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}")
     else:
         start = time.perf_counter()
         result_text = pipe(
