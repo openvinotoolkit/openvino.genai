@@ -324,26 +324,23 @@ def test_special_tokens(tmp_path, prompt, model_id):
     assert decoded_hf_skip_spec != decoded_hf_no_skip
 
 
-@pytest.fixture
-def hf_ov_genai_models(tmp_path_factory):
-    @functools.lru_cache(maxsize=2)
-    def _get_model_path(model_id, **args):
-        hf_args = args.copy()  # to overcome mutable default argument side effects
-        if "padding_side" in hf_args and hf_args["padding_side"] is None:
-            # HF does not accept None.
-            # Need to remove padding_side and let HF to choose default value,
-            hf_args.pop("padding_side")
-        else:
-            hf_args["truncation_side"] = hf_args["padding_side"]
-        model_dir = tmp_path_factory.getbasetemp() / model_id.replace("/", "_")
-        model_dir.mkdir(exist_ok=True, parents=True)
+@pytest.fixture(scope="module")
+def hf_ov_genai_models(request, tmp_path_factory):
+    model_id, args = request.param
+    hf_args = args.copy()  # to overcome mutable default argument side effects
+    if "padding_side" in hf_args and hf_args["padding_side"] is None:
+        # HF does not accept None.
+        # Need to remove padding_side and let HF to choose default value,
+        hf_args.pop("padding_side")
+    else:
+        hf_args["truncation_side"] = hf_args["padding_side"]
+    model_dir = tmp_path_factory.getbasetemp() / model_id.replace("/", "_")
+    model_dir.mkdir(exist_ok=True, parents=True)
 
-        hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_args)
-        convert_and_save_tokenizer(hf_tokenizer, model_dir)
-        genai_tokenzier = Tokenizer(model_dir)
-        return hf_tokenizer, genai_tokenzier
-
-    return _get_model_path
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_args)
+    convert_and_save_tokenizer(hf_tokenizer, model_dir)
+    genai_tokenzier = Tokenizer(model_dir)
+    return hf_tokenizer, genai_tokenzier
 
 
 prompts = [
@@ -372,15 +369,16 @@ prompts = [
 @pytest.mark.parametrize("pad_to_max_length", [None, True, False])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize(
-    "model_id",
+    "hf_ov_genai_models",
     [
-        "katuni4ka/tiny-random-phi3",
-        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        ("katuni4ka/tiny-random-phi3", {"padding_side": None}),
+        ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None}),
         ("katuni4ka/tiny-random-llava-next", dict(padding_side="right")),
         ("katuni4ka/tiny-random-llava-next", dict(padding_side="left")),
-        "BAAI/bge-small-en-v1.5",  # model with 2 RaggedToDense ops
+        ("BAAI/bge-small-en-v1.5", {"padding_side": None}),  # model with 2 RaggedToDense ops
         # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
     ],
+    indirect=True,
 )
 def test_padding(
     hf_ov_genai_models,
@@ -388,17 +386,12 @@ def test_padding(
     max_length,
     pad_to_max_length,
     prompt,
-    model_id,
 ):
-    model_id, hf_tok_load_params = (
-        (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
-    )
-
-    hf_tokenizer, genai_tokenzier = hf_ov_genai_models(
-        model_id,
-        subfolder=hf_tok_load_params.get("subfolder", None),
-        padding_side=hf_tok_load_params.get("padding_side", None),
-    )
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models
+    #     model_id,
+    #     subfolder=hf_tok_load_params.get("subfolder", None),
+    #     padding_side=hf_tok_load_params.get("padding_side", None),
+    # )
 
     # In openvino_tokenizers if sequences are of different length by default padding is applied
     # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor
