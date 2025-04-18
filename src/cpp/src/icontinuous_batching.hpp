@@ -33,6 +33,8 @@ protected:
 
     PipelineMetrics m_pipeline_metrics;
 
+    std::string m_device;
+
     struct PerfTime {
         float m_paged_attention_time_ms = 0.0f;
         float m_matmul_time_ms = 0.0f;
@@ -61,6 +63,8 @@ protected:
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 public:
+    virtual ~IContinuousBatchingPipeline();
+
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);
     PipelineMetrics get_metrics() const;

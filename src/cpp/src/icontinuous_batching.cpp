@@ -16,8 +16,9 @@ std::string add_image_tags_to_prompt(const std::string& prompt, const std::vecto
 
 namespace ov::genai {
 
-template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::~IContinuousBatchingPipeline() {
+    m_tokenizer = {};
+}
 
 GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
     return m_generation_config;

@@ -66,9 +66,17 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
+    // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
+    m_sampler.reset();
+    m_adapter_controller.reset();
+    m_model_runner.reset();
+
     if (m_scheduler) {
         m_scheduler->release();
+        m_scheduler.reset();
     }
+
+    utils::release_core_plugin(m_device);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
@@ -84,12 +92,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const std::string& device,
     const ov::AnyMap& properties,
     const std::vector<KVHeadConfig>& kv_cache_config) {
+    m_device = device;
+
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
+
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
     auto sampler_num_threads_it = filtered_properties->find("sampler_num_threads");
@@ -99,6 +110,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
+
     std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
     OPENVINO_ASSERT(execution_devices.size() == 1, "Contituous batching: execution device is expected to be CPU or GPU, but got ", execution_devices.size(), " devices");
     const std::string execution_device = execution_devices[0];
