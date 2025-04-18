@@ -19,6 +19,15 @@ For downloading pre-converted models, see [Download Pre-Converted OpenVINO Model
     ```bash
     pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git
     ```
+
+    :::info Note
+    Some models may require additional dependencies.
+    To convert models with `optimum-cli` and to run the examples, install the dependencies from [`./samples/requirements.txt`](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/requirements.txt):
+    ```bash
+    pip install --upgrade-strategy eager -r ./samples/requirements.txt
+    ```
+    :::
+
 2. Download and convert a model to the OpenVINO IR format using `optimum-cli` tool from Hugging Face:
     <OptimumCLI />
 
