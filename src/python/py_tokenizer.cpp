@@ -169,19 +169,5 @@ void init_tokenizer(py::module_& m) {
         .def("get_eos_token_id", &Tokenizer::get_eos_token_id)
         .def("get_pad_token", &Tokenizer::get_pad_token)
         .def("get_bos_token", &Tokenizer::get_bos_token)
-        .def("get_eos_token", &Tokenizer::get_eos_token)
-        .def("get_vocab",
-            [](Tokenizer& tok) {
-                const auto vocab = tok.get_vocab();
-                py::dict result;
-                for (const auto& [key, value] : vocab) {
-                    py::bytes key_bytes(key);  // Use bytes for keys to avoid UTF-8 encoding issues
-                    result[key_bytes] = value;
-                }
-                return result;
-            },
-             R"(Returns the vocabulary as a Python dictionary with bytes keys and integer values.
-
-Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.)"
-        );
+        .def("get_eos_token", &Tokenizer::get_eos_token);
 }
