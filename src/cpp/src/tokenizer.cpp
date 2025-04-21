@@ -281,6 +281,13 @@ public:
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
+
+        // temporary allow absense both tokenizer and detokenizer for GGUF support
+        // TODO: remove this code once Tokenizers can be created from GGUF file
+        if (!ov_tokenizer && !ov_detokenizer) {
+            return;
+        }
+
         OPENVINO_ASSERT(ov_tokenizer || ov_detokenizer, "Neither tokenizer nor detokenzier models were provided");
 
         auto core = get_core_singleton();
