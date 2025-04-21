@@ -48,7 +48,7 @@ jobs:
       with:
         platform: macos_12_6
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_js_package.tar.gz
-        revision: 32af492fd78aaff4c02f97871d0b8b4c8edd5d93
+        revision: latest_available_commit
 
   genai_build_cmake:
     name: Build cpack - ${{ matrix.build-type }}
