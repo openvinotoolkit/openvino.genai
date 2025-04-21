@@ -114,7 +114,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
     return embeds;
 }
 
-ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
     std::string image_token = m_vlm_config.im_start;
 
     std::string formatted_prompt;
