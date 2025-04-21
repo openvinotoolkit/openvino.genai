@@ -1,3 +1,6 @@
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include <vector>
@@ -8,7 +11,7 @@
 
 #include <openvino/openvino.hpp>
 
-#include "gguf.hpp"
+#include "gguf_utils/gguf.hpp"
 
 ov::Output<ov::Node> make_lm_head(
     const std::string& key,

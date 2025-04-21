@@ -1,3 +1,6 @@
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include <map>
 #include <vector>
 #include <string>
@@ -9,16 +12,19 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
 
-#include "building_blocks.hpp"
-#include "gguf_modeling.hpp"
+#include "gguf_utils/building_blocks.hpp"
+#include "gguf_utils/gguf_modeling.hpp"
+
 
 using namespace ov;
 using namespace ov::op::v13;
 using namespace ov::op;
 
-auto set_name = [](auto node, auto name) {
-        node->output(0).set_names({name});
-        node->set_friendly_name(name);
+namespace {
+
+auto set_name = [](auto node, const std::string& name) {
+    node->output(0).set_names({name});
+    node->set_friendly_name(name);
 };
 
 // Also valid for other models, e.g. SmolLMs
@@ -139,7 +145,9 @@ std::shared_ptr<ov::Model> create_llama_model(
     return model;
 }
 
-std::shared_ptr<ov::Model> OPENVINO_GENAI_EXPORTS create_from_gguf(const std::string& model_path) {
+} // namespace
+
+std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::cout << "Loading and unpacking model from: " << model_path << std::endl;
     auto [config, consts, qtypes] = load_gguf(model_path);
@@ -148,15 +156,11 @@ std::shared_ptr<ov::Model> OPENVINO_GENAI_EXPORTS create_from_gguf(const std::st
 
     std::shared_ptr<ov::Model> model;
 
-    auto model_arch = std::get<std::string>(config.at("architecture"));
-    std::cout << "Creating model with architecture: " << model_arch << std::endl;
-    
-
+    const std::string model_arch = std::get<std::string>(config.at("architecture"));
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
-        model = create_llama_model(config, consts, qtypes);
-    }
-    else {
-        throw std::runtime_error(std::string("Unsupported model architecture") + model_arch);
+        model = create_llama_model(config, consts);
+    } else {
+        OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - load_finish_time).count();

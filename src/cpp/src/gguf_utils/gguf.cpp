@@ -1,4 +1,5 @@
-#include "gguf.hpp"
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
 #include <cstring>
@@ -6,6 +7,10 @@
 #include <iostream>
 #include <numeric>
 #include <optional>
+
+#include "gguf_utils/gguf.hpp"
+
+#include <iostream>
 
 // https://github.com/antirez/gguf-tools/blob/af7d88d808a7608a33723fba067036202910acb3/gguflib.h#L102-L108
 constexpr int gguf_array_header_size = 12;
@@ -27,34 +32,46 @@ std::string format(std::string fmt, Args... args) {
 }
 
 std::optional<uint32_t> dtype_to_gguf_tensor_type(const ov::element::Type& dtype) {
-    switch (dtype) {
+  switch (dtype) {
+    case ov::element::f64:
+      return GGUF_TYPE_F64;
     case ov::element::f32:
         return GGUF_TYPE_F32;
     case ov::element::f16:
-        return GGUF_TYPE_F16;
+      return GGUF_TYPE_F16;
+    case ov::element::bf16:
+      return GGUF_TYPE_BF16;
     case ov::element::i8:
         return GGUF_TYPE_I8;
     case ov::element::i16:
         return GGUF_TYPE_I16;
     case ov::element::i32:
-        return GGUF_TYPE_I32;
+      return GGUF_TYPE_I32;
+      case ov::element::i64:
+        return GGUF_TYPE_I64;
     default:
         return std::nullopt;
     }
 }
 
 std::optional<ov::element::Type> gguf_type_to_dtype(const uint32_t& gguf_type) {
-    switch (gguf_type) {
+  switch (gguf_type) {
+    case GGUF_TYPE_F64:
+      return ov::element::f64;
     case GGUF_TYPE_F32:
         return ov::element::f32;
     case GGUF_TYPE_F16:
-        return ov::element::f16;
+      return ov::element::f16;
+    case GGUF_TYPE_BF16:
+      return ov::element::bf16;
     case GGUF_TYPE_I8:
         return ov::element::i8;
     case GGUF_TYPE_I16:
         return ov::element::i16;
     case GGUF_TYPE_I32:
-        return ov::element::i32;
+      return ov::element::i32;
+      case GGUF_TYPE_I64:
+        return ov::element::i64;
     default:
         return std::nullopt;
     }
@@ -328,9 +345,8 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     return config;
 }
 
-std::unordered_map<std::string, ov::Tensor> consts_from_weights(
-    const std::map<std::string, GGUFMetaData>& config,
-    const std::unordered_map<std::string, ov::Tensor>& weights) {
+std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<std::string, GGUFMetaData>& config,
+                                                                const std::unordered_map<std::string, ov::Tensor>& weights) {
     std::unordered_map<std::string, ov::Tensor> consts;
 
     consts["model.embed_tokens.weight"] = weights.at("token_embd.weight");

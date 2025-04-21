@@ -283,23 +283,30 @@ ov::Core singleton_core() {
     return core;
 }
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
-    auto gguf_model_name = model_dir / "openvino_model.gguf";
+namespace {
 
-    if (std::filesystem::exists(gguf_model_name)) {
-        return create_from_gguf(gguf_model_name.string());
-    }
-    else {
+bool is_gguf_model(const std::filesystem::path& file_path) {
+    return file_path.extension() == ".gguf";
+}
+
+} // namespace
+
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
+    if (is_gguf_model(model_dir)) {
+#ifdef ENABLE_GGUF
+        return create_from_gguf(model_dir.string());
+#else
+        OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
+#endif
+    } else {
         std::filesystem::path model_path = model_dir;
 
         if (std::filesystem::exists(model_dir / "openvino_model.xml")) {
             model_path = model_dir / "openvino_model.xml";
-        }
-        else if (std::filesystem::exists(model_dir / "openvino_language_model.xml")) {
+        } else if (std::filesystem::exists(model_dir / "openvino_language_model.xml")) {
             model_path = model_path / "openvino_language_model.xml";
-        }
-        else {
-            OPENVINO_THROW("Could not find a model in the directory.");
+        } else {
+            OPENVINO_THROW("Could not find a model in the directory '", model_dir, "'");
         }
 
         return singleton_core().read_model(model_path, {}, config);
@@ -442,8 +449,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                         const ov::AnyMap& config,
-                        const KVAxesPosition& kv_pos,
-                        const std::filesystem::path& model_path) {
+                        const KVAxesPosition& kv_pos) {
     ov::CompiledModel compiled;
     ov::AnyMap properties = config;
     KVDesc kv_desc;
@@ -467,17 +473,7 @@ compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
         kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
         kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
         update_npu_config(properties, model, kv_pos, kv_desc);
-        auto cache_mode = get_option<CacheMode>(config, ov::cache_mode.name());
-        // NB: Select OPTIMIZE_SPEED with model_path isn't provided
-        if ((cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SPEED)) {
-            compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
-        } else if (model_path.empty()) {
-            // Set config to OPTIMIZE_SPEED
-            properties[ov::cache_mode.name()] = CacheMode::OPTIMIZE_SPEED;
-            compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
-        } else {
-            compiled = ov::genai::utils::singleton_core().compile_model(model_path, "NPU", properties);
-        }
+        compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
         // Also export compiled model if required
         if (export_blob) {
             if (blob_path.empty()) {

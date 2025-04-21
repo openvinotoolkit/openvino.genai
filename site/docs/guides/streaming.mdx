@@ -7,7 +7,7 @@ sidebar_position: 3
 For more interactive UIs during generation, you can stream output tokens.
 
 :::info
-Streaming is supported for both `LLMPipeline` and `VLMPipeline`.
+Streaming is supported for `LLMPipeline`, `VLMPipeline` and `WhisperPipeline`.
 :::
 
 ## Streaming Function
@@ -18,6 +18,7 @@ In this example, a function outputs words to the console immediately upon genera
     <TabItemPython>
         ```python showLineNumbers
         import openvino_genai as ov_genai
+
         pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
         # highlight-start
@@ -86,6 +87,7 @@ You can also create your custom streamer for more sophisticated processing:
     <TabItemPython>
         ```python showLineNumbers
         import openvino_genai as ov_genai
+
         pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
         # highlight-start
@@ -95,8 +97,8 @@ You can also create your custom streamer for more sophisticated processing:
                 super().__init__()
                 # Initialization logic.
 
-            def write(self, token_id) -> bool:
-                # Custom decoding/tokens processing logic.
+            def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+                # Custom processing logic for new decoded token(s).
 
                 # Return flag corresponds whether generation should be stopped.
                 return ov_genai.StreamingStatus.RUNNING
@@ -130,8 +132,15 @@ You can also create your custom streamer for more sophisticated processing:
         // Create custom streamer class
         class CustomStreamer: public ov::genai::StreamerBase {
         public:
-            bool write(int64_t token) {
-                // Custom decoding/tokens processing logic.
+            ov::genai::StreamingStatus write(int64_t token) {
+                // Custom processing logic for new decoded token.
+
+                // Return flag corresponds whether generation should be stopped.
+                return ov::genai::StreamingStatus::RUNNING;
+            };
+
+            ov::genai::StreamingStatus write(const std::vector<int64_t>& tokens) {
+                // Custom processing logic for new vector of decoded tokens.
 
                 // Return flag corresponds whether generation should be stopped.
                 return ov::genai::StreamingStatus::RUNNING;
@@ -168,5 +177,5 @@ You can also create your custom streamer for more sophisticated processing:
 </LanguageTabs>
 
 :::info
-For fully implemented iterable `CustomStreamer` refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/blob/releases/2025/0/samples/python/text_generation/multinomial_causal_lm.py) sample.
+For fully implemented iterable `CustomStreamer` refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/multinomial_causal_lm.py) sample.
 :::
