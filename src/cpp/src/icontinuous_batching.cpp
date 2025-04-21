@@ -174,13 +174,17 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             prompt_with_tags = add_image_tags_to_prompt(prompt_with_tags, rgbs, m_history_images.size());
         }
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
+        auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
-        std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
+        std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
         m_inputs_embedder->set_apply_chat_template_status(false);
 
-        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0]));
+        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0));
+        auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+        vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
