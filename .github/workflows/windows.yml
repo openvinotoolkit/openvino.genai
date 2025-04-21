@@ -23,7 +23,7 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win
+  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/16042025
 
 jobs:
   openvino_download:
@@ -51,7 +51,7 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_js_package.zip
-        revision: latest_available_commit
+        revision: b9b952bd24eb9e3fcf0d799bf48df4e0dea41099
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build-type }})
