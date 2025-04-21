@@ -125,6 +125,38 @@ std::string remap_and_patch(const std::string& chat_template) {
     );
 }
 
+std::vector<std::string> read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model) {
+    std::shared_ptr<ov::Node> vocab_decoder_node;
+    for (auto node: model->get_ordered_ops()) {
+        if (node->get_friendly_name().find("VocabDecoder") != std::string::npos) {
+            vocab_decoder_node = node;
+        }
+    }
+    if (!vocab_decoder_node) {
+        return {};
+    }
+
+    auto begins_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(1));
+    auto ends_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(2));
+    auto chars_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(3));
+    if (!begins_node || !ends_node || !chars_node) {
+        return {};
+    }
+
+    auto begins = begins_node->cast_vector<int32_t>();
+    auto ends = ends_node->cast_vector<int32_t>();
+    auto chars = chars_node->cast_vector<uint8_t>();
+
+    std::vector<std::string> vocab_vector;
+    vocab_vector.resize(begins.size());
+    for (size_t i = 0; i < begins.size(); ++i) {
+        const auto begin = begins[i];
+        const auto end = ends[i];
+        vocab_vector[i] = std::string(chars.begin() + begin, chars.begin() + end);
+    };
+    return vocab_vector;
+}
+
 }  // namespace
 
 namespace ov {
@@ -150,6 +182,8 @@ public:
     std::string m_eos_token = {};
 
     std::string m_chat_template = {};
+
+    std::vector<std::string> m_vocab = {};
 
     template <typename T>
     void set_state_value(ov::VariableState& state, std::optional<T> value) {
@@ -307,6 +341,8 @@ public:
                 m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::skip_special_tokens(false)});
             // Initialize detokenizer's cache to save time later.
             decode({1, 33, 199, 42, 42});
+
+            m_vocab = read_vocab_from_detokenizer_model(ov_detokenizer);
         }
     }
 
@@ -708,6 +744,17 @@ std::string Tokenizer::get_chat_template() const {
 
 void Tokenizer::set_chat_template(const std::string& chat_template) {
     m_pimpl->set_chat_template(chat_template);
+}
+
+Vocab Tokenizer::get_vocab() const {
+    OPENVINO_ASSERT(!m_pimpl->m_vocab.empty(), "Tokenizer vocab is empty. Please check if the detokenizer model was provided and loaded correctly.");
+
+    Vocab vocab;
+    vocab.reserve(m_pimpl->m_vocab.size());
+    for (int64_t i = 0; i < m_pimpl->m_vocab.size(); ++i) {
+        vocab[m_pimpl->m_vocab[i]] = i;
+    }
+    return vocab;
 }
 
 Tokenizer::~Tokenizer() = default;
