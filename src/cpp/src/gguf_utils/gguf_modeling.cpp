@@ -158,7 +158,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
 
     const std::string model_arch = std::get<std::string>(config.at("architecture"));
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
-        model = create_llama_model(config, consts);
+        model = create_llama_model(config, consts, qtypes);
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }
