@@ -20,47 +20,6 @@ using namespace ov::op;
 
 static const size_t GGML_QUANTIZATION_GROUP_SIZE = 32;
 
-static inline float fp32_from_bits(uint32_t w) {
-    union {
-        uint32_t as_bits;
-        float as_value;
-    } fp32;
-    fp32.as_bits = w;
-    return fp32.as_value;
-}
-
-static inline uint32_t fp32_to_bits(float f) {
-    union {
-        float as_value;
-        uint32_t as_bits;
-    } fp32;
-    fp32.as_value = f;
-    return fp32.as_bits;
-}
-
-float from_half(uint16_t h) {
-    const uint32_t w = (uint32_t) h << 16;
-    const uint32_t sign = w & UINT32_C(0x80000000);
-    const uint32_t two_w = w + w;
-
-    const uint32_t exp_offset = UINT32_C(0xE0) << 23;
-#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) || defined(__GNUC__) && !defined(__STRICT_ANSI__)
-    const float exp_scale = 0x1.0p-112f;
-#else
-    const float exp_scale = fp32_from_bits(UINT32_C(0x7800000));
-#endif
-    const float normalized_value = fp32_from_bits((two_w >> 4) + exp_offset) * exp_scale;
-
-    const uint32_t magic_mask = UINT32_C(126) << 23;
-    const float magic_bias = 0.5f;
-    const float denormalized_value = fp32_from_bits((two_w >> 17) | magic_mask) - magic_bias;
-
-    const uint32_t denormalized_cutoff = UINT32_C(1) << 27;
-    const uint32_t result = sign |
-        (two_w < denormalized_cutoff ? fp32_to_bits(denormalized_value) : fp32_to_bits(normalized_value));
-    return fp32_from_bits(result);
-}
-
 Output<ov::Node> causal_mask(
     const Output<ov::Node>& attention_mask,
     const Output<ov::Node>& keys,
@@ -497,9 +456,7 @@ ov::Output<ov::Node> make_fp16_weights(
     int head_size) {
 
     auto it = consts.find(key + ".weight");
-    if (it == consts.end()) {
-        throw std::runtime_error("Weight not found: " + key);
-    }
+    OPENVINO_ASSERT(it != consts.end(), "Weight not found: ", key);
     ov::Tensor weight_f16 = it->second;    
 
     // Apply reordering
@@ -517,7 +474,7 @@ ov::Output<ov::Node> make_fp16_weights(
 ov::Tensor get_tensor(const std::unordered_map<std::string, ov::Tensor>& consts,
                     const std::string& key) {
     auto it = consts.find(key);
-    if (it == consts.end()) throw std::runtime_error("Missing tensor: " + key);
+    OPENVINO_ASSERT(it != consts.end(), "Missing tensor: ", key);
     return it->second;
 };
 
@@ -552,7 +509,7 @@ ov::Output<ov::Node> make_int8_weights(
 
     // Create graph nodes
     auto weights_node = std::make_shared<v0::Constant>(ov::element::u8, ov::Shape{orig_shape[0], num_groups, group_size}, static_cast<uint8_t*>(weight.data()), nullptr);
-    weights_node->get_rt_info()["__gguf_tensor_holde"] = weight;
+    weights_node->get_rt_info()["__gguf_tensor_holder"] = weight;
     auto scales_f16 = std::make_shared<ov::op::v0::Constant>(scales);
     ov::Tensor biases_u8(ov::element::u8, scale_shape);
 
@@ -677,7 +634,7 @@ ov::Output<ov::Node> make_weights_subgraph(
         case QType::INT4:
             return make_int4_weights(key, consts, reorder, head_size);
         default:
-            throw std::invalid_argument("Unsupported quantization type");
+            OPENVINO_THROW("Unsupported quantization type");
     }
 }
 
@@ -726,41 +683,6 @@ ov::Output<ov::Node> make_lm_head(
         input, w_f32, false, true);
 }
 
-ov::Output<ov::Node> make_mvn(
-    const std::string& key,
-    const ov::Output<ov::Node>& input,
-    const std::unordered_map<std::string, ov::Tensor>& consts,
-    const std::map<std::string, GGUFMetaData>& configs,
-    const std::string& name_suffix = "") {
-
-    auto eps = std::get<float>(configs.at("layer_norm_eps"));
-    auto reduction_axes = std::make_shared<ov::op::v0::Constant>(
-            ov::element::i64, ov::Shape{1}, -1);
-    auto mvn = std::make_shared<ov::op::v6::MVN>(
-        input, reduction_axes, true, eps, ov::op::MVNEpsMode::INSIDE_SQRT);
-    mvn->set_friendly_name(key + ".mvn" + name_suffix);
-
-    std::shared_ptr<ov::Node> result = mvn;
-
-    if (consts.count(key + ".weight")) {
-        auto weights = std::make_shared<ov::op::v0::Constant>(
-            consts.at(key + ".weight"));
-        weights->set_friendly_name(key + ".weight" + name_suffix);
-        result = std::make_shared<ov::op::v1::Multiply>(
-            mvn, weights, AutoBroadcastType::NUMPY);
-    }
-
-    if (consts.count(key + ".bias")) {
-        auto bias = std::make_shared<ov::op::v0::Constant>(
-            consts.at(key + ".bias"));
-        bias->set_friendly_name(key + ".bias" + name_suffix);
-        result = std::make_shared<ov::op::v1::Add>(
-            mvn, bias, AutoBroadcastType::NUMPY);
-    }
-
-    return result;
-}
-
 ov::Output<ov::Node> make_rms_norm(
     const std::string& key,
     const ov::Output<ov::Node>& input,
@@ -803,15 +725,15 @@ ov::Output<ov::Node> make_rms_norm(
                 }
             }
         } else if (weight_tensor.get_element_type() == ov::element::f16) {
-            const uint16_t* data = weight_tensor.data<uint16_t>();
+            const uint16_t* data = weight_tensor.data<uint16_t>(), one_fp16 = 0x3C00;
             for (size_t i = 0; i < weight_tensor.get_size(); ++i) {
-                if (from_half(data[i]) != 1.0f) { // TODO: convert 1.0f to half instead and compare
+                if (data[i] != one_fp16) {
                     all_ones = false;
                     break;
                 }
             }
         } else {
-            throw std::runtime_error("Unsupported weight type");
+            OPENVINO_THROW("Unsupported weight type ", weight_tensor.get_element_type());
         }
 
         if (!all_ones) {
