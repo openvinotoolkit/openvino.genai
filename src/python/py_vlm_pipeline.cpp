@@ -60,6 +60,7 @@ auto vlm_generate_kwargs_docstring = R"(
     images used in previous prompts isn't implemented.
     A model's native image tag can be used instead of
     <ov_genai_image_i>. These tags are:
+    llava-1.5-7b-hf: <image>
     MiniCPM-V-2_6: (<image>./</image>)\n
     Phi-3-vision: <|image_i|>\n - the index starts with one
     Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>

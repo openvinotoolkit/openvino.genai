@@ -1978,12 +1978,6 @@ class Tokenizer:
         ...
     def get_pad_token_id(self) -> int:
         ...
-    def get_vocab(self) -> dict:
-        """
-        Returns the vocabulary as a Python dictionary with bytes keys and integer values.
-        
-        Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
-        """
     def set_chat_template(self, chat_template: str) -> None:
         """
         Override a chat_template read from tokenizer_config.json.
@@ -2131,6 +2125,7 @@ class VLMPipeline:
             images used in previous prompts isn't implemented.
             A model's native image tag can be used instead of
             <ov_genai_image_i>. These tags are:
+            llava-1.5-7b-hf: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
