@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
                           // the memory.
     size_t output_size = 0;  // Used to store the required size of the output buffer.
 
-    CHECK_STATUS(ov_genai_llm_pipeline_create(model_dir, device, &pipeline));
+    CHECK_STATUS(ov_genai_llm_pipeline_create(model_dir, device, 0, &pipeline));
     CHECK_STATUS(ov_genai_generation_config_create(&config));
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, 100));
     CHECK_STATUS(ov_genai_llm_pipeline_generate(pipeline, prompt, config, NULL, &results));
