@@ -2,6 +2,33 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+#
+# Compile flags
+#
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "^(Apple)?Clang$")
+    set(c_cxx_flags "-Wno-undef")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    # C4146: unary minus operator applied to unsigned type, result still unsigned
+    # C4244: 'argument' : conversion from 'type1' to 'type2', possible loss of data
+    # C4267: 'var' : conversion from 'size_t' to 'type', possible loss of data
+    # C4700: uninitialized local variable 'var' used
+    set(c_cxx_flags "/wd4146 /wd4244 /wd4267 /wd4700 /wd4703")
+endif()
+
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-Wsuggest-override" SUGGEST_OVERRIDE_SUPPORTED)
+if(SUGGEST_OVERRIDE_SUPPORTED)
+    set(cxx_flags "${cxx_flags} -Wno-suggest-override")
+endif()
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${cxx_flags} ${c_cxx_flags}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${c_cxx_flags}")
+
+# Apply for 'Release' explicitly for WA '/sdl' issues
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${cxx_flags} ${c_cxx_flags}")
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${c_cxx_flags}")
+
 # Dependencies
 
 include(FetchContent)
