@@ -30,7 +30,11 @@ auto set_name = [](auto node, const std::string& name) {
 // Also valid for other models, e.g. SmolLMs
 std::shared_ptr<ov::Model> create_llama_model(
     const std::map<std::string, GGUFMetaData>& configs,
-    std::unordered_map<std::string, ov::Tensor>& consts) {
+    std::unordered_map<std::string, ov::Tensor>& consts,
+    std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
+
+    // auto start_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Start generating OV model..." << std::endl;
 
     // Create input parameters
     auto input_ids = std::make_shared<ov::op::v0::Parameter>(
@@ -54,11 +58,9 @@ std::shared_ptr<ov::Model> create_llama_model(
         "model.embed_tokens",
         input_ids->output(0),
         consts,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))));
+        qtypes.at("model.embed_tokens.qtype"));
 
     auto hidden_states = inputs_embeds;
-
-    auto qtype = static_cast<QType>(std::get<int>(configs.at("qtype")));
 
     // Initialize RoPE
     auto rope_const = init_rope(
@@ -86,6 +88,7 @@ std::shared_ptr<ov::Model> create_llama_model(
         auto [new_hidden, layer_sinks, new_mask, new_cos_sin, new_shape] = layer(
             configs,
             consts,
+            qtypes,
             i,
             hidden_states,
             attention_mask,
@@ -119,7 +122,7 @@ std::shared_ptr<ov::Model> create_llama_model(
         final_norm,
         consts,
         embeddings,
-        qtype);
+        qtypes.at("lm_head.qtype"));
 
     // Create results
     auto logits = std::make_shared<ov::op::v0::Result>(embed_out);
@@ -130,10 +133,10 @@ std::shared_ptr<ov::Model> create_llama_model(
     auto model = std::make_shared<ov::Model>(ov::OutputVector({logits->output(0)}), sinks, inputs);
 
     // Set runtime options
-    if (qtype == QType::FP16) {
-        model->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
+    if (std::get<int>(configs.at("file_type")) == 1 || std::get<int>(configs.at("file_type")) == 0) {
+        model->set_rt_info("f16", {"runtime_options", "KV_CACHE_PRECISION"});
     }
-    model->set_rt_info(8.0f, {"runtime_options", ov::hint::activations_scale_factor.name()});
+    model->set_rt_info("8.0", {"runtime_options", "ACTIVATIONS_SCALE_FACTOR"});
 
     return model;
 }
@@ -141,16 +144,22 @@ std::shared_ptr<ov::Model> create_llama_model(
 } // namespace
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
-    auto [config, consts] = load_gguf(model_path);
+    auto start_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Loading and unpacking model from: " << model_path << std::endl;
+    auto [config, consts, qtypes] = load_gguf(model_path);
+    auto load_finish_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Loading and unpacking model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms" << std::endl;
 
     std::shared_ptr<ov::Model> model;
 
     const std::string model_arch = std::get<std::string>(config.at("architecture"));
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
-        model = create_llama_model(config, consts);
+        model = create_llama_model(config, consts, qtypes);
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }
-
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - load_finish_time).count();
+    std::cout << "Model generation done. Time: " << duration << "ms" << std::endl;
     return model;
 }
