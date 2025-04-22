@@ -4,8 +4,11 @@
 from os.path import sep
 from pathlib import Path
 from typing import List
+
 from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
+
+from huggingface_hub import hf_hub_download
 
 from optimum.intel import OVModelForCausalLM
 from openvino import save_model
@@ -203,3 +206,18 @@ def download_and_convert_model(model_id: str, **tokenizer_kwargs):
         hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
     return opt_model, hf_tokenizer, models_path
+
+
+def download_gguf_model(gguf_model_id: str,
+                        gguf_filename: str):
+    gguf_dir_name = str(gguf_model_id).replace(sep, "_")
+    ov_cache_models_dir = get_ov_cache_models_dir()
+    models_path_gguf = ov_cache_models_dir / gguf_dir_name
+
+    gguf_path = hf_hub_download(
+        repo_id=gguf_model_id,
+        filename=gguf_filename,
+        local_dir=models_path_gguf # Optional: Specify download directory
+    )
+
+    return gguf_path
