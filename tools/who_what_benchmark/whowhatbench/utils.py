@@ -1,4 +1,5 @@
 from typing import Union, Tuple, List, Optional
+from packaging.version import Version
 import torch
 from contextlib import contextmanager
 
@@ -64,9 +65,8 @@ def patch_awq_for_inference(to_patch):
 
             out_shape = x.shape[:-1] + (out_features,)
             x = x.to(torch.float16)
-
-            out = dequantize_gemm(qweight, qzeros, scales, w_bit, group_size)
-            out = torch.matmul(x, out)
+            out = dequantize_gemm(qweight.to(torch.int32), qzeros.to(torch.int32), scales, w_bit, group_size)
+            out = torch.matmul(x, out.to(x.dtype))
 
             out = out + bias if bias is not None else out
             out = out.reshape(out_shape)
@@ -82,3 +82,13 @@ def patch_awq_for_inference(to_patch):
     finally:
         if orig_gemm_forward is not None:
             WQLinearMMFunction.forward = orig_gemm_forward
+
+
+def get_ignore_parameters_flag():
+    from transformers import __version__
+
+    transformers_version = Version(__version__)
+
+    if transformers_version >= Version("4.51.0"):
+        return {"use_model_defauls": False}
+    return {}

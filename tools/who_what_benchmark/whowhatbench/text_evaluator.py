@@ -3,10 +3,9 @@ from typing import Any, Union
 import os
 import pandas as pd
 from tqdm import tqdm
-
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
-from .utils import patch_awq_for_inference
+from .utils import patch_awq_for_inference, get_ignore_parameters_flag
 
 default_data = {
     "en": {
@@ -201,9 +200,10 @@ class TextEvaluator(BaseEvaluator):
 
             if is_awq:
                 with patch_awq_for_inference(is_awq):
-                    tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
+                    tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag()
+)
             else:
-                tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
+                tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
             if crop_question:
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
             return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
