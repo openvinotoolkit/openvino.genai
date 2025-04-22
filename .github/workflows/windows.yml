@@ -23,7 +23,7 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/16042025
+  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win
 
 jobs:
   openvino_download:
