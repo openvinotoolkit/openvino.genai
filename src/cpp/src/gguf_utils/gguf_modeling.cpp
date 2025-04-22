@@ -131,9 +131,9 @@ std::shared_ptr<ov::Model> create_llama_model(
 
     // Set runtime options
     if (qtype == QType::FP16) {
-        model->set_rt_info("f16", {"runtime_options", "KV_CACHE_PRECISION"});
+        model->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     }
-    model->set_rt_info("8.0", {"runtime_options", "ACTIVATIONS_SCALE_FACTOR"});
+    model->set_rt_info(8.0f, {"runtime_options", ov::hint::activations_scale_factor.name()});
 
     return model;
 }

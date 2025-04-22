@@ -17,7 +17,7 @@ import os
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_models_dir
+from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
 
 from utils.network import retry_request
 from typing import Any, List, Dict
@@ -141,7 +141,7 @@ def run_huggingface(
             "max_new_tokens": min(config.max_new_tokens, 444),
             "top_p": config.top_p,
             "do_sample": config.do_sample,
-        },
+        } | extra_generate_kwargs(),
     )
 
 
@@ -213,7 +213,7 @@ def run_pipeline_with_ref(
     streamer: typing.Callable[[str], bool] | None = None,
 ):
     _, _, hf_pipe, genai_pipe = read_whisper_model((model_id, tmp_path))
-    _, _, hf_with_past_pipe, genai_with_past_pipe = read_whisper_model(
+    _, _, _, genai_with_past_pipe = read_whisper_model(
         (model_id, tmp_path), stateful=False
     )
 
