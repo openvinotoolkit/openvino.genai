@@ -320,7 +320,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     int64_t vision_start_token_id = encoded_vision_start_token.data<int64_t>()[encoded_vision_start_token.get_size() - 1];
     int64_t image_pad_token_id = encoded_image_pad_token.data<int64_t>()[encoded_image_pad_token.get_size() - 1];
 
-    m_position_ids = create_position_ids(input_ids, images_grid_thw, vision_start_token_id);
+    m_position_ids = create_position_ids(input_ids, images_grid_thw, images_sequence, m_image_id, vision_start_token_id);
 
     int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
     m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
@@ -602,8 +602,15 @@ ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::arra
 ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
     const ov::Tensor& input_ids_tensor,
     const std::vector<std::array<size_t, 3>>& images_grid_thw,
+    const std::vector<size_t>& images_sequence,
+    const size_t image_id,
     const int64_t vision_start_token_id) {
     const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
+
+    std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
+    for (size_t new_image_id : images_sequence) {
+        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id - image_id));
+    }
     
     const int64_t* input_ids = input_ids_tensor.data<int64_t>();
     size_t batch_size = input_ids_tensor.get_shape().at(0);
@@ -644,8 +651,8 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
         ed++;
 
         // Process image token with grid
-        if (grid_idx < images_grid_thw.size()) {
-            const auto& grid = images_grid_thw.at(grid_idx);
+        if (grid_idx < reordered_images_grid_thw.size()) {
+            const auto& grid = reordered_images_grid_thw.at(grid_idx);
             size_t llm_grid_h = grid.at(1) / spatial_merge_size;
             size_t llm_grid_w = grid.at(2) / spatial_merge_size;
             size_t ed_image = ed + llm_grid_h * llm_grid_w;
