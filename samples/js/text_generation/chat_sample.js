@@ -1,5 +1,6 @@
 import readline from 'readline';
 import { LLMPipeline } from 'openvino-genai-node';
+import { basename } from 'node:path';
 
 main();
 
@@ -10,9 +11,13 @@ function streamer(subword) {
 async function main() {
   const MODEL_PATH = process.argv[2];
 
+  if (process.argv.length > 3) {
+    console.error(`Run command must be: 'node ${basename(process.argv[1])} *path_to_model_dir*'`);
+    process.exit(1);
+  }
   if (!MODEL_PATH) {
     console.error('Please specify path to model directory\n'
-                  + 'Run command must be: `node chat_sample.js *path_to_model_dir*`');
+                  + `Run command must be: 'node ${basename(process.argv[1])} *path_to_model_dir*'`);
     process.exit(1);
   }
 

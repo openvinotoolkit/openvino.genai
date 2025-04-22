@@ -180,12 +180,8 @@ public:
         );
     }
 
-    /// @brief Activate chat mode. Chat preserves previous history and
-    /// applies chat_template to input prompts. Calling start_chat()
-    /// again or finish_chat() drops the memorized history.
-    /// It's possible to disable
-    /// chat_template application by calling
-    /// set_chat_template("{% for message in messages %}{{ message['content'] }}{% endfor %}")
+    /// @brief Activate chat mode. Chat preserves previous history.
+    /// Calling start_chat() again or finish_chat() drops the memorized history.
     /// @param system_message Some chat_templates contain system role
     /// in addition to user and assistant roles. Set a message for that
     /// role.
