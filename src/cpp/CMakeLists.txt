@@ -64,6 +64,10 @@ if(ENABLE_GGUF)
     add_library(gguflib STATIC ${gguflib_SOURCE_DIR}/fp16.c ${gguflib_SOURCE_DIR}/gguflib.c)
     set_target_properties(gguflib PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_include_directories(gguflib PUBLIC "${gguflib_SOURCE_DIR}")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        string(REPLACE "/sdl" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+        string(REPLACE "/sdl" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
+    endif()
 endif()
 
 # generate version files
