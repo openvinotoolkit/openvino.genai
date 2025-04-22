@@ -60,13 +60,11 @@ if(ENABLE_GGUF)
       URL https://github.com/Lourdle/gguf-tools/archive/bac796ada809ac293e685db59b075971181cb008.zip
       URL_HASH SHA256=4d6eab5055468d222833f3f83fe2f7909ccd06114278c2c0b468570ef002c22d)
     FetchContent_MakeAvailable(gguflib)
+    set_target_properties(gguf-tools PROPERTIES EXCLUDE_FROM_ALL ON)
 
     add_library(gguflib STATIC ${gguflib_SOURCE_DIR}/fp16.c ${gguflib_SOURCE_DIR}/gguflib.c)
     set_target_properties(gguflib PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_include_directories(gguflib PUBLIC "${gguflib_SOURCE_DIR}")
-    if(MSVC)
-        target_compile_options(gguf-tools PRIVATE "/sdl-")
-    endif()
 endif()
 
 # generate version files
