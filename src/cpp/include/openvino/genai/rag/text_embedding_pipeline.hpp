@@ -21,7 +21,7 @@ public:
         MEAN = 1,
     };
 
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         std::optional<size_t> max_length;
         PoolingType pooling_type = PoolingType::CLS;
         bool normalize = false;
