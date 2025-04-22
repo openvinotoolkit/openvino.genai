@@ -9,7 +9,7 @@ from pathlib import Path
 from shutil import rmtree
 from typing import Dict
 
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model, GenerationFinishReason
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
@@ -17,7 +17,7 @@ from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from utils.hugging_face import download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type
+from utils.ov_genai_pipelines import create_ov_pipeline, create_ov_cb_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type
 from data.models import get_chat_models_list
 from data.test_dataset import get_test_dataset
 
@@ -43,7 +43,7 @@ def test_e2e_precommit(model_id):
     generate_and_compare(prompts=prompts,
                          generation_config=generation_configs,
                          model=model_id,
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 
 @pytest.mark.nightly
@@ -53,7 +53,7 @@ def test_e2e_nightly(model_id):
     generate_and_compare(prompts=prompts,
                          generation_config=generation_config,
                          model=model_id, 
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 
 @pytest.mark.real_models
@@ -63,7 +63,7 @@ def test_e2e_real_models(model_id):
     generate_and_compare(prompts=prompts,
                          generation_config=generation_config,
                          model=model_id,
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 #
 # Comparison with stateful
@@ -158,6 +158,45 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict, pip
     # Test that finish_chat() doesn't fail just in case.
     cb_pipe.finish_chat()
 
+
+generation_configs = [
+    dict(do_sample=False, max_new_tokens=20),
+    dict(do_sample=True, max_new_tokens=20, temperature=0.7),
+    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0, repetition_penalty=1.0)
+]
+questions = [
+    '1+1=',
+    'Why is the Sun yellow?',
+]
+@pytest.mark.parametrize("generation_config_kwargs", generation_configs)
+@pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("pipeline_type", [PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING,])
+@pytest.mark.precommit
+def test_continuous_batching_add_request_health_check(model_id, generation_config_kwargs: Dict, pipeline_type):
+    _, _, models_path = download_and_convert_model(model_id)
+
+    cb_pipe = create_ov_cb_pipeline(models_path, pipeline_type=pipeline_type)
+
+    generation_config = GenerationConfig(**generation_config_kwargs)
+
+    if generation_config.is_beam_search() and pipeline_type != PipelineType.CONTINUOUS_BATCHING:
+        pytest.skip("Assisted generation does not support beam search")
+
+    generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
+    handles = []
+    for idx, question in enumerate(questions):
+        handle = cb_pipe.add_request(idx, question, generation_config=generation_config)
+        handles.append(handle)
+
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+        
+    for handle in handles:
+        outputs = handle.read_all()
+        for output in outputs:
+            assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
+
+
 #
 # Stress tests to check OOM case
 #
@@ -178,7 +217,7 @@ def test_post_oom_health(sampling_config):
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
 
     cb_pipe = create_ov_pipeline(models_path,
-                                 pipeline_type=PipelineType.CONTINIOUS_BATCHING,
+                                 pipeline_type=PipelineType.CONTINUOUS_BATCHING,
                                  device="CPU",
                                  scheduler_config=scheduler_config)
 
@@ -232,7 +271,7 @@ def test_preemption(params):
 
     prompts, _ = get_test_dataset()
     generate_and_compare(prompts=prompts,
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING,
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING,
                          model=model_id,
                          scheduler_config=scheduler_params,
                          generation_config=generation_config)
@@ -288,7 +327,7 @@ def test_preemption_with_multinomial(dynamic_split_fuse):
 
     scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare(model=models_path,
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING,
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING,
                          prompts=multinomial_params.prompts,
                          ref=multinomial_params.ref_texts,
                          generation_config=generation_configs,
@@ -369,7 +408,7 @@ def test_preemption_with_multinomial_n_seq(dynamic_split_fuse):
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
     scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare(model=models_path,
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING,
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING,
                          prompts=multinomial_params_n_seq.prompts,
                          ref=multinomial_params_n_seq.ref_texts,
                          generation_config=multinomial_params_n_seq.generation_config,

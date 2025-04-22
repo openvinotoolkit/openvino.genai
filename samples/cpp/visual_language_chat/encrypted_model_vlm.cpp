@@ -9,9 +9,9 @@
 
 std::pair<std::string, ov::Tensor> decrypt_model(const std::filesystem::path& model_dir, const std::string& model_file_name, const std::string& weights_file_name) {
     std::ifstream model_file(model_dir / model_file_name);
-    std::ifstream weights_file();
+    std::ifstream weights_file;
     if (!model_file.is_open()) {
-        throw std::runtime_error("Cannot open model or weights file");
+        throw std::runtime_error("Cannot open model file");
     }
     std::string model_str((std::istreambuf_iterator<char>(model_file)), std::istreambuf_iterator<char>());
 
@@ -28,6 +28,39 @@ ov::genai::Tokenizer decrypt_tokenizer(const std::filesystem::path& models_path)
     auto [detok_model_str, detok_weights_tensor] = decrypt_model(models_path, "openvino_detokenizer.xml", "openvino_detokenizer.bin");
 
     return ov::genai::Tokenizer(tok_model_str, tok_weights_tensor, detok_model_str, detok_weights_tensor);
+}
+
+static const char codec_key[] = {0x30, 0x60, 0x70, 0x02, 0x04, 0x08, 0x3F, 0x6F, 0x72, 0x74, 0x78, 0x7F};
+
+std::string codec_xor(const std::string& source_str) {
+    auto key_size = sizeof(codec_key);
+    int key_idx = 0;
+    std::string dst_str = source_str;
+    for (char& c : dst_str) {
+        c ^= codec_key[key_idx % key_size];
+        key_idx++;
+    }
+    return dst_str;
+}
+
+std::string encryption_callback(const std::string& source_str) {
+    return codec_xor(source_str);
+}
+
+std::string decryption_callback(const std::string& source_str) {
+    return codec_xor(source_str);
+}
+
+auto get_config_for_cache_encryption() {
+    ov::AnyMap config;
+    config.insert({ov::cache_dir("llm_cache")});
+    ov::EncryptionCallbacks encryption_callbacks;
+    //use XOR-based encryption as an example
+    encryption_callbacks.encrypt = encryption_callback;
+    encryption_callbacks.decrypt = decryption_callback;
+    config.insert(ov::cache_encryption_callbacks(encryption_callbacks));
+    config.insert(ov::cache_mode(ov::CacheMode::OPTIMIZE_SIZE));
+    return config;
 }
 
 bool print_subword(std::string&& subword) {
@@ -61,7 +94,7 @@ int main(int argc, char* argv[]) try {
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
-        enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
+        enable_compile_cache = get_config_for_cache_encryption();
     }
     ov::genai::VLMPipeline pipe(models_map, tokenizer, models_path,  device, enable_compile_cache);
 

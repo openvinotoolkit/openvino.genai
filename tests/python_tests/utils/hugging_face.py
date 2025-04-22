@@ -9,6 +9,9 @@ from transformers import GenerationConfig as HFGenerationConfig
 
 from optimum.intel import OVModelForCausalLM, OVModelForFeatureExtraction
 from optimum.intel.openvino.modeling import OVModel
+
+from huggingface_hub import hf_hub_download
+
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
@@ -213,3 +216,18 @@ def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tok
         hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
     return opt_model, hf_tokenizer, models_path
+
+
+def download_gguf_model(gguf_model_id: str,
+                        gguf_filename: str):
+    gguf_dir_name = str(gguf_model_id).replace(sep, "_")
+    ov_cache_models_dir = get_ov_cache_models_dir()
+    models_path_gguf = ov_cache_models_dir / gguf_dir_name
+
+    gguf_path = hf_hub_download(
+        repo_id=gguf_model_id,
+        filename=gguf_filename,
+        local_dir=models_path_gguf # Optional: Specify download directory
+    )
+
+    return gguf_path
