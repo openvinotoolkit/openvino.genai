@@ -3,7 +3,7 @@
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino-tokenizers~=2025.2.0.0.dev
 optimum-intel[nncf] @ git+https://github.com/huggingface/optimum-intel.git@main
-numpy<2.0.0
+numpy<2.0.0; sys_platform == 'darwin'
 einops==0.8.1  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.33.1 # For image generation pipelines
