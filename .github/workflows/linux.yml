@@ -54,7 +54,7 @@ jobs:
       id: openvino_download
       with:
         platform: ubuntu22
-        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_js_package.tar.gz
+        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_js_package.tar.gz,openvino-node-2025.2.0.tgz
         revision: latest_available_commit
 
     - name: Clone docker tag from OpenVINO repo
@@ -661,7 +661,7 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
-          npm install ${{ env.OV_INSTALL_DIR }}/openvino_js_package/openvino-node-*
+          npm install ${{ env.OV_INSTALL_DIR }}/openvino-node-*
           npm install --verbose
 
       - name: Check lint
@@ -675,7 +675,7 @@ jobs:
       - name: Install openvino-genai-node samples dependencies
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
-          npm install ${{ env.OV_INSTALL_DIR }}/openvino_js_package/openvino-node-*
+          npm install ${{ env.OV_INSTALL_DIR }}/openvino-node-*
           npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
 
