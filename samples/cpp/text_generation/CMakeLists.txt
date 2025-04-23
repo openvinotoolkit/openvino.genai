@@ -23,7 +23,6 @@ endfunction()
 set (SAMPLE_LIST
     greedy_causal_lm
     encrypted_model_causal_lm
-    gguf_example
     beam_search_causal_lm
     chat_sample
     lora_greedy_causal_lm
