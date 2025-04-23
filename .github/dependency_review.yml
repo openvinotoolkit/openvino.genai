@@ -8,6 +8,7 @@ allow-licenses:
   - 'BlueOak-1.0.0'
   - '0BSD'
   - 'Python-2.0'
+  - 'MIT-CMU'  # Pillow's license
 fail-on-scopes:
   - 'runtime'
   - 'development'
