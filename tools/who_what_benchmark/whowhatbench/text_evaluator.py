@@ -200,8 +200,7 @@ class TextEvaluator(BaseEvaluator):
 
             if is_awq:
                 with patch_awq_for_inference(is_awq):
-                    tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag()
-)
+                    tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
             else:
                 tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
             if crop_question:
