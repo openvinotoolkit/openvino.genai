@@ -90,5 +90,5 @@ def get_ignore_parameters_flag():
     transformers_version = Version(__version__)
 
     if transformers_version >= Version("4.51.0"):
-        return {"use_model_defauls": False}
+        return {"use_model_defaults": False}
     return {}
