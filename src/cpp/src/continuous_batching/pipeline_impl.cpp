@@ -65,11 +65,15 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
+    // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
+    m_sampler.reset();
+    m_adapter_controller.reset();
+    m_model_runner.reset();
+
     if (m_scheduler) {
         m_scheduler->release();
+        m_scheduler.reset();
     }
-
-    utils::release_core_plugin(m_device);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {

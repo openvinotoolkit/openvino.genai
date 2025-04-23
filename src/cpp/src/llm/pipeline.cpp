@@ -336,6 +336,7 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
 }
 
 ov::genai::LLMPipeline::~LLMPipeline() {
+    m_pimpl.reset();
     utils::release_core_plugin(m_device);
 }
 

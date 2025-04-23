@@ -136,5 +136,7 @@ public:
      * Ends chat
      */
     void finish_chat();
+
+    ~IContinuousBatchingPipeline();
 };
 }

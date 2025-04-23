@@ -746,6 +746,17 @@ Vocab Tokenizer::get_vocab() const {
     return vocab;
 }
 
-Tokenizer::~Tokenizer() = default;
+Tokenizer::~Tokenizer() {
+    m_pimpl.reset();
+
+    // release CPU plugin ()
+    try {
+        get_core_singleton().unload_plugin("CPU");
+    } catch (const ov::Exception&) {
+        // Note: in a theory it can throw an exception when 2 different Tokenizers are created from
+        // different threads and then both of them unload plugin for 'device' from ov::Core
+    }
+}
+
 }  // namespace genai
 }  // namespace ov
