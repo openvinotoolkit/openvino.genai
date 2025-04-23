@@ -5,7 +5,9 @@ import GenAISamplesDocsPlugin from './src/plugins/genai-samples-docs-plugin';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
-const organizationName = 'openvinotoolkit';
+// GITHUB_REPOSITORY env var is set by GitHub Actions
+const GITHUB_REPOSITORY = process.env.GITHUB_REPOSITORY || 'openvinotoolkit/openvino.genai';
+const [organizationName, projectName] = GITHUB_REPOSITORY.split('/');
 // GITHUB_REPOSITORY is set by GitHub Actions
 const projectName = `${process.env.GITHUB_REPOSITORY?.split('/')[1] || 'openvino.genai'}`
 
