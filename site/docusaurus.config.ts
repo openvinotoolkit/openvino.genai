@@ -7,7 +7,7 @@ import GenAISamplesDocsPlugin from './src/plugins/genai-samples-docs-plugin';
 
 const organizationName = 'openvinotoolkit';
 // GITHUB_REPOSITORY is set by GitHub Actions
-const projectName = `/${process.env.GITHUB_REPOSITORY?.split('/')[1] || 'openvino.genai'}/`
+const projectName = `${process.env.GITHUB_REPOSITORY?.split('/')[1] || 'openvino.genai'}`
 
 const config: Config = {
   title: 'OpenVINO GenAI',
