@@ -27,7 +27,6 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                         prompt_index, bench_hook, tokens_len, streaming, model_precision, proc_id, mem_consumption):
-    
     from optimum.intel.utils.import_utils import is_transformers_version
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
@@ -65,7 +64,6 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         if args['infer_count'] is not None and args['end_token_stopping'] is False:
             model.generation_config.eos_token_id = None
             model.config.eos_token_id = None
-            
             result = model.generate(
                 **input_data,
                 max_new_tokens=int(max_gen_tokens),
@@ -73,7 +71,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
                 use_cache=True,
                 eos_token_id=None,
                 do_sample=False,
-                streamer=OptimumChunkStreamer(tokenizer, tokens_len=tokens_len)
+                streamer=OptimumChunkStreamer(tokenizer, tokens_len=tokens_len),
                 **additional_args
             )
         else:
@@ -83,7 +81,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
                 num_beams=args['num_beams'],
                 use_cache=True,
                 do_sample=False,
-                streamer=OptimumChunkStreamer(tokenizer, tokens_len=tokens_len)
+                streamer=OptimumChunkStreamer(tokenizer, tokens_len=tokens_len),
                 **additional_args
             )
     else:
