@@ -114,12 +114,7 @@ void gguf_load_quantized(
 
   auto shape = get_shape(tensor);
   const uint64_t weights_per_block = 32;
-  if (shape[shape.size() - 1] % weights_per_block != 0) {
-    std::ostringstream msg;
-    msg << "[load_gguf] tensor " << name
-        << "has incompatible last dim shape: " << shape[shape.size() - 1];
-    throw std::runtime_error(msg.str());
-  }
+  OPENVINO_ASSERT(shape.back() % weights_per_block == 0, "[load_gguf] tensor ", name, " has incompatible last dim shape: ", shape.back());
 
   auto weights_shape = shape;
   weights_shape.back() /= (weights_per_byte * 4);
@@ -144,22 +139,18 @@ void gguf_load_quantized(
     extract_q4_1_data(tensor, weights, scales, biases);
   } else if (tensor.type == GGUF_TYPE_Q8_0) {
     extract_q8_0_data(tensor, weights, scales, biases);
+  } else {
+    OPENVINO_ASSERT("Unsupported tensor type in 'gguf_load_quantized'");
   }
 
   a.emplace(name, std::move(weights));
 
   auto check_insert = [](const auto& inserted) {
-    if (!inserted.second) {
-      std::ostringstream msg;
-      msg << "[load_gguf] Duplicate parameter name " << inserted.first->second.data()
-          << " this can happend when loading quantized tensors.";
-      throw std::runtime_error(msg.str());
-    }
+    OPENVINO_ASSERT(inserted.second, "[load_gguf] Duplicate parameter name ", inserted.first->second.data(),". This can happend when loading quantized tensors");
   };
 
   constexpr std::string_view weight_suffix = ".weight";
-  const std::string name_prefix =
-      name.substr(0, name.length() - weight_suffix.length());
+  const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
   check_insert(a.emplace(name_prefix + ".scales", std::move(scales)));
   check_insert(a.emplace(name_prefix + ".biases", std::move(biases)));
 }
