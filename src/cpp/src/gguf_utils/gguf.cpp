@@ -102,14 +102,14 @@ ov::Tensor extract_tensor_data(gguf_tensor* tensor) {
   // Otherwise, we convert to float16.
   // TODO: Add other dequantization options.
   int16_t* data = gguf_tensor_to_f16(tensor);
+  OPENVINO_ASSERT(data != nullptr, "[load_gguf] gguf_tensor_to_f16 failed");
+
   auto shape = get_shape(*tensor);
-  if (data == NULL) {
-    throw std::runtime_error("[load_gguf] gguf_tensor_to_f16 failed");
-  }
   const size_t new_size = tensor->num_weights * sizeof(int16_t);
   ov::Tensor weights(ov::element::f16, shape);
   memcpy(weights.data(), data, new_size);
   free(data);
+
   return weights;
 }
 
@@ -171,10 +171,7 @@ void set_value_from_gguf(
       ctx->off += gguf_array_header_size; // Skip header
       char* data = reinterpret_cast<char*>(val) + gguf_array_header_size;
       auto size = static_cast<size_t>(val->array.len);
-      if (val->array.type == GGUF_VALUE_TYPE_ARRAY) {
-        throw std::invalid_argument(
-            "[load_gguf] Only supports loading 1-layer of nested arrays.");
-      }
+      OPENVINO_ASSERT(val->array.type != GGUF_VALUE_TYPE_ARRAY, "[load_gguf] Only supports loading 1-layer of nested arrays.");
       switch (val->array.type) {
         case GGUF_VALUE_TYPE_UINT8:
           value = ov::Tensor(ov::element::u8, {size}, reinterpret_cast<uint8_t*>(data));
@@ -221,15 +218,15 @@ void set_value_from_gguf(
           value = ov::Tensor(ov::element::f64, {size}, reinterpret_cast<double*>(data));
           break;
         default:
-          throw std::runtime_error(
-              "[load_gguf] Multiple levels of nested arrays are not supported.");
+          OPENVINO_THROW("[load_gguf] Multiple levels of nested arrays are not supported.");
       }
       break;
     }
     default:
-      throw std::runtime_error("[load_gguf] Received unexpected type.");
+      OPENVINO_THROW("[load_gguf] Received unexpected type.");
       break;
   }
+
   if (type == GGUF_VALUE_TYPE_STRING) {
     ctx->off += (sizeof(gguf_string) + std::get<std::string>(value).size());
   } else if (auto pv = std::get_if<ov::Tensor>(&value); pv) {
@@ -253,12 +250,7 @@ std::unordered_map<std::string, ov::Tensor> load_arrays(gguf_ctx* ctx) {
   gguf_tensor tensor;
 
   auto check_insert = [](const auto& inserted) {
-    if (!inserted.second) {
-      std::ostringstream msg;
-      msg << "[load_gguf] Duplicate parameter name " << inserted.first->first
-          << " this can happend when loading quantized tensors.";
-      throw std::runtime_error(msg.str());
-    }
+    OPENVINO_ASSERT(inserted.second,  "[load_gguf] Duplicate parameter name '", inserted.first->first, "'. This can happen when loading quantized tensors.");
   };
 
   while (gguf_get_tensor(ctx, &tensor)) {
@@ -271,6 +263,7 @@ std::unordered_map<std::string, ov::Tensor> load_arrays(gguf_ctx* ctx) {
       check_insert(array_map.insert({name, loaded_array}));
     }
   }
+
   return array_map;
 }
 
@@ -280,17 +273,14 @@ GGUFLoad get_gguf_data(const std::string& file) {
     std::ifstream f(file.c_str());
     exists = f.good();
   }
-  if (!exists) {
-    throw std::invalid_argument("[load_gguf] Failed to open " + file);
-  }
+  OPENVINO_ASSERT(exists, "[load_gguf] Failed to open '", file, "'");
 
-  std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx(
-      gguf_open(file.data()), gguf_close);
-  if (!ctx) {
-    throw std::runtime_error("[load_gguf] gguf_init failed");
-  }
+  std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx(gguf_open(file.data()), gguf_close);
+  OPENVINO_ASSERT(ctx, "Failed to open '", file, "' with gguf_open");
+
   auto metadata = load_metadata(ctx.get());
   auto arrays = load_arrays(ctx.get());
+
   return {metadata, arrays};
 }
 
@@ -308,8 +298,7 @@ QType get_quantization_type(int gguf_type) {
             return QType::INT8;
             
         default:
-            throw std::invalid_argument(
-                "Unsupported GGUF quantization type: " + std::to_string(gguf_type));
+          OPENVINO_THROW("Unsupported GGUF quantization type: ", std::to_string(gguf_type));
     }
 }
 
