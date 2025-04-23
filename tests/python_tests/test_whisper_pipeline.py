@@ -89,7 +89,7 @@ def read_whisper_model(params, stateful=True):
         model_id,
         path,
         hf_pipe,
-        ov_genai.WhisperPipeline(path, "CPU", **{"ENABLE_MMAP": False}),
+        ov_genai.WhisperPipeline(path, "CPU", ENABLE_MMAP=False),
     )
 
 
@@ -131,6 +131,15 @@ def run_huggingface(
 ):
     if not config:
         config = ov_genai.WhisperGenerationConfig()
+
+    from optimum.intel.utils.import_utils import is_transformers_version
+    if is_transformers_version(">=", "4.51"):
+        if hasattr(pipeline.model.config, 'forced_decoder_ids'):
+            pipeline.model.config.forced_decoder_ids = None
+
+        if hasattr(pipeline.model, 'generation_config'):
+            if hasattr(pipeline.model.generation_config, 'forced_decoder_ids'):
+                pipeline.model.generation_config.forced_decoder_ids = None
 
     return pipeline(
         sample,
