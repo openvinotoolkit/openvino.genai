@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import numpy as np
-import functools
 import pytest
 import gc
 import numpy as np
@@ -31,8 +30,9 @@ def run_gc_after_test():
     gc.collect()
 
 
-@functools.lru_cache()
-def get_dataset_documents(chunk_size=200):
+@pytest.fixture(scope="module")
+def dataset_documents(chunk_size=200):
+    print("dataset_documents")
     return [
         TEXT_DATASET[i : i + chunk_size]
         for i in range(0, len(TEXT_DATASET), chunk_size)
@@ -97,7 +97,6 @@ def run_pipeline_with_ref(
 
 
 @pytest.mark.parametrize("model_id", TEST_MODELS)
-@pytest.mark.parametrize("documents", [get_dataset_documents()])
 @pytest.mark.parametrize(
     "config",
     [
@@ -118,5 +117,5 @@ def run_pipeline_with_ref(
     ],
 )
 @pytest.mark.precommit
-def test_embeddings(model_id, documents, config):
-    run_pipeline_with_ref(model_id, documents, config)
+def test_embeddings(model_id, dataset_documents, config):
+    run_pipeline_with_ref(model_id, dataset_documents, config)
