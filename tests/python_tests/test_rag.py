@@ -13,6 +13,7 @@ from langchain_community.embeddings import OpenVINOBgeEmbeddings
 
 TEST_MODELS = [
     "sentence-transformers/all-mpnet-base-v2",
+    "BAAI/bge-small-en-v1.5",
 ]
 
 TEXT_DATASET = f"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aliquam tempus mollis suscipit. Pellentesque id suscipit magna. Pellentesque condimentum magna vel nisi condimentum suscipit. Interdum et malesuada fames ac ante ipsum primis in faucibus. Duis a urna ac eros accumsan commodo non non magna. Aenean mattis commodo urna, ac interdum turpis semper eu. Ut ut pharetra quam. Suspendisse erat tortor, vulputate sit amet quam eu, accumsan facilisis est. Ut varius nibh quis suscipit tempor. Pellentesque luctus, turpis id hendrerit condimentum, urna augue ultricies elit, vitae lacinia mauris enim id lacus.\
@@ -58,7 +59,11 @@ def run_langchain(
     if not config:
         config = TextEmbeddingPipeline.Config()
 
-    encode_kwargs = {"normalize_embeddings": config.normalize}
+    encode_kwargs = {
+        "normalize_embeddings": config.normalize,
+        # batch size affects the result
+        "batch_size": len(documents),
+    }
     if config.pooling_type == TextEmbeddingPipeline.PoolingType.MEAN:
         encode_kwargs["mean_pooling"] = True
 
@@ -84,8 +89,11 @@ def run_pipeline_with_ref(
     np_genai_result = np.array(genai_result)
     np_langchain_result = np.array(langchain_result)
 
-    print(f"Max error: {np.abs(np_genai_result - np_langchain_result).max()}")
-    assert np.abs(np_genai_result - np_langchain_result).max() < 1e-6
+    max_error = np.abs(np_genai_result - np_langchain_result).max()
+    print(f"Max error: {max_error}")
+    assert (
+        np.abs(np_genai_result - np_langchain_result).max() < 1e-6
+    ), f"Max error: {max_error}"
 
 
 @pytest.mark.parametrize("model_id", TEST_MODELS)

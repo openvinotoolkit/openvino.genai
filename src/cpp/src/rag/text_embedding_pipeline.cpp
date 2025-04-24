@@ -96,10 +96,22 @@ private:
     AnyMap m_tokenization_params;
 
     std::vector<EmbeddingResult> embed(std::vector<std::string>& texts) {
-        const auto tokenized_inputs = m_tokenizer.encode(texts, m_tokenization_params);
+        const auto encoded = m_tokenizer.encode(texts);
 
-        m_request.set_tensor("input_ids", tokenized_inputs.input_ids);
-        m_request.set_tensor("attention_mask", tokenized_inputs.attention_mask);
+        m_request.set_tensor("input_ids", encoded.input_ids);
+        m_request.set_tensor("attention_mask", encoded.attention_mask);
+
+        // fill token_type_ids
+        // todo: pass token_type_ids from tokenizer
+        for (auto& input : m_request.get_compiled_model().inputs()) {
+            if (input.get_any_name() == "token_type_ids") {
+                ov::Tensor token_type_ids{ov::element::i64, encoded.input_ids.get_shape()};
+                std::fill_n(token_type_ids.data<int64_t>(), encoded.input_ids.get_size(), 0);
+                m_request.set_tensor("token_type_ids", token_type_ids);
+                break;
+            }
+        }
+
         m_request.infer();
 
         // [batch_size, hidden_size]
@@ -212,6 +224,8 @@ private:
         auto sum_hidden_state =
             std::make_shared<op::v1::ReduceSum>(last_hidden_node_with_applied_attention_mask, axis_1);
 
+        // f32 overflow possible
+        // ReduceMean might help with overflow but its precision diverges from LlamaIndex
         auto sum_expanded_mask = std::make_shared<op::v1::ReduceSum>(input_mask_expanded_convert, axis_1);
 
         auto nearest_to_zero =
