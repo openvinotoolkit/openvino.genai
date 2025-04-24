@@ -66,6 +66,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
+    m_model_runner->get_infer_request().get_compiled_model().release_memory();
+
+    // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
     m_sampler.reset();
     m_adapter_controller.reset();
     m_model_runner.reset();
