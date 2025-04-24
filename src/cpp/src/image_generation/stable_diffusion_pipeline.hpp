@@ -36,7 +36,8 @@ public:
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
-        set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
+        for (size_t i = 0; i < 4; i++)
+            set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"), i);
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
@@ -78,7 +79,8 @@ public:
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
-        set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
+        for (size_t i = 0; i < 4; i++)
+            set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"), i);
 
         auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
 
@@ -254,13 +256,13 @@ public:
         return std::make_tuple(latent, proccesed_image, image_latent, noise);
     }
 
-    void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
+    void set_lora_adapters(std::optional<AdapterConfig> adapters, size_t request_idx = 0) override {
         if(adapters) {
             if(auto updated_adapters = derived_adapters(*adapters)) {
                 adapters = updated_adapters;
             }
-            m_clip_text_encoder->set_adapters(adapters);
-            m_unet->set_adapters(adapters);
+            m_clip_text_encoder->set_adapters(adapters, request_idx);
+            m_unet->set_adapters(adapters, request_idx);
         }
     }
 
@@ -296,17 +298,23 @@ public:
 
         check_inputs(generation_config, initial_image);
 
-        set_lora_adapters(generation_config.adapters);
+        std::cout << "Setting lora adapters" << std::endl;
+        set_lora_adapters(generation_config.adapters, request_idx);
+        std::cout << "Setting lora adapters done" << std::endl;
+
+        std::cout << "Number of predefined schedulers: " << m_schedulers.size() << std::endl;
+        std::cout << "Value of the scheduler" << request_idx << " " << (std::int64_t)m_schedulers[request_idx].get() << std::endl;
 
         m_schedulers[request_idx]->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
         std::vector<std::int64_t> timesteps = m_schedulers[request_idx]->get_timesteps();
 
+        std::cout << "Computing hidden states" << std::endl;
         // compute text encoders and set hidden states
-        compute_hidden_states(positive_prompt, generation_config);
+        compute_hidden_states(positive_prompt, generation_config, request_idx);
 
         // preparate initial / image latents
         ov::Tensor latent, processed_image, image_latent, noise;
-        std::tie(latent, processed_image, image_latent, noise) = prepare_latents(initial_image, generation_config);
+        std::tie(latent, processed_image, image_latent, noise) = prepare_latents(initial_image, generation_config, request_idx);
 
         // prepare mask latents
         ov::Tensor mask, masked_image_latent;
@@ -321,6 +329,7 @@ public:
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg), denoised, noisy_residual_tensor(ov::element::f32, {}), latent_model_input;
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
+            std::cout << "Iter " << inference_step << std::endl;
             auto step_start = std::chrono::steady_clock::now();
             numpy_utils::batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
@@ -333,9 +342,9 @@ public:
             ov::Tensor latent_model_input = is_inpainting_model() ? numpy_utils::concat(numpy_utils::concat(latent_cfg, mask, 1), masked_image_latent, 1) : latent_cfg;
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
             auto infer_start = std::chrono::steady_clock::now();
-            ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep);
+            ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep, request_idx);
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-            m_perf_metrics.raw_metrics.unet_inference_durations.emplace_back(MicroSeconds(infer_duration));
+            //m_perf_metrics.raw_metrics.unet_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
@@ -370,30 +379,31 @@ public:
 
             if (callback && callback(inference_step, timesteps.size(), denoised)) {
                 auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
-                m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+                //m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
 
                 auto image = ov::Tensor(ov::element::u8, {});
-                m_perf_metrics.generate_duration =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
-                        .count();
+                //m_perf_metrics.generate_duration =
+                //    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
+                //        .count();
                 return image;
             }
 
             auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
-            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+            //m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
         }
+        std::cout << "Iterations finished" << std::endl;
         auto decode_start = std::chrono::steady_clock::now();
-        auto image = decode(denoised);
-        m_perf_metrics.vae_decoder_inference_duration =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
-                .count();
-        m_perf_metrics.generate_duration =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
+        auto image = decode(denoised, request_idx);
+        // m_perf_metrics.vae_decoder_inference_duration =
+        //     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
+        //         .count();
+        // m_perf_metrics.generate_duration =
+        //     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
         return image;
     }
 
-    ov::Tensor decode(const ov::Tensor latent) override {
-        return m_vae->decode(latent);
+    ov::Tensor decode(const ov::Tensor latent, size_t request_idx = 0) override {
+        return m_vae->decode(latent, request_idx);
     }
 
     ImageGenerationPerfMetrics get_performance_metrics() override {

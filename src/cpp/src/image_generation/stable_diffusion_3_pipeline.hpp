@@ -455,7 +455,7 @@ public:
         return std::make_tuple(latent, proccesed_image, image_latents, noise);
     }
 
-    void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
+    void set_lora_adapters(std::optional<AdapterConfig> adapters, size_t request_idx = 0) override {
         OPENVINO_THROW("LORA adapters are not implemented for Stable Diffusion 3 yet");
     }
 
@@ -578,8 +578,8 @@ public:
         return image;
     }
 
-    ov::Tensor decode(const ov::Tensor latent) override {
-        return m_vae->decode(latent);
+    ov::Tensor decode(const ov::Tensor latent, size_t request_idx = 0) override {
+        return m_vae->decode(latent, request_idx);
     }
 
     ImageGenerationPerfMetrics get_performance_metrics() override {

@@ -340,14 +340,14 @@ public:
         }
     }
 
-    void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
+    void set_lora_adapters(std::optional<AdapterConfig> adapters, size_t request_idx = 0) override {
         if (adapters) {
             if (auto updated_adapters = derived_adapters(*adapters)) {
                 adapters = updated_adapters;
             }
-            m_clip_text_encoder->set_adapters(adapters);
-            m_clip_text_encoder_with_projection->set_adapters(adapters);
-            m_unet->set_adapters(adapters);
+            m_clip_text_encoder->set_adapters(adapters);  // TODO
+            m_clip_text_encoder_with_projection->set_adapters(adapters);  // TODO
+            m_unet->set_adapters(adapters);  // TODO
         }
     }
 

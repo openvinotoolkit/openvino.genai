@@ -351,13 +351,13 @@ public:
         return std::make_tuple(latent, proccesed_image, image_latents, noise);
     }
 
-    void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
+    void set_lora_adapters(std::optional<AdapterConfig> adapters, size_t request_idx = 0) override {
         if(adapters) {
             if(auto updated_adapters = derived_adapters(*adapters)) {
                 adapters = updated_adapters;
             }
-            m_clip_text_encoder->set_adapters(adapters);
-            m_transformer->set_adapters(adapters);
+            m_clip_text_encoder->set_adapters(adapters);  // TODO
+            m_transformer->set_adapters(adapters);  // TODO
         }
     }
 
@@ -522,12 +522,12 @@ public:
         return image;
     }
 
-    ov::Tensor decode(const ov::Tensor latent) override {
+    ov::Tensor decode(const ov::Tensor latent, size_t request_idx) override {
         ov::Tensor unpacked_latent = unpack_latents(latent,
                                      m_custom_generation_config.height,
                                      m_custom_generation_config.width,
                                      m_vae->get_vae_scale_factor());
-        return m_vae->decode(unpacked_latent);
+        return m_vae->decode(unpacked_latent, request_idx);
     }
 
     ImageGenerationPerfMetrics get_performance_metrics() override {

@@ -117,11 +117,11 @@ public:
 
     virtual void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config, size_t request_idx = 0) = 0;
 
-    virtual void set_lora_adapters(std::optional<AdapterConfig> adapters) = 0;
+    virtual void set_lora_adapters(std::optional<AdapterConfig> adapters, size_t request_idx = 0) = 0;
 
     virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties, size_t request_idx = 0) = 0;
 
-    virtual ov::Tensor decode(const ov::Tensor latent) = 0;
+    virtual ov::Tensor decode(const ov::Tensor latent, size_t request_idx = 0) = 0;
 
     virtual ImageGenerationPerfMetrics get_performance_metrics() = 0;
 
@@ -218,8 +218,8 @@ protected:
             // encode masked image to latent scape
             auto encode_start = std::chrono::steady_clock::now();
             masked_image_latent = m_vae->encode(masked_image, generation_config.generator);
-            m_perf_metrics.vae_encoder_inference_duration += std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                             std::chrono::steady_clock::now() - encode_start).count();
+            //m_perf_metrics.vae_encoder_inference_duration += std::chrono::duration_cast<std::chrono::milliseconds>(
+            //                                                 std::chrono::steady_clock::now() - encode_start).count();
             masked_image_latent = numpy_utils::repeat(masked_image_latent, generation_config.num_images_per_prompt * batch_size_multiplier);
         }
 
