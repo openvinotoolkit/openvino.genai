@@ -320,9 +320,8 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     for (size_t c_idx = 0; c_idx < channels; ++c_idx) {
         for (size_t k_idx = 0; k_idx < patch_size; k_idx++) {
             std::copy(clip_value_data, clip_value_data + d3_clip_pixel, pixel_value_data);
-            if (d3_all_pixel > d3_clip_pixel) {
-                memset(pixel_value_data + d3_clip_pixel, 0, (d3_all_pixel - d3_clip_pixel) * sizeof(float));
-            }
+            // pixel_values and patch_attention_mask are multiplied instead of ignoring the corresponding pixel_values resulting in NaN instead of 0.0f if pixel_values has NaN.
+            memset(pixel_value_data + d3_clip_pixel, 0, (d3_all_pixel - d3_clip_pixel) * sizeof(float));
             clip_value_data += d3_clip_pixel;
             pixel_value_data += d3_all_pixel;
         }
@@ -344,9 +343,8 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
                 for (size_t c_idx = 0; c_idx < channels; ++c_idx) {
                     for (size_t k_idx = 0; k_idx < patch_size; k_idx++) {
                         std::copy(clip_value_data, clip_value_data + d3_clip_pixel, pixel_value_data);
-                        if (d3_all_pixel > d3_clip_pixel) {
-                            memset(pixel_value_data + d3_clip_pixel, 0, (d3_all_pixel - d3_clip_pixel) * sizeof(float));
-                        }
+                        // pixel_values and patch_attention_mask are multiplied instead of ignoring the corresponding pixel_values resulting in NaN instead of 0.0f if pixel_values has NaN.
+                        memset(pixel_value_data + d3_clip_pixel, 0, (d3_all_pixel - d3_clip_pixel) * sizeof(float));
                         clip_value_data += d3_clip_pixel;
                         pixel_value_data += d3_all_pixel;
                     }
