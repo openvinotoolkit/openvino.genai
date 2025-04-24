@@ -76,6 +76,8 @@ protected:
     ov::Tensor create_position_ids(
         const ov::Tensor& input_ids_tensor,
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
+        const std::vector<size_t>& images_sequence,
+        const size_t image_id,
         const int64_t vision_start_token_id
     );
 };
