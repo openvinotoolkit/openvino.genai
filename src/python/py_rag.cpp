@@ -35,7 +35,20 @@ void init_rag_pipelines(py::module_& m) {
                 },
                 py::arg("texts"),
                 "List of texts ",
-                "Computes embeddings for a vector of texts");
+                "Computes embeddings for a vector of texts")
+            .def(
+                "embed_query",
+                [](TextEmbeddingPipeline& pipe, std::string& text) -> py::typing::Union<EmbeddingResult> {
+                    EmbeddingResult res;
+                    {
+                        py::gil_scoped_release rel;
+                        res = pipe.embed_query(text);
+                    }
+                    return py::cast(res);
+                },
+                py::arg("texts"),
+                "texts ",
+                "Computes embeddings for a text");
 
     py::enum_<TextEmbeddingPipeline::PoolingType>(text_embedding_pipeline, "PoolingType")
         .value("CLS", TextEmbeddingPipeline::PoolingType::CLS)

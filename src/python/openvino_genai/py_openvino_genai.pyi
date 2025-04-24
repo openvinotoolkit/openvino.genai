@@ -1958,6 +1958,10 @@ class TextEmbeddingPipeline:
         """
         Computes embeddings for a vector of texts
         """
+    def embed_query(self, texts: str) -> list[float] | list[int] | list[int]:
+        """
+        Computes embeddings for a text
+        """
 class TextStreamer(StreamerBase):
     """
     

@@ -9,6 +9,7 @@ from pathlib import Path
 from openvino_genai import TextEmbeddingPipeline
 from utils.hugging_face import download_and_convert_embeddings_models
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
+from typing import Literal
 
 TEST_MODELS = [
     "sentence-transformers/all-mpnet-base-v2",
@@ -43,18 +44,24 @@ def run_genai(
     models_path: Path,
     documents: list[str],
     config: TextEmbeddingPipeline.Config | None = None,
+    task: Literal["embed_documents", "embed_query"] = "embed_documents",
 ):
     if not config:
         config = TextEmbeddingPipeline.Config()
 
     pipeline = TextEmbeddingPipeline(models_path, "CPU", config)
-    return pipeline.embed_documents(documents)
+
+    if task == "embed_documents":
+        return pipeline.embed_documents(documents)
+    else:
+        return pipeline.embed_query(documents[0])
 
 
 def run_langchain(
     models_path: Path,
     documents: list[str],
     config: TextEmbeddingPipeline.Config | None = None,
+    task: Literal["embed_documents", "embed_query"] = "embed_documents",
 ):
     if not config:
         config = TextEmbeddingPipeline.Config()
@@ -73,18 +80,26 @@ def run_langchain(
         encode_kwargs=encode_kwargs,
     )
 
-    return ov_embeddings.embed_documents(documents)
+    # align instructions
+    ov_embeddings.embed_instruction = config.embed_instruction or ""
+    ov_embeddings.query_instruction = config.query_instruction or ""
+
+    if task == "embed_documents":
+        return ov_embeddings.embed_documents(documents)
+    else:
+        return ov_embeddings.embed_query(documents[0])
 
 
 def run_pipeline_with_ref(
     model_id: str,
     documents: list[str],
     config: TextEmbeddingPipeline.Config | None = None,
+    task: Literal["embed_documents", "embed_query"] = "embed_documents",
 ):
     _, _, models_path = download_and_convert_embeddings_models(model_id)
 
-    genai_result = run_genai(models_path, documents, config)
-    langchain_result = run_langchain(models_path, documents, config)
+    genai_result = run_genai(models_path, documents, config, task)
+    langchain_result = run_langchain(models_path, documents, config, task)
 
     np_genai_result = np.array(genai_result)
     np_langchain_result = np.array(langchain_result)
@@ -108,14 +123,47 @@ def run_pipeline_with_ref(
         TextEmbeddingPipeline.Config(
             normalize=True, pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
         ),
+        TextEmbeddingPipeline.Config(
+            embed_instruction="Represent this document for searching relevant passages: "
+        ),
     ],
     ids=[
         "cls_pooling",
         "mean_pooling",
         "cls_pooling + normalize",
         "mean_pooling + normalize",
+        "embed_instruction",
     ],
 )
 @pytest.mark.precommit
-def test_embeddings(model_id, dataset_documents, config):
-    run_pipeline_with_ref(model_id, dataset_documents, config)
+def test_embed_documents(model_id, dataset_documents, config):
+    run_pipeline_with_ref(model_id, dataset_documents, config, "embed_documents")
+
+
+@pytest.mark.parametrize("model_id", TEST_MODELS)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextEmbeddingPipeline.Config(),
+        TextEmbeddingPipeline.Config(
+            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
+        ),
+        TextEmbeddingPipeline.Config(normalize=True),
+        TextEmbeddingPipeline.Config(
+            normalize=True, pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
+        ),
+        TextEmbeddingPipeline.Config(
+            query_instruction="Represent this query for searching relevant passages: "
+        ),
+    ],
+    ids=[
+        "cls_pooling",
+        "mean_pooling",
+        "cls_pooling + normalize",
+        "mean_pooling + normalize",
+        "query_instruction",
+    ],
+)
+@pytest.mark.precommit
+def test_embed_query(model_id, dataset_documents, config):
+    run_pipeline_with_ref(model_id, dataset_documents[:1], config, "embed_query")

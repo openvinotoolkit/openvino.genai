@@ -96,7 +96,7 @@ private:
     AnyMap m_tokenization_params;
 
     std::vector<EmbeddingResult> embed(std::vector<std::string>& texts) {
-        const auto encoded = m_tokenizer.encode(texts);
+        const auto encoded = m_tokenizer.encode(texts, m_tokenization_params);
 
         m_request.set_tensor("input_ids", encoded.input_ids);
         m_request.set_tensor("attention_mask", encoded.attention_mask);
