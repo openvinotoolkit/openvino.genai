@@ -18,7 +18,8 @@ ov::Output<ov::Node> make_lm_head(
     const ov::Output<ov::Node>& input,
     const std::unordered_map<std::string, ov::Tensor>& consts,
     const ov::Output<ov::Node>& embeddings_node,
-    gguf_tensor_type qtype);
+    gguf_tensor_type qtype,
+    bool shared_embedding);
 
 ov::Output<ov::Node> make_rms_norm(
     const std::string& key,
