@@ -7,7 +7,7 @@
 
 std::pair<std::string, ov::Tensor> decrypt_model(const std::filesystem::path& model_dir, const std::string& model_file_name, const std::string& weights_file_name) {
     std::ifstream model_file(model_dir / model_file_name);
-    std::ifstream weights_file();
+    std::ifstream weights_file;
     if (!model_file.is_open()) {
         throw std::runtime_error("Cannot open model file");
     }

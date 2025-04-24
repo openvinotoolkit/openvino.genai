@@ -10,10 +10,10 @@ type VLMModelType = {
 
 export const VLM_MODELS: VLMModelType[] = [
   {
-    architecture: 'InternVL2',
+    architecture: 'InternVLChat',
     models: [
       {
-        name: 'InternVL2',
+        name: 'InternVLChatModel',
         loraSupport: false,
         links: [
           'https://huggingface.co/OpenGVLab/InternVL2-1B',
@@ -24,6 +24,11 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/OpenGVLab/InternVL2_5-2B',
           'https://huggingface.co/OpenGVLab/InternVL2_5-4B',
           'https://huggingface.co/OpenGVLab/InternVL2_5-8B',
+          'https://huggingface.co/OpenGVLab/InternVL3-1B',
+          'https://huggingface.co/OpenGVLab/InternVL3-2B',
+          'https://huggingface.co/OpenGVLab/InternVL3-8B',
+          'https://huggingface.co/OpenGVLab/InternVL3-9B',
+          'https://huggingface.co/OpenGVLab/InternVL3-14B'
         ],
         notesLink: '#internvl2-notes',
       },
