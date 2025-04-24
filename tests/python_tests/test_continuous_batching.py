@@ -7,7 +7,6 @@ import math
 
 from pathlib import Path
 from shutil import rmtree
-from typing import Dict
 
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model, GenerationFinishReason
 
@@ -132,7 +131,7 @@ questions = [
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING] )
 @pytest.mark.precommit
-def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict, pipeline_type):
+def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: dict, pipeline_type):
     _, _, models_path = download_and_convert_model(model_id)
 
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
@@ -172,7 +171,7 @@ questions = [
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.parametrize("pipeline_type", [PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING,])
 @pytest.mark.precommit
-def test_continuous_batching_add_request_health_check(model_id, generation_config_kwargs: Dict, pipeline_type):
+def test_continuous_batching_add_request_health_check(model_id, generation_config_kwargs: dict, pipeline_type):
     _, _, models_path = download_and_convert_model(model_id)
 
     cb_pipe = create_ov_cb_pipeline(models_path, pipeline_type=pipeline_type)

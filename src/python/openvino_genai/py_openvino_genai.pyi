@@ -939,7 +939,7 @@ class ImageGenerationPerfMetrics:
         If mean and std were already calculated, getters return cached values.
     
         :param get_text_encoder_infer_duration: Returns the inference duration of every text encoder in milliseconds.
-        :type get_text_encoder_infer_duration: Dict[str, float]
+        :type get_text_encoder_infer_duration: dict[str, float]
     
         :param get_vae_encoder_infer_duration: Returns the inference duration of vae encoder in milliseconds.
         :type get_vae_encoder_infer_duration: float
@@ -1120,13 +1120,13 @@ class LLMPipeline:
             :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in encoded, or decoded form depending on inputs type
             :rtype: DecodedResults, EncodedResults, str
@@ -1217,13 +1217,13 @@ class LLMPipeline:
             :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in encoded, or decoded form depending on inputs type
             :rtype: DecodedResults, EncodedResults, str
@@ -2104,7 +2104,7 @@ class VLMPipeline:
     def __init__(self, models: dict[str, tuple[str, openvino._pyopenvino.Tensor]], tokenizer: Tokenizer, config_dir_path: os.PathLike, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
         """
                     VLMPipeline class constructor.
-                    models (typing.Dict[str, typing.Tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+                    models (typing.dict[str, typing.Tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
                     tokenizer (Tokenizer): Genai Tokenizers.
                     config_dir_path (os.PathLike): Path to folder with model configs.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
@@ -2136,13 +2136,13 @@ class VLMPipeline:
             :type images: List[ov.Tensor] or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -2170,13 +2170,13 @@ class VLMPipeline:
             :type images: List[ov.Tensor] or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -2318,7 +2318,7 @@ class WhisperGenerationConfig(GenerationConfig):
         :type language: Optional[str]
     
         :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
-        :type lang_to_id: Dict[str, int]
+        :type lang_to_id: dict[str, int]
     
         :param task: Task to use for generation, either “translate” or “transcribe”
         :type task: int
@@ -2457,14 +2457,14 @@ class WhisperPipeline:
             :type raw_speech_input: List[float]
         
             :param generation_config: generation_config
-            :type generation_config: WhisperGenerationConfig or a Dict
+            :type generation_config: WhisperGenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
                              Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in decoded form
             :rtype: WhisperDecodedResults
@@ -2505,7 +2505,7 @@ class WhisperPipeline:
             :type language: Optional[str]
         
             :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
-            :type lang_to_id: Dict[str, int]
+            :type lang_to_id: dict[str, int]
         
             :param task: Task to use for generation, either “translate” or “transcribe”
             :type task: int
