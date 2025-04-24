@@ -49,7 +49,10 @@ def get_all_pipeline_types():
     return [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION, PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.AUTO]
 
 def get_main_pipeline_types():
-    return [ PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING]
+    return [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING]
+
+def get_gguf_pipeline_types():
+    return [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION]
 
 
 class StreamerWithResults:

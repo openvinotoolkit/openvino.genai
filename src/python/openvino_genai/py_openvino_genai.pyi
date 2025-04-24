@@ -1978,12 +1978,6 @@ class Tokenizer:
         ...
     def get_pad_token_id(self) -> int:
         ...
-    def get_vocab(self) -> dict:
-        """
-        Returns the vocabulary as a Python dictionary with bytes keys and integer values.
-        
-        Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
-        """
     def set_chat_template(self, chat_template: str) -> None:
         """
         Override a chat_template read from tokenizer_config.json.
