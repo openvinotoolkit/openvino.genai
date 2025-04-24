@@ -69,14 +69,15 @@ void init_clip_text_model(py::module_& m) {
 
     clip_text_model.def("get_config", &ov::genai::CLIPTextModel::get_config)
         .def("reshape", &ov::genai::CLIPTextModel::reshape, py::arg("batch_size"))
-        .def("set_adapters", &ov::genai::CLIPTextModel::set_adapters, py::arg("adapters"))
+        .def("set_adapters", &ov::genai::CLIPTextModel::set_adapters, py::arg("adapters"), py::arg("request_idx") = 0)
         .def("infer", 
             &ov::genai::CLIPTextModel::infer, 
             py::call_guard<py::gil_scoped_release>(), 
             py::arg("pos_prompt"), 
             py::arg("neg_prompt"), 
-            py::arg("do_classifier_free_guidance"))
-        .def("get_output_tensor", &ov::genai::CLIPTextModel::get_output_tensor, py::arg("idx"))
+            py::arg("do_classifier_free_guidance"),
+            py::arg("request_idx") = 0)
+        .def("get_output_tensor", &ov::genai::CLIPTextModel::get_output_tensor, py::arg("idx"), py::arg("request_idx") = 0)
         .def(
             "compile",
             [](ov::genai::CLIPTextModel& self,
@@ -279,13 +280,14 @@ void init_unet2d_condition_model(py::module_& m) {
 
     unet2d_condition_model.def("get_config", &ov::genai::UNet2DConditionModel::get_config)
         .def("reshape", &ov::genai::UNet2DConditionModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
-        .def("set_adapters", &ov::genai::UNet2DConditionModel::set_adapters, py::arg("adapters"))
+        .def("set_adapters", &ov::genai::UNet2DConditionModel::set_adapters, py::arg("adapters"), py::arg("request_idx") = 0)
         .def("infer", 
             &ov::genai::UNet2DConditionModel::infer, 
             py::call_guard<py::gil_scoped_release>(),
             py::arg("sample"), 
-            py::arg("timestep"))
-        .def("set_hidden_states", &ov::genai::UNet2DConditionModel::set_hidden_states, py::arg("tensor_name"), py::arg("encoder_hidden_states"))
+            py::arg("timestep"),
+            py::arg("request_idx") = 0)
+        .def("set_hidden_states", &ov::genai::UNet2DConditionModel::set_hidden_states, py::arg("tensor_name"), py::arg("encoder_hidden_states"), py::arg("request_idx") = 0)
         .def("do_classifier_free_guidance", &ov::genai::UNet2DConditionModel::do_classifier_free_guidance, py::arg("guidance_scale"))
         .def(
             "compile",
@@ -544,8 +546,8 @@ void init_autoencoder_kl(py::module_& m) {
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
             )")
-        .def("decode", &ov::genai::AutoencoderKL::decode, py::call_guard<py::gil_scoped_release>(), py::arg("latent"))
-        .def("encode", &ov::genai::AutoencoderKL::encode, py::call_guard<py::gil_scoped_release>(), py::arg("image"), py::arg("generator"))
+        .def("decode", &ov::genai::AutoencoderKL::decode, py::call_guard<py::gil_scoped_release>(), py::arg("latent"), py::arg("request_idx") = 0)
+        .def("encode", &ov::genai::AutoencoderKL::encode, py::call_guard<py::gil_scoped_release>(), py::arg("image"), py::arg("generator"), py::arg("request_idx") = 0)
         .def("get_config", &ov::genai::AutoencoderKL::get_config)
         .def("get_vae_scale_factor", &ov::genai::AutoencoderKL::get_vae_scale_factor);
 }

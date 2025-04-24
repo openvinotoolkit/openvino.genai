@@ -82,16 +82,16 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    void set_adapters(const std::optional<AdapterConfig>& adapters);
+    void set_adapters(const std::optional<AdapterConfig>& adapters, size_t request_idx = 0);
 
-    ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance);
+    ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, size_t request_idx = 0);
 
-    ov::Tensor get_output_tensor(const size_t idx);
+    ov::Tensor get_output_tensor(const size_t , size_t request_idx = 0);
 
 private:
     Config m_config;
     AdapterController m_adapter_controller;
-    ov::InferRequest m_request;
+    std::vector<ov::InferRequest> m_requests;
     std::shared_ptr<ov::Model> m_model;
 
     Tokenizer m_clip_tokenizer;

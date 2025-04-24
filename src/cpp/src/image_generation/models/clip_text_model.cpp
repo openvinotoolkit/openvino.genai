@@ -93,21 +93,23 @@ CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMa
     }
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Clip Text model");
-    m_request = compiled_model.create_infer_request();
+    for (size_t i = 0; i < 4; i++)
+        m_requests.emplace_back(compiled_model.create_infer_request());
     // release the original model
     m_model.reset();
 
     return *this;
 }
 
-void CLIPTextModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
+void CLIPTextModel::set_adapters(const std::optional<AdapterConfig>& adapters, size_t request_idx) {
+    // TODO: Missing OPENVINO_ASSERT?
     if (adapters) {
-        m_adapter_controller.apply(m_request, *adapters);
+        m_adapter_controller.apply(m_requests[request_idx], *adapters);
     }
 }
 
-ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance) {
-    OPENVINO_ASSERT(m_request, "CLIP text encoder model must be compiled first. Cannot infer non-compiled model");
+ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, size_t request_idx) {
+    OPENVINO_ASSERT(m_requests.size(), "CLIP text encoder model must be compiled first. Cannot infer non-compiled model");
 
     const int32_t pad_token_id = m_clip_tokenizer.get_pad_token_id();
     const size_t text_embedding_batch_size = do_classifier_free_guidance ? 2 : 1;
@@ -124,9 +126,9 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
         }
     };
 
-    ov::PartialShape compiled_input_partial_shape = m_request.get_compiled_model().inputs()[0].get_partial_shape();
+    ov::PartialShape compiled_input_partial_shape = m_requests[request_idx].get_compiled_model().inputs()[0].get_partial_shape();
 
-    ov::Tensor input_ids = m_request.get_input_tensor();
+    ov::Tensor input_ids = m_requests[request_idx].get_input_tensor();
 
     if (compiled_input_partial_shape.is_dynamic()) {
         input_ids.set_shape({text_embedding_batch_size, m_config.max_position_embeddings});
@@ -157,7 +159,7 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
                                                {current_batch_idx + 1, m_config.max_position_embeddings}));
 
     // text embeddings
-    m_request.infer();
+    m_requests[request_idx].infer();
 
     // This is true when text_embedding_batch_size is 1, but model was reshaped / compiled as batch size 2.
     m_slice_batch1_output = (text_embedding_batch_size != input_ids.get_shape()[0]);
@@ -165,8 +167,9 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
     return get_output_tensor(0);
 }
 
-ov::Tensor CLIPTextModel::get_output_tensor(const size_t idx) {
-    auto infer_out_tensor = m_request.get_output_tensor(idx);
+ov::Tensor CLIPTextModel::get_output_tensor(const size_t idx, size_t request_idx) {
+    // TODO: Missing OPENVINO_ASSERT?
+    auto infer_out_tensor = m_requests[request_idx].get_output_tensor(idx);
     if (m_slice_batch1_output) {
         //Slice and return batch index 1 output.
         auto out_shape = infer_out_tensor.get_shape();

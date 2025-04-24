@@ -47,9 +47,10 @@ public:
         }
     }
 
-    virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) override {
+    virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states, size_t request_idx = 0) override {
         OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
                         "UNet model must be compiled first");
+        OPENVINO_ASSERT(request_idx == 0, "multi concurrency not supported for NPU");
 
         size_t encoder_hidden_states_bs = encoder_hidden_states.get_shape()[0];
 
@@ -80,17 +81,19 @@ public:
         }
     }
 
-    virtual void set_adapters(AdapterController& adapter_controller, const AdapterConfig& adapters) override {
+    virtual void set_adapters(AdapterController& adapter_controller, const AdapterConfig& adapters, size_t request_idx = 0) override {
         OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
                         "UNet model must be compiled first");
+        OPENVINO_ASSERT(request_idx == 0, "multi concurrency not supported for NPU");
         for (int i = 0; i < m_native_batch_size; i++) {
             adapter_controller.apply(m_requests[i], adapters);
         }
     }
 
-    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep) override {
+    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep, size_t request_idx = 0) override {
         OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
                         "UNet model must be compiled first");
+        OPENVINO_ASSERT(request_idx == 0, "multi concurrency not supported for NPU");
 
         OPENVINO_ASSERT(sample.get_shape()[0] == m_native_batch_size,
                         "sample batch size must match native batch size");

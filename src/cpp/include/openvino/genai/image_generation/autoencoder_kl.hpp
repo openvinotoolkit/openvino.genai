@@ -127,9 +127,9 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    ov::Tensor decode(ov::Tensor latent);
+    ov::Tensor decode(ov::Tensor latent, size_t request_idx = 0);
 
-    ov::Tensor encode(ov::Tensor image, std::shared_ptr<Generator> generator);
+    ov::Tensor encode(ov::Tensor image, std::shared_ptr<Generator> generator, size_t request_idx = 0);
 
     const Config& get_config() const;
 
@@ -139,7 +139,7 @@ private:
     void merge_vae_image_post_processing() const;
 
     Config m_config;
-    ov::InferRequest m_encoder_request, m_decoder_request;
+    std::vector<ov::InferRequest> m_encoder_requests, m_decoder_requests;
     std::shared_ptr<ov::Model> m_encoder_model = nullptr, m_decoder_model = nullptr;
 };
 

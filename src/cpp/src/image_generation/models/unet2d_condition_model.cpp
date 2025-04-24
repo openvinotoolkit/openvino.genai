@@ -99,21 +99,21 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
     return *this;
 }
 
-void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
+void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states, size_t request_idx) {
     OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
-    m_impl->set_hidden_states(tensor_name, encoder_hidden_states);
+    m_impl->set_hidden_states(tensor_name, encoder_hidden_states, request_idx);
 }
 
-void UNet2DConditionModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
+void UNet2DConditionModel::set_adapters(const std::optional<AdapterConfig>& adapters, size_t request_idx) {
     OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
     if(adapters) {
-        m_impl->set_adapters(m_adapter_controller, *adapters);
+        m_impl->set_adapters(m_adapter_controller, *adapters, request_idx);
     }
 }
 
-ov::Tensor UNet2DConditionModel::infer(ov::Tensor sample, ov::Tensor timestep) {
+ov::Tensor UNet2DConditionModel::infer(ov::Tensor sample, ov::Tensor timestep, size_t request_idx) {
     OPENVINO_ASSERT(m_impl, "UNet model must be compiled first. Cannot infer non-compiled model");
-    return m_impl->infer(sample, timestep);
+    return m_impl->infer(sample, timestep, request_idx);
 }
 
 } // namespace genai
