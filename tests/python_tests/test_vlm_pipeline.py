@@ -660,7 +660,10 @@ def requests():
 
 image_id_ignorant = [
     ("katuni4ka/tiny-random-llava", lambda idx: "<image>"),
-    ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
+    (
+        "katuni4ka/tiny-random-qwen2vl",
+        lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    ),
 ]
 
 
@@ -685,33 +688,45 @@ def model_and_tag(request):
 @pytest.mark.precommit
 @pytest.mark.nightly
 class TestImageTags:
-    @pytest.mark.parametrize("model_to_tag", image_id_ignorant)
-    def test_representation(self, model_to_tag):
-        model_id = model_to_tag[0]
-        vlm = VLMPipeline(get_ov_model(model_id), "CPU")
+    @pytest.mark.parametrize(
+        "model_and_tag, model_id",
+        [((model_id, tag), model_id) for model_id, tag in image_id_ignorant],
+        indirect=["model_and_tag"],
+    )
+    def test_representation(self, model_and_tag, model_id):
+        vlm, tag = model_and_tag
         generation_config = vlm.get_generation_config()
         generation_config.max_new_tokens = 30
         vlm.set_generation_config(generation_config)
         prompt = "Describe"
-        image = get_image_by_link(image_links[0])
 
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-        processor = retry_request(lambda: transformers.AutoProcessor.from_pretrained(
-            model_id,
-            trust_remote_code=True,
-            **align_with_optimum_cli,
-        ))
-        templated_prompt = processor.apply_chat_template([{
-            "role": "user",
-            "content": [
-                {"type": "image"},
-                {"type": "text", "text": prompt},
+        processor = retry_request(
+            lambda: transformers.AutoProcessor.from_pretrained(
+                model_id,
+                trust_remote_code=True,
+                **align_with_optimum_cli,
+            )
+        )
+        templated_prompt = processor.apply_chat_template(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image"},
+                        {"type": "text", "text": prompt},
+                    ],
+                }
             ],
-        }], add_generation_prompt=True)
+            add_generation_prompt=True,
+        )
+        image = get_image_by_link(image_links[0])
 
         def workaround_inconsistent_inference():
             automatic_tags = vlm.generate(prompt, images=[image])
-            reference_tags = vlm.generate(templated_prompt, images=[image], apply_chat_template=False)
+            reference_tags = vlm.generate(
+                templated_prompt, images=[image], apply_chat_template=False
+            )
             assert automatic_tags.texts == reference_tags.texts
             assert automatic_tags.scores == reference_tags.scores
 
