@@ -92,10 +92,13 @@ public:
         m_generation_config.validate();
     }
 
-    void set_scheduler(std::shared_ptr<Scheduler> scheduler) {
+    void set_scheduler(std::shared_ptr<Scheduler> scheduler, size_t request_idx = 0) {
         auto casted = std::dynamic_pointer_cast<IScheduler>(scheduler);
         OPENVINO_ASSERT(casted != nullptr, "Passed incorrect scheduler type");
-        m_scheduler = casted;
+        if (m_schedulers.size() <= request_idx) {
+            m_schedulers.resize(request_idx + 1);
+        }
+        m_schedulers[request_idx] = casted;
     }
 
     virtual void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) = 0;
@@ -110,13 +113,13 @@ public:
                          const std::string& vae_device,
                          const ov::AnyMap& properties) = 0;
 
-    virtual std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) = 0;
+    virtual std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config, size_t request_idx = 0) = 0;
 
-    virtual void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) = 0;
+    virtual void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config, size_t request_idx = 0) = 0;
 
     virtual void set_lora_adapters(std::optional<AdapterConfig> adapters) = 0;
 
-    virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties) = 0;
+    virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties, size_t request_idx = 0) = 0;
 
     virtual ov::Tensor decode(const ov::Tensor latent) = 0;
 
@@ -143,18 +146,18 @@ protected:
 
     virtual size_t get_config_in_channels() const = 0;
 
-    virtual void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step) {
+    virtual void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step, size_t request_idx = 0) {
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
         OPENVINO_ASSERT(image_latent.get_shape() == latent.get_shape(), "Shapes for current", latent.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
 
         ov::Tensor noised_image_latent(image_latent.get_element_type(), {});
-        std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
+        std::vector<std::int64_t> timesteps = m_schedulers[request_idx]->get_timesteps();
 
         if (inference_step < timesteps.size() - 1) {
             image_latent.copy_to(noised_image_latent);
 
             int64_t noise_timestep = timesteps[inference_step + 1];
-            m_scheduler->add_noise(noised_image_latent, noise, noise_timestep);
+            m_schedulers[request_idx]->add_noise(noised_image_latent, noise, noise_timestep);
         } else {
             noised_image_latent = image_latent;
         }
@@ -224,7 +227,7 @@ protected:
     }
 
     PipelineType m_pipeline_type;
-    std::shared_ptr<IScheduler> m_scheduler;
+    std::vector<std::shared_ptr<IScheduler>> m_schedulers;
     ImageGenerationConfig m_generation_config;
     float m_load_time_ms = 0.0f;
     ImageGenerationPerfMetrics m_perf_metrics;

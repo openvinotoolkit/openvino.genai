@@ -267,7 +267,7 @@ public:
         m_vae->compile(vae_device, properties);
     }
 
-    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
+    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config, size_t request_idx = 0) override {
         const auto& transformer_config = m_transformer->get_config();
         const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
 
@@ -419,7 +419,7 @@ public:
         m_transformer->set_hidden_states("pooled_projections", pooled_prompt_embeds_inp);
     }
 
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config, size_t request_idx = 0) override {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         ov::Shape latent_shape{generation_config.num_images_per_prompt,
                                m_transformer->get_config().in_channels,
@@ -440,7 +440,7 @@ public:
             noise = generation_config.generator->randn_tensor(latent_shape);
             latent = ov::Tensor(image_latents.get_element_type(), image_latents.get_shape());
             image_latents.copy_to(latent);
-            m_scheduler->scale_noise(latent, m_latent_timestep, noise);
+            m_schedulers[request_idx]->scale_noise(latent, m_latent_timestep, noise);
         } else {
             noise = generation_config.generator->randn_tensor(latent_shape);
             latent.set_shape(latent_shape);
@@ -449,7 +449,7 @@ public:
             const float * noise_data = noise.data<const float>();
             float * latent_data = latent.data<float>();
             for (size_t i = 0; i < latent.get_size(); ++i)
-                latent_data[i] = noise_data[i] * m_scheduler->get_init_noise_sigma();
+                latent_data[i] = noise_data[i] * m_schedulers[request_idx]->get_init_noise_sigma();
         }
 
         return std::make_tuple(latent, proccesed_image, image_latents, noise);
@@ -462,7 +462,8 @@ public:
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
-                        const ov::AnyMap& properties) override {
+                        const ov::AnyMap& properties,
+                        size_t request_idx = 0) override {
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
         ImageGenerationConfig generation_config = m_generation_config;
@@ -487,9 +488,9 @@ public:
         check_inputs(generation_config, initial_image);
 
         // 3. Prepare timesteps
-        m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
+        m_schedulers[request_idx]->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
 
-        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        std::vector<float> timesteps = m_schedulers[request_idx]->get_float_timesteps();
         m_latent_timestep = timesteps[0];
 
         // 4. Compute text encoders and set hidden states
@@ -547,7 +548,7 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
-            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
+            auto scheduler_step_result = m_schedulers[request_idx]->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
             if (m_pipeline_type == PipelineType::INPAINTING && !is_inpainting_model()) {
@@ -592,18 +593,18 @@ private:
         return m_transformer->get_config().in_channels;
     }
 
-    void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step) override {
+    void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step, size_t request_idx = 0) override {
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
         OPENVINO_ASSERT(image_latent.get_shape() == latent.get_shape(), "Shapes for current", latent.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
 
         ov::Tensor noised_image_latent(image_latent.get_element_type(), {});
 
-        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        std::vector<float> timesteps = m_schedulers[request_idx]->get_float_timesteps();
         if (inference_step < timesteps.size() - 1) {
             image_latent.copy_to(noised_image_latent);
 
             float noise_timestep = timesteps[inference_step + 1];
-            m_scheduler->scale_noise(noised_image_latent, noise_timestep, noise);
+            m_schedulers[request_idx]->scale_noise(noised_image_latent, noise_timestep, noise);
         } else {
             noised_image_latent = image_latent;
         }

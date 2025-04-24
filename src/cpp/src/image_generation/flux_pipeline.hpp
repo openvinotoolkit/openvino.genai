@@ -269,7 +269,7 @@ public:
         m_transformer->compile(denoise_device, *updated_properties);
     }
 
-    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
+    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config, size_t request_idx = 0) override {
         // encode_prompt
         std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
 
@@ -310,7 +310,7 @@ public:
         m_transformer->set_hidden_states("img_ids", latent_image_ids);
     }
 
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config, size_t request_idx = 0) override {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
@@ -336,7 +336,7 @@ public:
             latent = ov::Tensor(image_latents.get_element_type(), image_latents.get_shape());
             image_latents.copy_to(latent);
 
-            m_scheduler->scale_noise(latent, m_latent_timestep, noise);
+            m_schedulers[request_idx]->scale_noise(latent, m_latent_timestep, noise);
             latent = pack_latents(latent, generation_config.num_images_per_prompt, num_channels_latents, height, width);
 
             if (m_pipeline_type == PipelineType::INPAINTING) {
@@ -430,7 +430,8 @@ public:
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
-                        const ov::AnyMap& properties) override {
+                        const ov::AnyMap& properties,
+                        size_t request_idx = 0) override {
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
         m_custom_generation_config = m_generation_config;
@@ -459,10 +460,10 @@ public:
 
         size_t image_seq_len = (m_custom_generation_config.height / vae_scale_factor / 2) *
                                (m_custom_generation_config.width / vae_scale_factor / 2);
-        m_scheduler->set_timesteps(image_seq_len, m_custom_generation_config.num_inference_steps, m_custom_generation_config.strength);
+        m_schedulers[request_idx]->set_timesteps(image_seq_len, m_custom_generation_config.num_inference_steps, m_custom_generation_config.strength);
 
         // Prepare timesteps
-        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        std::vector<float> timesteps = m_schedulers[request_idx]->get_float_timesteps();
         m_latent_timestep = timesteps[0];
 
         // Prepare latent variables
@@ -488,7 +489,7 @@ public:
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
-            auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
+            auto scheduler_step_result = m_schedulers[request_idx]->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
 
             if (m_pipeline_type == PipelineType::INPAINTING) {
@@ -614,7 +615,8 @@ protected:
                        const ov::Tensor image_latent,
                        const ov::Tensor mask,
                        const ov::Tensor noise,
-                       size_t inference_step) override {
+                       size_t inference_step,
+                       size_t request_idx = 0) override {
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
         OPENVINO_ASSERT(image_latent.get_shape() == latents.get_shape(),
                         "Shapes for current ", latents.get_shape(), " and initial image latents ", image_latent.get_shape(), " must match");
@@ -622,10 +624,10 @@ protected:
         ov::Tensor init_latents_proper(image_latent.get_element_type(), image_latent.get_shape());
         image_latent.copy_to(init_latents_proper);
 
-        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        std::vector<float> timesteps = m_schedulers[request_idx]->get_float_timesteps();
         if (inference_step < timesteps.size() - 1) {
             float noise_timestep = timesteps[inference_step + 1];
-            m_scheduler->scale_noise(init_latents_proper, noise_timestep, noise);
+            m_schedulers[request_idx]->scale_noise(init_latents_proper, noise_timestep, noise);
         }
 
         float * latents_data = latents.data<float>();

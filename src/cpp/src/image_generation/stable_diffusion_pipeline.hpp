@@ -163,7 +163,7 @@ public:
         m_vae->compile(vae_device, *updated_properties);
     }
 
-    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
+    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config, size_t request_idx = 0) override {
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
 
@@ -177,7 +177,7 @@ public:
         // replicate encoder hidden state to UNet model
         if (generation_config.num_images_per_prompt == 1) {
             // reuse output of text encoder directly w/o extra memory copy
-            m_unet->set_hidden_states("encoder_hidden_states", encoder_hidden_states);
+            m_unet->set_hidden_states("encoder_hidden_states", encoder_hidden_states, request_idx);
         } else {
             ov::Shape enc_shape = encoder_hidden_states.get_shape();
             enc_shape[0] *= generation_config.num_images_per_prompt;
@@ -191,17 +191,17 @@ public:
                 }
             }
 
-            m_unet->set_hidden_states("encoder_hidden_states", encoder_hidden_states_repeated);
+            m_unet->set_hidden_states("encoder_hidden_states", encoder_hidden_states_repeated, request_idx);
         }
 
         if (unet_config.time_cond_proj_dim >= 0) { // LCM
             ov::Tensor timestep_cond = get_guidance_scale_embedding(generation_config.guidance_scale - 1.0f, unet_config.time_cond_proj_dim);
-            m_unet->set_hidden_states("timestep_cond", timestep_cond);
+            m_unet->set_hidden_states("timestep_cond", timestep_cond, request_idx);
         }
     }
 
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
-        std::vector<int64_t> timesteps = m_scheduler->get_timesteps();
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config, size_t request_idx = 0) override {
+        std::vector<int64_t> timesteps = m_schedulers[request_idx]->get_timesteps();
         OPENVINO_ASSERT(!timesteps.empty(), "Timesteps are not computed yet");
         int64_t latent_timestep = timesteps.front();
 
@@ -224,7 +224,7 @@ public:
             // - inpainting with non-specialized model
             if (!is_strength_max || return_image_latent) {
                 auto encode_start = std::chrono::steady_clock::now();
-                image_latent = m_vae->encode(proccesed_image, generation_config.generator);
+                image_latent = m_vae->encode(proccesed_image, generation_config.generator, request_idx);
                 m_perf_metrics.vae_encoder_inference_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                                                                     std::chrono::steady_clock::now() - encode_start)
                                                                     .count();
@@ -240,7 +240,7 @@ public:
         noise = generation_config.generator->randn_tensor(latent_shape);
 
         if (!latent.get_shape().empty()) {
-            m_scheduler->add_noise(latent, noise, latent_timestep);
+            m_schedulers[request_idx]->add_noise(latent, noise, latent_timestep);
         } else {
             latent.set_shape(latent_shape);
 
@@ -248,7 +248,7 @@ public:
             const float * noise_data = noise.data<const float>();
             float * latent_data = latent.data<float>();
             for (size_t i = 0; i < latent.get_size(); ++i)
-                latent_data[i] = noise_data[i] * m_scheduler->get_init_noise_sigma();
+                latent_data[i] = noise_data[i] * m_schedulers[request_idx]->get_init_noise_sigma();
         }
 
         return std::make_tuple(latent, proccesed_image, image_latent, noise);
@@ -267,10 +267,11 @@ public:
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
-                        const ov::AnyMap& properties) override {
+                        const ov::AnyMap& properties,
+                        size_t request_idx = 0) override {
         const auto gen_start = std::chrono::steady_clock::now();
         using namespace numpy_utils;
-        m_perf_metrics.clean_up();
+        //m_perf_metrics.clean_up();
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
@@ -297,8 +298,8 @@ public:
 
         set_lora_adapters(generation_config.adapters);
 
-        m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
-        std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
+        m_schedulers[request_idx]->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
+        std::vector<std::int64_t> timesteps = m_schedulers[request_idx]->get_timesteps();
 
         // compute text encoders and set hidden states
         compute_hidden_states(positive_prompt, generation_config);
@@ -327,7 +328,7 @@ public:
                 numpy_utils::batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
             }
 
-            m_scheduler->scale_model_input(latent_cfg, inference_step);
+            m_schedulers[request_idx]->scale_model_input(latent_cfg, inference_step);
 
             ov::Tensor latent_model_input = is_inpainting_model() ? numpy_utils::concat(numpy_utils::concat(latent_cfg, mask, 1), masked_image_latent, 1) : latent_cfg;
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
@@ -355,7 +356,7 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
-            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
+            auto scheduler_step_result = m_schedulers[request_idx]->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
             // in case of non-specialized inpainting model, we need manually mask current denoised latent and initial image latent
