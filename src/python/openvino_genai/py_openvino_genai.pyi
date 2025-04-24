@@ -1962,6 +1962,22 @@ class TextEmbeddingPipeline:
         """
         Computes embeddings for a text
         """
+    def start_embed_documents_async(self, texts: list[str]) -> None:
+        """
+        Asynchronously computes embeddings for a vector of texts
+        """
+    def start_embed_query_async(self, texts: str) -> None:
+        """
+        Asynchronously computes embeddings for a text
+        """
+    def wait_embed_documents(self) -> list[list[float] | list[int] | list[int]]:
+        """
+        Waits computed embeddings of a vector of texts
+        """
+    def wait_embed_query(self) -> list[float] | list[int] | list[int]:
+        """
+        Waits computed embeddings for a text
+        """
 class TextStreamer(StreamerBase):
     """
     

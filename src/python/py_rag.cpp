@@ -37,6 +37,26 @@ void init_rag_pipelines(py::module_& m) {
                 "List of texts ",
                 "Computes embeddings for a vector of texts")
             .def(
+                "start_embed_documents_async",
+                [](TextEmbeddingPipeline& pipe, std::vector<std::string>& texts) -> void {
+                    py::gil_scoped_release rel;
+                    pipe.start_embed_documents_async(texts);
+                },
+                py::arg("texts"),
+                "List of texts ",
+                "Asynchronously computes embeddings for a vector of texts")
+            .def(
+                "wait_embed_documents",
+                [](TextEmbeddingPipeline& pipe) -> py::typing::Union<std::vector<EmbeddingResult>> {
+                    std::vector<EmbeddingResult> res;
+                    {
+                        py::gil_scoped_release rel;
+                        res = pipe.wait_embed_documents();
+                    }
+                    return py::cast(res);
+                },
+                "Waits computed embeddings of a vector of texts")
+            .def(
                 "embed_query",
                 [](TextEmbeddingPipeline& pipe, std::string& text) -> py::typing::Union<EmbeddingResult> {
                     EmbeddingResult res;
@@ -48,7 +68,27 @@ void init_rag_pipelines(py::module_& m) {
                 },
                 py::arg("texts"),
                 "texts ",
-                "Computes embeddings for a text");
+                "Computes embeddings for a text")
+            .def(
+                "start_embed_query_async",
+                [](TextEmbeddingPipeline& pipe, std::string& text) -> void {
+                    py::gil_scoped_release rel;
+                    pipe.start_embed_query_async(text);
+                },
+                py::arg("texts"),
+                "texts ",
+                "Asynchronously computes embeddings for a text")
+            .def(
+                "wait_embed_query",
+                [](TextEmbeddingPipeline& pipe) -> py::typing::Union<EmbeddingResult> {
+                    EmbeddingResult res;
+                    {
+                        py::gil_scoped_release rel;
+                        res = pipe.wait_embed_query();
+                    }
+                    return py::cast(res);
+                },
+                "Waits computed embeddings for a text");
 
     py::enum_<TextEmbeddingPipeline::PoolingType>(text_embedding_pipeline, "PoolingType")
         .value("CLS", TextEmbeddingPipeline::PoolingType::CLS)

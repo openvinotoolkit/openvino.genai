@@ -111,6 +111,34 @@ def run_pipeline_with_ref(
     ), f"Max error: {max_error}"
 
 
+@pytest.mark.precommit
+def test_constructors():
+    model_id = "BAAI/bge-small-en-v1.5"
+    _, _, models_path = download_and_convert_embeddings_models(model_id)
+
+    TextEmbeddingPipeline(models_path, "CPU")
+    TextEmbeddingPipeline(models_path, "CPU", TextEmbeddingPipeline.Config())
+    TextEmbeddingPipeline(
+        models_path,
+        "CPU",
+        TextEmbeddingPipeline.Config(),
+        PERFORMANCE_HINT_NUM_REQUESTS=2,
+    )
+    TextEmbeddingPipeline(
+        models_path,
+        "CPU",
+        normalize=True,
+        pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+    )
+    TextEmbeddingPipeline(
+        models_path,
+        "CPU",
+        normalize=True,
+        pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+        PERFORMANCE_HINT_NUM_REQUESTS=2,
+    )
+
+
 @pytest.mark.parametrize("model_id", TEST_MODELS)
 @pytest.mark.parametrize(
     "config",

@@ -61,7 +61,7 @@ public:
     std::vector<EmbeddingResult> embed_documents(std::vector<std::string>& texts);
 
     void start_embed_documents_async(std::vector<std::string>& texts);
-    std::vector<std::vector<float>> wait_embed_documents();
+    std::vector<EmbeddingResult> wait_embed_documents();
 
     /**
      * @brief Computes embedding for a query
