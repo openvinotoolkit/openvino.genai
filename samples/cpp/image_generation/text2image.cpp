@@ -1,7 +1,9 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
+#include <iostream>
 
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
+
 
 #include "imwrite.hpp"
 #include "progress_bar.hpp"
@@ -13,15 +15,41 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::Text2ImagePipeline pipe(models_path, device);
-    ov::Tensor image = pipe.generate(prompt,
-        ov::genai::width(512),
-        ov::genai::height(512),
-        ov::genai::num_inference_steps(20),
-        ov::genai::num_images_per_prompt(1),
-        ov::genai::callback(progress_bar));
+    std::thread t([&pipe, prompt] () {
 
-    // writes `num_images_per_prompt` images by pattern name
-    imwrite("image_%d.bmp", image, true);
+        std::cout << "Generating..." << std::endl;
+        ov::Tensor image = pipe.generate(prompt,
+            ov::genai::width(512),
+            ov::genai::height(512),
+            ov::genai::num_inference_steps(20),
+            ov::genai::num_images_per_prompt(1));
+            //ov::genai::callback(progress_bar));
+
+        // writes `num_images_per_prompt` images by pattern name
+        imwrite("image_0.bmp", image, true);
+        std::cout << "Generation ended" << std::endl;
+
+    });
+
+    std::thread t1([&pipe, prompt] () {
+
+        std::cout << "Generating 1..." << std::endl;
+        ov::Tensor image = pipe.generate(prompt,
+            ov::genai::width(512),
+            ov::genai::height(512),
+            ov::genai::num_inference_steps(20),
+            ov::genai::num_images_per_prompt(1));
+            //ov::genai::callback(progress_bar));
+
+        // writes `num_images_per_prompt` images by pattern name
+        imwrite("image_1.bmp", image, true);
+        std::cout << "Generation 1 ended" << std::endl;
+
+    });
+
+    t.join();
+    t1.join();
+
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
