@@ -13,7 +13,7 @@ from pathlib import Path
 import openvino as ov
 import openvino_genai as ov_genai
 
-from utils.constants import get_default_llm_properties
+from utils.constants import get_default_llm_properties, extra_generate_kwargs
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model, download_gguf_model
 # model_tmp_path fixture import required
 from utils.tokenizers import delete_rt_info, model_tmp_path
@@ -63,7 +63,7 @@ def test_encoded_inputs(model_id, inputs):
         inputs_hf = dict(inputs=torch.tensor(input_ids))
         inputs_ov = ov.Tensor(input_ids)
 
-    hf_output = opt_model.generate(**inputs_hf, generation_config=hf_generation_config).sequences[0]
+    hf_output = opt_model.generate(**inputs_hf, generation_config=hf_generation_config, **extra_generate_kwargs()).sequences[0]
     ov_output = ov_pipe.generate(inputs_ov, ov_generation_config)
 
     hf_res = hf_output[prompt_len:].numpy()
@@ -142,9 +142,9 @@ def test_different_input_types_works_same_and_change_nothing(model_id):
 # Chat scenario
 #
 
-chat_intpus = [
-    (dict(max_new_tokens=20),  ""),
-    (dict(max_new_tokens=20),  "You are a helpful assistant."),
+chat_inputs = [
+    (dict(max_new_tokens=20), ""),
+    (dict(max_new_tokens=20), "You are a helpful assistant."),
     (dict(max_new_tokens=10, num_beam_groups=3, num_beams=15, num_return_sequences=1, diversity_penalty=1.0), "")
 ]
 
@@ -155,12 +155,12 @@ questions = [
     'What was my first question?'
 ]
 
-@pytest.mark.parametrize("intpus", chat_intpus)
+@pytest.mark.parametrize("inputs", chat_inputs)
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.parametrize("string_inputs", [True, False])
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_chat_scenario(model_id, intpus, string_inputs):
+def test_chat_scenario(model_id, inputs, string_inputs):
     chat_history_hf = []
     chat_history_ov = []
 
@@ -169,10 +169,10 @@ def test_chat_scenario(model_id, intpus, string_inputs):
     if string_inputs:
         ov_pipe = create_ov_pipeline(models_path)
     else:
-        # chat is not supported for PA backend with encoded_inputs fromat
+        # chat is not supported for PA backend with encoded_inputs format
         ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
 
-    generation_config_kwargs, system_message = intpus
+    generation_config_kwargs, system_message = inputs
 
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
@@ -190,7 +190,7 @@ def test_chat_scenario(model_id, intpus, string_inputs):
         tokenized = hf_tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
         prompt_len = tokenized['input_ids'].numel()
 
-        answer = opt_model.generate(**tokenized, generation_config=hf_generation_config).sequences[0]
+        answer = opt_model.generate(**tokenized, generation_config=hf_generation_config, **extra_generate_kwargs()).sequences[0]
         answer_str = hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
@@ -223,7 +223,7 @@ def test_chat_scenario_several_chats_in_series():
     opt_model, hf_tokenizer, models_path  = download_and_convert_model(get_chat_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
 
-    generation_config_kwargs, _ = chat_intpus[0]
+    generation_config_kwargs, _ = chat_inputs[0]
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
@@ -239,7 +239,7 @@ def test_chat_scenario_several_chats_in_series():
             tokenized = hf_tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
             prompt_len = tokenized['input_ids'].numel()
     
-            answer = opt_model.generate(**tokenized, generation_config=hf_generation_config).sequences[0]
+            answer = opt_model.generate(**tokenized, generation_config=hf_generation_config, **extra_generate_kwargs()).sequences[0]
             answer_str = hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
             chat_history_hf.append({'role': 'assistant', 'content': answer_str})
     
@@ -262,7 +262,7 @@ def test_chat_scenario_several_start(model_id):
     opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
-    generation_config_kwargs, _ = chat_intpus[0]
+    generation_config_kwargs, _ = chat_inputs[0]
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
 
     ov_pipe.start_chat()
@@ -278,7 +278,7 @@ def test_generate_works_same_before_and_after_chat(model_id):
     opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
-    generation_config_kwargs, _ = chat_intpus[0]
+    generation_config_kwargs, _ = chat_inputs[0]
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     ov_generation_config.apply_chat_template = False
 
@@ -453,7 +453,7 @@ def test_chat_scenario_callback_cancel(model_id):
             tokenized = hf_tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
             prompt_len = tokenized['input_ids'].numel()
 
-            answer = opt_model.generate(**tokenized, generation_config=hf_generation_config).sequences[0]
+            answer = opt_model.generate(**tokenized, generation_config=hf_generation_config, **extra_generate_kwargs()).sequences[0]
             answer_str = hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
             chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
@@ -812,34 +812,23 @@ def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
-@pytest.mark.skip("PA transformation does not work with GGUF FE modeling")
 @pytest.mark.precommit
-def test_pipelines_with_gguf_generate_with_streaming(pipeline_type, model_ids):
-    hf_model_id = model_ids["hf_model_id"]
+def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
     prompt = 'Why is the Sun yellow?'
-
-    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
-    _, _, models_path = download_and_convert_model(hf_model_id)
-
-    ov_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
-
-    # current version of GGUF support in GenAI does not imply tokenizer
-    # so, perform tokenization explicitly and pass tokens to GGUF-based pipeline
-    tokenizer = ov_pipe.get_tokenizer()
-    tokenized_inputs = tokenizer.encode(prompt)
-
-    ov_generation_config = ov_genai.GenerationConfig()
-    ov_generation_config.max_new_tokens = 30
-    ov_generation_config.apply_chat_template = False
-    ov_generation_config.set_eos_token_id(tokenizer.get_eos_token_id())
 
     from utils.network import retry_request
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
     opt_model = retry_request(lambda: AutoModelForCausalLM.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
     hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+
+    ov_generation_config = ov_genai.GenerationConfig()
+    ov_generation_config.max_new_tokens = 30
+    ov_generation_config.apply_chat_template = False
+    ov_generation_config.set_eos_token_id(hf_tokenizer.eos_token_id)
+
     inputs = hf_tokenizer(prompt, return_tensors="pt")
     input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
@@ -847,11 +836,10 @@ def test_pipelines_with_gguf_generate_with_streaming(pipeline_type, model_ids):
     prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
     all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
     res_string_input_1 = all_text_batch[0]
-    print(f'HF = {res_string_input_1}')
 
+    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
-    encoded_result  = ov_pipe_gguf.generate(tokenized_inputs.input_ids, generation_config=ov_generation_config)
-    res_string_input_2 = tokenizer.decode(encoded_result.tokens[0])
-    print(f'OpenVINO GenAI = {res_string_input_2}')
+    encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
+    res_string_input_2 = hf_tokenizer.batch_decode([encoded_result.tokens[0]], skip_special_tokens=True)[0]
 
     assert res_string_input_1 == res_string_input_2
