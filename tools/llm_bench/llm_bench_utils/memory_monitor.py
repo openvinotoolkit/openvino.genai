@@ -118,7 +118,8 @@ class MemoryMonitor:
             ```
         """
         if self._monitoring_in_progress:
-            raise Exception("Monitoring already in progress")
+            log.warning(f"Monitoring was already in progress. MemoryMonitor will be restarted and previous data will be lost for {self.memory_type}.")
+            self.stop()
 
         self._memory_values_queue = queue.Queue()
         self._monitoring_thread_should_stop = False

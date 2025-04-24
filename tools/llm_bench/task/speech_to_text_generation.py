@@ -61,10 +61,14 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         tm_infer_list = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
         result_text = result_text.texts[0]
     else:
+        from optimum.intel.utils.import_utils import is_transformers_version
+        additional_args = {}
+        if is_transformers_version(">=", "4.51"):
+            additional_args["use_model_defaults"] = False
         start = time.perf_counter()
         result_text = pipe(
             raw_speech,
-            generate_kwargs={"task": 'translate', "language": speech_language},
+            generate_kwargs={"task": 'translate', "language": speech_language, **additional_args},
             return_timestamps=ret_timestamps
         )["text"]
         end = time.perf_counter()
@@ -145,7 +149,7 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     if len(speech_list) == 0:
         raise RuntimeError('==Failure speech list is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, speech file nums: {len(speech_file_list)}, speech idx: {speech_idx_list}')
-    pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2txt_model(model_path, device, mem_consumption, **args)
+    pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2_txt_model(model_path, device, mem_consumption, **args)
     md5_list = {num : {} for num in range(num_iters + 1)}
     iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
     input_param = {
