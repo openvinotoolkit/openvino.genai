@@ -8,8 +8,6 @@ import GenAISamplesDocsPlugin from './src/plugins/genai-samples-docs-plugin';
 // GITHUB_REPOSITORY env var is set by GitHub Actions
 const GITHUB_REPOSITORY = process.env.GITHUB_REPOSITORY || 'openvinotoolkit/openvino.genai';
 const [organizationName, projectName] = GITHUB_REPOSITORY.split('/');
-// GITHUB_REPOSITORY is set by GitHub Actions
-const projectName = `${process.env.GITHUB_REPOSITORY?.split('/')[1] || 'openvino.genai'}`
 
 const config: Config = {
   title: 'OpenVINO GenAI',
