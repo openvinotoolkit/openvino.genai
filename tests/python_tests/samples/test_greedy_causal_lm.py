@@ -55,13 +55,13 @@ class TestGreedyCausalLM:
         model = MODELS[model_name]
         
         import transformers
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'])
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'], local_files_only=True)
                 
         if tokenizer.chat_template:
             prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
     
-        for output in transformers.AutoModelForCausalLM.from_pretrained(model['name']).generate(**tokenized, max_length=100, do_sample=False):
+        for output in transformers.AutoModelForCausalLM.from_pretrained(model['name'], local_files_only=True).generate(**tokenized, max_length=100, do_sample=False):
             ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
             logger.info(f'Checking for "{ref=}"')
 

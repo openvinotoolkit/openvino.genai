@@ -1,0 +1,8 @@
+#### Generation Configuration Workflow
+
+1. Get the model default config with `get_generation_config()`
+2. Modify parameters
+3. Apply the updated config using one of the following methods:
+    - Use `set_generation_config(config)`
+    - Pass config directly to `generate()` (e.g. `generate(prompt, config)`)
+    - Specify options as inputs in the `generate()` method (e.g. `generate(prompt, max_new_tokens=100)`)

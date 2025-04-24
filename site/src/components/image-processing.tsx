@@ -18,7 +18,7 @@ export const ImageProcessing = () => {
   return (
     <Section.Container>
       <Section.Column>
-        <Section.Title>Image processing with Visual Language Models</Section.Title>
+        <Section.Title>Image Processing with Visual Language Models</Section.Title>
         <Section.Description>
           An easy-to-use API for vision language models can power chatbots, AI assistants like
           medical helpers, and AI tools like legal contract creators.
@@ -40,7 +40,7 @@ export const ImageProcessing = () => {
           </TabItemCpp>
         </LanguageTabs>
         <hr />
-        <ExploreCodeSamples link="docs/category/samples" />
+        <ExploreCodeSamples link="docs/samples" />
         <GoToDocumentation link="docs/use-cases/image-processing" />
       </Section.Column>
     </Section.Container>
