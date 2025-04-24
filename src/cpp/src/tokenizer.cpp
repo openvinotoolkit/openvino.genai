@@ -169,7 +169,7 @@ public:
 
     // To change the adding special tokens mode we use a statefull subgraph,
     // this flag holds the current state value of the CompiledModel.
-    ov::AnyMap m_state_flags;
+    std::unordered_map<ov::InferRequest*, ov::AnyMap> m_request_to_state_flags;
 
     bool m_older_than_24_5 = false;
 
@@ -186,10 +186,10 @@ public:
     std::vector<std::string> m_vocab = {};
 
     template <typename T>
-    void set_state_value(ov::VariableState& state, std::optional<T> value) {
+    void set_state_value(ov::VariableState& state, std::optional<T> value, ov::AnyMap& state_flags) {
         // better to store which value is in the state locally so that get_state is not called every infer request
         std::optional<T> last_value;
-        ov::genai::utils::read_anymap_param(m_state_flags, state.get_name(), last_value);
+        ov::genai::utils::read_anymap_param(state_flags, state.get_name(), last_value);
         
         // If requested add[skip]_special_tokens, max_length, pading mode, etc.
         // is different from the stored state, need to set state variable.
@@ -200,46 +200,48 @@ public:
             
             *value_tensor.data<T>() = *value;
             state.set_state(value_tensor);
-            m_state_flags[state.get_name()] = *value;
+            state_flags[state.get_name()] = *value;
         } else if (!value.has_value()) {
             // If user called with params, e.g. tokenizer.encode(prompt, add_special_tokens|max_length=...)
             // After that called without params, e.g. tokenizer.encode(prompt) we should reset to the default state.
             state.reset();
-            m_state_flags.erase(state.get_name());
+            state_flags.erase(state.get_name());
         }
     }
 
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
-        // These values should be equal to default values in py_tokenizer.cpp
-        // in order to get the same behavior in C++ when arguments are not specified.
-        std::optional<bool> add_special_tokens_flag = true;
-        std::optional<bool> skip_special_tokens_flag = true;
-        std::optional<int32_t> max_length_val;
-        std::optional<bool> pad_to_max_length_val = false;
-        
-        ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
-        ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
-        ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
-        ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
-
         if (m_older_than_24_5) {
             // Changing add_special_tokens at runtime was introduced in
             // 24.5. Older tokenizers still allow manipulating their
             // state but the effect is incorrect.
             return;
         }
+
+        // These values should be equal to default values in py_tokenizer.cpp
+        // in order to get the same behavior in C++ when arguments are not specified.
+        std::optional<bool> add_special_tokens_flag = true;
+        std::optional<bool> skip_special_tokens_flag = true;
+        std::optional<int32_t> max_length_val;
+        std::optional<bool> pad_to_max_length_val = false;
+
+        ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
+        ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
+        ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
+        ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
+
+        ov::AnyMap& state_flags = m_request_to_state_flags[&infer_request_guard.get()];
         
         for (auto& state: infer_request_guard.get().query_state()) {
             auto name = state.get_name();
 
             if (name == add_special_tokens.name()) {
-                set_state_value(state, add_special_tokens_flag);
+                set_state_value(state, add_special_tokens_flag, state_flags);
             } else if (name == skip_special_tokens.name()) {
-                set_state_value(state, skip_special_tokens_flag);
+                set_state_value(state, skip_special_tokens_flag, state_flags);
             } else if (name == MAX_LENGTH_VAR_ID) {
-                set_state_value(state, max_length_val);
+                set_state_value(state, max_length_val, state_flags);
             } else if (name == PAD_TO_MAX_LENGTH_VAR_ID) {
-                set_state_value(state, pad_to_max_length_val);
+                set_state_value(state, pad_to_max_length_val, state_flags);
             }
         }
     }
@@ -758,7 +760,7 @@ Vocab Tokenizer::get_vocab() const {
 
     Vocab vocab;
     vocab.reserve(m_pimpl->m_vocab.size());
-    for (int64_t i = 0; i < m_pimpl->m_vocab.size(); ++i) {
+    for (size_t i = 0; i < m_pimpl->m_vocab.size(); ++i) {
         vocab[m_pimpl->m_vocab[i]] = i;
     }
     return vocab;

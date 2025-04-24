@@ -1,23 +1,23 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
-import pytest
-import json
-import numpy as np
 import dataclasses
-import openvino
+import json
 import typing
-from transformers import AutoTokenizer
-from typing import Dict, Tuple, List
-import functools
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Dict, List, Tuple
 
-from utils.network import retry_request
-
-from openvino_genai import Tokenizer
-
-from utils.tokenizers import delete_rt_info
-from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
+import numpy as np
+import openvino
+import openvino.properties.hint as hints
+import pytest
 from data.models import get_models_list
+from openvino_genai import Tokenizer
+from openvino_tokenizers import convert_tokenizer
+from transformers import AutoTokenizer
+from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
+from utils.network import retry_request
+from utils.tokenizers import delete_rt_info
 
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
@@ -90,9 +90,7 @@ def get_chat_templates():
 
     from data.tokenizer_configs import get_tokenizer_configs
 
-    return [
-        (k, v) for k, v in get_tokenizer_configs().items() if k not in skipped_models
-    ]
+    return [(k, v) for k, v in get_tokenizer_configs().items() if k not in skipped_models]
 
 
 prompts = [
@@ -177,25 +175,19 @@ conversation = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("chat_config", get_chat_templates())
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict], model_id):
+@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
+def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict], ov_hf_tokenizers):
     tokenizer_config = chat_config[1]
-
-    # Will load openvino_model for tiny-random-phi as a placeholder
-    # but indeed only Tokenizer and apply_chat_template will be tested.
-    _, hf_tokenizer, models_path = download_and_convert_model(model_id)
+    # load hf_tokenizer only to apply chat template to ov_tokenizer later
+    _, hf_tokenizer = ov_hf_tokenizers
 
     hf_full_history_str = hf_tokenizer.apply_chat_template(
         conversation, add_generation_prompt=False, tokenize=False, **tokenizer_config
     )
 
-    ov_tokenizer = load_genai_tokenizer_with_configs(
-        [(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1]
-    )
+    ov_tokenizer = load_genai_tokenizer_with_configs([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
     ov_tokenizer.set_chat_template(tokenizer_config["chat_template"])
-    ov_full_history_str = ov_tokenizer.apply_chat_template(
-        conversation, add_generation_prompt=False
-    )
+    ov_full_history_str = ov_tokenizer.apply_chat_template(conversation, add_generation_prompt=False)
 
     if ov_full_history_str != hf_full_history_str:
         print(f"hf reference: {hf_full_history_str}")
@@ -206,9 +198,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict], mode
     # Example: Qwen2-VL chat template
     chat_template_for_empty_output = "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}"
     with pytest.raises(Exception):
-        ov_tokenizer.apply_chat_template(
-            conversation, chat_template=chat_template_for_empty_output
-        )
+        ov_tokenizer.apply_chat_template(conversation, chat_template=chat_template_for_empty_output)
 
 
 @pytest.mark.precommit
@@ -221,9 +211,7 @@ def test_set_chat_template(ov_hf_tokenizers):
     dummy_conversation = [
         {"role": "user", "content": prompt},
     ]
-    identity_chat_template = (
-        "{% for message in messages %}{{ message['content'] }}{% endfor %}"
-    )
+    identity_chat_template = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
 
     templated_prompt_inline = ov_tokenizer.apply_chat_template(
         dummy_conversation,
@@ -232,9 +220,7 @@ def test_set_chat_template(ov_hf_tokenizers):
     )
 
     ov_tokenizer.set_chat_template(identity_chat_template)
-    templated_prompt = ov_tokenizer.apply_chat_template(
-        dummy_conversation, add_generation_prompt=False
-    )
+    templated_prompt = ov_tokenizer.apply_chat_template(dummy_conversation, add_generation_prompt=False)
 
     assert templated_prompt_inline == templated_prompt
     assert prompt == templated_prompt
@@ -249,53 +235,35 @@ eng_prompts = [
     "Multiline\nstring\nWow!",
 ]
 unicode_prompts = [
-    *map(
-        lambda x: str.encode(x, "unicode_escape"),
-        [
+    *(str.encode(x, "unicode_escape") for x in [
             "如果您有任何疑问，请联系我们，我们将予以解答。",
             "מחרוזת בדיקה",
-        ],
-    )
+        ])
 ]
 
 
 @pytest.mark.parametrize(
-    "model_id",
+    "ov_hf_tokenizers",
     [
         "katuni4ka/tiny-random-phi3",
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
     ],
+    indirect=True,
 )
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
-def test_special_tokens(tmp_path, prompt, model_id):
+def test_special_tokens(prompt, ov_hf_tokenizers):
     prompt = prompt.decode("unicode_escape") if isinstance(prompt, bytes) else prompt
 
-    model_id, hf_tok_load_params = (
-        (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
-    )
-
-    hf_tokenizer = retry_request(
-        lambda: AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params)
-    )
-    convert_and_save_tokenizer(hf_tokenizer, tmp_path)
-    ov_tokenizer = Tokenizer(tmp_path)
+    ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
 
     # Calling encode with 'add_special_tokens' will set state flag.
-    ov_res_add_spec = ov_tokenizer.encode(
-        prompt, add_special_tokens=True
-    ).input_ids.data
-    ov_res_no_spec = ov_tokenizer.encode(
-        prompt, add_special_tokens=False
-    ).input_ids.data
-    hf_res_add_spec = hf_tokenizer(
-        prompt, return_tensors="np", add_special_tokens=True
-    )["input_ids"]
-    hf_res_no_spec = hf_tokenizer(
-        prompt, return_tensors="np", add_special_tokens=False
-    )["input_ids"]
+    ov_res_add_spec = ov_tokenizer.encode(prompt, add_special_tokens=True).input_ids.data
+    ov_res_no_spec = ov_tokenizer.encode(prompt, add_special_tokens=False).input_ids.data
+    hf_res_add_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=True)["input_ids"]
+    hf_res_no_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=False)["input_ids"]
     assert np.all(ov_res_add_spec == hf_res_add_spec)
     assert np.all(ov_res_no_spec == hf_res_no_spec)
 
@@ -304,24 +272,41 @@ def test_special_tokens(tmp_path, prompt, model_id):
     assert hf_res_add_spec.size != hf_res_no_spec.size
 
     # Decode with 'skip_special_tokens'
-    decoded_genai_skip_spec = ov_tokenizer.decode(
-        hf_res_add_spec, skip_special_tokens=True
-    )[0]
-    decoded_genai_no_skip = ov_tokenizer.decode(
-        hf_res_add_spec, skip_special_tokens=False
-    )[0]
-    decoded_hf_skip_spec = hf_tokenizer.decode(
-        hf_res_add_spec[0], skip_special_tokens=True
-    )
-    decoded_hf_no_skip = hf_tokenizer.decode(
-        hf_res_add_spec[0], skip_special_tokens=False
-    )
+    decoded_genai_skip_spec = ov_tokenizer.decode(hf_res_add_spec, skip_special_tokens=True)[0]
+    decoded_genai_no_skip = ov_tokenizer.decode(hf_res_add_spec, skip_special_tokens=False)[0]
+    decoded_hf_skip_spec = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=True)
+    decoded_hf_no_skip = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=False)
     assert decoded_genai_skip_spec == decoded_hf_skip_spec
     assert decoded_genai_no_skip == decoded_hf_no_skip
 
     # Check that skip_special_tokens indeed made any difference
     assert decoded_genai_skip_spec != decoded_genai_no_skip
     assert decoded_hf_skip_spec != decoded_hf_no_skip
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_miltiple_infer_request_state():
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained("llamafactory/tiny-random-Llama-3"))
+    ov_tokenizer = convert_tokenizer(hf_tokenizer)
+    with TemporaryDirectory() as temp_dir:
+        tmp_path = Path(temp_dir)
+        openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
+        del ov_tokenizer, hf_tokenizer
+
+        ov_tokenizer = Tokenizer(
+            tmp_path,
+            properties={hints.performance_mode: hints.PerformanceMode.THROUGHPUT},
+        )
+    text = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+    You are a helpful assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+    What is OpenVINO?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+    """
+    result_tensors = [ov_tokenizer.encode(text, add_special_tokens=False).input_ids.data for _ in range(10)]
+    gt_tensor = result_tensors.pop()
+    assert all(((tensor.shape == gt_tensor.shape) and (tensor == gt_tensor).all()) for tensor in result_tensors)
 
 
 @pytest.fixture(scope="module")
@@ -373,9 +358,12 @@ prompts = [
     [
         ("katuni4ka/tiny-random-phi3", {"padding_side": None}),
         ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None}),
-        ("katuni4ka/tiny-random-llava-next", dict(padding_side="right")),
-        ("katuni4ka/tiny-random-llava-next", dict(padding_side="left")),
-        ("BAAI/bge-small-en-v1.5", {"padding_side": None}),  # model with 2 RaggedToDense ops
+        ("katuni4ka/tiny-random-llava-next", {"padding_side": "right"}),
+        ("katuni4ka/tiny-random-llava-next", {"padding_side": "left"}),
+        (
+            "BAAI/bge-small-en-v1.5",
+            {"padding_side": None},
+        ),  # model with 2 RaggedToDense ops
         # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
     ],
     indirect=True,
@@ -395,20 +383,20 @@ def test_padding(
     # Therefore, for default mode truncation=True.
     # For the same reason runcation is always applied.
     hf_pad_params_map = {
-        None: dict(padding="longest", truncation=True),
-        False: dict(padding="longest", truncation=True),
-        True: dict(padding="max_length", truncation=True),
+        None: {"padding": "longest", "truncation": True},
+        False: {"padding": "longest", "truncation": True},
+        True: {"padding": "max_length", "truncation": True},
     }
     hf_params = dict(
         add_special_tokens=add_special_tokens,
         max_length=max_length,
         **hf_pad_params_map[pad_to_max_length],
     )
-    ov_params = dict(
-        add_special_tokens=add_special_tokens,
-        max_length=max_length,
-        pad_to_max_length=pad_to_max_length,
-    )
+    ov_params = {
+        "add_special_tokens": add_special_tokens,
+        "max_length": max_length,
+        "pad_to_max_length": pad_to_max_length,
+    }
     if pad_to_max_length is None:
         ov_params.pop("pad_to_max_length")
     if max_length is None:
@@ -430,9 +418,7 @@ def test_load_special_tokens_from_config_json(model_tmp_path):
         "bos_token_id": 42,
         "eos_token_id": 37,
     }
-    tok = load_genai_tokenizer_with_configs(
-        [(config_json, "config.json")], model_tmp_path[1]
-    )
+    tok = load_genai_tokenizer_with_configs([(config_json, "config.json")], model_tmp_path[1])
     assert tok.get_pad_token_id() == config_json["pad_token_id"]
     assert tok.get_bos_token_id() == config_json["bos_token_id"]
     assert tok.get_eos_token_id() == config_json["eos_token_id"]
@@ -447,9 +433,7 @@ def test_load_special_tokens_from_special_tokens_map_json(model_tmp_path):
         "bos_token": {"content": "<custom_bos>"},
         "eos_token": {"content": "<custom_eos>"},
     }
-    tok = load_genai_tokenizer_with_configs(
-        [(special_tokens_map_json, "special_tokens_map.json")], model_tmp_path[1]
-    )
+    tok = load_genai_tokenizer_with_configs([(special_tokens_map_json, "special_tokens_map.json")], model_tmp_path[1])
     assert tok.get_pad_token() == special_tokens_map_json["pad_token"]["content"]
     assert tok.get_bos_token() == special_tokens_map_json["bos_token"]["content"]
     assert tok.get_eos_token() == special_tokens_map_json["eos_token"]["content"]
@@ -472,9 +456,7 @@ def test_load_special_tokens_from_tokenizer_config_json(model_tmp_path):
         "eos_token": "</s>",
     }
 
-    tok = load_genai_tokenizer_with_configs(
-        [(tok_config_json, "tokenizer_config.json")], model_tmp_path[1]
-    )
+    tok = load_genai_tokenizer_with_configs([(tok_config_json, "tokenizer_config.json")], model_tmp_path[1])
     assert tok.get_pad_token() == tok_config_json["pad_token"]
     assert tok.get_bos_token() == tok_config_json["bos_token"]
     assert tok.get_eos_token() == tok_config_json["eos_token"]
@@ -528,9 +510,7 @@ def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(
 ):
     # only string representation is provided, find token integers by inference
     model_id, temp_path = model_tmp_path
-    tokenizer = retry_request(
-        lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    )
+    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
 
     special_tokens_map_json = {}
     token_str_int_map = {}
@@ -543,9 +523,7 @@ def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(
             token_str_int_map.update({token_str: token_id})
 
     # since only string representations are present in the json will try to get by inference
-    tok = load_genai_tokenizer_with_configs(
-        [(special_tokens_map_json, "special_tokens_map.json")], temp_path
-    )
+    tok = load_genai_tokenizer_with_configs([(special_tokens_map_json, "special_tokens_map.json")], temp_path)
 
     # check ids inferred correctly for special tokens existing if HF tokenizer
     if "pad_token" in token_str_int_map:
@@ -567,13 +545,9 @@ class ChatTemplates:
 
 
 def generate_tokenizer(tmp_path, chat_templates):
-    input_ids = openvino.op.Constant(
-        openvino.Type.i64, openvino.Shape([0, 0]), []
-    ).output(0)
+    input_ids = openvino.op.Constant(openvino.Type.i64, openvino.Shape([0, 0]), []).output(0)
     input_ids.get_tensor().set_names({"input_ids"})
-    attention_mask = openvino.op.Constant(
-        openvino.Type.i64, openvino.Shape([0, 0]), []
-    ).output(0)
+    attention_mask = openvino.op.Constant(openvino.Type.i64, openvino.Shape([0, 0]), []).output(0)
     attention_mask.get_tensor().set_names({"attention_mask"})
     model = openvino.Model(
         [openvino.op.Result(input_ids), openvino.op.Result(attention_mask)],
@@ -599,17 +573,13 @@ def generate_tokenizer(tmp_path, chat_templates):
 QWEN2_VL_2B = "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}"
 
 
-SIMPLIFIED_QWEN2_VL_2B = (
-    "{% for message in messages %}{{ message['content'] }}{% endfor %}"
-)
+SIMPLIFIED_QWEN2_VL_2B = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
 
 
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_set_special_runtime_template(tmp_path):
-    tokenizer = generate_tokenizer(
-        tmp_path, ChatTemplates(None, None, None, None, None, None)
-    )
+    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None, None))
     tokenizer.chat_template = QWEN2_VL_2B
     assert tokenizer.chat_template == SIMPLIFIED_QWEN2_VL_2B
 
