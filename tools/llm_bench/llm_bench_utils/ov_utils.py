@@ -560,9 +560,9 @@ def create_speech_2_txt_model(model_path, device, memory_monitor, **kwargs):
     if is_transformers_version(">=", "4.51.0"):
         ov_model.config.forced_decoder_ids = None
 
-    if hasattr(ov_model, 'generation_config'):
-        if hasattr(ov_model.generation_config, 'forced_decoder_ids'):
-            ov_model.generation_config.forced_decoder_ids = None
+        if hasattr(ov_model, 'generation_config'):
+            if hasattr(ov_model.generation_config, 'forced_decoder_ids'):
+                ov_model.generation_config.forced_decoder_ids = None
 
     processor = AutoProcessor.from_pretrained(model_path)
     pipe = pipeline(
