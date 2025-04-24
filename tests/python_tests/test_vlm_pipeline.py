@@ -108,13 +108,13 @@ def get_image_by_link(link):
     from openvino import Tensor
     import numpy as np
 
-    # image = Image.open(requests.get(link, stream=True).raw)
-    with open(
-        "/home/apaniuko/cpp/openvino.genai/tests/python_tests/d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg",
-        "rb",
-    ) as f:
-        image = Image.open(f)
-        image.load()
+    image = Image.open(requests.get(link, stream=True).raw)
+    # with open(
+    #     "/home/apaniuko/cpp/openvino.genai/tests/python_tests/d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg",
+    #     "rb",
+    # ) as f:
+    #     image = Image.open(f)
+    #     image.load()
     if image.mode != "RGB":
         image = image.convert("RGB")
     image_data = np.array(image)
