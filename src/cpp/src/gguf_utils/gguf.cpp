@@ -416,6 +416,8 @@ std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
     }
     if (qtype.count("output.qtype")) {
         qtype_map["lm_head.qtype"] = qtype.at("output.qtype");
+    } else {
+        qtype_map["lm_head.qtype"] = gguf_tensor_type::GGUF_TYPE_F16;//To avoid that no output.weights layer
     }
 
     for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
