@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import shutil
-import pytest
 from pathlib import Path
 from typing import List, Tuple
 
 import openvino
+import pytest
+from data.models import get_models_list
 
 from utils.hugging_face import download_and_convert_model
-from data.models import get_models_list
 
 
 @pytest.fixture(scope="module")
