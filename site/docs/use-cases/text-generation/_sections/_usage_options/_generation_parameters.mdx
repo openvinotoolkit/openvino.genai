@@ -1,0 +1,99 @@
+import BasicGenerationConfiguration from '@site/docs/use-cases/_shared/_basic_generation_configuration.mdx';
+import BeamSearchGeneration from '@site/docs/use-cases/_shared/_beam_search_generation.mdx';
+import GenerationConfigurationWorkflow from '@site/docs/use-cases/_shared/_generation_configuration_workflow.mdx';
+
+### Use Different Generation Parameters
+
+Fine-tune your LLM's output by adjusting various generation parameters.
+OpenVINO GenAI supports multiple sampling strategies and generation configurations to help you achieve the desired balance between deterministic and creative outputs.
+
+<GenerationConfigurationWorkflow />
+
+<BasicGenerationConfiguration>
+  <LanguageTabs>
+      <TabItemPython>
+          ```python
+          import openvino_genai as ov_genai
+
+          pipe = ov_genai.LLMPipeline(model_path, "CPU")
+
+          # Get default configuration
+          config = pipe.get_generation_config()
+
+          # Modify parameters
+          config.max_new_tokens = 100
+          config.temperature = 0.7
+          config.top_k = 50
+          config.top_p = 0.9
+          config.repetition_penalty = 1.2
+
+          # Generate text with custom configuration
+          output = pipe.generate(prompt, config)
+          ```
+      </TabItemPython>
+      <TabItemCpp>
+          ```cpp
+          int main() {
+              ov::genai::LLMPipeline pipe(model_path, "CPU");
+
+              // Get default configuration
+              auto config = pipe.get_generation_config();
+
+              // Modify parameters
+              config.max_new_tokens = 100;
+              config.temperature = 0.7f;
+              config.top_k = 50;
+              config.top_p = 0.9f;
+              config.repetition_penalty = 1.2f;
+
+              // Generate text with custom configuration
+              auto output = pipe.generate(prompt, config);
+          }
+          ```
+      </TabItemCpp>
+  </LanguageTabs>
+</BasicGenerationConfiguration>
+
+<BeamSearchGeneration>
+  <LanguageTabs>
+      <TabItemPython>
+          ```python
+          import openvino_genai as ov_genai
+
+          pipe = ov_genai.LLMPipeline(model_path, "CPU")
+
+          # Get default generation config
+          config = pipe.get_generation_config()
+
+          # Modify parameters
+          config.max_new_tokens = 256
+          config.num_beams = 15
+          config.num_beam_groups = 3
+          config.diversity_penalty = 1.0
+
+          # Generate text with custom configuration
+          output = pipe.generate(prompt, config)
+          ```
+      </TabItemPython>
+      <TabItemCpp>
+          ```cpp
+          int main(int argc, char* argv[]) {
+              std::string model_path = argv[1];
+              ov::genai::LLMPipeline pipe(model_path, "CPU");
+
+              // Get default generation config
+              ov::genai::GenerationConfig config = pipe.get_generation_config();
+
+              // Modify parameters
+              config.max_new_tokens = 256;
+              config.num_beams = 15;
+              config.num_beam_groups = 3;
+              config.diversity_penalty = 1.0f;
+
+              // Generate text with custom configuration
+              auto output = pipe.generate(prompt, config);
+          }
+          ```
+      </TabItemCpp>
+  </LanguageTabs>
+</BeamSearchGeneration>

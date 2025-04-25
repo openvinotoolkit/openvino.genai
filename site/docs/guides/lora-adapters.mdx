@@ -1,0 +1,105 @@
+---
+sidebar_position: 4
+---
+
+# LoRA Adapters
+
+## Overview
+
+Low-Rank Adaptation (LoRA) is a technique for efficiently fine-tuning large models without changing the base model's weights.
+LoRA adapters enable customization of model outputs for specific tasks, styles, or domains while requiring significantly fewer computational resources than full fine-tuning.
+
+:::info
+For more details about LoRA, see [Low-Rank Adaptation (LoRA)](/docs/concepts/lora).
+:::
+
+OpenVINO GenAI provides built-in support for LoRA adapters in [text generation](/docs/use-cases/text-generation/) and [image generation](/docs/use-cases/image-generation/) pipelines.
+This capability allows you to dynamically switch between or combine multiple adapters without recompiling the model.
+
+:::info
+See [Supported Models](/docs/supported-models/) for the list of models that support LoRA adapters.
+:::
+
+## Key Features
+
+- **Dynamic Adapter Application:** Apply LoRA adapters at runtime without model recompilation.
+- **Multiple Adapter Support:** Blend effects from multiple adapters with different weights.
+- **Adapter Switching:** Change adapters between generation calls without pipeline reconstruction.
+- **Safetensors Format:** Support for industry-standard `safetensors` format for adapter files.
+
+## Using LoRA Adapters
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        # Initialize pipeline with adapters
+        adapter_config = ov_genai.AdapterConfig()
+
+        # Add multiple adapters with different weights
+        adapter1 = ov_genai.Adapter("path/to/lora1.safetensors")
+        adapter2 = ov_genai.Adapter("path/to/lora2.safetensors")
+
+        adapter_config.add(adapter1, alpha=0.5)
+        adapter_config.add(adapter2, alpha=0.5)
+
+        pipe = ov_genai.LLMPipeline(
+            model_path,
+            "CPU",
+            adapters=adapter_config
+        )
+
+        # Generate with current adapters
+        output1 = pipe.generate("Generate story about", max_new_tokens=100)
+
+        # Switch to different adapter configuration
+        new_config = ov_genai.AdapterConfig()
+        new_config.add(adapter1, alpha=1.0)
+        output2 = pipe.generate(
+            "Generate story about",
+            max_new_tokens=100,
+            adapters=new_config
+        )
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include "openvino/genai/llm_pipeline.hpp"
+
+        int main() {
+            ov::genai::AdapterConfig adapter_config;
+
+            // Add multiple adapters with different weights
+            ov::genai::Adapter adapter1("path/to/lora1.safetensors");
+            ov::genai::Adapter adapter2("path/to/lora2.safetensors");
+
+            adapter_config.add(adapter1, 0.5f);
+            adapter_config.add(adapter2, 0.5f);
+
+            ov::genai::LLMPipeline pipe(
+                model_path,
+                "CPU",
+                ov::genai::adapters(adapter_config)
+            );
+
+            // Generate with current adapters
+            auto output1 = pipe.generate("Generate story about", ov::genai::max_new_tokens(100));
+
+            // Switch to different adapter configuration
+            ov::genai::AdapterConfig new_config;
+            new_config.add(adapter1, 1.0f);
+            auto output2 = pipe.generate(
+                "Generate story about",
+                ov::genai::adapters(new_config),
+                ov::genai::max_new_tokens(100)
+            );
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+## LoRA Adapters Sources
+
+1. **Hugging Face:** Browse adapters for various models at [huggingface.co/models](https://huggingface.co/models?other=lora) using "LoRA" filter.
+2. **Civitai:** For stable diffusion models, [Civitai](https://civitai.com/) offers a wide range of LoRA adapters for various styles and subjects.

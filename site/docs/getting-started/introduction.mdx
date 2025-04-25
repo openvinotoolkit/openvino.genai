@@ -15,7 +15,7 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 
 ## Key Features and Benefits
 
-- **📦 Pre-built Generative AI Pipelines:** Ready-to-use pipelines for text generation (LLMs), image generation (Diffuser-based), speech processing (Whisper), and visual language models (VLMs). See all [supported use cases](/docs/category/use-cases).
+- **📦 Pre-built Generative AI Pipelines:** Ready-to-use pipelines for text generation (LLMs), image generation (Diffuser-based), speech recognition (Whisper), and visual language models (VLMs). See all [supported use cases](/docs/category/use-cases).
 - **👣 Minimal Footprint:** Smaller binary size and reduced memory footprint compared to other frameworks.
 - **🚀 Performance Optimization:** Hardware-specific optimizations for CPU, GPU, and NPU devices.
 - **👨‍💻 Programming Language Support:** Comprehensive APIs in both Python and C++.
@@ -28,11 +28,13 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 Using OpenVINO GenAI typically involves three main steps:
 
 1. **Model Preparation:**
-    - Convert model from other frameworks to the OpenVINO IR format (e.g. using `optimum-intel`), optionally applying weights compression.
     - Download pre-converted model in OpenVINO IR format (e.g. from [OpenVINO Toolkit](https://huggingface.co/OpenVINO) organization on Hugging Face).
+    - Convert model from other frameworks to the OpenVINO IR format (e.g. using `optimum-intel`), optionally applying weights compression.
     :::info
 
     You can use models from [Hugging Face](https://huggingface.co/) and [ModelScope](https://modelscope.cn/home)
+
+    Refer to [Model Preparation](/docs/category/model-preparation) for more details.
 
     :::
 2. **Pipeline Setup:** Initialize the appropriate pipeline for your task (`LLMPipeline`, `Text2ImagePipeline`, `WhisperPipeline`, `VLMPipeline`, etc.) with the converted model.
@@ -53,9 +55,3 @@ Compared to Hugging Face Optimum Intel, OpenVINO GenAI offers a smaller footprin
 | C++ support | ✅ | ✅ | ❌ |
 | Pre-built pipelines | ✅ | ❌ | ✅ |
 | Model variety | Medium | High | High |
-
-## System Requirements
-
-OpenVINO GenAI is built on top of OpenVINO Runtime and shares the same system requirements.
-
-Refer to the [OpenVINO System Requirements](https://docs.openvino.ai/2025/about-openvino/release-notes-openvino/system-requirements.html) for more details.
