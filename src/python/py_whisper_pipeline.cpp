@@ -42,14 +42,14 @@ auto whisper_generate_docstring = R"(
     :type raw_speech_input: List[float]
 
     :param generation_config: generation_config
-    :type generation_config: WhisperGenerationConfig or a Dict
+    :type generation_config: WhisperGenerationConfig or a dict
 
     :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
                      Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
     :type : Callable[[str], bool], ov.genai.StreamerBase
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
-    :type : Dict
+    :type : dict
 
     :return: return results in decoded form
     :rtype: WhisperDecodedResults
@@ -109,7 +109,7 @@ auto whisper_generation_config_docstring = R"(
     :type language: Optional[str]
 
     :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
-    :type lang_to_id: Dict[str, int]
+    :type lang_to_id: dict[str, int]
 
     :param task: Task to use for generation, either “translate” or “transcribe”
     :type task: int
