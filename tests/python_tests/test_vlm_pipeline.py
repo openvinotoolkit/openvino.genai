@@ -480,7 +480,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_im
 
 
 def retry(func):
-    max_retries = 10
+    max_retries = 20
     for idx in range(max_retries):
         try: 
             return func()
