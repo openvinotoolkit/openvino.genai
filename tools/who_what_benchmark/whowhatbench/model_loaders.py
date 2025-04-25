@@ -1,8 +1,10 @@
 import logging
 import json
+import torch
 
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq
-from diffusers import DiffusionPipeline, AutoPipelineForImage2Image, AutoPipelineForInpainting
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
+
+from .utils import mock_torch_cuda_is_available
 
 
 logging.basicConfig(level=logging.INFO)
@@ -19,8 +21,12 @@ class GenAIModelWrapper:
         self.model_type = model_type
 
         if model_type == "text" or model_type == "visual-text":
-            self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+            try:
+                self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+            except Exception:
+                self.config = AutoConfig.from_pretrained(model_dir)
         elif model_type == "text-to-image":
+            from diffusers import DiffusionPipeline
             self.config = DiffusionPipeline.load_config(
                 model_dir, trust_remote_code=True)
 
@@ -31,14 +37,41 @@ class GenAIModelWrapper:
             return getattr(self.model, attr)
 
 
-def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
+def get_scheduler_config_genai(cb_config):
+    import openvino_genai
+
+    default_cb_config = {"cache_size": 1}
+    scheduler_config = openvino_genai.SchedulerConfig()
+    scheduler_params = cb_config or default_cb_config
+    if scheduler_params:
+        logger.info(f"Scheduler parameters for:\n{scheduler_params}")
+        for param, value in scheduler_params.items():
+            if param == "cache_eviction_config":
+                value = openvino_genai.CacheEvictionConfig(aggregation_mode=openvino_genai.AggregationMode.NORM_SUM, **value)
+            setattr(scheduler_config, param, value)
+
+    return scheduler_config
+
+
+def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     try:
         import openvino_genai
     except ImportError:
         logger.error(
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
-    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device=device, **ov_config), model_dir, "text")
+
+    is_continuous_batching = kwargs.get("cb_config", None) is not None
+
+    if is_continuous_batching:
+        logger.info("Using OpenVINO GenAI Continuous Batching API")
+        scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
+        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, **ov_config)
+    else:
+        logger.info("Using OpenVINO GenAI LLMPipeline API")
+        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, **ov_config)
+
+    return GenAIModelWrapper(pipeline, model_dir, "text")
 
 
 def load_text_llamacpp_pipeline(model_dir):
@@ -52,18 +85,39 @@ def load_text_llamacpp_pipeline(model_dir):
     return model
 
 
+def load_text_hf_pipeline(model_id, device):
+    model_kwargs = {}
+
+    if not torch.cuda.is_available or device.lower() == "cpu":
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        is_gptq = False
+        is_awq = False
+        if getattr(config, "quantization_config", None):
+            is_gptq = config.quantization_config["quant_method"] == "gptq"
+            is_awq = config.quantization_config["quant_method"] == "awq"
+        if is_gptq or is_awq:
+            # infer in FP32
+            model_kwargs["torch_dtype"] = torch.float32
+        with mock_torch_cuda_is_available(is_gptq or is_awq):
+            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map="cpu", **model_kwargs)
+        if is_awq:
+            model.is_awq = is_awq
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
+        )
+    model.eval()
+    return model
+
+
 def load_text_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False,
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs,
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id, trust_remote_code=True, device_map=device.lower()
-        )
-        model.eval()
+        model = load_text_hf_pipeline(model_id, device)
     elif use_genai:
-        logger.info("Using OpenVINO GenAI API")
-        model = load_text_genai_pipeline(model_id, device, ov_config)
+        model = load_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_llamacpp:
         logger.info("Using llama.cpp API")
         model = load_text_llamacpp_pipeline(model_id)
@@ -74,17 +128,27 @@ def load_text_model(
             model = OVModelForCausalLM.from_pretrained(
                 model_id, trust_remote_code=True, device=device, ov_config=ov_config
             )
-        except ValueError:
-            config = AutoConfig.from_pretrained(
-                model_id, trust_remote_code=True)
-            model = OVModelForCausalLM.from_pretrained(
-                model_id,
-                config=config,
-                trust_remote_code=True,
-                use_cache=True,
-                device=device,
-                ov_config=ov_config,
-            )
+        except Exception:
+            try:
+                config = AutoConfig.from_pretrained(
+                    model_id, trust_remote_code=True)
+                model = OVModelForCausalLM.from_pretrained(
+                    model_id,
+                    config=config,
+                    trust_remote_code=True,
+                    use_cache=True,
+                    device=device,
+                    ov_config=ov_config,
+                )
+            except Exception:
+                config = AutoConfig.from_pretrained(model_id)
+                model = OVModelForCausalLM.from_pretrained(
+                    model_id,
+                    config=config,
+                    use_cache=True,
+                    device=device,
+                    ov_config=ov_config,
+                )
 
     return model
 
@@ -111,6 +175,7 @@ def load_text2image_model(
         logger.info("Using OpenvINO GenAI API")
         model = load_text2image_genai_pipeline(model_id, device, ov_config)
     elif use_hf:
+        from diffusers import DiffusionPipeline
         logger.info("Using HF Transformers API")
         model = DiffusionPipeline.from_pretrained(
             model_id, trust_remote_code=True)
@@ -177,6 +242,11 @@ def load_visual_text_model(
             model.get_vision_tower().load_model()
         except Exception:
             pass
+
+        if "internvl" in model.config.model_type:
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            img_context_token_id = tokenizer.convert_tokens_to_ids("<IMG_CONTEXT>")
+            model.img_context_token_id = img_context_token_id
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_visual_text_genai_pipeline(model_id, device, ov_config)
@@ -218,6 +288,7 @@ def load_imagetext2image_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
 ):
     if use_hf:
+        from diffusers import AutoPipelineForImage2Image
         logger.info("Using HF Transformers API")
         model = AutoPipelineForImage2Image.from_pretrained(
             model_id, trust_remote_code=True
@@ -264,6 +335,7 @@ def load_inpainting_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
 ):
     if use_hf:
+        from diffusers import AutoPipelineForInpainting
         logger.info("Using HF Transformers API")
         model = AutoPipelineForInpainting.from_pretrained(
             model_id, trust_remote_code=True
@@ -294,7 +366,7 @@ def load_inpainting_model(
 
 
 def load_model(
-    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False
+    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
     if model_id is None:
         return None
@@ -306,7 +378,7 @@ def load_model(
         ov_options = {}
 
     if model_type == "text":
-        return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp)
+        return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(
             model_id, device, ov_options, use_hf, use_genai

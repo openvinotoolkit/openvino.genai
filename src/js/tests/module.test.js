@@ -1,4 +1,4 @@
-import { Pipeline } from '../lib/module.js';
+import { LLMPipeline } from '../dist/index.js';
 
 import assert from 'node:assert/strict';
 import { describe, it, before, after } from 'node:test';
@@ -11,7 +11,7 @@ describe('module', async () => {
   let pipeline = null;
 
   await before(async () => {
-    pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
+    pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
 
     await pipeline.startChat();
   });
@@ -23,6 +23,7 @@ describe('module', async () => {
   await it('should generate non empty string', async () => {
     const result = await pipeline.generate(
       'Type something in English',
+      // eslint-disable-next-line camelcase
       { temperature: '0', max_new_tokens: '4' },
       () => {},
     );
@@ -33,19 +34,19 @@ describe('module', async () => {
 
 describe('corner cases', async () => {
   it('should throw an error if pipeline is already initialized', async () => {
-    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
+    const pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
 
     await assert.rejects(
       async () => await pipeline.init(),
       {
         name: 'Error',
-        message: 'Pipeline is already initialized',
+        message: 'LLMPipeline is already initialized',
       },
     );
   });
 
   it('should throw an error if chat is already started', async () => {
-    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
+    const pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
 
     await pipeline.startChat();
 
@@ -59,7 +60,7 @@ describe('corner cases', async () => {
   });
 
   it('should throw an error if chat is not started', async () => {
-    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
+    const pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
 
     await assert.rejects(
       () => pipeline.finishChat(),
@@ -75,7 +76,7 @@ describe('generation parameters validation', () => {
   let pipeline = null;
 
   before(async () => {
-    pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
+    pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
 
     await pipeline.startChat();
   });
@@ -89,39 +90,44 @@ describe('generation parameters validation', () => {
       async () => await pipeline.generate(),
       {
         name: 'Error',
-        message: 'Prompt must be a string',
+        message: 'Prompt must be a string or string[]',
       },
     );
   });
 
-  it('should throw an error if generationCallback is not a function', async () => {
-    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
+  it(
+    'should throw an error if generationCallback is not a function',
+    async () => {
+      const pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
 
-    await pipeline.startChat();
+      await pipeline.startChat();
 
-    await assert.rejects(
-      async () => await pipeline.generate('prompt', {}, false),
-      {
-        name: 'Error',
-        message: 'Generation callback must be a function',
-      },
-    );
-  });
+      await assert.rejects(
+        async () => await pipeline.generate('prompt', {}, false),
+        {
+          name: 'Error',
+          message: 'Callback must be a function',
+        },
+      );
+    });
 
-  it('should throw an error if options specified but not an object', async () => {
-    await assert.rejects(
-      async () => await pipeline.generate('prompt', 'options', () => {}),
-      {
-        name: 'Error',
-        message: 'Options must be an object',
-      },
-    );
-  });
+  it(
+    'should throw an error if options specified but not an object',
+    async () => {
+      await assert.rejects(
+        async () => await pipeline.generate('prompt', 'options', () => {}),
+        {
+          name: 'Error',
+          message: 'Options must be an object',
+        },
+      );
+    });
 
   it('should perform generation with default options', async () => {
     try {
+      // eslint-disable-next-line camelcase
       await pipeline.generate('prompt', { max_new_tokens: 1 });
-    } catch (error) {
+    } catch(error) {
       assert.fail(error);
     }
 
@@ -129,12 +135,14 @@ describe('generation parameters validation', () => {
   });
 
   it('should return a string as generation result', async () => {
+    // eslint-disable-next-line camelcase
     const reply = await pipeline.generate('prompt', { max_new_tokens: 1 });
 
     assert.strictEqual(typeof reply, 'string');
   });
 
   it('should call generationCallback with string chunk', async () => {
+    // eslint-disable-next-line camelcase
     await pipeline.generate('prompt', { max_new_tokens: 1 }, (chunk) => {
       assert.strictEqual(typeof chunk, 'string');
     });

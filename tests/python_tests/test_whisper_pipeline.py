@@ -17,8 +17,10 @@ import os
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
+from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
 
-from typing import Any, List, Dict
+from utils.network import retry_request
+from typing import Any, List
 
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
@@ -46,7 +48,7 @@ def get_whisper_models_list(tiny_only=False):
             if model_id in pytest.selected_model_ids.split(" ")
         ]
 
-    prefix = pathlib.Path(os.getenv("GENAI_MODELS_PATH_PREFIX", ""))
+    prefix = get_ov_cache_models_dir()
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
@@ -61,15 +63,20 @@ def read_whisper_model(params, stateful=True):
     if not (path / "openvino_encoder_model.xml").exists():
         save_model(model_id=model_id, tmp_path=path, stateful=stateful)
 
-    opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
+    opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
         path,
         trust_remote_code=True,
         compile=False,
         device="CPU",
         load_in_8bit=False,
-    )
+        local_files_only=True,
+    ))
 
-    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
+    processor = retry_request(lambda: WhisperProcessor.from_pretrained(
+        path,
+        trust_remote_code=True,
+        local_files_only=True,
+    ))
 
     hf_pipe = pipeline(
         "automatic-speech-recognition",
@@ -82,12 +89,12 @@ def read_whisper_model(params, stateful=True):
         model_id,
         path,
         hf_pipe,
-        ov_genai.WhisperPipeline(path, "CPU", **{"ENABLE_MMAP": False}),
+        ov_genai.WhisperPipeline(path, "CPU", ENABLE_MMAP=False),
     )
 
 
 def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
         tokenizer,
         with_detokenizer=True,
@@ -100,7 +107,7 @@ def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
     # to store tokenizer config jsons with special tokens
     tokenizer.save_pretrained(tmp_path)
 
-    opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
+    opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
         model_id,
         export=True,
         trust_remote_code=True,
@@ -108,12 +115,12 @@ def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
         compile=False,
         device="CPU",
         load_in_8bit=False,
-    )
+    ))
     opt_model.generation_config.save_pretrained(tmp_path)
     opt_model.config.save_pretrained(tmp_path)
     opt_model.save_pretrained(tmp_path)
 
-    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
+    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
     processor.save_pretrained(tmp_path)
 
 
@@ -125,6 +132,15 @@ def run_huggingface(
     if not config:
         config = ov_genai.WhisperGenerationConfig()
 
+    from optimum.intel.utils.import_utils import is_transformers_version
+    if is_transformers_version(">=", "4.51"):
+        if hasattr(pipeline.model.config, 'forced_decoder_ids'):
+            pipeline.model.config.forced_decoder_ids = None
+
+        if hasattr(pipeline.model, 'generation_config'):
+            if hasattr(pipeline.model.generation_config, 'forced_decoder_ids'):
+                pipeline.model.generation_config.forced_decoder_ids = None
+
     return pipeline(
         sample,
         return_timestamps=config.return_timestamps,
@@ -134,7 +150,7 @@ def run_huggingface(
             "max_new_tokens": min(config.max_new_tokens, 444),
             "top_p": config.top_p,
             "do_sample": config.do_sample,
-        },
+        } | extra_generate_kwargs(),
     )
 
 
@@ -195,7 +211,7 @@ def sample_from_dataset(request):
 
     return samples[sample_id]
 
-def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> Dict[str, Any]:
+def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> List[dict[str, Any]]:
     return [{"language": language, "long_form": long_form, "sample_id": i} for i in range(n)]
 
 def run_pipeline_with_ref(
@@ -206,7 +222,7 @@ def run_pipeline_with_ref(
     streamer: typing.Callable[[str], bool] | None = None,
 ):
     _, _, hf_pipe, genai_pipe = read_whisper_model((model_id, tmp_path))
-    _, _, hf_with_past_pipe, genai_with_past_pipe = read_whisper_model(
+    _, _, _, genai_with_past_pipe = read_whisper_model(
         (model_id, tmp_path), stateful=False
     )
 
@@ -271,7 +287,7 @@ def test_whisper_config_constructor(model_descr):
 
     config = ov_genai.WhisperGenerationConfig(path / "generation_config.json")
 
-    with open(path / "generation_config.json") as f:
+    with open(path / "generation_config.json", encoding="utf-8") as f:
         original_config = json.load(f)
 
     assert original_config["decoder_start_token_id"] == config.decoder_start_token_id
@@ -625,3 +641,153 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
+
+
+@pytest.fixture(params=[
+    "DeprecatedBaseStreamer",
+    "DeprecatedChunkStreamer",
+    "DeprecatedChunkWriteStreamer",
+    "Streamer",
+    "streamer_callback",
+    "streamer_bool_callback"
+])
+def streamer_for_test(request):
+    class ResultHandler:
+        def __init__(self, container: list[int] | list[str]):
+            self.container: list[int] | list[str] = container
+
+        def decode(self, tokenizer: ov_genai.Tokenizer) -> str:
+            if type(self.container[0]) == int:
+                return tokenizer.decode(typing.cast(list[int], self.container))
+            return ''.join(typing.cast(list[str], self.container))
+
+        def reset(self) -> None:
+            self.container.clear()
+
+
+    class DeprecatedBaseStreamer(ov_genai.StreamerBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tokens = []
+
+        def put(self, token: int) -> bool:
+            self.tokens.append(token)
+            return False
+
+        def end(self) -> None:
+            pass
+
+    if request.param == 'DeprecatedBaseStreamer':
+        streamer = DeprecatedBaseStreamer()
+        return streamer, ResultHandler(streamer.tokens)
+
+
+    class DeprecatedChunkStreamer(ov_genai.ChunkStreamerBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tokens = []
+
+        def put(self, token: int) -> bool:
+            self.tokens.append(token)
+            return False
+
+        def put_chunk(self, tokens: list[int]) -> bool:
+            self.tokens += tokens
+            return False
+
+        def end(self) -> None:
+            pass
+
+    if request.param == 'DeprecatedChunkStreamer':
+        streamer = DeprecatedChunkStreamer()
+        return streamer, ResultHandler(streamer.tokens)
+
+    class DeprecatedChunkWriteStreamer(ov_genai.ChunkStreamerBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tokens = []
+
+        def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+            if type(token) == list:
+                self.tokens += token
+            else:
+                self.tokens.append(token)
+            return ov_genai.StreamingStatus.RUNNING
+
+        def end(self) -> None:
+            pass
+
+    if request.param == 'DeprecatedChunkWriteStreamer':
+        streamer = DeprecatedChunkWriteStreamer()
+        return streamer, ResultHandler(streamer.tokens)
+    
+    class Streamer(ov_genai.StreamerBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tokens = []
+
+        def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+            if type(token) == list:
+                self.tokens += token
+            else:
+                self.tokens.append(token)
+            return ov_genai.StreamingStatus.RUNNING
+
+        def end(self) -> None:
+            pass
+
+    if request.param == 'Streamer':
+        streamer = Streamer()
+        return streamer, ResultHandler(streamer.tokens)
+
+
+    if request.param == 'streamer_callback':
+        texts = []
+        def streamer_callback(subword):
+            texts.append(subword)
+            return ov_genai.StreamingStatus.RUNNING
+        return streamer_callback, ResultHandler(texts)
+
+    if request.param == 'streamer_bool_callback':
+        texts = []
+        def streamer_bool_callback(subword):
+            texts.append(subword)
+            return False
+        return streamer_bool_callback, ResultHandler(texts)
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
+@pytest.mark.precommit
+def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
+    _, _, _, genai_pipe = read_whisper_model(model_descr)
+
+    streamer, result_handler = streamer_for_test
+
+    result = genai_pipe.generate(sample_from_dataset, streamer=streamer)
+
+    expected = result.texts[0]
+
+    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    result_handler.reset()
+
+    config = genai_pipe.get_generation_config()
+    genai_pipe.generate(sample_from_dataset, config, streamer)
+
+    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    result_handler.reset()
+
+    genai_pipe.generate(sample_from_dataset, config, streamer=streamer)
+
+    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    result_handler.reset()
+
+    genai_pipe.generate(sample_from_dataset, generation_config=config, streamer=streamer)
+
+    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    result_handler.reset()
+
+    genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer)
+
+    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    result_handler.reset()
+        

@@ -27,7 +27,7 @@ def parse_vlm_json_data(json_data_list):
                 raise RuntimeError('== prompt should not be empty string ==')
         else:
             raise RuntimeError('== key word "prompt" does not exist ==')
-        if "media" in json_data_list:
+        if "media" in json_data:
             prompt_data["media"] = json_data["media"]
         text_param_list.append(prompt_data)
     return text_param_list
@@ -52,6 +52,10 @@ def parse_image_json_data(json_data_list):
             image_param['steps'] = int(data['steps'])
         if 'guidance_scale' in data:
             image_param['guidance_scale'] = float(data['guidance_scale'])
+        if 'media' in data:
+            image_param['media'] = data['media']
+        if 'mask_image' in data:
+            image_param['mask_image'] = data['mask_image']
         image_param_list.append(image_param)
     return image_param_list
 

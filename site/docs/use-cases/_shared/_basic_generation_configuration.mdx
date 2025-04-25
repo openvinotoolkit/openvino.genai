@@ -1,0 +1,19 @@
+#### Basic Generation Configuration
+
+{/* Python and C++ code examples */}
+{props.children}
+
+:::info Understanding Basic Generation Parameters
+
+- `max_new_tokens`: The maximum numbers of tokens to generate, excluding the number of tokens in the prompt. `max_new_tokens` has priority over `max_length`.
+- `temperature`: Controls the level of creativity in AI-generated text:
+    - Low temperature (e.g. 0.2) leads to more focused and deterministic output, choosing tokens with the highest probability.
+    - Medium temperature (e.g. 1.0) maintains a balance between creativity and focus, selecting tokens based on their probabilities without significant bias.
+    - High temperature (e.g. 2.0) makes output more creative and adventurous, increasing the chances of selecting less likely tokens.
+- `top_k`: Limits token selection to the k most likely next tokens. Higher values allow more diverse outputs.
+- `top_p`: Selects from the smallest set of tokens whose cumulative probability exceeds p. Helps balance diversity and quality.
+- `repetition_penalty`: Reduces the likelihood of repeating tokens. Values above 1.0 discourage repetition.
+
+For the full list of generation parameters, refer to the [Generation Config API](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.GenerationConfig.html#openvino-genai-generationconfig).
+
+:::

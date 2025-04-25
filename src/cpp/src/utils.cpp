@@ -3,6 +3,7 @@
 
 #include "utils.hpp"
 
+#include <variant>
 #include <fstream>
 #include <memory>
 
@@ -14,8 +15,78 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
+#include "openvino/genai/text_streamer.hpp"
+#include "gguf_utils/gguf_modeling.hpp"
+
 
 #include "sampler.hpp"
+
+namespace {
+
+void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
+    if (config.count(pair.first) == 0) {
+        config.insert(pair);
+    }
+}
+
+void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
+    if (config.count(old_key) != 0) {
+        auto opt_value = ov::genai::utils::pop_option(config, old_key);
+        config[new_key] = opt_value.value();
+    }
+}
+
+template <typename T>
+std::optional<T> get_option(const ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        return std::make_optional(it->second.as<T>());
+    }
+    return std::nullopt;
+}
+
+std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& key) {
+    auto anyopt = ov::genai::utils::pop_option(config, key);
+    if (anyopt.has_value()) {
+        const auto any = anyopt.value();
+        int64_t value;
+        // NB: Integer value coming from python has int64_t datatype
+        if (any.is<int64_t>()) {
+            value = any.as<int64_t>();
+        } else if (any.is<int>()) {
+            value = any.as<int>();
+        } else {
+            OPENVINO_THROW("Failed to extract " + key + ". Type mismatch: expected types: int or int64_t");
+        }
+        if (value < 0) {
+            OPENVINO_THROW(key + " cannot be negative!");
+        }
+        return std::make_optional(static_cast<uint32_t>(value));
+    }
+    return std::nullopt;
+}
+
+void update_npu_config(ov::AnyMap& config,
+                       const std::shared_ptr<ov::Model>& model,
+                       const ov::genai::utils::KVAxesPosition& kv_pos,
+                       const ov::genai::utils::KVDesc& kv_desc) {
+    update_config(config, {"NPU_USE_NPUW", "YES"});
+    update_config(config, {"NPUW_LLM", "YES"});
+
+    update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
+    update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
+
+    update_config(config, {"NPUW_LLM_MAX_PROMPT_LEN", kv_desc.max_prompt_len});
+    update_config(config, {"NPUW_LLM_MIN_RESPONSE_LEN", kv_desc.min_response_len});
+
+    rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
+    rename_key(config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
+    rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
+    rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
+}
+
+} // anonymous
 
 namespace ov {
 namespace genai {
@@ -26,24 +97,6 @@ Tensor init_attention_mask(const Tensor& input_ids) {
     auto attention_mask = ov::Tensor{input_ids.get_element_type(), shape};
     std::fill_n(attention_mask.data<int64_t>(), shape[0] * shape[1], 1);
     return attention_mask;
-}
-
-void print_tensor(const ov::Tensor& tensor) {
-    std::vector<int64_t> res;
-
-    auto t_shape = tensor.get_shape();
-    std::cout << "[";
-    for (size_t i = 0; i < t_shape[0]; ++i) {
-        std::cout << "|";
-        for (size_t j = 0; j < t_shape[1]; ++j) {
-            if (tensor.get_element_type() == ov::element::i64) {
-                res.emplace_back(tensor.data<int64_t>()[t_shape[1] * i + j]);
-                std::cout << tensor.data<int64_t>()[t_shape[1] * i + j] << " ";
-            }
-        }
-        std::cout << "|";
-    }
-    std::cout << "]" << std::endl;
 }
 
 /**
@@ -77,61 +130,6 @@ void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attenti
     }
 }
 
-void initialize_beam_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_mask, ov::InferRequest& request) {
-    request.set_tensor("input_ids", input_ids);
-    request.set_tensor("attention_mask", attention_mask);
-
-    ov::Shape input_shape = input_ids.get_shape();
-
-    ov::Tensor position_ids = request.get_tensor("position_ids");
-    position_ids.set_shape(input_shape);
-    initialize_position_ids(position_ids, attention_mask);
-
-    ov::Tensor beam_idx = request.get_tensor("beam_idx");
-    beam_idx.set_shape({input_shape.at(0)});
-    std::fill_n(beam_idx.data<int32_t>(), input_shape.at(0), 0);
-}
-
-void set_attention_mask(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
-    ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
-    ov::Shape original_shape = original_mask.get_shape();
-    attention_mask.copy_to(original_mask);
-
-    ov::Shape new_shape{next_beams.size(), original_mask.get_shape().at(1) + 1};
-    attention_mask.set_shape(new_shape);
-
-    for (size_t beam_id = 0; beam_id < next_beams.size(); beam_id++) {
-        const size_t original_prompt_offset = next_beams.at(beam_id) * original_shape.at(1);
-        const size_t result_prompt_offset = beam_id * new_shape.at(1);
-
-        int64_t* dest = attention_mask.data<int64_t>() + result_prompt_offset;
-        const int64_t* src = original_mask.data<int64_t>() + original_prompt_offset;
-
-        std::memcpy(dest, src, original_shape.at(1) * sizeof(int64_t));
-        attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
-    }
-}
-
-/**
- * Get attention mask tensor for next token inference
- * Supports multi batch
- * Supports sparse attention_mask
- */
-ov::Tensor extend_attention(ov::Tensor attention_mask) {
-    auto shape = attention_mask.get_shape();
-    auto batch_size = shape[0];
-    auto seq_len = shape[1];
-
-    ov::Tensor new_atten_mask = ov::Tensor{attention_mask.get_element_type(), {batch_size, seq_len + 1}};
-    auto old_data = attention_mask.data<int64_t>();
-    auto new_data = new_atten_mask.data<int64_t>();
-    for (size_t batch = 0; batch < batch_size; ++batch) {
-        std::memcpy(new_data + batch * (seq_len + 1), old_data + batch * seq_len, seq_len * sizeof(int64_t));
-        new_data[batch * (seq_len + 1) + seq_len] = 1;
-    }
-    return new_atten_mask;
-}
-
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     ov::genai::StreamerVariant streamer = std::monostate();
 
@@ -141,9 +139,30 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
             streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
         } else if (any_val.is<std::function<bool(std::string)>>()) {
             streamer = any_val.as<std::function<bool(std::string)>>();
+        } else if (any_val.is<std::function<StreamingStatus(std::string)>>()) {
+            streamer = any_val.as<std::function<StreamingStatus(std::string)>>();
         }
     }
     return streamer;
+}
+
+std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer) {
+    std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
+        [](std::monostate) -> std::shared_ptr<StreamerBase> {
+            return nullptr;
+        },
+        [](const std::shared_ptr<StreamerBase>& streamer) {
+            return streamer;
+        },
+        [&tokenizer = tokenizer](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return std::make_unique<TextStreamer>(tokenizer, streamer);
+        },
+        [&tokenizer = tokenizer](const std::function<ov::genai::StreamingStatus(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return std::make_unique<TextStreamer>(tokenizer, streamer);
+        }
+    }, streamer);
+
+    return streamer_ptr;
 }
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
@@ -168,21 +187,6 @@ ProcessorConfig from_any_map(
     read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
     return extracted_config;
 }
-
-/**
- * scheduler_config is a separate config for continuous batching pipeline. 
- * This routine splits scheduler_config from plugin_config.
- */
-std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties) {
-    ov::AnyMap plugin_config = properties;
-    auto it = plugin_config.find(ov::genai::scheduler_config.name());
-    SchedulerConfig scheduler_config;
-    if (it != plugin_config.end()) {
-        scheduler_config = it->second.as<SchedulerConfig>();
-        plugin_config.erase(it);
-    }
-    return {plugin_config, scheduler_config};
-};
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
@@ -274,29 +278,42 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
     }
 }
 
-template <typename T>
-void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value) {
-    if (!model)
-        return;
-    if (model->get_rt_info().count(name) == 0)
-        return;
-    auto str_value = model->get_rt_info().at(name).as<std::string>();
-    if constexpr (std::is_same<T, int64_t>::value) {
-        value = std::stoll(str_value);
-    } else if constexpr (std::is_same<T, std::string>::value) {
-        value = str_value;
-    }
-}
-
-template void read_rt_info<int64_t>(std::shared_ptr<ov::Model>&,  const char*, int64_t&);
-template void read_rt_info<std::string>(std::shared_ptr<ov::Model>&,  const char*, std::string&);
-
 ov::Core singleton_core() {
     static ov::Core core;
     return core;
 }
 
-size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens) {
+namespace {
+
+bool is_gguf_model(const std::filesystem::path& file_path) {
+    return file_path.extension() == ".gguf";
+}
+
+} // namespace
+
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
+    if (is_gguf_model(model_dir)) {
+#ifdef ENABLE_GGUF
+        return create_from_gguf(model_dir.string());
+#else
+        OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
+#endif
+    } else {
+        std::filesystem::path model_path = model_dir;
+
+        if (std::filesystem::exists(model_dir / "openvino_model.xml")) {
+            model_path = model_dir / "openvino_model.xml";
+        } else if (std::filesystem::exists(model_dir / "openvino_language_model.xml")) {
+            model_path = model_path / "openvino_language_model.xml";
+        } else {
+            OPENVINO_THROW("Could not find a model in the directory '", model_dir, "'");
+        }
+
+        return singleton_core().read_model(model_path, {}, config);
+    }
+}
+
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history) {
     size_t idx = 0;
     auto encoded_history_data = encoded_history.data<int64_t>();
     while(idx < encoded_history.get_size() && idx < tokenized_history.size()) {
@@ -305,18 +322,13 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
         idx++;
     }
 
-    // encoded_history after decode of tokenizer could lose one last token (eos/stop token)
-    if ((idx == tokenized_history.size() && idx == encoded_history.get_size()) ||
-        (encoded_history.get_size() < tokenized_history.size() && idx == tokenized_history.size() - 1 && stop_tokens.find(tokenized_history.back()) != stop_tokens.end()))
-        return SIZE_MAX;
-    else
-        return idx;
+    return idx;
 }
 
-size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model) {
+KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
-    // therefore usually seq_length_axis = 2
-    size_t seq_length_axis = 2;
+    // therefore usually seq_length_axis = 2 and batch = 0
+    KVAxesPosition kv_pos { 0u, 2u };
 
     // "ReadValue" node is KV cache representation in stateful model
     std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
@@ -333,21 +345,41 @@ size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model) {
         for (size_t i = 0; i < shape.rank().get_length(); i++) {
             // Find axis = 0. This would be sequence length axis.
             if (shape[i] == 0) {
-                seq_length_axis = i;
+                kv_pos.seq_len = i;
+            } else if (shape[i].is_dynamic()) {
+                // Dynamic axis is a batch
+                kv_pos.batch = i;
             }
         }
         break;
     }
 
-    return seq_length_axis;
+    return kv_pos;
 }
 
-void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller) {
+void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller) {
+    if (kv_cache_state.reset_mem_state) {
+        if (adapter_controller) {
+            for(auto& state: request.query_state()) {
+                if(!adapter_controller->has_state_name(state.get_name())) {
+                    state.reset();
+                }
+            }
+        } else {
+            request.reset_state();
+        }
+
+        return;
+    }
+
     // nothing to trim in this case
-    if (remove_from_end == 0)
+    if (kv_cache_state.num_tokens_to_trim == 0)
         return;
 
     auto states = request.query_state();
+
+    OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");
+
     for (auto& state : states) {
         if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
             continue;
@@ -355,7 +387,7 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
         ov::Tensor old_tensor = state.get_state();
         // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
         auto shape = old_tensor.get_shape();
-        shape[seq_length_axis] -= remove_from_end;
+        shape[kv_cache_state.seq_length_axis] -= kv_cache_state.num_tokens_to_trim;
 
         ov::Coordinate new_shape_begin{0, 0, 0, 0};
         ov::Coordinate new_shape_end{shape};
@@ -377,42 +409,128 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
     return new_tensor;
 }
 
-void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
+bool env_setup_for_print_debug_info() {
     // Specify the name of the environment variable
     const char* env_var_name = "OPENVINO_LOG_LEVEL";
     const char* env_var_value = std::getenv(env_var_name);
-
     // Check if the environment variable was found
-    if (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING)) {
-        // output of the actual settings that the device selected
-        auto supported_properties = compiled_Model.get_property(ov::supported_properties);
-        std::cout << "Model: " << model_title << std::endl;
-        for (const auto& cfg : supported_properties) {
-            if (cfg == ov::supported_properties)
-                continue;
-            auto prop = compiled_Model.get_property(cfg);
-            if (cfg == ov::device::properties) {
-                auto devices_properties = prop.as<ov::AnyMap>();
-                for (auto& item : devices_properties) {
-                    std::cout << "  " << item.first << ": " << std::endl;
-                    for (auto& item2 : item.second.as<ov::AnyMap>()) {
-                        std::cout << "    " << item2.first << ": " << item2.second.as<std::string>() << std::endl;
-                    }
-                }
-            } else {
-                std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
-            }
-        }
+    return (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING));
+}
 
-        ov::Core core;
-        std::vector<std::string> exeTargets;
-        exeTargets = compiled_Model.get_property(ov::execution_devices);
-        std::cout << "EXECUTION_DEVICES:" << std::endl;
-        for (const auto& device : exeTargets) {
-            std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+    // output of the actual settings that the device selected
+    auto supported_properties = compiled_Model.get_property(ov::supported_properties);
+    std::cout << "Model: " << model_title << std::endl;
+    for (const auto& cfg : supported_properties) {
+        if (cfg == ov::supported_properties)
+            continue;
+        auto prop = compiled_Model.get_property(cfg);
+        if (cfg == ov::device::properties) {
+            auto devices_properties = prop.as<ov::AnyMap>();
+            for (auto& item : devices_properties) {
+                std::cout << "  " << item.first << ": " << std::endl;
+                for (auto& item2 : item.second.as<ov::AnyMap>()) {
+                    std::cout << "    " << item2.first << ": " << item2.second.as<std::string>() << std::endl;
+                }
+            }
+        } else {
+            std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
         }
     }
+
+    ov::Core core;
+    std::vector<std::string> exeTargets;
+    exeTargets = compiled_Model.get_property(ov::execution_devices);
+    std::cout << "EXECUTION_DEVICES:" << std::endl;
+    for (const auto& device : exeTargets) {
+        std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
+    }
 }
+
+std::pair<ov::CompiledModel, KVDesc>
+compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
+                        const ov::AnyMap& config,
+                        const KVAxesPosition& kv_pos) {
+    ov::CompiledModel compiled;
+    ov::AnyMap properties = config;
+    KVDesc kv_desc;
+
+    auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+    const auto export_blob = pop_or_default(properties, "EXPORT_BLOB", false);
+    const bool do_import = (!blob_path.empty() && !export_blob);
+
+    if (do_import) {
+        if (!std::filesystem::exists(blob_path)) {
+            OPENVINO_THROW("Blob file is not found at: " + blob_path);
+        }
+        std::ifstream fin(blob_path, std::ios::in | std::ios::binary);
+        if (!fin.is_open()) {
+            OPENVINO_THROW("Blob file can't be opened: " + blob_path);
+        }
+        compiled = ov::genai::utils::singleton_core().import_model(fin, "NPU", config);
+        kv_desc.max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+        kv_desc.min_response_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
+    } else {
+        kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
+        kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+        update_npu_config(properties, model, kv_pos, kv_desc);
+        compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
+        // Also export compiled model if required
+        if (export_blob) {
+            if (blob_path.empty()) {
+                blob_path = "openvino_model.blob";
+            }
+            // Check the path is full
+            const int EXT_SIZE = 5; // ".blob"
+            if (blob_path.size() < EXT_SIZE) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            if (strncmp(".blob", &blob_path[blob_path.size() - EXT_SIZE], EXT_SIZE) != 0) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            std::ofstream fout(blob_path, std::ios::out | std::ios::binary);
+            if (!fout.is_open()) {
+                OPENVINO_THROW("Blob file can't be exported to: " + blob_path);
+            }
+            compiled.export_model(fout);
+        }
+    }
+    return { compiled, kv_desc };
+}
+
+std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        std::optional<ov::Any> found = std::make_optional(it->second);
+        config.erase(it);
+        return found;
+    }
+    return std::nullopt;
+}
+
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
+    auto it = models_map.find(key);
+    if (it != models_map.end()) {
+        return it->second;
+    }
+    OPENVINO_THROW("Model with key '", key, "' not found in models map.");
+}
+
+std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
+    ov::AnyMap plugin_config = properties;
+    auto it = plugin_config.find(ov::genai::scheduler_config.name());
+    SchedulerConfig scheduler_config;
+    if (it != plugin_config.end()) {
+        scheduler_config = it->second.as<SchedulerConfig>();
+        plugin_config.erase(it);
+    } else if (default_config.has_value()) {
+        scheduler_config = *default_config;
+    }
+    return {plugin_config, scheduler_config};
+};
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

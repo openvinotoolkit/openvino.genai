@@ -4,26 +4,29 @@
 import os
 import pytest
 import math
-from typing import Dict
 
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  Tokenizer, draft_model
+from shutil import rmtree
 
-from common import get_default_properties, get_hugging_face_models, convert_models, generate_and_compare_with_reference_text, \
-    get_scheduler_config, get_greedy, run_cb_pipeline_with_ref, get_beam_search, get_greedy, \
-    get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
-    get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model, GenerationFinishReason
+
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
-from ov_genai_test_utils import (
-    get_chat_models_list,
-    read_model,
-    get_continuous_batching
-)
+from utils.generation_config import get_greedy, get_beam_search, \
+    get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
+    get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
+from utils.hugging_face import download_and_convert_model
+from utils.ov_genai_pipelines import create_ov_pipeline, create_ov_cb_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type
+from data.models import get_chat_models_list
+from data.test_dataset import get_test_dataset
+
+#
+# e2e tests on random and real models
+#
 
 def read_models_list(file_name: str):
     models = []
-    with open(file_name) as f:
+    with open(file_name, encoding="utf-8") as f:
         for model_name in f:
             model_name = model_name.strip()
             # skip comment in model scope file
@@ -32,28 +35,34 @@ def read_models_list(file_name: str):
             models.append(model_name)
     return models
 
-from shutil import rmtree
-
-#
-# e2e tests on random and real models
-#
-
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
-def test_e2e_precommit(tmp_path, model_id):
-    run_cb_pipeline_with_ref(tmp_path, model_id)
+def test_e2e_precommit(model_id):
+    prompts, generation_configs = get_test_dataset()
+    generate_and_compare(prompts=prompts,
+                         generation_config=generation_configs,
+                         model=model_id,
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
-def test_e2e_nightly(tmp_path, model_id):
-    run_cb_pipeline_with_ref(tmp_path, model_id)
+def test_e2e_nightly(model_id):
+    prompts, generation_config = get_test_dataset()
+    generate_and_compare(prompts=prompts,
+                         generation_config=generation_config,
+                         model=model_id, 
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 
 @pytest.mark.real_models
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
-def test_e2e_real_models(tmp_path, model_id):
-    run_cb_pipeline_with_ref(tmp_path, model_id)
+def test_e2e_real_models(model_id):
+    prompts, generation_config = get_test_dataset()
+    generate_and_compare(prompts=prompts,
+                         generation_config=generation_config,
+                         model=model_id,
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 #
 # Comparison with stateful
@@ -74,14 +83,16 @@ batched_prompts = [
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompt", batched_prompts[1:])  # num_beams=15 diverges on the first prompt.
 @pytest.mark.precommit
+@pytest.mark.skip(reason="CVS-162891: Fix test_continuous_batching_vs_stateful tests after we started to compare cb vs sdpa")
 def test_continuous_batching_vs_stateful(prompt, generation_config):
-    model_id, path, tokenizer, model, stateful = read_model((
-        "facebook/opt-125m",
-        Path("opt-125m")
-    ))
-    cb_pipe = get_continuous_batching(path)
+    model_id = "facebook/opt-125m"
+    _, _, models_path = download_and_convert_model(model_id, padding_side="left")
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
+    ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
+
     generated = cb_pipe.generate(prompt, **generation_config)
-    reference = stateful.generate(prompt, **generation_config)
+    reference = ov_pipe.generate(prompt, **generation_config)
+
     assert generated.texts == reference.texts
     if 1 != generation_config.get("num_return_sequences", 1):
         # Stateful puts zeroes to generated.scores. Don't compare them.
@@ -93,11 +104,12 @@ prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is 
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
 def test_cb_streamer_vs_return_vs_stateful(prompt):
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((
-        "facebook/opt-125m",
-        Path("opt-125m")
-    ))
-    cb_pipe = get_continuous_batching(path)
+    model_id = "facebook/opt-125m"
+    _, _, models_path = download_and_convert_model(model_id)
+
+    ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
+
     streamed = []
     generated = cb_pipe.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
     reference = ov_pipe.generate(prompt, max_new_tokens=20)
@@ -116,18 +128,27 @@ questions = [
     'What was my first question?'
 ]
 @pytest.mark.parametrize("generation_config_kwargs", generation_configs[1:])
-@pytest.mark.parametrize("model_descr", get_chat_models_list())
+@pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING] )
 @pytest.mark.precommit
-def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
-    model_id, models_path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
-    cb_pipe = get_continuous_batching(models_path)
+def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: dict, pipeline_type):
+    _, _, models_path = download_and_convert_model(model_id)
+
+    ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
 
     ov_pipe.start_chat()
     cb_pipe.start_chat()
 
     generation_config = GenerationConfig(**generation_config_kwargs)
-    ov_pipe.set_generation_config(generation_config)
+    # assisted generation is not supported for beam search
+    if generation_config.is_beam_search() and pipeline_type != PipelineType.PAGED_ATTENTION:
+        return
 
+    generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
+
+    ov_pipe.set_generation_config(generation_config)
+    
     for question in questions:
         generated = cb_pipe.generate(question, generation_config=generation_config)
         reference = ov_pipe.generate(question)
@@ -136,28 +157,68 @@ def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
     # Test that finish_chat() doesn't fail just in case.
     cb_pipe.finish_chat()
 
+
+generation_configs = [
+    dict(do_sample=False, max_new_tokens=20),
+    dict(do_sample=True, max_new_tokens=20, temperature=0.7),
+    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0, repetition_penalty=1.0)
+]
+questions = [
+    '1+1=',
+    'Why is the Sun yellow?',
+]
+@pytest.mark.parametrize("generation_config_kwargs", generation_configs)
+@pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("pipeline_type", [PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING,])
+@pytest.mark.precommit
+def test_continuous_batching_add_request_health_check(model_id, generation_config_kwargs: dict, pipeline_type):
+    _, _, models_path = download_and_convert_model(model_id)
+
+    cb_pipe = create_ov_cb_pipeline(models_path, pipeline_type=pipeline_type)
+
+    generation_config = GenerationConfig(**generation_config_kwargs)
+
+    if generation_config.is_beam_search() and pipeline_type != PipelineType.CONTINUOUS_BATCHING:
+        pytest.skip("Assisted generation does not support beam search")
+
+    generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
+    handles = []
+    for idx, question in enumerate(questions):
+        handle = cb_pipe.add_request(idx, question, generation_config=generation_config)
+        handles.append(handle)
+
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+        
+    for handle in handles:
+        outputs = handle.read_all()
+        for output in outputs:
+            assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
+
+
 #
 # Stress tests to check OOM case
 #
 
+# todo: iefode: bug reproducer!!!
 @pytest.mark.precommit
 @pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()],
                          ids=["greedy", "beam_search", "multinomial_all_parameters"])
-def test_post_oom_health(tmp_path, sampling_config):
+def test_post_oom_health(sampling_config):
     generation_config = sampling_config
     generation_config.ignore_eos = True
     generation_config.max_new_tokens = 1000000
 
-    scheduler_config = get_scheduler_config()
+    scheduler_config = dict_to_scheduler_config()
     scheduler_config.num_kv_blocks = 10 # Low cache size to trigger OOM quickly
 
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
 
-    models_path : Path = tmp_path / model_id
-    convert_models(opt_model, hf_tokenizer, models_path)
-
-    cb_pipe = ContinuousBatchingPipeline(models_path, Tokenizer(models_path), scheduler_config, "CPU", **get_default_properties())
+    cb_pipe = create_ov_pipeline(models_path,
+                                 pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+                                 device="CPU",
+                                 scheduler_config=scheduler_config)
 
     # First run should return incomplete response
     output = cb_pipe.generate(["What is OpenVINO?"], [generation_config])
@@ -202,9 +263,17 @@ scheduler_params_list = [({"num_kv_blocks": 2, "dynamic_split_fuse": True, "max_
                          ({"num_kv_blocks": 100, "dynamic_split_fuse": False}, get_beam_search_seq_len_300())]
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
-def test_preemption(tmp_path, params):
-    run_cb_pipeline_with_ref(tmp_path, "facebook/opt-125m", scheduler_params=params[0], generation_config=params[1])
+def test_preemption(params):
+    model_id = "facebook/opt-125m"
+    scheduler_params = params[0]
+    generation_config = params[1]
 
+    prompts, _ = get_test_dataset()
+    generate_and_compare(prompts=prompts,
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+                         model=model_id,
+                         scheduler_config=scheduler_params,
+                         generation_config=generation_config)
 
 multinomial_params = RandomSamplingTestStruct(
     generation_config=[
@@ -248,18 +317,20 @@ multinomial_params = RandomSamplingTestStruct(
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
-def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
+def test_preemption_with_multinomial(dynamic_split_fuse):
     generation_configs = multinomial_params.generation_config
     for config in generation_configs:
         config.max_new_tokens = 30
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_hugging_face_models(model_id)
+    model, hf_tokenizer, models_path = download_and_convert_model(model_id)
 
-    models_path : Path = tmp_path / model_id
-    convert_models(model, hf_tokenizer, models_path)
-
-    scheduler_config = get_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
-    generate_and_compare_with_reference_text(models_path, multinomial_params.prompts, multinomial_params.ref_texts, generation_configs, scheduler_config)
+    scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+    generate_and_compare(model=models_path,
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+                         prompts=multinomial_params.prompts,
+                         ref=multinomial_params.ref_texts,
+                         generation_config=generation_configs,
+                         scheduler_config=scheduler_config)
 
 
 multinomial_params_n_seq = RandomSamplingTestStruct(
@@ -329,23 +400,24 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
-def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
+def test_preemption_with_multinomial_n_seq(dynamic_split_fuse):
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
-
-    models_path : Path = tmp_path / model_id
-    convert_models(opt_model, hf_tokenizer, models_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
 
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
-    scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
-    generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, multinomial_params_n_seq.generation_config, scheduler_config)
+    scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+    generate_and_compare(model=models_path,
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+                         prompts=multinomial_params_n_seq.prompts,
+                         ref=multinomial_params_n_seq.ref_texts,
+                         generation_config=multinomial_params_n_seq.generation_config,
+                         scheduler_config=scheduler_config)
 
-def get_data_by_pipeline_type(model_path: Path, pipeline_type: str):
+
+def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_config: GenerationConfig):
     device = "CPU"
-    prompt = "Prompt example is"  
-    generation_config = GenerationConfig()
+    prompt = "Prompt example is"
     generation_config.max_new_tokens = 10
-    generation_config.do_sample = True
     pipe = None
     if pipeline_type == "continuous_batching":
         scheduler_config = SchedulerConfig()
@@ -365,18 +437,3 @@ def get_data_by_pipeline_type(model_path: Path, pipeline_type: str):
         raise RuntimeError(f"{pipeline_type} is unknown pipeline type!")
     return pipe, prompt, generation_config
 
-@pytest.mark.parametrize("pipeline_type", ["continuous_batching", "speculative_decoding", "prompt_lookup_decoding", "llm_pipeline"])
-@pytest.mark.precommit
-def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
-    model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
-
-    models_path : Path = tmp_path / "t_streaming" / model_id
-    convert_models(opt_model, hf_tokenizer, models_path)
-
-    pipe, input, gen_config = get_data_by_pipeline_type(models_path, pipeline_type)
-    py_streamer = lambda x: False
-    _ = pipe.generate(input, generation_config=gen_config, streamer=py_streamer)
-
-    del pipe
-    rmtree(models_path)

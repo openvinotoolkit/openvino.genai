@@ -1,0 +1,77 @@
+import ImageGenerationModelsTable from './_components/image-generation-models-table';
+import LLMModelsTable from './_components/llm-models-table';
+import VLMModelsTable from './_components/vlm-models-table';
+import WhisperModelsTable from './_components/whisper-models-table';
+
+
+# Supported Models
+
+:::info
+
+Other models with similar architectures may also work successfully even if not explicitly validated.
+Consider testing any unlisted models to verify compatibility with your specific use case.
+
+:::
+
+## Large Language Models (LLMs)
+
+<LLMModelsTable />
+
+:::info
+
+LoRA adapters are supported.
+
+:::
+
+::::info
+
+The pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
+The model is required to have the following inputs after the conversion:
+
+1. `input_ids` contains the tokens.
+2. `attention_mask` is filled with `1`.
+3. `beam_idx` selects beams.
+4. `position_ids` (optional) encodes a position of currently generating token in the sequence and a single `logits` output.
+
+:::note
+
+Models should belong to the same family and have the same tokenizers.
+
+:::
+
+::::
+
+## Image Generation Models
+
+<ImageGenerationModelsTable />
+
+## Visual Language Models (VLMs)
+
+<VLMModelsTable />
+
+:::warning VLM Models Notes
+#### InternVL2 {#internvl2-notes}
+
+To convert InternVL2 models, `timm` and `einops` are required:
+
+```bash
+pip install timm einops
+```
+#### phi3_v {#phi3_v-notes}
+  - Example models' configs aren't consistent. It's required to override the default `eos_token_id` with the one from a tokenizer:
+    ```python
+    generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())
+    ```
+:::
+
+## Speech Recognition Models (Whisper-based)
+
+<WhisperModelsTable />
+
+:::info
+
+Some models may require access request submission on the Hugging Face page to be downloaded.
+
+If https://huggingface.co/ is down, the conversion step won't be able to download the models.
+
+:::

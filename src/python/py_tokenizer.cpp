@@ -13,6 +13,29 @@
 
 #include "py_utils.hpp"
 
+namespace {
+
+constexpr char class_docstring[] = R"(
+    The class is used to encode prompts and decode resulting tokens
+
+    Chat template is initialized from sources in the following order
+    overriding the previous value:
+    1. chat_template entry from tokenizer_config.json
+    2. chat_template entry from processor_config.json
+    3. chat_template entry from chat_template.json
+    4. chat_template entry from rt_info section of openvino.Model
+    5. If the template is known to be not supported by GenAI, it's
+        replaced with a simplified supported version.
+    6. Patch chat_template replacing not supported instructions with
+        equivalents.
+    7. If the template was not in the list of not supported GenAI
+        templates from (5), it's blindly replaced with
+        simplified_chat_template entry from rt_info section of
+        openvino.Model if the entry exists.
+)";
+
+}  // namespace
+
 namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -26,9 +49,7 @@ void init_tokenizer(py::module_& m) {
         .def_readwrite("input_ids", &TokenizedInputs::input_ids)
         .def_readwrite("attention_mask", &TokenizedInputs::attention_mask);
 
-    py::class_<ov::genai::Tokenizer>(m, "Tokenizer",
-        R"(openvino_genai.Tokenizer object is used to initialize Tokenizer
-           if it's located in a different path than the main model.)")
+    py::class_<ov::genai::Tokenizer>(m, "Tokenizer", class_docstring)
 
         .def(py::init([](const std::filesystem::path& tokenizer_path, const std::map<std::string, py::object>& properties, const py::kwargs& kwargs) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
@@ -44,21 +65,49 @@ void init_tokenizer(py::module_& m) {
             return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, kwargs_properties);
         }), py::arg("tokenizer_path"), py::arg("properties") = ov::AnyMap({}))
 
-        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) {
+        .def(py::init([](const std::string& tokenizer_model, const ov::Tensor& tokenizer_weights,
+                         const std::string& detokenizer_model, const ov::Tensor& detokenizer_weights,
+                         const py::kwargs& kwargs) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            auto kwargs_properties = pyutils::kwargs_to_any_map(kwargs);
+
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_model, tokenizer_weights, detokenizer_model, detokenizer_weights, kwargs_properties);
+        }), py::arg("tokenizer_model"), py::arg("tokenizer_weights"), py::arg("detokenizer_model"), py::arg("detokenizer_weights"))
+
+        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, 
+                          bool add_special_tokens, 
+                          bool pad_to_max_length,
+                          std::optional<size_t> max_length) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+                tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
+                if (max_length.has_value()) {
+                    tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
                 return tok.encode(prompts, tokenization_params);
             },
             py::arg("prompts"),
             py::arg("add_special_tokens") = true,
+            py::arg("pad_to_max_length") = false,
+            py::arg("max_length") = std::nullopt,
             R"(Encodes a list of prompts into tokenized inputs.)")
 
-        .def("encode", [](Tokenizer& tok, const std::string prompt, bool add_special_tokens) {
+        .def("encode", [](Tokenizer& tok, const std::string prompt, 
+                          bool add_special_tokens, 
+                          bool pad_to_max_length,
+                          std::optional<size_t> max_length) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+                tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
+                if (max_length.has_value()) {
+                    tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
                 return tok.encode(prompt, tokenization_params);
             },
-            py::arg("prompt"), py::arg("add_special_tokens") = true,
+            py::arg("prompt"), 
+            py::arg("add_special_tokens") = true, 
+            py::arg("pad_to_max_length") = false,
+            py::arg("max_length") = std::nullopt,
             R"(Encodes a single prompt into tokenized input.)")
 
         .def(

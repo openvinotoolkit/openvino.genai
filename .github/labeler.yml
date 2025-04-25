@@ -17,14 +17,14 @@
 
 'category: LLM':
 - 'src/cpp/include/openvino/genai/llm_pipeline.hpp'
+- 'src/cpp/include/openvino/genai/text_streamer.hpp'
 - 'src/cpp/src/llm_pipeline.cpp'
 - 'src/cpp/src/lm_encoding.hpp'
 - 'src/cpp/src/lm_encoding.cpp'
 - 'src/cpp/src/llm_pipeline_base.hpp'
 - 'src/cpp/src/llm_pipeline_static.hpp'
 - 'src/cpp/src/llm_pipeline_static.cpp'
-- 'src/cpp/src/text_callback_streamer.cpp'
-- 'src/cpp/src/text_callback_streamer.hpp'
+- 'src/cpp/src/text_streamer.cpp'
 - 'src/python/py_llm_pipeline.cpp'
 - 'tests/python_tests/test_llm_pipeline.py'
 
@@ -140,3 +140,6 @@
 
 'category: WWB':
 - 'tools/who_what_benchmark/**/*'
+
+'category: GH Pages Docs':
+- 'site/**/*'

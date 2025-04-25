@@ -13,6 +13,7 @@ from PIL import Image
 
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
+from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -129,8 +130,8 @@ def parse_args():
         "--language",
         type=str,
         choices=["en", "cn"],
-        default=None,
-        help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
+        default="en",
+        help="Used to select default prompts based on the primary model language, e.g. 'en', 'cn'.",
     )
     parser.add_argument(
         "--hf",
@@ -141,6 +142,13 @@ def parse_args():
         "--genai",
         action="store_true",
         help="Use LLMPipeline from transformers library to instantiate the model.",
+    )
+    parser.add_argument(
+        "--cb-config",
+        type=str,
+        default=None,
+        help="Path to the JSON file that contains SchedulerConfig for Continuous Batching Pipeline"
+        "of OpenVINO GenAI API.",
     )
     parser.add_argument(
         "--llamacpp",
@@ -222,7 +230,7 @@ def load_tokenizer(args):
 def load_processor(args):
     model_id = args.base_model if args.base_model is not None else args.target_model
     if model_id is None:
-        return None
+        return None, None
 
     config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
     if "llava-qwen" in config.model_type:
@@ -230,9 +238,7 @@ def load_processor(args):
     else:
         preprocessor_id = model_id
 
-    return AutoProcessor.from_pretrained(
-        preprocessor_id, trust_remote_code=True
-    )
+    return AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True), config
 
 
 def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
@@ -301,7 +307,7 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
 
 
 def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
+    image_data = ov.Tensor(np.array(image)[None])
     image_tensor = model.generate(
         prompt,
         image=image_data,
@@ -314,8 +320,8 @@ def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=N
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
-    mask_data = ov.Tensor(np.array(mask.getdata()).reshape(1, mask.size[1], mask.size[0], 3).astype(np.uint8))
+    image_data = ov.Tensor(np.array(image)[None])
+    mask_data = ov.Tensor(np.array(mask)[None])
     image_tensor = model.generate(
         prompt,
         image=image_data,
@@ -328,8 +334,14 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 
 def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
-    out = model.generate(prompt, image=image_data, do_sample=False, max_new_tokens=max_new_tokens)
+    image_data = ov.Tensor(np.array(image)[None])
+    out = model.generate(
+        prompt,
+        **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
+        image=image_data,
+        do_sample=False,
+        max_new_tokens=max_new_tokens
+    )
     return out.texts[0]
 
 
@@ -378,7 +390,11 @@ def create_evaluator(base_model, args):
             )
         elif task == "visual-text":
             tokenizer = load_tokenizer(args)
-            processor = load_processor(args)
+            processor, config = load_processor(args)
+            if config and "internvl" in config.model_type and args.hf:
+                crop_question = False
+            else:
+                crop_question = True
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -388,6 +404,7 @@ def create_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
+                crop_question=crop_question,
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
@@ -462,9 +479,28 @@ def print_image_results(evaluator):
         logger.info(e)
 
 
+def read_cb_config(path):
+    import json
+
+    try:
+        with open(path, 'r') as f:
+            config = json.load(f)
+        return config
+    except FileNotFoundError:
+        logger.error(f"Configuration file not found at: {path}")
+        return {}
+    except json.JSONDecodeError:
+        logger.error(f"Invalid JSON format in configuration file: {path}")
+        return {}
+
+
 def main():
     args = parse_args()
     check_args(args)
+
+    kwargs = {}
+    if args.cb_config:
+        kwargs["cb_config"] = read_cb_config(args.cb_config)
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
@@ -476,6 +512,7 @@ def main():
             args.ov_config,
             args.hf,
             args.genai,
+            **kwargs,
         )
         evaluator = create_evaluator(base_model, args)
 
@@ -498,7 +535,8 @@ def main():
                 args.ov_config,
                 args.hf,
                 args.genai,
-                args.llamacpp
+                args.llamacpp,
+                **kwargs
             )
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,

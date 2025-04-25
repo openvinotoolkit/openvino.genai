@@ -30,7 +30,6 @@ target_include_directories(text2image PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRE
 target_link_libraries(text2image PRIVATE openvino::genai indicators::indicators)
 
 set_target_properties(text2image PROPERTIES
-    COMPILE_PDB_NAME text2image
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 
@@ -47,7 +46,6 @@ target_include_directories(lora_text2image PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
 target_link_libraries(lora_text2image PRIVATE openvino::genai indicators::indicators)
 
 set_target_properties(lora_text2image PROPERTIES
-    COMPILE_PDB_NAME lora_text2image
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 
@@ -66,7 +64,6 @@ target_include_directories(heterogeneous_stable_diffusion PRIVATE "${CMAKE_CURRE
 target_link_libraries(heterogeneous_stable_diffusion PRIVATE openvino::genai indicators::indicators)
 
 set_target_properties(heterogeneous_stable_diffusion PROPERTIES
-    COMPILE_PDB_NAME heterogeneous_stable_diffusion
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 
@@ -83,7 +80,6 @@ target_include_directories(image2image PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${
 target_link_libraries(image2image PRIVATE openvino::genai indicators::indicators)
 
 set_target_properties(image2image PROPERTIES
-    COMPILE_PDB_NAME image2image
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 
@@ -100,11 +96,35 @@ target_include_directories(inpainting PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${C
 target_link_libraries(inpainting PRIVATE openvino::genai indicators::indicators)
 
 set_target_properties(inpainting PROPERTIES
-    COMPILE_PDB_NAME inpainting
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS inpainting
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
+# benchmark_image_gen
+
+include(FetchContent)
+
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
+FetchContent_Declare(cxxopts
+    URL https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.1.1.tar.gz
+    URL_HASH SHA256=523175f792eb0ff04f9e653c90746c12655f10cb70f1d5e6d6d9491420298a08)
+FetchContent_MakeAvailable(cxxopts)
+
+add_executable(benchmark_image_gen benchmark_image_gen.cpp load_image.cpp imwrite.cpp)
+target_include_directories(benchmark_image_gen PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
+target_link_libraries(benchmark_image_gen PRIVATE openvino::genai cxxopts::cxxopts indicators::indicators)
+set_target_properties(benchmark_image_gen PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS benchmark_image_gen
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)

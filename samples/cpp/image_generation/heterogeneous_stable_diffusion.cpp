@@ -18,7 +18,6 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     const int width = 512;
     const int height = 512;
-    const float guidance_scale = 7.5f;
     const int number_of_images_to_generate = 1;
     const int number_of_inference_steps_per_image = 20;
 
@@ -37,73 +36,36 @@ int32_t main(int32_t argc, char* argv[]) try {
     std::string ov_cache_dir = "./cache";
 
     //
-    // Step 1: Prepare each Text2Image subcomponent (scheduler, text encoder, unet, vae) separately.
+    // Step 1: Create the initial Text2ImagePipeline, given the model path
     //
-
-    // Create the scheduler from the details listed in the json.
-    auto scheduler = ov::genai::Scheduler::from_config(root_dir / "scheduler/scheduler_config.json");
-
-    // Note that we could have created the scheduler by specifying specific type (for example EULER_DISCRETE), like
-    // this: auto scheduler = ov::genai::Scheduler::from_config(root_dir / "scheduler/scheduler_config.json",
-    //                                                    ov::genai::Scheduler::Type::EULER_DISCRETE);
-    // This can be useful when a particular type of Scheduler is not yet supported natively by OpenVINO GenAI.
-    // (even though we are actively working to support most commonly used ones)
-
-    // Create unet object
-    auto unet = ov::genai::UNet2DConditionModel(root_dir / "unet");
-
-    // Set batch size based on classifier free guidance condition.
-    int unet_batch_size = unet.do_classifier_free_guidance(guidance_scale)  ? 2 : 1;
-
-    // Create the text encoder.
-    auto text_encoder = ov::genai::CLIPTextModel(root_dir / "text_encoder");
-
-    // In case of NPU, we need to reshape the model to have static shapes
-    if (text_encoder_device == "NPU") {
-        text_encoder.reshape(unet_batch_size);
-    }
-
-    // Compile text encoder for the specified device
-    text_encoder.compile(text_encoder_device, ov::cache_dir(ov_cache_dir));
-
-    // In case of NPU, we need to reshape the model to have static shapes
-    if (unet_device == "NPU") {
-        // The max_postiion_embeddings config from text encoder will be used as a parameter to unet reshape.
-        int max_position_embeddings = text_encoder.get_config().max_position_embeddings;
-
-        unet.reshape(unet_batch_size, height, width, max_position_embeddings);
-    }
-
-    // Compile unet for specified device
-    unet.compile(unet_device, ov::cache_dir(ov_cache_dir));
-
-    // Create the vae decoder.
-    auto vae = ov::genai::AutoencoderKL(root_dir / "vae_decoder");
-
-    // In case of NPU, we need to reshape the model to have static shapes
-    if (vae_decoder_device == "NPU") {
-        // We set batch-size to '1' here, as we're configuring our pipeline to return 1 image per 'generate' call.
-        vae.reshape(1, height, width);
-    }
-
-    // Compile vae decoder for the specified device
-    vae.compile(vae_decoder_device, ov::cache_dir(ov_cache_dir));
+    ov::genai::Text2ImagePipeline pipe(models_path);
 
     //
-    // Step 2: Create a Text2ImagePipeline from the individual subcomponents
+    // Step 2: Reshape the pipeline given number of images, height, width and guidance scale.
     //
-    auto pipe = ov::genai::Text2ImagePipeline::stable_diffusion(scheduler, text_encoder, unet, vae);
+    pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale);
 
     //
-    // Step 3: Use the Text2ImagePipeline to generate 'number_of_images_to_generate' images.
+    // Step 3: Compile the pipeline with the specified devices, and properties (like cache dir)
+    //
+    ov::AnyMap properties = {ov::cache_dir(ov_cache_dir)};
+
+    // Note that if there are device-specific properties that are needed, they can
+    // be added using ov::device::properties groups, like this:
+    //ov::AnyMap properties = {ov::device::properties("CPU", ov::cache_dir("cpu_cache")),
+    //                         ov::device::properties("GPU", ov::cache_dir("gpu_cache")),
+    //                         ov::device::properties("NPU", ov::cache_dir("npu_cache"))};
+
+    pipe.compile(text_encoder_device, unet_device, vae_decoder_device, properties);
+
+
+    //
+    // Step 4: Use the Text2ImagePipeline to generate 'number_of_images_to_generate' images.
     //
     for (int imagei = 0; imagei < number_of_images_to_generate; imagei++) {
         std::cout << "Generating image " << imagei << std::endl;
 
         ov::Tensor image = pipe.generate(prompt,
-                                         ov::genai::width(width),
-                                         ov::genai::height(height),
-                                         ov::genai::guidance_scale(guidance_scale),
                                          ov::genai::num_inference_steps(number_of_inference_steps_per_image),
                                          ov::genai::callback(progress_bar));
 

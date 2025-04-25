@@ -3,11 +3,12 @@
 Examples in this folder showcase inference of text to image models like Stable Diffusion 1.5, 2.1, LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::Text2ImagePipeline` and uses a text prompt as input source.
 
 There are several sample files:
- - [`text2image.cpp`](./main.cpp) demonstrates basic usage of the text to image pipeline
- - [`text2image_lora.cpp`](./lora.cpp) shows how to apply LoRA adapters to the pipeline
+ - [`text2image.cpp`](./text2image.cpp) demonstrates basic usage of the text to image pipeline
+ - [`lora_text2image.cpp`](./lora_text2image.cpp) shows how to apply LoRA adapters to the pipeline
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
+ - [`benchmark_image_gen.cpp`](./benchmark_image_gen.cpp) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -37,7 +38,7 @@ optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task sta
 
 ## Run text to image
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
+Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
 `stable_diffusion ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'`
 
@@ -57,7 +58,7 @@ Please find the template of the callback usage below.
 ov::genai::Text2ImagePipeline pipe(models_path, device);
 
 auto callback = [&](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
-   std::cout << "Image generation step: " << step << " / " << num_steps << std::endl;
+   std::cout << "Image generation step: " << step + 1 << " / " << num_steps << std::endl;
    ov::Tensor img = pipe.decode(latent); // get intermediate image tensor
    if (your_condition) // return true if you want to interrupt image generation
       return true;
@@ -148,3 +149,64 @@ The resuling image is:
    ![](./inpainting.bmp)
 
 Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeline` are applicable for `InpaintingPipeline`.
+
+## benchmarking sample for image generation pipelines
+
+This `benchmark_image_gen.cpp` sample script demonstrates how to benchmark the text to image pipeline, image to image pipeline and inpainting pipeline. The script includes functionality for warm-up iterations, generating image, and calculating various performance metrics.
+
+The usage of this sample is:
+```bash
+./benchmark_image_gen [OPTIONS]
+```
+Options:
+- `-t, --pipeline_type` (default: `"text2image"`): Pipeline type(text2image, image2image, inpainting).
+- `-m, --model`: Path to the model and tokenizers base directory.
+- `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
+- `--nw, --num_warmup` (default: `1`): Number of warmup iterations.
+- `-n, --num_iter` (default: `3`): Number of iterations.
+- `-d, --device` (default: `"CPU"`): Device(s) to run the pipeline with.
+- `-w, --width` (default: `512`): The width of the output image.
+- `--ht, --height` (default: `512`): The height of the output image.
+- `--is, --num_inference_steps` (default: `20`): The number of inference steps.
+- `--ni, --num_images_per_prompt` (default: `1`): The number of images to generate per generate() call.
+- `-o, --output_dir` (default: `""`): Path to save output image.
+- `-i, --image`: Path to input image.
+- `-s, --strength`: Indicates extent to transform the reference `image`. Must be between 0 and 1.
+- `--mi, --mask_image`: Path to mask image.
+- `-r, --reshape': Reshape pipeline before compilation. This can improve image generation performance.
+
+For example:
+
+`./benchmark_image_gen -t text2image -m dreamlike_anime_1_0_ov/FP16 -n 10 -d CPU`
+
+Performance output:
+
+```
+[warmup-0] generate time: 85008.00 ms, total infer time:84999.88 ms
+[warmup-0] text encoder infer time: 98.00 ms
+[warmup-0] unet iteration num:21, first iteration time:4317.94 ms, other iteration avg time:3800.91 ms
+[warmup-0] unet inference num:21, first inference time:4317.71 ms, other inference avg time:3800.61 ms
+[warmup-0] vae encoder infer time:0.00 ms, vae decoder infer time:4572.00 ms
+
+[iter-0] generate time: 84349.00 ms, total infer time:84340.97 ms
+[iter-0] text encoder infer time: 76.00 ms
+[iter-0] unet iteration num:21, first iteration time:3805.63 ms, other iteration avg time:3799.68 ms
+[iter-0] unet inference num:21, first inference time:3805.42 ms, other inference avg time:3799.38 ms
+[iter-0] vae encoder infer time:0.00 ms, vae decoder infer time:4472.00 ms
+
+[iter-1] generate time: 84391.00 ms, total infer time:84384.36 ms
+[iter-1] text encoder infer time: 78.00 ms
+[iter-1] unet iteration num:21, first iteration time:3801.15 ms, other iteration avg time:3802.17 ms
+[iter-1] unet inference num:21, first inference time:3800.93 ms, other inference avg time:3801.87 ms
+[iter-1] vae encoder infer time:0.00 ms, vae decoder infer time:4468.00 ms
+
+[iter-2] generate time: 84377.00 ms, total infer time:84366.51 ms
+[iter-2] text encoder infer time: 76.00 ms
+[iter-2] unet iteration num:21, first iteration time:3783.31 ms, other iteration avg time:3802.25 ms
+[iter-2] unet inference num:21, first inference time:3783.09 ms, other inference avg time:3801.82 ms
+[iter-2] vae encoder infer time:0.00 ms, vae decoder infer time:4471.00 ms
+
+Test finish, load time: 9356.00 ms
+Warmup number:1, first generate warmup time:85008.00 ms, infer warmup time:84999.88 ms
+Generate iteration number:3, for one iteration, generate avg time: 84372.34 ms, infer avg time:84363.95 ms, all text encoders infer avg time:76.67 ms, vae encoder infer avg time:0.00 ms, vae decoder infer avg time:4470.33 ms
+```

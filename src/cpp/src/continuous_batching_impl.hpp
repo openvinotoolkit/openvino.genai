@@ -7,6 +7,7 @@
 
 #include "openvino/genai/lora_adapter.hpp"
 #include "cache_eviction.hpp"
+#include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
 
@@ -50,6 +51,7 @@ protected:
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
 
+
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
 #endif
@@ -90,6 +92,7 @@ protected:
     void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
 
     void _register_step_cache_usage(float step_cache_usage);
+    void _reset_cache_usage_statistics();
     float _get_current_running_average_cache_usage() const;
     void _compute_cache_rotation_data(const std::vector<SequenceGroup::Ptr>& sequence_groups, const Scheduler::Output& scheduler_output);
 
@@ -97,6 +100,15 @@ protected:
 
 public:
     ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
+                           const Tokenizer& tokenizer,
+                           const SchedulerConfig& scheduler_config,
+                           const std::string& device,
+                           const ov::AnyMap& properties,
+                           const ov::genai::GenerationConfig& generation_config,
+                           bool is_validation_mode_enabled = false);
+
+    ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
+                           std::shared_ptr<InputsEmbedder> inputs_embedder,
                            const Tokenizer& tokenizer,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
@@ -122,6 +134,7 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
+
 
     /**
      * Updates LoRA adapters for current generation call

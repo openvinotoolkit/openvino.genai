@@ -3,9 +3,9 @@ from typing import Any, Union
 import os
 import pandas as pd
 from tqdm import tqdm
-
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
+from .utils import patch_awq_for_inference, get_ignore_parameters_flag
 
 default_data = {
     "en": {
@@ -73,21 +73,6 @@ default_data = {
 }
 
 
-def autodetect_language(model):
-    model2language = {
-        "chatglm": "cn",
-        "qwen2": "cn",
-        "qwen": "cn",
-        "baichuan": "cn",
-        "minicpmv": "cn",
-        "internlm": "cn",
-    }
-
-    if not hasattr(model, "config"):
-        return "en"
-    return model2language.get(model.config.model_type, "en")
-
-
 @register_evaluator(
     "text"
 )
@@ -103,7 +88,7 @@ class TextEvaluator(BaseEvaluator):
         max_new_tokens=128,
         crop_question=True,
         num_samples=None,
-        language=None,
+        language="en",
         gen_answer_fn=None,
         generation_config=None,
         generation_config_base=None,
@@ -130,9 +115,6 @@ class TextEvaluator(BaseEvaluator):
 
         # Take language from the base model if provided
         self.language = language
-        if self.language is None:
-            if base_model is not None:
-                self.language = autodetect_language(base_model)
 
         if base_model:
             self.gt_data = self._generate_data(
@@ -205,20 +187,25 @@ class TextEvaluator(BaseEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False):
+            is_awq = getattr(model, "is_awq", None) is not None
+            device = "cpu"
+            if hasattr(model, "device"):
+                device = model.device
+
             if use_chat_template:
                 message = [{"role": "user", "content": prompt}]
-                inputs = tokenizer.apply_chat_template(message, tokenize=True, add_generation_prompt=True, return_tensors="pt")
-                tokens = model.generate(inputs, do_sample=False, max_new_tokens=max_new_tokens)
-                if crop_question:
-                    tokens = tokens[:, inputs.shape[-1]:]
-                res = self.tokenizer.decode(tokens[0], skip_special_tokens=True)
-                return res
+                inputs = tokenizer.apply_chat_template(message, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_dict=True).to(device)
             else:
-                inputs = self.tokenizer(prompt, return_tensors="pt")
-                tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
-                if crop_question:
-                    tokens = tokens[:, inputs["input_ids"].shape[-1] :]
-                return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
+                inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
+
+            if is_awq:
+                with patch_awq_for_inference(is_awq):
+                    tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
+            else:
+                tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
+            if crop_question:
+                tokens = tokens[:, inputs["input_ids"].shape[-1] :]
+            return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
@@ -233,11 +220,6 @@ class TextEvaluator(BaseEvaluator):
                     data = {"prompts": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
-            if self.language is None:
-                print(
-                    "No language detecting in the base model or ground truth data. Taking language from target model."
-                )
-                self.language = autodetect_language(model)
             data = pd.DataFrame.from_dict(default_data[self.language])
 
         prompt_data = data["prompts"]

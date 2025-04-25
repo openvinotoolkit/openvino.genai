@@ -13,6 +13,30 @@
 
 #include "embedding_model.hpp"
 
+namespace {
+
+std::unique_ptr<ov::genai::CircularBufferQueue<ov::genai::EmbeddingsRequest>> init(ov::CompiledModel& compiled) {
+    auto embeddings_requests_queue = std::make_unique<ov::genai::CircularBufferQueue<ov::genai::EmbeddingsRequest>>(
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled]() -> ov::genai::EmbeddingsRequest {
+            ov::genai::EmbeddingsRequest req;
+            req.ireq = compiled.create_infer_request();
+            req.cpu_tensor = req.ireq.get_output_tensor();
+            ov::RemoteContext context;
+            try {
+                context = compiled.get_context();
+            } catch (const ov::Exception&) {
+                req.remote_tensor = req.cpu_tensor;
+                return req;
+            }
+            req.remote_tensor = context.create_tensor(ov::element::f32, req.cpu_tensor.get_shape());
+            return req;
+        });
+    return embeddings_requests_queue;
+}
+
+}  // namespace
+
 namespace ov {
 namespace genai {
 
@@ -27,7 +51,7 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
 
     ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
-    m_request = compiled_model.create_infer_request();
+    m_embeddings_requests_queue = init(compiled_model);
 }
 
 EmbeddingsModel::EmbeddingsModel(const std::string& model,
@@ -41,15 +65,23 @@ EmbeddingsModel::EmbeddingsModel(const std::string& model,
     merge_postprocess(m_model, scale_emb);
 
     ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
-    m_request = compiled_model.create_infer_request();
+    m_embeddings_requests_queue = init(compiled_model);
 }
 
-ov::Tensor EmbeddingsModel::infer(ov::Tensor input_idx) {
-    OPENVINO_ASSERT(m_request, "Text embeddings decoder model must be compiled first. Cannot infer non-compiled model");
+std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>>& EmbeddingsModel::get_request_queue() {
+    return this->m_embeddings_requests_queue;
+}
 
-    m_request.set_input_tensor(input_idx);
-    m_request.infer();
-    return m_request.get_output_tensor();
+ov::Tensor EmbeddingsModel::infer(EmbeddingsRequest& req, const ov::Tensor& input_idx, bool return_remote_tensor) {
+    OPENVINO_ASSERT(req.ireq, "Text embeddings decoder model must be compiled first. Cannot infer non-compiled model");
+    req.ireq.set_input_tensor(input_idx);
+    if (return_remote_tensor) {
+        req.ireq.set_output_tensor(req.remote_tensor);
+    } else {
+        req.ireq.set_output_tensor(req.cpu_tensor);
+    }
+    req.ireq.infer();
+    return req.ireq.get_output_tensor();
 }
 
 void EmbeddingsModel::merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const {

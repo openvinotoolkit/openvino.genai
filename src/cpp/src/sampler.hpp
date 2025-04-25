@@ -19,6 +19,7 @@
 #include "logit_processor.hpp"
 #include "scheduler.hpp"
 #include "sequence_group.hpp"
+#include "threadpool.hpp"
 
 namespace ov::genai {
 // Handle stop_token_ids
@@ -26,6 +27,16 @@ inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t
     for (auto & stop_token_id : stop_token_ids) {
         if (generated_token == stop_token_id)
             return true;
+    }
+    return false;
+}
+
+inline bool is_stop_token_id_hit_in_sequence_group(SequenceGroup::Ptr sequence_group, const std::set<int64_t>& stop_token_ids) {
+    for (auto& sequence : sequence_group->get_running_sequences()) {
+        const TokenIds& generated_tokens = sequence->get_generated_ids();
+        if (!generated_tokens.empty() && is_stop_token_id_hit(generated_tokens.back(), stop_token_ids)) {
+            return true;
+        }
     }
     return false;
 }
@@ -42,6 +53,21 @@ struct SamplerOutput {
     size_t num_generated_tokens = 0;
 };
 
+struct AssistingPipelineInfo {
+    size_t max_removed_tokens_per_request = 0; 
+    size_t min_generated_len = std::numeric_limits<size_t>::max();
+    size_t updated_validation_len = 0;
+};
+
+struct SequenceGroupSamplingInfo {
+    SamplerOutput sampler_output;
+    AssistingPipelineInfo assisting_pipeline_info;
+
+    AssistingPipelineInfo& get_assisting_pipeline_info() {
+        return assisting_pipeline_info;
+    }
+};
+
 class Sampler {
     class GroupBeamSearcher;
 
@@ -53,8 +79,13 @@ class Sampler {
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
                             bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample);
 
+    SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits,
+                                                        LogitProcessor& logit_processor, const std::pair<size_t, std::set<std::string>>& stop_strings,
+                                                        bool is_validation_mode_enabled);
+
     // request ID => beam search tracking information
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
+    std::mutex m_beam_search_info_mutex;
 
     std::mt19937 rng_engine;
     size_t seed = rng_engine.default_seed;
@@ -65,9 +96,13 @@ class Sampler {
 
     Tokenizer m_tokenizer;
 
+    ThreadPool m_thread_pool;
+
 public:
-    Sampler() = default;
-    Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
+    Sampler(const Sampler& rhs) = delete;
+    Sampler(Sampler&& rhs) = delete;
+    Sampler(size_t num_threads = 1): m_thread_pool(num_threads) {};
+    explicit Sampler(const Tokenizer & tokenizer, size_t num_threads = 1) : m_tokenizer(tokenizer), m_thread_pool(num_threads) {};
 
     SamplerOutput sample(const std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
     void set_seed(size_t new_seed) {
@@ -75,6 +110,10 @@ public:
         seed = new_seed;
     }
     size_t get_seed() { return seed; }
+
+    void set_tokenizer(const Tokenizer& tokenizer) {
+        m_tokenizer = tokenizer;
+    }
 
     void clear_request_info(uint64_t request_id);
 

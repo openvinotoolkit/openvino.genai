@@ -14,12 +14,15 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"
+#include "openvino/genai/common_types.hpp"
 
 namespace ov {
 namespace genai {
 
-// Return flag corresponds whether generation should be stopped: false means continue generation, true means stop.
-using StreamerVariant = std::variant<std::function<bool(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
+// Return flag corresponds whether generation should be stopped. It could be:
+// ov::genai::StreamingStatus flag, RUNNING means continue generation, STOP means stop generation, CANCEL means stop generation and remove last propmt and answer from history
+// *DEPRECATED* bool flag, false means continue generation, true means stop. Please, use `ov::genai::StreamingStatus` instead.
+using StreamerVariant = std::variant<std::function<bool(std::string)>, std::function<StreamingStatus(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
@@ -260,7 +263,7 @@ public:
 
     /**
     * @brief start chat with keeping history in kv cache.
-    * Turns on keeping KV cache between generate calls and automatic applying of chat templates.
+    * Turns on keeping KV cache between generate calls.
     * In case if beam search is used, KV cache is kept for the generated sequence with maximal scores.
     *
     * @param system_message optional system message.

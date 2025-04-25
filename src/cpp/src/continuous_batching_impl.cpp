@@ -4,7 +4,7 @@
 #include <atomic>
 #include <thread>
 
-#include "text_callback_streamer.hpp"
+#include "openvino/genai/text_streamer.hpp"
 #include "continuous_batching_impl.hpp"
 #include "utils.hpp"
 #include "paged_attention_transformations.hpp"
@@ -16,83 +16,13 @@ namespace {
 
 ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model) {
     const std::vector<std::string> kv_cache_precision_path = { "runtime_options", ov::hint::kv_cache_precision.name() };
-    ov::element::Type ir_kv_cache_precision = ov::element::undefined;
+    ov::element::Type ir_kv_cache_precision = ov::element::dynamic;
 
     if (model->has_rt_info(kv_cache_precision_path)) {
         ir_kv_cache_precision = model->get_rt_info<ov::element::Type>(kv_cache_precision_path);
     }
 
     return ir_kv_cache_precision;
-}
-
-void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& plugin_config) {
-    ov::element::Type m_kv_cache_type = ov::element::undefined, ir_kv_cache_precision = get_model_kv_cache_precision(model);
-    ov::Core core = ov::genai::utils::singleton_core();
-
-    auto inference_precision = core.get_property(device, ov::hint::inference_precision);
-    // if user sets properties affecting KV cache precision
-    const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
-    const auto kv_cache_precision_it = plugin_config.find(ov::hint::kv_cache_precision.name());
-    const auto execution_mode_it = plugin_config.find(ov::hint::execution_mode.name());
-    const bool accuracy_mode = execution_mode_it != plugin_config.end() &&
-        execution_mode_it->second.as<ov::hint::ExecutionMode>() == ov::hint::ExecutionMode::ACCURACY;
-
-    if (device == "CPU") {
-        if (kv_cache_precision_it != plugin_config.end()) {
-            const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
-            m_kv_cache_type = kv_cache_precision;
-        } else if (accuracy_mode) {
-            // ACCURACY mode will use f32 KV cache type
-            m_kv_cache_type = ov::element::f32;
-        } else if (ir_kv_cache_precision != ov::element::undefined) {
-            // check that kv_cache_precision is set in runtime_info section of OpenVINO IR
-            // but in case it's set to FP16, we need to patch it to be BF16 for Xeon platforms
-            m_kv_cache_type = ir_kv_cache_precision == ov::element::f16 && inference_precision == ov::element::bf16 ?
-                inference_precision : ir_kv_cache_precision;
-        } else {
-            // x86 and ARM have different default kv cache type, take this information from the plugin
-            m_kv_cache_type = core.get_property(device, ov::hint::kv_cache_precision);
-        }
-
-        // TEMP WA: currently FP16 / BF16 KV cache is faster than U8 for PagedAttention
-        if (m_kv_cache_type == ov::element::u8) {
-            m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-        }
-    } else if (device.find("GPU") != std::string::npos) {
-        if (accuracy_mode) {
-            inference_precision = ov::element::f32;
-        }
-        if (inference_precision_it != plugin_config.end()) {
-            inference_precision = inference_precision_it->second.as<ov::element::Type>();
-        }
-
-        m_kv_cache_type = inference_precision;
-    } else {
-        OPENVINO_THROW(device, " is not supported by OpenVINO Continuous Batching");
-    }
-
-    std::map<std::string, std::shared_ptr<ov::op::v0::Parameter>> key_cache_params, value_cache_params;
-    for (const auto& param_ptr : model->get_parameters()) {
-        const auto& name = param_ptr->get_friendly_name();
-        if (name.find("key_cache.") == 0) {
-            key_cache_params[name] = param_ptr;
-        } else if (name.find("value_cache.") == 0) {
-            value_cache_params[name] = param_ptr;
-        }
-    }
-
-    OPENVINO_ASSERT(key_cache_params.size() == value_cache_params.size() && key_cache_params.size() > 0);
-
-    size_t num_decoder_layers = key_cache_params.size();
-    for (size_t idx = 0; idx < num_decoder_layers; idx++) {
-        auto k = key_cache_params[std::string("key_cache.") + std::to_string(idx)];
-        auto v = value_cache_params[std::string("value_cache.") + std::to_string(idx)];
-
-        k->set_element_type(m_kv_cache_type);
-        v->set_element_type(m_kv_cache_type);
-    }
-
-    model->validate_nodes_and_infer_types();
 }
 
 } // namespace
@@ -121,6 +51,20 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     initialize_pipeline(model, scheduler_config, device, properties, kv_cache_config);
 }
 
+ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
+    const std::shared_ptr<ov::Model>& model,
+    std::shared_ptr<InputsEmbedder> inputs_embedder,
+    const Tokenizer& tokenizer,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config,
+    bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
+    m_inputs_embedder = inputs_embedder;
+    m_model_runner->set_embedding_model(inputs_embedder->get_embedding_model());
+    m_model_input_type = ModelInputType::EMBEDDINGS;
+}
+
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     if (m_scheduler) {
         m_scheduler->release();
@@ -140,20 +84,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const std::string& device,
     const ov::AnyMap& properties,
     const std::vector<KVHeadConfig>& kv_cache_config) {
-    ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model;
-
-    // TODO: remove once plugin automatically set KV cache precisions
-    apply_kv_cache_precision(model, device, properties);
-
     // apply LoRA
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
+    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
-        compiled_model = core.compile_model(model, device, *filtered_properties);
-    } else {
-        compiled_model = core.compile_model(model, device, properties);
     }
+    // Extract sampler_num_threads property if exists and remove it from properties
+    size_t sampler_num_threads = std::thread::hardware_concurrency();
+    auto sampler_num_threads_it = filtered_properties->find("sampler_num_threads");
+    if (sampler_num_threads_it != filtered_properties->end()) {
+        sampler_num_threads = sampler_num_threads_it->second.as<size_t>();
+        filtered_properties.fork().erase("sampler_num_threads");   // do not use iterator sampler_num_threads_it because a forked container may not be the same container
+    }
+
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
+    std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
+    OPENVINO_ASSERT(execution_devices.size() == 1, "Contituous batching: execution device is expected to be CPU or GPU, but got ", execution_devices.size(), " devices");
+    const std::string execution_device = execution_devices[0];
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
@@ -171,7 +119,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
 
     bool can_use_partial_preemption = true;
-    if (device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
+    if (execution_device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
         // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
         // as it may lead to performance slowdown
         can_use_partial_preemption = false;
@@ -227,7 +175,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
             std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
     }
 
-    m_sampler = std::make_shared<Sampler>(m_tokenizer);
+    m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
     m_sampler->set_seed(m_generation_config.rng_seed);
 
     // If eos_token_id was not provided, take value
@@ -240,6 +188,9 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                const ov::Tensor& input_ids,
                                                                ov::genai::GenerationConfig sampling_params) {
+    // If stop_token_ids were not provided, take value from default m_generation_config
+    if (sampling_params.stop_token_ids.empty())
+        sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
     // If eos_token_id was not provided, take value from default m_generation_config
     if (sampling_params.eos_token_id == -1)
         sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
@@ -263,12 +214,21 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                 const std::string& prompt,
                                                                 ov::genai::GenerationConfig sampling_params) {
-    static ManualTimer timer("tokenize");
-    timer.start();
-    ov::Tensor input_ids = m_tokenizer.encode(prompt).input_ids;
-    timer.end();
+    ov::Tensor inputs;
+    ov::genai::VLMPerfMetrics metrics;
+    if (m_model_input_type == ModelInputType::TOKENS) {
+        static ManualTimer timer("tokenize");
+        timer.start();
+        inputs = m_tokenizer.encode(prompt).input_ids;
+        timer.end();
+        return add_request(request_id, inputs, sampling_params);
+    } else if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+    } else {
+        OPENVINO_THROW("Unknown model input type.");
+    }
 
-    return add_request(request_id, input_ids, sampling_params);
+    return add_request(request_id, inputs, sampling_params);
 }
 
 bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_requests() {
@@ -282,8 +242,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
     _pull_awaiting_requests();
 
-
     Scheduler::Output scheduler_output;
+
     {
         static ManualTimer scheduling_timer("scheduling");
         scheduling_timer.start();
@@ -318,10 +278,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         return;
     }
     ov::Tensor logits;
+
     {
         static ManualTimer timer("forward");
+        const auto infer_start = std::chrono::steady_clock::now();
         timer.start();
         logits = m_model_runner->forward(m_requests, scheduler_output);
+        const auto infer_end = std::chrono::steady_clock::now();
+        m_pipeline_metrics.inference_duration = PerfMetrics::get_microsec(infer_end - infer_start);
         timer.end();
     }
 
@@ -371,6 +335,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
         free_fork_timer.end();
     }
+    
+    // append embeddings for generated tokens
+    if (m_model_input_type == ModelInputType::EMBEDDINGS)
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
 
     // notify requests dropped by handle
     {
@@ -402,12 +370,13 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer) {
+    _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
     generate_timer.start();
 
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
-    
+
     auto start_time =  std::chrono::steady_clock::now();
     PerfMetrics perf_metrics;
     auto& raw_perf_counters = perf_metrics.raw_metrics;
@@ -420,19 +389,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
     set_adapters(sampling_params[0].adapters);
 
-    const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
-        [](std::monostate) -> std::shared_ptr<StreamerBase> {
-            return nullptr;
-        },
-        [](const std::shared_ptr<StreamerBase>& streamer) {
-            return streamer;
-        },
-        [this](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
-        }
-    }, streamer);
+    const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
 
-    OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && sampling_params[0].num_return_sequences == 1 &&
+    OPENVINO_ASSERT(!streamer_ptr->has_callback() || input_ids.size() == 1 && sampling_params[0].num_return_sequences == 1 &&
         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
@@ -443,72 +402,34 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
     auto all_requests = m_awaiting_requests; // we need to store all requests to get results from them once generation has finished
 
-    std::atomic<bool> has_active_requests = has_non_finished_requests();
     GenerationHandle& generation = generations.at(0);
 
-    // create variables to make optimal thread-safe streaming
-    std::mutex mutex;
-    std::unique_lock lock(mutex);
-    std::condition_variable cv;
+    streamer_ptr->start();
 
-    // to define streaming thread
-    std::shared_ptr<std::thread> t_stream_ptr = nullptr;
-    if (streamer_ptr) {
-        // define stream token lambda to use in `t_stream_ptr`
-        auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
-            while (has_active_requests || generation->can_read()) {
-                // waiting for any tokens or request finishing
-                cv.wait(lock, [&generation, &has_active_requests]{
-                    return generation->can_read() || !has_active_requests;
-                });
-
-                if (generation->can_read()) {
-                    std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
-                    for (const auto& gen_token : token.begin()->second.generated_ids) {
-                        if (streamer_ptr->put(gen_token)) {
-                            generation->drop();
-                            break;
-                        }
-                    }
-                }
-            };
-            streamer_ptr->end();
-        };
-
-        // to define streaming thread
-        t_stream_ptr = std::make_shared<std::thread>([&stream_tokens] {
-            stream_tokens();
-        });
-    }
-
-    std::exception_ptr thrown_exception = nullptr;
-    while (has_active_requests) {
+    while (has_non_finished_requests()) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
+            // During prefill step (or steps if max_batch_size < prompt_len) we don't generate new tokens,
+            // but still inference took place, so we need to add this time to the total inference duration.
+            raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
             if (m_batch_size > 0) {
                 const auto infer_end = std::chrono::steady_clock::now();
-                const auto infer_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+                const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
                 raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
-                raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
                 raw_perf_counters.m_new_token_times.emplace_back(infer_end);
                 raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
             }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
-            thrown_exception = std::current_exception();
+            streamer_ptr->end();
+            std::rethrow_exception(std::current_exception());
         }
-        has_active_requests = has_non_finished_requests();
-        cv.notify_one();
-        if (thrown_exception) {
-            throw thrown_exception;
-        }
+        stream_tokens(streamer_ptr, generation);
     }
 
     // waiting for competion of streaming
-    if (t_stream_ptr && t_stream_ptr->joinable()) {
-        t_stream_ptr->join();
-    }
+    streamer_ptr->end();
 
     OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
@@ -525,6 +446,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         result.m_request_id = request_id;
         result.m_generation_ids.resize(num_outputs);
         result.m_scores.resize(num_outputs);
+        result.m_status = request->get_generation_stream()->get_status();
 
         for (size_t i = 0; i < num_outputs; ++i) {
             const auto & sequence = sequences[i];
@@ -559,7 +481,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
     while (requests_iterator != m_requests.end()) {
         const auto& request = *requests_iterator;
-        if (request->has_finished() || request->handle_dropped()) {
+        if(request->has_finished() || request->handle_stopped() || request->handle_cancelled()) {
             for (const auto& sequence: request->get_sequences()) {
                 if (m_scheduler->has_block_table(sequence->get_id())) {
                     m_scheduler->free_sequence(sequence->get_id());
@@ -577,7 +499,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_requests_droppe
     // Notify the last time by pushing empty output
     // This causes read() to unblock by adding anything to the queue
     for (SequenceGroup::Ptr& request : m_requests) {
-        if (request->handle_dropped())
+        if (request->handle_stopped() || request->handle_cancelled())
             request->push_empty_outputs();
     }
 }
@@ -591,6 +513,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_register_step_cache_us
 
 float ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_current_running_average_cache_usage() const {
     return std::accumulate(m_previous_step_cache_usages.begin(), m_previous_step_cache_usages.end(), 0.0) / m_previous_step_cache_usages.size();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reset_cache_usage_statistics() {
+    m_previous_step_cache_usages.clear();
+    m_pipeline_metrics.max_cache_usage = 0.0;
+    m_pipeline_metrics.avg_cache_usage = 0.0;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
@@ -789,7 +717,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
         }
         currently_processed_tokens += output_seq_len * num_running_sequences;
         // For max_new_tokens == 0, we don't reach sampling so need to notify handle separately
-        if(sequence_group->get_sampling_parameters().max_new_tokens == 0) {
+        if(sequence_group->get_max_new_tokens() == 0) {
             sequence_group->notify_handle_echo_only();
         }
     }

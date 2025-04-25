@@ -22,6 +22,11 @@ enum class SequenceStatus {
     WAITING = 3
 };
 
+enum class SequenceGroupType {
+    TOKENS,
+    EMBEDDINGS
+};
+
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
 class SequenceGroup;
@@ -44,17 +49,29 @@ class Sequence {
     std::vector<int64_t> m_prefix_hashes;
     SequenceGroup* m_sequence_group = nullptr;
     static std::mutex m_counter_mutex;
+    std::vector<std::vector<float>> m_generated_ids_embeds;
+    SequenceGroupType m_type;
+    size_t m_hidden_size;
+
+    // Embeddings hash calculation params
+    static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
+    static constexpr size_t m_embeddings_hash_calculation_stride = 50; // the stride with which values are taken from embeddings vector
+    static constexpr size_t m_multiplier = 10000; // multiplier by which float values are multiplied before conversion to size_t
 
     size_t _make_hash(size_t content_length);
 
-    explicit Sequence(const uint64_t id) : m_grouped_id(id) {}
+    static std::vector<int64_t> _reduce_embedding(const std::vector<float>& embedding);
+
+    explicit Sequence(const uint64_t id, const SequenceGroupType type, const size_t hidden_size) : m_grouped_id(id), m_type(type), m_hidden_size(hidden_size) {}
 
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
         m_grouped_id(id),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
-        m_sequence_group(seq.m_sequence_group) {
+        m_sequence_group(seq.m_sequence_group),
+        m_type(seq.m_type),
+        m_hidden_size(seq.m_hidden_size) {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
@@ -62,8 +79,8 @@ public:
     using Ptr = std::shared_ptr<Sequence>;
     using CPtr = std::shared_ptr<const Sequence>;
 
-    static Sequence::Ptr create(const uint64_t id) {
-        return Sequence::Ptr(new Sequence(id));
+    static Sequence::Ptr create(const uint64_t id, const SequenceGroupType type = SequenceGroupType::TOKENS, const size_t hidden_size = 0) {
+        return Sequence::Ptr(new Sequence(id, type, hidden_size));
     }
 
     static Sequence::Ptr fork(Sequence::CPtr sequence, const uint64_t id) {
@@ -186,6 +203,25 @@ public:
         m_sequence_group = sequence_group;
     }
 
+    const std::vector<std::vector<float>>& get_generated_ids_embeds() const {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_generated_ids_embeds;
+    }
+
+    void append_generated_ids_embeds(ov::Tensor generated_ids_embeds) {
+        OPENVINO_ASSERT(m_type == SequenceGroupType::EMBEDDINGS);
+        auto embeds_count = generated_ids_embeds.get_shape()[1];
+        OPENVINO_ASSERT(m_hidden_size == generated_ids_embeds.get_shape()[2]);
+
+        auto current_embeds_size = m_generated_ids_embeds.size();
+        for (size_t i = current_embeds_size, idx = 0; i < current_embeds_size + embeds_count; i++, idx++) {
+            m_generated_ids_embeds.emplace_back(std::vector<float>());
+            m_generated_ids_embeds[i].resize(m_hidden_size);
+            std::copy_n(generated_ids_embeds.data<float>() + idx * m_hidden_size, m_hidden_size, m_generated_ids_embeds[i].begin());
+
+        }
+    }
+
     std::shared_ptr<SequenceGroup> get_sequence_group_ptr() const;
 
     // Each KV block can be uniquely identified by
@@ -204,10 +240,12 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     ov::genai::GenerationConfig m_sampling_params;
     std::size_t m_block_size;
     TokenIds m_prompt_ids;
+    std::vector<std::vector<float>> m_input_embeds;
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
     size_t m_num_evicted_tokens = 0;
     bool m_has_echoed = false;
+    SequenceGroupType m_sequence_group_type;
 
     uint64_t m_next_sequence_id = 0;
  
@@ -252,15 +290,36 @@ public:
 
     SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : SequenceGroup(request_id, sampling_params, block_size) {
-        size_t prompt_len = input_ids.get_size();
+        
+        size_t prompt_len;
+        size_t hidden_size = 0;
+        if (input_ids.get_shape().size() > 1) {
+            prompt_len = input_ids.get_shape()[1];
+        } else {
+            prompt_len = input_ids.get_size();
+        }
         OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
 
-        m_prompt_ids.resize(prompt_len);
-        std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
+        if (input_ids.get_element_type() == ov::element::i64) {
+            m_prompt_ids.resize(prompt_len);
+            std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
+            m_sequence_group_type = SequenceGroupType::TOKENS;
+        } else if (input_ids.get_element_type() == ov::element::f32) {
+            hidden_size = input_ids.get_shape()[2];
+            m_input_embeds.resize(prompt_len);
+            for (size_t i = 0; i < prompt_len; i++) {
+                m_input_embeds[i].resize(hidden_size);
+              std::copy_n(input_ids.data<float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
+            }
+            m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
+        }
+        else {
+            OPENVINO_THROW("Unknown tensor format.");
+        }
         m_prompt_log_probs.reserve(prompt_len);
 
         // create a single sequence
-        add_sequence(Sequence::create(m_next_sequence_id++));
+        add_sequence(Sequence::create(m_next_sequence_id++, m_sequence_group_type, hidden_size));
     }
 
     void add_sequence(const Sequence::Ptr & sequence) {
@@ -277,7 +336,15 @@ public:
     }
 
     size_t get_prompt_len() const {
-        return m_prompt_ids.size();
+        if (m_sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+            return m_input_embeds.size();
+        }
+        else if (m_sequence_group_type == SequenceGroupType::TOKENS) {
+            return m_prompt_ids.size();
+        }
+        else {
+            OPENVINO_THROW("Not implemented.");
+        }
     }
 
     void pause_generation(bool status) {
@@ -342,19 +409,19 @@ public:
     }
 
     // must be used only after sequence group generation loop has finished (either by lenght or OOM)
-    // or stopped / cancelled via streamer / generation_stream->drop()
+    // or stopped / cancelled via streamer / generation_stream->stop() / generation_stream->cancel()
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
         finished_seqs.reserve(num_total_seqs());
 
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_dropped()) {
+            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_stopped() || handle_cancelled()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
             }
         }
 
         OPENVINO_ASSERT(finished_seqs.size() == num_total_seqs(), "Internal error: get_finished_sequences() must be called when all sequences are "
-            "either finisehed / ignored by OOM or dropped via GenerationStream::drop()");
+            "either finished / ignored by OOM or dropped via GenerationStream::stop() / GenerationStream::cancel()");
 
         std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
             bool is_beam_search = m_sampling_params.is_beam_search();
@@ -457,7 +524,7 @@ public:
     }
 
     bool requires_sampling() const {
-        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len && m_sampling_params.max_new_tokens > 0;
+        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len && get_max_new_tokens() > 0;
     }
 
     void schedule_tokens(size_t num_tokens) {
@@ -526,8 +593,23 @@ public:
         return m_prompt_ids;
     }
 
+    const std::vector<std::vector<float>>& get_input_embeds() const {
+        OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::EMBEDDINGS);
+        return m_input_embeds;
+    }
+
+    size_t get_hidden_size() const {
+        OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(m_input_embeds.size() > 0, "Embeddings should be set to get hidden size.");
+        return m_input_embeds[0].size();
+    }
+
     void append_prompt_log_prob(float log_prob) {
         m_prompt_log_probs.push_back(log_prob);
+    }
+
+    SequenceGroupType get_sequence_group_type() const {
+        return m_sequence_group_type;
     }
 
     /**
@@ -589,8 +671,12 @@ public:
         m_generation_stream->set_generation_status(status);
     }
 
-    bool handle_dropped() const {
-        return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
+    bool handle_stopped() const {
+        return m_generation_stream->get_status() == GenerationStatus::STOP;
+    }
+
+    bool handle_cancelled() const {
+        return m_generation_stream->get_status() == GenerationStatus::CANCEL;
     }
 
     void push_empty_outputs() {
@@ -649,7 +735,11 @@ public:
                 if (has_finished()) {
                     m_stream_window_size = 0;
                 }
+                // push empty output in case we won't stream generation res
                 if (generated_len <= (m_num_streamed_tokens + m_stream_window_size)) {
+                    if (has_finished()) {
+                        push_empty_outputs();
+                    }
                     return;
                 }
                 // speculative decoding draft handling
@@ -691,7 +781,7 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
-    size_t get_max_new_tokens() {
+    size_t get_max_new_tokens() const {
         return m_sampling_params.get_max_new_tokens(get_prompt_len());
     }
 };

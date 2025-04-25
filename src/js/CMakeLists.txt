@@ -78,9 +78,17 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 if(LINUX)
     # to find libopenvino_genai.so in the same folder
     set(rpaths "$ORIGIN")
+    # to find libopenvino.so when installing from npm
+    list(APPEND rpaths "$ORIGIN/../../openvino-node/bin")
+    # to find libopenvino.so when installing from source
+    list(APPEND rpaths "$ORIGIN/../node_modules/openvino-node/bin")
 elseif(APPLE)
     # to find libopenvino_genai.dylib in the same folder
     set(rpaths "@loader_path")
+    # to find libopenvino.dylib when installing from npm
+    list(APPEND rpaths "@loader_path/../../openvino-node/bin")
+    # to find libopenvino.dylib when installing from source
+    list(APPEND rpaths "@loader_path/../node_modules/openvino-node/bin")
 endif()
 
 if(rpaths)

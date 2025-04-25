@@ -1,0 +1,9 @@
+.table-of-contents__link {
+  position: relative;
+  padding: var(--ifm-menu-link-padding-vertical) var(--ifm-menu-link-padding-horizontal);
+}
+
+.table-of-contents__link--active {
+  background-color: var(--ifm-menu-color-background-active);
+  color: var(--genai-color-classic-blue);
+}

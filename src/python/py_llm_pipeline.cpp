@@ -34,13 +34,13 @@ auto generate_docstring = R"(
     :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
 
     :param generation_config: generation_config
-    :type generation_config: GenerationConfig or a Dict
+    :type generation_config: GenerationConfig or a dict
 
     :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
     :type : Callable[[str], bool], ov.genai.StreamerBase
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-    :type : Dict
+    :type : dict
 
     :return: return results in encoded, or decoded form depending on inputs type
     :rtype: DecodedResults, EncodedResults, str
@@ -167,6 +167,36 @@ void init_llm_pipeline(py::module_& m) {
             models_path (os.PathLike): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
+            kwargs: Device properties.
+        )")
+
+        .def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::Tokenizer& tokenizer,
+            const std::string& device,
+            OptionalGenerationConfig generation_config,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            if (!generation_config.has_value()) {
+                generation_config = ov::genai::GenerationConfig();
+            }
+            return std::make_unique<LLMPipeline>(model, weights, tokenizer, device, properties, *generation_config);
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("tokenizer"), "genai Tokenizers",
+        py::arg("device"), "device on which inference will be done",
+        py::arg("generation_config") = py::none(), "genai GenerationConfig (default: None, will use empty config)",
+        R"(
+            LLMPipeline class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights.
+            tokenizer (str): Genai Tokenizers.
+            device (str): Device to run the model on (e.g., CPU, GPU).
+            generation_config {ov_genai.GenerationConfig} Genai GenerationConfig. Default is an empty config.
             kwargs: Device properties.
         )")
 

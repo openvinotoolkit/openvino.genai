@@ -40,5 +40,30 @@ Prompt file example：
 
 ## 5. Visual Language Models
 Supported parameters that can be set are:
-* `media` - imge file path
+* `media` - image file path or url
 * `prompt`- input text prompt
+
+## 6. Image to Image Generation
+Supported parameters that can be set are:
+* `steps` - inference steps (default 20)
+* `width` - resolution width (default 512)
+* `height` - resolution height (default 512)
+* `guidance_scale` - guidance scale
+* `strength` - strength of noising of the image converted to latent space
+* `prompt` - input prompt text for the image generation
+* `media` - image file path or url
+Prompt file example：
+{"steps":"10", "width":"256", "height":"256", "guidance_scale":"0.8", "prompt": "side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, 8K HD Resolution, beautifully background", "media": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png"}
+
+## 5. Inpaiting Image Generation
+Supported parameters that can be set are:
+* `steps` - inference steps (default 20)
+* `width` - resolution width (default 512)
+* `height` - resolution height (default 512)
+* `guidance_scale` - guidance scale
+* `strength` - strength of noising of the image converted to latent space
+* `prompt` - input prompt text for the image generation
+* `media` - image file path or url
+* `mask_image` - mask image file path or url
+Prompt file example：
+{"steps":"10", "width":"256", "height":"256", "guidance_scale":"0.8", "prompt": "side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, 8K HD Resolution, beautifully background", "media": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png", "mask_image": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png"}

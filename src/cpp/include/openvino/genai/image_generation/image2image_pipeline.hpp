@@ -57,6 +57,23 @@ public:
         const FluxTransformer2DModel& transformer,
         const AutoencoderKL& vae);
 
+    // creates SD3 pipeline from building blocks
+    static Image2ImagePipeline stable_diffusion_3(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const CLIPTextModelWithProjection& clip_text_model_1,
+        const CLIPTextModelWithProjection& clip_text_model_2,
+        const T5EncoderModel& t5_encoder_model,
+        const SD3Transformer2DModel& transformer,
+        const AutoencoderKL& vae);
+
+    // creates SD3 pipeline from building blocks
+    static Image2ImagePipeline stable_diffusion_3(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const CLIPTextModelWithProjection& clip_text_model_1,
+        const CLIPTextModelWithProjection& clip_text_model_2,
+        const SD3Transformer2DModel& transformer,
+        const AutoencoderKL& vae);
+
     ImageGenerationConfig get_generation_config() const;
     void set_generation_config(const ImageGenerationConfig& generation_config);
 
@@ -73,6 +90,30 @@ public:
             const std::string& device,
             Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    /**
+     * Compiles image generation pipeline for given devices for text encoding, denoising, and vae decoding.
+     * @param text_encode_device A device to compile text encoder(s) with
+     * @param denoise_device A device to compile denoiser (e.g. UNet, SD3 Transformer, etc.) with
+     * @param vae_device A device to compile VAE encoder / decoder(s) with
+     * @param properties A map of properties which affect models compilation
+     * @note If pipeline was compiled before, an exception is thrown.
+     */
+    void compile(const std::string& text_encode_device,
+                 const std::string& denoise_device,
+                 const std::string& vae_device,
+                 const ov::AnyMap& properties = {});
+
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<void, Properties...> compile(const std::string& text_encode_device,
+                                                                const std::string& denoise_device,
+                                                                const std::string& vae_device,
+                                                                Properties&&... properties) {
+        return compile(text_encode_device,
+                       denoise_device,
+                       vae_device,
+                       ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
     /**
@@ -94,6 +135,8 @@ public:
     }
 
     ov::Tensor decode(const ov::Tensor latent);
+
+    ImageGenerationPerfMetrics get_performance_metrics();
 
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;

@@ -17,13 +17,15 @@ public:
 
     std::pair<int64_t, float> detect_language(const Tensor& encoder_hidden_state, const int64_t decoder_start_token_id);
 
-    virtual std::pair<Tensor, float> decode(const Tensor& encoder_hidden_state,
-                                            const Tensor& input_ids,
-                                            const Tensor& beam_idx) = 0;
+    virtual void start_async(const Tensor& encoder_hidden_state, const Tensor& input_ids, const Tensor& beam_idx) = 0;
+    
+    virtual Tensor wait() = 0;
 
     virtual void reset_state() = 0;
 
     virtual ~WhisperDecoder();
+
+    virtual ov::Tensor create_host_tensor(const element::Type element_type, const Shape& shape);
 
 protected:
     void _set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,

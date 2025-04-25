@@ -16,6 +16,7 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 
 namespace py = pybind11;
 namespace ov::genai::pybind::utils {
@@ -92,50 +93,82 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if (py::isinstance<py::none>(py_obj)) {
         return {};
     } else if (py::isinstance<py::list>(py_obj)) {
-        auto _list = py_obj.cast<py::list>();
-        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR};
-        PY_TYPE detected_type = PY_TYPE::UNKNOWN;
-        for (const auto& it : _list) {
-            auto check_type = [&](PY_TYPE type) {
-                if (detected_type == PY_TYPE::UNKNOWN || detected_type == type) {
-                    detected_type = type;
-                    return;
-                }
-                OPENVINO_THROW("Incorrect value in \"" + property_name + "\". Mixed types in the list are not allowed.");
+        if (property_name == ov::cache_encryption_callbacks.name()) {
+            // this impl is based on OpenVINO python bindings impl.
+            auto property_list = py_obj.cast<py::list>();
+            // Wrapped to sp due-to we need to hold GIL upon destruction of python function
+            auto py_encrypt = std::shared_ptr<py::function>(new py::function(std::move(property_list[0])),
+                                                            [](py::function* py_encrypt) {
+                                                                py::gil_scoped_acquire acquire;
+                                                                delete py_encrypt;
+                                                            });
+            auto py_decrypt = std::shared_ptr<py::function>(new py::function(std::move(property_list[1])),
+                                                            [](py::function* py_decrypt) {
+                                                                py::gil_scoped_acquire acquire;
+                                                                delete py_decrypt;
+                                                            });
+
+            std::function<std::string(const std::string&)> encrypt_func =
+                [py_encrypt](const std::string& in_str) -> std::string {
+                // Acquire GIL, execute Python function
+                py::gil_scoped_acquire acquire;
+                return (*py_encrypt)(py::bytes(in_str)).cast<std::string>();
             };
-            if (py::isinstance<py::str>(it)) {
-                check_type(PY_TYPE::STR);
-            } else if (py::isinstance<py::int_>(it)) {
-                check_type(PY_TYPE::INT);
-            } else if (py::isinstance<py::float_>(it)) {
-                check_type(PY_TYPE::FLOAT);
-            } else if (py::isinstance<py::bool_>(it)) {
-                check_type(PY_TYPE::BOOL);
-            } else if (py::isinstance<ov::PartialShape>(it)) {
-                check_type(PY_TYPE::PARTIAL_SHAPE);
-            } else if (py::isinstance<ov::Tensor>(it)) {
-                check_type(PY_TYPE::TENSOR);
+
+            std::function<std::string(const std::string&)> decrypt_func =
+                [py_decrypt](const std::string& in_str) -> std::string {
+                // Acquire GIL, execute Python function
+                py::gil_scoped_acquire acquire;
+                return (*py_decrypt)(py::bytes(in_str)).cast<std::string>();
+            };
+            ov::EncryptionCallbacks encryption_callbacks{encrypt_func, decrypt_func};
+            return encryption_callbacks;
+        } else {
+            auto _list = py_obj.cast<py::list>();
+            enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR};
+            PY_TYPE detected_type = PY_TYPE::UNKNOWN;
+            for (const auto& it : _list) {
+                auto check_type = [&](PY_TYPE type) {
+                    if (detected_type == PY_TYPE::UNKNOWN || detected_type == type) {
+                        detected_type = type;
+                        return;
+                    }
+                    OPENVINO_THROW("Incorrect value in \"" + property_name + "\". Mixed types in the list are not allowed.");
+                };
+                if (py::isinstance<py::str>(it)) {
+                    check_type(PY_TYPE::STR);
+                } else if (py::isinstance<py::int_>(it)) {
+                    check_type(PY_TYPE::INT);
+                } else if (py::isinstance<py::float_>(it)) {
+                    check_type(PY_TYPE::FLOAT);
+                } else if (py::isinstance<py::bool_>(it)) {
+                    check_type(PY_TYPE::BOOL);
+                } else if (py::isinstance<ov::PartialShape>(it)) {
+                    check_type(PY_TYPE::PARTIAL_SHAPE);
+                } else if (py::isinstance<ov::Tensor>(it)) {
+                    check_type(PY_TYPE::TENSOR);
+                }
             }
-        }
 
-        if (_list.empty())
-            return ov::Any();
+            if (_list.empty())
+                return ov::Any();
 
-        switch (detected_type) {
-        case PY_TYPE::STR:
-            return _list.cast<std::vector<std::string>>();
-        case PY_TYPE::FLOAT:
-            return _list.cast<std::vector<double>>();
-        case PY_TYPE::INT:
-            return _list.cast<std::vector<int64_t>>();
-        case PY_TYPE::BOOL:
-            return _list.cast<std::vector<bool>>();
-        case PY_TYPE::PARTIAL_SHAPE:
-            return _list.cast<std::vector<ov::PartialShape>>();
-        case PY_TYPE::TENSOR:
-            return _list.cast<std::vector<ov::Tensor>>();
-        default:
-            OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
+            switch (detected_type) {
+            case PY_TYPE::STR:
+                return _list.cast<std::vector<std::string>>();
+            case PY_TYPE::FLOAT:
+                return _list.cast<std::vector<double>>();
+            case PY_TYPE::INT:
+                return _list.cast<std::vector<int64_t>>();
+            case PY_TYPE::BOOL:
+                return _list.cast<std::vector<bool>>();
+            case PY_TYPE::PARTIAL_SHAPE:
+                return _list.cast<std::vector<ov::PartialShape>>();
+            case PY_TYPE::TENSOR:
+                return _list.cast<std::vector<ov::Tensor>>();
+            default:
+                OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
+            }
         }
 
     } else if (py::isinstance<py::dict>(py_obj) && any_map_properties.find(property_name) == any_map_properties.end()) {
@@ -265,10 +298,16 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) && property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
-    } else if (py::isinstance<py::object>(py_obj)) {
-        return py_obj;
     }
-    OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
+    OPENVINO_THROW("Property \"", property_name, "\" has unsupported type. Please, add type support to 'py_object_to_any' function");
+}
+
+void add_deprecation_warning_for_chunk_streamer(std::shared_ptr<StreamerBase> streamer) {
+    OPENVINO_SUPPRESS_DEPRECATED_START
+    if (auto chunk_streamer = std::dynamic_pointer_cast<ov::genai::ChunkStreamerBase>(streamer)) {
+        PyErr_WarnEx(PyExc_DeprecationWarning, "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.", 1);
+    }
+    OPENVINO_SUPPRESS_DEPRECATED_END
 }
 
 } // namespace
@@ -316,20 +355,30 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
     ov::genai::StreamerVariant streamer = std::monostate();
 
     std::visit(overloaded {
-    [&streamer](const std::function<bool(py::str)>& py_callback){
-        // Wrap python streamer with manual utf-8 decoding. Do not rely
-        // on pybind automatic decoding since it raises exceptions on incomplete strings.
-        auto callback_wrapped = [py_callback](std::string subword) -> bool {
-            py::gil_scoped_acquire acquire;
-            auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-            return py_callback(py::reinterpret_borrow<py::str>(py_str));
-        };
-        streamer = callback_wrapped;
-    },
-    [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
-        streamer = streamer_cls;
-    },
-    [](std::monostate none){ /*streamer is already a monostate */ }
+        [&streamer](const std::function<std::optional<uint16_t>(py::str)>& py_callback){
+            // Wrap python streamer with manual utf-8 decoding. Do not rely
+            // on pybind automatic decoding since it raises exceptions on incomplete strings.
+            auto callback_wrapped = [py_callback](std::string subword) -> ov::genai::StreamingStatus {
+                py::gil_scoped_acquire acquire;
+                auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
+                std::optional<uint16_t> callback_output = py_callback(py::reinterpret_borrow<py::str>(py_str));
+                if (callback_output.has_value()) {
+                    if (*callback_output == (uint16_t)StreamingStatus::RUNNING)
+                        return StreamingStatus::RUNNING;
+                    else if (*callback_output == (uint16_t)StreamingStatus::CANCEL)
+                        return StreamingStatus::CANCEL;
+                    return StreamingStatus::STOP;
+                } else {
+                    return StreamingStatus::RUNNING;
+                }
+            };
+            streamer = callback_wrapped;
+        },
+        [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
+            add_deprecation_warning_for_chunk_streamer(streamer_cls);
+            streamer = streamer_cls;
+        },
+        [](std::monostate none){ /*streamer is already a monostate */ }
     }, py_streamer);
     return streamer;
 }
