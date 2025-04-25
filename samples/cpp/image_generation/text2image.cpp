@@ -24,9 +24,19 @@ int32_t main(int32_t argc, char* argv[]) try {
                 ov::genai::height(512),
                 ov::genai::num_inference_steps(20),
                 ov::genai::num_images_per_prompt(1)},
-            
-            1);
-            //ov::genai::callback(progress_bar));
+            1);  // request_idx
+
+        // TODO: GenerationRequest will wrap request_idx
+        /*
+        Text2ImagePipeline::GenerationRequest request = pipeline.create_generation_request(); // assigns new free request_idx
+
+        // Sync (would be used in OVMS)
+        ov::Tensor image = request.generate("happy dog",
+                                            ov::genai::width(512),
+                                            ov::genai::height(512),
+                                            ov::genai::num_inference_steps(20),
+                                            ov::genai::num_images_per_prompt(1));
+        */
 
         // writes `num_images_per_prompt` images by pattern name
         imwrite("image_2_%d.bmp", image, true);
@@ -39,13 +49,11 @@ int32_t main(int32_t argc, char* argv[]) try {
         std::cout << "Generating..." << std::endl;
         ov::Tensor image = pipe.generate("black cat",
             ov::AnyMap{
-                ov::genai::width(512),
-                ov::genai::height(512),
+                ov::genai::width(256),
+                ov::genai::height(256),
                 ov::genai::num_inference_steps(20),
                 ov::genai::num_images_per_prompt(1)},
-            
             2);
-            //ov::genai::callback(progress_bar));
 
         // writes `num_images_per_prompt` images by pattern name
         imwrite("image_1_%d.bmp", image, true);
