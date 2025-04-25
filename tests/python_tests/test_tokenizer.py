@@ -288,17 +288,15 @@ def test_special_tokens(prompt, ov_hf_tokenizers):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_multiple_infer_request_state():
+def test_multiple_infer_request_state(tmp_path):
     hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained("llamafactory/tiny-random-Llama-3"))
     ov_tokenizer = convert_tokenizer(hf_tokenizer)
-    with TemporaryDirectory() as temp_dir:
-        tmp_path = Path(temp_dir)
-        openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
-        del ov_tokenizer, hf_tokenizer
+    openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
+    del ov_tokenizer, hf_tokenizer
 
-        ov_tokenizer = Tokenizer(
-            tmp_path,
-            properties={hints.performance_mode: hints.PerformanceMode.THROUGHPUT} | get_disabled_mmap_ov_config(),
+    ov_tokenizer = Tokenizer(
+        tmp_path,
+        properties={hints.performance_mode: hints.PerformanceMode.THROUGHPUT} | get_disabled_mmap_ov_config(),
         )
     text = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
