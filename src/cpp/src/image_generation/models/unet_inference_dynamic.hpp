@@ -22,6 +22,7 @@ public:
 
     virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states, size_t request_idx = 0) override {
         OPENVINO_ASSERT(m_requests.size(), "UNet model must be compiled first");
+        std::cout << "Setting hidden states for request " << request_idx << std::endl;
         m_requests[request_idx].set_tensor(tensor_name, encoder_hidden_states);
     }
 

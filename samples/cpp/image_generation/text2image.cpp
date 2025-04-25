@@ -18,32 +18,38 @@ int32_t main(int32_t argc, char* argv[]) try {
     std::thread t([&pipe, prompt] () {
 
         std::cout << "Generating..." << std::endl;
-        ov::Tensor image = pipe.generate(prompt,
-            ov::genai::width(512),
-            ov::genai::height(512),
-            ov::genai::num_inference_steps(20),
-            ov::genai::num_images_per_prompt(1));
+        ov::Tensor image = pipe.generate("happy dog",
+            ov::AnyMap{
+                ov::genai::width(512),
+                ov::genai::height(512),
+                ov::genai::num_inference_steps(20),
+                ov::genai::num_images_per_prompt(1)},
+            
+            1);
             //ov::genai::callback(progress_bar));
 
         // writes `num_images_per_prompt` images by pattern name
-        imwrite("image_0.bmp", image, true);
+        imwrite("image_2_%d.bmp", image, true);
         std::cout << "Generation ended" << std::endl;
 
     });
 
     std::thread t1([&pipe, prompt] () {
 
-        std::cout << "Generating 1..." << std::endl;
-        ov::Tensor image = pipe.generate(prompt,
-            ov::genai::width(512),
-            ov::genai::height(512),
-            ov::genai::num_inference_steps(20),
-            ov::genai::num_images_per_prompt(1));
+        std::cout << "Generating..." << std::endl;
+        ov::Tensor image = pipe.generate("black cat",
+            ov::AnyMap{
+                ov::genai::width(512),
+                ov::genai::height(512),
+                ov::genai::num_inference_steps(20),
+                ov::genai::num_images_per_prompt(1)},
+            
+            2);
             //ov::genai::callback(progress_bar));
 
         // writes `num_images_per_prompt` images by pattern name
-        imwrite("image_1.bmp", image, true);
-        std::cout << "Generation 1 ended" << std::endl;
+        imwrite("image_1_%d.bmp", image, true);
+        std::cout << "Generation ended" << std::endl;
 
     });
 

@@ -68,6 +68,8 @@ const UNet2DConditionModel::Config& UNet2DConditionModel::get_config() const {
 UNet2DConditionModel& UNet2DConditionModel::reshape(int batch_size, int height, int width, int tokenizer_model_max_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
+    OPENVINO_ASSERT(false, "Reshaping");
+
     height /= m_vae_scale_factor;
     width /= m_vae_scale_factor;
 

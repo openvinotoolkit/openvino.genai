@@ -210,15 +210,15 @@ public:
         }
     }
 
-    TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
-        setup_tokenizer(models_path, properties);
+    TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties, size_t infer_request_queue_size = 0) {
+        setup_tokenizer(models_path, properties, infer_request_queue_size);
     }
 
-    TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
-        setup_tokenizer(models, properties);
+    TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties, size_t infer_request_queue_size = 0) {
+        setup_tokenizer(models, properties, infer_request_queue_size);
     }
 
-    void setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
+    void setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties, size_t infer_request_queue_size = 0) {
         ScopedVar env_manager(tokenizers_relative_to_genai());
         auto core = get_core_singleton();
 
@@ -242,10 +242,10 @@ public:
         parse_if_exists(models_path / "tokenizer_config.json", m_chat_template);
         parse_if_exists(models_path / "processor_config.json", m_chat_template);
         parse_if_exists(models_path / "chat_template.json", m_chat_template);
-        setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
+        setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties, infer_request_queue_size);
     }
 
-    void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
+    void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties, size_t infer_request_queue_size = 0) {
         auto [ov_tokenizer, ov_detokenizer] = models;
         OPENVINO_ASSERT(ov_tokenizer || ov_detokenizer, "Neither tokenizer nor detokenzier models were provided");
 
@@ -264,7 +264,7 @@ public:
             ov::genai::utils::print_compiled_model_properties(tokenizer, "OV Tokenizer");
 
             m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-                tokenizer.get_property(ov::optimal_number_of_infer_requests),
+                infer_request_queue_size > 0 ? infer_request_queue_size : tokenizer.get_property(ov::optimal_number_of_infer_requests),
                 [&tokenizer]() -> ov::InferRequest {
                     return tokenizer.create_infer_request();
                 });
@@ -601,8 +601,8 @@ public:
     }
 };
 
-Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties) {
-    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, properties);
+Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties, size_t infer_request_queue_size) {
+    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, properties, infer_request_queue_size);
 }
 
 Tokenizer::Tokenizer(

@@ -35,7 +35,7 @@ CLIPTextModel::Config::Config(const std::filesystem::path& config_path) {
 }
 
 CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir) :
-    m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)),
+    m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir), {}, 4/*?*/),
     m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
 }
@@ -145,6 +145,7 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
 
     size_t current_batch_idx = 0;
 
+
     if (input_ids.get_shape()[0] == 2) {
         perform_tokenization(neg_prompt,
                              ov::Tensor(input_ids, {current_batch_idx    , 0},
@@ -164,7 +165,7 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
     // This is true when text_embedding_batch_size is 1, but model was reshaped / compiled as batch size 2.
     m_slice_batch1_output = (text_embedding_batch_size != input_ids.get_shape()[0]);
 
-    return get_output_tensor(0);
+    return get_output_tensor(0, request_idx);
 }
 
 ov::Tensor CLIPTextModel::get_output_tensor(const size_t idx, size_t request_idx) {

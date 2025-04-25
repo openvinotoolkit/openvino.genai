@@ -172,9 +172,10 @@ public:
         std::string negative_prompt = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
         auto infer_start = std::chrono::steady_clock::now();
         ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, negative_prompt,
-            batch_size_multiplier > 1);
+            batch_size_multiplier > 1, request_idx);
         auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
-        m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
+
+        //m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
 
         // replicate encoder hidden state to UNet model
         if (generation_config.num_images_per_prompt == 1) {
@@ -227,9 +228,9 @@ public:
             if (!is_strength_max || return_image_latent) {
                 auto encode_start = std::chrono::steady_clock::now();
                 image_latent = m_vae->encode(proccesed_image, generation_config.generator, request_idx);
-                m_perf_metrics.vae_encoder_inference_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                                    std::chrono::steady_clock::now() - encode_start)
-                                                                    .count();
+                //m_perf_metrics.vae_encoder_inference_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                //                                                    std::chrono::steady_clock::now() - encode_start)
+                //                                                    .count();
                 // in case of image to image or inpaining with strength < 1.0, we need to initialize initial latent with
                 // image_latent
                 if (!is_strength_max) {
