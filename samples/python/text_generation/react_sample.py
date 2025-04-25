@@ -47,8 +47,8 @@ tools = [
         ],
     },
     {
-        "name_for_human": "image generation",
-        "name_for_model": "image_gen",
+        "name_for_human": "generate image",
+        "name_for_model": "generate_image",
         "description_for_model": "AI painting (image generation) service, input text description, and return the image URL drawn based on text information.",
         "parameters": [
             {
@@ -138,7 +138,7 @@ def call_tool(tool_name: str, tool_args: str) -> str:
         resp = resp.json()
         ret = {k: {_v: resp[k][0][_v] for _v in v} for k, v in key_selection.items()}
         return str(ret)
-    elif tool_name == "image_gen":
+    elif tool_name == "generate_image":
         tool_args = tool_args.replace("(", "").replace(")", "")
         prompt = json5.loads(tool_args)["prompt"]
         prompt = urllib.parse.quote(prompt)
@@ -150,7 +150,7 @@ def call_tool(tool_name: str, tool_args: str) -> str:
         raise NotImplementedError
 
 
-def llm_with_tool(llm_pipe, llm_config, tokenizer, prompt: str, history, list_of_tool_info):
+def llm_with_tool(llm_pipe, llm_config, tokenizer, prompt: str, history, list_of_tool_info=()):
     chat_history = [(x["user"], x["bot"]) for x in history] + [(prompt, "")]
     planning_prompt = build_input_text(tokenizer, chat_history, list_of_tool_info)
 
