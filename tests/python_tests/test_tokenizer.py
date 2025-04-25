@@ -16,7 +16,7 @@ from transformers import AutoTokenizer
 from utils.constants import get_disabled_mmap_ov_config
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.network import retry_request
-from utils.tokenizers import delete_rt_info
+from utils.tokenizers import delete_rt_info, model_tmp_path
 
 
 def load_genai_tokenizer_with_configs(configs: list[tuple], temp_path):

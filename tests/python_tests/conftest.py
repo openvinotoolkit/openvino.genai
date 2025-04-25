@@ -3,7 +3,6 @@ import pytest
 import shutil
 import logging
 from utils.constants import get_ov_cache_models_dir
-from utils.tokenizers import model_tmp_path  # NOQA: F401
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
