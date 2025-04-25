@@ -178,6 +178,9 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         m_perf_metrics.num_input_tokens = request->get_prompt_len();
         m_perf_metrics.evaluate_statistics(generate_timer.get_start_time());
 
+        // TODO: adjust to cover loop over requests
+        result.perf_metrics = m_perf_metrics;
+      
         results.push_back(std::move(result));
     }
 
