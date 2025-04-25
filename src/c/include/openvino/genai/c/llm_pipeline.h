@@ -70,16 +70,30 @@ typedef struct ov_genai_llm_pipeline_opaque ov_genai_llm_pipeline;
 
 /**
  * @brief Construct ov_genai_llm_pipeline.
+ *
+ * Initializes a ov_genai_llm_pipeline instance from the specified model directory and device. Optional property
+ * parameters can be passed as key-value pairs.
+ *
  * @param models_path Path to the directory containing the model files.
  * @param device Name of a device to load a model to.
+ * @param property_args_size How many properties args will be passed, each property contains 2 args: key and value.
  * @param ov_genai_llm_pipeline A pointer to the newly created ov_genai_llm_pipeline.
+ * @param ... property paramater: Optional pack of pairs: <char* property_key, char* property_value> relevant only
  * @return ov_status_e A status code, return OK(0) if successful.
+ *
+ * @example
+ * Example with no properties:
+ * ov_genai_llm_pipeline_create(model_path, "CPU", 0, &pipe);
+ *
+ * Example with properties:
+ * ov_genai_llm_pipeline_create(model_path, "GPU", 2, &pipe,
+ *                             "CACHE_DIR", "cache_dir");
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_create(const char* models_path,
                                                                   const char* device,
-                                                                  ov_genai_llm_pipeline** pipe);
-
-// TODO: Add 'const ov::AnyMap& properties' as an input argument when creating ov_genai_llm_pipeline.
+                                                                  const size_t property_args_size,
+                                                                  ov_genai_llm_pipeline** pipe,
+                                                                  ...);
 
 /**
  * @brief Release the memory allocated by ov_genai_llm_pipeline.
@@ -96,9 +110,17 @@ typedef enum {
 } ov_genai_streamming_status_e;
 
 /**
- * @brief Callback function for streaming output.
+ * @brief Structure for streamer callback functions with arguments.
+ *
+ * The callback function takes two parameters:
+ * - `const char* str`: A constant string extracted from the decoded result for processing
+ * - `void* args`: A pointer to additional arguments, allowing flexible data passing.
  */
-typedef ov_genai_streamming_status_e(OPENVINO_C_API_CALLBACK* stream_callback)(const char*);
+typedef struct {
+    ov_genai_streamming_status_e(
+        OPENVINO_C_API_CALLBACK* callback_func)(const char* str, void* args);  //!< Pointer to the callback function
+    void* args;  //!< Pointer to the arguments passed to the callback function
+} streamer_callback;
 
 /**
  * @brief Generate results by ov_genai_llm_pipeline
@@ -114,7 +136,7 @@ typedef ov_genai_streamming_status_e(OPENVINO_C_API_CALLBACK* stream_callback)(c
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                                                     const char* inputs,
                                                                     const ov_genai_generation_config* config,
-                                                                    const stream_callback* streamer,
+                                                                    const streamer_callback* streamer,
                                                                     ov_genai_decoded_results** results);
 /**
  * @brief Start chat with keeping history in kv cache.

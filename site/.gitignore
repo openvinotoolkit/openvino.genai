@@ -18,3 +18,9 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Generated docs files for samples
+/docs/samples/*/
+!/docs/samples/_*/
+# !/docs/samples/index.mdx
+# !/docs/samples/_category_.json

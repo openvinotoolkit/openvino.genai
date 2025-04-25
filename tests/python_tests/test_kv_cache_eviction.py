@@ -9,23 +9,19 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from tqdm import tqdm
 
-from optimum.intel.openvino import OVModelForCausalLM
-from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationResult, GenerationConfig, CacheEvictionConfig, AggregationMode
-from openvino_tokenizers import convert_tokenizer
-from openvino import serialize
-from transformers import AutoTokenizer
+from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode
 
 from utils.ov_genai_pipelines import PipelineType, generate_and_compare
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 from utils.constants import get_default_llm_properties
-from utils.network import retry_request
+from utils.hugging_face import download_and_convert_model
 from data.test_dataset import get_test_dataset
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
     TESTS_ROOT = Path(__file__).parent
     file_path = TESTS_ROOT / 'data' / file_name
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding="utf-8") as f:
         return {"prompts": [s for s in f]}
 
 def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
@@ -36,29 +32,6 @@ def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
     scheduler_config.max_num_seqs = 256
     scheduler_config.use_cache_eviction = False
     return scheduler_config
-
-@dataclass
-class ConvertedModel:
-    model: OVModelForCausalLM
-    tokenizer: AutoTokenizer
-    models_path: Path
-
-
-@pytest.fixture(scope='module')
-def converted_model(tmp_path_factory):
-    model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=get_default_llm_properties()))
-    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id))
-    models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
-    model.save_pretrained(models_path)
-    ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
-    serialize(ov_tokenizer, models_path / "openvino_tokenizer.xml")
-    serialize(ov_detokenizer, models_path / "openvino_detokenizer.xml")
-    converted_model = ConvertedModel(model, tokenizer, models_path)
-    yield converted_model
-    del converted_model
-    del model
-
 
 @dataclass
 class CacheOptTestStruct:
@@ -108,7 +81,7 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
 @pytest.mark.parametrize("enable_prefix_caching", [True, False],
                                                   ids=["with_prefix_caching", "no_prefix_caching"])  # prefix caching shouldn't impact similarity
 @pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
-def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, test_struct, enable_prefix_caching, apply_rotation):
+def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, enable_prefix_caching, apply_rotation):
     import whowhatbench
 
     seqs_per_request = 32
@@ -126,11 +99,10 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
         scheduler_config_opt.cache_eviction_config.apply_rotation = apply_rotation
     scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
 
-    models_path = converted_model.models_path
+    model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    _, tokenizer, models_path = download_and_convert_model(model_id)
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
-
-    tokenizer = converted_model.tokenizer
 
     data_dict = load_prompts_dataset(test_struct.prompt_file)
 
@@ -200,23 +172,7 @@ def test_dynamic_memory_allocation(params):
                          model="facebook/opt-125m",
                          scheduler_config=params[0],
                          generation_config=params[1],
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
-
-
-@pytest.fixture(scope='module')
-def qwen2_converted_model(tmp_path_factory):
-    model_id = "Qwen/Qwen2-0.5B-Instruct"
-    model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True))
-    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id))
-    models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
-    model.save_pretrained(models_path)
-    ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
-    serialize(ov_tokenizer, models_path / "openvino_tokenizer.xml")
-    serialize(ov_detokenizer, models_path / "openvino_detokenizer.xml")
-    qwen2_converted_model = ConvertedModel(model, tokenizer, models_path)
-    yield qwen2_converted_model
-    del qwen2_converted_model
-    del model
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 
 @dataclass
@@ -234,10 +190,11 @@ class LongBenchTestData:
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
     LongBenchTestData("qasper", 5.8, 1.7, 3.6),
 ])
-def test_optimized_generation_longbench(qwen2_converted_model, device, test_struct):
+def test_optimized_generation_longbench(device, test_struct):
     seqs_per_request = 32
     num_kv_blocks = 1000 if device == "CPU" else 500
-    models_path = qwen2_converted_model.models_path
+    model_id = "Qwen/Qwen2-0.5B-Instruct"
+    _, _, models_path = download_and_convert_model(model_id)
     scheduler_config = get_scheduler_config(num_kv_blocks)
 
     scheduler_config_opt = get_scheduler_config(num_kv_blocks)

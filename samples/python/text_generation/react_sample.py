@@ -84,7 +84,7 @@ def build_input_text(tokenizer, chat_history, list_of_tool_info) -> str:
     messages = [{"role": "system", "content": "You are a helpful assistant."}]
     for i, (query, response) in enumerate(chat_history):
         if list_of_tool_info:
-            if (len(chat_history) == 1) or (i == len(chat_history) - 2):
+            if (len(chat_history) == 1):
                 query = PROMPT_REACT.format(
                     tools_text=tools_text,
                     tools_name_text=tools_name_text,
@@ -102,15 +102,15 @@ def build_input_text(tokenizer, chat_history, list_of_tool_info) -> str:
 
 def parse_latest_tool_call(text):
     tool_name, tool_args = "", ""
-    i = text.rfind("\nAction:")
-    j = text.rfind("\nAction Input:")
-    k = text.rfind("\nObservation:")
+    i = text.find("\nAction:")
+    j = text.find("\nAction Input:")
+    k = text.find("\nObservation:")
     if 0 <= i < j:  # If the text has `Action` and `Action input`,
         if k < j:  # but does not contain `Observation`,
             # then it is likely that `Observation` is ommited by the LLM,
             # because the output text may have discarded the stop word.
             text = text.rstrip() + "\nObservation:"  # Add it back.
-        k = text.rfind("\nObservation:")
+        k = text.find("\nObservation:")
         tool_name = text[i + len("\nAction:") : j].strip()
         tool_args = text[j + len("\nAction Input:") : k].strip()
         text = text[:k]
@@ -156,15 +156,15 @@ def llm_with_tool(llm_pipe, llm_config, tokenizer, prompt: str, history, list_of
 
     text = ""
     while True:
+        # llm pipe output based planning_prompt and the text (previous output)
         output = llm_pipe.generate(planning_prompt + text, llm_config, streamer)
+        # parse the output to get action
         action, action_input, output = parse_latest_tool_call(output)
         if action:
-            print("Action:", action)
-            print("Action_input:", action_input)
             observation = call_tool(action, action_input)
-            output += f"\nObservation: = {observation}\nThought:"
-            observation = f"{observation}\nThought:"
-            print(observation)
+            observation_txt = f"\nObservation: = {observation}\nThought:"
+            print("\n\nGet Tool API", observation_txt, "\n")
+            output += observation_txt
             text += output
         else:
             text += output
@@ -202,9 +202,8 @@ def main():
     history = []
     query = "get the weather in London, and create a picture of Big Ben based on the weather information"
     response, history = llm_with_tool(llm_pipe, llm_config, tokenizer, prompt=query, history=history, list_of_tool_info=tools)
-    llm_pipe.finish_chat()
 
+    llm_pipe.finish_chat()
 
 if '__main__' == __name__:
     main()
-

@@ -1,5 +1,4 @@
 import ImageGenerationModelsTable from './_components/image-generation-models-table';
-import InpaintingModelsTable from './_components/inpainting-models-table';
 import LLMModelsTable from './_components/llm-models-table';
 import VLMModelsTable from './_components/vlm-models-table';
 import WhisperModelsTable from './_components/whisper-models-table';
@@ -46,17 +45,26 @@ Models should belong to the same family and have the same tokenizers.
 
 <ImageGenerationModelsTable />
 
-### Inpainting Models
-
-In addition to image generation models, `InpaintingPipeline` supports specialized inpainting models:
-
-<InpaintingModelsTable />
-
 ## Visual Language Models (VLMs)
 
 <VLMModelsTable />
 
-## Speech Processing Models (Whisper-based)
+:::warning VLM Models Notes
+#### InternVL2 {#internvl2-notes}
+
+To convert InternVL2 models, `timm` and `einops` are required:
+
+```bash
+pip install timm einops
+```
+#### phi3_v {#phi3_v-notes}
+  - Example models' configs aren't consistent. It's required to override the default `eos_token_id` with the one from a tokenizer:
+    ```python
+    generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())
+    ```
+:::
+
+## Speech Recognition Models (Whisper-based)
 
 <WhisperModelsTable />
 

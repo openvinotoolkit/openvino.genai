@@ -29,6 +29,7 @@ auto vlm_generate_docstring = R"(
     images used in previous prompts isn't implemented.
     A model's native image tag can be used instead of
     <ov_genai_image_i>. These tags are:
+    llava-1.5-7b-hf: <image>
     MiniCPM-V-2_6: (<image>./</image>)\n
     Phi-3-vision: <|image_i|>\n - the index starts with one
     Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
@@ -60,6 +61,7 @@ auto vlm_generate_kwargs_docstring = R"(
     images used in previous prompts isn't implemented.
     A model's native image tag can be used instead of
     <ov_genai_image_i>. These tags are:
+    llava-1.5-7b-hf: <image>
     MiniCPM-V-2_6: (<image>./</image>)\n
     Phi-3-vision: <|image_i|>\n - the index starts with one
     Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
@@ -165,11 +167,36 @@ void init_vlm_pipeline(py::module_& m) {
             return std::make_unique<ov::genai::VLMPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"), "folder with exported model files",
-        py::arg("device"), "device on which inference will be done"
+        py::arg("device"), "device on which inference will be done",
         R"(
             VLMPipeline class constructor.
             models_path (os.PathLike): Path to the folder with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            kwargs: Device properties
+        )")
+
+        .def(py::init([](
+            const ov::genai::ModelsMap& models,
+            const ov::genai::Tokenizer& tokenizer,
+            const std::filesystem::path& config_dir_path,
+            const std::string& device,
+            const ov::genai::OptionalGenerationConfig& generation_config,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::VLMPipeline>(models, tokenizer, config_dir_path, device, pyutils::kwargs_to_any_map(kwargs), generation_config.value_or(ov::genai::GenerationConfig()));
+        }),
+        py::arg("models"), "map with decrypted models",
+        py::arg("tokenizer"), "genai Tokenizers",
+        py::arg("config_dir_path"), "Path to folder with model configs",
+        py::arg("device"), "device on which inference will be done",
+        py::arg("generation_config")  = std::nullopt, "generation config",
+        R"(
+            VLMPipeline class constructor.
+            models (typing.Dict[str, typing.Tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+            tokenizer (Tokenizer): Genai Tokenizers.
+            config_dir_path (os.PathLike): Path to folder with model configs.
+            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            generation_config (GenerationConfig | None): Device properties.
             kwargs: Device properties
         )")
 
