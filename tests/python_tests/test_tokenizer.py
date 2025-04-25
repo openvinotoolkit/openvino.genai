@@ -2,10 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import dataclasses
 import json
-import typing
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Dict, List, Tuple
+from typing import Optional
 
 import numpy as np
 import openvino
@@ -22,7 +19,7 @@ from utils.network import retry_request
 from utils.tokenizers import delete_rt_info
 
 
-def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
+def load_genai_tokenizer_with_configs(configs: list[tuple], temp_path):
     delete_rt_info(configs, temp_path)
 
     for json_file in temp_path.glob("*.json"):
@@ -178,7 +175,7 @@ conversation = [
 @pytest.mark.nightly
 @pytest.mark.parametrize("chat_config", get_chat_templates())
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
-def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict], ov_hf_tokenizers):
+def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_hf_tokenizers):
     tokenizer_config = chat_config[1]
     # load hf_tokenizer only to apply chat template to ov_tokenizer later
     _, hf_tokenizer = ov_hf_tokenizers
@@ -536,12 +533,12 @@ def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(
 
 @dataclasses.dataclass(frozen=True)
 class ChatTemplates:
-    reference: typing.Optional[str]
-    rt_simplified: typing.Optional[str]
-    rt_template: typing.Optional[str]
-    chat_template_json: typing.Optional[str]
-    processor_config_json: typing.Optional[str]
-    tokenizer_config_json: typing.Optional[str]
+    reference: Optional[str]
+    rt_simplified: Optional[str]
+    rt_template: Optional[str]
+    chat_template_json: Optional[str]
+    processor_config_json: Optional[str]
+    tokenizer_config_json: Optional[str]
 
 
 def generate_tokenizer(tmp_path, chat_templates):
