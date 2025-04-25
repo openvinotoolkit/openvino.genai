@@ -66,16 +66,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
-    m_model_runner->get_infer_request().get_compiled_model().release_memory();
-
-    // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
-    m_sampler.reset();
-    m_adapter_controller.reset();
-    m_model_runner.reset();
+    if (m_model_runner) {
+        m_model_runner->get_infer_request().get_compiled_model().release_memory();
+    }
 
     if (m_scheduler) {
         m_scheduler->release();
-        m_scheduler.reset();
     }
 }
 
@@ -90,8 +86,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     std::shared_ptr<ov::Model> model,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& properties,
-    const std::vector<KVHeadConfig>& kv_cache_config) {
+    const ov::AnyMap& properties) {
     m_device = device;
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
