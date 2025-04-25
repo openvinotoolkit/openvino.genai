@@ -370,7 +370,6 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
         </ul>
       </td>
       <td>
-          <li>GPU isn't supported</li>
           <li>These models' configs aren't consistent. It's required to override the default <code>eos_token_id</code> with the one from a tokenizer: <code>generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())</code>.</li>
       </td>
     </tr>
