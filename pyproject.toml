@@ -66,13 +66,3 @@ markers = [
     "nightly",
     "precommit: (deselect with '-m \"precommit\"')",
 ]
-
-[tool.ruff]
-line-length = 119
-
-[tool.ruff.lint]
-ignore = ["C901", "E501", "E741", "W605"]
-select = ["C", "E", "F", "I", "W"]
-
-[tool.ruff.lint.isort]
-lines-after-imports = 2
