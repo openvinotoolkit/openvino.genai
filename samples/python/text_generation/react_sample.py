@@ -119,11 +119,7 @@ def parse_latest_tool_call(text):
 
 def call_tool(tool_name: str, tool_args: str) -> str:
     if tool_name == "get_weather":
-        try:
-            city_name = json5.loads(tool_args)["city_name"]
-        except KeyError:
-            print("Error: 'city_name' key not found in tool_args")  # Debug print
-            raise
+        city_name = json5.loads(tool_args)["city_name"]
         key_selection = {
             "current_condition": [
                 "temp_C",
@@ -163,7 +159,7 @@ def llm_with_tool(llm_pipe, llm_config, tokenizer, prompt: str, history, list_of
         if action:
             observation = call_tool(action, action_input)
             observation_txt = f"\nObservation: = {observation}\nThought:"
-            print("\n\nGet Tool API", observation_txt, "\n")
+            print("\n\n- Getting information from the tool API -", observation_txt, "\n")
             output += observation_txt
             text += output
         else:
@@ -197,13 +193,10 @@ def main():
     llm_pipe = openvino_genai.LLMPipeline(model, weights, tokenizer, device)
     llm_config = openvino_genai.GenerationConfig()
     llm_config.max_new_tokens = 256
-    llm_pipe.start_chat()
 
     history = []
     query = "get the weather in London, and create a picture of Big Ben based on the weather information"
     response, history = llm_with_tool(llm_pipe, llm_config, tokenizer, prompt=query, history=history, list_of_tool_info=tools)
-
-    llm_pipe.finish_chat()
 
 if '__main__' == __name__:
     main()
