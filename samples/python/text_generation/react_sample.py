@@ -146,8 +146,9 @@ def call_tool(tool_name: str, tool_args: str) -> str:
         raise NotImplementedError
 
 
-def llm_with_tool(llm_pipe, llm_config, tokenizer, prompt: str, history, list_of_tool_info=()):
+def llm_with_tool(llm_pipe, llm_config, prompt: str, history, list_of_tool_info=()):
     chat_history = [(x["user"], x["bot"]) for x in history] + [(prompt, "")]
+    tokenizer = llm_pipe.get_tokenizer()
     planning_prompt = build_input_text(tokenizer, chat_history, list_of_tool_info)
 
     text = ""
@@ -184,19 +185,16 @@ def main():
     parser.add_argument('model_dir')
     args = parser.parse_args()
 
-    device = 'GPU'
+    device = 'CPU'  # GPU can be used as well
     llm_model_path = args.model_dir
 
-    model, weights = encrypted_model_causal_lm.decrypt_model(llm_model_path, 'openvino_model.xml', 'openvino_model.bin')
-    tokenizer = encrypted_model_causal_lm.read_tokenizer(llm_model_path)
-
-    llm_pipe = openvino_genai.LLMPipeline(model, weights, tokenizer, device)
+    llm_pipe = openvino_genai.LLMPipeline(llm_model_path, device)
     llm_config = openvino_genai.GenerationConfig()
     llm_config.max_new_tokens = 256
 
     history = []
     query = "get the weather in London, and create a picture of Big Ben based on the weather information"
-    response, history = llm_with_tool(llm_pipe, llm_config, tokenizer, prompt=query, history=history, list_of_tool_info=tools)
+    response, history = llm_with_tool(llm_pipe, llm_config, prompt=query, history=history, list_of_tool_info=tools)
 
 if '__main__' == __name__:
     main()
