@@ -149,7 +149,7 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     if len(speech_list) == 0:
         raise RuntimeError('==Failure speech list is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, speech file nums: {len(speech_file_list)}, speech idx: {speech_idx_list}')
-    pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2txt_model(model_path, device, mem_consumption, **args)
+    pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2_txt_model(model_path, device, mem_consumption, **args)
     md5_list = {num : {} for num in range(num_iters + 1)}
     iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
     input_param = {

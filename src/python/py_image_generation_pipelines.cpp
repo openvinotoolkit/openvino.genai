@@ -90,7 +90,7 @@ auto image_generation_perf_metrics_docstring = R"(
     If mean and std were already calculated, getters return cached values.
 
     :param get_text_encoder_infer_duration: Returns the inference duration of every text encoder in milliseconds.
-    :type get_text_encoder_infer_duration: Dict[str, float]
+    :type get_text_encoder_infer_duration: dict[str, float]
 
     :param get_vae_encoder_infer_duration: Returns the inference duration of vae encoder in milliseconds.
     :type get_vae_encoder_infer_duration: float
