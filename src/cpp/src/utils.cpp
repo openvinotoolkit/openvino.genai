@@ -270,7 +270,7 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
         auto indices = std::make_shared<ov::op::v0::Parameter>(ov::element::i32, ov::PartialShape{-1});
         indices->set_friendly_name("sampled_tokens_indices");
         indices->output(0).get_tensor().set_names({"sampled_tokens_indices"});
-        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector<int32_t>{slice_gather_dim});
+        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector<int32_t>{static_cast<int>(slice_gather_dim)});
         auto gather = std::make_shared<ov::op::v8::Gather>(matmul->input_value(0), indices, axis);
         matmul->input(0).replace_source_output(gather);
         model->add_parameters({indices});

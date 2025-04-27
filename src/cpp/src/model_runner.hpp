@@ -29,6 +29,7 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
  * KV cache block indices etc.) and returning the logit scores for the next token to be generated for each of the currently scheduled sequences.
  */
 class ModelRunner {
+    ov::CompiledModel m_compiled;
     ov::InferRequest m_request;
     AttentionScoresForEachSubsequence m_last_attention_scores;
     size_t m_block_size;
@@ -45,6 +46,18 @@ class ModelRunner {
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
+    bool m_use_remote = true;
+    int m_last_remote_shape = 0;
+    int m_last_batch_size_in_sequences = 0;
+    ov::Tensor m_input_ids;
+    ov::Tensor m_inputs_embeds;
+    ov::Tensor m_position_ids;
+    ov::Tensor m_past_lens;
+    ov::Tensor m_subsequence_begins;
+    ov::Tensor m_block_indices_begins;
+    ov::Tensor m_max_context_len;
+    ov::Tensor m_gather_indices;
+    ov::Tensor m_output;
 
 public:
     /**
@@ -57,13 +70,15 @@ public:
      * @param is_use_per_layer_cache_control If true, then the runner will pass cache control input tensors to the model
      * on a per-attention layer basis.
      */
-    ModelRunner(ov::InferRequest request,
+    ModelRunner(ov::CompiledModel compiled,
+                ov::InferRequest request,
                 size_t block_size,
                 size_t num_decoder_layers = 1,
                 bool collect_attention_scores = false,
                 bool is_use_per_layer_cache_control = false,
                 bool is_use_rotation_inputs = false)
-        : m_request(std::move(request)),
+        : m_compiled(std::move(compiled)),
+          m_request(std::move(request)),
           m_block_size(block_size),
           m_num_decoder_layers(num_decoder_layers),
           m_collect_attention_scores(collect_attention_scores),
@@ -72,6 +87,10 @@ public:
           m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
+        auto p = std::getenv("GENAI_REMOTE_TENSOR");
+        if (p) {
+            m_use_remote = p[0] == '1';
+        }
     }
 
     /**
@@ -255,35 +274,104 @@ public:
             sequence_group->set_output_seq_len(matmul_gathering_is_available ? output_seq_len : num_scheduled_tokens);
         }
 
-        if (sequence_group_type == SequenceGroupType::TOKENS) {
-            m_request.set_tensor("input_ids", input_ids);
+        if (m_use_remote) {
+            if (m_last_remote_shape != total_num_tokens) {
+                m_last_remote_shape = static_cast<int>(total_num_tokens);
+                ov::RemoteContext context = m_compiled.get_context();
+
+                if (sequence_group_type == SequenceGroupType::TOKENS) {
+                    m_input_ids = context.create_host_tensor(ov::element::i32, {total_num_tokens});
+                } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                    m_inputs_embeds = context.create_host_tensor(ov::element::f32, {total_num_tokens, hidden_size});
+                }
+                m_position_ids = context.create_host_tensor(ov::element::i32, {total_num_tokens});
+                m_past_lens = context.create_host_tensor(ov::element::i32, {batch_size_in_sequences});
+                m_subsequence_begins = context.create_host_tensor(ov::element::i32, {batch_size_in_sequences + 1});
+                m_block_indices_begins = context.create_host_tensor(ov::element::i32, {batch_size_in_sequences + 1});
+                m_max_context_len = context.create_host_tensor(ov::element::i32, {});
+                if (matmul_gathering_is_available) {
+                    m_gather_indices = context.create_host_tensor(ov::element::i32, {gather_indices_values.size()});
+                }
+                if (batch_size_in_sequences != m_last_batch_size_in_sequences) {
+                    m_last_batch_size_in_sequences = batch_size_in_sequences;
+                    auto shape = m_request.get_output_tensor().get_shape();
+                    shape[0] = batch_size_in_sequences;
+                    m_output = context.create_host_tensor(m_request.get_output_tensor().get_element_type(), shape);
+                }
+            }
+            if (sequence_group_type == SequenceGroupType::TOKENS) {
+                memcpy(m_input_ids.data(), input_ids.data(), (total_num_tokens) * sizeof(int32_t));
+                m_request.set_tensor("input_ids", m_input_ids);
+            } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                memcpy(m_inputs_embeds.data(), inputs_embeds.data(), (total_num_tokens * hidden_size) * sizeof(float));
+                m_request.set_tensor("inputs_embeds", m_inputs_embeds);
+            }
+
+            // typical LLM parameters
+            memcpy(m_position_ids.data(), position_ids.data(), (total_num_tokens) * sizeof(int32_t));
+            m_request.set_tensor("position_ids", m_position_ids);
+
+            // PA specific parameters
+            memcpy(m_past_lens.data(), past_lens.data(),
+                   (batch_size_in_sequences) * sizeof(int32_t));
+            m_request.set_tensor("past_lens", m_past_lens);
+            memcpy(m_subsequence_begins.data(),
+                   subsequence_begins.data(),
+                   (batch_size_in_sequences + 1) * sizeof(int32_t));
+            m_request.set_tensor("subsequence_begins", m_subsequence_begins);
+
+            _set_block_indices(sequence_groups, scheduler_output, total_num_blocks);
+            memcpy(m_block_indices_begins.data(),
+                   block_indices_begins.data(),
+                   (batch_size_in_sequences + 1) * sizeof(int32_t));
+            m_request.set_tensor("block_indices_begins", m_block_indices_begins);
+            memcpy(m_max_context_len.data(), max_context_len.data(), sizeof(int32_t));
+            m_request.set_tensor("max_context_len", m_max_context_len);
+
+            if (m_is_use_rotation_inputs) {
+                OPENVINO_ASSERT(false, "Not support rotation");
+            }
+
+            if (matmul_gathering_is_available) {
+                std::memcpy(m_gather_indices.data(),
+                            gather_indices_values.data(),
+                            gather_indices_values.size() * sizeof(int32_t));
+                m_request.set_tensor("sampled_tokens_indices", m_gather_indices);
+            } else {
+                OPENVINO_ASSERT(false, "expected the last matmul is sliced!");
+            }
+            m_request.set_tensor("logits", m_output);
+        } else {
+            if (sequence_group_type == SequenceGroupType::TOKENS) {
+                m_request.set_tensor("input_ids", input_ids);
+            } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                m_request.set_tensor("inputs_embeds", inputs_embeds);
+            }
+
+            // typical LLM parameters
+            m_request.set_tensor("position_ids", position_ids);
+
+            // PA specific parameters
+            m_request.set_tensor("past_lens", past_lens);
+            m_request.set_tensor("subsequence_begins", subsequence_begins);
+
+            _set_block_indices(sequence_groups, scheduler_output, total_num_blocks);
+            m_request.set_tensor("block_indices_begins", block_indices_begins);
+            m_request.set_tensor("max_context_len", max_context_len);
+
+            if (m_is_use_rotation_inputs) {
+                m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
+                _set_cache_rotation_coefficients(sequence_groups, scheduler_output);
+            }
+
+            if (matmul_gathering_is_available) {
+                ov::Tensor gather_indices(ov::element::i32, {gather_indices_values.size()});
+                std::memcpy(gather_indices.data(),
+                            gather_indices_values.data(),
+                            gather_indices_values.size() * sizeof(int32_t));
+                m_request.set_tensor("sampled_tokens_indices", gather_indices);
+            }
         }
-        else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-            m_request.set_tensor("inputs_embeds", inputs_embeds);
-        }
-
-        // typical LLM parameters
-        m_request.set_tensor("position_ids", position_ids);
-
-        // PA specific parameters
-        m_request.set_tensor("past_lens", past_lens);
-        m_request.set_tensor("subsequence_begins", subsequence_begins);
-
-        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks);
-        m_request.set_tensor("block_indices_begins", block_indices_begins);
-        m_request.set_tensor("max_context_len", max_context_len);
-
-        if (m_is_use_rotation_inputs) {
-            m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
-            _set_cache_rotation_coefficients(sequence_groups, scheduler_output);
-        }
-
-        if (matmul_gathering_is_available) {
-            ov::Tensor gather_indices(ov::element::i32, {gather_indices_values.size()});
-            std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int32_t));
-            m_request.set_tensor("sampled_tokens_indices", gather_indices);
-        }
-
         // print_tensor("input_ids", input_ids);
         // print_tensor("position_ids", position_ids);
 

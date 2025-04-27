@@ -129,7 +129,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     if (is_use_cache_eviction) {
         const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
         bool is_apply_rotation = eviction_config.apply_rotation;
-        m_model_runner = std::make_shared<ModelRunner>(infer_request,
+        m_model_runner = std::make_shared<ModelRunner>(compiled_model,
+                                                       infer_request,
                                                        m_block_size,
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
@@ -168,8 +169,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
             m_model_runner->set_cache_rotation_trig_lut(std::move(rotation_trig_lut));
         }
     } else {
-        m_model_runner =
-            std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
+        m_model_runner = std::make_shared<ModelRunner>(compiled_model, infer_request, m_block_size, m_num_decoder_layers);
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
