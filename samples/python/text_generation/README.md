@@ -162,8 +162,8 @@ For more information how performance metrics are calculated please follow [perfo
 ### 10. LLM ReAct Agent Sample (`react_sample`)
 - **Description:**
 Interactive ReAct Agent powered by OpenVINO.
-Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-agent-react) that provides an example of LLM-powered reasoning engine to execute an action in Python.
-Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7b-Instruct
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-native-agent-react) that provides an example of LLM-powered reasoning engine to execute an action in Python.
+Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
 - **Main Feature:** Real-time reasoning-action from user's input.
 - **Run Command:**
   ```bash
