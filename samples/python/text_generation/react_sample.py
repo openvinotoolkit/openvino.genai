@@ -6,7 +6,6 @@ import requests
 import argparse
 import openvino_genai
 import urllib.parse
-import encrypted_model_causal_lm
 import json
 import json5
 
@@ -99,8 +98,7 @@ def build_input_text(tokenizer, chat_history, list_of_tool_info) -> str:
 
     return prompt
 
-
-def parse_latest_tool_call(text):
+def parse_first_tool_call(text):
     tool_name, tool_args = "", ""
     i = text.find("\nAction:")
     j = text.find("\nAction Input:")
@@ -115,7 +113,6 @@ def parse_latest_tool_call(text):
         tool_args = text[j + len("\nAction Input:") : k].strip()
         text = text[:k]
     return tool_name, tool_args, text
-
 
 def call_tool(tool_name: str, tool_args: str) -> str:
     if tool_name == "get_weather":
@@ -145,18 +142,17 @@ def call_tool(tool_name: str, tool_args: str) -> str:
     else:
         raise NotImplementedError
 
-
-def llm_with_tool(llm_pipe, llm_config, prompt: str, history, list_of_tool_info=()):
+def llm_with_tool(llm_pipe, prompt, history, list_of_tool_info):
     chat_history = [(x["user"], x["bot"]) for x in history] + [(prompt, "")]
-    tokenizer = llm_pipe.get_tokenizer()
-    planning_prompt = build_input_text(tokenizer, chat_history, list_of_tool_info)
+    planning_prompt = build_input_text(llm_pipe.get_tokenizer(), chat_history, list_of_tool_info)
 
     text = ""
     while True:
         # llm pipe output based planning_prompt and the text (previous output)
+        llm_config = llm_pipe.get_generation_config()
         output = llm_pipe.generate(planning_prompt + text, llm_config, streamer)
         # parse the output to get action
-        action, action_input, output = parse_latest_tool_call(output)
+        action, action_input, output = parse_first_tool_call(output)
         if action:
             observation = call_tool(action, action_input)
             observation_txt = f"\nObservation: = {observation}\nThought:"
@@ -167,18 +163,13 @@ def llm_with_tool(llm_pipe, llm_config, prompt: str, history, list_of_tool_info=
             text += output
             break
 
-    new_history = []
-    new_history.extend(history)
-    new_history.append({"user": prompt, "bot": text})
-    return text, new_history
-
+    history.append({"user": prompt, "bot": text})
+    return text, history
 
 def streamer(subword):
     print(subword, end='', flush=True)
     # Return flag corresponds whether generation should be stopped.
     return openvino_genai.StreamingStatus.RUNNING
-
- 
 
 def main():
     parser = argparse.ArgumentParser()
@@ -191,10 +182,11 @@ def main():
     llm_pipe = openvino_genai.LLMPipeline(llm_model_path, device)
     llm_config = openvino_genai.GenerationConfig()
     llm_config.max_new_tokens = 256
+    llm_pipe.set_generation_config(llm_config)
 
     history = []
     query = "get the weather in London, and create a picture of Big Ben based on the weather information"
-    response, history = llm_with_tool(llm_pipe, llm_config, prompt=query, history=history, list_of_tool_info=tools)
+    response, history = llm_with_tool(llm_pipe, prompt=query, history=history, list_of_tool_info=tools)
 
 if '__main__' == __name__:
     main()
