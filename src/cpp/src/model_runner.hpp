@@ -137,9 +137,9 @@ public:
         }
 
         ov::Tensor
-            input_ids(ov::element::i64, {total_num_tokens}),
+            input_ids(ov::element::i32, {total_num_tokens}),
             inputs_embeds(ov::element::f32, {total_num_tokens, hidden_size}),
-            position_ids(ov::element::i64, {total_num_tokens}),
+            position_ids(ov::element::i32, {total_num_tokens}),
             // PA specific parameters
             past_lens(ov::element::i32, {batch_size_in_sequences}),
             subsequence_begins(ov::element::i32, {batch_size_in_sequences + 1}),
@@ -154,16 +154,16 @@ public:
 
         // get raw pointers to copy to
         float *inputs_embeds_data = nullptr;
-        int64_t *input_ids_data = nullptr;
+        int32_t *input_ids_data = nullptr;
         
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
-            input_ids_data = input_ids.data<int64_t>();
+            input_ids_data = input_ids.data<int32_t>();
         }
 
-        int64_t
-            * position_ids_data = position_ids.data<int64_t>();
+        int32_t
+            * position_ids_data = position_ids.data<int32_t>();
 
         int32_t 
             * past_lens_data = past_lens.data<int32_t>(),
@@ -176,7 +176,7 @@ public:
 
         bool matmul_gathering_is_available = false;
         size_t gathering_current_index = 0;
-        std::vector<int64_t> gather_indices_values;
+        std::vector<int32_t> gather_indices_values;
         try {
             std::ignore = m_request.get_tensor("sampled_tokens_indices");
             matmul_gathering_is_available = true;
@@ -279,8 +279,8 @@ public:
         }
 
         if (matmul_gathering_is_available) {
-            ov::Tensor gather_indices(ov::element::i64, {gather_indices_values.size()});
-            std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
+            ov::Tensor gather_indices(ov::element::i32, {gather_indices_values.size()});
+            std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int32_t));
             m_request.set_tensor("sampled_tokens_indices", gather_indices);
         }
 
@@ -330,8 +330,8 @@ public:
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
 
-        ov::Tensor generated_ids = ov::Tensor(ov::element::i64, {1, num_generated_ids_without_embeddings});
-        int64_t *generated_ids_data = generated_ids.data<int64_t>();
+        ov::Tensor generated_ids = ov::Tensor(ov::element::i32, {1, num_generated_ids_without_embeddings});
+        int32_t *generated_ids_data = generated_ids.data<int32_t>();
         size_t pos = 0;
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
