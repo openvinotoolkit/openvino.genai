@@ -64,17 +64,17 @@ public:
     /**
      * @brief Computes embeddings for a vector of texts
      */
-    std::vector<EmbeddingResult> embed_documents(std::vector<std::string>& texts);
+    std::vector<EmbeddingResult> embed_documents(const std::vector<std::string>& texts);
 
-    void start_embed_documents_async(std::vector<std::string>& texts);
+    void start_embed_documents_async(const std::vector<std::string>& texts);
     std::vector<EmbeddingResult> wait_embed_documents();
 
     /**
      * @brief Computes embedding for a query
      */
-    EmbeddingResult embed_query(std::string& text);
+    EmbeddingResult embed_query(const std::string& text);
 
-    void start_embed_query_async(std::string& text);
+    void start_embed_query_async(const std::string& text);
     EmbeddingResult wait_embed_query();
 
     ~TextEmbeddingPipeline();

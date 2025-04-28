@@ -455,7 +455,7 @@ public:
 
     TokenizedInputs encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params = {}) {
         OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
-                        "Tokenizer::encode is not available");
+                                                "Tokenizer::encode is not available");
 
         TokenizedInputs unpadded;
         {

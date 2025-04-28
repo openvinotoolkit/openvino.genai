@@ -75,12 +75,12 @@ public:
         m_request = compiled_model.create_infer_request();
     };
 
-    std::vector<EmbeddingResult> embed_documents(std::vector<std::string>& texts) {
+    std::vector<EmbeddingResult> embed_documents(const std::vector<std::string>& texts) {
         start_embed_documents_async(texts);
         return wait_embed_documents();
     };
 
-    void start_embed_documents_async(std::vector<std::string>& texts) {
+    void start_embed_documents_async(const std::vector<std::string>& texts) {
         auto formatted_texts = format_texts(texts);
         start_embed_async(formatted_texts);
     };
@@ -89,12 +89,12 @@ public:
         return wait_embed();
     };
 
-    EmbeddingResult embed_query(std::string& text) {
+    EmbeddingResult embed_query(const std::string& text) {
         start_embed_query_async(text);
         return wait_embed_query();
     };
 
-    void start_embed_query_async(std::string& text) {
+    void start_embed_query_async(const std::string& text) {
         std::vector<std::string> formatted_query{format_query(text)};
         start_embed_async(formatted_query);
     };
@@ -160,7 +160,7 @@ private:
         return *m_config.query_instruction + text;
     }
 
-    std::vector<EmbeddingResult> to_embedding_result(const Tensor last_hidden_state) {
+    std::vector<EmbeddingResult> to_embedding_result(const Tensor& last_hidden_state) {
         const auto last_hidden_state_data = last_hidden_state.data<float>();
 
         std::vector<EmbeddingResult> result;
@@ -270,11 +270,11 @@ TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models
     m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, Config(properties), plugin_properties);
 };
 
-std::vector<EmbeddingResult> TextEmbeddingPipeline::embed_documents(std::vector<std::string>& texts) {
+std::vector<EmbeddingResult> TextEmbeddingPipeline::embed_documents(const std::vector<std::string>& texts) {
     return m_impl->embed_documents(texts);
 }
 
-void TextEmbeddingPipeline::start_embed_documents_async(std::vector<std::string>& texts) {
+void TextEmbeddingPipeline::start_embed_documents_async(const std::vector<std::string>& texts) {
     return m_impl->start_embed_documents_async(texts);
 }
 
@@ -282,11 +282,11 @@ std::vector<EmbeddingResult> TextEmbeddingPipeline::wait_embed_documents() {
     return m_impl->wait_embed_documents();
 }
 
-EmbeddingResult TextEmbeddingPipeline::embed_query(std::string& text) {
+EmbeddingResult TextEmbeddingPipeline::embed_query(const std::string& text) {
     return m_impl->embed_query(text);
 }
 
-void TextEmbeddingPipeline::start_embed_query_async(std::string& text) {
+void TextEmbeddingPipeline::start_embed_query_async(const std::string& text) {
     return m_impl->start_embed_query_async(text);
 }
 
