@@ -55,6 +55,10 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
         glb_GN = parsed.at("glb_GN").get<std::vector<std::vector<std::vector<float>>>>().at(0).at(0);
     }
     OPENVINO_ASSERT(glb_GN.size() == 4096);
+    // Qwen2.5VL
+    if (parsed.contains("vision_config")) {
+        read_json_param(parsed.at("vision_config"), "window_size", vision_config_window_size);
+    }
 }
 
 } // namespace ov::genai
