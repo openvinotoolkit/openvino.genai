@@ -81,10 +81,6 @@ public:
     };
 
     void start_embed_documents_async(std::vector<std::string>& texts) {
-        if (!m_config.embed_instruction) {
-            return start_embed_async(texts);
-        }
-
         auto formatted_texts = format_texts(texts);
         start_embed_async(formatted_texts);
     };

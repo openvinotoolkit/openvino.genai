@@ -17,7 +17,13 @@ using EmbeddingResult = std::variant<std::vector<float>, std::vector<int8_t>, st
 class OPENVINO_GENAI_EXPORTS TextEmbeddingPipeline {
 public:
     enum class OPENVINO_GENAI_EXPORTS PoolingType {
+        /**
+         * @brief First token embeddings
+         */
         CLS = 0,
+        /**
+         * @brief The average of all token embeddings
+         */
         MEAN = 1,
     };
 
@@ -33,9 +39,9 @@ public:
     };
 
     /**
-     * @brief Constructs an pipeline from xml/bin files, tokenizers and configuration in the same dir.
+     * @brief Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir.
      *
-     * @param models_path Path to the dir model xml/bin files, tokenizers
+     * @param models_path Path to the dir model xml/bin files, tokenizer
      * @param device optional device
      * @param plugin_config optional plugin_config properties
      */
