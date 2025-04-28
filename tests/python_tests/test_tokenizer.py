@@ -11,7 +11,7 @@ import openvino
 import typing
 import functools
 from transformers import AutoTokenizer
-from typing import Dict, Tuple, List
+from typing import Tuple, List
 import functools
 
 from utils.hugging_face import convert_and_save_tokenizer
@@ -172,7 +172,7 @@ conversation = [
 @pytest.mark.nightly
 @pytest.mark.parametrize('chat_config', get_chat_templates())
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict], model_id):
+def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, dict], model_id):
     tokenizer_config = chat_config[1]
 
     # Will load openvino_model for tiny-random-phi as a placeholder

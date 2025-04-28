@@ -480,7 +480,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_im
 
 
 def retry(func):
-    max_retries = 10
+    max_retries = 20
     for idx in range(max_retries):
         try: 
             return func()
@@ -507,9 +507,14 @@ def requests():
     ]
 
 
-image_id_ignorant = [
+tag_inserted_by_template = [
     ("katuni4ka/tiny-random-llava", lambda idx: "<image>"),
+    ("katuni4ka/tiny-random-llava-next", lambda idx: "<image>"),
     ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
+]
+
+image_id_ignorant =  tag_inserted_by_template + [
+    ("katuni4ka/tiny-random-internvl2", lambda idx: "<image>\n"),
 ]
 
 
@@ -523,7 +528,7 @@ models_to_tag = image_id_ignorant + [
 @pytest.mark.precommit
 @pytest.mark.nightly
 class TestImageTags:
-    @pytest.mark.parametrize("model_to_tag", image_id_ignorant)
+    @pytest.mark.parametrize("model_to_tag", tag_inserted_by_template)
     def test_representation(self, model_to_tag):
         model_id = model_to_tag[0]
         vlm = VLMPipeline(get_ov_model(model_id), "CPU")

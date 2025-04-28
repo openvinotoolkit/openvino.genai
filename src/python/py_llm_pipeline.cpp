@@ -34,13 +34,13 @@ auto generate_docstring = R"(
     :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
 
     :param generation_config: generation_config
-    :type generation_config: GenerationConfig or a Dict
+    :type generation_config: GenerationConfig or a dict
 
     :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
     :type : Callable[[str], bool], ov.genai.StreamerBase
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-    :type : Dict
+    :type : dict
 
     :return: return results in encoded, or decoded form depending on inputs type
     :rtype: DecodedResults, EncodedResults, str

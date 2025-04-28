@@ -84,7 +84,7 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
         raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());
     }
 
-    if (generated_len_after.empty() && 0) {
+    if (generated_len_after.empty() && utils::env_setup_for_print_debug_info()) {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }

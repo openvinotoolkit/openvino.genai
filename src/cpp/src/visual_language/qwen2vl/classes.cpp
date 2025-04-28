@@ -368,6 +368,7 @@ void InputsEmbedderQwen2VL::finish_chat() {
     IInputsEmbedder::finish_chat();
     m_position_ids = ov::Tensor();
     m_rope_delta = 0;
+    m_merged_image_embeddings = ov::Tensor();
 }
 
 bool InputsEmbedderQwen2VL::prompt_has_image_tag(const std::string& prompt) const {
