@@ -301,7 +301,6 @@ std::vector<std::string> get_all_files(std::string file, int total_num){
 
 GGUFLoad get_gguf_data(const std::string& file) {
 
-    // std::unordered_map<std::string, GGUFMetaData> metadata;
     std::unordered_map<std::string, ov::Tensor> arrays;
     std::unordered_map<std::string, gguf_tensor_type> qtype;
    
