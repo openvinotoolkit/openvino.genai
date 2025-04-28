@@ -258,9 +258,12 @@ void load_arrays(gguf_ctx* ctx, std::unordered_map<std::string, ov::Tensor>& arr
   while (gguf_get_tensor(ctx, &tensor)) {
     if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q8_0 ||
         tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) {
+            std::string name(tensor.name, tensor.namelen);
+            std::cout<<"debug: tensor " << name << std::endl;
       gguf_load_quantized(array_map, qtype_map, tensor);
     } else {
       std::string name(tensor.name, tensor.namelen);
+      std::cout<<"debug: tensor " << name << std::endl;
       ov::Tensor loaded_array = extract_tensor_data(&tensor); 
       check_insert(array_map.insert({name, loaded_array}));
 
@@ -349,22 +352,33 @@ GGUFLoad get_gguf_data(const std::string& file) {
         int total_num =  *(total_num_tensor.data<ov::element_type_traits<ov::element::u16>::value_type>());
 
         std::vector<std::string> files = get_all_files(file, total_num);
-        std::cout << "Debug0: size " << ctx->size << std::endl; 
+        // std::cout << "Debug0: size " << ctx->size << std::endl; 
+        // std::cout << "Debug0: metadata_kv_count " << ctx->header->metadata_kv_count << std::endl;
+        // std::cout << "Debug0: left_kv " << ctx->left_kv << std::endl;
+        // std::cout << "Debug0: left_tensors " << ctx->left_tensors << std::endl;
+        // std::cout << "Debug0: off " << ctx->off << std::endl;
+        // std::cout << "Debug0: data_off " << ctx->data_off << std::endl;
         load_arrays(ctx.get(), arrays, qtype);
+        // ctx.reset();
 
         for (size_t i = 1; i < files.size(); i++)
         {
             std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx_i(gguf_open(files.at(i).data()), gguf_close);
             OPENVINO_ASSERT(ctx_i, "Failed to open '", files.at(i), "' with gguf_open");
 
-            gguf_tensor tensor;
-            std::cout << "Debug: size " << ctx_i->size << std::endl; 
-            std::cout << "Debug: off " << ctx_i->off << std::endl;
-            gguf_ctx* debug = ctx_i.get();
-            while (gguf_get_tensor(debug, &tensor)) {
-                 
-            }
-            // load_arrays(ctx_i.get(), arrays, qtype);
+            auto metadata_tmp = load_metadata(ctx_i.get());
+
+            // std::cout << "Debug: size " << ctx_i->size << std::endl; 
+            // std::cout << "Debug: metadata_kv_count " << ctx_i->header->metadata_kv_count << std::endl;
+            // std::cout << "Debug: left_kv " << ctx_i->left_kv << std::endl;
+            // std::cout << "Debug: left_tensors " << ctx_i->left_tensors << std::endl;
+            // std::cout << "Debug: off " << ctx_i->off << std::endl;
+            // std::cout << "Debug: data_off " << ctx_i->data_off << std::endl;
+
+            // gguf_tensor tensor;
+            // gguf_ctx* debug = ctx_i.get();
+            
+            load_arrays(ctx_i.get(), arrays, qtype);
         }
         return {metadata, arrays, qtype};
     }     
