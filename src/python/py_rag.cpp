@@ -91,8 +91,8 @@ void init_rag_pipelines(py::module_& m) {
                 "Waits computed embeddings for a text");
 
     py::enum_<TextEmbeddingPipeline::PoolingType>(text_embedding_pipeline, "PoolingType")
-        .value("CLS", TextEmbeddingPipeline::PoolingType::CLS)
-        .value("MEAN", TextEmbeddingPipeline::PoolingType::MEAN);
+        .value("CLS", TextEmbeddingPipeline::PoolingType::CLS, "First token embeddings")
+        .value("MEAN", TextEmbeddingPipeline::PoolingType::MEAN, "The average of all token embeddings");
 
     py::class_<TextEmbeddingPipeline::Config>(text_embedding_pipeline,
                                               "Config",

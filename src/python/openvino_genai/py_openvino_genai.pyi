@@ -1913,9 +1913,9 @@ class TextEmbeddingPipeline:
         """
         Members:
         
-          CLS
+          CLS : First token embeddings
         
-          MEAN
+          MEAN : The average of all token embeddings
         """
         CLS: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.CLS: 0>
         MEAN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.MEAN: 1>
