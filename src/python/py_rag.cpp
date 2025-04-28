@@ -123,7 +123,7 @@ void init_rag_pipelines(py::module_& m) {
             return std::make_unique<TextEmbeddingPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"),
-        "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
+        "folder with openvino_model.xml and openvino_tokenizer.xml files",
         py::arg("device"),
         "device on which inference will be done",
         py::arg("config") = std::nullopt,
