@@ -91,13 +91,11 @@ def run_langchain(
 
 
 def run_pipeline_with_ref(
-    model_id: str,
+    models_path: Path,
     documents: list[str],
     config: TextEmbeddingPipeline.Config | None = None,
     task: Literal["embed_documents", "embed_query"] = "embed_documents",
 ):
-    _, _, models_path = download_and_convert_embeddings_models(model_id)
-
     genai_result = run_genai(models_path, documents, config, task)
     langchain_result = run_langchain(models_path, documents, config, task)
 
@@ -111,10 +109,14 @@ def run_pipeline_with_ref(
     ), f"Max error: {max_error}"
 
 
+@pytest.mark.parametrize(
+    "download_and_convert_embeddings_models",
+    [{"model_id": "BAAI/bge-small-en-v1.5"}],
+    indirect=True,
+)
 @pytest.mark.precommit
-def test_constructors():
-    model_id = "BAAI/bge-small-en-v1.5"
-    _, _, models_path = download_and_convert_embeddings_models(model_id)
+def test_constructors(download_and_convert_embeddings_models):
+    _, _, models_path = download_and_convert_embeddings_models
 
     TextEmbeddingPipeline(models_path, "CPU")
     TextEmbeddingPipeline(models_path, "CPU", TextEmbeddingPipeline.Config())
@@ -139,7 +141,11 @@ def test_constructors():
     )
 
 
-@pytest.mark.parametrize("model_id", TEST_MODELS)
+@pytest.mark.parametrize(
+    "download_and_convert_embeddings_models",
+    [{"model_id": x} for x in TEST_MODELS],
+    indirect=True,
+)
 @pytest.mark.parametrize(
     "config",
     [
@@ -164,11 +170,18 @@ def test_constructors():
     ],
 )
 @pytest.mark.precommit
-def test_embed_documents(model_id, dataset_documents, config):
-    run_pipeline_with_ref(model_id, dataset_documents, config, "embed_documents")
+def test_embed_documents(
+    download_and_convert_embeddings_models, dataset_documents, config
+):
+    _, _, models_path = download_and_convert_embeddings_models
+    run_pipeline_with_ref(models_path, dataset_documents, config, "embed_documents")
 
 
-@pytest.mark.parametrize("model_id", TEST_MODELS)
+@pytest.mark.parametrize(
+    "download_and_convert_embeddings_models",
+    [{"model_id": x} for x in TEST_MODELS],
+    indirect=True,
+)
 @pytest.mark.parametrize(
     "config",
     [
@@ -193,5 +206,6 @@ def test_embed_documents(model_id, dataset_documents, config):
     ],
 )
 @pytest.mark.precommit
-def test_embed_query(model_id, dataset_documents, config):
-    run_pipeline_with_ref(model_id, dataset_documents[:1], config, "embed_query")
+def test_embed_query(download_and_convert_embeddings_models, dataset_documents, config):
+    _, _, models_path = download_and_convert_embeddings_models
+    run_pipeline_with_ref(models_path, dataset_documents[:1], config, "embed_query")

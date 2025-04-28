@@ -18,6 +18,7 @@ from openvino_tokenizers import convert_tokenizer
 
 from utils.constants import get_default_llm_properties, get_ov_cache_models_dir
 from utils.network import retry_request
+import pytest
 
 def generation_config_to_hf(
     default_generation_config : HFGenerationConfig,
@@ -195,9 +196,10 @@ def convert_models(opt_model : OVModelForCausalLM,
 def download_and_convert_model(model_id: str, **tokenizer_kwargs):
     return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
 
-
-def download_and_convert_embeddings_models(model_id: str, **tokenizer_kwargs):
-    return _download_and_convert_model(model_id, OVModelForFeatureExtraction, **tokenizer_kwargs)
+@pytest.fixture()
+def download_and_convert_embeddings_models(request):
+    model_id = request.param.get("model_id")
+    return _download_and_convert_model(model_id, OVModelForFeatureExtraction)
 
 
 def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):
