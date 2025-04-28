@@ -110,9 +110,7 @@ def run_pipeline_with_ref(
 
 
 @pytest.mark.parametrize(
-    "download_and_convert_embeddings_models",
-    [{"model_id": "BAAI/bge-small-en-v1.5"}],
-    indirect=True,
+    "download_and_convert_embeddings_models", ["BAAI/bge-small-en-v1.5"], indirect=True
 )
 @pytest.mark.precommit
 def test_constructors(download_and_convert_embeddings_models):
@@ -142,9 +140,7 @@ def test_constructors(download_and_convert_embeddings_models):
 
 
 @pytest.mark.parametrize(
-    "download_and_convert_embeddings_models",
-    [{"model_id": x} for x in TEST_MODELS],
-    indirect=True,
+    "download_and_convert_embeddings_models", TEST_MODELS, indirect=True
 )
 @pytest.mark.parametrize(
     "config",
@@ -178,9 +174,7 @@ def test_embed_documents(
 
 
 @pytest.mark.parametrize(
-    "download_and_convert_embeddings_models",
-    [{"model_id": x} for x in TEST_MODELS],
-    indirect=True,
+    "download_and_convert_embeddings_models", TEST_MODELS, indirect=True
 )
 @pytest.mark.parametrize(
     "config",
