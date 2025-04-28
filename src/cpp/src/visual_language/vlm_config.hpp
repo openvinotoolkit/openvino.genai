@@ -16,6 +16,7 @@ enum class VLMModelType {
     INTERNVL_CHAT,
     PHI3_V,
     QWEN2_VL,
+    QWEN2_5_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to

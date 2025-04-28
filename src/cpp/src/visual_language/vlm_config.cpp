@@ -17,7 +17,8 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"llava_next", VLMModelType::LLAVA_NEXT},
         {"internvl_chat", VLMModelType::INTERNVL_CHAT},
         {"phi3_v", VLMModelType::PHI3_V},
-        {"qwen2_vl", VLMModelType::QWEN2_VL}
+        {"qwen2_vl", VLMModelType::QWEN2_VL},
+        {"qwen2_5_vl", VLMModelType::QWEN2_5_VL},
     };
 
     auto it = model_types_map.find(value);
