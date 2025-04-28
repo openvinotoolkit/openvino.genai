@@ -182,7 +182,7 @@ def test_vlm_continuous_batching_vs_stateful(config):
 
     models_path = get_ov_model(model_ids[0])
     for idx, links in enumerate(image_links_list):
-        stateful_pipe = VLMPipeline(models_path, "CPU", **get_default_llm_properties())
+        stateful_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="SDPA", **get_default_llm_properties())
 
         images = []
         for link in links:
@@ -299,8 +299,8 @@ def test_sampling(config):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("scheduler_config", [SchedulerConfig(), None])
-def test_perf_metrics(cache, scheduler_config):
+@pytest.mark.parametrize("attention_backend", ["PA", "SDPA"])
+def test_perf_metrics(cache, attention_backend):
     import numpy as np
     from time import perf_counter_ns
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
@@ -310,10 +310,7 @@ def test_perf_metrics(cache, scheduler_config):
     max_new_tokens = 30
 
     start_time = perf_counter_ns()
-    if scheduler_config:
-        pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config)
-    else:
-        pipe = VLMPipeline(models_path, "CPU")
+    pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=attention_backend)
     
     start_generate = perf_counter_ns()
     result = pipe.generate(prompts[0], images=images, generation_config=GenerationConfig(max_new_tokens=max_new_tokens))

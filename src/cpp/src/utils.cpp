@@ -86,6 +86,16 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
 }
 
+inline bool is_paged_attention_available() {
+#ifdef OPENVINO_ARCH_X86_64
+    return true;
+#elif defined OPENVINO_ARCH_ARM64
+    return with_cpu_sve();
+#else
+    return false;
+#endif
+}
+
 } // anonymous
 
 namespace ov {
@@ -529,6 +539,61 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
         scheduler_config = *default_config;
     }
     return {plugin_config, scheduler_config};
+};
+
+SchedulerConfig get_latency_oriented_scheduler_config() {
+    SchedulerConfig default_config;
+    default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
+    default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
+    return default_config;
+}
+
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
+    auto attention_backend_it = properties.find("ATTENTION_BACKEND");
+
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
+        (attention_backend_it != properties.end() && attention_backend_it->second.as<std::string>() == PA_BACKEND)) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 with SVE platforms only");
+        }
+    }
+    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 with SVE platforms only");
+        }
+    }
+    if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Prompt lookup decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 with SVE platforms only");
+        }
+    }
+    return false;
+}
+
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
+    std::string attention_backend = PA_BACKEND;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find("ATTENTION_BACKEND");
+    if (it != properties.end()) {
+        attention_backend = it->second.as<std::string>();
+        OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SDPA_BACKEND,
+            "Attention backend must be either '", PA_BACKEND, "' or '", SDPA_BACKEND, "', got '", attention_backend, "'");
+        properties.erase(it);
+    }
+
+    if (explicitly_requires_paged_attention(external_properties)) {
+        OPENVINO_ASSERT(attention_backend == PA_BACKEND,
+            "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
+    }
+
+    return {properties, attention_backend};
 };
 
 }  // namespace utils
