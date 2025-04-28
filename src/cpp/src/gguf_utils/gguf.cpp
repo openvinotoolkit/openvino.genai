@@ -246,9 +246,6 @@ std::unordered_map<std::string, GGUFMetaData> load_metadata(gguf_ctx* ctx) {
 }
 
 void load_arrays(gguf_ctx* ctx, std::unordered_map<std::string, ov::Tensor>& array_map, std::unordered_map<std::string, gguf_tensor_type>& qtype_map) {
-// std::pair<std::unordered_map<std::string, ov::Tensor>, std::unordered_map<std::string, gguf_tensor_type>> load_arrays(gguf_ctx* ctx) {
-//   std::unordered_map<std::string, ov::Tensor> array_map;
-//   std::unordered_map<std::string, gguf_tensor_type> qtype_map;
   gguf_tensor tensor;
 
   auto check_insert = [](const auto& inserted) {
@@ -269,26 +266,7 @@ void load_arrays(gguf_ctx* ctx, std::unordered_map<std::string, ov::Tensor>& arr
       qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type));
     }
   }
-
-//   return {array_map, qtype_map};
 }
-
-// GGUFLoad get_gguf_data(const std::string& file) {
-//   bool exists;
-//   {
-//     std::ifstream f(file.c_str());
-//     exists = f.good();
-//   }
-//   OPENVINO_ASSERT(exists, "[load_gguf] Failed to open '", file, "'");
-
-//   std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx(gguf_open(file.data()), gguf_close);
-//   OPENVINO_ASSERT(ctx, "Failed to open '", file, "' with gguf_open");
-
-//   auto metadata = load_metadata(ctx.get());
-//   auto [arrays, qtype] = load_arrays(ctx.get());
-
-//   return {metadata, arrays, qtype};
-// }
 
 void check_file(std::string file){
     bool exists;
@@ -340,14 +318,11 @@ GGUFLoad get_gguf_data(const std::string& file) {
 
     if(it == metadata.end()) // single GGUF file
     {
-        std::cout << "Debug: single" << std::endl;
         load_arrays(ctx.get(), arrays, qtype);
         return {metadata, arrays, qtype};
     } 
     else // multi GGUF files
-    {
-        std::cout << "Debug: multi" << std::endl;
-        
+    {     
         auto total_num_tensor = std::get<ov::Tensor>(metadata.at(split_flag));
         int total_num =  *(total_num_tensor.data<ov::element_type_traits<ov::element::u16>::value_type>());
 
