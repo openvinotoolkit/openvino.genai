@@ -20,7 +20,7 @@ from packaging.version import parse
 from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
 
 from utils.network import retry_request
-from typing import Any, List, Dict
+from typing import Any, List
 
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
@@ -89,7 +89,7 @@ def read_whisper_model(params, stateful=True):
         model_id,
         path,
         hf_pipe,
-        ov_genai.WhisperPipeline(path, "CPU", **{"ENABLE_MMAP": False}),
+        ov_genai.WhisperPipeline(path, "CPU", ENABLE_MMAP=False),
     )
 
 
@@ -131,6 +131,15 @@ def run_huggingface(
 ):
     if not config:
         config = ov_genai.WhisperGenerationConfig()
+
+    from optimum.intel.utils.import_utils import is_transformers_version
+    if is_transformers_version(">=", "4.51"):
+        if hasattr(pipeline.model.config, 'forced_decoder_ids'):
+            pipeline.model.config.forced_decoder_ids = None
+
+        if hasattr(pipeline.model, 'generation_config'):
+            if hasattr(pipeline.model.generation_config, 'forced_decoder_ids'):
+                pipeline.model.generation_config.forced_decoder_ids = None
 
     return pipeline(
         sample,
@@ -202,7 +211,7 @@ def sample_from_dataset(request):
 
     return samples[sample_id]
 
-def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> List[Dict[str, Any]]:
+def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> List[dict[str, Any]]:
     return [{"language": language, "long_form": long_form, "sample_id": i} for i in range(n)]
 
 def run_pipeline_with_ref(
