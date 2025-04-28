@@ -90,7 +90,7 @@ describe('generation parameters validation', () => {
       async () => await pipeline.generate(),
       {
         name: 'Error',
-        message: 'Prompt must be a string',
+        message: 'Prompt must be a string or string[]',
       },
     );
   });
@@ -106,7 +106,7 @@ describe('generation parameters validation', () => {
         async () => await pipeline.generate('prompt', {}, false),
         {
           name: 'Error',
-          message: 'Generation callback must be a function',
+          message: 'Callback must be a function',
         },
       );
     });

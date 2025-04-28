@@ -5,7 +5,7 @@
 import time
 import inspect
 from pathlib import Path
-from typing import Optional, Union, Dict, List, Tuple, Callable, Iterable, Any
+from typing import Optional, Union, List, Tuple
 from tempfile import TemporaryDirectory
 import PIL
 import numpy as np
@@ -15,13 +15,9 @@ from diffusers.utils.torch_utils import randn_tensor
 from diffusers.utils import PIL_INTERPOLATION
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline, ImagePipelineOutput
 from optimum.intel.openvino import OVModelForCausalLM
-from optimum.intel.openvino.utils import ONNX_WEIGHTS_NAME, OV_XML_FILE_NAME
 from openvino import Model, Core, Tensor, Type
 from transformers import PretrainedConfig
 from transformers.modeling_outputs import CausalLMOutputWithPast, ModelOutput
-from transformers import GenerationConfig, StoppingCriteriaList
-from transformers.generation.logits_process import LogitsProcessorList, LogitsProcessor
-from transformers.generation.utils import GenerateOutput
 
 
 class OVMPTModel(OVModelForCausalLM):
@@ -283,7 +279,7 @@ class OVChatGLMModel(OVModelForCausalLM):
         config: PretrainedConfig = None,
         device: str = 'CPU',
         dynamic_shapes: bool = True,
-        ov_config: Optional[Dict[str, str]] = None,
+        ov_config: Optional[dict[str, str]] = None,
         model_save_dir: Optional[Union[str, Path, TemporaryDirectory]] = None,
         **kwargs,
     ):

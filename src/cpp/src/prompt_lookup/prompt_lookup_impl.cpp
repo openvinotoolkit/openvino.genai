@@ -84,7 +84,7 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
         raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());
     }
 
-    if (generated_len_after.empty() && 0) {
+    if (generated_len_after.empty() && utils::env_setup_for_print_debug_info()) {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
@@ -178,6 +178,9 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         m_perf_metrics.num_input_tokens = request->get_prompt_len();
         m_perf_metrics.evaluate_statistics(generate_timer.get_start_time());
 
+        // TODO: adjust to cover loop over requests
+        result.perf_metrics = m_perf_metrics;
+      
         results.push_back(std::move(result));
     }
 

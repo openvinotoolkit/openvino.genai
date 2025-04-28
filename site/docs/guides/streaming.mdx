@@ -1,0 +1,181 @@
+---
+sidebar_position: 3
+---
+
+# Streaming the Output
+
+For more interactive UIs during generation, you can stream output tokens.
+
+:::info
+Streaming is supported for `LLMPipeline`, `VLMPipeline` and `WhisperPipeline`.
+:::
+
+## Streaming Function
+
+In this example, a function outputs words to the console immediately upon generation:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai as ov_genai
+
+        pipe = ov_genai.LLMPipeline(model_path, "CPU")
+
+        # highlight-start
+        # Create a streamer function
+        def streamer(subword):
+            print(subword, end='', flush=True)
+            # Return flag corresponds whether generation should be stopped.
+            return ov_genai.StreamingStatus.RUNNING
+        # highlight-end
+
+        # highlight-next-line
+        pipe.start_chat()
+        while True:
+            try:
+                prompt = input('question:\n')
+            except EOFError:
+                break
+            # highlight-next-line
+            pipe.generate(prompt, streamer=streamer, max_new_tokens=100)
+            print('\n----------\n')
+        # highlight-next-line
+        pipe.finish_chat()
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/llm_pipeline.hpp"
+        #include <iostream>
+
+        int main(int argc, char* argv[]) {
+            std::string prompt;
+
+            std::string model_path = argv[1];
+            ov::genai::LLMPipeline pipe(model_path, "CPU");
+
+            // highlight-start
+            // Create a streamer function
+            auto streamer = [](std::string word) {
+                std::cout << word << std::flush;
+                // Return flag corresponds whether generation should be stopped.
+                return ov::genai::StreamingStatus::RUNNING;
+            };
+            // highlight-end
+
+            // highlight-next-line
+            pipe.start_chat();
+            std::cout << "question:\n";
+            while (std::getline(std::cin, prompt)) {
+                // highlight-next-line
+                pipe.generate(prompt, ov::genai::streamer(streamer), ov::genai::max_new_tokens(100));
+                std::cout << "\n----------\n"
+                    "question:\n";
+            }
+            // highlight-next-line
+            pipe.finish_chat();
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+## Custom Streamer Class
+
+You can also create your custom streamer for more sophisticated processing:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai as ov_genai
+
+        pipe = ov_genai.LLMPipeline(model_path, "CPU")
+
+        # highlight-start
+        # Create custom streamer class
+        class CustomStreamer(ov_genai.StreamerBase):
+            def __init__(self):
+                super().__init__()
+                # Initialization logic.
+
+            def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+                # Custom processing logic for new decoded token(s).
+
+                # Return flag corresponds whether generation should be stopped.
+                return ov_genai.StreamingStatus.RUNNING
+
+            def end(self):
+                # Custom finalization logic.
+                pass
+        # highlight-end
+
+        # highlight-next-line
+        pipe.start_chat()
+        while True:
+            try:
+                prompt = input('question:\n')
+            except EOFError:
+                break
+            # highlight-next-line
+            pipe.generate(prompt, streamer=CustomStreamer(), max_new_tokens=100)
+            print('\n----------\n')
+        # highlight-next-line
+        pipe.finish_chat()
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/streamer_base.hpp"
+        #include "openvino/genai/llm_pipeline.hpp"
+        #include <iostream>
+
+        // highlight-start
+        // Create custom streamer class
+        class CustomStreamer: public ov::genai::StreamerBase {
+        public:
+            ov::genai::StreamingStatus write(int64_t token) {
+                // Custom processing logic for new decoded token.
+
+                // Return flag corresponds whether generation should be stopped.
+                return ov::genai::StreamingStatus::RUNNING;
+            };
+
+            ov::genai::StreamingStatus write(const std::vector<int64_t>& tokens) {
+                // Custom processing logic for new vector of decoded tokens.
+
+                // Return flag corresponds whether generation should be stopped.
+                return ov::genai::StreamingStatus::RUNNING;
+            };
+
+            void end() {
+                // Custom finalization logic.
+            };
+        };
+        // highlight-end
+
+        int main(int argc, char* argv[]) {
+            std::string prompt;
+            // highlight-next-line
+            std::shared_ptr<CustomStreamer> custom_streamer;
+
+            std::string model_path = argv[1];
+            ov::genai::LLMPipeline pipe(model_path, "CPU");
+
+            // highlight-next-line
+            pipe.start_chat();
+            std::cout << "question:\n";
+            while (std::getline(std::cin, prompt)) {
+                // highlight-next-line
+                pipe.generate(prompt, ov::genai::streamer(custom_streamer), ov::genai::max_new_tokens(100));
+                std::cout << "\n----------\n"
+                    "question:\n";
+            }
+            // highlight-next-line
+            pipe.finish_chat();
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+:::info
+For fully implemented iterable `CustomStreamer` refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/multinomial_causal_lm.py) sample.
+:::

@@ -259,6 +259,18 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Gemma3ForCausalLM',
+    models: [
+      {
+        name: 'Gemma3',
+        links: [
+          'https://huggingface.co/google/gemma-3-1b-it',
+          'https://huggingface.co/google/gemma-3-1b-pt',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'GlmForCausalLM',
     models: [
       {
@@ -674,6 +686,17 @@ export const LLM_MODELS: LLMModelType[] = [
         ],
       },
     ],
+  },
+  {
+    architecture: "PhimoeForCausalLM",
+    models: [
+      {
+        name: "Phi-3.5-MoE",
+        links: [
+          "https://huggingface.co/microsoft/Phi-3.5-MoE-instruct"
+        ]
+      }
+    ]
   },
   {
     architecture: 'QWenLMHeadModel',

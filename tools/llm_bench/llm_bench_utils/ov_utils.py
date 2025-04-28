@@ -21,7 +21,6 @@ from llm_bench_utils.config_class import (
     IMAGE_TO_IMAGE_GEN_CLS
 )
 from transformers import pipeline
-import openvino_genai as ov_genai
 import queue
 from transformers.generation.streamers import BaseStreamer
 from llm_bench_utils.config_class import TASK
@@ -102,7 +101,7 @@ def get_lora_config(lora_paths, lora_alphas, lora_mode=None):
     return adapter_config
 
 
-def create_text_gen_model(model_path, device, **kwargs):
+def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
     """Create text generation model.
 
     - model_path: can be model_path or IR path
@@ -130,7 +129,7 @@ def create_text_gen_model(model_path, device, **kwargs):
                 log.warning(f"OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default benchmarking")
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
-                return create_genai_text_gen_model(model_path, device, ov_config, **kwargs)
+                return create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, **kwargs)
         log.info("Selected Optimum Intel for benchmarking")
         remote_code = False
         try:
@@ -138,6 +137,9 @@ def create_text_gen_model(model_path, device, **kwargs):
         except Exception:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
             remote_code = True
+
+        if kwargs.get("mem_consumption"):
+            memory_monitor.start()
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(
             model_path,
@@ -145,9 +147,13 @@ def create_text_gen_model(model_path, device, **kwargs):
             ov_config=ov_config,
             config=model_config,
             stateful=kwargs.get("stateful", None),
-            trust_remote_code=remote_code
+            trust_remote_code=remote_code,
+            from_onnx=kwargs.get("from_onnx", False)
         )
         end = time.perf_counter()
+        if kwargs.get("mem_consumption"):
+            memory_monitor.stop_and_collect_data('compilation_phase')
+            memory_monitor.log_data('for copmpilation phase')
     bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -173,7 +179,7 @@ def get_scheduler_config_genai(user_config, config_name="CB config"):
     return scheduler_config
 
 
-def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
+def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, **kwargs):
     import openvino_genai
     from transformers import AutoTokenizer
     from packaging.version import parse
@@ -213,10 +219,15 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     if adapter_config:
         ov_config['adapters'] = adapter_config
 
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
     start = time.perf_counter()
     llm_pipe = openvino_genai.LLMPipeline(model_path, device.upper(), **ov_config)
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for copmpilation phase')
 
     class TokenStreamer(openvino_genai.StreamerBase):
         def __init__(self, tokenizer):
@@ -259,7 +270,7 @@ def convert_ov_tokenizer(tokenizer_path):
     export_tokenizer(hf_tokenizer, tokenizer_path)
 
 
-def create_image_gen_model(model_path, device, **kwargs):
+def create_image_gen_model(model_path, device, memory_monitor, **kwargs):
     model_index_data = {}
     with open(str(model_path / "model_index.json"), 'r') as f:
         model_index_data = json.load(f)
@@ -278,12 +289,26 @@ def create_image_gen_model(model_path, device, **kwargs):
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             log.info("Selected OpenVINO GenAI for benchmarking")
-            return create_genai_image_gen_model(model_path, device, ov_config, model_index_data, **kwargs)
+            return create_genai_image_gen_model(model_path, device, ov_config, model_index_data, memory_monitor, **kwargs)
 
+        if kwargs.get("mem_consumption"):
+            memory_monitor.start()
         log.info("Selected Optimum Intel for benchmarking")
         start = time.perf_counter()
-        ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
+        if kwargs.get("static_reshape", False):
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config, compile=False)
+            num_images_per_prompt = kwargs.get("batch_size", 1)
+            height = kwargs.get("height", 512)
+            width = kwargs.get("width", 512)
+            log.info(f"Image Pipeline reshape(batch_size=1, height={height}, width={width}, num_images_per_prompt={num_images_per_prompt})")
+            ov_model.reshape(batch_size=1, height=height, width=width, num_images_per_prompt=num_images_per_prompt)
+            ov_model.compile()
+        else:
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
         end = time.perf_counter()
+        if kwargs.get("mem_consumption"):
+            memory_monitor.stop_and_collect_data('compilation_phase')
+            memory_monitor.log_data('for copmpilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time, False, None
@@ -322,7 +347,7 @@ def get_genai_unet_model(model_index_data, model_path, device, ov_config):
     return unet
 
 
-def create_genai_image_gen_model(model_path, device, ov_config, model_index_data, **kwargs):
+def create_genai_image_gen_model(model_path, device, ov_config, model_index_data, memory_monitor, **kwargs):
     import openvino_genai
 
     class PerfCollector:
@@ -397,11 +422,18 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder="tokenizer")
     callback.orig_tokenizer = orig_tokenizer
 
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
     start = time.perf_counter()
 
     scheduler_type = model_index_data.get("scheduler", ["", ""])[1]
     if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "PNDMScheduler", "EulerDiscreteScheduler",
                                "FlowMatchEulerDiscreteScheduler", "EulerAncestralDiscreteScheduler"]):
+        # It's possible we could support --static_reshape here, but initially it seems too complicated to be worth it..
+        # (as we'd need to refactor each get_*_model calls below to perform explicit reshape + compile)
+        if kwargs.get("static_reshape", False):
+            raise RuntimeError(f'Type of scheduler {scheduler_type} is unsupported. Right now this is unsupported if --static_reshape is also specified. ')
+
         scheduler = openvino_genai.Scheduler.from_config(model_path / "scheduler/scheduler_config.json", openvino_genai.Scheduler.Type.DDIM)
         log.warning(f'Type of scheduler {scheduler_type} is unsupported. Please, be aware that it will be replaced to DDIMScheduler')
 
@@ -427,14 +459,27 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
         else:
             raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported _class_name {model_class_name}')
     else:
-        image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
+        if kwargs.get("static_reshape", False):
+            image_gen_pipe = image_gen_pipeline_class(model_path)
+            guidance_scale = kwargs.get("guidance_scale", image_gen_pipe.get_generation_config().guidance_scale)
+            num_images_per_prompt = kwargs.get("batch_size", 1)
+            height = kwargs.get("height", 512)
+            width = kwargs.get("width", 512)
+            log.info(f"Image Pipeline reshape(num_images_per_prompt={num_images_per_prompt}, height={height}, width={width}, guidance_scale={guidance_scale})")
+            image_gen_pipe.reshape(num_images_per_prompt=num_images_per_prompt, height=height, width=width, guidance_scale=guidance_scale)
+            image_gen_pipe.compile(device.upper(), **ov_config)
+        else:
+            image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
 
     end = time.perf_counter()
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for copmpilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     return image_gen_pipe, end - start, True, callback
 
 
-def create_ldm_super_resolution_model(model_path, device, **kwargs):
+def create_ldm_super_resolution_model(model_path, device, memory_monitor, **kwargs):
     core = Core()
     ov_config = kwargs['config']
     core.set_property(ov_config)
@@ -442,35 +487,47 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
     model_type = kwargs.get('model_type', default_model_type)
     model_class = OV_MODEL_CLASSES_MAPPING[model_type]
     model_path = Path(model_path)
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
     start = time.perf_counter()
     ov_model = model_class(model_path, core, device.upper())
     end = time.perf_counter()
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for copmpilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time
 
 
-def create_genai_speech_2_txt_model(model_path, device, **kwargs):
+def create_genai_speech_2_txt_model(model_path, device, memory_monitor, **kwargs):
     import openvino_genai as ov_genai
     if kwargs.get("genai", True) is False:
         raise RuntimeError('==Failure the command line does not set --genai ==')
     if is_genai_available(log_msg=True) is False:
         raise RuntimeError('==Failure genai is not enable ==')
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
     start = time.perf_counter()
     genai_pipe = ov_genai.WhisperPipeline(model_path, device.upper())
     end = time.perf_counter()
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for copmpilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
     return genai_pipe, processor, from_pretrained_time, True
 
 
-def create_speech_2txt_model(model_path, device, **kwargs):
+def create_speech_2_txt_model(model_path, device, memory_monitor, **kwargs):
     """Create speech generation model.
     - model_path: can be model_path or IR path
     - device: can be CPU
     - model_type:
     """
+    from optimum.intel.utils.import_utils import is_transformers_version
+
     default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
     model_type = kwargs.get('model_type', default_model_type)
     model_class = OV_MODEL_CLASSES_MAPPING.get(model_type, OV_MODEL_CLASSES_MAPPING[default_model_type])
@@ -485,16 +542,28 @@ def create_speech_2txt_model(model_path, device, **kwargs):
                 log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
-                return create_genai_speech_2_txt_model(model_path, device, **kwargs)
+                return create_genai_speech_2_txt_model(model_path, device, memory_monitor, **kwargs)
         log.info("Selected Optimum Intel for benchmarking")
+        if kwargs.get("mem_consumption"):
+            memory_monitor.start()
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(
             model_path,
             device=device
         )
         end = time.perf_counter()
+        if kwargs.get("mem_consumption"):
+            memory_monitor.stop_and_collect_data('compilation_phase')
+            memory_monitor.log_data('for copmpilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    if is_transformers_version(">=", "4.51.0"):
+        ov_model.config.forced_decoder_ids = None
+
+        if hasattr(ov_model, 'generation_config'):
+            if hasattr(ov_model.generation_config, 'forced_decoder_ids'):
+                ov_model.generation_config.forced_decoder_ids = None
+
     processor = AutoProcessor.from_pretrained(model_path)
     pipe = pipeline(
         "automatic-speech-recognition",
@@ -522,7 +591,7 @@ def get_vlm_processor(model_path):
     return preprocessors
 
 
-def create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs):
+def create_genai_image_text_gen_model(model_path, device, ov_config, memory_monitor, **kwargs):
     import openvino_genai
 
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
@@ -536,16 +605,21 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs):
         log.info("Continuous Batching mode activated")
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
     start = time.perf_counter()
     llm_pipe = openvino_genai.VLMPipeline(model_path, device.upper(), **ov_config)
     end = time.perf_counter()
     log.info("Selected OpenVINO GenAI for benchmarking")
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for copmpilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
     return llm_pipe, processor_config, end - start, None, True
 
 
-def create_image_text_gen_model(model_path, device, **kwargs):
+def create_image_text_gen_model(model_path, device, memory_monitor, **kwargs):
     model_path = Path(model_path)
     # specify the model path
     if model_path.name.endswith('xml'):
@@ -566,7 +640,7 @@ def create_image_text_gen_model(model_path, device, **kwargs):
             remote_code = True
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             try:
-                return create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs)
+                return create_genai_image_text_gen_model(model_path, device, ov_config, memory_monitor, **kwargs)
             except Exception as exp:
                 log.warning(
                     f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
@@ -576,6 +650,8 @@ def create_image_text_gen_model(model_path, device, **kwargs):
 
         log.info("Selected Optimum Intel for benchmarking")
         model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
+        if kwargs.get("mem_consumption"):
+            memory_monitor.start()
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(
             model_path,
@@ -585,6 +661,9 @@ def create_image_text_gen_model(model_path, device, **kwargs):
             trust_remote_code=remote_code
         )
         end = time.perf_counter()
+        if kwargs.get("mem_consumption"):
+            memory_monitor.stop_and_collect_data('compilation_phase')
+            memory_monitor.log_data('for copmpilation phase')
     bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -604,120 +683,125 @@ def is_genai_available(log_msg=False):
     return True
 
 
-class GenaiChunkStreamer(ov_genai.StreamerBase):
-    """
-    A custom streamer class for handling token streaming and detokenization with buffering.
+def get_genai_chunk_streamer():
+    import openvino_genai as ov_genai
 
-    Attributes:
-        tokenizer (Tokenizer): The tokenizer used for encoding and decoding tokens.
-        tokens_cache (list): A buffer to accumulate tokens for detokenization.
-        text_queue (Queue): A synchronized queue for storing decoded text chunks.
-        print_len (int): The length of the printed text to manage incremental decoding.
-    """
-
-    def __init__(self, tokenizer, tokens_len=1):
+    class GenaiChunkStreamer(ov_genai.StreamerBase):
         """
-        Initializes the IterableStreamer with the given tokenizer.
+        A custom streamer class for handling token streaming and detokenization with buffering.
 
-        Args:
-            tokenizer (Tokenizer): The tokenizer to use for encoding and decoding tokens.
+        Attributes:
+            tokenizer (Tokenizer): The tokenizer used for encoding and decoding tokens.
+            tokens_cache (list): A buffer to accumulate tokens for detokenization.
+            text_queue (Queue): A synchronized queue for storing decoded text chunks.
+            print_len (int): The length of the printed text to manage incremental decoding.
         """
-        super().__init__()
-        self.tokenizer = tokenizer
-        self.tokens_cache = []
-        self.text_queue = queue.Queue()
-        self.print_len = 0
-        self.tokens_len = tokens_len
 
-    def __iter__(self):
-        """
-        Returns the iterator object itself.
-        """
-        return self
+        def __init__(self, tokenizer, tokens_len=1):
+            """
+            Initializes the IterableStreamer with the given tokenizer.
 
-    def __next__(self):
-        """
-        Returns the next value from the text queue.
+            Args:
+                tokenizer (Tokenizer): The tokenizer to use for encoding and decoding tokens.
+            """
+            super().__init__()
+            self.tokenizer = tokenizer
+            self.tokens_cache = []
+            self.text_queue = queue.Queue()
+            self.print_len = 0
+            self.tokens_len = tokens_len
 
-        Returns:
-            str: The next decoded text chunk.
+        def __iter__(self):
+            """
+            Returns the iterator object itself.
+            """
+            return self
 
-        Raises:
-            StopIteration: If there are no more elements in the queue.
-        """
-        value = self.text_queue.get()  # get() will be blocked until a token is available.
-        if value is None:
-            raise StopIteration
-        return value
+        def __next__(self):
+            """
+            Returns the next value from the text queue.
 
-    def get_stop_flag(self):
-        """
-        Checks whether the generation process should be stopped.
+            Returns:
+                str: The next decoded text chunk.
 
-        Returns:
-            bool: Always returns False in this implementation.
-        """
-        return False
+            Raises:
+                StopIteration: If there are no more elements in the queue.
+            """
+            value = self.text_queue.get()  # get() will be blocked until a token is available.
+            if value is None:
+                raise StopIteration
+            return value
 
-    def put_word(self, word: str):
-        """
-        Puts a word into the text queue.
+        def get_stop_flag(self):
+            """
+            Checks whether the generation process should be stopped.
 
-        Args:
-            word (str): The word to put into the queue.
-        """
-        self.text_queue.put(word)
-
-    def put(self, token_id: int) -> bool:
-        """
-        Processes a token and manages the decoding buffer. Adds decoded text to the queue.
-
-        Args:
-            token_id (int): The token_id to process.
-
-        Returns:
-            bool: True if generation should be stopped, False otherwise.
-        """
-        self.tokens_cache.append(token_id)
-        if len(self.tokens_cache) % self.tokens_len == 0:
-            text = self.tokenizer.decode(self.tokens_cache)
-
-            word = ''
-            if len(text) > self.print_len and '\n' == text[-1]:
-                # Flush the cache after the new line symbol.
-                word = text[self.print_len:]
-                self.tokens_cache = []
-                self.print_len = 0
-            elif len(text) >= 3 and text[-1] == chr(65533):
-                # Don't print incomplete text.
-                pass
-            elif len(text) > self.print_len:
-                # It is possible to have a shorter text after adding new token.
-                # Print to output only if text lengh is increaesed.
-                word = text[self.print_len:]
-                self.print_len = len(text)
-            self.put_word(word)
-
-            if self.get_stop_flag():
-                # When generation is stopped from streamer then end is not called, need to call it here manually.
-                self.end()
-                return True  # True means stop  generation
-            else:
-                return False  # False means continue generation
-        else:
+            Returns:
+                bool: Always returns False in this implementation.
+            """
             return False
 
-    def end(self):
-        """
-        Flushes residual tokens from the buffer and puts a None value in the queue to signal the end.
-        """
-        text = self.tokenizer.decode(self.tokens_cache)
-        if len(text) > self.print_len:
-            word = text[self.print_len:]
-            self.put_word(word)
-            self.tokens_cache = []
-            self.print_len = 0
-        self.put_word(None)
+        def put_word(self, word: str):
+            """
+            Puts a word into the text queue.
+
+            Args:
+                word (str): The word to put into the queue.
+            """
+            self.text_queue.put(word)
+
+        def put(self, token_id: int) -> bool:
+            """
+            Processes a token and manages the decoding buffer. Adds decoded text to the queue.
+
+            Args:
+                token_id (int): The token_id to process.
+
+            Returns:
+                bool: True if generation should be stopped, False otherwise.
+            """
+            self.tokens_cache.append(token_id)
+            if len(self.tokens_cache) % self.tokens_len == 0:
+                text = self.tokenizer.decode(self.tokens_cache)
+
+                word = ''
+                if len(text) > self.print_len and '\n' == text[-1]:
+                    # Flush the cache after the new line symbol.
+                    word = text[self.print_len:]
+                    self.tokens_cache = []
+                    self.print_len = 0
+                elif len(text) >= 3 and text[-1] == chr(65533):
+                    # Don't print incomplete text.
+                    pass
+                elif len(text) > self.print_len:
+                    # It is possible to have a shorter text after adding new token.
+                    # Print to output only if text lengh is increaesed.
+                    word = text[self.print_len:]
+                    self.print_len = len(text)
+                self.put_word(word)
+
+                if self.get_stop_flag():
+                    # When generation is stopped from streamer then end is not called, need to call it here manually.
+                    self.end()
+                    return True  # True means stop  generation
+                else:
+                    return False  # False means continue generation
+            else:
+                return False
+
+        def end(self):
+            """
+            Flushes residual tokens from the buffer and puts a None value in the queue to signal the end.
+            """
+            text = self.tokenizer.decode(self.tokens_cache)
+            if len(text) > self.print_len:
+                word = text[self.print_len:]
+                self.put_word(word)
+                self.tokens_cache = []
+                self.print_len = 0
+            self.put_word(None)
+
+    return GenaiChunkStreamer
 
 
 class OptimumChunkStreamer(BaseStreamer):

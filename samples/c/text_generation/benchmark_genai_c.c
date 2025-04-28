@@ -125,7 +125,7 @@ int main(int argc, char* argv[]) {
     ov_genai_perf_metrics* metrics = NULL;
     ov_genai_perf_metrics* cumulative_metrics = NULL;
 
-    CHECK_STATUS(ov_genai_llm_pipeline_create(options.model, options.device, &pipe));
+    CHECK_STATUS(ov_genai_llm_pipeline_create(options.model, options.device, 0, &pipe));
 
     CHECK_STATUS(ov_genai_generation_config_create(&config));
     CHECK_STATUS(ov_genai_generation_config_set_max_new_tokens(config, options.max_new_tokens));

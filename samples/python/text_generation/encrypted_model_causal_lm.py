@@ -31,23 +31,46 @@ def read_tokenizer(model_dir):
 
     return openvino_genai.Tokenizer(tokenizer_model, tokenizer_weights, detokenizer_model, detokenizer_weights)
 
+
+# here is example how to make cache de-encryption based on base64
+import base64
+
+def encrypt_base64(src: bytes):
+    return base64.b64encode(src)
+
+def decrypt_base64(src: bytes):
+    return base64.b64decode(src)
+
+def get_config_for_cache_encryption():
+    config_cache = dict()
+    config_cache["CACHE_DIR"] = "llm_cache"
+    config_cache["CACHE_ENCRYPTION_CALLBACKS"] = [encrypt_base64, decrypt_base64]
+    config_cache["CACHE_MODE"] = "OPTIMIZE_SIZE"
+    return config_cache
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir')
     parser.add_argument('prompt')
     args = parser.parse_args()
 
+    device = "CPU"
+
+    config = dict()
+    if device == "GPU":
+        # Cache compiled models on disk for GPU to save time on the
+        # next run. It's not beneficial for CPU.
+        config = get_config_for_cache_encryption()
+
     model, weights = decrypt_model(args.model_dir, 'openvino_model.xml', 'openvino_model.bin')
     tokenizer = read_tokenizer(args.model_dir)
 
-    device = 'CPU'  # GPU can be used as well
-    pipe = openvino_genai.LLMPipeline(model, weights, tokenizer, device)
+    pipe = openvino_genai.LLMPipeline(model, weights, tokenizer, device, **config)
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
 
     print(pipe.generate(args.prompt, config))
-
 
 if '__main__' == __name__:
     main()

@@ -1,0 +1,103 @@
+import Text2ImageCPP from './_text2image_cpp.mdx';
+import Text2ImagePython from './_text2image_python.mdx';
+
+import Image2ImageCPP from './_image2image_cpp.mdx';
+import Image2ImagePython from './_image2image_python.mdx';
+
+import InpaintingCPP from './_inpainting_cpp.mdx';
+import InpaintingPython from './_inpainting_python.mdx';
+
+## Run Model Using OpenVINO GenAI
+
+OpenVINO GenAI supports the following diffusion model pipelines:
+- [`Text2ImagePipeline`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.Text2ImagePipeline.html) for creating images from text prompts.
+- [`Image2ImagePipeline`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.Image2ImagePipeline.html) for modifying existing images based on prompts.
+- [`InpaintingPipeline`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.InpaintingPipeline.html) for selectively replacing portions of images using masks.
+
+### `Text2ImagePipeline`
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Text2ImagePython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Text2ImagePython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                :::info
+
+                Code below requires installation of C++ compatible package.
+                See [here](https://docs.openvino.ai/2025/get-started/install-openvino/install-openvino-genai.html#archive-installation) for additional setup details,
+                or [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67) blog for full instruction.
+
+                :::
+                <Text2ImageCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Text2ImageCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>
+
+:::tip
+
+Use CPU or GPU as devices without any other code change.
+
+:::
+
+### `Image2ImagePipeline`
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Image2ImagePython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Image2ImagePython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Image2ImageCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Image2ImageCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>
+
+### `InpaintingPipeline`
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <InpaintingPython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <InpaintingPython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <InpaintingCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <InpaintingCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>

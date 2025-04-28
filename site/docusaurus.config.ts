@@ -1,11 +1,13 @@
 import type * as Preset from '@docusaurus/preset-classic';
 import type { Config } from '@docusaurus/types';
 import { themes as prismThemes } from 'prism-react-renderer';
+import GenAISamplesDocsPlugin from './src/plugins/genai-samples-docs-plugin';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
-const organizationName = 'openvinotoolkit';
-const projectName = 'openvino.genai';
+// GITHUB_REPOSITORY env var is set by GitHub Actions
+const GITHUB_REPOSITORY = process.env.GITHUB_REPOSITORY || 'openvinotoolkit/openvino.genai';
+const [organizationName, projectName] = GITHUB_REPOSITORY.split('/');
 
 const config: Config = {
   title: 'OpenVINO GenAI',
@@ -22,7 +24,7 @@ const config: Config = {
   organizationName, // Usually your GitHub org/user name.
   projectName, // Usually your repo name.
 
-  onBrokenLinks: 'throw',
+  onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'throw',
 
   // Even if you don't use internationalization, you can use this field to set
@@ -159,6 +161,7 @@ const config: Config = {
       },
     ],
   ],
+  plugins: [GenAISamplesDocsPlugin],
 };
 
 export default config;

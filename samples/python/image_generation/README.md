@@ -4,7 +4,7 @@ Examples in this folder showcase inference of text to image models like Stable D
 
 There are several sample files:
  - [`text2image.py`](./text2image.py) demonstrates basic usage of the text to image pipeline
- - [`lora_text2image.py`](./lora.py) shows how to apply LoRA adapters to the pipeline
+ - [`lora_text2image.py`](./lora_text2image.py) shows how to apply LoRA adapters to the pipeline
  - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous text2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.py`](./image2image.py) demonstrates basic usage of the image to image pipeline
  - [`inpainting.py`](./inpainting.py) demonstrates basic usage of the inpainting pipeline
@@ -163,7 +163,7 @@ Options:
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-n, --num_iter` (default: `3`): Number of iterations.
-- `-d, --device` (default: `"CPU"`): Device to run the model on.
+- `-d, --device` (default: `"CPU"`): Device(s) to run the pipeline with.
 - `-w, --width` (default: `512`): The width of the output image.
 - `-ht, --height` (default: `512`): The height of the output image.
 - `-is, --num_inference_steps` (default: `20`): The number of inference steps.
@@ -172,6 +172,7 @@ Options:
 - `-i, --image`: Path to input image.
 - `-mi, --mask_image`: Path to the mask image.
 - `-s, --strength`: Indicates extent to transform the reference `image`. Must be between 0 and 1.
+- `-r, --reshape': Reshape pipeline before compilation. This can improve image generation performance.
 
 For example:
 

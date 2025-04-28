@@ -2,7 +2,7 @@
   "label": "Samples",
   "position": 5,
   "link": {
-    "type": "generated-index",
-    "description": "Samples to OpenVINO GenAI."
+    "type": "doc",
+    "id": "samples/index"
   }
 }

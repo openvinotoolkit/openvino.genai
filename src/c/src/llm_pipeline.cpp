@@ -6,6 +6,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "types_c.h"
+#include <stdarg.h>
 
 ov_status_e ov_genai_decoded_results_create(ov_genai_decoded_results** results) {
     if (!results) {
@@ -67,14 +68,23 @@ ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* 
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_llm_pipeline_create(const char* models_path, const char* device, ov_genai_llm_pipeline** pipe) {
-    if (!models_path || !device || !pipe) {
+ov_status_e ov_genai_llm_pipeline_create(const char* models_path, const char* device, const size_t property_args_size, ov_genai_llm_pipeline** pipe, ...) {
+    if (!models_path || !device || !pipe || property_args_size % 2 != 0) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
+        ov::AnyMap property = {};
+        va_list args_ptr;
+        va_start(args_ptr, pipe);
+        size_t property_size = property_args_size / 2;
+        for (size_t i = 0; i < property_size; i++) {
+            GET_PROPERTY_FROM_ARGS_LIST;
+        }
+        va_end(args_ptr);
+
         std::unique_ptr<ov_genai_llm_pipeline> _pipe = std::make_unique<ov_genai_llm_pipeline>();
         _pipe->object =
-            std::make_shared<ov::genai::LLMPipeline>(std::filesystem::path(models_path), std::string(device));
+            std::make_shared<ov::genai::LLMPipeline>(std::filesystem::path(models_path), std::string(device), property);
         *pipe = _pipe.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
@@ -90,7 +100,7 @@ void ov_genai_llm_pipeline_free(ov_genai_llm_pipeline* pipe) {
 ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
                                            const char* inputs,
                                            const ov_genai_generation_config* config,
-                                           const stream_callback* streamer,
+                                           const streamer_callback* streamer,
                                            ov_genai_decoded_results** results) {
     if (!pipe || !(pipe->object) || !inputs || !(streamer || results)) {
         return ov_status_e::INVALID_C_PARAM;
@@ -102,7 +112,7 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
         ov::genai::StringInputs input = {input_str};
         if (streamer) {
             auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
-                return static_cast<ov::genai::StreamingStatus>((*streamer)(word.c_str()));
+                return static_cast<ov::genai::StreamingStatus>((streamer->callback_func)(word.c_str(), streamer->args));
             };
             *(_results->object) = (config && config->object)
                                       ? pipe->object->generate(input, *(config->object), callback)

@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import logger, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, MODELS
+from conftest import logger, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, MODELS
 from test_utils import run_sample
     
 class TestChatSample:
@@ -29,16 +29,23 @@ class TestChatSample:
         cpp_command = [cpp_sample, convert_model]
         cpp_result = run_sample(cpp_command, '\n'.join(prompts))
         cpp_predictions = cpp_result.stdout
+
+        # C test
+        c_sample = os.path.join(SAMPLES_C_DIR, 'chat_sample_c')
+        c_command = [c_sample, convert_model]
+        c_result = run_sample(c_command, '\n'.join(prompts))
+        c_predictions = c_result.stdout
         
         # Compare results
         assert py_predictions == cpp_predictions, "Python and C++ results should match"
+        assert c_predictions == cpp_predictions, "C and C++ results should match"
         
         model_name = request.node.callspec.params['convert_model']
         model = MODELS[model_name]
         
         from transformers import AutoTokenizer, AutoModelForCausalLM
-        tokenizer = AutoTokenizer.from_pretrained(model['name'])
-        model = AutoModelForCausalLM.from_pretrained(model['name'])
+        tokenizer = AutoTokenizer.from_pretrained(model['name'], local_files_only=True)
+        model = AutoModelForCausalLM.from_pretrained(model['name'], local_files_only=True)
         
         def gen_prompt(prompt):
             return {'role': 'user', 'content': prompt}

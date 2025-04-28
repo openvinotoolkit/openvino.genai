@@ -81,15 +81,29 @@ def print_statistic(warmup_metrics, iter_metrics):
           f"infer avg time: {inference_mean:.2f} ms, all text encoder infer avg time: {text_encoder_mean:.2f} ms, "
           f"vae encoder infer avg time: {vae_encoder_mean:.2f} ms, vae decoder infer avg time: {vae_decoder_mean:.2f} ms")
 
+def device_string_to_triplet(device_input):
+    devices = [device.strip() for device in device_input.split(",")]
+    if len(devices) == 1:
+        return [devices[0]] * 3
+    elif len(devices) == 3:
+        return devices
+    else:
+        raise ValueError("The device specified by -d/--device must be a single device (e.g. -d \"GPU\"), " +
+                         "or exactly 3 comma separated device names (e.g. -d \"CPU,NPU,GPU\")")
+
 def text2image(args):
     prompt = args.prompt
     models_path = args.model
-    device = args.device
+    devices = device_string_to_triplet(args.device)
     num_warmup = args.num_warmup
     num_iter = args.num_iter
     output_dir = args.output_dir
     
-    pipe = ov_genai.Text2ImagePipeline(models_path, device)
+    pipe = ov_genai.Text2ImagePipeline(models_path)
+    if args.reshape:
+        pipe.reshape(args.num_images_per_prompt, args.height, args.width, pipe.get_generation_config().guidance_scale)
+    pipe.compile(devices[0], devices[1], devices[2])
+
     config = pipe.get_generation_config()
     config.width = args.width
     config.height = args.height
@@ -124,16 +138,21 @@ def read_image(path: str) -> openvino.Tensor:
 def image2image(args):
     prompt = args.prompt
     models_path = args.model
-    device = args.device
+    devices = device_string_to_triplet(args.device)
     num_warmup = args.num_warmup
     num_iter = args.num_iter
     output_dir = args.output_dir
     image_path = args.image
     strength = args.strength
     
-    pipe = ov_genai.Image2ImagePipeline(models_path, device)
-
     image_input = read_image(image_path)
+
+    pipe = ov_genai.Image2ImagePipeline(models_path)
+    if args.reshape:
+        height = image_input.get_shape()[1]
+        width = image_input.get_shape()[2]
+        pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale)
+    pipe.compile(devices[0], devices[1], devices[2])
 
     warmup_metrics = []
     for i in range(num_warmup):
@@ -157,7 +176,7 @@ def image2image(args):
 def inpainting(args):
     prompt = args.prompt
     models_path = args.model
-    device = args.device
+    devices = device_string_to_triplet(args.device)
     num_warmup = args.num_warmup
     num_iter = args.num_iter
     output_dir = args.output_dir
@@ -165,10 +184,15 @@ def inpainting(args):
     strength = args.strength
     mask_image_path = args.mask_image
     
-    pipe = ov_genai.InpaintingPipeline(models_path, device)
-
     image_input = read_image(image_path)
     mask_image = read_image(mask_image_path)
+
+    pipe = ov_genai.InpaintingPipeline(models_path)
+    if args.reshape:
+        height = image_input.get_shape()[1]
+        width = image_input.get_shape()[2]
+        pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale)
+    pipe.compile(devices[0], devices[1], devices[2])
 
     warmup_metrics = []
     for i in range(num_warmup):
@@ -202,6 +226,7 @@ def main():
     parser.add_argument("-is", "--num_inference_steps", type=int, default=20, help="The number of inference steps used to denoise initial noised latent to final image")
     parser.add_argument("-ni", "--num_images_per_prompt", type=int, default=1, help="The number of images to generate per generate() call")
     parser.add_argument("-i", "--image", type=str, help="Image path")
+    parser.add_argument("-r", "--reshape", action="store_true", help="Reshape pipeline before compilation")
     # special parameters of text2image pipeline
     parser.add_argument("-w", "--width", type=int, default=512, help="The width of the resulting image")
     parser.add_argument("-ht", "--height", type=int, default=512, help="The height of the resulting image")

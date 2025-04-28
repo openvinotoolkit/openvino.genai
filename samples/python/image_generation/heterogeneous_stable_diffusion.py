@@ -40,9 +40,9 @@ def main():
     pipe = openvino_genai.Text2ImagePipeline(args.model_dir)
 
     #
-    # Step 2: Reshape the pipeline given number of images, width, height, and guidance scale.
+    # Step 2: Reshape the pipeline given number of images, height, width, and guidance scale.
     #
-    pipe.reshape(1, width, height, pipe.get_generation_config().guidance_scale)
+    pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale)
 
     #
     # Step 3: Compile the pipeline given the specified devices, and properties (like cache dir)

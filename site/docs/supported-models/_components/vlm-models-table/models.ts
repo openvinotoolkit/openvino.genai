@@ -4,15 +4,16 @@ type VLMModelType = {
     name: string;
     loraSupport: boolean;
     links: string[];
+    notesLink?: string;
   }>;
 };
 
 export const VLM_MODELS: VLMModelType[] = [
   {
-    architecture: 'InternVL2',
+    architecture: 'InternVLChat',
     models: [
       {
-        name: 'InternVL2',
+        name: 'InternVLChatModel',
         loraSupport: false,
         links: [
           'https://huggingface.co/OpenGVLab/InternVL2-1B',
@@ -23,7 +24,13 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/OpenGVLab/InternVL2_5-2B',
           'https://huggingface.co/OpenGVLab/InternVL2_5-4B',
           'https://huggingface.co/OpenGVLab/InternVL2_5-8B',
+          'https://huggingface.co/OpenGVLab/InternVL3-1B',
+          'https://huggingface.co/OpenGVLab/InternVL3-2B',
+          'https://huggingface.co/OpenGVLab/InternVL3-8B',
+          'https://huggingface.co/OpenGVLab/InternVL3-9B',
+          'https://huggingface.co/OpenGVLab/InternVL3-14B'
         ],
+        notesLink: '#internvl2-notes',
       },
     ],
   },
@@ -58,6 +65,20 @@ export const VLM_MODELS: VLMModelType[] = [
         name: 'MiniCPM-V-2_6',
         loraSupport: false,
         links: ['https://huggingface.co/openbmb/MiniCPM-V-2_6'],
+      },
+    ],
+  },
+  {
+    architecture: 'Phi3VForCausalLM',
+    models: [
+      {
+        name: 'phi3_v',
+        loraSupport: false,
+        links: [
+          'https://huggingface.co/microsoft/Phi-3-vision-128k-instruct',
+          'https://huggingface.co/microsoft/Phi-3.5-vision-instruct',
+        ],
+        notesLink: '#phi3_v-notes',
       },
     ],
   },

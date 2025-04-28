@@ -47,12 +47,25 @@ function(ov_genai_build_jinja2cpp)
     endif()
 endfunction()
 
+ov_genai_build_jinja2cpp()
+
 FetchContent_Declare(safetensors.h
     URL https://github.com/hsnyder/safetensors.h/archive/974a85d7dfd6e010558353226638bb26d6b9d756.tar.gz
     URL_HASH SHA256=9aaf5961609601cf9aaa96582a207bce7c6e5fbf57ed2cc669bb7bde6a937d4b)
 FetchContent_MakeAvailable(safetensors.h)
 
-ov_genai_build_jinja2cpp()
+if(ENABLE_GGUF)
+    FetchContent_Declare(
+      gguflib
+      URL https://github.com/Lourdle/gguf-tools/archive/bac796ada809ac293e685db59b075971181cb008.zip
+      URL_HASH SHA256=4d6eab5055468d222833f3f83fe2f7909ccd06114278c2c0b468570ef002c22d)
+    FetchContent_MakeAvailable(gguflib)
+    set_target_properties(gguf-tools PROPERTIES EXCLUDE_FROM_ALL ON)
+
+    add_library(gguflib STATIC ${gguflib_SOURCE_DIR}/fp16.c ${gguflib_SOURCE_DIR}/gguflib.c)
+    set_target_properties(gguflib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(gguflib PUBLIC "${gguflib_SOURCE_DIR}")
+endif()
 
 # generate version files
 
@@ -63,8 +76,17 @@ configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.cpp.in"
                "${CMAKE_CURRENT_BINARY_DIR}/version.cpp" @ONLY)
 
 # Object library
+
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
+
+if(NOT ENABLE_GGUF)
+    set(GGUF_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf.cpp
+                    ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_quants.cpp
+                    ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_modeling.cpp
+                    ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/building_blocks.cpp)
+    list(REMOVE_ITEM SOURCE_FILES ${GGUF_SOURCES})
+endif()
 
 set(TARGET_NAME openvino_genai)
 set(TARGET_NAME_OBJ ${TARGET_NAME}_obj)
@@ -75,6 +97,11 @@ target_include_directories(${TARGET_NAME_OBJ}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
            "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+if(ENABLE_GGUF)
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE gguflib)
+    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_GGUF)
+endif()
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
@@ -93,9 +120,14 @@ add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime/include>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                                                    "$<BUILD_INTERFACE:${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/gguf_utils>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
+
+if(ENABLE_GGUF)
+  target_link_libraries(${TARGET_NAME} PRIVATE gguflib)
+endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
 

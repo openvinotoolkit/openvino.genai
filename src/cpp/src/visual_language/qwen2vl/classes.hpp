@@ -30,6 +30,13 @@ class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
 
     ov::Tensor m_position_ids;
     int64_t m_rope_delta = 0;
+    ov::Tensor m_merged_image_embeddings;
+
+    ov::Tensor run_image_embeddings_merger(
+        const std::vector<EncodedImage>& images, 
+        const std::vector<size_t>& images_sequence, 
+        size_t image_id, 
+        const VLMConfig& vlm_config);
 
 public:
     InputsEmbedderQwen2VL(
@@ -46,7 +53,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 
@@ -59,9 +66,8 @@ public:
 protected:
     ov::Tensor merge_text_and_image_embeddings_qwen2vl(
         const ov::Tensor& input_ids,
-        const ov::Tensor& text_embeds,
-        const std::vector<ov::Tensor>& image_embeds,
-        const std::vector<std::array<size_t, 3>> images_grid_thw,
+        const ov::Tensor& text_embeds, 
+        const ov::Tensor& merged_image_embeds,
         const int64_t image_pad_token_id
     );
 
@@ -70,6 +76,8 @@ protected:
     ov::Tensor create_position_ids(
         const ov::Tensor& input_ids_tensor,
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
+        const std::vector<size_t>& images_sequence,
+        const size_t image_id,
         const int64_t vision_start_token_id
     );
 };
