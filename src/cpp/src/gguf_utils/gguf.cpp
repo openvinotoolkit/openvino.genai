@@ -277,7 +277,7 @@ void check_file(std::string file){
     OPENVINO_ASSERT(exists, "[load_gguf] Failed to open '", file, "'");
 }
 
-std::vector<std::string> get_all_files(const std::string& file, int total_num) {
+std::vector<std::string> get_all_files(std::string file, int total_num) {
 
     std::vector<std::string> files;
     files.push_back(file);
