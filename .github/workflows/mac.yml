@@ -89,7 +89,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -187,7 +187,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -398,7 +398,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -473,7 +473,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -552,7 +552,7 @@ jobs:
         run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
         
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
