@@ -8,7 +8,7 @@ allow-licenses:
   - 'BlueOak-1.0.0'
   - '0BSD'
   - 'Python-2.0'
-  - 'LicenseRef-scancode-secret-labs-2011 AND MIT-CMU'  # Pillow's license
+  - 'MIT-CMU' # Pillow's license
 fail-on-scopes:
   - 'runtime'
   - 'development'
