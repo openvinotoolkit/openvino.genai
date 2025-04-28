@@ -11,7 +11,7 @@ import openvino
 import typing
 import functools
 from transformers import AutoTokenizer
-from typing import Dict, Tuple, List
+from typing import Tuple, List
 import functools
 
 from utils.hugging_face import convert_and_save_tokenizer
@@ -33,7 +33,7 @@ def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
         json_file.unlink()
 
     for config_json, config_name in configs:
-        with (temp_path / config_name).open('w') as f:
+        with (temp_path / config_name).open('w', encoding="utf-8") as f:
             json.dump(config_json, f)
 
     ov_tokenizer = Tokenizer(temp_path)
@@ -172,7 +172,7 @@ conversation = [
 @pytest.mark.nightly
 @pytest.mark.parametrize('chat_config', get_chat_templates())
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict], model_id):
+def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, dict], model_id):
     tokenizer_config = chat_config[1]
 
     # Will load openvino_model for tiny-random-phi as a placeholder
@@ -510,13 +510,13 @@ def generate_tokenizer(tmp_path, chat_templates):
     if chat_templates.rt_template is not None:
         model.set_rt_info(chat_templates.rt_template, "chat_template")
     if chat_templates.chat_template_json is not None:
-        with open(tmp_path / "chat_template.json", "w") as file:
+        with open(tmp_path / "chat_template.json", "w", encoding="utf-8") as file:
             json.dump({"chat_template": chat_templates.chat_template_json}, file)
     if chat_templates.processor_config_json is not None:
-        with open(tmp_path / "processor_config.json", "w") as file:
+        with open(tmp_path / "processor_config.json", "w", encoding="utf-8") as file:
             json.dump({"chat_template": chat_templates.processor_config_json}, file)
     if chat_templates.tokenizer_config_json is not None:
-        with open(tmp_path / "tokenizer_config.json", "w") as file:
+        with open(tmp_path / "tokenizer_config.json", "w", encoding="utf-8") as file:
             json.dump({"chat_template": chat_templates.tokenizer_config_json}, file)
     openvino.save_model(model, tmp_path / "openvino_tokenizer.xml")
     return Tokenizer(tmp_path)

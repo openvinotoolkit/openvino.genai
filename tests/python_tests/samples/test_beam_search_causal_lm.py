@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import logger, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, MODELS
+from conftest import logger, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_JS_DIR, MODELS
 from test_utils import run_sample
     
 class TestBeamSearchCausalLM:
@@ -30,13 +30,18 @@ class TestBeamSearchCausalLM:
         cpp_command = [cpp_sample, convert_model, f'"{sample_args}"']
         cpp_result = run_sample(cpp_command)
 
+        # Test JS sample
+        js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/beam_search_causal_lm.js")
+        js_command =['node', js_sample, convert_model, f'"{sample_args}"']
+        js_result = run_sample(js_command)
+
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
+        assert py_result.stdout == js_result.stdout, "Python and JS results should match"
         
 
     @pytest.mark.llm
     @pytest.mark.samples
-    @pytest.mark.skipif(sys.platform == "win32", reason="CVS-165582")
     @pytest.mark.parametrize("convert_model", ["SmolLM2-135M"], indirect=True)
     @pytest.mark.parametrize("sample_args",
         [
@@ -60,21 +65,28 @@ class TestBeamSearchCausalLM:
         cpp_command = [cpp_sample, convert_model] + [f'"{arg}"' for arg in sample_args]
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
+
+        # Test JS sample
+        js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/beam_search_causal_lm.js")
+        js_command =['node', js_sample, convert_model] + [f'"{arg}"' for arg in sample_args]
+        js_result = run_sample(js_command)
+        js_predictions = js_result.stdout
         
         # Compare results
         assert py_predictions == cpp_predictions, "Python and C++ results should match"
+        assert py_predictions == js_predictions, "Python and JS results should match"
         
         model_name = request.node.callspec.params['convert_model']
         model = MODELS[model_name]
         
         import transformers
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'])
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'], local_files_only=True)
         for prompt in sample_args:
             if tokenizer.chat_template:
                 prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': f'"{prompt}"'}], tokenize=False, add_generation_prompt=True)
             tokenized = tokenizer(f'"{prompt}"', return_tensors='pt', add_special_tokens=False)
         
-            for beam in transformers.LlamaForCausalLM.from_pretrained(model['name']).generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+            for beam in transformers.LlamaForCausalLM.from_pretrained(model['name'], local_files_only=True).generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
                 ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
                 logger.info(f'Checking for "{ref=}"')
                 

@@ -46,6 +46,9 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
     m_history_images.clear();
+    if (m_inputs_embedder) {
+        m_inputs_embedder->finish_chat();
+    }
 };
 
 std::vector<GenerationResult>
@@ -174,13 +177,17 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             prompt_with_tags = add_image_tags_to_prompt(prompt_with_tags, rgbs, m_history_images.size());
         }
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
+        auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
-        std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
+        std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
         m_inputs_embedder->set_apply_chat_template_status(false);
 
-        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0]));
+        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0));
+        auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+        vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
@@ -213,7 +220,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
         
         gen_result.perf_metrics.m_evaluated = false;
-        gen_result.perf_metrics.evaluate_statistics();
+        gen_result.perf_metrics.evaluate_statistics(generate_start_time);
 
         results.emplace_back(gen_result);
     }
@@ -235,8 +242,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
                                         GenerationConfig sampling_params) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
-    m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
-    ov::Tensor inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
+    ov::Tensor inputs;
+    {
+        std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+        m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+        inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
+    }
     return add_request(request_id, inputs, sampling_params);
 }
 

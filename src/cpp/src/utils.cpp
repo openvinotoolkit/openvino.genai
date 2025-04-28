@@ -16,6 +16,7 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "gguf_utils/gguf_modeling.hpp"
 
 
 #include "sampler.hpp"
@@ -282,6 +283,36 @@ ov::Core singleton_core() {
     return core;
 }
 
+namespace {
+
+bool is_gguf_model(const std::filesystem::path& file_path) {
+    return file_path.extension() == ".gguf";
+}
+
+} // namespace
+
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
+    if (is_gguf_model(model_dir)) {
+#ifdef ENABLE_GGUF
+        return create_from_gguf(model_dir.string());
+#else
+        OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
+#endif
+    } else {
+        std::filesystem::path model_path = model_dir;
+
+        if (std::filesystem::exists(model_dir / "openvino_model.xml")) {
+            model_path = model_dir / "openvino_model.xml";
+        } else if (std::filesystem::exists(model_dir / "openvino_language_model.xml")) {
+            model_path = model_path / "openvino_language_model.xml";
+        } else {
+            OPENVINO_THROW("Could not find a model in the directory '", model_dir, "'");
+        }
+
+        return singleton_core().read_model(model_path, {}, config);
+    }
+}
+
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history) {
     size_t idx = 0;
     auto encoded_history_data = encoded_history.data<int64_t>();
@@ -378,40 +409,44 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
     return new_tensor;
 }
 
-void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
+bool env_setup_for_print_debug_info() {
     // Specify the name of the environment variable
     const char* env_var_name = "OPENVINO_LOG_LEVEL";
     const char* env_var_value = std::getenv(env_var_name);
-
     // Check if the environment variable was found
-    if (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING)) {
-        // output of the actual settings that the device selected
-        auto supported_properties = compiled_Model.get_property(ov::supported_properties);
-        std::cout << "Model: " << model_title << std::endl;
-        for (const auto& cfg : supported_properties) {
-            if (cfg == ov::supported_properties)
-                continue;
-            auto prop = compiled_Model.get_property(cfg);
-            if (cfg == ov::device::properties) {
-                auto devices_properties = prop.as<ov::AnyMap>();
-                for (auto& item : devices_properties) {
-                    std::cout << "  " << item.first << ": " << std::endl;
-                    for (auto& item2 : item.second.as<ov::AnyMap>()) {
-                        std::cout << "    " << item2.first << ": " << item2.second.as<std::string>() << std::endl;
-                    }
-                }
-            } else {
-                std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
-            }
-        }
+    return (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING));
+}
 
-        ov::Core core;
-        std::vector<std::string> exeTargets;
-        exeTargets = compiled_Model.get_property(ov::execution_devices);
-        std::cout << "EXECUTION_DEVICES:" << std::endl;
-        for (const auto& device : exeTargets) {
-            std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+    // output of the actual settings that the device selected
+    auto supported_properties = compiled_Model.get_property(ov::supported_properties);
+    std::cout << "Model: " << model_title << std::endl;
+    for (const auto& cfg : supported_properties) {
+        if (cfg == ov::supported_properties)
+            continue;
+        auto prop = compiled_Model.get_property(cfg);
+        if (cfg == ov::device::properties) {
+            auto devices_properties = prop.as<ov::AnyMap>();
+            for (auto& item : devices_properties) {
+                std::cout << "  " << item.first << ": " << std::endl;
+                for (auto& item2 : item.second.as<ov::AnyMap>()) {
+                    std::cout << "    " << item2.first << ": " << item2.second.as<std::string>() << std::endl;
+                }
+            }
+        } else {
+            std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
         }
+    }
+
+    ov::Core core;
+    std::vector<std::string> exeTargets;
+    exeTargets = compiled_Model.get_property(ov::execution_devices);
+    std::cout << "EXECUTION_DEVICES:" << std::endl;
+    for (const auto& device : exeTargets) {
+        std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
     }
 }
 

@@ -42,6 +42,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
+    size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
 public:
@@ -81,6 +82,7 @@ public:
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
+            m_max_prompt_len = kv_desc.max_prompt_len;
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
         } else {
             compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
@@ -120,7 +122,7 @@ public:
     ) :
         m_generation_config{generation_config} {
         m_is_npu = device.find("NPU") != std::string::npos;
-        OPENVINO_ASSERT(m_is_npu,
+        OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
@@ -182,6 +184,14 @@ public:
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+
+        if (m_is_npu) {
+            // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
+            OPENVINO_ASSERT(inputs_embeds.get_shape().at(1) <= m_max_prompt_len,
+                "VLM pipeline on NPU may only process input embeddings up to ", m_max_prompt_len,
+                " tokens. ", inputs_embeds.get_shape().at(1), " is passed.\nSet the \"MAX_PROMPT_LEN\""
+                " config option to increase the limit.");
+        }
 
         utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         if (m_is_chat_conversation)

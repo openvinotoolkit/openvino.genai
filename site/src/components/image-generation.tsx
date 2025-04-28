@@ -39,7 +39,7 @@ export const ImageGeneration = () => {
           </TabItemCpp>
         </LanguageTabs>
         <hr />
-        <ExploreCodeSamples link="docs/category/samples" />
+        <ExploreCodeSamples link="docs/samples" />
         <GoToDocumentation link="docs/use-cases/image-generation/" />
       </Section.Column>
     </Section.Container>
