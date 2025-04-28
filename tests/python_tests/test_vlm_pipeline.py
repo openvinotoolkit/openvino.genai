@@ -658,12 +658,14 @@ def requests():
     ]
 
 
-image_id_ignorant = [
+tag_inserted_by_template = [
     ("katuni4ka/tiny-random-llava", lambda idx: "<image>"),
-    (
-        "katuni4ka/tiny-random-qwen2vl",
-        lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    ),
+    ("katuni4ka/tiny-random-llava-next", lambda idx: "<image>"),
+    ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
+]
+
+image_id_ignorant =  tag_inserted_by_template + [
+    ("katuni4ka/tiny-random-internvl2", lambda idx: "<image>\n"),
 ]
 
 
@@ -690,11 +692,12 @@ def model_and_tag(request):
 class TestImageTags:
     @pytest.mark.parametrize(
         "model_and_tag, model_id",
-        [((model_id, tag), model_id) for model_id, tag in image_id_ignorant],
+        [((model_id, tag), model_id) for model_id, tag in tag_inserted_by_template],
         indirect=["model_and_tag"],
     )
     def test_representation(self, model_and_tag, model_id):
         vlm, tag = model_and_tag
+
         generation_config = vlm.get_generation_config()
         generation_config.max_new_tokens = 30
         vlm.set_generation_config(generation_config)
