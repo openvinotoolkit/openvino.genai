@@ -663,6 +663,7 @@ tag_inserted_by_template = [
     ("katuni4ka/tiny-random-llava", lambda idx: "<image>"),
     ("katuni4ka/tiny-random-llava-next", lambda idx: "<image>"),
     ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
+    ("katuni4ka/tiny-random-qwen2.5-vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
 ]
 
 image_id_ignorant =  tag_inserted_by_template + [
