@@ -56,13 +56,11 @@ void extract_q4_1_data(const gguf_tensor& tensor,
     auto weights = static_cast<uint8_t*>(weights_arr.data());
     auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
     auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
-    for (int64_t i = 0; i < scales_arr.get_size(); i++) {
-        scales[i] = ov::float16::from_bits(*((uint16_t*)data));
-        biases[i] = ov::float16::from_bits(*((uint16_t*)data + 1));
-        unpack_32_4(data, weights);
-        weights += 16;
-        data += bytes_per_block;
-    }
+    ov::parallel_for(scales_arr.get_size(), [&](size_t i) {
+        scales[i] = ov::float16::from_bits(*((uint16_t*)(data + i * bytes_per_block)));
+        biases[i] = ov::float16::from_bits(*((uint16_t*)(data + i * bytes_per_block + 1)));
+        unpack_32_4(data + i * bytes_per_block, weights + i * 16);
+    });
 }
 
 // Extracts (weight, scales, biases) from Q8_0 tensors.
