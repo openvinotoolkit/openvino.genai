@@ -16,10 +16,6 @@
 #include "utils.hpp"
 
 namespace ov {
-
-// forward declaration, taken from OpenVINO Dev API
-bool with_cpu_sve();
-
 namespace genai {
 
 std::pair<std::string, Any> streamer(StreamerVariant func) {

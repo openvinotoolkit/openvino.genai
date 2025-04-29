@@ -20,8 +20,8 @@
 namespace ov {
 namespace genai {
 
-const std::string PA_BACKEND = "PA";
-const std::string SDPA_BACKEND = "SDPA";
+extern const std::string PA_BACKEND;
+extern const std::string SDPA_BACKEND;
 
 }  // namespace genai
 }  // namespace ov

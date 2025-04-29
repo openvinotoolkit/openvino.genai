@@ -21,6 +21,16 @@
 
 #include "sampler.hpp"
 
+namespace ov {
+// forward declaration, taken from OpenVINO Dev API
+bool with_cpu_sve();
+
+namespace genai {
+const std::string PA_BACKEND = "PA";
+const std::string SDPA_BACKEND = "SDPA";
+}
+}
+
 namespace {
 
 void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
