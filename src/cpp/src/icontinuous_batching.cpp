@@ -46,6 +46,9 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
     m_history_images.clear();
+    if (m_inputs_embedder) {
+        m_inputs_embedder->finish_chat();
+    }
 };
 
 std::vector<GenerationResult>
@@ -217,7 +220,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
         
         gen_result.perf_metrics.m_evaluated = false;
-        gen_result.perf_metrics.evaluate_statistics();
+        gen_result.perf_metrics.evaluate_statistics(generate_start_time);
 
         results.emplace_back(gen_result);
     }

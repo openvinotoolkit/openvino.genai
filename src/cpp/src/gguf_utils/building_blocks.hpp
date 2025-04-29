@@ -18,7 +18,8 @@ ov::Output<ov::Node> make_lm_head(
     const ov::Output<ov::Node>& input,
     const std::unordered_map<std::string, ov::Tensor>& consts,
     const ov::Output<ov::Node>& embeddings_node,
-    QType qtype);
+    gguf_tensor_type qtype,
+    bool shared_embedding);
 
 ov::Output<ov::Node> make_rms_norm(
     const std::string& key,
@@ -30,7 +31,7 @@ std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_embedding(
     const std::string& key,
     const ov::Output<ov::Node>& input,
     const std::unordered_map<std::string, ov::Tensor>& consts,
-    QType qtype);
+    gguf_tensor_type qtype);
 
 std::tuple<ov::Output<ov::Node>, 
            ov::SinkVector,
@@ -39,6 +40,7 @@ std::tuple<ov::Output<ov::Node>,
            std::shared_ptr<ov::Node>> 
     layer(const std::map<std::string, GGUFMetaData>& configs,
         std::unordered_map<std::string, ov::Tensor>& consts,
+        std::unordered_map<std::string, gguf_tensor_type>& qtypes,
         int layer_idx,
         const ov::Output<ov::Node>& hidden_states,
         const ov::Output<ov::Node>& attn_mask,
