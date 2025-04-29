@@ -5,7 +5,7 @@ from contextlib import contextmanager
 
 
 def new_randn_tensor(
-    shape: Union[Tuple, List],
+    shape: Union[tuple, list],
     generator: Optional[Union[list["torch.Generator"],
                               "torch.Generator"]] = None,
     device: Optional["torch.device"] = None,
