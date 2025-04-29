@@ -64,7 +64,7 @@ tm_mm_embeddings = []
 # Transformers version: v4.40-release 4fdf58afb72b0754da30037fc800b6044e7d9c99
 # Copied from https://github.com/huggingface/transformers/blob/4fdf58afb72b0754da30037fc800b6044e7d9c99/src/transformers/generation/utils.py#L2911
 # Add the function of collecting latency
-def legacy_new_beam_search(
+def new_beam_search_v40(
         self,
         input_ids: torch.LongTensor,
         beam_scorer: BeamScorer,
@@ -795,7 +795,7 @@ def new_beam_search_v51(
 if version.parse(transformers.__version__) >= version.parse("4.51.0"):
     new_beam_search = new_beam_search_v51
 else:
-    new_beam_search = legacy_new_beam_search
+    new_beam_search = new_beam_search_v40
 
 def new_get_multimodal_embeddings(
         self, input_ids, pixel_values=None, attention_mask=None, position_ids=None, **kwargs
