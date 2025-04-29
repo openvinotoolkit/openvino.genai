@@ -20,24 +20,6 @@ public:
 };
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
-    // A model for merging image embeddings (hidden states), rotary_pos_emb and attension_mask.
-    // Inputs:
-    //  - hidden_states: [N, embed_dim]
-    //  - rotary_pos_emb: [?, 40]
-    //  - attention_mask: [1, ?, ?]
-    // Output: [N, hidden_size]
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_merger;
-
-    ov::Tensor m_position_ids;
-    int64_t m_rope_delta = 0;
-    ov::Tensor m_merged_image_embeddings;
-
-    ov::Tensor run_image_embeddings_merger(
-        const std::vector<EncodedImage>& images, 
-        const std::vector<size_t>& images_sequence, 
-        size_t image_id, 
-        const VLMConfig& vlm_config);
-
 public:
     InputsEmbedderQwen2VL(
         const VLMConfig& vlm_config,
@@ -64,6 +46,24 @@ public:
     bool prompt_has_image_tag(const std::string& prompt) const override;
 
 protected:
+    // A model for merging image embeddings (hidden states), rotary_pos_emb and attension_mask.
+    // Inputs:
+    //  - hidden_states: [N, embed_dim]
+    //  - rotary_pos_emb: [?, 40]
+    //  - attention_mask: [1, ?, ?]
+    // Output: [N, hidden_size]
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_merger;
+
+    ov::Tensor m_position_ids;
+    int64_t m_rope_delta = 0;
+    ov::Tensor m_merged_image_embeddings;
+
+    virtual ov::Tensor run_image_embeddings_merger(
+        const std::vector<EncodedImage>& images, 
+        const std::vector<size_t>& images_sequence, 
+        size_t image_id, 
+        const VLMConfig& vlm_config);
+
     ov::Tensor merge_text_and_image_embeddings_qwen2vl(
         const ov::Tensor& input_ids,
         const ov::Tensor& text_embeds, 
