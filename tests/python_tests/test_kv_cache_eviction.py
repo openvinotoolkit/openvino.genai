@@ -172,7 +172,7 @@ def test_dynamic_memory_allocation(params):
                          model="facebook/opt-125m",
                          scheduler_config=params[0],
                          generation_config=params[1],
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 
 @dataclass
