@@ -25,7 +25,7 @@ std::string format(std::string fmt, Args... args) {
     assert(n >= 0 && n < (int)bufferSize - 1);
 
     std::string fmtStr(buffer);
-    delete buffer;
+    delete[] buffer;
     return fmtStr;
 }
 
@@ -427,8 +427,9 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
             consts[format("model.layers[%d].mlp.down_proj.bias", i)] = weights.at(format("blk.%d.ffn_down.bias", i));
         }
 
-        // Quantization parameters
-        if (std::get<int>(config.at("file_type")) != 0 && std::get<int>(config.at("file_type")) != 1) {
+        // Quantization parameters 
+        // If file_type not ALL_F32 = 0 or MOSTLY_F16 = 1, get dequant scales and biases 
+        if (std::get<int>(config.at("file_type")) != 0 && std::get<int>(config.at("file_type")) != 1) { 
             if (weights.count(format("blk.%d.attn_q.scales", i))) {
                 consts[format("model.layers[%d].self_attn.q_proj.scales", i)] = weights.at(format("blk.%d.attn_q.scales", i));
             }
