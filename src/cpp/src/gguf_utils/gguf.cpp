@@ -502,8 +502,7 @@ std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
         }
 
         if (qtype.count(format("blk.%d.ffn_norm.qtype", i))) {
-            qtype_map[format("model.layers[%d].post_attention_layernorm.qtype", i)] =
-                qtype.at(format("blk.%d.ffn_norm.qtype", i));
+            qtype_map[format("model.layers[%d].post_attention_layernorm.qtype", i)] = qtype.at(format("blk.%d.ffn_norm.qtype", i));
         }
 
         // Attention weights
