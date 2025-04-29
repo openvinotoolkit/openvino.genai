@@ -1123,7 +1123,7 @@ class LLMPipeline:
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
             :param inputs: inputs in the form of string, list of strings or tokenized input_ids
-            :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
+            :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
@@ -1220,7 +1220,7 @@ class LLMPipeline:
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
             :param inputs: inputs in the form of string, list of strings or tokenized input_ids
-            :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
+            :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
@@ -1426,13 +1426,13 @@ class RawImageGenerationPerfMetrics:
         Structure with raw performance metrics for each generation before any statistics are calculated.
     
         :param unet_inference_durations: Durations for each unet inference in microseconds.
-        :type unet_inference_durations: List[float]
+        :type unet_inference_durations: list[float]
     
         :param transformer_inference_durations: Durations for each transformer inference in microseconds.
-        :type transformer_inference_durations: List[float]
+        :type transformer_inference_durations: list[float]
     
         :param iteration_durations: Durations for each step iteration in microseconds.
-        :type iteration_durations: List[float]
+        :type iteration_durations: list[float]
     """
     def __init__(self) -> None:
         ...
@@ -1451,31 +1451,31 @@ class RawPerfMetrics:
         Structure with raw performance metrics for each generation before any statistics are calculated.
     
         :param generate_durations: Durations for each generate call in milliseconds.
-        :type generate_durations: List[float]
+        :type generate_durations: list[float]
     
         :param tokenization_durations: Durations for the tokenization process in milliseconds.
-        :type tokenization_durations: List[float]
+        :type tokenization_durations: list[float]
     
         :param detokenization_durations: Durations for the detokenization process in milliseconds.
-        :type detokenization_durations: List[float]
+        :type detokenization_durations: list[float]
     
         :param m_times_to_first_token: Times to the first token for each call in milliseconds.
-        :type m_times_to_first_token: List[float]
+        :type m_times_to_first_token: list[float]
     
         :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
-        :type m_new_token_times: List[double]
+        :type m_new_token_times: list[double]
     
         :param token_infer_durations : Inference time for each token in milliseconds.
-        :type batch_sizes: List[float]
+        :type batch_sizes: list[float]
     
         :param m_batch_sizes: Batch sizes for each generate call.
-        :type m_batch_sizes: List[int]
+        :type m_batch_sizes: list[int]
     
         :param m_durations: Total durations for each generate call in milliseconds.
-        :type m_durations: List[float]
+        :type m_durations: list[float]
     
         :param inference_durations : Total inference duration for each generate call in milliseconds.
-        :type batch_sizes: List[float]
+        :type batch_sizes: list[float]
     """
     def __init__(self) -> None:
         ...
@@ -2116,7 +2116,7 @@ class VLMPipeline:
     def __init__(self, models: dict[str, tuple[str, openvino._pyopenvino.Tensor]], tokenizer: Tokenizer, config_dir_path: os.PathLike, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
         """
                     VLMPipeline class constructor.
-                    models (dict[str, typing.Tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+                    models (dict[str, tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
                     tokenizer (Tokenizer): Genai Tokenizers.
                     config_dir_path (os.PathLike): Path to folder with model configs.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
@@ -2147,7 +2147,7 @@ class VLMPipeline:
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
-            :type images: List[ov.Tensor] or ov.Tensor
+            :type images: list[ov.Tensor] or ov.Tensor
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
@@ -2183,7 +2183,7 @@ class VLMPipeline:
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
-            :type images: List[ov.Tensor] or ov.Tensor
+            :type images: list[ov.Tensor] or ov.Tensor
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
@@ -2223,7 +2223,7 @@ class VLMPipeline:
         
             Expected parameters list:
             image: ov.Tensor - input image,
-            images: List[ov.Tensor] - input images,
+            images: list[ov.Tensor] - input images,
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
         
@@ -2246,7 +2246,7 @@ class VLMRawPerfMetrics:
         Structure with VLM specific raw performance metrics for each generation before any statistics are calculated.
     
         :param prepare_embeddings_durations: Durations of embeddings preparation.
-        :type prepare_embeddings_durations: List[MicroSeconds]
+        :type prepare_embeddings_durations: list[MicroSeconds]
     """
     def __init__(self) -> None:
         ...
@@ -2472,7 +2472,7 @@ class WhisperPipeline:
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         
             :param raw_speech_input: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-            :type raw_speech_input: List[float]
+            :type raw_speech_input: list[float]
         
             :param generation_config: generation_config
             :type generation_config: WhisperGenerationConfig or a dict
@@ -2612,7 +2612,7 @@ class WhisperRawPerfMetrics:
         Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
     
         :param features_extraction_durations: Duration for each features extraction call.
-        :type features_extraction_durations: List[MicroSeconds]
+        :type features_extraction_durations: list[MicroSeconds]
     """
     def __init__(self) -> None:
         ...

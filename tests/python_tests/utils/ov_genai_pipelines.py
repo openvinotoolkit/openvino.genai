@@ -3,7 +3,7 @@
 
 from enum import Enum
 from pathlib import Path
-from typing import List, Callable
+from typing import Callable
 from shutil import rmtree
 
 from optimum.intel.openvino.utils import TemporaryDirectory
@@ -57,7 +57,7 @@ def get_gguf_pipeline_types():
 
 class StreamerWithResults:
     # Return a streamer which accumulates results in order to compare with results returned from generate.
-    results: List[str] = []
+    results: list[str] = []
     def __init__(self):
         self.results = []
 
@@ -65,7 +65,7 @@ class StreamerWithResults:
         self.results.append(subword)
         return False
     
-    def get_results(self) -> List[GenerationResult]:
+    def get_results(self) -> list[GenerationResult]:
         streaming_result = GenerationResult()
         streaming_result.m_generation_ids = [''.join(self.results)]
         return [streaming_result]
@@ -128,7 +128,7 @@ def prepare_generation_config_by_pipe_type(generation_config : GenerationConfig,
     return generation_config
 
 
-def prepare_generation_configs_by_pipe_type(generation_configs : List[GenerationConfig],
+def prepare_generation_configs_by_pipe_type(generation_configs : list[GenerationConfig],
                                             pipeline_type: PipelineType = PipelineType.AUTO):
     return [ prepare_generation_config_by_pipe_type(generation_config, pipeline_type) for generation_config in generation_configs ]
 
@@ -136,7 +136,7 @@ def prepare_generation_configs_by_pipe_type(generation_configs : List[Generation
 def convert_decoded_results_to_generation_result(generate_outputs: DecodedResults,
                                                  num_prompts: int,
                                                  num_return_sequences: int,
-                                                 is_beam_search: bool) -> List[GenerationResult]:
+                                                 is_beam_search: bool) -> list[GenerationResult]:
     index = 0
     generation_results = []
 
@@ -154,21 +154,21 @@ def convert_decoded_results_to_generation_result(generate_outputs: DecodedResult
 
 
 def run_ov_pipeline(models_path: Path,
-                    prompt : str | List[str],
-                    generation_config : GenerationConfig | List[GenerationConfig],
+                    prompt : str | list[str],
+                    generation_config : GenerationConfig | list[GenerationConfig],
                     pipeline_type : PipelineType = PipelineType.AUTO,
                     streamer: StreamerWithResults | Callable | StreamerBase = None,
                     scheduler_config: SchedulerConfig = SchedulerConfig(),
                     draft_model_path: Path = None,
                     ov_config: dict = {},
                     device: str = "CPU"
-    ) -> List[GenerationResult]:
+    ) -> list[GenerationResult]:
     # update the generation config according pipeline_type
     updated_generation_config = None
-    if isinstance(generation_config, List):
+    if isinstance(generation_config, list):
         if pipeline_type != PipelineType.CONTINUOUS_BATCHING:
-            raise Exception(f"\'generation_config\' is \'List[GenerationConfig]\'. This type is supported only for \'PipelineType.CONTINIOUS_BATCHING\'! Please change pipeline_type or generation_config type!")
-        assert isinstance(prompt, List)
+            raise Exception(f"\'generation_config\' is \'list[GenerationConfig]\'. This type is supported only for \'PipelineType.CONTINIOUS_BATCHING\'! Please change pipeline_type or generation_config type!")
+        assert isinstance(prompt, list)
         assert len(generation_config) == len(prompt)
         updated_generation_config = prepare_generation_configs_by_pipe_type(generation_config, pipeline_type)
     else:
@@ -192,7 +192,7 @@ def run_ov_pipeline(models_path: Path,
                                  draft_model_path=draft_model_path)
     generation_results = ov_pipe.generate(prompt, updated_generation_config, streamer)
 
-    # convert results to `List[GenerationResult]`
+    # convert results to `list[GenerationResult]`
     if isinstance(generation_results, DecodedResults):
         assert isinstance(generation_config, GenerationConfig)
         num_prompts = 1 if isinstance(prompt, str) else len(prompt)
@@ -209,7 +209,7 @@ def run_ov_pipeline(models_path: Path,
     return generation_results
 
 
-def is_generation_available(generation_config: GenerationConfig | List[GenerationConfig],
+def is_generation_available(generation_config: GenerationConfig | list[GenerationConfig],
                             pipeline_type: PipelineType):
     if type(generation_config) is GenerationConfig:
         if generation_config.is_beam_search():
@@ -225,11 +225,11 @@ def is_generation_available(generation_config: GenerationConfig | List[Generatio
 
 # TODO: remove `ref` after Generator property is supported by LLMPipeline / VLMPipeline
 def generate_and_compare(model: str,
-                         prompts : str | List[str],
-                         generation_config: List[GenerationConfig] | GenerationConfig | dict,
+                         prompts : str | list[str],
+                         generation_config: list[GenerationConfig] | GenerationConfig | dict,
                          pipeline_type: PipelineType = PipelineType.AUTO,
                          scheduler_config: SchedulerConfig | dict = SchedulerConfig(),
-                         ref : List[List[str]] = None,
+                         ref : list[list[str]] = None,
                          streamer: StreamerWithResults | Callable | StreamerBase = None):
     ov_prompts = prompts if type(prompts) is list else [prompts]
 

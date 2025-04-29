@@ -1,12 +1,12 @@
-from typing import Union, Tuple, List, Optional
+from typing import Union, Optional
 from packaging.version import Version
 import torch
 from contextlib import contextmanager
 
 
 def new_randn_tensor(
-    shape: Union[Tuple, List],
-    generator: Optional[Union[List["torch.Generator"],
+    shape: Union[tuple, list],
+    generator: Optional[Union[list["torch.Generator"],
                               "torch.Generator"]] = None,
     device: Optional["torch.device"] = None,
     dtype: Optional["torch.dtype"] = None,
