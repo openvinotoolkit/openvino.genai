@@ -176,7 +176,7 @@ def run_genai(
 MAX_DATASET_LENGTH = 30
 
 @functools.lru_cache(16)
-def get_whisper_dataset(language: str, long_form: bool) -> List:
+def get_whisper_dataset(language: str, long_form: bool) -> list:
     if not long_form:
         ds = datasets.load_dataset(
             "mozilla-foundation/common_voice_11_0",
