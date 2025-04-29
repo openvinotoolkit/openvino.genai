@@ -177,7 +177,7 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
         return_dict: bool = True,
         tm_list: Optional[list] = None,
         **kwargs,
-    ) -> Union[Tuple, ImagePipelineOutput]:
+    ) -> Union[tuple, ImagePipelineOutput]:
         r'''
         Args:
             image (`torch.Tensor` or `PIL.Image.Image`):

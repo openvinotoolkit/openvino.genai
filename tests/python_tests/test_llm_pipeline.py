@@ -608,7 +608,7 @@ def test_operator_with_streamer_kwargs_batch_throws(model_id):
 #
 
 
-def load_genai_pipe_with_configs(configs: list[Tuple], temp_path):
+def load_genai_pipe_with_configs(configs: list[tuple], temp_path):
     # Load LLMPipeline where all configs are cleared.
     # remove existing jsons from previous tests
     for json_file in temp_path.glob("*.json"):

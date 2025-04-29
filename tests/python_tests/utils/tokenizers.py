@@ -27,7 +27,7 @@ def model_tmp_path(tmpdir_factory):
     yield model_id, Path(temp_path)
 
 
-def delete_rt_info(configs: list[Tuple], temp_path):
+def delete_rt_info(configs: list[tuple], temp_path):
     """rt_info has the highest priority. Delete it to respect configs."""
     core = openvino.Core()
     core.set_property({"ENABLE_MMAP": False})
