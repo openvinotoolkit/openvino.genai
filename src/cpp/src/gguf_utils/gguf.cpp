@@ -245,9 +245,7 @@ std::unordered_map<std::string, GGUFMetaData> load_metadata(gguf_ctx* ctx) {
   return metadata;
 }
 
-std::pair<std::unordered_map<std::string, ov::Tensor>, std::unordered_map<std::string, gguf_tensor_type>> load_arrays(gguf_ctx* ctx) {
-  std::unordered_map<std::string, ov::Tensor> array_map;
-  std::unordered_map<std::string, gguf_tensor_type> qtype_map;
+void load_arrays(gguf_ctx* ctx, std::unordered_map<std::string, ov::Tensor>& array_map, std::unordered_map<std::string, gguf_tensor_type>& qtype_map) {
   gguf_tensor tensor;
 
   auto check_insert = [](const auto& inserted) {
@@ -261,33 +259,88 @@ std::pair<std::unordered_map<std::string, ov::Tensor>, std::unordered_map<std::s
     } else {
       std::string name(tensor.name, tensor.namelen);
       ov::Tensor loaded_array = extract_tensor_data(&tensor); 
-      check_insert(array_map.insert({name, loaded_array}));
+      check_insert(array_map.emplace(name, loaded_array));
 
       constexpr std::string_view weight_suffix = ".weight";
       const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
-      qtype_map.insert({name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type)});
+      qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type));
     }
   }
-
-  return {array_map, qtype_map};
 }
+
+void check_file(std::string file){
+    bool exists;
+    {
+        std::ifstream f(file.c_str());
+        exists = f.good();
+    }
+    OPENVINO_ASSERT(exists, "[load_gguf] Failed to open '", file, "'");
+}
+
+std::vector<std::string> get_all_files(std::string file, int total_num) {
+
+    std::vector<std::string> files;
+    files.push_back(file);
+    
+    size_t length = 5;
+    size_t startPos = file.length() - 19; 
+
+    for (int i = 1; i < total_num; i++)
+    { 
+        std::string new_number = std::to_string(i + 1) ;
+        while (new_number.length() < length) {
+            new_number = "0" + new_number;
+        }
+        file.replace(startPos, length, new_number);
+        check_file(file);
+        files.push_back(file);
+    }
+    return files;
+}
+
 
 GGUFLoad get_gguf_data(const std::string& file) {
-  bool exists;
-  {
-    std::ifstream f(file.c_str());
-    exists = f.good();
-  }
-  OPENVINO_ASSERT(exists, "[load_gguf] Failed to open '", file, "'");
 
-  std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx(gguf_open(file.data()), gguf_close);
-  OPENVINO_ASSERT(ctx, "Failed to open '", file, "' with gguf_open");
+    std::unordered_map<std::string, ov::Tensor> arrays;
+    std::unordered_map<std::string, gguf_tensor_type> qtype;
+   
+    check_file(file);
+    
+    std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx(gguf_open(file.data()), gguf_close);
+    OPENVINO_ASSERT(ctx, "Failed to open '", file, "' with gguf_open");
 
-  auto metadata = load_metadata(ctx.get());
-  auto [arrays, qtype] = load_arrays(ctx.get());
+    // get main config from first file or single file
+    auto metadata = load_metadata(ctx.get());
+    
+    std::string split_flag = "split.count";
+    auto it = metadata.find(split_flag);
 
-  return {metadata, arrays, qtype};
+    if(it == metadata.end()) // single GGUF file
+    {
+        load_arrays(ctx.get(), arrays, qtype);
+        return {metadata, arrays, qtype};
+    } 
+    else // multi GGUF files
+    {     
+        auto total_num_tensor = std::get<ov::Tensor>(metadata.at(split_flag));
+        int total_num =  *(total_num_tensor.data<ov::element_type_traits<ov::element::u16>::value_type>());
+
+        std::vector<std::string> files = get_all_files(file, total_num);
+
+        for (size_t i = 1; i < files.size(); i++)
+        {
+            std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx_i(gguf_open(files.at(i).data()), gguf_close);
+            OPENVINO_ASSERT(ctx_i, "Failed to open '", files.at(i), "' with gguf_open");
+
+            auto metadata_tmp = load_metadata(ctx_i.get());
+            
+            load_arrays(ctx_i.get(), arrays, qtype);
+        }
+        load_arrays(ctx.get(), arrays, qtype);
+        return {metadata, arrays, qtype};
+    }     
 }
+
 
 float metadata_to_float(const std::unordered_map<std::string, GGUFMetaData>& metadata, const std::string& key) {
     auto tensor = std::get<ov::Tensor>(metadata.at(key));

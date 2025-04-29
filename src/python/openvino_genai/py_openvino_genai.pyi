@@ -21,6 +21,12 @@ class Adapter:
                     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
                     path (os.PathLike): Path to adapter file in safetensors format.
         """
+    @typing.overload
+    def __init__(self, safetensor: openvino._pyopenvino.Tensor) -> None:
+        """
+                    Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
+                    safetensor (ov.Tensor): Pre-read LoRA Adapter safetensor.
+        """
 class AdapterConfig:
     """
     Adapter config that defines a combination of LoRA adapters with blending parameters.
@@ -1978,6 +1984,12 @@ class Tokenizer:
         ...
     def get_pad_token_id(self) -> int:
         ...
+    def get_vocab(self) -> dict:
+        """
+        Returns the vocabulary as a Python dictionary with bytes keys and integer values.
+        
+        Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        """
     def set_chat_template(self, chat_template: str) -> None:
         """
         Override a chat_template read from tokenizer_config.json.

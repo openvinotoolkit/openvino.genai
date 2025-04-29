@@ -5,13 +5,13 @@
 #include "openvino/genai/whisper_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (3 > argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> \"<WAV_FILE_PATH>\"");
+    if (argc < 3 || argc > 4) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> \"<WAV_FILE_PATH>\" <DEVICE>");
     }
 
     std::filesystem::path models_path = argv[1];
     std::string wav_file_path = argv[2];
-    std::string device = "CPU";  // GPU, NPU can be used as well
+    std::string device = (argc == 4) ? argv[3] : "CPU";  // Default to CPU if no device is provided
 
     ov::genai::WhisperPipeline pipeline(models_path, device);
 
