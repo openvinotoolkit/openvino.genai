@@ -271,55 +271,10 @@ class CLIPTextModel:
         ...
     def set_adapters(self, adapters: AdapterConfig | None) -> None:
         ...
-class CLIPTextModelWithProjection:
+class CLIPTextModelWithProjection(CLIPTextModel):
     """
     CLIPTextModelWithProjection class.
     """
-    class Config:
-        """
-        This class is used for storing CLIPTextModelWithProjection config.
-        """
-        max_position_embeddings: int
-        num_hidden_layers: int
-        def __init__(self, config_path: os.PathLike) -> None:
-            ...
-    @typing.overload
-    def __init__(self, root_dir: os.PathLike) -> None:
-        """
-                    CLIPTextModelWithProjection class
-                    root_dir (os.PathLike): Model root directory.
-        """
-    @typing.overload
-    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
-        """
-                    CLIPTextModelWithProjection class
-                    root_dir (os.PathLike): Model root directory.
-                    device (str): Device on which inference will be done.
-                    kwargs: Device properties.
-        """
-    @typing.overload
-    def __init__(self, model: CLIPTextModelWithProjection) -> None:
-        """
-        CLIPTextModelWithProjection model
-                    CLIPTextModelWithProjection class
-                    model (CLIPTextModelWithProjection): CLIPTextModelWithProjection model
-        """
-    def compile(self, device: str, **kwargs) -> None:
-        """
-                        Compiles the model.
-                        device (str): Device to run the model on (e.g., CPU, GPU).
-                        kwargs: Device properties.
-        """
-    def get_config(self) -> CLIPTextModelWithProjection.Config:
-        ...
-    def get_output_tensor(self, idx: int) -> openvino._pyopenvino.Tensor:
-        ...
-    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool) -> openvino._pyopenvino.Tensor:
-        ...
-    def reshape(self, batch_size: int) -> CLIPTextModelWithProjection:
-        ...
-    def set_adapters(self, adapters: AdapterConfig | None) -> None:
-        ...
 class CacheEvictionConfig:
     """
     

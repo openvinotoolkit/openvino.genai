@@ -8,7 +8,10 @@
 namespace ov {
 namespace genai {
 
-using CLIPTextModelWithProjection = CLIPTextModel;
+class CLIPTextModelWithProjection : public CLIPTextModel {
+public:
+    using CLIPTextModel::CLIPTextModel;
+};
 
 } // namespace genai
 } // namespace ov
