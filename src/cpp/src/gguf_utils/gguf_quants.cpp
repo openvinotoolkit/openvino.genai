@@ -24,7 +24,7 @@ void unpack_32_4(uint8_t *data, uint8_t *dst)
             y <<= 4;
         }
         dst[j / 2] |= x;
-        dst[8 + j / 2] |= y;
+        dst[8 + j / 2] |= y; // Last 16 weights are in the higher bits
     }
 }
 
@@ -120,7 +120,7 @@ void unpack_256_4(const uint8_t *data, uint8_t *dst)
                 y <<= 4;
             }
             dst[i * 32 + j / 2] |= x;
-            dst[i * 32 + 16 + j / 2] |= y;
+            dst[i * 32 + 16 + j / 2] |= y; // Last 16 weights are in the higher bits
         }
     }
 }
