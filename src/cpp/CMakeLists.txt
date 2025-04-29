@@ -67,6 +67,39 @@ if(ENABLE_GGUF)
     target_include_directories(gguflib PUBLIC "${gguflib_SOURCE_DIR}")
 endif()
 
+if(ENABLE_XGRAMMAR)
+    set(XGRAMMAR_VERSION v0.1.18)
+    set(XGRAMMAR_DIR ${CMAKE_BINARY_DIR}/xgrammar)
+
+    FetchContent_Declare(
+      xgrammar
+      GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
+      GIT_TAG ${XGRAMMAR_VERSION}
+      GIT_SUBMODULES_RECURSE ON
+    )
+
+    set(XGRAMMAR_BUILD_PYTHON_BINDINGS OFF CACHE BOOL "Build Python bindings" FORCE)
+    FetchContent_GetProperties(xgrammar)
+    if(NOT xgrammar_POPULATED)
+        FetchContent_Populate(xgrammar)
+
+        # Modify the config.cmake file directly
+        set(CONFIG_FILE "${xgrammar_SOURCE_DIR}/cmake/config.cmake")
+        if(EXISTS "${CONFIG_FILE}")
+            file(READ "${CONFIG_FILE}" CONFIG_CONTENT)
+            string(REGEX REPLACE "XGRAMMAR_BUILD_PYTHON_BINDINGS ON"
+                                "XGRAMMAR_BUILD_PYTHON_BINDINGS OFF"
+                                MODIFIED_CONFIG "${CONFIG_CONTENT}")
+            file(WRITE "${CONFIG_FILE}" "${MODIFIED_CONFIG}")
+        endif()
+
+        set(XGRAMMAR_BUILD_CXX_TESTS OFF CACHE BOOL "Build CXX tests" FORCE)
+        set(XGRAMMAR_ENABLE_CPPTRACE OFF CACHE BOOL "Enable CPPTrace" FORCE)
+        set(XGRAMMAR_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA" FORCE)
+
+        add_subdirectory("${xgrammar_SOURCE_DIR}" "${xgrammar_BINARY_DIR}" EXCLUDE_FROM_ALL)
+    endif()
+endif()
 # generate version files
 
 configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.hpp.in"
@@ -101,6 +134,12 @@ target_include_directories(${TARGET_NAME_OBJ}
 if(ENABLE_GGUF)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE gguflib)
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_GGUF)
+endif()
+
+if(ENABLE_XGRAMMAR)
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE xgrammar)
+    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_XGRAMMAR)
+    target_include_directories(${TARGET_NAME_OBJ} PRIVATE "${XGRAMMAR_DIR}/include")
 endif()
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
