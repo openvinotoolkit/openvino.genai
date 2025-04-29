@@ -250,7 +250,7 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
         extract_q4_1_data(tensor, weights, scales, biases);
     } else if (tensor.type == GGUF_TYPE_Q8_0) {
         extract_q8_0_data(tensor, weights, scales, biases);
-    } else if (tensor.type == GGUF_TYPE_Q6_K) {
+    } else if (tensor.type == GGUF_TYPE_Q6_K) { //due to WA #2135, this case will not be used, extract_q6_k_data temporarily disabled.
         extract_q6_k_data(tensor, weights, scales, biases);
     } else if (tensor.type == GGUF_TYPE_Q4_K) {
         extract_q4_k_data(tensor, weights, scales, biases);
@@ -269,5 +269,5 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
     check_insert(a.emplace(name_prefix + ".scales", std::move(scales)));
     check_insert(a.emplace(name_prefix + ".biases", std::move(biases)));
 
-    qtype_map.insert({name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type)});
+    qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type));
 }

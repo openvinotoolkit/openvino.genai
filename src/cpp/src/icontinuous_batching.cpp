@@ -55,6 +55,9 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
     m_history_images.clear();
+    if (m_inputs_embedder) {
+        m_inputs_embedder->finish_chat();
+    }
 };
 
 std::vector<GenerationResult>

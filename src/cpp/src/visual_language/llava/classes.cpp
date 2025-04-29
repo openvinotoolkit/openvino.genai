@@ -122,7 +122,7 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
     image_embeds.reserve(images_sequence.size());
     size_t searched_pos = 0;
     for (size_t new_image_id : images_sequence) {
-        image_embeds.push_back(std::move(images.at(new_image_id - m_image_id).resized_source));
+        image_embeds.push_back(images.at(new_image_id - m_image_id).resized_source);
         std::string expanded_tag;
         for (size_t idx = 0; idx < image_embeds.back().get_shape().at(1); ++idx) {
             expanded_tag += image_token;
@@ -134,7 +134,6 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
         unified_prompt.replace(searched_pos, image_token.length(), expanded_tag);
         searched_pos += expanded_tag.length();
     }
-    m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
@@ -152,7 +151,9 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
-    if (!m_is_chat_conversation) {
+    if (m_is_chat_conversation) {
+        m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
+    } else {
         m_image_id = 0;
     }
     return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
@@ -203,6 +204,10 @@ ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(const ov::
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
     std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
     return inputs_embeds;
+}
+
+bool InputsEmbedderLLaVA::prompt_has_image_tag(const std::string& prompt) const {
+    return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(m_vlm_config.im_start) != std::string::npos;
 }
 
 } // namespace ov::genai

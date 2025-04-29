@@ -40,7 +40,7 @@ std::shared_ptr<ov::Model> create_language_model(
     const std::map<std::string, GGUFMetaData>& configs,
     std::unordered_map<std::string, ov::Tensor>& consts,
     std::unordered_map<std::string, gguf_tensor_type>& qtypes,
-    bool shared_embedding = true) {
+    bool shared_embedding = false) {
     // Create input parameters
     auto input_ids = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
