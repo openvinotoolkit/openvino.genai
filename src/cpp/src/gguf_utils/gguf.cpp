@@ -250,7 +250,6 @@ void load_arrays(gguf_ctx* ctx,
 
     while (gguf_get_tensor(ctx, &tensor)) {
         if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q8_0 ||
-            // tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) {
             tensor.type == GGUF_TYPE_Q4_K) {
             gguf_load_quantized(array_map, qtype_map, tensor);
         } else {
@@ -261,7 +260,7 @@ void load_arrays(gguf_ctx* ctx,
             constexpr std::string_view weight_suffix = ".weight";
             const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
             if (tensor.type == GGUF_TYPE_Q6_K) {
-                qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(GGUF_TYPE_F16));
+                qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(GGUF_TYPE_F16)); //WA: Q6_K is not supported by platform because of group size 16, so we use F16 as a workaround
             } else {
                 qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type));
             }
