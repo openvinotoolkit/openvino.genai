@@ -16,6 +16,7 @@ namespace ov {
 namespace genai {
 
 using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
+using Vocab = std::unordered_map<std::string, int64_t>;  // similar to huggingface .get_vocab() output format
 
 struct TokenizedInputs {
     ov::Tensor input_ids;
@@ -25,16 +26,16 @@ struct TokenizedInputs {
 /**
  * @brief The class is used to encode prompts and decode resulting tokens
  *
- * Chat tempalte is initialized from sources in the following order
- * overriding the previos value:
+ * Chat template is initialized from sources in the following order
+ * overriding the previous value:
  * 1. chat_template entry from tokenizer_config.json
  * 2. chat_template entry from processor_config.json
  * 3. chat_template entry from chat_template.json
- * 4. chat_tempalte entry from rt_info section of ov::Model
- * 5. If the tempalte is known to be not supported by GenAI, it's
+ * 4. chat_template entry from rt_info section of ov::Model
+ * 5. If the template is known to be not supported by GenAI, it's
  *     replaced with a simplified supported version.
- * 6. Patch chat_tempalte replacing not supported instructions with
- *     eqvivalents.
+ * 6. Patch chat_template replacing not supported instructions with
+ *     equivalents.
  * 7. If the template was not in the list of not supported GenAI
  *     templates from (5), it's blindly replaced with
  *     simplified_chat_template entry from rt_info section of
@@ -252,6 +253,20 @@ public:
     std::string get_bos_token() const;
     std::string get_eos_token() const;
     std::string get_pad_token() const;
+
+    /**
+     * @brief Get the vocabulary of the tokenizer.
+     *
+     * This function retrieves the vocabulary from the detokenizer, which maps
+     * token strings to their corresponding integer IDs. Note that some token strings
+     * may not be valid UTF-8 encoded. The resulting vocabulary may differ from the
+     * original tokenizer's vocabulary due to optimizations during conversion (space symbol
+     * swaps, byte fallback reverse, and other preprocessing changes).
+     *
+     * @return A map of string tokens to int64_t IDs.
+     * @throws Exception if the detokenizer is not available.
+     */
+    Vocab get_vocab() const;
 
     Tokenizer() = default;
     ~Tokenizer();

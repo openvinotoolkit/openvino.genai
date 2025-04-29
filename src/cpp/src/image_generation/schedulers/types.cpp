@@ -49,9 +49,11 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Schedu
             param = Scheduler::LCM;
         else if (scheduler_type_str == "DDIMScheduler")
             param = Scheduler::DDIM;
-        else if (scheduler_type_str == "LMSDiscreteScheduler")
+        else if (scheduler_type_str == "LMSDiscreteScheduler") {
+            OPENVINO_SUPPRESS_DEPRECATED_START
             param = Scheduler::LMS_DISCRETE;
-        else if (scheduler_type_str == "EulerDiscreteScheduler")
+            OPENVINO_SUPPRESS_DEPRECATED_END
+        } else if (scheduler_type_str == "EulerDiscreteScheduler")
             param = Scheduler::EULER_DISCRETE;
         else if (scheduler_type_str == "FlowMatchEulerDiscreteScheduler")
             param = Scheduler::FLOW_MATCH_EULER_DISCRETE;
@@ -131,12 +133,14 @@ std::ostream& operator<<(std::ostream& os, const ov::genai::Scheduler::Type& sch
     switch (scheduler_type) {
     case ov::genai::Scheduler::Type::LCM:
         return os << "LCMScheduler";
-    case ov::genai::Scheduler::Type::LMS_DISCRETE:
-        return os << "LMSDiscreteScheduler";
     case ov::genai::Scheduler::Type::DDIM:
         return os << "DDIMScheduler";
     case ov::genai::Scheduler::Type::EULER_DISCRETE:
         return os << "EulerDiscreteScheduler";
+    case ov::genai::Scheduler::Type::EULER_ANCESTRAL_DISCRETE:
+        return os << "EulerAncestralScheduler";
+    case ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE:
+        return os << "FlowMatchEulerDiscreteScheduler";
     case ov::genai::Scheduler::Type::AUTO:
         return os << "AutoScheduler";
     default:

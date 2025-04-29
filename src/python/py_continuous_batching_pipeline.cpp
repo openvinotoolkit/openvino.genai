@@ -256,15 +256,18 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
-        .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
+        .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, 
+                const std::map<std::string, py::object>& tokenizer_plugin_config, const std::map<std::string, py::object>& inputs_embedder_plugin_config) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, pyutils::properties_to_any_map(llm_plugin_config), pyutils::properties_to_any_map(tokenizer_plugin_config));
+            return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, pyutils::properties_to_any_map(llm_plugin_config), 
+                pyutils::properties_to_any_map(tokenizer_plugin_config), pyutils::properties_to_any_map(inputs_embedder_plugin_config));
         }),
         py::arg("models_path"),
         py::arg("scheduler_config"),
         py::arg("device"),
         py::arg("properties") = ov::AnyMap({}),
-        py::arg("tokenizer_properties") = ov::AnyMap({}))
+        py::arg("tokenizer_properties") = ov::AnyMap({}),
+        py::arg("vision_encoder_properties") = ov::AnyMap({}))
 
         .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const py::kwargs& kwargs) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
@@ -338,7 +341,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const pyutils::PyBindStreamerVariant& py_streamer
             ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
                 ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-                std::vector<ov::genai::GenerationResult> generated_results;
+                std::vector<ov::genai::VLMDecodedResults> generated_results;
                 {
                     py::gil_scoped_release rel;
                     generated_results = pipe.generate(prompts, images, generation_config, streamer);

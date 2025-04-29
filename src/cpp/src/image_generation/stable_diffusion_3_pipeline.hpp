@@ -47,9 +47,11 @@ void padding_right(ov::Tensor src, ov::Tensor res) {
 // returns tensor, which shares data with input tensor and pointing to a given batch slice
 ov::Tensor get_tensor_batch(const ov::Tensor input, size_t batch_id) {
     ov::Shape target_shape = input.get_shape();
+
+    OPENVINO_ASSERT(target_shape.at(0) > batch_id, "Cannot get batch with id ", batch_id, ", total batch size is ", target_shape.at(0));
     target_shape[0] = 1;
 
-    void * target_data = input.data<float>() + batch_id * ov::shape_size(target_shape);
+    auto target_data = input.data<float>() + batch_id * ov::shape_size(target_shape);
     ov::Tensor target_tensor(input.get_element_type(), target_shape, target_data);
 
     return target_tensor;
@@ -233,26 +235,36 @@ public:
             do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
         m_clip_text_encoder_1->reshape(batch_size_multiplier);
         m_clip_text_encoder_2->reshape(batch_size_multiplier);
+
+        int transformer_tokenizer_max_length = m_clip_text_encoder_1->get_config().max_position_embeddings;
         if (m_t5_text_encoder) {
             m_t5_text_encoder->reshape(batch_size_multiplier, m_generation_config.max_sequence_length);
+            transformer_tokenizer_max_length += m_generation_config.max_sequence_length;
         }
+        else {
+            transformer_tokenizer_max_length *= 2;
+        }
+
         m_transformer->reshape(num_images_per_prompt * batch_size_multiplier,
                                height,
                                width,
-                               m_clip_text_encoder_1->get_config().max_position_embeddings);
+                               transformer_tokenizer_max_length);
         m_vae->reshape(num_images_per_prompt, height, width);
     }
 
-    void compile(const std::string& device, const ov::AnyMap& properties) override {
+    void compile(const std::string& text_encode_device,
+                 const std::string& denoise_device,
+                 const std::string& vae_device,
+                 const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
 
-        m_clip_text_encoder_1->compile(device, properties);
-        m_clip_text_encoder_2->compile(device, properties);
+        m_clip_text_encoder_1->compile(text_encode_device, properties);
+        m_clip_text_encoder_2->compile(text_encode_device, properties);
         if (m_t5_text_encoder) {
-            m_t5_text_encoder->compile(device, properties);
+            m_t5_text_encoder->compile(text_encode_device, properties);
         }
-        m_transformer->compile(device, properties);
-        m_vae->compile(device, properties);
+        m_transformer->compile(denoise_device, properties);
+        m_vae->compile(vae_device, properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -302,7 +314,7 @@ public:
                     .count();
             m_perf_metrics.encoder_inference_duration["text_encode_3"] = infer_duration;
         } else {
-            ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
+            ov::Shape t5_prompt_embed_shape = {batch_size_multiplier,
                                                m_clip_text_encoder_1->get_config().max_position_embeddings,
                                                transformer_config.joint_attention_dim};
             text_encoder_3_output = ov::Tensor(ov::element::f32, t5_prompt_embed_shape);
@@ -365,7 +377,7 @@ public:
             ov::Tensor negative_pooled_prompt_2_embed_out = get_tensor_batch(text_encoder_2_output, 0);
             ov::Tensor negative_prompt_2_embed_out = get_tensor_batch(text_encoder_2_hidden_state, 0);
             ov::Tensor negative_t5_prompt_embed_out = get_tensor_batch(text_encoder_3_output, 0);
-            
+
             ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed,
                 negative_prompt_2_embed, negative_t5_prompt_embed;
             if (generation_config.num_images_per_prompt == 1) {

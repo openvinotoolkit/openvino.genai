@@ -22,7 +22,7 @@ ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_
 
     OPENVINO_ASSERT(latents.get_size() == permuted_latents.get_size(), "Incorrect target shape, tensors must have the same sizes");
 
-    float* src_data = latents.data<float>();
+    auto src_data = latents.data<float>();
     float* dst_data = permuted_latents.data<float>();
 
     // Permute to (0, 2, 4, 1, 3, 5)
@@ -109,7 +109,7 @@ namespace genai {
 
 class FluxPipeline : public DiffusionPipeline {
 public:
-    FluxPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) : DiffusionPipeline(pipeline_type) {
+    FluxPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) : FluxPipeline(pipeline_type) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -153,15 +153,19 @@ public:
             OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
+        const std::string class_name = data["_class_name"].get<std::string>();
+        OPENVINO_ASSERT(!is_inpainting_model() || class_name == "FluxFillPipeline",
+                        "inpainting model is not currently supported by Flux InpaintingPipeline. Please, contact OpenVINO GenAI developers.");
+
         // initialize generation config
-        initialize_generation_config(data["_class_name"].get<std::string>());
+        initialize_generation_config(class_name);
     }
 
     FluxPipeline(PipelineType pipeline_type,
                  const std::filesystem::path& root_dir,
                  const std::string& device,
                  const ov::AnyMap& properties)
-        : DiffusionPipeline(pipeline_type) {
+        : FluxPipeline(pipeline_type) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -207,8 +211,12 @@ public:
             OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
+        const std::string class_name = data["_class_name"].get<std::string>();
+        OPENVINO_ASSERT(!is_inpainting_model() || class_name == "FluxFillPipeline",
+                        "inpainting model is not currently supported by Flux InpaintingPipeline. Please, contact OpenVINO GenAI developers.");
+
         // initialize generation config
-        initialize_generation_config(data["_class_name"].get<std::string>());
+        initialize_generation_config(class_name);
         update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
@@ -217,16 +225,18 @@ public:
                  const T5EncoderModel& t5_text_model,
                  const FluxTransformer2DModel& transformer,
                  const AutoencoderKL& vae)
-        : DiffusionPipeline(pipeline_type) {
+        : FluxPipeline(pipeline_type) {
         m_clip_text_encoder = std::make_shared<CLIPTextModel>(clip_text_model);
         m_t5_text_encoder = std::make_shared<T5EncoderModel>(t5_text_model);
         m_vae = std::make_shared<AutoencoderKL>(vae);
         m_transformer = std::make_shared<FluxTransformer2DModel>(transformer);
         initialize_generation_config("FluxPipeline");
+
+        OPENVINO_ASSERT(!is_inpainting_model(), "inpainting model is not currently supported by Flux InpaintingPipeline. Please, contact OpenVINO GenAI developers.");
     }
 
-    FluxPipeline(PipelineType pipeline_type, const FluxPipeline& pipe) :
-        DiffusionPipeline(pipeline_type) {
+    FluxPipeline(PipelineType pipeline_type, const FluxPipeline& pipe)
+        : FluxPipeline(pipeline_type) {
         OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
             pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
 
@@ -247,13 +257,16 @@ public:
         m_vae->reshape(num_images_per_prompt, height, width);
     }
 
-    void compile(const std::string& device, const ov::AnyMap& properties) override {
+    void compile(const std::string& text_encode_device,
+                 const std::string& denoise_device,
+                 const std::string& vae_device,
+                 const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
         auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
-        m_clip_text_encoder->compile(device, *updated_properties);
-        m_t5_text_encoder->compile(device, *updated_properties);
-        m_vae->compile(device, *updated_properties);
-        m_transformer->compile(device, *updated_properties);
+        m_clip_text_encoder->compile(text_encode_device, *updated_properties);
+        m_t5_text_encoder->compile(text_encode_device, *updated_properties);
+        m_vae->compile(vae_device, *updated_properties);
+        m_transformer->compile(denoise_device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -382,21 +395,6 @@ public:
             masked_image_data[i + 2 * plane_size] = mask_condition_data[i] < 0.5f ? processed_image_data[i + 2 * plane_size] : 0.0f;
         }
 
-        ov::Tensor masked_image_latent;
-        // TODO: support is_inpainting_model() == true
-        // auto encode_start = std::chrono::steady_clock::now();
-        // masked_image_latent = m_vae->encode(masked_image, generation_config.generator);
-        // m_perf_metrics.vae_encoder_inference_duration +=
-        //     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - encode_start)
-        //         .count();
-        // // masked_image_latents = (masked_image_latents - self.vae.config.shift_factor) * self.vae.config.scaling_factor
-        // float * masked_image_latent_data = masked_image_latent.data<float>();
-        // for (size_t i = 0; i < masked_image_latent.get_size(); ++i) {
-        //     masked_image_latent_data[i] = (masked_image_latent_data[i] - m_vae->get_config().shift_factor) * m_vae->get_config().scaling_factor;
-        // }
-        // masked_image_latent = pack_latents(masked_image_latent, generation_config.num_images_per_prompt, num_channels_latents, height, width);
-
-        // mask.repeat(1, num_channels_latents, 1, 1)
         auto repeat_mask = [](const ov::Tensor& mask, size_t num_channels_latents) -> ov::Tensor {
             const ov::Shape& mask_shape = mask.get_shape();
             OPENVINO_ASSERT(mask_shape.size() == 4 && mask_shape[1] == 1, "Mask must have shape (batch_size, 1, height, width)");
@@ -425,6 +423,7 @@ public:
         ov::Tensor repeated_mask = repeat_mask(mask, num_channels_latents);
         ov::Tensor mask_packed = pack_latents(repeated_mask, generation_config.num_images_per_prompt, num_channels_latents, height, width);
 
+        ov::Tensor masked_image_latent;
         return std::make_tuple(mask_packed, masked_image_latent);
     }
 
@@ -535,7 +534,10 @@ public:
         return m_perf_metrics;
     }
 
-private:
+protected:
+    explicit FluxPipeline(PipelineType pipeline_type) :
+        DiffusionPipeline(pipeline_type) {}
+
     void compute_dim(int64_t & generation_config_value, ov::Tensor initial_image, int dim_idx) {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
@@ -566,6 +568,10 @@ private:
                 m_generation_config.num_inference_steps = 28;
                 m_generation_config.strength = 0.6f;
             }
+            m_generation_config.max_sequence_length = 512;
+        } else if (class_name == "FluxFillPipeline" && m_pipeline_type == PipelineType::INPAINTING) {
+            m_generation_config.guidance_scale = 30.f;
+            m_generation_config.num_inference_steps = 50;
             m_generation_config.max_sequence_length = 512;
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
@@ -611,7 +617,7 @@ private:
                        size_t inference_step) override {
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
         OPENVINO_ASSERT(image_latent.get_shape() == latents.get_shape(),
-                        "Shapes for current", latents.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
+                        "Shapes for current ", latents.get_shape(), " and initial image latents ", image_latent.get_shape(), " must match");
 
         ov::Tensor init_latents_proper(image_latent.get_element_type(), image_latent.get_shape());
         image_latent.copy_to(init_latents_proper);

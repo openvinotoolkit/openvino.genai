@@ -30,7 +30,7 @@ if(UNIX AND NOT (APPLE OR ANDROID OR CYGWIN))
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2025.1.0.0
+        VERSION 2025.2.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
@@ -41,12 +41,14 @@ endif()
 
 # Looking for OpenVINO in the python distribution. It doesn't work for cross-compiling build
 if(NOT CMAKE_CROSSCOMPILING)
-    find_package(Python3 REQUIRED)
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
-        OUTPUT_VARIABLE OpenVINO_DIR_PY
-        ERROR_QUIET
-    )
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        execute_process(
+            COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
+            OUTPUT_VARIABLE OpenVINO_DIR_PY
+            ERROR_QUIET
+        )
+    endif()
 endif()
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
@@ -105,7 +107,7 @@ if(NOT DEFINED CPACK_ARCHIVE_COMPONENT_INSTALL)
 endif()
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 # Workaround https://gitlab.kitware.com/cmake/cmake/-/issues/2614
-set(CPACK_COMPONENTS_ALL core_genai core_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_docs)
+set(CPACK_COMPONENTS_ALL core_genai core_genai_dev core_c_genai core_c_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_docs)
 if(ENABLE_PYTHON)
     list(APPEND CPACK_COMPONENTS_ALL pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
 endif()
@@ -114,5 +116,8 @@ if(ENABLE_JS)
 endif()
 if(WIN32 AND NOT DEFINED CPACK_GENERATOR)
     set(CPACK_GENERATOR "ZIP")
+endif()
+if(CPACK_GENERATOR STREQUAL "NPM")
+    set(CPACK_GENERATOR "TGZ")
 endif()
 include(CPack)

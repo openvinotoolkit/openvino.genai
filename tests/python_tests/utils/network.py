@@ -1,17 +1,17 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import requests
 import time
 import logging
 from huggingface_hub.utils import HfHubHTTPError
 from subprocess import CalledProcessError # nosec B404
+from requests.exceptions import RequestException
 
 # Configure the logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def retry_request(func, retries=5):
+def retry_request(func, retries=7):
     """
     Retries a function that makes a request up to a specified number of times.
 
@@ -25,6 +25,7 @@ def retry_request(func, retries=5):
     network_error_patterns = [
         "ConnectionError",
         "Timeout",
+        "Time-out",
         "ServiceUnavailable",
         "InternalServerError"
     ]
@@ -32,7 +33,7 @@ def retry_request(func, retries=5):
     for attempt in range(retries):
         try:
             return func()
-        except (CalledProcessError, requests.exceptions.ConnectionError, requests.exceptions.Timeout, HfHubHTTPError) as e:
+        except (CalledProcessError, RequestException, HfHubHTTPError) as e:
             if isinstance(e, CalledProcessError):
                 if any(pattern in e.stderr for pattern in network_error_patterns):
                     logger.warning(f"CalledProcessError occurred: {e.stderr}")

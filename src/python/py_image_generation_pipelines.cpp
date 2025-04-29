@@ -90,7 +90,7 @@ auto image_generation_perf_metrics_docstring = R"(
     If mean and std were already calculated, getters return cached values.
 
     :param get_text_encoder_infer_duration: Returns the inference duration of every text encoder in milliseconds.
-    :type get_text_encoder_infer_duration: Dict[str, float]
+    :type get_text_encoder_infer_duration: dict[str, float]
 
     :param get_vae_encoder_infer_duration: Returns the inference duration of vae encoder in milliseconds.
     :type get_vae_encoder_infer_duration: float
@@ -276,15 +276,18 @@ void init_image_generation_pipelines(py::module_& m) {
     init_autoencoder_kl(m);
 
     auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.");
-    py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
+    auto scheduler_enum = py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
         .value("AUTO", ov::genai::Scheduler::Type::AUTO)
         .value("LCM", ov::genai::Scheduler::Type::LCM)
-        .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)
         .value("DDIM", ov::genai::Scheduler::Type::DDIM)
         .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
         .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE)
         .value("PNDM", ov::genai::Scheduler::Type::PNDM)
         .value("EULER_ANCESTRAL_DISCRETE", ov::genai::Scheduler::Type::EULER_ANCESTRAL_DISCRETE);
+    OPENVINO_SUPPRESS_DEPRECATED_START
+    scheduler_enum
+        .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE);
+    OPENVINO_SUPPRESS_DEPRECATED_END
     image_generation_scheduler.def_static("from_config",
         &ov::genai::Scheduler::from_config,
         py::arg("scheduler_config_path"),
@@ -415,6 +418,30 @@ void init_image_generation_pipelines(py::module_& m) {
                 kwargs: Device properties.
             )")
         .def(
+            "compile",
+            [](ov::genai::Text2ImagePipeline& pipe,
+                const std::string& text_encode_device,
+                const std::string& denoise_device,
+                const std::string& vae_device,
+                const py::kwargs& kwargs
+            ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(text_encode_device, denoise_device, vae_device, map);
+                }
+            },
+            py::arg("text_encode_device"), "device to run the text encoder(s) on",
+            py::arg("denoise_device"), "device to run denoise steps on",
+            py::arg("vae_device"), "device to run vae decoder on",
+            R"(
+                Compiles the model.
+                text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                denoise_device (str): Device to run denoise steps on.
+                vae_device (str): Device to run vae decoder on.
+                kwargs: Device properties.
+            )")
+        .def(
             "generate",
             [](ov::genai::Text2ImagePipeline& pipe,
                 const std::string& prompt,
@@ -498,6 +525,30 @@ void init_image_generation_pipelines(py::module_& m) {
                 kwargs: Device properties.
             )")
         .def(
+            "compile",
+            [](ov::genai::Image2ImagePipeline& pipe,
+                const std::string& text_encode_device,
+                const std::string& denoise_device,
+                const std::string& vae_device,
+                const py::kwargs& kwargs
+            ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(text_encode_device, denoise_device, vae_device, map);
+                }
+            },
+            py::arg("text_encode_device"), "device to run the text encoder(s) on",
+            py::arg("denoise_device"), "device to run denoise steps on",
+            py::arg("vae_device"), "device to run vae encoder / decoder on",
+            R"(
+                Compiles the model.
+                text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                denoise_device (str): Device to run denoise steps on.
+                vae_device (str): Device to run vae encoder / decoder on.
+                kwargs: Device properties.
+            )")
+        .def(
             "generate",
             [](ov::genai::Image2ImagePipeline& pipe,
                 const std::string& prompt,
@@ -558,6 +609,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_static("latent_consistency_model", &ov::genai::InpaintingPipeline::latent_consistency_model, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
         .def_static("stable_diffusion_xl", &ov::genai::InpaintingPipeline::stable_diffusion_xl, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("clip_text_model_with_projection"), py::arg("unet"), py::arg("vae"))
         .def_static("flux", &ov::genai::InpaintingPipeline::flux, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
+        .def_static("flux_fill", &ov::genai::InpaintingPipeline::flux, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
         .def_static("stable_diffusion_3", py::overload_cast<const std::shared_ptr<ov::genai::Scheduler>&, const ov::genai::CLIPTextModelWithProjection&, const ov::genai::CLIPTextModelWithProjection&, const ov::genai::T5EncoderModel&,
                                                             const ov::genai::SD3Transformer2DModel&, const ov::genai::AutoencoderKL&>(&ov::genai::InpaintingPipeline::stable_diffusion_3),
             py::arg("scheduler"), py::arg("clip_text_model_1"), py::arg("clip_text_model_2"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
@@ -580,6 +632,30 @@ void init_image_generation_pipelines(py::module_& m) {
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
+            )")
+        .def(
+            "compile",
+            [](ov::genai::InpaintingPipeline& pipe,
+                const std::string& text_encode_device,
+                const std::string& denoise_device,
+                const std::string& vae_device,
+                const py::kwargs& kwargs
+            ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(text_encode_device, denoise_device, vae_device, map);
+                }
+            },
+            py::arg("text_encode_device"), "device to run the text encoder(s) on",
+            py::arg("denoise_device"), "device to run denoise steps on",
+            py::arg("vae_device"), "device to run vae encoder / decoder on",
+            R"(
+                Compiles the model.
+                text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                denoise_device (str): Device to run denoise steps on.
+                vae_device (str): Device to run vae encoder / decoder on.
                 kwargs: Device properties.
             )")
         .def(

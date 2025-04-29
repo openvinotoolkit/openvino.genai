@@ -21,6 +21,12 @@ class Adapter:
                     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
                     path (os.PathLike): Path to adapter file in safetensors format.
         """
+    @typing.overload
+    def __init__(self, safetensor: openvino._pyopenvino.Tensor) -> None:
+        """
+                    Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
+                    safetensor (ov.Tensor): Pre-read LoRA Adapter safetensor.
+        """
 class AdapterConfig:
     """
     Adapter config that defines a combination of LoRA adapters with blending parameters.
@@ -371,7 +377,7 @@ class ContinuousBatchingPipeline:
     This class is used for generation with LLMs with continuous batchig
     """
     @typing.overload
-    def __init__(self, models_path: os.PathLike, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}) -> None:
+    def __init__(self, models_path: os.PathLike, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}, vision_encoder_properties: dict[str, typing.Any] = {}) -> None:
         ...
     @typing.overload
     def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
@@ -835,10 +841,20 @@ class Image2ImagePipeline:
     @typing.overload
     def __init__(self, pipe: InpaintingPipeline) -> None:
         ...
+    @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                        denoise_device (str): Device to run denoise steps on.
+                        vae_device (str): Device to run vae encoder / decoder on.
                         kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -929,7 +945,7 @@ class ImageGenerationPerfMetrics:
         If mean and std were already calculated, getters return cached values.
     
         :param get_text_encoder_infer_duration: Returns the inference duration of every text encoder in milliseconds.
-        :type get_text_encoder_infer_duration: Dict[str, float]
+        :type get_text_encoder_infer_duration: dict[str, float]
     
         :param get_vae_encoder_infer_duration: Returns the inference duration of vae encoder in milliseconds.
         :type get_vae_encoder_infer_duration: float
@@ -1004,6 +1020,9 @@ class InpaintingPipeline:
     def flux(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
         ...
     @staticmethod
+    def flux_fill(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @staticmethod
     def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
         ...
     @staticmethod
@@ -1037,10 +1056,20 @@ class InpaintingPipeline:
     @typing.overload
     def __init__(self, pipe: Image2ImagePipeline) -> None:
         ...
+    @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                        denoise_device (str): Device to run denoise steps on.
+                        vae_device (str): Device to run vae encoder / decoder on.
                         kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -1097,13 +1126,13 @@ class LLMPipeline:
             :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in encoded, or decoded form depending on inputs type
             :rtype: DecodedResults, EncodedResults, str
@@ -1174,7 +1203,7 @@ class LLMPipeline:
                     kwargs: Device properties.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer, device: str, generation_config: GenerationConfig = ..., **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
         """
                     LLMPipeline class constructor.
                     model (str): Pre-read model.
@@ -1194,13 +1223,13 @@ class LLMPipeline:
             :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in encoded, or decoded form depending on inputs type
             :rtype: DecodedResults, EncodedResults, str
@@ -1538,8 +1567,6 @@ class Scheduler:
         
           LCM
         
-          LMS_DISCRETE
-        
           DDIM
         
           EULER_DISCRETE
@@ -1549,16 +1576,18 @@ class Scheduler:
           PNDM
         
           EULER_ANCESTRAL_DISCRETE
+        
+          LMS_DISCRETE
         """
         AUTO: typing.ClassVar[Scheduler.Type]  # value = <Type.AUTO: 0>
-        DDIM: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 3>
-        EULER_ANCESTRAL_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_ANCESTRAL_DISCRETE: 7>
-        EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_DISCRETE: 4>
-        FLOW_MATCH_EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.FLOW_MATCH_EULER_DISCRETE: 5>
+        DDIM: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 2>
+        EULER_ANCESTRAL_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_ANCESTRAL_DISCRETE: 6>
+        EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_DISCRETE: 3>
+        FLOW_MATCH_EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.FLOW_MATCH_EULER_DISCRETE: 4>
         LCM: typing.ClassVar[Scheduler.Type]  # value = <Type.LCM: 1>
-        LMS_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.LMS_DISCRETE: 2>
-        PNDM: typing.ClassVar[Scheduler.Type]  # value = <Type.PNDM: 6>
-        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>, 'PNDM': <Type.PNDM: 6>, 'EULER_ANCESTRAL_DISCRETE': <Type.EULER_ANCESTRAL_DISCRETE: 7>}
+        LMS_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 2>
+        PNDM: typing.ClassVar[Scheduler.Type]  # value = <Type.PNDM: 5>
+        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'DDIM': <Type.DDIM: 2>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 3>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 4>, 'PNDM': <Type.PNDM: 5>, 'EULER_ANCESTRAL_DISCRETE': <Type.EULER_ANCESTRAL_DISCRETE: 6>, 'LMS_DISCRETE': <Type.DDIM: 2>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -1809,10 +1838,20 @@ class Text2ImagePipeline:
     @typing.overload
     def __init__(self, pipe: InpaintingPipeline) -> None:
         ...
+    @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
+                        denoise_device (str): Device to run denoise steps on.
+                        vae_device (str): Device to run vae decoder on.
                         kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -1882,16 +1921,16 @@ class Tokenizer:
     
         The class is used to encode prompts and decode resulting tokens
     
-        Chat tempalte is initialized from sources in the following order
-        overriding the previos value:
+        Chat template is initialized from sources in the following order
+        overriding the previous value:
         1. chat_template entry from tokenizer_config.json
         2. chat_template entry from processor_config.json
         3. chat_template entry from chat_template.json
-        4. chat_tempalte entry from rt_info section of openvino.Model
-        5. If the tempalte is known to be not supported by GenAI, it's
+        4. chat_template entry from rt_info section of openvino.Model
+        5. If the template is known to be not supported by GenAI, it's
             replaced with a simplified supported version.
-        6. Patch chat_tempalte replacing not supported instructions with
-            eqvivalents.
+        6. Patch chat_template replacing not supported instructions with
+            equivalents.
         7. If the template was not in the list of not supported GenAI
             templates from (5), it's blindly replaced with
             simplified_chat_template entry from rt_info section of
@@ -1945,6 +1984,12 @@ class Tokenizer:
         ...
     def get_pad_token_id(self) -> int:
         ...
+    def get_vocab(self) -> dict:
+        """
+        Returns the vocabulary as a Python dictionary with bytes keys and integer values.
+        
+        Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        """
     def set_chat_template(self, chat_template: str) -> None:
         """
         Override a chat_template read from tokenizer_config.json.
@@ -2059,12 +2104,23 @@ class VLMPipeline:
     """
     This class is used for generation with VLMs
     """
+    @typing.overload
     def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
         """
-        device on which inference will be done
                     VLMPipeline class constructor.
                     models_path (os.PathLike): Path to the folder with exported model files.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+                    kwargs: Device properties
+        """
+    @typing.overload
+    def __init__(self, models: dict[str, tuple[str, openvino._pyopenvino.Tensor]], tokenizer: Tokenizer, config_dir_path: os.PathLike, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
+        """
+                    VLMPipeline class constructor.
+                    models (dict[str, typing.Tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+                    tokenizer (Tokenizer): Genai Tokenizers.
+                    config_dir_path (os.PathLike): Path to folder with model configs.
+                    device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+                    generation_config (GenerationConfig | None): Device properties.
                     kwargs: Device properties
         """
     def finish_chat(self) -> None:
@@ -2076,18 +2132,31 @@ class VLMPipeline:
         
             :param prompt: input prompt
             :type prompt: str
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            InternVL2: <image>\\n
+            llava-1.5-7b-hf: <image>
+            LLaVA-NeXT: <image>
+            MiniCPM-V-2_6: (<image>./</image>)\\n
+            Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            If the prompt doesn't contain image tags, but images are
+            provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
             :type images: List[ov.Tensor] or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -2099,18 +2168,31 @@ class VLMPipeline:
         
             :param prompt: input prompt
             :type prompt: str
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            InternVL2: <image>\\n
+            llava-1.5-7b-hf: <image>
+            LLaVA-NeXT: <image>
+            MiniCPM-V-2_6: (<image>./</image>)\\n
+            Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            If the prompt doesn't contain image tags, but images are
+            provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
             :type images: List[ov.Tensor] or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -2121,6 +2203,20 @@ class VLMPipeline:
             Generates sequences for VLMs.
         
             :param prompt: input prompt
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            InternVL2: <image>\\n
+            llava-1.5-7b-hf: <image>
+            LLaVA-NeXT: <image>
+            MiniCPM-V-2_6: (<image>./</image>)\\n
+            Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            If the prompt doesn't contain image tags, but images are
+            provided, the tags are prepended to the prompt.
+        
             :type prompt: str
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
@@ -2240,7 +2336,7 @@ class WhisperGenerationConfig(GenerationConfig):
         :type language: Optional[str]
     
         :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
-        :type lang_to_id: Dict[str, int]
+        :type lang_to_id: dict[str, int]
     
         :param task: Task to use for generation, either “translate” or “transcribe”
         :type task: int
@@ -2379,14 +2475,14 @@ class WhisperPipeline:
             :type raw_speech_input: List[float]
         
             :param generation_config: generation_config
-            :type generation_config: WhisperGenerationConfig or a Dict
+            :type generation_config: WhisperGenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
                              Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in decoded form
             :rtype: WhisperDecodedResults
@@ -2427,7 +2523,7 @@ class WhisperPipeline:
             :type language: Optional[str]
         
             :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
-            :type lang_to_id: Dict[str, int]
+            :type lang_to_id: dict[str, int]
         
             :param task: Task to use for generation, either “translate” or “transcribe”
             :type task: int

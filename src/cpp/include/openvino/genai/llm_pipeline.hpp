@@ -14,6 +14,7 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"
+#include "openvino/genai/common_types.hpp"
 
 namespace ov {
 namespace genai {
@@ -262,7 +263,7 @@ public:
 
     /**
     * @brief start chat with keeping history in kv cache.
-    * Turns on keeping KV cache between generate calls and automatic applying of chat templates.
+    * Turns on keeping KV cache between generate calls.
     * In case if beam search is used, KV cache is kept for the generated sequence with maximal scores.
     *
     * @param system_message optional system message.
@@ -274,6 +275,7 @@ public:
     * Turns off keeping KV cache between generate calls.
     */
     void finish_chat();
+
 private:
     std::unique_ptr<LLMPipelineImplBase> m_pimpl;
 };

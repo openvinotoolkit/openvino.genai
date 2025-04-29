@@ -2,6 +2,32 @@
 
 version: 2
 updates:
+  #
+  # Github actions - CI
+  #
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Dublin"
+    open-pull-requests-limit: 3
+    
+  #
+  # Enable version updates for npm
+  #
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Dublin"
+    open-pull-requests-limit: 3
+    versioning-strategy: increase-if-necessary
+    
+  #
+  # Python dependencies
+  #
   - package-ecosystem: "pip"
     directory: "./tests/python_tests/"
     schedule:

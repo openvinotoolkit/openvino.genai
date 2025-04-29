@@ -15,8 +15,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         first_token_infer_latency = iter_data['first_token_infer_latency']
         other_token_infer_latency = iter_data['other_tokens_infer_avg_latency']
         rss_mem = iter_data['max_rss_mem_consumption']
-        uss_mem = iter_data['max_uss_mem_consumption']
-        shared_mem = iter_data['max_shared_mem_consumption']
+        max_sys_mem = iter_data['max_sys_mem_consumption']
         tokenization_time = iter_data['tokenization_time']
         detokenization_time = iter_data['detokenization_time']
 
@@ -39,8 +38,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             'first_infer_latency': round(first_token_infer_latency, 5) if first_token_infer_latency != '' else first_token_infer_latency,
             'second_infer_avg_latency': round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency,
             'max_rss_mem': round(rss_mem, 5) if rss_mem != '' else -1,
-            'max_uss_mem': round(uss_mem, 5) if uss_mem != '' else -1,
-            'max_shared_mem': round(shared_mem, 5) if shared_mem != '' else -1,
+            'max_sys_mem': round(max_sys_mem, 5) if max_sys_mem != '' else -1,
             'prompt_idx': iter_data['prompt_idx'],
             'tokenization_time': round(tokenization_time, 5) if tokenization_time != '' else tokenization_time,
             'detokenization_time': round(detokenization_time, 5) if detokenization_time != '' else detokenization_time,
@@ -50,7 +48,26 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
 
         result.append(res_data)
 
+    keys_to_average = [
+        'generation_time',
+        'latency',
+        'first_latency',
+        'second_avg_latency',
+        'first_infer_latency',
+        'second_infer_avg_latency',
+        'tokenization_time',
+        'detokenization_time'
+    ]
+    results_averaged = {}
+    for key in keys_to_average:
+        values = [x[key] for x in result[1:] if x[key] != '']
+        if len(values) > 0:
+            results_averaged[key] = round(sum(values) / len(values), 5)
+
     output_result = {'metadata': metadata, "perfdata": {'compile_time': pretrain_time, 'results': result}}
+
+    if len(results_averaged) > 0:
+        output_result['perfdata']['results_averaged'] = results_averaged
 
     with open(report_file, 'w') as outfile:
         json.dump(output_result, outfile, indent=4)

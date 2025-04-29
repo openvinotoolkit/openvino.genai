@@ -3,17 +3,7 @@
 
 #pragma once
 
-#include <filesystem>
-#include <string>
-
-#include "openvino/genai/visibility.hpp"
-#include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/lora_adapter.hpp"
-
-#include "openvino/core/any.hpp"
-#include "openvino/runtime/tensor.hpp"
-#include "openvino/runtime/infer_request.hpp"
-#include "openvino/runtime/properties.hpp"
+#include "openvino/genai/image_generation/clip_text_model.hpp"
 
 namespace ov {
 namespace genai {

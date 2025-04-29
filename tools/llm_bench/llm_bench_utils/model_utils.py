@@ -50,17 +50,29 @@ def get_param_from_file(args, input_key):
                     else:
                         raise RuntimeError(f'== {input_key} path should not be empty string ==')
         else:
-            if args["use_case"] != "vlm":
-                raise RuntimeError("Multiple sources for benchmarking supported only for Visual Language Models")
+            if args["use_case"] != "vlm" and args["use_case"] != "image_gen":
+                raise RuntimeError("Multiple sources for benchmarking supported for Visual Language Models / Image To Image Models / Inpainting Models")
             data_dict = {}
-            if args["media"] is None and args["images"] is None:
-                log.warn("Input image is not provided. Only text generation part will be evaluated")
-            else:
-                data_dict["media"] = args["media"] if args["media"] is not None else args["images"]
+            if "media" in input_key:
+                if args["media"] is None and args["images"] is None:
+                    if args["use_case"] != "vlm":
+                        log.warn("Input image is not provided. Only text generation part will be evaluated")
+                    elif args["use_case"] != "image_gen":
+                        raise RuntimeError("No input image. ImageToImage/Inpainting Models cannot start generation without one. Please, provide an image.")
+                else:
+                    data_dict["media"] = args["media"] if args["media"] is not None else args["images"]
             if args["prompt"] is None:
-                data_dict["prompt"] = "What is OpenVINO?" if data_dict["media"] is None else "Describe image"
+                if args["use_case"] != "vlm":
+                    data_dict["prompt"] = "What is OpenVINO?" if data_dict["media"] is None else "Describe image"
+                elif args['use_case'] == 'image_gen':
+                    data_dict["prompt"] = 'sailing ship in storm by Leonardo da Vinci'
             else:
                 data_dict["prompt"] = args["prompt"]
+            if "mask_image" in input_key:
+                if args.get("mask_image"):
+                    data_dict["mask_image"] = args["mask_image"]
+                else:
+                    raise RuntimeError("Mask image is not provided. Inpainting Models cannot start of generation wihtout it. Please, provide a mask image.")
             data_list.append(data_dict)
     else:
         input_prompt_list = args['prompt_file']
@@ -110,13 +122,21 @@ def analyze_args(args):
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['media'] = args.media
     model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
+    model_args["static_reshape"] = args.static_reshape
+    model_args['mask_image'] = args.mask_image
+    model_args['task'] = args.task
+    model_args['strength'] = args.strength
 
     optimum = args.optimum
 
     if optimum and args.genai:
         raise RuntimeError("`--genai` and `--optimum` can not be selected in the same time")
+    if args.from_onnx and not optimum:
+        log.warning("ONNX model initialization supported only using Optimum. Benchmarking will be switched to this backend")
+        optimum = True
     model_args["optimum"] = optimum
     model_args["genai"] = not optimum
+    model_args["from_onnx"] = args.from_onnx
 
     has_torch_compile_options = any([args.torch_compile_options is not None, args.torch_compile_options is not None, args.torch_compile_dynamic])
     if model_args["torch_compile_backend"] is None and has_torch_compile_options:
@@ -180,6 +200,7 @@ def analyze_args(args):
     model_args["draft_cb_config"] = draft_cb_config
     model_args['num_assistant_tokens'] = args.num_assistant_tokens
     model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
+    model_args['max_ngram_size'] = args.max_ngram_size
     return model_path, model_framework, model_args, model_name
 
 
@@ -297,3 +318,20 @@ def init_timestamp(num_iters, prompt_list, prompt_idx_list):
             p_idx = prompt_idx_list[idx]
             iter_timestamp[num][p_idx] = {}
     return iter_timestamp
+
+
+def resolve_media_file_path(file_path, prompt_file_path):
+    if not file_path:
+        return file_path
+    if not (file_path.startswith("http://") or file_path.startswith("https://")):
+        return os.path.join(os.path.dirname(prompt_file_path), file_path.replace("./", ""))
+    return file_path
+
+
+def get_version_in_format_to_pars(version):
+    processed_version = version
+    if "-" in processed_version:
+        ov_major_version, dev_info = version.split("-", 1)
+        commit_id = dev_info.split("-")[0]
+        processed_version = f"{ov_major_version}-{commit_id}"
+    return processed_version

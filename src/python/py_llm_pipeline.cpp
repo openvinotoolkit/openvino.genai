@@ -34,13 +34,13 @@ auto generate_docstring = R"(
     :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
 
     :param generation_config: generation_config
-    :type generation_config: GenerationConfig or a Dict
+    :type generation_config: GenerationConfig or a dict
 
     :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
     :type : Callable[[str], bool], ov.genai.StreamerBase
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-    :type : Dict
+    :type : dict
 
     :return: return results in encoded, or decoded form depending on inputs type
     :rtype: DecodedResults, EncodedResults, str
@@ -175,18 +175,21 @@ void init_llm_pipeline(py::module_& m) {
             const ov::Tensor& weights,
             const ov::genai::Tokenizer& tokenizer,
             const std::string& device,
-            const ov::genai::GenerationConfig& generation_config,
+            OptionalGenerationConfig generation_config,
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
-            return std::make_unique<LLMPipeline>(model, weights, tokenizer, device, properties, generation_config);
+            if (!generation_config.has_value()) {
+                generation_config = ov::genai::GenerationConfig();
+            }
+            return std::make_unique<LLMPipeline>(model, weights, tokenizer, device, properties, *generation_config);
         }),
         py::arg("model"), "string with pre-read model",
         py::arg("weights"), "ov::Tensor with pre-read model weights",
         py::arg("tokenizer"), "genai Tokenizers",
         py::arg("device"), "device on which inference will be done",
-        py::arg("generation_config") = ov::genai::GenerationConfig(), "genai GenerationConfig",
+        py::arg("generation_config") = py::none(), "genai GenerationConfig (default: None, will use empty config)",
         R"(
             LLMPipeline class constructor.
             model (str): Pre-read model.

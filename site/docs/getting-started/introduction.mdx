@@ -1,0 +1,57 @@
+---
+sidebar_position: 1
+sidebar_label: Introduction
+---
+
+# Introduction to OpenVINO GenAI
+
+## What is OpenVINO GenAI?
+
+OpenVINO™ GenAI is a library of the most popular Generative AI model pipelines, optimized execution methods, and samples that run on top of highly performant [OpenVINO Runtime](https://docs.openvino.ai/).
+It provides simplified APIs for running generative models, hiding the complexity of the generation process and enabling developers to easily integrate state-of-the-art generative models into their applications with minimal code.
+
+As a lightweight solution designed for efficient inference, OpenVINO GenAI includes all the core functionality needed for generative model execution (e.g. tokenization via `openvino-tokenizers`) with no external dependencies required.
+This library is friendly to PC and laptop execution, and optimized for resource consumption.
+
+## Key Features and Benefits
+
+- **📦 Pre-built Generative AI Pipelines:** Ready-to-use pipelines for text generation (LLMs), image generation (Diffuser-based), speech recognition (Whisper), and visual language models (VLMs). See all [supported use cases](/docs/category/use-cases).
+- **👣 Minimal Footprint:** Smaller binary size and reduced memory footprint compared to other frameworks.
+- **🚀 Performance Optimization:** Hardware-specific optimizations for CPU, GPU, and NPU devices.
+- **👨‍💻 Programming Language Support:** Comprehensive APIs in both Python and C++.
+- **🗜️ Model Compression:** Support for 8-bit and 4-bit weight compression, including embedding layers.
+- **🎓 Advanced Inference Capabilities:** In-place KV-cache, dynamic quantization, speculative sampling, and more.
+- **🎨 Wide Model Compatibility:** Support for popular models including Llama, Mistral, Phi, Qwen, Stable Diffusion, Flux, Whisper, and others. Refer to the [Supported Models](/docs/supported-models) for more details.
+
+## Workflow Overview
+
+Using OpenVINO GenAI typically involves three main steps:
+
+1. **Model Preparation:**
+    - Download pre-converted model in OpenVINO IR format (e.g. from [OpenVINO Toolkit](https://huggingface.co/OpenVINO) organization on Hugging Face).
+    - Convert model from other frameworks to the OpenVINO IR format (e.g. using `optimum-intel`), optionally applying weights compression.
+    :::info
+
+    You can use models from [Hugging Face](https://huggingface.co/) and [ModelScope](https://modelscope.cn/home)
+
+    Refer to [Model Preparation](/docs/category/model-preparation) for more details.
+
+    :::
+2. **Pipeline Setup:** Initialize the appropriate pipeline for your task (`LLMPipeline`, `Text2ImagePipeline`, `WhisperPipeline`, `VLMPipeline`, etc.) with the converted model.
+3. **Inference:** Run the model with your inputs using the pipeline's simple API.
+
+![OpenVINO GenAI Workflow](/img/openvino-genai-workflow.svg)
+
+## Comparison with Alternatives
+
+Unlike base OpenVINO, which requires manual implementation of generation loops, tokenization, scheduling etc., OpenVINO GenAI provides these components in a ready-to-use package.
+
+Compared to Hugging Face Optimum Intel, OpenVINO GenAI offers a smaller footprint, fewer dependencies, and better performance optimization options, particularly for C++ applications.
+
+| Feature | OpenVINO GenAI | Base OpenVINO | Hugging Face Optimum Intel |
+|-|-|-|-|
+| Easy-to-use APIs | ✅ | ❌ | ✅ |
+| Low footprint | ✅ | ✅ | ❌ |
+| C++ support | ✅ | ✅ | ❌ |
+| Pre-built pipelines | ✅ | ❌ | ✅ |
+| Model variety | Medium | High | High |
