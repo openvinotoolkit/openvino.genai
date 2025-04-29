@@ -21,6 +21,7 @@ function(add_sample_executable target_name)
 endfunction()
 
 set (SAMPLE_LIST
+    gguf_sample
     greedy_causal_lm
     encrypted_model_causal_lm
     beam_search_causal_lm

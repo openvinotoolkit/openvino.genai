@@ -254,7 +254,8 @@ void load_arrays(gguf_ctx* ctx, std::unordered_map<std::string, ov::Tensor>& arr
 
   while (gguf_get_tensor(ctx, &tensor)) {
     if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q8_0 ||
-        tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) {
+        // tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) {
+        tensor.type == GGUF_TYPE_Q4_K) {
       gguf_load_quantized(array_map, qtype_map, tensor);
     } else {
       std::string name(tensor.name, tensor.namelen);
@@ -263,6 +264,10 @@ void load_arrays(gguf_ctx* ctx, std::unordered_map<std::string, ov::Tensor>& arr
 
       constexpr std::string_view weight_suffix = ".weight";
       const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
+      if (tensor.type == GGUF_TYPE_Q6_K)
+      {
+        qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(GGUF_TYPE_F16));
+      } else 
       qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type));
     }
   }
@@ -435,21 +440,65 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(const std::map<s
 
         // Quantization parameters
         if (std::get<int>(config.at("file_type")) != 0 && std::get<int>(config.at("file_type")) != 1) {
-            consts[format("model.layers[%d].self_attn.q_proj.scales", i)] = weights.at(format("blk.%d.attn_q.scales", i));
-            consts[format("model.layers[%d].self_attn.k_proj.scales", i)] = weights.at(format("blk.%d.attn_k.scales", i));
-            consts[format("model.layers[%d].self_attn.v_proj.scales", i)] = weights.at(format("blk.%d.attn_v.scales", i));
-            consts[format("model.layers[%d].self_attn.o_proj.scales", i)] = weights.at(format("blk.%d.attn_output.scales", i));
-            consts[format("model.layers[%d].mlp.gate_proj.scales", i)] = weights.at(format("blk.%d.ffn_gate.scales", i));
-            consts[format("model.layers[%d].mlp.up_proj.scales", i)] = weights.at(format("blk.%d.ffn_up.scales", i));
-            consts[format("model.layers[%d].mlp.down_proj.scales", i)] = weights.at(format("blk.%d.ffn_down.scales", i));
+            if (weights.count(format("blk.%d.attn_q.scales", i))) {
+                consts[format("model.layers[%d].self_attn.q_proj.scales", i)] = weights.at(format("blk.%d.attn_q.scales", i));
+            }
+            if (weights.count(format("blk.%d.attn_k.scales", i))) {
+                consts[format("model.layers[%d].self_attn.k_proj.scales", i)] = weights.at(format("blk.%d.attn_k.scales", i));
+            }
+            if (weights.count(format("blk.%d.attn_v.scales", i))) {
+                consts[format("model.layers[%d].self_attn.v_proj.scales", i)] = weights.at(format("blk.%d.attn_v.scales", i));
+            }
+            if (weights.count(format("blk.%d.attn_output.scales", i))) {
+                consts[format("model.layers[%d].self_attn.o_proj.scales", i)] = weights.at(format("blk.%d.attn_output.scales", i));
+            }
+            if (weights.count(format("blk.%d.ffn_gate.scales", i))) {
+                consts[format("model.layers[%d].mlp.gate_proj.scales", i)] = weights.at(format("blk.%d.ffn_gate.scales", i));
+            }
+            if (weights.count(format("blk.%d.ffn_up.scales", i))) {
+                consts[format("model.layers[%d].mlp.up_proj.scales", i)] = weights.at(format("blk.%d.ffn_up.scales", i));
+            }
+            if (weights.count(format("blk.%d.ffn_down.scales", i))) {
+                consts[format("model.layers[%d].mlp.down_proj.scales", i)] = weights.at(format("blk.%d.ffn_down.scales", i));
+            }
+            
+            if (weights.count(format("blk.%d.attn_q.biases", i))) {
+                consts[format("model.layers[%d].self_attn.q_proj.biases", i)] = weights.at(format("blk.%d.attn_q.biases", i));
+            }  
+            if (weights.count(format("blk.%d.attn_k.biases", i))) {
+                consts[format("model.layers[%d].self_attn.k_proj.biases", i)] = weights.at(format("blk.%d.attn_k.biases", i));
+            }    
+            if (weights.count(format("blk.%d.attn_v.biases", i))) {
+                consts[format("model.layers[%d].self_attn.v_proj.biases", i)] = weights.at(format("blk.%d.attn_v.biases", i));
+            }
+            if (weights.count(format("blk.%d.attn_output.biases", i))) {
+                consts[format("model.layers[%d].self_attn.o_proj.biases", i)] = weights.at(format("blk.%d.attn_output.biases", i));
+            }      
+            if (weights.count(format("blk.%d.ffn_gate.biases", i))) {
+                consts[format("model.layers[%d].mlp.gate_proj.biases", i)] = weights.at(format("blk.%d.ffn_gate.biases", i));
+            }        
+            if (weights.count(format("blk.%d.ffn_up.biases", i))) {
+                consts[format("model.layers[%d].mlp.up_proj.biases", i)] = weights.at(format("blk.%d.ffn_up.biases", i));
+            }           
+            if (weights.count(format("blk.%d.ffn_down.biases", i))) {
+                consts[format("model.layers[%d].mlp.down_proj.biases", i)] = weights.at(format("blk.%d.ffn_down.biases", i));
+            }
 
-            consts[format("model.layers[%d].self_attn.q_proj.biases", i)] = weights.at(format("blk.%d.attn_q.biases", i));
-            consts[format("model.layers[%d].self_attn.k_proj.biases", i)] = weights.at(format("blk.%d.attn_k.biases", i));
-            consts[format("model.layers[%d].self_attn.v_proj.biases", i)] = weights.at(format("blk.%d.attn_v.biases", i));
-            consts[format("model.layers[%d].self_attn.o_proj.biases", i)] = weights.at(format("blk.%d.attn_output.biases", i));
-            consts[format("model.layers[%d].mlp.gate_proj.biases", i)] = weights.at(format("blk.%d.ffn_gate.biases", i));
-            consts[format("model.layers[%d].mlp.up_proj.biases", i)] = weights.at(format("blk.%d.ffn_up.biases", i));
-            consts[format("model.layers[%d].mlp.down_proj.biases", i)] = weights.at(format("blk.%d.ffn_down.biases", i));
+            // consts[format("model.layers[%d].self_attn.q_proj.scales", i)] = weights.at(format("blk.%d.attn_q.scales", i));
+            // consts[format("model.layers[%d].self_attn.k_proj.scales", i)] = weights.at(format("blk.%d.attn_k.scales", i));
+            // consts[format("model.layers[%d].self_attn.v_proj.scales", i)] = weights.at(format("blk.%d.attn_v.scales", i));
+            // consts[format("model.layers[%d].self_attn.o_proj.scales", i)] = weights.at(format("blk.%d.attn_output.scales", i));
+            // consts[format("model.layers[%d].mlp.gate_proj.scales", i)] = weights.at(format("blk.%d.ffn_gate.scales", i));
+            // consts[format("model.layers[%d].mlp.up_proj.scales", i)] = weights.at(format("blk.%d.ffn_up.scales", i));
+            // consts[format("model.layers[%d].mlp.down_proj.scales", i)] = weights.at(format("blk.%d.ffn_down.scales", i));
+
+            // consts[format("model.layers[%d].self_attn.q_proj.biases", i)] = weights.at(format("blk.%d.attn_q.biases", i));
+            // consts[format("model.layers[%d].self_attn.k_proj.biases", i)] = weights.at(format("blk.%d.attn_k.biases", i));
+            // consts[format("model.layers[%d].self_attn.v_proj.biases", i)] = weights.at(format("blk.%d.attn_v.biases", i));
+            // consts[format("model.layers[%d].self_attn.o_proj.biases", i)] = weights.at(format("blk.%d.attn_output.biases", i));
+            // consts[format("model.layers[%d].mlp.gate_proj.biases", i)] = weights.at(format("blk.%d.ffn_gate.biases", i));
+            // consts[format("model.layers[%d].mlp.up_proj.biases", i)] = weights.at(format("blk.%d.ffn_up.biases", i));
+            // consts[format("model.layers[%d].mlp.down_proj.biases", i)] = weights.at(format("blk.%d.ffn_down.biases", i));
         }
     }
 
