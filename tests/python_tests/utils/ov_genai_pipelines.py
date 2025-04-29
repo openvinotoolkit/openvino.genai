@@ -165,10 +165,10 @@ def run_ov_pipeline(models_path: Path,
     ) -> list[GenerationResult]:
     # update the generation config according pipeline_type
     updated_generation_config = None
-    if isinstance(generation_config, List):
+    if isinstance(generation_config, list):
         if pipeline_type != PipelineType.CONTINUOUS_BATCHING:
             raise Exception(f"\'generation_config\' is \'list[GenerationConfig]\'. This type is supported only for \'PipelineType.CONTINIOUS_BATCHING\'! Please change pipeline_type or generation_config type!")
-        assert isinstance(prompt, List)
+        assert isinstance(prompt, list)
         assert len(generation_config) == len(prompt)
         updated_generation_config = prepare_generation_configs_by_pipe_type(generation_config, pipeline_type)
     else:

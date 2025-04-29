@@ -148,7 +148,7 @@ class MemoryMonitor:
             atexit.unregister(self._stop_logging_atexit_fn)
             self._stop_logging_atexit_fn = None
 
-    def get_data(self, memory_from_zero: Optional[bool] = False) -> tuple[List, List]:
+    def get_data(self, memory_from_zero: Optional[bool] = False) -> tuple[list, list]:
         """
         :param memory_from_zero: Whether to normalize memory measurements by subtracting the first value. This way
             the measurements will start with 0. Hence, is not very reliable and may actually result in negative values.

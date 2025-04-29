@@ -191,7 +191,7 @@ def draw_from_step_data(plot_axes: plt.Axes, step_data: StepDumpData) -> plt.Axe
     return plot_axes
 
 
-def load_and_draw_usage(plot_axes: plt.Axes, usage_dump_file: pathlib.Path, current_step: int, allocated_usage_series: list[float], eviction_relation='before') -> tuple[plt.Axes, float, tuple[List, List]]:
+def load_and_draw_usage(plot_axes: plt.Axes, usage_dump_file: pathlib.Path, current_step: int, allocated_usage_series: list[float], eviction_relation='before') -> tuple[plt.Axes, float, tuple[list, list]]:
     usage_values: dict[int, tuple[float, float]] = {}
     with open(usage_dump_file, "r") as f:
         while True:

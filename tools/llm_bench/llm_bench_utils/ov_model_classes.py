@@ -175,7 +175,7 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
         generator: Optional[Union[torch.Generator, list[torch.Generator]]] = None,
         output_type: Optional[str] = 'pil',
         return_dict: bool = True,
-        tm_list: Optional[List] = None,
+        tm_list: Optional[list] = None,
         **kwargs,
     ) -> Union[Tuple, ImagePipelineOutput]:
         r'''
