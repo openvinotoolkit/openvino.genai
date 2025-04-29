@@ -269,5 +269,5 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
     check_insert(a.emplace(name_prefix + ".scales", std::move(scales)));
     check_insert(a.emplace(name_prefix + ".biases", std::move(biases)));
 
-    qtype_map.insert({name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type)});
+    qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type));
 }
