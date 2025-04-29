@@ -70,6 +70,7 @@ model_ids = [
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-internvl2",
     "katuni4ka/tiny-random-qwen2vl",
+    "katuni4ka/tiny-random-qwen2.5-vl",
 ]
 
 
@@ -361,8 +362,8 @@ def test_perf_metrics(cache, scheduler_config):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-# FIXME: katuni4ka/tiny-random-qwen2vl - fails on NPU
-@pytest.mark.parametrize("model_id", model_ids[:-1])
+# FIXME: katuni4ka/tiny-random-qwen2vl and katuni4ka/tiny-random-qwen2.5-vl - fails on NPU
+@pytest.mark.parametrize("model_id", model_ids[:-2])
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
