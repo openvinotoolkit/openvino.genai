@@ -8,7 +8,7 @@ import warnings
 import types
 import logging as log
 from torch import nn
-from typing import Optional, Tuple, Union, List
+from typing import Optional, Union
 from transformers.generation.stopping_criteria import (
     EosTokenCriteria,
     StoppingCriteriaList,
@@ -29,26 +29,26 @@ logger = log.getLogger(__name__)
 class GenerateBeamDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
     sequences_scores: Optional[torch.FloatTensor] = None
-    scores: Optional[Tuple[torch.FloatTensor]] = None
-    logits: Optional[Tuple[torch.FloatTensor]] = None
+    scores: Optional[tuple[torch.FloatTensor]] = None
+    logits: Optional[tuple[torch.FloatTensor]] = None
     beam_indices: Optional[torch.LongTensor] = None
-    attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    past_key_values: Optional[Tuple[Tuple[Tuple[torch.FloatTensor]]]] = None
+    attentions: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
 class GenerateBeamEncoderDecoderOutput(ModelOutput):
     sequences: torch.LongTensor = None
     sequences_scores: Optional[torch.FloatTensor] = None
-    scores: Optional[Tuple[torch.FloatTensor]] = None
-    logits: Optional[Tuple[torch.FloatTensor]] = None
+    scores: Optional[tuple[torch.FloatTensor]] = None
+    logits: Optional[tuple[torch.FloatTensor]] = None
     beam_indices: Optional[torch.LongTensor] = None
-    encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    decoder_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    cross_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    decoder_hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    past_key_values: Optional[Tuple[Tuple[Tuple[torch.FloatTensor]]]] = None
+    encoder_attentions: Optional[tuple[torch.FloatTensor]] = None
+    encoder_hidden_states: Optional[tuple[torch.FloatTensor]] = None
+    decoder_attentions: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    cross_attentions: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    decoder_hidden_states: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
 GenerateBeamOutput = Union[GenerateBeamDecoderOnlyOutput, GenerateBeamEncoderDecoderOutput]
@@ -69,7 +69,7 @@ def new_beam_search(
         stopping_criteria: Optional[StoppingCriteriaList] = None,
         max_length: Optional[int] = None,
         pad_token_id: Optional[int] = None,
-        eos_token_id: Optional[Union[int, List[int]]] = None,
+        eos_token_id: Optional[Union[int, list[int]]] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
@@ -108,7 +108,7 @@ def new_beam_search(
                 tokens. The maximum length of the sequence to be generated.
             pad_token_id (`int`, *optional*):
                 The id of the *padding* token.
-            eos_token_id (`Union[int, List[int]]`, *optional*):
+            eos_token_id (`Union[int, list[int]]`, *optional*):
                 The id of the *end-of-sequence* token. Optionally, use a list to set multiple *end-of-sequence* tokens.
             output_attentions (`bool`, *optional*, defaults to `False`):
                 Whether or not to return the attentions tensors of all attention layers. See `attentions` under

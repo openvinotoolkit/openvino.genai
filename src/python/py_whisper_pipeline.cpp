@@ -39,7 +39,7 @@ auto whisper_generate_docstring = R"(
     High level generate that receives raw speech as a vector of floats and returns decoded output.
 
     :param raw_speech_input: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-    :type raw_speech_input: List[float]
+    :type raw_speech_input: list[float]
 
     :param generation_config: generation_config
     :type generation_config: WhisperGenerationConfig or a dict
@@ -195,7 +195,7 @@ auto raw_perf_metrics_docstring = R"(
     Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
 
     :param features_extraction_durations: Duration for each features extraction call.
-    :type features_extraction_durations: List[MicroSeconds]
+    :type features_extraction_durations: list[MicroSeconds]
 )";
 
 auto perf_metrics_docstring = R"(

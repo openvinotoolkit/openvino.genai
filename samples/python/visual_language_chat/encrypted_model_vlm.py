@@ -10,7 +10,6 @@ import openvino
 from PIL import Image
 from openvino import Tensor
 from pathlib import Path
-import typing
 
 
 def decrypt_model(model_dir, model_file_name, weights_file_name):

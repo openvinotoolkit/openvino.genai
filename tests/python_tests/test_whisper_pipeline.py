@@ -11,7 +11,6 @@ from transformers import WhisperProcessor, pipeline, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import gc
 import json
-import typing
 import numpy as np
 import os
 import pathlib
@@ -20,7 +19,7 @@ from packaging.version import parse
 from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
 
 from utils.network import retry_request
-from typing import Any, List
+from typing import Any
 
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
@@ -211,7 +210,7 @@ def sample_from_dataset(request):
 
     return samples[sample_id]
 
-def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> List[dict[str, Any]]:
+def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> list[dict[str, Any]]:
     return [{"language": language, "long_form": long_form, "sample_id": i} for i in range(n)]
 
 def run_pipeline_with_ref(
