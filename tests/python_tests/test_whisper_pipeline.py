@@ -11,6 +11,7 @@ from transformers import WhisperProcessor, pipeline, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import gc
 import json
+import typing
 import numpy as np
 import os
 import pathlib
