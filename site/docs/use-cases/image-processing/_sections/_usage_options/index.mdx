@@ -9,6 +9,18 @@ import Streaming from '@site/docs/use-cases/_shared/_streaming.mdx';
 Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/visual_language_chat) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/visual_language_chat) visual language chat samples.
 :::
 
+### Use image tags in prompt
+
+The prompt can contain `<ov_genai_image_i>` with `i` replaced with an actual zero based index to refer to an image. Reference to images used in previous prompts isn't implemented. A model's native image tag can be used instead of `<ov_genai_image_i>`. These tags are:
+1. InternVL2: `<image>\n`
+2. llava-1.5-7b-hf: `<image>`
+3. LLaVA-NeXT: `<image>`
+4. MiniCPM-V-2_6: `(<image>./</image>)\n`
+5. Phi-3-vision: `<|image_i|>\n` - the index starts with one
+6. Qwen2-VL: `<|vision_start|><|image_pad|><|vision_end|>`
+
+If the prompt doesn't contain image tags, but images are provided, the tags are prepended to the prompt.
+
 ### Use Different Generation Parameters
 
 Similar to [text generation](/docs/use-cases/text-generation/#use-different-generation-parameters), VLM pipelines support various generation parameters to control the text output.
