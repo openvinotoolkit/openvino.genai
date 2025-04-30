@@ -136,7 +136,7 @@ public:
         m_request = compiled_model.create_infer_request();
     };
 
-    std::vector<EmbeddingResult> embed_documents(const std::vector<std::string>& texts) {
+    EmbeddingResults embed_documents(const std::vector<std::string>& texts) {
         start_embed_documents_async(texts);
         return wait_embed_documents();
     };
@@ -146,7 +146,7 @@ public:
         start_embed_async(formatted_texts);
     };
 
-    std::vector<EmbeddingResult> wait_embed_documents() {
+    EmbeddingResults wait_embed_documents() {
         return wait_embed();
     };
 
@@ -161,7 +161,15 @@ public:
     };
 
     EmbeddingResult wait_embed_query() {
-        return wait_embed()[0];
+        const EmbeddingResults results = wait_embed();
+        if (auto floats = std::get_if<std::vector<std::vector<float>>>(&results)) {
+            return (*floats)[0];
+        } else if (auto int8s = std::get_if<std::vector<std::vector<int8_t>>>(&results)) {
+            return (*int8s)[0];
+        } else if (auto uint8s = std::get_if<std::vector<std::vector<uint8_t>>>(&results)) {
+            return (*uint8s)[0];
+        }
+        OPENVINO_THROW("Embeddigs result type is not supported");
     };
 
 private:
@@ -190,7 +198,7 @@ private:
         m_request.start_async();
     };
 
-    std::vector<EmbeddingResult> wait_embed() {
+    EmbeddingResults wait_embed() {
         m_request.wait();
 
         // [batch_size, hidden_size]
@@ -221,10 +229,10 @@ private:
         return *m_config.query_instruction + text;
     }
 
-    std::vector<EmbeddingResult> to_embedding_result(const Tensor& last_hidden_state) {
+    EmbeddingResults to_embedding_result(const Tensor& last_hidden_state) {
         const auto last_hidden_state_data = last_hidden_state.data<float>();
 
-        std::vector<EmbeddingResult> result;
+        std::vector<std::vector<float>> result;
         const auto shape = last_hidden_state.get_shape();
 
         const size_t batch_size = shape[0];
@@ -256,7 +264,7 @@ TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models
     m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, Config(properties), plugin_properties);
 };
 
-std::vector<EmbeddingResult> TextEmbeddingPipeline::embed_documents(const std::vector<std::string>& texts) {
+EmbeddingResults TextEmbeddingPipeline::embed_documents(const std::vector<std::string>& texts) {
     return m_impl->embed_documents(texts);
 }
 
@@ -264,7 +272,7 @@ void TextEmbeddingPipeline::start_embed_documents_async(const std::vector<std::s
     return m_impl->start_embed_documents_async(texts);
 }
 
-std::vector<EmbeddingResult> TextEmbeddingPipeline::wait_embed_documents() {
+EmbeddingResults TextEmbeddingPipeline::wait_embed_documents() {
     return m_impl->wait_embed_documents();
 }
 

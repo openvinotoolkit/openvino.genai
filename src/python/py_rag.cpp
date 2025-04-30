@@ -13,6 +13,7 @@
 
 namespace py = pybind11;
 using ov::genai::EmbeddingResult;
+using ov::genai::EmbeddingResults;
 using ov::genai::TextEmbeddingPipeline;
 
 namespace pyutils = ov::genai::pybind::utils;
@@ -23,8 +24,8 @@ void init_rag_pipelines(py::module_& m) {
             .def(
                 "embed_documents",
                 [](TextEmbeddingPipeline& pipe,
-                   std::vector<std::string>& texts) -> py::typing::Union<std::vector<EmbeddingResult>> {
-                    std::vector<EmbeddingResult> res;
+                   std::vector<std::string>& texts) -> py::typing::Union<EmbeddingResults> {
+                    EmbeddingResults res;
                     {
                         py::gil_scoped_release rel;
                         res = pipe.embed_documents(texts);
@@ -45,8 +46,8 @@ void init_rag_pipelines(py::module_& m) {
                 "Asynchronously computes embeddings for a vector of texts")
             .def(
                 "wait_embed_documents",
-                [](TextEmbeddingPipeline& pipe) -> py::typing::Union<std::vector<EmbeddingResult>> {
-                    std::vector<EmbeddingResult> res;
+                [](TextEmbeddingPipeline& pipe) -> py::typing::Union<EmbeddingResults> {
+                    EmbeddingResults res;
                     {
                         py::gil_scoped_release rel;
                         res = pipe.wait_embed_documents();

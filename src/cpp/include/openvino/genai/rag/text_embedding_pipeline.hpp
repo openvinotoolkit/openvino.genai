@@ -13,6 +13,8 @@ namespace ov {
 namespace genai {
 
 using EmbeddingResult = std::variant<std::vector<float>, std::vector<int8_t>, std::vector<uint8_t>>;
+using EmbeddingResults =
+    std::variant<std::vector<std::vector<float>>, std::vector<std::vector<int8_t>>, std::vector<std::vector<uint8_t>>>;
 
 class OPENVINO_GENAI_EXPORTS TextEmbeddingPipeline {
 public:
@@ -64,10 +66,10 @@ public:
     /**
      * @brief Computes embeddings for a vector of texts
      */
-    std::vector<EmbeddingResult> embed_documents(const std::vector<std::string>& texts);
+    EmbeddingResults embed_documents(const std::vector<std::string>& texts);
 
     void start_embed_documents_async(const std::vector<std::string>& texts);
-    std::vector<EmbeddingResult> wait_embed_documents();
+    EmbeddingResults wait_embed_documents();
 
     /**
      * @brief Computes embedding for a query
