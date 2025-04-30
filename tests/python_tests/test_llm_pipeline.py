@@ -138,6 +138,39 @@ def test_different_input_types_works_same_and_change_nothing(model_id):
 
     assert res_string_input_1 == res_string_input_2
 
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.parametrize("prompt", ["Generate a json about a person."])
+def test_structured_output_generation(model_id, prompt):
+    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(models_path)
+
+    from pydantic import BaseModel
+    from typing import Literal
+    class Person(BaseModel):
+        name: str
+        age: int
+        city: Literal["Dublin", "Dubai", "Munich"]    
+
+    gen_config = ov_genai.GenerationConfig()
+    gen_config.max_new_tokens = 100
+    gen_config.apply_chat_template = False
+
+    gen_config.json = json.dumps(Person.model_json_schema())
+    res_str = ov_pipe.generate(prompt, generation_config=gen_config)
+
+    # If it's invalid it will raise an error.
+    Person.model_validate_json(res_str)
+
+    # If generation is not constrained by json schema, 
+    # assert that output is not valid.
+    gen_config.json = None
+    res_str = ov_pipe.generate(prompt, generation_config=gen_config)
+    with pytest.raises(ValueError):
+        Person.model_validate_json(res_str)
+
+
 #
 # Chat scenario
 #

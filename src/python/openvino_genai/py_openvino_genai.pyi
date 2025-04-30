@@ -579,17 +579,26 @@ class GenerationConfig:
         top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
         num_return_sequences: the number of sequences to generate from a single prompt.
+    
+        Structured output parameters:
+        json:           if set, the output will be a JSON string constraint by the specified json-schema.
+        regex:          if set, the output will be constraint by specified regex.
+        choices:        if set, the output will be one of specified strings.
+        grammar:        if set, the output will be constraint by specified grammar.
     """
     adapters: AdapterConfig | None
     apply_chat_template: bool
     assistant_confidence_threshold: float
+    choices: list[str] | None
     diversity_penalty: float
     do_sample: bool
     echo: bool
     eos_token_id: int
     frequency_penalty: float
+    grammar: str | None
     ignore_eos: bool
     include_stop_str_in_output: bool
+    json: str | None
     length_penalty: float
     logprobs: int
     max_length: int
@@ -602,6 +611,7 @@ class GenerationConfig:
     num_beams: int
     num_return_sequences: int
     presence_penalty: float
+    regex: str | None
     repetition_penalty: float
     rng_seed: int
     stop_criteria: StopCriteria
@@ -1164,6 +1174,12 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
+        
+            Structured output parameters:
+            json:           if set, the output will be a JSON string constraint by the specified json-schema.
+            regex:          if set, the output will be constraint by specified regex.
+            choices:        if set, the output will be one of specified strings.
+            grammar:        if set, the output will be constraint by specified grammar.
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, device: str, config: dict[str, typing.Any] = {}, **kwargs) -> None:
@@ -1261,6 +1277,12 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
+        
+            Structured output parameters:
+            json:           if set, the output will be a JSON string constraint by the specified json-schema.
+            regex:          if set, the output will be constraint by specified regex.
+            choices:        if set, the output will be one of specified strings.
+            grammar:        if set, the output will be constraint by specified grammar.
         """
     def get_generation_config(self) -> GenerationConfig:
         ...

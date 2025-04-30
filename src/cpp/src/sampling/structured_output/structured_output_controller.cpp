@@ -1,0 +1,62 @@
+// Copyright (C) 2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include <xgrammar/xgrammar.h>
+#include "structured_output_controller.hpp"
+
+namespace ov {
+namespace genai {
+
+std::unordered_map<std::string, StructuredOutputController::BackendFactory>&
+StructuredOutputController::get_backend_registry() {
+    static std::unordered_map<std::string, BackendFactory> registry;
+    return registry;
+}
+
+std::string& StructuredOutputController::get_default_backend_name() {
+    static std::string default_backend = "xgrammar";
+    return default_backend;
+}
+
+void StructuredOutputController::register_backend(const std::string& name, BackendFactory factory) {
+    get_backend_registry()[name] = std::move(factory);
+}
+
+void StructuredOutputController::set_default_backend(const std::string& name) {
+    if (get_backend_registry().find(name) == get_backend_registry().end()) {
+        OPENVINO_THROW("Cannot set default backend to unregistered backend: " + name);
+    }
+
+    get_default_backend_name() = name;
+}
+
+StructuredOutputController::StructuredOutputController(const ov::genai::Tokenizer& tokenizer,
+                                                       std::optional<int> vocab_size)
+    : m_tokenizer(tokenizer), m_vocab_size(vocab_size) {}
+
+std::shared_ptr<LogitTransformers::ILogitTransformer>
+StructuredOutputController::get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) {
+//    std::string backend_name = sampling_parameters.structured_output_backend.value_or(get_default_backend_name());
+    std::string backend_name = get_default_backend_name();
+
+    // Check if backend already instantiated
+    auto impl_it = m_impls.find(backend_name);
+    if (impl_it == m_impls.end()) {
+        // Backend not instantiated yet, create it
+        auto& registry = get_backend_registry();
+        auto factory_it = registry.find(backend_name);
+        if (factory_it == registry.end()) {
+            OPENVINO_THROW("Structured output backend not found: " + backend_name);
+        }
+
+        // Create the backend instance and store it
+        m_impls[backend_name] = factory_it->second(m_tokenizer, m_vocab_size);
+        impl_it = m_impls.find(backend_name);
+    }
+
+    // Use the instantiated backend
+    return impl_it->second->get_logits_transformer(sampling_parameters);
+}
+
+} // namespace genai
+} // namespace ov

@@ -841,6 +841,11 @@ Vocab Tokenizer::get_vocab() const {
     return vocab;
 }
 
+const std::vector<std::string>& Tokenizer::get_vocab_vector() const {
+    OPENVINO_ASSERT(!m_pimpl->m_vocab.empty(), "Tokenizer vocab is empty. Please check if the detokenizer model was provided and loaded correctly.");
+    return m_pimpl->m_vocab;
+}
+
 Tokenizer::~Tokenizer() {
     m_pimpl.reset();
 

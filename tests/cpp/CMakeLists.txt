@@ -26,6 +26,12 @@ set(TEST_TARGET_NAME "tests_continuous_batching")
 
 add_executable(${TEST_TARGET_NAME} ${tests_src} $<TARGET_OBJECTS:openvino_genai_obj>)
 
+if(ENABLE_XGRAMMAR)
+    target_link_libraries(${TEST_TARGET_NAME} PRIVATE xgrammar)
+    target_compile_definitions(${TEST_TARGET_NAME} PRIVATE ENABLE_XGRAMMAR)
+    target_include_directories(${TEST_TARGET_NAME} PRIVATE "${XGRAMMAR_DIR}/include")
+endif()
+
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> gtest_main gmock_main)
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src"
                                                        $<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>)
