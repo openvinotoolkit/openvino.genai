@@ -16,7 +16,7 @@ using EmbeddingResult = std::variant<std::vector<float>, std::vector<int8_t>, st
 
 class OPENVINO_GENAI_EXPORTS TextEmbeddingPipeline {
 public:
-    enum class OPENVINO_GENAI_EXPORTS PoolingType {
+    enum class PoolingType {
         /**
          * @brief First token embeddings
          */
@@ -30,7 +30,7 @@ public:
     struct OPENVINO_GENAI_EXPORTS Config {
         std::optional<size_t> max_length;
         PoolingType pooling_type = PoolingType::CLS;
-        bool normalize = false;
+        bool normalize = true;
         std::optional<std::string> query_instruction;
         std::optional<std::string> embed_instruction;
 
