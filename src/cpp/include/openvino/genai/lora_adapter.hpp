@@ -37,6 +37,7 @@ class OPENVINO_GENAI_EXPORTS Adapter {
     Adapter(const std::shared_ptr<AdapterImpl>& pimpl);
 public:
     explicit Adapter(const std::filesystem::path& path);
+    explicit Adapter(const ov::Tensor& safetensor);
     Adapter() = default;
 
     operator bool() const {

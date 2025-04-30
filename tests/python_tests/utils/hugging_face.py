@@ -3,7 +3,6 @@
 
 from os.path import sep
 from pathlib import Path
-from typing import List
 
 from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
@@ -91,9 +90,9 @@ def generation_config_to_hf(
 def run_hugging_face(
     opt_model,
     hf_tokenizer,
-    prompts: List[str],
-    generation_configs: List[GenerationConfig] | GenerationConfig,
-) -> List[GenerationResult]:
+    prompts: list[str],
+    generation_configs: list[GenerationConfig] | GenerationConfig,
+) -> list[GenerationResult]:
     generation_results = []
 
     if type(generation_configs) is list:

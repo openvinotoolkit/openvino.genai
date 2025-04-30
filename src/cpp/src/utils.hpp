@@ -125,7 +125,9 @@ public:
     }
 
     void add_inputs(const ov::Tensor& inputs_ids) {
+        OPENVINO_SUPPRESS_DEPRECATED_START
         std::copy_n(inputs_ids.data<int64_t>(), inputs_ids.get_size(), std::back_inserter(state));
+        OPENVINO_SUPPRESS_DEPRECATED_END
     }
 
     void reset_state() {

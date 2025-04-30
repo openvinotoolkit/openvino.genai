@@ -45,6 +45,7 @@ class TestBenchmarkLLM:
         "convert_model, sample_args",
         [
             pytest.param("tiny-random-qwen2", ["-d", "cpu", "-n", "1", "-ic", "10", "--optimum"]),
+            pytest.param("tiny-random-qwen2", ["-d", "cpu", "-n", "1", "-ic", "10", "--optimum", "--num_beams", "2"]),
             pytest.param("tiny-random-qwen2", ["-d", "cpu", "-n", "1", "-ic", "20", "--max_ngram_size", "3", "--num_assistant_tokens", "5", "-p", "'Why is the Sun yellow?'"]),
             pytest.param("tiny-random-llava", [ "-ic", "4", "-pf", os.path.join(SAMPLES_PY_DIR, "llm_bench/prompts/llava-1.5-7b.jsonl")]),
             pytest.param("tiny-random-llava", [ "-ic", "4", "--optimum", "-pf", os.path.join(SAMPLES_PY_DIR, "llm_bench/prompts/llava-1.5-7b.jsonl")]),

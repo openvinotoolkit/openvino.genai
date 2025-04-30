@@ -33,8 +33,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     auto main_scheduler_config = main_model_desc.scheduler_config;
     auto main_device = main_model_desc.device;
 
-    auto main_kv_cache_config = utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
-    auto draft_kv_cache_config = utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
+    utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
+    utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
 
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::apply_gather_before_matmul_transformation(draft_model);
@@ -47,15 +47,21 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
     if (is_draft_scheduler_undefined) {
         // split KV cache to 2 caches for main and draft models
-        auto compute_total_hidden_size = [] (const std::vector<KVHeadConfig>& kv_cache_config) -> size_t {
+        auto compute_total_hidden_size = [] (const std::shared_ptr<ov::Model>& model) -> size_t {
             size_t total_hidden_size = 0;
-            for (auto & config : kv_cache_config) {
-                total_hidden_size += config.k_head_size * config.num_k_heads + config.v_head_size * config.num_v_heads;
+            for (const auto& param_ptr : model->get_parameters()) {
+                const auto& name = param_ptr->get_friendly_name();
+                if (name.find("key_cache.") == 0) {
+                    auto pa_op = param_ptr->get_output_target_inputs(0).begin()->get_node();
+                    const auto& rt_info = pa_op->get_rt_info();
+                    total_hidden_size += rt_info.at("num_k_heads").as<int>() * rt_info.at("k_head_size").as<int>() +
+                                         rt_info.at("num_v_heads").as<int>() * rt_info.at("v_head_size").as<int>();
+                }
             }
             return total_hidden_size;
         };
-        float main_model_hidden_size = compute_total_hidden_size(main_kv_cache_config),
-              draft_model_hidden_size = compute_total_hidden_size(draft_kv_cache_config);
+        float main_model_hidden_size = compute_total_hidden_size(main_model),
+              draft_model_hidden_size = compute_total_hidden_size(draft_model);
         auto k = draft_model_hidden_size / (main_model_hidden_size + draft_model_hidden_size);
 
         // TODO: work with KV blocks as it will be more precise instead of GBs
@@ -85,10 +91,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
         main_model, main_model_tokenizer, main_model_desc.generation_config,
-        main_kv_cache_config, main_scheduler_config_updated, main_device, main_model_desc.properties, true);
+        main_scheduler_config_updated, main_device, main_model_desc.properties, true);
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
         draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
-        draft_kv_cache_config, draft_scheduler_config, draft_device, draft_properties, false);
+        draft_scheduler_config, draft_device, draft_properties, false);
 
     m_perf_metrics = PerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};

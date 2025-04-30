@@ -24,9 +24,7 @@ std::shared_ptr<CacheManager> init_cache_manager(SchedulerConfig scheduler_confi
     ov::Core core = ov::Core();
     size_t num_decoder_layers = 12;
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
-    const size_t head_size = 64;
-    std::vector<KVHeadConfig> kv_head_configs(num_decoder_layers, KVHeadConfig { 12, 12, head_size, head_size });
-    return std::make_shared<CacheManager>(request, kv_head_configs);
+    return std::make_shared<CacheManager>(request);
 }
 
 ov::Tensor embeds_matrix_to_tensor(std::vector<std::vector<float>> vec) {
