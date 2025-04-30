@@ -18,8 +18,6 @@ using ov::genai::TextEmbeddingPipeline;
 namespace pyutils = ov::genai::pybind::utils;
 
 void init_rag_pipelines(py::module_& m) {
-    m.doc() = "Pybind11 binding for RAG Pipelines";
-
     auto text_embedding_pipeline =
         py::class_<TextEmbeddingPipeline>(m, "TextEmbeddingPipeline", "Text embedding pipeline")
             .def(
