@@ -8,7 +8,8 @@ from os.path import sep
 
 def get_models_list():
     precommit_models = [
-        "katuni4ka/tiny-random-phi3",
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        # "katuni4ka/tiny-random-phi3",
     ]
 
     nightly_models = [
