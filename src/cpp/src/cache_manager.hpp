@@ -34,7 +34,7 @@ class CacheManager {
     }
 
 public:
-    CacheManager(ov::InferRequest request, const std::vector<KVHeadConfig>& kv_cache_config) :
+    explicit CacheManager(ov::InferRequest request) :
         m_request(request) {
         // extract information about inference device
         ov::CompiledModel compiled_model = request.get_compiled_model();
@@ -246,8 +246,10 @@ public:
                             return;
                         }
                         auto sub_byte_multipyer = sub_byte_data_type_multiplier(dst.get_element_type());
+                        OPENVINO_SUPPRESS_DEPRECATED_START
                         const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(src.data()) + src_start * stride;
                         uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(dst.data()) + dst_start * stride;
+                        OPENVINO_SUPPRESS_DEPRECATED_END
                         std::memcpy(dst_ptr, src_ptr, 1 * stride);
                     };
 

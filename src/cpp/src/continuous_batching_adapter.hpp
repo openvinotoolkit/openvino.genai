@@ -155,8 +155,10 @@ public:
                 std::vector<ov::Tensor> input_ids;
                 input_ids.reserve(batch_size);
                 size_t max_len = inp.input_ids.get_shape().at(1);
+                OPENVINO_SUPPRESS_DEPRECATED_START
                 const int64_t* const source = inp.input_ids.data<const int64_t>();
                 const int64_t* const attention_mask = inp.attention_mask.data<const int64_t>();
+                OPENVINO_SUPPRESS_DEPRECATED_END
                 for (size_t batch_id = 0; batch_id < batch_size; ++batch_id) {
                     input_ids.emplace_back(ov::element::i64, ov::Shape(1, max_len));
                     int64_t* destination = input_ids.back().data<int64_t>();
