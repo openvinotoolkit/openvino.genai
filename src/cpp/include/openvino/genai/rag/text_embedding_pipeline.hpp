@@ -47,12 +47,12 @@ public:
      */
     TextEmbeddingPipeline(const std::filesystem::path& models_path,
                           const std::string& device,
-                          const std::optional<Config>& config = std::nullopt,
+                          const Config& config,
                           const ov::AnyMap& properties = {});
 
     TextEmbeddingPipeline(const std::filesystem::path& models_path,
                           const std::string& device,
-                          const ov::AnyMap& properties);
+                          const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>

@@ -117,13 +117,10 @@ class TextEmbeddingPipeline::TextEmbeddingPipelineImpl {
 public:
     TextEmbeddingPipelineImpl(const std::filesystem::path& models_path,
                               const std::string& device,
-                              const std::optional<Config>& config,
+                              const Config& config,
                               const ov::AnyMap& properties = {})
-        : m_tokenizer{models_path} {
-        if (config.has_value()) {
-            m_config = *config;
-        }
-
+        : m_config{config},
+          m_tokenizer{models_path} {
         ov::Core core = utils::singleton_core();
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
@@ -246,7 +243,7 @@ private:
 
 TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models_path,
                                              const std::string& device,
-                                             const std::optional<Config>& config,
+                                             const Config& config,
                                              const ov::AnyMap& properties) {
     m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, config, properties);
 };
