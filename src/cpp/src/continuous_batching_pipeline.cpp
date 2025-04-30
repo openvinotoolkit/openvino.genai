@@ -19,7 +19,8 @@
 
 using namespace ov::genai;
 
-inline ov::genai::ModelDesc
+namespace {
+ov::genai::ModelDesc
 extract_draft_model_from_config(ov::AnyMap& config) {
     ov::genai::ModelDesc draft_model;
     if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
@@ -29,7 +30,7 @@ extract_draft_model_from_config(ov::AnyMap& config) {
     return draft_model;
 }
 
-inline bool
+bool
 extract_prompt_lookup_from_config(ov::AnyMap& config) {
     bool res = false;
     if (config.find(ov::genai::prompt_lookup.name()) != config.end()) {
@@ -39,9 +40,10 @@ extract_prompt_lookup_from_config(ov::AnyMap& config) {
     return res;
 }
 
-inline float get_load_time(std::chrono::steady_clock::time_point start_time) {
+float get_load_time(std::chrono::steady_clock::time_point start_time) {
     auto stop_time = std::chrono::steady_clock::now();
     return std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
