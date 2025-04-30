@@ -34,24 +34,17 @@ std::vector<KVHeadConfig> apply_paged_attention_transformations(std::shared_ptr<
     std::vector<KVHeadConfig> kv_cache_config(num_decoder_layers);
 
     for (size_t idx = 0; idx < num_decoder_layers; idx++) {
-        KVHeadConfig& config = kv_cache_config[idx];
-
         auto k = key_cache_params[std::string("key_cache.") + std::to_string(idx)];
         auto key_shape = k->get_partial_shape();
-        config.num_k_heads = key_shape[1].get_length();
-        config.k_head_size = key_shape[2].get_length();
+        size_t num_k_heads = key_shape[1].get_length();
+        size_t k_head_size = key_shape[2].get_length();
 
         auto v = value_cache_params[std::string("value_cache.") + std::to_string(idx)];
         auto value_shape = v->get_partial_shape();
-        config.num_v_heads = value_shape[1].get_length();
-        config.v_head_size = value_shape[2].get_length();
-    }
+        size_t num_v_heads = value_shape[1].get_length();
+        size_t v_head_size = value_shape[2].get_length();
 
-    // reset information in KV cache parameters and set PagedAttention's rt_info
-    for (size_t idx = 0; idx < num_decoder_layers; idx++) {
-        auto k = key_cache_params[std::string("key_cache.") + std::to_string(idx)];
-        auto v = value_cache_params[std::string("value_cache.") + std::to_string(idx)];
-
+        // reset information in KV cache parameters and set PagedAttention's rt_info
         // allow a plugin to automatically set KV cache precisions
         k->set_element_type(ov::element::dynamic);
         v->set_element_type(ov::element::dynamic);
@@ -65,10 +58,11 @@ std::vector<KVHeadConfig> apply_paged_attention_transformations(std::shared_ptr<
         const KVHeadConfig& config = kv_cache_config[idx];
 
         auto pa_op = k->get_output_target_inputs(0).begin()->get_node();
-        pa_op->get_rt_info()["num_k_heads"] = config.num_k_heads;
-        pa_op->get_rt_info()["k_head_size"] = config.k_head_size;
-        pa_op->get_rt_info()["num_v_heads"] = config.num_v_heads;
-        pa_op->get_rt_info()["v_head_size"] = config.v_head_size;
+        pa_op->get_rt_info()["num_k_heads"] = num_k_heads;
+        pa_op->get_rt_info()["k_head_size"] = k_head_size;
+        pa_op->get_rt_info()["num_v_heads"] = num_v_heads;
+        pa_op->get_rt_info()["v_head_size"] = v_head_size;
+        kv_cache_config[idx] = {num_v_heads, num_k_heads, v_head_size, k_head_size};
     }
 
     model->validate_nodes_and_infer_types();

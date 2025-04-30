@@ -12,13 +12,13 @@ TEST(TestBlockHashStore, general_test) {
     ov::genai::OverwritableBlocksHashStore block_hash_store(1);
     auto block0 = std::make_shared<ov::genai::KVCacheBlock>(0);
     block0->set_hash(77);
-    std::this_thread::sleep_until(std::chrono::system_clock::now() + std::chrono::seconds(1));
+    std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
     auto block1 = std::make_shared<ov::genai::KVCacheBlock>(1);
     block1->set_hash(56);
-    std::this_thread::sleep_until(std::chrono::system_clock::now() + std::chrono::seconds(1));
+    std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
     auto block2 = std::make_shared<ov::genai::KVCacheBlock>(2);
     block2->set_hash(23);
-    std::this_thread::sleep_until(std::chrono::system_clock::now() + std::chrono::seconds(1));
+    std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
     block_hash_store.add(ov::genai::BlocksPerLayer{block0});
     block_hash_store.add(ov::genai::BlocksPerLayer{block1});
     block_hash_store.add(ov::genai::BlocksPerLayer{block2});
@@ -38,13 +38,13 @@ TEST(TestBlockHashStore, general_test) {
 
     auto block3 = std::make_shared<ov::genai::KVCacheBlock>(7);
     block3->set_hash(12);
-    std::this_thread::sleep_until(std::chrono::system_clock::now() + std::chrono::seconds(1));
+    std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
     auto block4 = std::make_shared<ov::genai::KVCacheBlock>(10);
     block4->set_hash(99);
-    std::this_thread::sleep_until(std::chrono::system_clock::now() + std::chrono::seconds(1));
+    std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
     block_hash_store.add(ov::genai::BlocksPerLayer{block3});
     block_hash_store.add(ov::genai::BlocksPerLayer{block4});
-    block2->set_timestamp(std::chrono::system_clock::now());
+    block2->set_timestamp(std::chrono::steady_clock::now());
 
     EXPECT_EQ(block_hash_store.get_lru_block_to_overwrite()[0]->get_index(), 7);
     EXPECT_EQ(block_hash_store.get_lru_block_to_overwrite()[0]->get_index(), 10);
