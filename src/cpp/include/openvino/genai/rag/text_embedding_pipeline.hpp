@@ -16,7 +16,7 @@ using EmbeddingResult = std::variant<std::vector<float>, std::vector<int8_t>, st
 
 class OPENVINO_GENAI_EXPORTS TextEmbeddingPipeline {
 public:
-    enum class OPENVINO_GENAI_EXPORTS PoolingType {
+    enum class PoolingType {
         /**
          * @brief First token embeddings
          */

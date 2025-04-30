@@ -33,7 +33,6 @@ def run_gc_after_test():
 
 @pytest.fixture(scope="module")
 def dataset_documents(chunk_size=200):
-    print("dataset_documents")
     return [
         TEXT_DATASET[i : i + chunk_size]
         for i in range(0, len(TEXT_DATASET), chunk_size)

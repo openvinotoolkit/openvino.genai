@@ -12,6 +12,7 @@
 
 namespace {
 using namespace ov::genai;
+using namespace ov;
 
 ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     auto properties_copy = properties;
@@ -23,6 +24,79 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(query_instruction.name());
 
     return properties_copy;
+}
+
+/**
+ * CLS pooling slices first element from seq_length dimension
+ * [batch_size, seq_length, hidden_size] -> [batch_size, seq_length[0], hidden_size]
+ * [10, 5, 768] -> [10, 768]
+ */
+std::shared_ptr<op::Op> get_cls_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node) {
+    auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
+    auto stop = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+    auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+    auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+
+    auto slice = std::make_shared<op::v8::Slice>(last_hidden_state_node, start, stop, step, axis);
+
+    auto squeeze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+    return std::make_shared<op::v15::Squeeze>(slice, squeeze_axis);
+}
+
+std::shared_ptr<op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
+                                            const ov::Output<ov::Node>& last_hidden_state_node) {
+    auto shape_of = std::make_shared<op::v3::ShapeOf>(last_hidden_state_node);
+
+    auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
+
+    auto unsqueze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
+
+    auto unsqueze = std::make_shared<op::v0::Unsqueeze>(attention_mask, unsqueze_axis);
+
+    auto input_mask_expanded = std::make_shared<op::v3::Broadcast>(unsqueze, shape_of);
+
+    auto input_mask_expanded_convert =
+        std::make_shared<op::v0::Convert>(input_mask_expanded, last_hidden_state_node.get_element_type());
+
+    auto last_hidden_node_with_applied_attention_mask =
+        std::make_shared<op::v1::Multiply>(last_hidden_state_node, input_mask_expanded_convert->outputs()[0]);
+
+    auto axis_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+    auto sum_hidden_state = std::make_shared<op::v1::ReduceSum>(last_hidden_node_with_applied_attention_mask, axis_1);
+
+    // f32 overflow possible
+    // ReduceMean might help with overflow but its precision diverges from LlamaIndex
+    auto sum_expanded_mask = std::make_shared<op::v1::ReduceSum>(input_mask_expanded_convert, axis_1);
+
+    auto nearest_to_zero =
+        std::make_shared<op::v0::Constant>(ov::element::f32, ov::Shape{1}, std::vector<float>{1e-12});
+    auto max_expanded_mask = std::make_shared<op::v1::Maximum>(sum_expanded_mask, nearest_to_zero);
+
+    // shape: [batch_size, hidden_state_size]
+    return std::make_shared<op::v1::Divide>(sum_hidden_state, max_expanded_mask);
+}
+
+std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const TextEmbeddingPipeline::Config& config) {
+    ov::preprocess::PrePostProcessor processor(model);
+
+    processor.output().postprocess().custom([model, &config](const ov::Output<ov::Node>& node) {
+        if (config.pooling_type == TextEmbeddingPipeline::PoolingType::CLS) {
+            return get_cls_pooling_op(node);
+        } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::MEAN) {
+            return get_mean_pooling_op(model, node);
+        }
+
+        OPENVINO_THROW("Pooling type is not supported");
+    });
+
+    if (config.normalize) {
+        processor.output().postprocess().custom([](const ov::Output<ov::Node>& node) {
+            auto axis_const = std::make_shared<op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
+            return std::make_shared<op::v0::NormalizeL2>(node, axis_const, 1e-12, op::EpsMode::ADD);
+        });
+    }
+
+    return processor.build();
 }
 }  // namespace
 
@@ -55,7 +129,7 @@ public:
 
         model = apply_postprocessing(model, m_config);
         if (m_config.max_length) {
-            m_tokenization_params.insert({ov::genai::max_length.name(), *m_config.max_length});
+            m_tokenization_params.insert({max_length.name(), *m_config.max_length});
         }
 
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
@@ -166,81 +240,6 @@ private:
         }
 
         return result;
-    }
-
-    std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const Config& config) {
-        ov::preprocess::PrePostProcessor processor(model);
-
-        processor.output().postprocess().custom([this, model, &config](const ov::Output<ov::Node>& node) {
-            if (config.pooling_type == PoolingType::CLS) {
-                return get_cls_pooling_op(node);
-            } else if (config.pooling_type == PoolingType::MEAN) {
-                return get_mean_pooling_op(model, node);
-            }
-
-            OPENVINO_THROW("Pooling type is not supported");
-        });
-
-        if (config.normalize) {
-            processor.output().postprocess().custom([](const ov::Output<ov::Node>& node) {
-                auto axis_const = std::make_shared<op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
-                return std::make_shared<op::v0::NormalizeL2>(node, axis_const, 1e-12, op::EpsMode::MAX);
-            });
-        }
-
-        return processor.build();
-    }
-
-    /**
-     * CLS pooling slices first element from seq_length dimension
-     * [batch_size, seq_length, hidden_size] -> [batch_size, seq_length[0], hidden_size]
-     * [10, 5, 768] -> [10, 768]
-     */
-    std::shared_ptr<op::Op> get_cls_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node) {
-        auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
-        auto stop = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-
-        auto slice = std::make_shared<op::v8::Slice>(last_hidden_state_node, start, stop, step, axis);
-
-        auto squeeze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        return std::make_shared<op::v15::Squeeze>(slice, squeeze_axis);
-    }
-
-    std::shared_ptr<op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
-                                                const ov::Output<ov::Node>& last_hidden_state_node) {
-        auto shape_of = std::make_shared<op::v3::ShapeOf>(last_hidden_state_node);
-
-        auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
-
-        auto unsqueze_axis =
-            std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
-
-        auto unsqueze = std::make_shared<op::v0::Unsqueeze>(attention_mask, unsqueze_axis);
-
-        auto input_mask_expanded = std::make_shared<op::v3::Broadcast>(unsqueze, shape_of);
-
-        auto input_mask_expanded_convert =
-            std::make_shared<op::v0::Convert>(input_mask_expanded, last_hidden_state_node.get_element_type());
-
-        auto last_hidden_node_with_applied_attention_mask =
-            std::make_shared<op::v1::Multiply>(last_hidden_state_node, input_mask_expanded_convert->outputs()[0]);
-
-        auto axis_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        auto sum_hidden_state =
-            std::make_shared<op::v1::ReduceSum>(last_hidden_node_with_applied_attention_mask, axis_1);
-
-        // f32 overflow possible
-        // ReduceMean might help with overflow but its precision diverges from LlamaIndex
-        auto sum_expanded_mask = std::make_shared<op::v1::ReduceSum>(input_mask_expanded_convert, axis_1);
-
-        auto nearest_to_zero =
-            std::make_shared<op::v0::Constant>(ov::element::f32, ov::Shape{1}, std::vector<float>{1e-12});
-        auto max_expanded_mask = std::make_shared<op::v1::Maximum>(sum_expanded_mask, nearest_to_zero);
-
-        // shape: [batch_size, hidden_state_size]
-        return std::make_shared<op::v1::Divide>(sum_hidden_state, max_expanded_mask);
     }
 };
 
