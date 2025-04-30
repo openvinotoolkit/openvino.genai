@@ -10,14 +10,6 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-/**
- * Per layer KV cache size configuration
- */
-struct KVHeadConfig {
-    size_t num_v_heads, num_k_heads;
-    size_t v_head_size, k_head_size;
-};
-
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, bool per_layer_cache_control, bool allow_cache_rotation) {
     const ov::op::util::VariableVector& variables = model->get_variables();
     OPENVINO_ASSERT(!variables.empty(), "Model is supposed to be stateful");
@@ -39,8 +31,6 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, boo
     OPENVINO_ASSERT(key_cache_params.size() == value_cache_params.size() && key_cache_params.size() > 0);
 
     size_t num_decoder_layers = key_cache_params.size();
-    std::vector<KVHeadConfig> kv_cache_config(num_decoder_layers);
-
     for (size_t idx = 0; idx < num_decoder_layers; idx++) {
         auto k = key_cache_params[std::string("key_cache.") + std::to_string(idx)];
         auto key_shape = k->get_partial_shape();
@@ -63,14 +53,11 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, boo
 
         // set KV cache parameters as rt_info for PagedAttention op, so plugins can apply
         // model compile-time optimizations based on them
-        const KVHeadConfig& config = kv_cache_config[idx];
-
         auto pa_op = k->get_output_target_inputs(0).begin()->get_node();
         pa_op->get_rt_info()["num_k_heads"] = num_k_heads;
         pa_op->get_rt_info()["k_head_size"] = k_head_size;
         pa_op->get_rt_info()["num_v_heads"] = num_v_heads;
         pa_op->get_rt_info()["v_head_size"] = v_head_size;
-        kv_cache_config[idx] = {num_v_heads, num_k_heads, v_head_size, k_head_size};
     }
 
     model->validate_nodes_and_infer_types();
