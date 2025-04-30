@@ -89,7 +89,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -132,7 +132,7 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
       - name: Upload Archive Distribution Package
         if: always()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: genai_cpack_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}
@@ -140,7 +140,7 @@ jobs:
           
       - name: Upload Tools
         if: always()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: genai_tools_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TOOLS_DIR }}
@@ -148,7 +148,7 @@ jobs:
         
       - name: Upload Tests
         if: always()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
@@ -187,7 +187,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -234,7 +234,7 @@ jobs:
 
       - name: Upload Wheels
         if: always()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: genai_wheels
           path: ${{ env.INSTALL_DIR }}
@@ -290,7 +290,7 @@ jobs:
 
       - name: Upload Samples Build Package
         if: ${{ always() }}
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: genai_samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}
@@ -344,7 +344,7 @@ jobs:
 
       - name: Upload Node.js bindings Build Package
         if: always()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: genai_nodejs_bindings
           path: ${{ env.INSTALL_DIR }}
@@ -398,7 +398,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -473,7 +473,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -552,7 +552,7 @@ jobs:
         run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
         
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'

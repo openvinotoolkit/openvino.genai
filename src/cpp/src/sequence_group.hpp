@@ -302,14 +302,18 @@ public:
 
         if (input_ids.get_element_type() == ov::element::i64) {
             m_prompt_ids.resize(prompt_len);
+            OPENVINO_SUPPRESS_DEPRECATED_START
             std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
+            OPENVINO_SUPPRESS_DEPRECATED_END
             m_sequence_group_type = SequenceGroupType::TOKENS;
         } else if (input_ids.get_element_type() == ov::element::f32) {
             hidden_size = input_ids.get_shape()[2];
             m_input_embeds.resize(prompt_len);
             for (size_t i = 0; i < prompt_len; i++) {
                 m_input_embeds[i].resize(hidden_size);
-              std::copy_n(input_ids.data<float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
+                OPENVINO_SUPPRESS_DEPRECATED_START
+                std::copy_n(input_ids.data<float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
+                OPENVINO_SUPPRESS_DEPRECATED_END
             }
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
         }

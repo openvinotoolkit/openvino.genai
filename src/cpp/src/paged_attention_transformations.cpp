@@ -10,7 +10,15 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-std::vector<KVHeadConfig> apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, bool per_layer_cache_control, bool allow_cache_rotation) {
+/**
+ * Per layer KV cache size configuration
+ */
+struct KVHeadConfig {
+    size_t num_v_heads, num_k_heads;
+    size_t v_head_size, k_head_size;
+};
+
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, bool per_layer_cache_control, bool allow_cache_rotation) {
     const ov::op::util::VariableVector& variables = model->get_variables();
     OPENVINO_ASSERT(!variables.empty(), "Model is supposed to be stateful");
 
@@ -66,8 +74,6 @@ std::vector<KVHeadConfig> apply_paged_attention_transformations(std::shared_ptr<
     }
 
     model->validate_nodes_and_infer_types();
-
-    return kv_cache_config;
 }
 
 }  // namespace utils
