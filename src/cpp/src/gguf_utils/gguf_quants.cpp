@@ -118,7 +118,7 @@ void extract_q4_k_data(const gguf_tensor& tensor,
     auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
     auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
 
-    for (int64_t i = 0; i < n_super_block; i++) {
+    ov::parallel_for(n_super_block, [&](size_t i) {
         uint8_t* block_data = data + i * bytes_per_block;
 
         // Extract scale factors and offsets
@@ -154,9 +154,7 @@ void extract_q4_k_data(const gguf_tensor& tensor,
             ov::float16(-1.f * scale_biases * static_cast<float>((*(qs1 + 10) >> 4) | ((*(qs1 + 6) >> 6) << 4)));
         biases[i * 8 + 7] =
             ov::float16(-1.f * scale_biases * static_cast<float>((*(qs1 + 11) >> 4) | ((*(qs1 + 7) >> 6) << 4)));
-    }
-    ov::parallel_for(n_super_block, [&](size_t i) {
-        unpack_256_4(data + i * bytes_per_block + 16, weights + i * 128);
+        unpack_256_4(block_data + 16, weights + i * 128);
     });
 }
 
