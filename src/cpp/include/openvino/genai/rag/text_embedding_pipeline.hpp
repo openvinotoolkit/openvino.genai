@@ -30,7 +30,7 @@ public:
     struct OPENVINO_GENAI_EXPORTS Config {
         std::optional<size_t> max_length;
         PoolingType pooling_type = PoolingType::CLS;
-        bool normalize = false;
+        bool normalize = true;
         std::optional<std::string> query_instruction;
         std::optional<std::string> embed_instruction;
 

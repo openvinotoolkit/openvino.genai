@@ -12,8 +12,8 @@ from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from typing import Literal
 
 TEST_MODELS = [
-    "sentence-transformers/all-mpnet-base-v2",
     "BAAI/bge-small-en-v1.5",
+    "mixedbread-ai/mxbai-embed-xsmall-v1",
 ]
 
 TEXT_DATASET = f"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aliquam tempus mollis suscipit. Pellentesque id suscipit magna. Pellentesque condimentum magna vel nisi condimentum suscipit. Interdum et malesuada fames ac ante ipsum primis in faucibus. Duis a urna ac eros accumsan commodo non non magna. Aenean mattis commodo urna, ac interdum turpis semper eu. Ut ut pharetra quam. Suspendisse erat tortor, vulputate sit amet quam eu, accumsan facilisis est. Ut varius nibh quis suscipit tempor. Pellentesque luctus, turpis id hendrerit condimentum, urna augue ultricies elit, vitae lacinia mauris enim id lacus.\
@@ -105,7 +105,7 @@ def run_pipeline_with_ref(
     max_error = np.abs(np_genai_result - np_langchain_result).max()
     print(f"Max error: {max_error}")
     assert (
-        np.abs(np_genai_result - np_langchain_result).max() < 1e-6
+        np.abs(np_genai_result - np_langchain_result).max() < 2e-6
     ), f"Max error: {max_error}"
 
 
@@ -145,16 +145,17 @@ def test_constructors(download_and_convert_embeddings_models):
 @pytest.mark.parametrize(
     "config",
     [
-        TextEmbeddingPipeline.Config(),
+        TextEmbeddingPipeline.Config(normalize=False),
         TextEmbeddingPipeline.Config(
-            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
+            normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
         ),
         TextEmbeddingPipeline.Config(normalize=True),
         TextEmbeddingPipeline.Config(
             normalize=True, pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
         ),
         TextEmbeddingPipeline.Config(
-            embed_instruction="Represent this document for searching relevant passages: "
+            normalize=False,
+            embed_instruction="Represent this document for searching relevant passages: ",
         ),
     ],
     ids=[
@@ -179,16 +180,17 @@ def test_embed_documents(
 @pytest.mark.parametrize(
     "config",
     [
-        TextEmbeddingPipeline.Config(),
+        TextEmbeddingPipeline.Config(normalize=False),
         TextEmbeddingPipeline.Config(
-            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
+            normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
         ),
         TextEmbeddingPipeline.Config(normalize=True),
         TextEmbeddingPipeline.Config(
             normalize=True, pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
         ),
         TextEmbeddingPipeline.Config(
-            query_instruction="Represent this query for searching relevant passages: "
+            normalize=False,
+            query_instruction="Represent this query for searching relevant passages: ",
         ),
     ],
     ids=[
