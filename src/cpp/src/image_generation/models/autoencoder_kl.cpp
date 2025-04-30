@@ -216,38 +216,40 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
     if (m_encoder_model) {
         ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, properties));
         ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
-        m_encoder_request = encoder_compiled_model.create_infer_request();
+        for (size_t i = 0; i < 4; i++)
+            m_encoder_requests.emplace_back(encoder_compiled_model.create_infer_request());
         // release the original model
         m_encoder_model.reset();
     }
 
     ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, handle_scale_factor(m_decoder_model, device, properties));
     ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL decoder model");
-    m_decoder_request = decoder_compiled_model.create_infer_request();
+    for (size_t i = 0; i < 4; i++)
+        m_decoder_requests.emplace_back(decoder_compiled_model.create_infer_request());
     // release the original model
     m_decoder_model.reset();
 
     return *this;
 }
 
-ov::Tensor AutoencoderKL::decode(ov::Tensor latent) {
-    OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
+ov::Tensor AutoencoderKL::decode(ov::Tensor latent, size_t request_idx) {
+    OPENVINO_ASSERT(m_decoder_requests.size(), "VAE decoder model must be compiled first. Cannot infer non-compiled model");
 
-    m_decoder_request.set_input_tensor(latent);
-    m_decoder_request.infer();
-    return m_decoder_request.get_output_tensor();
+    m_decoder_requests[request_idx].set_input_tensor(latent);
+    m_decoder_requests[request_idx].infer();
+    return m_decoder_requests[request_idx].get_output_tensor();
 }
 
-ov::Tensor AutoencoderKL::encode(ov::Tensor image, std::shared_ptr<Generator> generator) {
-    OPENVINO_ASSERT(m_encoder_request || m_encoder_model, "AutoencoderKL is created without 'VAE encoder' capability. Please, pass extra argument to constructor to create 'VAE encoder'");
-    OPENVINO_ASSERT(m_encoder_request, "VAE encoder model must be compiled first. Cannot infer non-compiled model");
+ov::Tensor AutoencoderKL::encode(ov::Tensor image, std::shared_ptr<Generator> generator, size_t request_idx) {
+    OPENVINO_ASSERT(m_encoder_requests.size() || m_encoder_model, "AutoencoderKL is created without 'VAE encoder' capability. Please, pass extra argument to constructor to create 'VAE encoder'");
+    OPENVINO_ASSERT(m_encoder_requests.size(), "VAE encoder model must be compiled first. Cannot infer non-compiled model");
 
-    m_encoder_request.set_input_tensor(image);
-    m_encoder_request.infer();
+    m_encoder_requests[request_idx].set_input_tensor(image);
+    m_encoder_requests[request_idx].infer();
 
-    ov::Tensor output = m_encoder_request.get_output_tensor(), latent;
+    ov::Tensor output = m_encoder_requests[request_idx].get_output_tensor(), latent;
 
-    ov::CompiledModel compiled_model = m_encoder_request.get_compiled_model();
+    ov::CompiledModel compiled_model = m_encoder_requests[request_idx].get_compiled_model();
     auto outputs = compiled_model.outputs();
     OPENVINO_ASSERT(outputs.size() == 1, "AutoencoderKL encoder model is expected to have a single output");
 

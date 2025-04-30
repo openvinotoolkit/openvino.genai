@@ -185,7 +185,7 @@ public:
         m_vae->compile(vae_device, *updated_properties);
     }
 
-    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
+    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config, size_t request_idx = 0) override {
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
 
@@ -340,14 +340,14 @@ public:
         }
     }
 
-    void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
+    void set_lora_adapters(std::optional<AdapterConfig> adapters, size_t request_idx = 0) override {
         if (adapters) {
             if (auto updated_adapters = derived_adapters(*adapters)) {
                 adapters = updated_adapters;
             }
-            m_clip_text_encoder->set_adapters(adapters);
-            m_clip_text_encoder_with_projection->set_adapters(adapters);
-            m_unet->set_adapters(adapters);
+            m_clip_text_encoder->set_adapters(adapters);  // TODO
+            m_clip_text_encoder_with_projection->set_adapters(adapters);  // TODO
+            m_unet->set_adapters(adapters);  // TODO
         }
     }
 

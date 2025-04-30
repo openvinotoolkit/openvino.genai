@@ -85,11 +85,11 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states);
+    void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states, size_t request_idx = 0);
 
-    void set_adapters(const std::optional<AdapterConfig>& adapters);
+    void set_adapters(const std::optional<AdapterConfig>& adapters, size_t request_idx = 0);
 
-    ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep);
+    ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep, size_t request_idx = 0);
 
     bool do_classifier_free_guidance(float guidance_scale) const {
         return guidance_scale > 1.0f && m_config.time_cond_proj_dim < 0;

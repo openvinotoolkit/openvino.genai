@@ -35,7 +35,7 @@ public:
         initialize_generation_config("FluxFillPipeline");
     }
 
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config, size_t request_idx = 0) override {
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
@@ -119,7 +119,8 @@ public:
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
-                        const ov::AnyMap& properties) override {
+                        const ov::AnyMap& properties,
+                        size_t request_idx = 0) override {
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
         m_custom_generation_config = m_generation_config;
@@ -149,10 +150,10 @@ public:
         std::tie(latents, processed_image, image_latent, noise) = prepare_latents(initial_image, m_custom_generation_config);
 
         size_t image_seq_len = latents.get_shape()[1];
-        m_scheduler->set_timesteps(image_seq_len, m_custom_generation_config.num_inference_steps, m_custom_generation_config.strength);
+        m_schedulers[request_idx]->set_timesteps(image_seq_len, m_custom_generation_config.num_inference_steps, m_custom_generation_config.strength);
 
         // Prepare timesteps
-        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        std::vector<float> timesteps = m_schedulers[request_idx]->get_float_timesteps();
         m_latent_timestep = timesteps[0];
 
         // Prepare mask latents
@@ -174,7 +175,7 @@ public:
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
-            auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
+            auto scheduler_step_result = m_schedulers[request_idx]->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
 
             if (callback && callback(inference_step, timesteps.size(), latents)) {
