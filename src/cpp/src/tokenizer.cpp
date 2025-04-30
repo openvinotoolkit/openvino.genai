@@ -70,13 +70,13 @@ const std::pair<std::string, std::string> chat_template_fallback_map[] = {
     }
 };    
 
-std::optional<std::string> remap_template(const std::string& chat_template) {
+std::string remap_template(const std::string& chat_template) {
     for (const auto& [known, fallback] : chat_template_fallback_map) {
         if (chat_template == known) {
             return fallback;
         }
     }
-    return std::nullopt;
+    return chat_template;
 }
 
 void parse_if_exists(const std::filesystem::path& path, std::string& value) {
@@ -120,9 +120,7 @@ std::string patch_template(std::string&& chat_template) {
 }
 
 std::string remap_and_patch(const std::string& chat_template) {
-    return patch_template(
-        remap_template(chat_template).value_or(chat_template)
-    );
+    return patch_template(remap_template(chat_template));
 }
 
 std::vector<std::string> read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model) {
@@ -318,11 +316,9 @@ public:
             m_eos_token_id = find_or_fallback(rt_info, "eos_token_id", m_eos_token_id);
 
             m_chat_template = find_or_fallback(rt_info, "chat_template", m_chat_template);
-            std::optional<std::string> fallback = remap_template(m_chat_template);
-            m_chat_template = patch_template(fallback.value_or(m_chat_template));
-            if (!fallback.has_value()) {
-                m_chat_template = find_or_fallback(rt_info, "simplified_chat_template", m_chat_template);
-            }
+            m_chat_template = remap_and_patch(m_chat_template);
+            m_chat_template = find_or_fallback(rt_info, "simplified_chat_template", m_chat_template);
+            m_chat_template = patch_template(std::move(m_chat_template));
             // Initialize tokenizer's cache to save time later.
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
             encode("non empty string");

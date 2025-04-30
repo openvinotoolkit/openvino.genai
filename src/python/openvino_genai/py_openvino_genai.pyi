@@ -1884,12 +1884,9 @@ class Tokenizer:
         4. chat_template entry from rt_info section of openvino.Model
         5. If the template is known to be not supported by GenAI, it's
             replaced with a simplified supported version.
-        6. Patch chat_template replacing not supported instructions with
-            equivalents.
-        7. If the template was not in the list of not supported GenAI
-            templates from (5), it's blindly replaced with
-            simplified_chat_template entry from rt_info section of
-            openvino.Model if the entry exists.
+        6. Replace not supported instructions with equivalents.
+        7. simplified_chat_template entry from rt_info section of ov::Model
+        8. Replace not supported instructions with equivalents.
     """
     chat_template: str
     @typing.overload
