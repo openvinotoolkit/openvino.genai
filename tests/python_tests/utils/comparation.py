@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from openvino_genai import GenerationResult, GenerationConfig
-from typing import List
 
 def compare_generation_result(hf_result: GenerationResult,
                               ov_result: GenerationResult,
@@ -23,10 +22,10 @@ def compare_generation_result(hf_result: GenerationResult,
             assert hf_text == ov_text
             
 
-def compare_generation_results(prompts: List[str],
-                               hf_results: List[GenerationResult],
-                               ov_results: List[GenerationResult],
-                               generation_configs: List[GenerationConfig] | GenerationConfig):
+def compare_generation_results(prompts: list[str],
+                               hf_results: list[GenerationResult],
+                               ov_results: list[GenerationResult],
+                               generation_configs: list[GenerationConfig] | GenerationConfig):
     if type(generation_configs) is not list:
         generation_configs = [generation_configs]
 
@@ -39,9 +38,9 @@ def compare_generation_results(prompts: List[str],
 
 
 # TODO: remove this function after Generator property is supported by LLMPipeline / VLMPipeline
-def compare_generation_results_vs_ref(prompts: List[str],  
-                                      ref: List[List[str]],
-                                      ov_results: List[GenerationResult]):
+def compare_generation_results_vs_ref(prompts: list[str],
+                                      ref: list[list[str]],
+                                      ov_results: list[GenerationResult]):
     assert len(prompts) == len(ref)
     assert len(prompts) == len(ov_results)
 

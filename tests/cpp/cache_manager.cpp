@@ -35,10 +35,9 @@ TEST(TestCacheManager, test_cache_size_param) {
 
     const std::string device = "CPU";
     const size_t num_decoder_layers = 12;
-    const std::vector<KVHeadConfig> kv_cache_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
-
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
-    auto cache_manager = std::make_shared<CacheManager>(request, kv_cache_config);
+
+    auto cache_manager = std::make_shared<CacheManager>(request);
     ASSERT_EQ(num_decoder_layers, cache_manager->get_num_decoder_layers());
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, cache_manager->get_block_size_in_bytes());
 
@@ -78,10 +77,9 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
 
     const std::string device = "CPU";
     const size_t num_decoder_layers = 12;
-    const std::vector<KVHeadConfig> kv_cache_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
 
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
-    auto cache_manager = std::make_shared<CacheManager>(request, kv_cache_config);
+    auto cache_manager = std::make_shared<CacheManager>(request);
     size_t block_size_in_bytes = cache_manager->get_block_size_in_bytes();
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, block_size_in_bytes);
 

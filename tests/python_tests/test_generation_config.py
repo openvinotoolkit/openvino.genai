@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from openvino_genai import GenerationConfig
-from typing import Tuple, List
 import json
 import os
 import pytest
@@ -136,7 +135,7 @@ def test_invalid_fields_assinment_rises(fields):
         config.validate()
 
 
-def load_genai_generation_config_from_file(configs: List[Tuple], temp_path):
+def load_genai_generation_config_from_file(configs: list[tuple], temp_path):
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
 

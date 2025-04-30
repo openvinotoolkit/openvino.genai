@@ -25,6 +25,16 @@ void init_lora_adapter(py::module_& m) {
             Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
             path (os.PathLike): Path to adapter file in safetensors format.
         )")
+        .def(py::init([](
+            const ov::Tensor& safetensor
+        ) {
+            return ov::genai::Adapter(safetensor);
+        }),
+        py::arg("safetensor"), "ov::Tensor with pre-read LoRA Adapter safetensor",
+        R"(
+            Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
+            safetensor (ov.Tensor): Pre-read LoRA Adapter safetensor.
+        )")
         .def(
             "__bool__",
             [](ov::genai::Adapter& self
