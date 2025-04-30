@@ -591,7 +591,7 @@ def test_set_special_runtime_template(tmp_path):
         ChatTemplates("correct template", None, None, "correct template", "", ""),
         ChatTemplates("correct template", None, None, None, "correct template", ""),
         ChatTemplates("correct template", None, None, None, None, "correct template"),
-        ChatTemplates(SIMPLIFIED_QWEN2_VL_2B, "", QWEN2_VL_2B, "", "", ""),
+        ChatTemplates(SIMPLIFIED_QWEN2_VL_2B, None, QWEN2_VL_2B, "", "", ""),
     ],
 )
 def test_template_priorities(tmp_path, chat_templates):
