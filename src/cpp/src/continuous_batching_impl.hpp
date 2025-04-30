@@ -62,8 +62,7 @@ protected:
     void initialize_pipeline(std::shared_ptr<ov::Model> model,
                              const SchedulerConfig& scheduler_config,
                              const std::string& device,
-                             const ov::AnyMap& plugin_config,
-                             const std::vector<KVHeadConfig>& kv_cache_config);
+                             const ov::AnyMap& plugin_config);
 
     /**
      * Pulls requests from awaiting queue to running queue

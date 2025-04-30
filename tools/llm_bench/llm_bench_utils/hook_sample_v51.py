@@ -7,7 +7,7 @@ import time
 import os
 import torch
 from torch import nn
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 from transformers.generation.stopping_criteria import StoppingCriteriaList
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.streamers import BaseStreamer
@@ -22,23 +22,23 @@ logger = log.getLogger(__name__)
 
 class GenerateDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
-    scores: Optional[Tuple[torch.FloatTensor]] = None
-    logits: Optional[Tuple[torch.FloatTensor]] = None
-    attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    past_key_values: Optional[Tuple[Tuple[Tuple[torch.FloatTensor]]]] = None
+    scores: Optional[tuple[torch.FloatTensor]] = None
+    logits: Optional[tuple[torch.FloatTensor]] = None
+    attentions: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
 class GenerateEncoderDecoderOutput(ModelOutput):
     sequences: torch.LongTensor = None
-    scores: Optional[Tuple[torch.FloatTensor]] = None
-    logits: Optional[Tuple[torch.FloatTensor]] = None
-    encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    decoder_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    cross_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    decoder_hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    past_key_values: Optional[Tuple[Tuple[Tuple[torch.FloatTensor]]]] = None
+    scores: Optional[tuple[torch.FloatTensor]] = None
+    logits: Optional[tuple[torch.FloatTensor]] = None
+    encoder_attentions: Optional[tuple[torch.FloatTensor]] = None
+    encoder_hidden_states: Optional[tuple[torch.FloatTensor]] = None
+    decoder_attentions: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    cross_attentions: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    decoder_hidden_states: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
 GenerateNonBeamOutput = Union[GenerateDecoderOnlyOutput, GenerateEncoderDecoderOutput]

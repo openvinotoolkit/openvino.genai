@@ -24,31 +24,31 @@ auto raw_perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
     :param generate_durations: Durations for each generate call in milliseconds.
-    :type generate_durations: List[float]
+    :type generate_durations: list[float]
 
     :param tokenization_durations: Durations for the tokenization process in milliseconds.
-    :type tokenization_durations: List[float]
+    :type tokenization_durations: list[float]
 
     :param detokenization_durations: Durations for the detokenization process in milliseconds.
-    :type detokenization_durations: List[float]
+    :type detokenization_durations: list[float]
 
     :param m_times_to_first_token: Times to the first token for each call in milliseconds.
-    :type m_times_to_first_token: List[float]
+    :type m_times_to_first_token: list[float]
 
     :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
-    :type m_new_token_times: List[double]
+    :type m_new_token_times: list[double]
 
     :param token_infer_durations : Inference time for each token in milliseconds.
-    :type batch_sizes: List[float]
+    :type batch_sizes: list[float]
 
     :param m_batch_sizes: Batch sizes for each generate call.
-    :type m_batch_sizes: List[int]
+    :type m_batch_sizes: list[int]
 
     :param m_durations: Total durations for each generate call in milliseconds.
-    :type m_durations: List[float]
+    :type m_durations: list[float]
 
     :param inference_durations : Total inference duration for each generate call in milliseconds.
-    :type batch_sizes: List[float]
+    :type batch_sizes: list[float]
 )";
 
 auto perf_metrics_docstring = R"(

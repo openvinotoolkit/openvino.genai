@@ -20,7 +20,7 @@ from packaging.version import parse
 from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
 
 from utils.network import retry_request
-from typing import Any, List
+from typing import Any
 
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
@@ -177,7 +177,7 @@ def run_genai(
 MAX_DATASET_LENGTH = 30
 
 @functools.lru_cache(16)
-def get_whisper_dataset(language: str, long_form: bool) -> List:
+def get_whisper_dataset(language: str, long_form: bool) -> list:
     if not long_form:
         ds = datasets.load_dataset(
             "mozilla-foundation/common_voice_11_0",
@@ -211,7 +211,7 @@ def sample_from_dataset(request):
 
     return samples[sample_id]
 
-def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> List[dict[str, Any]]:
+def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> list[dict[str, Any]]:
     return [{"language": language, "long_form": long_form, "sample_id": i} for i in range(n)]
 
 def run_pipeline_with_ref(
