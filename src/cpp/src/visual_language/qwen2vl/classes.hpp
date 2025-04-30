@@ -70,6 +70,16 @@ protected:
         const int64_t image_pad_token_id
     );
 
+    std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_embeds_and_grid_thw(
+        const std::vector<EncodedImage>& encoded_images,
+        const std::vector<size_t>& images_sequence,
+        const size_t image_id
+    );
+
+    ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw);
+    
+    ov::Tensor concatenate_image_embeds(const std::vector<ov::Tensor> reordered_image_embeds);
+
     ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw);
 
     ov::Tensor create_position_ids(

@@ -26,102 +26,21 @@ InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(
 ov::Tensor InputsEmbedderQwen2_5_VL::run_image_embeddings_merger(
     const std::vector<EncodedImage>& images, 
     const std::vector<size_t>& images_sequence, 
-    const size_t image_id) {
-    
-    std::vector<ov::Tensor> image_embeds;
-    std::vector<std::array<size_t, 3>> images_grid_thw;
-    image_embeds.reserve(images.size());
-    images_grid_thw.reserve(images.size());
-    
-    for (const auto& encoded_image : images) {
-        ov::Tensor single_image_embeds = encoded_image.resized_source;
-        image_embeds.push_back(std::move(single_image_embeds));
+    const size_t image_id
+) {
+    auto [reordered_image_embeds, reordered_images_grid_thw] = reorder_image_embeds_and_grid_thw(images, images_sequence, image_id);
 
-        size_t grid_t = 1;
-        size_t grid_h = encoded_image.resized_source_size.height;
-        size_t grid_w = encoded_image.resized_source_size.width;
-        images_grid_thw.push_back({grid_t, grid_h, grid_w});
-    }
-
-    std::vector<ov::Tensor> reordered_image_embeds;
-    std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
-    for (size_t new_image_id : images_sequence) {
-        reordered_image_embeds.push_back(image_embeds.at(new_image_id - image_id));
-        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id - image_id));
-    }
-
-    // Calculate cumulative sequence lengths for attention mask
-    std::vector<int32_t> cu_seqlens;
-    cu_seqlens.push_back(0);
-    int32_t cumsum = 0;
-    for (const auto& grid_thw : reordered_images_grid_thw) {
-        size_t slice_len = grid_thw.at(1) * grid_thw.at(2);
-        for (size_t t = 0; t < grid_thw.at(0); ++t) {
-            cumsum += slice_len;
-            cu_seqlens.push_back(cumsum);
-        }
-    }
-
-    // Create attention mask for vision embeddings merger model
-    size_t hidden_states_size = cumsum;
-    ov::Tensor attention_mask{ov::element::f32, {1, hidden_states_size, hidden_states_size}};
-    float* attention_mask_data = attention_mask.data<float>();
-    std::fill_n(attention_mask_data, attention_mask.get_size(), -std::numeric_limits<float>::infinity());
-
-    for (size_t i = 1; i < cu_seqlens.size(); ++i) {
-        size_t start = cu_seqlens[i-1];
-        size_t end = cu_seqlens[i];
-        for (size_t row = start; row < end; ++row) {
-            for (size_t col = start; col < end; ++col) {
-                attention_mask_data[row * hidden_states_size + col] = 0.0f;
-            }
-        }
-    }
-
-    // Get window index and create window attention mask
-    auto [window_index, cu_window_seqlens] = get_window_index(reordered_images_grid_thw);
-    
-    ov::Tensor window_attention_mask{ov::element::f32, {1, hidden_states_size, hidden_states_size}};
-    float* window_mask_data = window_attention_mask.data<float>();
-    std::fill_n(window_mask_data, window_attention_mask.get_size(), -std::numeric_limits<float>::infinity());
-
-    for (size_t i = 1; i < cu_window_seqlens.size(); ++i) {
-        size_t start = cu_window_seqlens[i-1];
-        size_t end = cu_window_seqlens[i];
-        for (size_t row = start; row < end; ++row) {
-            for (size_t col = start; col < end; ++col) {
-                window_mask_data[row * hidden_states_size + col] = 0.0f;
-            }
-        }
-    }
-
-    // Concatenate image embeddings
-    ov::Tensor concatenated_images;
-    if (reordered_image_embeds.size() == 1) {
-        concatenated_images = reordered_image_embeds.at(0);
-    } else {
-        size_t total_length = 0;
-        for (const auto& embed : reordered_image_embeds) {
-            total_length += embed.get_shape().at(0);
-        }
-        size_t hidden_dim = reordered_image_embeds.at(0).get_shape().at(1);
-        
-        concatenated_images = ov::Tensor(reordered_image_embeds.at(0).get_element_type(), {total_length, hidden_dim});
-        float* concat_data = concatenated_images.data<float>();
-        
-        size_t offset = 0;
-        for (const auto& embed : reordered_image_embeds) {
-            size_t embed_size = embed.get_shape().at(0) * embed.get_shape().at(1);
-            std::memcpy(concat_data + offset, embed.data(), embed.get_byte_size());
-            offset += embed_size;
-        }
-    }
-
+    ov::Tensor concatenated_embeds = concatenate_image_embeds(reordered_image_embeds);
+    ov::Tensor attention_mask = get_attention_mask(reordered_images_grid_thw);
     ov::Tensor rotary_pos_emb = get_rotary_pos_emb(reordered_images_grid_thw);
+
+    auto [window_index, cu_window_seqlens] = get_window_index(reordered_images_grid_thw);
+    size_t hidden_states_size = attention_mask.get_shape().at(1);
+    ov::Tensor window_attention_mask = get_window_attention_mask(hidden_states_size, cu_window_seqlens);
+
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
-
-    vision_embeddings_merger.set_tensor("hidden_states", concatenated_images);
+    vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
     vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
     vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
     vision_embeddings_merger.set_tensor("window_attention_mask", window_attention_mask);
@@ -219,6 +138,23 @@ std::pair<ov::Tensor, std::vector<int32_t>> InputsEmbedderQwen2_5_VL::get_window
     }
     
     return {window_index_tensor, cu_window_seqlens};
+}
+
+ov::Tensor InputsEmbedderQwen2_5_VL::get_window_attention_mask(const size_t hidden_states_size, const std::vector<int32_t>& cu_window_seqlens) {
+    ov::Tensor window_attention_mask{ov::element::f32, {1, hidden_states_size, hidden_states_size}};
+    float* window_mask_data = window_attention_mask.data<float>();
+    std::fill_n(window_mask_data, window_attention_mask.get_size(), -std::numeric_limits<float>::infinity());
+
+    for (size_t i = 1; i < cu_window_seqlens.size(); ++i) {
+        size_t start = cu_window_seqlens[i-1];
+        size_t end = cu_window_seqlens[i];
+        for (size_t row = start; row < end; ++row) {
+            for (size_t col = start; col < end; ++col) {
+                window_mask_data[row * hidden_states_size + col] = 0.0f;
+            }
+        }
+    }
+    return window_attention_mask;
 }
 
 } // namespace ov::genai
