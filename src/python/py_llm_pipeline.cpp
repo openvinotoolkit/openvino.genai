@@ -31,7 +31,7 @@ auto generate_docstring = R"(
     Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
 
     :param inputs: inputs in the form of string, list of strings or tokenized input_ids
-    :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
+    :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
 
     :param generation_config: generation_config
     :type generation_config: GenerationConfig or a dict

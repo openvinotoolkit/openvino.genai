@@ -40,7 +40,7 @@ auto vlm_generate_docstring = R"(
     provided, the tags are prepended to the prompt.
 
     :param images: image or list of images
-    :type images: List[ov.Tensor] or ov.Tensor
+    :type images: list[ov.Tensor] or ov.Tensor
 
     :param generation_config: generation_config
     :type generation_config: GenerationConfig or a dict
@@ -80,7 +80,7 @@ auto vlm_generate_kwargs_docstring = R"(
 
     Expected parameters list:
     image: ov.Tensor - input image,
-    images: List[ov.Tensor] - input images,
+    images: list[ov.Tensor] - input images,
     generation_config: GenerationConfig,
     streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
 
@@ -92,7 +92,7 @@ auto raw_perf_metrics_docstring = R"(
     Structure with VLM specific raw performance metrics for each generation before any statistics are calculated.
 
     :param prepare_embeddings_durations: Durations of embeddings preparation.
-    :type prepare_embeddings_durations: List[MicroSeconds]
+    :type prepare_embeddings_durations: list[MicroSeconds]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -198,7 +198,7 @@ void init_vlm_pipeline(py::module_& m) {
         py::arg("generation_config")  = std::nullopt, "generation config",
         R"(
             VLMPipeline class constructor.
-            models (dict[str, typing.Tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+            models (dict[str, tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
             tokenizer (Tokenizer): Genai Tokenizers.
             config_dir_path (os.PathLike): Path to folder with model configs.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.

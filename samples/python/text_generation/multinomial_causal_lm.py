@@ -6,7 +6,7 @@ import argparse
 import openvino_genai
 import queue
 import threading
-from typing import Union, List
+from typing import Union
 
 
 class IterableStreamer(openvino_genai.StreamerBase):
@@ -74,12 +74,12 @@ class IterableStreamer(openvino_genai.StreamerBase):
         """
         self.text_queue.put(word)
 
-    def write(self, token: Union[int, List[int]]) -> openvino_genai.StreamingStatus:
+    def write(self, token: Union[int, list[int]]) -> openvino_genai.StreamingStatus:
         """
         Processes a token and manages the decoding buffer. Adds decoded text to the queue.
 
         Args:
-            token (Union[int, List[int]]): The token(s) to process.
+            token (Union[int, list[int]]): The token(s) to process.
 
         Returns:
             bool: True if generation should be stopped, False otherwise.
@@ -156,7 +156,7 @@ class ChunkStreamer(IterableStreamer):
         super().__init__(tokenizer)
         self.tokens_len = tokens_len
 
-    def write(self, token: Union[int, List[int]]) -> openvino_genai.StreamingStatus:
+    def write(self, token: Union[int, list[int]]) -> openvino_genai.StreamingStatus:
         if (len(self.tokens_cache) + 1) % self.tokens_len == 0:
             return super().write(token)
 

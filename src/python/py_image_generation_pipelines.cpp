@@ -62,13 +62,13 @@ auto raw_image_generation_perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
     :param unet_inference_durations: Durations for each unet inference in microseconds.
-    :type unet_inference_durations: List[float]
+    :type unet_inference_durations: list[float]
 
     :param transformer_inference_durations: Durations for each transformer inference in microseconds.
-    :type transformer_inference_durations: List[float]
+    :type transformer_inference_durations: list[float]
 
     :param iteration_durations: Durations for each step iteration in microseconds.
-    :type iteration_durations: List[float]
+    :type iteration_durations: list[float]
 )";
 
 auto image_generation_perf_metrics_docstring = R"(
