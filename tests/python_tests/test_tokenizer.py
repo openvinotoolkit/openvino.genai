@@ -573,6 +573,12 @@ QWEN2_VL_2B = "{% if messages is string %}{{ messages }}{% else %}{% for content
 SIMPLIFIED_QWEN2_VL_2B = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
 
 
+SIMPLIFIED_QWEN3 = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+
+
+PATCHED_SIMPLIFIED_QWEN3 = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+
+
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_set_special_runtime_template(tmp_path):
@@ -591,7 +597,12 @@ def test_set_special_runtime_template(tmp_path):
         ChatTemplates("correct template", None, None, "correct template", "", ""),
         ChatTemplates("correct template", None, None, None, "correct template", ""),
         ChatTemplates("correct template", None, None, None, None, "correct template"),
+        # If the template is known to be not supported by GenAI, it's replaced with a simplified supported version:
         ChatTemplates(SIMPLIFIED_QWEN2_VL_2B, None, QWEN2_VL_2B, "", "", ""),
+        # Replace not supported instructions with equivalents in chat_template rt_info:
+        ChatTemplates(PATCHED_SIMPLIFIED_QWEN3, None, SIMPLIFIED_QWEN3, "", "", ""),
+        # Replace not supported instructions with equivalents in simplified_chat_template rt_info:
+        ChatTemplates(PATCHED_SIMPLIFIED_QWEN3, SIMPLIFIED_QWEN3, "", "", "", ""),
     ],
 )
 def test_template_priorities(tmp_path, chat_templates):
