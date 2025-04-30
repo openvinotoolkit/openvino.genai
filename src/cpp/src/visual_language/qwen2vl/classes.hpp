@@ -61,8 +61,7 @@ protected:
     virtual ov::Tensor run_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
         const std::vector<size_t>& images_sequence, 
-        size_t image_id, 
-        const VLMConfig& vlm_config);
+        const size_t image_id);
 
     ov::Tensor merge_text_and_image_embeddings_qwen2vl(
         const ov::Tensor& input_ids,

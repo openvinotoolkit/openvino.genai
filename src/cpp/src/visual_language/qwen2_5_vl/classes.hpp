@@ -38,8 +38,7 @@ protected:
     ov::Tensor run_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
         const std::vector<size_t>& images_sequence, 
-        size_t image_id, 
-        const VLMConfig& vlm_config) override;
+        const size_t image_id) override;
         
     std::pair<ov::Tensor, std::vector<int32_t>> get_window_index(const std::vector<std::array<size_t, 3>>& grids_thw);
 };

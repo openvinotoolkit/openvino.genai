@@ -332,7 +332,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     }
     ov::Tensor merged_image_embeddings_tensor;
     if (recalculate_merged_embeddings) {
-        m_merged_image_embeddings = run_image_embeddings_merger(images, images_sequence, m_image_id, m_vlm_config);
+        m_merged_image_embeddings = run_image_embeddings_merger(images, images_sequence, m_image_id);
     }
     merged_image_embeddings_tensor = m_merged_image_embeddings;
 
@@ -375,7 +375,7 @@ bool InputsEmbedderQwen2VL::prompt_has_image_tag(const std::string& prompt) cons
     return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(NATIVE_TAG) != std::string::npos;
 }
 
-ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::vector<size_t>& images_sequence, size_t image_id, const VLMConfig& vlm_config) {
+ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(const std::vector<EncodedImage>& images, const std::vector<size_t>& images_sequence, const size_t image_id) {
     std::vector<ov::Tensor> image_embeds;
     std::vector<std::array<size_t, 3>> images_grid_thw;
     image_embeds.reserve(images.size());

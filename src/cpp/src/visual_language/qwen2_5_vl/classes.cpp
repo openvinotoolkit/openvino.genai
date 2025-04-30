@@ -26,8 +26,7 @@ InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(
 ov::Tensor InputsEmbedderQwen2_5_VL::run_image_embeddings_merger(
     const std::vector<EncodedImage>& images, 
     const std::vector<size_t>& images_sequence, 
-    size_t image_id, 
-    const VLMConfig& vlm_config) {
+    const size_t image_id) {
     
     std::vector<ov::Tensor> image_embeds;
     std::vector<std::array<size_t, 3>> images_grid_thw;
