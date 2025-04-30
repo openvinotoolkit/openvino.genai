@@ -28,5 +28,6 @@ private:
 private:
     ov::InferRequest m_request;
     Tensor m_beam_idx_tensor;
+    bool m_is_npu = false;
 };
 }  // namespace ov::genai
