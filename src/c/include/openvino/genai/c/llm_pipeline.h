@@ -88,6 +88,10 @@ typedef struct ov_genai_llm_pipeline_opaque ov_genai_llm_pipeline;
  * Example with properties:
  * ov_genai_llm_pipeline_create(model_path, "GPU", 2, &pipe,
  *                             "CACHE_DIR", "cache_dir");
+ * Note: If the property value is not a string, please pass it as a string
+ * Example:
+ * ov_genai_llm_pipeline_create(model_path, "NPU", 6, &pipeline, "MAX_PROMPT_LEN", "128", "MIN_RESPONSE_LEN",
+                                             "64", "CHACHE_DIR", "cache_dir")
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_create(const char* models_path,
                                                                   const char* device,
