@@ -5,7 +5,7 @@ import psutil
 import csv
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 from tqdm import tqdm
 
 from optimum.intel.openvino import OVModelForCausalLM
@@ -60,13 +60,13 @@ def retry_request(func, retries=5):
             else:
                 raise e
 
-def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
+def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
     TESTS_ROOT = Path('tests/python_tests')
     file_path = TESTS_ROOT / 'data' / file_name
     with open(file_path, 'r') as f:
         return {"prompts": [s for s in f]}
 
-def load_samsum_dataset(file_name : str) -> Dict[str, List[str]]:
+def load_samsum_dataset(file_name : str) -> dict[str, list[str]]:
     import json
     retval = {"prompts": []}
     with open(file_name, 'r') as json_file:

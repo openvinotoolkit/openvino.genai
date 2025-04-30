@@ -6,7 +6,7 @@ import datasets
 import pytest
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 from tqdm import tqdm
 
 from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode
@@ -18,7 +18,7 @@ from utils.hugging_face import download_and_convert_model
 from data.test_dataset import get_test_dataset
 
 
-def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
+def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
     TESTS_ROOT = Path(__file__).parent
     file_path = TESTS_ROOT / 'data' / file_name
     with open(file_path, 'r', encoding="utf-8") as f:
@@ -172,7 +172,7 @@ def test_dynamic_memory_allocation(params):
                          model="facebook/opt-125m",
                          scheduler_config=params[0],
                          generation_config=params[1],
-                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
+                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 
 @dataclass

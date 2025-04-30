@@ -1,11 +1,10 @@
 # Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import Tuple, List
 from openvino_genai import GenerationConfig
 from utils.generation_config import get_greedy, get_beam_search, get_multinomial_temperature
 
-def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
+def get_test_dataset() -> tuple[list[str], list[GenerationConfig]]:
     prompts = [
         "What is OpenVINO?",
         "How are you?",

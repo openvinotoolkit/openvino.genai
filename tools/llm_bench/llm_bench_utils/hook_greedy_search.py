@@ -8,7 +8,7 @@ import types
 import warnings
 import logging as log
 import transformers
-from typing import Optional, Tuple, Union, List
+from typing import Optional, Union
 from transformers.generation.stopping_criteria import (
     EosTokenCriteria,
     StoppingCriteriaList,
@@ -18,8 +18,6 @@ from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
 import llm_bench_utils.hook_sample as hook_sample
-import llm_bench_utils.hook_sample_v43 as hook_sample_v43
-import llm_bench_utils.hook_sample_v45 as hook_sample_v45
 from packaging import version
 
 
@@ -28,23 +26,23 @@ logger = log.getLogger(__name__)
 
 class GenerateDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
-    scores: Optional[Tuple[torch.FloatTensor]] = None
-    logits: Optional[Tuple[torch.FloatTensor]] = None
-    attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    past_key_values: Optional[Tuple[Tuple[Tuple[torch.FloatTensor]]]] = None
+    scores: Optional[tuple[torch.FloatTensor]] = None
+    logits: Optional[tuple[torch.FloatTensor]] = None
+    attentions: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
 class GenerateEncoderDecoderOutput(ModelOutput):
     sequences: torch.LongTensor = None
-    scores: Optional[Tuple[torch.FloatTensor]] = None
-    logits: Optional[Tuple[torch.FloatTensor]] = None
-    encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    decoder_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    cross_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    decoder_hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    past_key_values: Optional[Tuple[Tuple[Tuple[torch.FloatTensor]]]] = None
+    scores: Optional[tuple[torch.FloatTensor]] = None
+    logits: Optional[tuple[torch.FloatTensor]] = None
+    encoder_attentions: Optional[tuple[torch.FloatTensor]] = None
+    encoder_hidden_states: Optional[tuple[torch.FloatTensor]] = None
+    decoder_attentions: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    cross_attentions: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    decoder_hidden_states: Optional[tuple[tuple[torch.FloatTensor]]] = None
+    past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
 GenerateNonBeamOutput = Union[GenerateDecoderOnlyOutput, GenerateEncoderDecoderOutput]
@@ -62,7 +60,7 @@ def new_greedy_search(
         stopping_criteria: Optional[StoppingCriteriaList] = None,
         max_length: Optional[int] = None,
         pad_token_id: Optional[int] = None,
-        eos_token_id: Optional[Union[int, List[int]]] = None,
+        eos_token_id: Optional[Union[int, list[int]]] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
@@ -100,7 +98,7 @@ def new_greedy_search(
                 tokens. The maximum length of the sequence to be generated.
             pad_token_id (`int`, *optional*):
                 The id of the *padding* token.
-            eos_token_id (`Union[int, List[int]]`, *optional*):
+            eos_token_id (`Union[int, list[int]]`, *optional*):
                 The id of the *end-of-sequence* token. Optionally, use a list to set multiple *end-of-sequence* tokens.
             output_attentions (`bool`, *optional*, defaults to `False`):
                 Whether or not to return the attentions tensors of all attention layers. See `attentions` under
@@ -380,12 +378,18 @@ class GreedySearchHook:
     def new_forward(self, model):
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
-        model._sample = hook_sample.new_sample.__get__(model, model.__class__)
         trans_version = version.parse(transformers.__version__)
-        if trans_version >= version.parse('4.45.0'):
+        if trans_version >= version.parse('4.51.0'):
+            import llm_bench_utils.hook_sample_v51 as hook_sample_v51
+            model._sample = hook_sample_v51.new_sample.__get__(model, model.__class__)
+        elif trans_version >= version.parse('4.45.0'):
+            import llm_bench_utils.hook_sample_v45 as hook_sample_v45
             model._sample = hook_sample_v45.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.43.0'):
-            model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)  
+            import llm_bench_utils.hook_sample_v43 as hook_sample_v43
+            model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)
+        else:
+            model._sample = hook_sample.new_sample.__get__(model, model.__class__) 
        
     def new_get_multimodal_embeddings(self, model):
         model._orig_get_multimodal_embeddings = model.get_multimodal_embeddings

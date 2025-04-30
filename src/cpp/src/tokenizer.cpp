@@ -125,6 +125,38 @@ std::string remap_and_patch(const std::string& chat_template) {
     );
 }
 
+std::vector<std::string> read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model) {
+    std::shared_ptr<ov::Node> vocab_decoder_node;
+    for (auto node: model->get_ordered_ops()) {
+        if (node->get_friendly_name().find("VocabDecoder") != std::string::npos) {
+            vocab_decoder_node = node;
+        }
+    }
+    if (!vocab_decoder_node) {
+        return {};
+    }
+
+    auto begins_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(1));
+    auto ends_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(2));
+    auto chars_node = ov::as_type_ptr<ov::op::v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(3));
+    if (!begins_node || !ends_node || !chars_node) {
+        return {};
+    }
+
+    auto begins = begins_node->cast_vector<int32_t>();
+    auto ends = ends_node->cast_vector<int32_t>();
+    auto chars = chars_node->cast_vector<uint8_t>();
+
+    std::vector<std::string> vocab_vector;
+    vocab_vector.resize(begins.size());
+    for (size_t i = 0; i < begins.size(); ++i) {
+        const auto begin = begins[i];
+        const auto end = ends[i];
+        vocab_vector[i] = std::string(chars.begin() + begin, chars.begin() + end);
+    };
+    return vocab_vector;
+}
+
 }  // namespace
 
 namespace ov {
@@ -137,7 +169,7 @@ public:
 
     // To change the adding special tokens mode we use a statefull subgraph,
     // this flag holds the current state value of the CompiledModel.
-    ov::AnyMap m_state_flags;
+    std::unordered_map<ov::InferRequest*, ov::AnyMap> m_request_to_state_flags;
 
     bool m_older_than_24_5 = false;
 
@@ -151,11 +183,13 @@ public:
 
     std::string m_chat_template = {};
 
+    std::vector<std::string> m_vocab = {};
+
     template <typename T>
-    void set_state_value(ov::VariableState& state, std::optional<T> value) {
+    void set_state_value(ov::VariableState& state, std::optional<T> value, ov::AnyMap& state_flags) {
         // better to store which value is in the state locally so that get_state is not called every infer request
         std::optional<T> last_value;
-        ov::genai::utils::read_anymap_param(m_state_flags, state.get_name(), last_value);
+        ov::genai::utils::read_anymap_param(state_flags, state.get_name(), last_value);
         
         // If requested add[skip]_special_tokens, max_length, pading mode, etc.
         // is different from the stored state, need to set state variable.
@@ -166,46 +200,48 @@ public:
             
             *value_tensor.data<T>() = *value;
             state.set_state(value_tensor);
-            m_state_flags[state.get_name()] = *value;
+            state_flags[state.get_name()] = *value;
         } else if (!value.has_value()) {
             // If user called with params, e.g. tokenizer.encode(prompt, add_special_tokens|max_length=...)
             // After that called without params, e.g. tokenizer.encode(prompt) we should reset to the default state.
             state.reset();
-            m_state_flags.erase(state.get_name());
+            state_flags.erase(state.get_name());
         }
     }
 
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
-        // These values should be equal to default values in py_tokenizer.cpp
-        // in order to get the same behavior in C++ when arguments are not specified.
-        std::optional<bool> add_special_tokens_flag = true;
-        std::optional<bool> skip_special_tokens_flag = true;
-        std::optional<int32_t> max_length_val;
-        std::optional<bool> pad_to_max_length_val = false;
-        
-        ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
-        ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
-        ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
-        ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
-
         if (m_older_than_24_5) {
             // Changing add_special_tokens at runtime was introduced in
             // 24.5. Older tokenizers still allow manipulating their
             // state but the effect is incorrect.
             return;
         }
+
+        // These values should be equal to default values in py_tokenizer.cpp
+        // in order to get the same behavior in C++ when arguments are not specified.
+        std::optional<bool> add_special_tokens_flag = true;
+        std::optional<bool> skip_special_tokens_flag = true;
+        std::optional<int32_t> max_length_val;
+        std::optional<bool> pad_to_max_length_val = false;
+
+        ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
+        ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
+        ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
+        ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
+
+        ov::AnyMap& state_flags = m_request_to_state_flags[&infer_request_guard.get()];
         
         for (auto& state: infer_request_guard.get().query_state()) {
             auto name = state.get_name();
 
             if (name == add_special_tokens.name()) {
-                set_state_value(state, add_special_tokens_flag);
+                set_state_value(state, add_special_tokens_flag, state_flags);
             } else if (name == skip_special_tokens.name()) {
-                set_state_value(state, skip_special_tokens_flag);
+                set_state_value(state, skip_special_tokens_flag, state_flags);
             } else if (name == MAX_LENGTH_VAR_ID) {
-                set_state_value(state, max_length_val);
+                set_state_value(state, max_length_val, state_flags);
             } else if (name == PAD_TO_MAX_LENGTH_VAR_ID) {
-                set_state_value(state, pad_to_max_length_val);
+                set_state_value(state, pad_to_max_length_val, state_flags);
             }
         }
     }
@@ -247,6 +283,13 @@ public:
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
+
+        // temporary allow absense both tokenizer and detokenizer for GGUF support
+        // TODO: remove this code once Tokenizers can be created from GGUF file
+        if (!ov_tokenizer && !ov_detokenizer) {
+            return;
+        }
+
         OPENVINO_ASSERT(ov_tokenizer || ov_detokenizer, "Neither tokenizer nor detokenzier models were provided");
 
         auto core = get_core_singleton();
@@ -307,6 +350,8 @@ public:
                 m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::skip_special_tokens(false)});
             // Initialize detokenizer's cache to save time later.
             decode({1, 33, 199, 42, 42});
+
+            m_vocab = read_vocab_from_detokenizer_model(ov_detokenizer);
         }
     }
 
@@ -579,9 +624,12 @@ public:
         try {
             result = tpl.RenderAsString(params).value();
         } catch (const std::exception& error) {
-            OPENVINO_THROW("Chat template for the current model is not supported by Jinja2Cpp. "
-                           "Please apply template manually to your prompt before calling generate. "
-                           "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+            OPENVINO_THROW("Jinja2Cpp failed to apply chat template. Possible solutions are\n"
+                           "* Provide a simplified chat template with set_chat_template().\n"
+                           "* Set apply_chat_template to false in GenerationConfig. "
+                           "It's possible to apply the template manually to your prompt before calling generate. "
+                           "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
+                           "Jinja2Cpp's error: ", error.what());
         }
         OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
                                          "Please check the chat template or apply template manually to your prompt before calling generate."
@@ -705,6 +753,17 @@ std::string Tokenizer::get_chat_template() const {
 
 void Tokenizer::set_chat_template(const std::string& chat_template) {
     m_pimpl->set_chat_template(chat_template);
+}
+
+Vocab Tokenizer::get_vocab() const {
+    OPENVINO_ASSERT(!m_pimpl->m_vocab.empty(), "Tokenizer vocab is empty. Please check if the detokenizer model was provided and loaded correctly.");
+
+    Vocab vocab;
+    vocab.reserve(m_pimpl->m_vocab.size());
+    for (size_t i = 0; i < m_pimpl->m_vocab.size(); ++i) {
+        vocab[m_pimpl->m_vocab[i]] = i;
+    }
+    return vocab;
 }
 
 Tokenizer::~Tokenizer() = default;

@@ -23,9 +23,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (execution_devices[0].find("NPU") != std::string::npos) {
         OPENVINO_ASSERT(execution_devices.size() == 1u);
         m_is_npu = true;
-        const auto max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+        m_max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
         const auto min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
-        m_max_kv_cache_size = max_prompt_len + min_response_len;
+        m_max_kv_cache_size = m_max_prompt_len + min_response_len;
     }
 }
 
@@ -35,7 +35,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::string& device,
     const ov::AnyMap& properties)
     : StatefulLLMPipeline{
-        utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, properties),
+        utils::read_model(models_path, properties),
         tokenizer,
         device,
         properties,
@@ -69,6 +69,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (m_is_npu) {
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(model, *filtered_properties, kv_pos);
+        m_max_prompt_len = kv_desc.max_prompt_len;
         m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
     } else {
        compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
@@ -155,6 +156,14 @@ DecodedResults StatefulLLMPipeline::generate(
                 encoded_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
             }
         }
+    }
+
+    if (m_is_npu) {
+        // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
+        OPENVINO_ASSERT(encoded_input.input_ids.get_size() <= m_max_prompt_len,
+            "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
+            m_max_prompt_len, " tokens. ", encoded_input.input_ids.get_size(), " is passed.\n"
+            "Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
     }
 
     auto encode_stop_time =  std::chrono::steady_clock::now();

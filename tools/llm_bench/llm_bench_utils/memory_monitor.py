@@ -16,7 +16,7 @@ from enum import Enum
 from functools import lru_cache
 from functools import partial
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Optional
 
 import psutil
 import matplotlib
@@ -118,7 +118,8 @@ class MemoryMonitor:
             ```
         """
         if self._monitoring_in_progress:
-            raise Exception("Monitoring already in progress")
+            log.warning(f"Monitoring was already in progress. MemoryMonitor will be restarted and previous data will be lost for {self.memory_type}.")
+            self.stop()
 
         self._memory_values_queue = queue.Queue()
         self._monitoring_thread_should_stop = False
@@ -147,7 +148,7 @@ class MemoryMonitor:
             atexit.unregister(self._stop_logging_atexit_fn)
             self._stop_logging_atexit_fn = None
 
-    def get_data(self, memory_from_zero: Optional[bool] = False) -> Tuple[List, List]:
+    def get_data(self, memory_from_zero: Optional[bool] = False) -> tuple[list, list]:
         """
         :param memory_from_zero: Whether to normalize memory measurements by subtracting the first value. This way
             the measurements will start with 0. Hence, is not very reliable and may actually result in negative values.
@@ -169,8 +170,8 @@ class MemoryMonitor:
 
     def save_memory_logs(
         self,
-        time_values: List[float],
-        memory_values: List[float],
+        time_values: list[float],
+        memory_values: list[float],
         save_dir: Path,
         plot_title: Optional[str] = "",
         filename_suffix: Optional[str] = "",

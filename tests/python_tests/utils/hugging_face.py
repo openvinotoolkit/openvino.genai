@@ -3,16 +3,18 @@
 
 from os.path import sep
 from pathlib import Path
-from typing import List
+
 from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
+
+from huggingface_hub import hf_hub_download
 
 from optimum.intel import OVModelForCausalLM
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
-from utils.constants import get_default_llm_properties, get_ov_cache_models_dir
+from utils.constants import get_default_llm_properties, extra_generate_kwargs, get_ov_cache_models_dir
 from utils.network import retry_request
 
 def generation_config_to_hf(
@@ -88,9 +90,9 @@ def generation_config_to_hf(
 def run_hugging_face(
     opt_model,
     hf_tokenizer,
-    prompts: List[str],
-    generation_configs: List[GenerationConfig] | GenerationConfig,
-) -> List[GenerationResult]:
+    prompts: list[str],
+    generation_configs: list[GenerationConfig] | GenerationConfig,
+) -> list[GenerationResult]:
     generation_results = []
 
     if type(generation_configs) is list:
@@ -106,7 +108,7 @@ def run_hugging_face(
             input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
             prompt_len = 0 if generation_config.echo else input_ids.numel()
 
-            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer, **extra_generate_kwargs())
             all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
             generation_result = GenerationResult()
@@ -127,7 +129,7 @@ def run_hugging_face(
             inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, padding_side='left')
         input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
         hf_generation_config = generation_config_to_hf(opt_model.generation_config, generation_configs)
-        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer, **extra_generate_kwargs())
 
         generation_ids = []
         scores = []
@@ -203,3 +205,18 @@ def download_and_convert_model(model_id: str, **tokenizer_kwargs):
         hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
     return opt_model, hf_tokenizer, models_path
+
+
+def download_gguf_model(gguf_model_id: str,
+                        gguf_filename: str):
+    gguf_dir_name = str(gguf_model_id).replace(sep, "_")
+    ov_cache_models_dir = get_ov_cache_models_dir()
+    models_path_gguf = ov_cache_models_dir / gguf_dir_name
+
+    gguf_path = hf_hub_download(
+        repo_id=gguf_model_id,
+        filename=gguf_filename,
+        local_dir=models_path_gguf # Optional: Specify download directory
+    )
+
+    return gguf_path

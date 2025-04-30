@@ -14,12 +14,12 @@ def read_wav(filepath):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("model_dir")
-    parser.add_argument("wav_file_path")
+    parser.add_argument("model_dir", help="Path to the model directory")
+    parser.add_argument("wav_file_path", help="Path to the WAV file")
+    parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
-    device = "CPU"  # GPU, NPU can be used as well
-    pipe = openvino_genai.WhisperPipeline(args.model_dir, device)
+    pipe = openvino_genai.WhisperPipeline(args.model_dir, args.device)
 
     config = pipe.get_generation_config()
     config.max_new_tokens = 100  # increase this based on your speech length

@@ -45,10 +45,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
-    auto kv_cache_config = utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation);
+    utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation);
     utils::apply_gather_before_matmul_transformation(model);
 
-    initialize_pipeline(model, scheduler_config, device, properties, kv_cache_config);
+    initialize_pipeline(model, scheduler_config, device, properties);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
@@ -82,8 +82,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     std::shared_ptr<ov::Model> model,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& properties,
-    const std::vector<KVHeadConfig>& kv_cache_config) {
+    const ov::AnyMap& properties) {
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
@@ -107,7 +106,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // Cache manager
-    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(infer_request, kv_cache_config);
+    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(infer_request);
     m_num_decoder_layers = cache_manager->get_num_decoder_layers();
     m_block_size = cache_manager->get_block_size();
 
