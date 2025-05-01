@@ -4,8 +4,8 @@
 
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
-#include "scheduler.hpp"
-#include "cache_manager.hpp"
+#include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/cache_manager.hpp"
 #include "helper.hpp"
 
 using namespace ov::genai;

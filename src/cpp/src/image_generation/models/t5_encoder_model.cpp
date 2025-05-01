@@ -6,9 +6,8 @@
 #include <fstream>
 
 #include "json_utils.hpp"
-#include "lora_helper.hpp"
+#include "lora/lora_helper.hpp"
 #include "utils.hpp"
-#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {

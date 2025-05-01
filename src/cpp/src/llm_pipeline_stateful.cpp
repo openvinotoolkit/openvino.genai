@@ -4,7 +4,7 @@
 
 #include "llm_pipeline_stateful.hpp"
 
-#include "lora_helper.hpp"
+#include "lora/lora_helper.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/text_streamer.hpp"
 

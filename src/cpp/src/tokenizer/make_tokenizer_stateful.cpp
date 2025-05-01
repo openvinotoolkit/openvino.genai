@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "make_tokenizer_stateful.hpp"
+#include "tokenizer/make_tokenizer_stateful.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/select.hpp"
 #include "openvino/op/maximum.hpp"

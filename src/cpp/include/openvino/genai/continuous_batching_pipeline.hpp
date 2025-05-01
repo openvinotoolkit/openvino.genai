@@ -3,10 +3,12 @@
 
 #pragma once
 
-#include <memory>
 #include <filesystem>
+#include <memory>
+#include <string>
+#include <optional>
 
-#include <openvino/openvino.hpp>
+#include <openvino/runtime/tensor.hpp>
 
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
@@ -17,7 +19,7 @@
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 
-#include "cache_eviction.hpp"
+#include "openvino/genai/cache_eviction.hpp"
 
 namespace ov::genai {
 

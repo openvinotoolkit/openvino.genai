@@ -9,7 +9,7 @@
 #include <cmath>
 
 #include "openvino/openvino.hpp"
-#include "attention_output.hpp"
+#include "continuous_batching/attention_output.hpp"
 #include "openvino/genai/cache_eviction.hpp"
 
 namespace ov::genai {

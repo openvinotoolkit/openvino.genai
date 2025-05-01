@@ -7,7 +7,6 @@
 #include <list>
 
 #include "openvino/runtime/tensor.hpp"
-#include "paged_attention_transformations.hpp"
 
 namespace ov::genai {
 

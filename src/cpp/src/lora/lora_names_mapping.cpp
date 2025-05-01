@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <optional>
 
-#include "lora_names_mapping.hpp"
+#include "lora/lora_names_mapping.hpp"
 
 namespace {
 

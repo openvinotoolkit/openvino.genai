@@ -37,8 +37,8 @@
 #include "openvino/genai/lora_adapter.hpp"
 
 #include "utils.hpp"
-#include "lora_common.hpp"
-#include "lora_names_mapping.hpp"
+#include "lora/lora_common.hpp"
+#include "lora/lora_names_mapping.hpp"
 
 extern "C" {
     #include "safetensors.h"

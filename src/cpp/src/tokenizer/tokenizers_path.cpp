@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 
 #include <sstream>
 #ifdef _WIN32

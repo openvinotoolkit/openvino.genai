@@ -9,10 +9,10 @@
 
 #include "openvino/runtime/intel_gpu/properties.hpp"
 #include "openvino/genai/scheduler_config.hpp"
-#include "block_manager.hpp"
+#include "continuous_batching/block_manager.hpp"
 #include "sequence_group.hpp"
-#include "cache_manager.hpp"
-#include "timer.hpp"
+#include "continuous_batching/cache_manager.hpp"
+#include "continuous_batching/timer.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {

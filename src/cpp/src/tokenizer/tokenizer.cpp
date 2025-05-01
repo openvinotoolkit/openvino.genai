@@ -14,8 +14,8 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
-#include "make_tokenizer_stateful.hpp"
-#include "tokenizers_path.hpp"
+#include "tokenizer/make_tokenizer_stateful.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 #include "circular_buffer_queue.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"

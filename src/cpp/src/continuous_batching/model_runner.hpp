@@ -11,10 +11,10 @@
 #include "visual_language/embedding_model.hpp"
 #include "debug_utils.hpp"
 #include "sequence_group.hpp"
-#include "scheduler.hpp"
-#include "timer.hpp"
+#include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/timer.hpp"
 
-#include "attention_output.hpp"
+#include "continuous_batching/attention_output.hpp"
 
 namespace ov::genai {
 

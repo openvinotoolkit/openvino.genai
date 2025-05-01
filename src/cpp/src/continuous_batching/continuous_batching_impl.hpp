@@ -3,10 +3,10 @@
 
 #pragma once
 
-#include "icontinuous_batching.hpp"
+#include "continuous_batching/icontinuous_batching.hpp"
 
 #include "openvino/genai/lora_adapter.hpp"
-#include "cache_eviction.hpp"
+#include "continuous_batching/cache_eviction.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {

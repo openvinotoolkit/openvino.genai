@@ -7,7 +7,7 @@
 #include <filesystem>
 #include <vector>
 
-#include "block_manager.hpp"
+#include "continuous_batching/block_manager.hpp"
 #include "sequence_group.hpp"
 #include "scheduler.hpp"
 
