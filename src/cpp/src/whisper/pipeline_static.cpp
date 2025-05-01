@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "whisper_pipeline_static.hpp"
+#include "whisper/pipeline_static.hpp"
 
 #include <chrono>
 #include <regex>
@@ -11,9 +11,9 @@
 #include "utils.hpp"
 #include "whisper/logit_processor.hpp"
 #include "whisper/timestamps.hpp"
-#include "whisper/whisper.hpp"
-#include "whisper/whisper_config.hpp"
-#include "whisper/whisper_utils.hpp"
+#include "whisper/generate.hpp"
+#include "whisper/config.hpp"
+#include "whisper/filter_non_segment_metrics.hpp"
 
 #include "openvino/core/layout.hpp"
 #include "openvino/core/preprocess/pre_post_process.hpp"
@@ -153,6 +153,17 @@ void process_whisper_logits(ov::Tensor logits,
 
 }
 
+void infer_with_perf_metrics(ov::InferRequest& request, ov::genai::RawPerfMetrics& raw_metrics) {
+    const auto infer_start = std::chrono::steady_clock::now();
+    request.infer();
+    const auto infer_end = std::chrono::steady_clock::now();
+    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(infer_end - infer_start);
+    raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
+    raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
+    raw_metrics.m_new_token_times.emplace_back(infer_end);
+    raw_metrics.m_batch_sizes.emplace_back(1);
+}
+
 ov::Tensor decode(ov::Tensor& encoder_hidden_state,
                   ov::InferRequest& decoder,
                   const std::vector<int64_t>& init_ids,
@@ -161,7 +172,7 @@ ov::Tensor decode(ov::Tensor& encoder_hidden_state,
     encoder_hidden_state.copy_to(decoder.get_tensor("encoder_hidden_states"));
     set_decoder_input_ids(decoder, init_ids);
 
-    ov::genai::utils::infer_with_perf_metrics(decoder, raw_metrics);
+    infer_with_perf_metrics(decoder, raw_metrics);
     return decoder.get_tensor("logits");
 }
 
@@ -174,7 +185,7 @@ ov::Tensor decode_with_past(ov::InferRequest& decoder_with_past,
     // FIXME: Is "attention_mask" supposed to be f16?
     decoder_with_past.get_tensor("attention_mask").data<ov::float16>()[position_id - 1] = 0u;
 
-    ov::genai::utils::infer_with_perf_metrics(decoder_with_past, raw_metrics);
+    infer_with_perf_metrics(decoder_with_past, raw_metrics);
     return decoder_with_past.get_tensor("logits");
 }
 

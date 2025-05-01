@@ -3,7 +3,7 @@
 
 #include <numeric>
 
-#include "speculative_decoding/speculative_decoding_metrics.hpp"
+#include "speculative_decoding/metrics.hpp"
 #include "openvino/runtime/exception.hpp"
 
 namespace ov::genai {

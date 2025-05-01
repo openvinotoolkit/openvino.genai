@@ -12,12 +12,12 @@
 #include "utils.hpp"
 #include "whisper/context_tokens.hpp"
 #include "whisper/models/decoder.hpp"
-#include "whisper/whisper.hpp"
-#include "whisper/whisper_config.hpp"
-#include "whisper/whisper_feature_extractor.hpp"
-#include "whisper/whisper_models.hpp"
-#include "whisper_pipeline_base.hpp"
-#include "whisper_pipeline_static.hpp"
+#include "whisper/generate.hpp"
+#include "whisper/config.hpp"
+#include "whisper/feature_extractor.hpp"
+#include "whisper/models.hpp"
+#include "whisper/pipeline_base.hpp"
+#include "whisper/pipeline_static.hpp"
 
 namespace {
 ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {

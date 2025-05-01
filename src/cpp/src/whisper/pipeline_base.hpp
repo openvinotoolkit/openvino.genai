@@ -5,8 +5,8 @@
 
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "utils.hpp"
-#include "whisper/whisper_config.hpp"
-#include "whisper/whisper_feature_extractor.hpp"
+#include "whisper/config.hpp"
+#include "whisper/feature_extractor.hpp"
 
 namespace ov {
 namespace genai {

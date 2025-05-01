@@ -6,8 +6,6 @@
 #include <filesystem>
 #include <vector>
 
-#include "openvino/genai/visibility.hpp"
-
 namespace ov {
 namespace genai {
 

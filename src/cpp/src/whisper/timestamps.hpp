@@ -5,7 +5,7 @@
 
 #include <openvino/openvino.hpp>
 
-#include "whisper.hpp"
+#include "whisper/generate.hpp"
 
 namespace ov {
 namespace genai {

@@ -5,9 +5,27 @@
 
 #include <filesystem>
 
+#include "openvino/genai/perf_metrics.hpp"
 #include "statefull_decoder.hpp"
-#include "whisper/whisper_utils.hpp"
-#include "with_past_decoder.hpp"
+#include "whisper/models/with_past_decoder.hpp"
+
+namespace {
+int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
+    if (logits.get_shape()[0] <= batch_idx) {
+        OPENVINO_THROW("logits batch size doesn't match the number of beams");
+    }
+
+    size_t vocab_size = logits.get_shape().back();
+    size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;
+    size_t sequence_offset = (logits.get_shape()[1] - 1) * vocab_size;
+    const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
+
+    int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
+    float max_logit = logits_data[out_token];
+
+    return out_token;
+}
+}
 
 namespace ov::genai {
 std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem::path& models_path,
@@ -36,7 +54,7 @@ std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& enco
     auto output_tensor = wait();
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
 
-    int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
+    int64_t output_token = argmax(output_tensor, 0);
 
     reset_state();
 

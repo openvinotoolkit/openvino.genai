@@ -7,7 +7,7 @@
 
 #include <openvino/genai/lora_adapter.hpp>
 
-#include "lora/lora_common.hpp"
+#include "lora/common.hpp"
 
 namespace ov {
 namespace genai {

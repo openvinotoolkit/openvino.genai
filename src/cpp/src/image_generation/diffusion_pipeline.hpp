@@ -13,8 +13,8 @@
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 
-#include "lora/lora_helper.hpp"
-#include "lora/lora_names_mapping.hpp"
+#include "lora/helper.hpp"
+#include "lora/names_mapping.hpp"
 
 #include "json_utils.hpp"
 namespace {

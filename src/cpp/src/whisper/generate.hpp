@@ -10,9 +10,9 @@
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "sampler.hpp"
-#include "whisper_config.hpp"
-#include "whisper_feature_extractor.hpp"
-#include "whisper_models.hpp"
+#include "whisper/config.hpp"
+#include "whisper/feature_extractor.hpp"
+#include "whisper/models.hpp"
 
 namespace ov {
 namespace genai {

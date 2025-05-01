@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "whisper.hpp"
+#include "whisper/generate.hpp"
 
 #include <iostream>
 #include <openvino/openvino.hpp>
@@ -17,10 +17,10 @@
 #include "sampler.hpp"
 #include "timestamps.hpp"
 #include "utils.hpp"
-#include "whisper_config.hpp"
-#include "whisper_feature_extractor.hpp"
-#include "whisper_models.hpp"
-#include "whisper_utils.hpp"
+#include "whisper/config.hpp"
+#include "whisper/feature_extractor.hpp"
+#include "whisper/models.hpp"
+#include "whisper/filter_non_segment_metrics.hpp"
 
 using ov::genai::MicroSeconds;
 

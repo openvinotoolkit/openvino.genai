@@ -9,8 +9,8 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
-#include "whisper/whisper_models.hpp"
-#include "whisper_pipeline_base.hpp"
+#include "whisper/models.hpp"
+#include "pipeline_base.hpp"
 #include "sampler.hpp"
 
 namespace ov {

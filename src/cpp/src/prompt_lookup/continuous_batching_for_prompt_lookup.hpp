@@ -5,7 +5,7 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
-#include "continuous_batching/continuous_batching_impl.hpp"
+#include "continuous_batching/impl.hpp"
 
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
