@@ -56,7 +56,6 @@ class Sequence {
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
     static constexpr size_t m_embeddings_hash_calculation_stride = 50; // the stride with which values are taken from embeddings vector
-    static constexpr size_t m_multiplier = 10000; // multiplier by which float values are multiplied before conversion to size_t
 
     size_t _make_hash(size_t content_length);
 
