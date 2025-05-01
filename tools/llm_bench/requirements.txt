@@ -10,7 +10,7 @@ torch
 transformers[sentencepiece]>=4.40.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
-git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel
+git+https://github.com/huggingface/optimum-intel.git@267f3852b893723c31adf3994601c2bc7c6d35ee#egg=optimum-intel
 git+https://github.com/openvinotoolkit/nncf.git@develop#egg=nncf
 packaging
 psutil
