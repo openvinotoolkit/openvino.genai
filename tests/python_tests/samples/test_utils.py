@@ -9,7 +9,7 @@ def run_sample(command, input_data=None):
     if input_data:
         logger.info(f"Input data: {input_data}")
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8', env=os.environ.copy(), input=input_data)
+        result = subprocess.run(command, stderr=subprocess.STDOUT, universal_newlines=True, encoding='utf-8', env={**os.environ, 'PYTHONIOENCODING': 'utf-8'}, input=input_data)
     except  subprocess.CalledProcessError as error:
         print(f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:")
         print(error.output)
