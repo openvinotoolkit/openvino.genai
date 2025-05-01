@@ -70,7 +70,7 @@ std::vector<int64_t> Sequence::_reduce_embedding(const std::vector<float>& embed
     size_t res_size = std::min((size_t)ceil(float(embedding.size()) / m_embeddings_hash_calculation_stride), m_embeddings_hash_max_num_values);
     std::vector<int64_t> res(res_size);
     for (size_t i = 0, idx=0; idx < res_size; i+= m_embeddings_hash_calculation_stride, idx++) {
-        res[idx] = std::round(embedding[i] * m_multiplier);
+        std::memcopy(&(res[idx]), &(embedding[i]), sizeof(embedding[i]));
     }
     return res;
 }

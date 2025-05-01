@@ -231,7 +231,7 @@ public:
 };
 
 // contains a list of Sequences in generic case (beam search or parallel sampling)
-// - each sequence shares the same prompt and KV-caches for promp
+// - each sequence shares the same prompt and KV-caches for prompt
 // - in case of beam search each sequence also shares specific part of generic phase
 //   via reference counter mechanism on BlockManager level
 class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
