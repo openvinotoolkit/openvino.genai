@@ -18,7 +18,7 @@ class KVCacheBlock {
     int m_ref_count;
     int m_index;
     size_t m_hash;
-    std::chrono::time_point<std::chrono::system_clock> m_timestamp;
+    std::chrono::time_point<std::chrono::steady_clock> m_timestamp;
 public:
     using Ptr = std::shared_ptr<KVCacheBlock>;
     using CPtr = std::shared_ptr<const KVCacheBlock>;
@@ -26,7 +26,7 @@ public:
     explicit KVCacheBlock(int index)
         : m_ref_count(0),
           m_index(index),
-          m_timestamp(std::chrono::system_clock::now()) { }
+          m_timestamp(std::chrono::steady_clock::now()) { }
 
     int get_index() const {
         return m_index;
@@ -61,11 +61,11 @@ public:
         m_hash = hash;
     }
 
-    void set_timestamp(const std::chrono::time_point<std::chrono::system_clock>& timestamp) {
+    void set_timestamp(const std::chrono::time_point<std::chrono::steady_clock>& timestamp) {
         m_timestamp = timestamp;
     }
 
-    std::chrono::time_point<std::chrono::system_clock> get_timestamp() {
+    std::chrono::time_point<std::chrono::steady_clock> get_timestamp() {
         return m_timestamp;
     }
 };
@@ -123,7 +123,7 @@ class OverwritableBlocksHashStore {
         BlocksPerLayer blocks_for_all_layers = it->second;
         for (auto& block_ptr : blocks_for_all_layers) {
 
-            block_ptr->set_timestamp(std::chrono::system_clock::now());
+            block_ptr->set_timestamp(std::chrono::steady_clock::now());
             block_ptr->increment();
         }
         m_blocks.erase(it);
@@ -142,7 +142,7 @@ class OverwritableBlocksHashStore {
         }
         auto hash_and_blocks_for_all_layers = std::min_element(std::begin(m_blocks), std::end(m_blocks), [](const auto& lhs, const auto& rhs) -> bool { return lhs.second[0]->get_timestamp() < rhs.second[0]->get_timestamp(); });
         auto blocks_for_all_layers = hash_and_blocks_for_all_layers->second;
-        auto timestamp = std::chrono::system_clock::now();
+        auto timestamp = std::chrono::steady_clock::now();
         for (auto& block_ptr : blocks_for_all_layers) {
             block_ptr->set_timestamp(timestamp);
             block_ptr->increment();
@@ -1105,7 +1105,7 @@ public:
             // restore fully filled blocks
             auto full_block_hash = sequence->get_hash(content_len);
             auto blocks = m_allocator.get_cached_block(full_block_hash, m_prefix_hash_to_occupied_block_map);
-            auto timestamp = std::chrono::system_clock::now();
+            auto timestamp = std::chrono::steady_clock::now();
             if (!blocks.empty()) {
                 for (size_t layer_idx = 0; layer_idx < block_table.size(); layer_idx++) {
                     auto& block = blocks[layer_idx];
@@ -1122,7 +1122,7 @@ public:
                     auto hash = sequence->get_hash(prev_iteration_content_len + i);
                     auto blocks = m_allocator.get_cached_block(hash, m_prefix_hash_to_occupied_block_map);
                     if (!blocks.empty()) {
-                        auto timestamp = std::chrono::system_clock::now();
+                        auto timestamp = std::chrono::steady_clock::now();
 
                         for (size_t layer_idx = 0; layer_idx < block_table.size(); layer_idx++) {
                             auto& block = blocks[layer_idx];
