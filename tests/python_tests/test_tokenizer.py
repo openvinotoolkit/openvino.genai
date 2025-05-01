@@ -595,6 +595,5 @@ def test_set_special_runtime_template(tmp_path):
     ],
 )
 def test_template_priorities(tmp_path, chat_templates):
-    generate_tokenizer(tmp_path, chat_templates)
     tokenizer = generate_tokenizer(tmp_path, chat_templates)
     assert tokenizer.chat_template == chat_templates.reference
