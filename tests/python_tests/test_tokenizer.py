@@ -592,13 +592,14 @@ def test_set_special_runtime_template(tmp_path):
 @pytest.mark.parametrize(
     "chat_templates",
     [
+        # If the template was not in the list of not supported GenAI templates from (5), it's replaced with simplified_chat_template entry from rt_info section of ov::Model:
         ChatTemplates("correct template", "correct template", "", "", "", ""),
         ChatTemplates("correct template", None, "correct template", "", "", ""),
         ChatTemplates("correct template", None, None, "correct template", "", ""),
         ChatTemplates("correct template", None, None, None, "correct template", ""),
         ChatTemplates("correct template", None, None, None, None, "correct template"),
         # If the template is known to be not supported by GenAI, it's replaced with a simplified supported version:
-        ChatTemplates(SIMPLIFIED_QWEN2_VL_2B, None, QWEN2_VL_2B, "", "", ""),
+        ChatTemplates(SIMPLIFIED_QWEN2_VL_2B, "", QWEN2_VL_2B, "", "", ""),
         # Replace not supported instructions with equivalents in chat_template rt_info:
         ChatTemplates(PATCHED_SIMPLIFIED_QWEN3, None, SIMPLIFIED_QWEN3, "", "", ""),
         # Replace not supported instructions with equivalents in simplified_chat_template rt_info:
