@@ -15,7 +15,7 @@
 #include "visual_language/pipeline_base.hpp"
 #include "visual_language/continuous_batching_adapter.hpp"
 
-#include "sampler.hpp"
+#include "sampling/sampler.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
 

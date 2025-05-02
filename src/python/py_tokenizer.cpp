@@ -9,7 +9,7 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 
 #include "py_utils.hpp"
 

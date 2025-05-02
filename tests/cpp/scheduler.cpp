@@ -8,7 +8,7 @@
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "sequence_group.hpp"
-#include "scheduler.hpp"
+#include "continuous_batching/scheduler.hpp"
 #include "helper.hpp"
 
 using namespace ov::genai;

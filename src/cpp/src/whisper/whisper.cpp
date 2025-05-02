@@ -7,20 +7,20 @@
 #include <openvino/openvino.hpp>
 #include <thread>
 
-#include "context_tokens.hpp"
-#include "logit_processor.hpp"
-#include "models/decoder.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
-#include "sampler.hpp"
-#include "timestamps.hpp"
+#include "sampling/sampler.hpp"
 #include "utils.hpp"
-#include "whisper_config.hpp"
-#include "whisper_feature_extractor.hpp"
-#include "whisper_models.hpp"
-#include "whisper_utils.hpp"
+#include "whisper/logit_processor.hpp"
+#include "whisper/timestamps.hpp"
+#include "whisper/context_tokens.hpp"
+#include "whisper/models/decoder.hpp"
+#include "whisper/config.hpp"
+#include "whisper/feature_extractor.hpp"
+#include "whisper/models.hpp"
+#include "whisper/whisper_utils.hpp"
 
 using ov::genai::MicroSeconds;
 

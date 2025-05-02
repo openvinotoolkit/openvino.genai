@@ -19,7 +19,7 @@
 #include "gguf_utils/gguf_modeling.hpp"
 
 
-#include "sampler.hpp"
+#include "sampling/sampler.hpp"
 
 namespace {
 

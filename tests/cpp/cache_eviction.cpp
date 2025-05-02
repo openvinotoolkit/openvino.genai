@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "cache_eviction.hpp"
+#include "continuous_batching/cache_eviction.hpp"
 
 #include <algorithm>
 #include <fstream>
