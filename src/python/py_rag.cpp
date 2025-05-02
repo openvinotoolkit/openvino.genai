@@ -9,7 +9,7 @@
 
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "py_utils.hpp"
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 
 namespace py = pybind11;
 using ov::genai::EmbeddingResult;
