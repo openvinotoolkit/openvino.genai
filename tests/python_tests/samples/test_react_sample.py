@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import logger, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, MODELS
+from conftest import SAMPLES_PY_DIR
 from test_utils import run_sample
     
 class TestReactSample:
