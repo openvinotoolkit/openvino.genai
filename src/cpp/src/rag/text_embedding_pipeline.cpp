@@ -168,7 +168,7 @@ public:
         } else if (auto uint8s = std::get_if<std::vector<std::vector<uint8_t>>>(&results)) {
             return (*uint8s)[0];
         }
-        OPENVINO_THROW("Embeddigs result type is not supported");
+        OPENVINO_THROW("Embedding result type is not supported");
     };
 
 private:
