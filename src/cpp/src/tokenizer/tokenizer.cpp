@@ -319,10 +319,12 @@ public:
 
             m_chat_template = find_or_fallback(rt_info, "chat_template", m_chat_template);
             std::optional<std::string> fallback = remap_template(m_chat_template);
-            m_chat_template = patch_template(fallback.value_or(m_chat_template));
-            if (!fallback.has_value()) {
+            if (fallback.has_value()) {
+                m_chat_template = std::move(fallback).value();
+            } else {
                 m_chat_template = find_or_fallback(rt_info, "simplified_chat_template", m_chat_template);
             }
+            m_chat_template = patch_template(std::move(m_chat_template));
             // Initialize tokenizer's cache to save time later.
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
             encode("non empty string");
