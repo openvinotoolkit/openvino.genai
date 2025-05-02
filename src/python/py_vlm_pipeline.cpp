@@ -12,7 +12,7 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;

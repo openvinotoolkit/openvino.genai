@@ -4,7 +4,8 @@
 #pragma once
 
 #include <cstddef>
-#include "cache_eviction.hpp"
+
+#include "openvino/genai/cache_eviction.hpp"
 
 namespace ov::genai {
 struct SchedulerConfig {
