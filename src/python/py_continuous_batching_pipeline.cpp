@@ -9,7 +9,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 
 #include "py_utils.hpp"
 

@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
-#include "scheduler.hpp"
+#include "continuous_batching/scheduler.hpp"
 #include <chrono>
 #include <thread>
 

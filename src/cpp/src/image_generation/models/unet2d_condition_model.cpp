@@ -8,7 +8,7 @@
 #include <fstream>
 
 #include "json_utils.hpp"
-#include "lora_helper.hpp"
+#include "lora/helper.hpp"
 #include "utils.hpp"
 
 namespace ov {
