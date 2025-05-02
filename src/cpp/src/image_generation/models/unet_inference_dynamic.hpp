@@ -4,7 +4,6 @@
 #pragma once
 
 #include "image_generation/models/unet_inference.hpp"
-#include "lora_helper.hpp"
 #include "utils.hpp"
 
 namespace ov {
