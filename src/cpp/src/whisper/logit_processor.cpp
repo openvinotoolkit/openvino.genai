@@ -4,7 +4,7 @@
 #include <openvino/openvino.hpp>
 
 #include "openvino/genai/whisper_generation_config.hpp"
-#include "sampler.hpp"
+#include "sampling/sampler.hpp"
 
 namespace ov {
 namespace genai {
