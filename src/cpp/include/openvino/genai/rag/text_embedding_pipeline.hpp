@@ -31,7 +31,7 @@ public:
 
     struct OPENVINO_GENAI_EXPORTS Config {
         /**
-         * @brief Maximum length of tokens passed to embedding model
+         * @brief Maximum length of tokens passed to the embedding model
          */
         std::optional<size_t> max_length;
 
@@ -41,17 +41,17 @@ public:
         PoolingType pooling_type = PoolingType::CLS;
 
         /**
-         * @brief If 'true' normalization applied to embeddings
+         * @brief If 'true' normalization is applied to embeddings
          */
         bool normalize = true;
 
         /**
-         * @brief Instruction to use for embedding query
+         * @brief Instruction to use for embedding a query
          */
         std::optional<std::string> query_instruction;
 
         /**
-         * @brief Instruction to use for embedding document
+         * @brief Instruction to use for embedding a document
          */
         std::optional<std::string> embed_instruction;
 
