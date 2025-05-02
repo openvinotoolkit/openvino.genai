@@ -65,18 +65,18 @@ void init_rag_pipelines(py::module_& m) {
                     }
                     return py::cast(res);
                 },
-                py::arg("texts"),
-                "texts ",
-                "Computes embeddings for a text")
+                py::arg("text"),
+                "text ",
+                "Computes embeddings for a query")
             .def(
                 "start_embed_query_async",
                 [](TextEmbeddingPipeline& pipe, std::string& text) -> void {
                     py::gil_scoped_release rel;
                     pipe.start_embed_query_async(text);
                 },
-                py::arg("texts"),
-                "texts ",
-                "Asynchronously computes embeddings for a text")
+                py::arg("text"),
+                "text ",
+                "Asynchronously computes embeddings for a query")
             .def(
                 "wait_embed_query",
                 [](TextEmbeddingPipeline& pipe) -> py::typing::Union<EmbeddingResult> {
@@ -87,7 +87,7 @@ void init_rag_pipelines(py::module_& m) {
                     }
                     return py::cast(res);
                 },
-                "Waits computed embeddings for a text");
+                "Waits computed embeddings for a query");
 
     py::enum_<TextEmbeddingPipeline::PoolingType>(text_embedding_pipeline, "PoolingType")
         .value("CLS", TextEmbeddingPipeline::PoolingType::CLS, "First token embeddings")

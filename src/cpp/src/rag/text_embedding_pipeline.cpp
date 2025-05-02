@@ -3,7 +3,6 @@
 
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 
-#include "debug_utils.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/opsets/opset.hpp"
 #include "openvino/opsets/opset1.hpp"
@@ -93,7 +92,7 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const 
     if (config.normalize) {
         processor.output().postprocess().custom([](const ov::Output<ov::Node>& node) {
             auto axis_const = std::make_shared<op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
-            return std::make_shared<op::v0::NormalizeL2>(node, axis_const, 1e-12, op::EpsMode::ADD);
+            return std::make_shared<op::v0::NormalizeL2>(node, axis_const, 1e-12, op::EpsMode::MAX);
         });
     }
 
