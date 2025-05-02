@@ -35,7 +35,7 @@ tools = [
     {
         "name_for_human": "get weather",
         "name_for_model": "get_weather",
-        "description_for_model": 'Get the current weather in a given city name."',
+        "description_for_model": "Get the current weather in a given city name.",
         "parameters": [
             {
                 "name": "city_name",
