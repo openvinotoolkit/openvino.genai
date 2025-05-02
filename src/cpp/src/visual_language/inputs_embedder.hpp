@@ -96,6 +96,8 @@ private:
         // Verifies no previous image is referenced.
         // InputsEmbedderMiniCPM Uses to insert <image_id>i</image_id> per image (not a slice).
         size_t m_image_id = 0;
+        // image id at the beginning of generation
+        size_t m_prev_image_id = 0;
 
     public:
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) = 0;

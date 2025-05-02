@@ -51,10 +51,12 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
         m_kv_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
         state.resize(m_prev_hist_length);
         m_kv_cache_state.reset_mem_state = state.empty();
+        m_image_id = m_prev_image_id;
     } else {
         // Tail of chat template is missing in KV cache.
         // Find the tail to concatenate it with the next input prompt.
         m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
+        m_prev_image_id = m_image_id;
     }
 }
 
