@@ -4,7 +4,6 @@
 import numpy as np
 import pytest
 import gc
-import numpy as np
 from pathlib import Path
 from openvino_genai import TextEmbeddingPipeline
 from utils.hugging_face import download_and_convert_embeddings_models
