@@ -9,9 +9,9 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 
-#include "llm_pipeline_static.hpp"
-#include "llm_pipeline_stateful.hpp"
-#include "continuous_batching/continuous_batching_adapter.hpp"
+#include "llm/pipeline_static.hpp"
+#include "llm/pipeline_stateful.hpp"
+#include "llm/pipeline_continuous_batching_adapter.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
 #include "utils.hpp"
 

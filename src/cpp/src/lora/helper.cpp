@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "lora/lora_helper.hpp"
+#include "lora/helper.hpp"
 
 namespace ov {
 namespace genai {

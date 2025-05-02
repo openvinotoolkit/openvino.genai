@@ -15,7 +15,7 @@
 #include "openvino/runtime/core.hpp"
 
 #include "json_utils.hpp"
-#include "lora/lora_helper.hpp"
+#include "lora/helper.hpp"
 #include "debug_utils.hpp"
 #include "numpy_utils.hpp"
 

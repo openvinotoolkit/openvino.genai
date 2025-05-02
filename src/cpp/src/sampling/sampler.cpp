@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <future>
-#include "sampler.hpp"
+
+#include "sampling/sampler.hpp"
 
 namespace ov::genai {
 // Modified Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurrence in haystack

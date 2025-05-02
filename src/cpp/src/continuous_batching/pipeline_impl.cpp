@@ -5,10 +5,10 @@
 #include <thread>
 
 #include "openvino/genai/text_streamer.hpp"
-#include "continuous_batching/continuous_batching_impl.hpp"
+#include "continuous_batching/pipeline_impl.hpp"
 #include "utils.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
-#include "lora/lora_helper.hpp"
+#include "lora/helper.hpp"
 #include "continuous_batching/cache_state_dumper.hpp"
 
 namespace {

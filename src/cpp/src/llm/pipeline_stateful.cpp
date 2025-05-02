@@ -2,9 +2,9 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "llm_pipeline_stateful.hpp"
+#include "llm/pipeline_stateful.hpp"
 
-#include "lora/lora_helper.hpp"
+#include "lora/helper.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/text_streamer.hpp"
 

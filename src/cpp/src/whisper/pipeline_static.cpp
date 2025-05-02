@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "whisper_pipeline_static.hpp"
+#include "whisper/pipeline_static.hpp"
 
 #include <chrono>
 #include <regex>
@@ -12,7 +12,7 @@
 #include "whisper/logit_processor.hpp"
 #include "whisper/timestamps.hpp"
 #include "whisper/whisper.hpp"
-#include "whisper/whisper_config.hpp"
+#include "whisper/config.hpp"
 #include "whisper/whisper_utils.hpp"
 
 #include "openvino/core/layout.hpp"

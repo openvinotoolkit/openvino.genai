@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "whisper_config.hpp"
+#include "whisper/config.hpp"
 
 #include <fstream>
 #include <nlohmann/json.hpp>

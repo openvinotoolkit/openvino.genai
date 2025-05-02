@@ -4,9 +4,9 @@
 
 #include <limits>
 
-#include "llm_pipeline_base.hpp"
+#include "llm/pipeline_base.hpp"
 #include "lm_encoding.hpp"
-#include "sampler.hpp"
+#include "sampling/sampler.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {

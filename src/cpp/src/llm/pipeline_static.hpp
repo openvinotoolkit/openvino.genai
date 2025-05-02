@@ -5,8 +5,8 @@
 
 #include <filesystem>
 
-#include "llm_pipeline_base.hpp"
-#include "sampler.hpp"
+#include "llm/pipeline_base.hpp"
+#include "sampling/sampler.hpp"
 
 namespace ov {
 namespace genai {

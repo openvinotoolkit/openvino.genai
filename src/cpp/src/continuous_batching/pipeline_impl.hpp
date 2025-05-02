@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "continuous_batching/icontinuous_batching.hpp"
+#include "continuous_batching/pipeline_base.hpp"
 
 #include "openvino/genai/lora_adapter.hpp"
 #include "continuous_batching/cache_eviction.hpp"

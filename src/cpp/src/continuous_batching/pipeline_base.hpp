@@ -7,10 +7,10 @@
 #include "visual_language/inputs_embedder.hpp"
 
 #include "continuous_batching/cache_manager.hpp"
-#include "sampler.hpp"
+#include "sampling/sampler.hpp"
 #include "continuous_batching/model_runner.hpp"
 #include "continuous_batching/scheduler.hpp"
-#include "threaded_streamer.hpp"
+#include "continuous_batching/threaded_streamer.hpp"
 
 namespace ov::genai {
 

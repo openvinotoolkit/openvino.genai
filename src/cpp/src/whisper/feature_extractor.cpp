@@ -5,7 +5,7 @@
 #    define _USE_MATH_DEFINES
 #endif
 
-#include "whisper_feature_extractor.hpp"
+#include "whisper/feature_extractor.hpp"
 
 #include <algorithm>
 #include <cassert>
