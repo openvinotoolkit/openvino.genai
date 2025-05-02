@@ -230,6 +230,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         results.emplace_back(gen_result);
     }
     if (m_is_chat_conversation) {
+        m_inputs_embedder->update_chat_history(results[0].texts[0], encoded_results[0].m_status);
         if (encoded_results[0].m_status == ov::genai::GenerationStatus::CANCEL) {
             m_history.pop_back();
             for (size_t i = 0; i < encode_images_num; i++) {
