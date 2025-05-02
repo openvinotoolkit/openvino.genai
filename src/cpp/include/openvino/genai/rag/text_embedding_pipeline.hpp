@@ -77,9 +77,9 @@ public:
      * @brief Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir.
      *
      * @param models_path Path to the directory containing model xml/bin files and tokenizer
-     * @param device device
-     * @param config pipeline configuration
-     * @param properties optional plugin properties to pass to ov::Core::compile_model().
+     * @param device Device
+     * @param config Pipeline configuration
+     * @param properties Optional plugin properties to pass to ov::Core::compile_model().
      */
     TextEmbeddingPipeline(const std::filesystem::path& models_path,
                           const std::string& device,
@@ -90,8 +90,8 @@ public:
      * @brief Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir.
      *
      * @param models_path Path to the directory containing model xml/bin files and tokenizer
-     * @param device device
-     * @param properties optional plugin and/or config properties
+     * @param device Device
+     * @param properties Optional plugin and/or config properties
      */
     TextEmbeddingPipeline(const std::filesystem::path& models_path,
                           const std::string& device,
@@ -101,8 +101,8 @@ public:
      * @brief Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir.
      *
      * @param models_path Path to the directory containing model xml/bin files and tokenizer
-     * @param device device
-     * @param properties plugin and/or config properties
+     * @param device Device
+     * @param properties Plugin and/or config properties
      */
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>

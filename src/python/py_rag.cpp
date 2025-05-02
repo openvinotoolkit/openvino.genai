@@ -122,17 +122,17 @@ void init_rag_pipelines(py::module_& m) {
             return std::make_unique<TextEmbeddingPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"),
-        "folder with openvino_model.xml and openvino_tokenizer.xml files",
+        "Path to the directory containing model xml/bin files and tokenizer",
         py::arg("device"),
-        "device on which inference will be done",
+        "Device to run the model on (e.g., CPU, GPU)",
         py::arg("config") = std::nullopt,
-        "optional config",
-        "openvino.properties map",
+        "Optional pipeline configuration",
+        "Plugin and/or config properties",
         R"(
-TextEmbeddingPipeline class constructor.
-models_path (os.PathLike): Path to the model file.
+Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
 device (str): Device to run the model on (e.g., CPU, GPU).
-config: (TextEmbeddingPipeline.Config): optional Config
-kwargs: Config or device properties.
+config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
+kwargs: Plugin and/or config properties
 )");
 }
