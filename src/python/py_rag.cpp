@@ -18,6 +18,29 @@ using ov::genai::TextEmbeddingPipeline;
 
 namespace pyutils = ov::genai::pybind::utils;
 
+namespace {
+const auto text_embedding_config_docstring = R"(
+Structure to keep TextEmbeddingPipeline configuration parameters
+
+Attributes
+    ----------
+    max_length : int, optional
+        Maximum length of tokens passed to embedding model
+
+    pooling_type : TextEmbeddingPipeline.PoolingType, default=PoolingType.CLS
+        Pooling strategy applied to model output tensor
+
+    normalize : boolean, default=True
+        If 'true' normalization applied to embeddings
+    
+    query_instruction: str, optional
+        Instruction to use for embedding query
+    
+    embed_instruction: str, optional
+        Instruction to use for embedding document
+)";
+}
+
 void init_rag_pipelines(py::module_& m) {
     auto text_embedding_pipeline =
         py::class_<TextEmbeddingPipeline>(m, "TextEmbeddingPipeline", "Text embedding pipeline")
@@ -93,9 +116,7 @@ void init_rag_pipelines(py::module_& m) {
         .value("CLS", TextEmbeddingPipeline::PoolingType::CLS, "First token embeddings")
         .value("MEAN", TextEmbeddingPipeline::PoolingType::MEAN, "The average of all token embeddings");
 
-    py::class_<TextEmbeddingPipeline::Config>(text_embedding_pipeline,
-                                              "Config",
-                                              "This class is used for storing TextEmbeddingPipeline config.")
+    py::class_<TextEmbeddingPipeline::Config>(text_embedding_pipeline, "Config", text_embedding_config_docstring)
         .def(py::init<>())
         .def(py::init([](py::kwargs kwargs) {
             return TextEmbeddingPipeline::Config(pyutils::kwargs_to_any_map(kwargs));

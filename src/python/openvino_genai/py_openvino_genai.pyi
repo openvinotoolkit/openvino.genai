@@ -1857,7 +1857,25 @@ class TextEmbeddingPipeline:
     """
     class Config:
         """
-        This class is used for storing TextEmbeddingPipeline config.
+        
+        Structure to keep TextEmbeddingPipeline configuration parameters
+        
+        Attributes
+            ----------
+            max_length : int, optional
+                Maximum length of tokens passed to embedding model
+        
+            pooling_type : TextEmbeddingPipeline.PoolingType, default=PoolingType.CLS
+                Pooling strategy applied to model output tensor
+        
+            normalize : boolean, default=True
+                If 'true' normalization applied to embeddings
+            
+            query_instruction: str, optional
+                Instruction to use for embedding query
+            
+            embed_instruction: str, optional
+                Instruction to use for embedding document
         """
         embed_instruction: str | None
         max_length: int | None
@@ -1909,35 +1927,35 @@ class TextEmbeddingPipeline:
             ...
     def __init__(self, models_path: os.PathLike, device: str, config: TextEmbeddingPipeline.Config | None = None, **kwargs) -> None:
         """
-        TextEmbeddingPipeline class constructor.
-        models_path (os.PathLike): Path to the model file.
+        Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+        models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
         device (str): Device to run the model on (e.g., CPU, GPU).
-        config: (TextEmbeddingPipeline.Config): optional Config
-        kwargs: Config or device properties.
+        config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
+        kwargs: Plugin and/or config properties
         """
-    def embed_documents(self, texts: list[str]) -> list[list[float] | list[int] | list[int]]:
+    def embed_documents(self, texts: list[str]) -> list[list[float]] | list[list[int]] | list[list[int]]:
         """
         Computes embeddings for a vector of texts
         """
-    def embed_query(self, texts: str) -> list[float] | list[int] | list[int]:
+    def embed_query(self, text: str) -> list[float] | list[int] | list[int]:
         """
-        Computes embeddings for a text
+        Computes embeddings for a query
         """
     def start_embed_documents_async(self, texts: list[str]) -> None:
         """
         Asynchronously computes embeddings for a vector of texts
         """
-    def start_embed_query_async(self, texts: str) -> None:
+    def start_embed_query_async(self, text: str) -> None:
         """
-        Asynchronously computes embeddings for a text
+        Asynchronously computes embeddings for a query
         """
-    def wait_embed_documents(self) -> list[list[float] | list[int] | list[int]]:
+    def wait_embed_documents(self) -> list[list[float]] | list[list[int]] | list[list[int]]:
         """
         Waits computed embeddings of a vector of texts
         """
     def wait_embed_query(self) -> list[float] | list[int] | list[int]:
         """
-        Waits computed embeddings for a text
+        Waits computed embeddings for a query
         """
 class TextStreamer(StreamerBase):
     """
