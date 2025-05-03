@@ -20,7 +20,7 @@ void write_native(std::ostream& os, size_t idx) {
     os << "<|image_" << idx + 1 << "|>\n";
 }
 
-std::string normalize_prompt(
+std::string normalize_prompt_phi3(
     const std::string& prompt, size_t base_id, size_t n_images
 ) {
     std::smatch match;
@@ -662,9 +662,13 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
+std::pair<std::string, std::vector<size_t>> InputsEmbedderPhi3V::normalize_prompt(const std::string& prompt, size_t base_id,size_t n_images) const {
+    return {normalize_prompt_phi3(prompt, base_id, n_images), {}};
+}
+
+ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
     size_t base_id = m_tokens_per_images.size();
-    std::string image_prompt = normalize_prompt(prompt, base_id, images.size());
+    std::string image_prompt = normalize_prompt_phi3(prompt, base_id, images.size());
     std::vector<ov::Tensor> images_features_proj;
     for (const ov::genai::EncodedImage& encoded_image : images) {
         images_features_proj.push_back(encoded_image.images_features_projection);

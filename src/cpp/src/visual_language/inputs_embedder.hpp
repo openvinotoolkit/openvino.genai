@@ -37,7 +37,7 @@ public:
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true);
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -66,6 +66,12 @@ public:
     void finish_chat();
 
     bool prompt_has_image_tag(const std::string& prompt) const;
+
+    virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
+        const std::string& prompt,
+        size_t base_id,
+        size_t n_images
+    ) const;
 
 private:
     class IInputsEmbedder {
@@ -100,7 +106,7 @@ private:
         size_t m_prev_image_id = 0;
 
     public:
-        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) = 0;
+        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
 
         ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
@@ -131,6 +137,12 @@ private:
         virtual void finish_chat();
 
         virtual bool prompt_has_image_tag(const std::string& prompt) const;
+
+        virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
+            const std::string& prompt,
+            size_t base_id,
+            size_t n_images
+        ) const = 0;
     
     protected:
         IInputsEmbedder(
@@ -152,6 +164,14 @@ private:
         ov::Tensor update_history(const ov::Tensor& new_chat_tokens);
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
+
+        std::pair<std::string, std::vector<size_t>> normalize(
+            const std::string& prompt,
+            const std::string& native_tag,
+            const std::string& automatic_tag,
+            size_t base_id,
+            size_t n_images
+        ) const;
 
         /**
         * @brief Converts a vector of batched images ([NHWC]) into a vector of individual image tensors ([1HWC]).

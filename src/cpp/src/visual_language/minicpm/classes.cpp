@@ -570,14 +570,29 @@ void adjust_pos_cache(
 
 } // namespace
 
-ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
-    auto [unified_prompt, images_sequence] = normalize_prompt(
+std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_prompt(const std::string& prompt, size_t base_id, size_t n_images) const {
+    return normalize(
         prompt,
         NATIVE_TAG,
         '(' + NATIVE_TAG + ")\n",
-        m_image_id,
-        images.size()
+        base_id,
+        n_images
     );
+}
+
+
+ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
+    std::string unified_prompt;
+    std::vector<size_t> images_sequence;
+    
+    if (image_sequence.size()) {
+        images_sequence = image_sequence;
+        unified_prompt = prompt;
+    } else {
+        auto normalized = normalize_prompt(prompt, m_image_id, images.size());
+        unified_prompt = normalized.first;
+        images_sequence = normalized.second;
+    }
 
     std::string unk64;
     for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
