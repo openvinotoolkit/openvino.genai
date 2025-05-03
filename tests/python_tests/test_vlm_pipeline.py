@@ -99,22 +99,36 @@ model_ids = [
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-internvl2",
     "katuni4ka/tiny-random-qwen2vl",
+    "katuni4ka/tiny-random-qwen2.5-vl",
 ]
 
 attention_backend = ["PA", "SDPA"]
 
 
-def get_image_by_link(link):
+def get_pil_image_by_link(link, target_size=None):
+    """
+    Get PIL image by link.
+    Args:
+        link (str): Link to the image.
+        target_size (tuple): Target size of the image (width, height).
+    """
     from PIL import Image
     import requests
-    from openvino import Tensor
-    import numpy as np
 
     image = Image.open(requests.get(link, stream=True).raw)
     if image.mode != "RGB":
         image = image.convert("RGB")
+    if target_size:
+        image = image.resize(target_size)
+    return image
+
+
+def get_image_by_link(link):
+    import numpy as np
+
+    image = get_pil_image_by_link(link)
     image_data = np.array(image)
-    return Tensor(image_data)
+    return openvino.Tensor(image_data)
 
 
 @pytest.mark.precommit
@@ -427,8 +441,8 @@ def test_perf_metrics(cache, backend):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-# FIXME: katuni4ka/tiny-random-qwen2vl - fails on NPU
-@pytest.mark.parametrize("model_id", model_ids[:-1])
+# FIXME: katuni4ka/tiny-random-qwen2vl and katuni4ka/tiny-random-qwen2.5-vl - fails on NPU
+@pytest.mark.parametrize("model_id", model_ids[:-2])
 @pytest.mark.parametrize("backend", attention_backend)
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
@@ -625,6 +639,7 @@ tag_inserted_by_template = [
     ("katuni4ka/tiny-random-llava", lambda idx: "<image>"),
     ("katuni4ka/tiny-random-llava-next", lambda idx: "<image>"),
     ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
+    ("katuni4ka/tiny-random-qwen2.5-vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
 ]
 
 image_id_ignorant =  tag_inserted_by_template + [
@@ -817,3 +832,50 @@ class TestImageTags:
         vlm, tag = model_and_tag
         with pytest.raises(RuntimeError):
             vlm.generate(tag(0))
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize(
+    "model_id, image_link, target_size",
+    [
+        pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336)),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336)),
+    ],
+)
+def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size):
+    import numpy as np
+
+    resized_image = get_pil_image_by_link(image_link, target_size=target_size)
+    resized_image_tensor = openvino.Tensor(np.array(resized_image))
+
+    prompt = "Describe this image."
+    max_new_tokens = 100
+
+    model_path = get_ov_model(model_id)
+
+    # Run the model with optimum-intel
+    model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
+    processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+    conversation = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image"},
+                {"type": "text", "text": prompt},
+            ],
+        }
+    ]
+    templated_prompt = processor.apply_chat_template(conversation,add_generation_prompt=True)
+    inputs = processor(text=[templated_prompt], images=[resized_image], padding=True, return_tensors="pt")
+    output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens)
+    generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(inputs.input_ids, output_ids)]
+    optimum_output = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+    optimum_text = optimum_output[0]
+
+    # Run the model with GenAI
+    vlm = VLMPipeline(model_path, "CPU")
+    genai_output = vlm.generate(prompt, images=[resized_image_tensor], max_new_tokens=max_new_tokens)
+    genai_text = genai_output.texts[0]
+
+    assert optimum_text == genai_text

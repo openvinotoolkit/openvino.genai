@@ -14,6 +14,7 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
+#include "tokenizer/chat_template_fallback_map.hpp"
 #include "tokenizer/make_tokenizer_stateful.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 #include "circular_buffer_queue.hpp"
@@ -46,29 +47,6 @@ ov::Core get_core_singleton() {
     static ov::Core core = core_with_extension();
     return core;
 }
-
-const std::pair<std::string, std::string> chat_template_fallback_map[] = {
-    {
-        // llava-1.5, llava-v1.6-vicuna (chat_template.json)
-        "{% for message in messages %}{% if message['role'] != 'system' %}{{ message['role'].upper() + ': '}}{% endif %}{# Render all images first #}{% for content in message['content'] | selectattr('type', 'equalto', 'image') %}{{ '<image>\n' }}{% endfor %}{# Render all text next #}{% if message['role'] != 'assistant' %}{% for content in message['content'] | selectattr('type', 'equalto', 'text') %}{{ content['text'] + ' '}}{% endfor %}{% else %}{% for content in message['content'] | selectattr('type', 'equalto', 'text') %}{% generation %}{{ content['text'] + ' '}}{% endgeneration %}{% endfor %}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}",
-        "{% for message in messages %}{% if message['role'] != 'system' %}{{ message['role'] | upper + ': ' }}{% endif %}{{ message['content'] + ' ' }}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}"
-    },
-    {
-        // tiny-random-llava-next, llava-v1.6-mistral (chat_template.json)
-        "{% for message in messages %}{% if message['role'] == 'system' %}{{ '<<SYS>>\n' + message['content'][0]['text'] + '\n<</SYS>>\n\n' }}{% elif message['role'] == 'user' %}{{ '[INST] ' }}{# Render all images first #}{% for content in message['content'] | selectattr('type', 'equalto', 'image') %}{{ '<image>\n' }}{% endfor %}{# Render all text next #}{% for content in message['content'] | selectattr('type', 'equalto', 'text') %}{{ content['text'] }}{% endfor %}{{' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' ' + message['content'][0]['text'] + '<\\s> '}}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}",
-        "{% for message in messages %}{% if message['role'] == 'system' %}{{ '<<SYS>>\n' + message['content'] + '\n<</SYS>>\n\n' }}{% elif message['role'] == 'user' %}{{ '[INST] ' + message['content'] + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' ' + message['content'] + '<\\s> ' }}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}"
-    },
-    {
-        // Qwen2-VL-2B-Instruct (tokenizer_config.json)
-        "{% set image_count = namespace(value=0) %}{% set video_count = namespace(value=0) %}{% for message in messages %}{% if loop.first and message['role'] != 'system' %}<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n{% endif %}<|im_start|>{{ message['role'] }}\n{% if message['content'] is string %}{{ message['content'] }}<|im_end|>\n{% else %}{% for content in message['content'] %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}{% set image_count.value = image_count.value + 1 %}{% if add_vision_id %}Picture {{ image_count.value }}: {% endif %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}{% set video_count.value = video_count.value + 1 %}{% if add_vision_id %}Video {{ video_count.value }}: {% endif %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}<|im_end|>\n{% endif %}{% endfor %}{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}",
-        "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
-    },
-    {
-        // Qwen2-VL-2B (tokenizer_config.json)
-        "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}",
-        "{% for message in messages %}{{ message['content'] }}{% endfor %}"
-    }
-};    
 
 std::optional<std::string> remap_template(const std::string& chat_template) {
     for (const auto& [known, fallback] : chat_template_fallback_map) {
@@ -319,10 +297,12 @@ public:
 
             m_chat_template = find_or_fallback(rt_info, "chat_template", m_chat_template);
             std::optional<std::string> fallback = remap_template(m_chat_template);
-            m_chat_template = patch_template(fallback.value_or(m_chat_template));
-            if (!fallback.has_value()) {
+            if (fallback.has_value()) {
+                m_chat_template = std::move(fallback).value();
+            } else {
                 m_chat_template = find_or_fallback(rt_info, "simplified_chat_template", m_chat_template);
             }
+            m_chat_template = patch_template(std::move(m_chat_template));
             // Initialize tokenizer's cache to save time later.
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
             encode("non empty string");
