@@ -83,7 +83,7 @@ describe("run", () => {
     await findWheelImpl.run();
 
     expect(setFailedMock).toHaveBeenCalledWith(
-      'No files found matching pattern "non_existent_package*.whl"',
+      'No files found matching pattern "non_existent_package-*.whl"',
     );
   });
 
@@ -106,7 +106,7 @@ describe("run", () => {
       path.join(wheelsPath, wheels[2]),
     ];
     expect(setFailedMock).toHaveBeenCalledWith(
-      `Multiple files found matching pattern "package_y*.whl": ${JSON.stringify(expectedWheels)}`,
+      `Multiple files found matching pattern "package_y-*.whl": ${JSON.stringify(expectedWheels)}`,
     );
   });
 });

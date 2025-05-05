@@ -26,7 +26,7 @@ async function run() {
       core.getInput("wheels_dir", { required: true }),
     );
     const packageName = core.getInput("package_name", { required: true });
-    const pattern = `${packageName}*.whl`;
+    const pattern = `${packageName}-*.whl`;
 
     const pythonVersion = await getPythonVersion();
     core.debug(`Detected Python version: ${JSON.stringify(pythonVersion)}`);
