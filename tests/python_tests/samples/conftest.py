@@ -7,9 +7,8 @@ import logging
 import gc
 import requests
 
-from importlib import metadata
-from datetime import datetime
 from utils.network import retry_request
+from utils.constants import get_ov_cache_dir
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -142,19 +141,7 @@ SAMPLES_JS_DIR = os.environ.get("SAMPLES_JS_DIR", os.path.abspath(os.path.join(o
 def setup_and_teardown(request, tmp_path_factory):
     """Fixture to set up and tear down the temporary directories."""
     
-    if "OV_CACHE" in os.environ:
-        date_subfolder = datetime.now().strftime("%Y%m%d")
-        ov_cache = os.path.join(os.environ["OV_CACHE"], date_subfolder)
-        try:
-            optimum_intel_version = metadata.version("optimum-intel")
-            ov_cache = os.path.join(ov_cache, optimum_intel_version)
-        except metadata.PackageNotFoundError:
-            logger.info("optimum-intel package not found, skipping version addition to cache dir.")
-    else:
-        ov_cache = tmp_path_factory.mktemp("ov_cache")
-        
-    logger.info(f"Using OpenVINO cache directory: {ov_cache}")
-        
+    ov_cache = get_ov_cache_dir(tmp_path_factory.mktemp("ov_cache"))           
     models_dir = os.path.join(ov_cache, "test_models")
     test_data = os.path.join(ov_cache, "test_data")
     
