@@ -9,78 +9,45 @@
 #include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
+    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");  // TODO: <PROMPT> unused
 
     const std::string models_path = argv[1], prompt = argv[2];
     const std::string device = "CPU";  // GPU can be used as well
 
+    std::vector<std::string> prompts = {
+        "happy dog",
+        "black cat",
+        "yellow raspberry",
+        "retro personal computer",
+        "walking astronaut",
+        "fish with a hat",
+        "flying car",
+    };
+
     ov::genai::Text2ImagePipeline pipe(models_path, device);
-    std::thread t([&pipe, prompt] () {
+    
+    std::vector<std::thread> threads;
 
-        std::cout << "Generating..." << std::endl;
-        ov::Tensor image = pipe.generate("happy dog",
-            ov::AnyMap{
-                ov::genai::width(512),
-                ov::genai::height(512),
-                ov::genai::num_inference_steps(20),
-                ov::genai::num_images_per_prompt(1)}
-    );//1);  // request_idx
+    for (size_t i = 0; i < prompts.size(); ++i) {
+        const std::string p = prompts[i];
+        threads.emplace_back([i, &pipe, p] () {
+            std::cout << "Generating... " << i << std::endl;
+            ov::Tensor image = pipe.generate(p,
+                ov::AnyMap{
+                    ov::genai::width(512),
+                    ov::genai::height(512),
+                    ov::genai::num_inference_steps(20),
+                    ov::genai::num_images_per_prompt(1)});
+            std::cout << "Generated " << i << std::endl;
+            imwrite("mt_image_" + std::to_string(i) + "_%d.bmp", image, true);
+            std::cout << "Generation saved" << std::endl;
+        });
+    }
 
-        // TODO: GenerationRequest will wrap request_idx
-        /*
-        Text2ImagePipeline::GenerationRequest request = pipeline.create_generation_request(); // assigns new free request_idx
-
-        // Sync (would be used in OVMS)
-        ov::Tensor image = request.generate("happy dog",
-                                            ov::genai::width(512),
-                                            ov::genai::height(512),
-                                            ov::genai::num_inference_steps(20),
-                                            ov::genai::num_images_per_prompt(1));
-        */
-
-        // writes `num_images_per_prompt` images by pattern name
-        imwrite("image_1_%d.bmp", image, true);
-        std::cout << "Generation ended" << std::endl;
-
-    });
-
-    std::thread t1([&pipe, prompt] () {
-
-        std::cout << "Generating..." << std::endl;
-        ov::Tensor image = pipe.generate("black cat",
-            ov::AnyMap{
-                ov::genai::width(256),
-                ov::genai::height(256),
-                ov::genai::num_inference_steps(20),
-                ov::genai::num_images_per_prompt(1)}
-    );//2);
-
-        // writes `num_images_per_prompt` images by pattern name
-        imwrite("image_2_%d.bmp", image, true);
-        std::cout << "Generation ended" << std::endl;
-
-    });
-
-    std::thread t2([&pipe, prompt] () {
-
-        std::cout << "Generating..." << std::endl;
-        ov::Tensor image = pipe.generate("yellow raspberry",
-            ov::AnyMap{
-                ov::genai::width(512),
-                ov::genai::height(512),
-                ov::genai::num_inference_steps(20),
-                ov::genai::num_images_per_prompt(1)}
-    );//2);
-
-        // writes `num_images_per_prompt` images by pattern name
-        imwrite("image_3_%d.bmp", image, true);
-        std::cout << "Generation ended" << std::endl;
-
-    });
-
-    t.join();
-    t1.join();
-    t2.join();
+    // join all threads
+    for (auto& thread : threads) {
+        thread.join();
+    }
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {

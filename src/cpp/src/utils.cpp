@@ -502,7 +502,7 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
 struct RequestIdxQueueImpl {
     std::unique_ptr<CircularBufferQueue<size_t>> m_queue;
     size_t m_concurrency_limit;
-    size_t m_val = 0;
+    size_t m_val = 0;  // only used to initialize the queue
 
     RequestIdxQueueImpl(size_t concurrency_limit) : m_concurrency_limit(concurrency_limit), m_queue(std::make_unique<ov::genai::CircularBufferQueue<size_t>>(concurrency_limit, [this] {
         return this->m_val++;
@@ -514,16 +514,12 @@ RequestIdxQueue::RequestIdxQueue(size_t concurrency_limit) {
 }
 
 size_t RequestIdxQueue::get() {
-    std::cout << "================================ RequestIdxQueue::get()..." << std::endl;
     size_t res =  m_impl->m_queue->get_idle().get();
-    std::cout << "================================ RequestIdxQueue::get() finished, res = " << res << std::endl;
     return res;
 }
 
 void RequestIdxQueue::return_to(size_t value) {
-    std::cout << "================================ RequestIdxQueue::return_to()..., res = " << value << std::endl;
     m_impl->m_queue->return_to(value);
-    std::cout << "================================ RequestIdxQueue::return_to() finished" << std::endl;
 }
 
 }  // namespace utils
