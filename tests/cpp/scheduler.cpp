@@ -974,7 +974,7 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
 
     // mock-generate 4 more tokens in the 1-st sequence group so that the remaining 2 blocks are filled up
     std::vector<SequenceGroup::Ptr> first_seq_group_only = { requests[0] };
-    for (size_t i = 0; i < 4; i++) {
+    for (size_t i = 0; i < 4 /* To be passed in constructor after idea is approved */; i++) {
         // Since eviction arena size is less than the cache_size - BLOCK_SIZE, no preemption is expected to occur yet
         // - tokens are added 1 by 1 and once a new block fills, an older one is evicted automatically
         _schedule_one_mock_generation_token_for_each_sequence_group(scheduler, first_seq_group_only);

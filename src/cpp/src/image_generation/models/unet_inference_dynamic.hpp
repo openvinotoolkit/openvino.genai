@@ -16,7 +16,7 @@ public:
         ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition dynamic model");
 
-        for (size_t i = 0; i < 4; i++)
+        for (size_t i = 0; i < 4 /* To be passed in constructor after idea is approved */; i++)
             m_requests.emplace_back(compiled_model.create_infer_request());
     }
 

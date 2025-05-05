@@ -17,7 +17,7 @@
 namespace ov {
 namespace genai {
 
-Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) : m_request_idx_queue(std::make_shared<ov::genai::utils::RequestIdxQueue>(4)/*?*/) {
+Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) : m_request_idx_queue(std::make_shared<ov::genai::utils::RequestIdxQueue>(4)/* To be inherited from root_dir config or constructor param once idea is approved */) {
     const std::string class_name = get_class_name(root_dir);
 
     auto start_time = std::chrono::steady_clock::now();
@@ -36,7 +36,7 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) : 
     m_impl->save_load_time(start_time);
 }
 
-Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) : m_request_idx_queue(std::make_shared<ov::genai::utils::RequestIdxQueue>(4)/*?*/) {
+Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) : m_request_idx_queue(std::make_shared<ov::genai::utils::RequestIdxQueue>(4)/* To be inherited from root_dir config or constructor param once idea is approved */) {
     const std::string class_name = get_class_name(root_dir);
 
     auto start_time = std::chrono::steady_clock::now();
@@ -55,7 +55,7 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, co
     m_impl->save_load_time(start_time);
 }
 
-Text2ImagePipeline::Text2ImagePipeline(const Image2ImagePipeline& pipe) : m_request_idx_queue(std::make_shared<ov::genai::utils::RequestIdxQueue>(4)/*?*/) {
+Text2ImagePipeline::Text2ImagePipeline(const Image2ImagePipeline& pipe) : m_request_idx_queue(std::make_shared<ov::genai::utils::RequestIdxQueue>(4)/* To be inherited from root_dir config or constructor param once idea is approved */) {
     auto start_time = std::chrono::steady_clock::now();
     if (auto stable_diffusion_xl = std::dynamic_pointer_cast<StableDiffusionXLPipeline>(pipe.m_impl); stable_diffusion_xl != nullptr) {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::TEXT_2_IMAGE, *stable_diffusion_xl);
@@ -71,7 +71,7 @@ Text2ImagePipeline::Text2ImagePipeline(const Image2ImagePipeline& pipe) : m_requ
     m_impl->save_load_time(start_time);
 }
 
-Text2ImagePipeline::Text2ImagePipeline(const InpaintingPipeline& pipe) : m_request_idx_queue(std::make_shared<ov::genai::utils::RequestIdxQueue>(4)/*?*/) {
+Text2ImagePipeline::Text2ImagePipeline(const InpaintingPipeline& pipe) : m_request_idx_queue(std::make_shared<ov::genai::utils::RequestIdxQueue>(4)/* To be inherited from root_dir config or constructor param once idea is approved */) {
     auto start_time = std::chrono::steady_clock::now();
     if (auto stable_diffusion_xl = std::dynamic_pointer_cast<StableDiffusionXLPipeline>(pipe.m_impl); stable_diffusion_xl != nullptr) {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::TEXT_2_IMAGE, *stable_diffusion_xl);
@@ -88,7 +88,7 @@ Text2ImagePipeline::Text2ImagePipeline(const InpaintingPipeline& pipe) : m_reque
 }
 
 Text2ImagePipeline::Text2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl)
-    : m_impl(impl), m_request_idx_queue(std::make_shared<ov::genai::utils::RequestIdxQueue>(4)/*?*/) {
+    : m_impl(impl), m_request_idx_queue(std::make_shared<ov::genai::utils::RequestIdxQueue>(4)/* To be inherited from root_dir config or constructor param once idea is approved */) {
     assert(m_impl != nullptr);
 }
 
@@ -215,15 +215,21 @@ void Text2ImagePipeline::compile(const std::string& text_encode_device,
     m_impl->save_load_time(start_time);
 }
 
+// Move to separate infer request class
 ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties, size_t request_idx) {
-    ov::Tensor result;
+    // Taking new free infer request from the pool
     size_t request_idx_new = m_request_idx_queue->get();
-    result = m_impl->generate(positive_prompt, {}, {}, properties, request_idx_new);
-    // clone the tensor to avoid
-    // the case when the tensor is released before the user uses it
+
+    // Actual inference with given index
+    ov::Tensor result = m_impl->generate(positive_prompt, {}, {}, properties, request_idx_new);
+
+    // Clone the result to be able to return infer request to the pool
     ov::Tensor copied(result.get_element_type(), result.get_shape());
     result.copy_to(copied);
+
+    // Returning infer request to the pool
     m_request_idx_queue->return_to(request_idx_new);
+
     return copied;
 }
 

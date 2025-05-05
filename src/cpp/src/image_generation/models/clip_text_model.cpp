@@ -35,7 +35,7 @@ CLIPTextModel::Config::Config(const std::filesystem::path& config_path) {
 }
 
 CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir) :
-    m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir), {}, 4/*?*/),
+    m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir), {}, 4/* To be passed in constructor after idea is approved */),
     m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
 }
@@ -93,7 +93,7 @@ CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMa
     }
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Clip Text model");
-    for (size_t i = 0; i < 4; i++)
+    for (size_t i = 0; i < 4 /* To be passed in constructor after idea is approved */; i++)
         m_requests.emplace_back(compiled_model.create_infer_request());
     // release the original model
     m_model.reset();

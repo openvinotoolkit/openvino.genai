@@ -36,7 +36,7 @@ public:
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
-        for (size_t i = 0; i < 4; i++)
+        for (size_t i = 0; i < 4 /* To be passed in constructor after idea is approved */; i++)
             set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"), i);
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
@@ -79,7 +79,7 @@ public:
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
-        for (size_t i = 0; i < 4; i++)
+        for (size_t i = 0; i < 4 /* To be passed in constructor after idea is approved */; i++)
             set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"), i);
 
         auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
@@ -175,6 +175,7 @@ public:
             batch_size_multiplier > 1, request_idx);
         auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
 
+        // TODO: Metrics for POC purposes, metrics need to be handled per-request
         //m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
 
         // replicate encoder hidden state to UNet model
@@ -228,6 +229,7 @@ public:
             if (!is_strength_max || return_image_latent) {
                 auto encode_start = std::chrono::steady_clock::now();
                 image_latent = m_vae->encode(proccesed_image, generation_config.generator, request_idx);
+                // TODO: Metrics for POC purposes, metrics need to be handled per-request
                 //m_perf_metrics.vae_encoder_inference_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                 //                                                    std::chrono::steady_clock::now() - encode_start)
                 //                                                    .count();
@@ -274,6 +276,7 @@ public:
                         size_t request_idx = 0) override {
         const auto gen_start = std::chrono::steady_clock::now();
         using namespace numpy_utils;
+        // TODO: Metrics for POC purposes, metrics need to be handled per-request
         //m_perf_metrics.clean_up();
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
@@ -299,17 +302,11 @@ public:
 
         check_inputs(generation_config, initial_image);
 
-        std::cout << "Setting lora adapters" << std::endl;
         set_lora_adapters(generation_config.adapters, request_idx);
-        std::cout << "Setting lora adapters done" << std::endl;
-
-        std::cout << "Number of predefined schedulers: " << m_schedulers.size() << std::endl;
-        std::cout << "Value of the scheduler" << request_idx << " " << (std::int64_t)m_schedulers[request_idx].get() << std::endl;
 
         m_schedulers[request_idx]->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
         std::vector<std::int64_t> timesteps = m_schedulers[request_idx]->get_timesteps();
 
-        std::cout << "Computing hidden states" << std::endl;
         // compute text encoders and set hidden states
         compute_hidden_states(positive_prompt, generation_config, request_idx);
 
@@ -383,6 +380,7 @@ public:
                 //m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
 
                 auto image = ov::Tensor(ov::element::u8, {});
+                // TODO: Metrics for POC purposes, metrics need to be handled per-request
                 //m_perf_metrics.generate_duration =
                 //    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
                 //        .count();

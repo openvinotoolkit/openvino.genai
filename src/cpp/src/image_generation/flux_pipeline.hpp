@@ -356,8 +356,8 @@ public:
             if(auto updated_adapters = derived_adapters(*adapters)) {
                 adapters = updated_adapters;
             }
-            m_clip_text_encoder->set_adapters(adapters);  // TODO
-            m_transformer->set_adapters(adapters);  // TODO
+            m_clip_text_encoder->set_adapters(adapters);  // TODO support Flux pipeline after the idea is approved
+            m_transformer->set_adapters(adapters);  // TODO support Flux pipeline after the idea is approved
         }
     }
 
