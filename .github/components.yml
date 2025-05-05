@@ -58,7 +58,7 @@ whisper:
     - llm_bench
     - WWB
 
-text to image:
+image generation:
   revalidate:
     - Image generation samples
     - llm_bench
@@ -125,3 +125,7 @@ llm_bench:
 WWB:
   revalidate:
     - WWB
+
+GH Pages Docs:
+  revalidate:
+    - []
