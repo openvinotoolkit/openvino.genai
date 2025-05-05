@@ -11,7 +11,7 @@
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "py_utils.hpp"
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 
 namespace py = pybind11;
 using ov::genai::ChunkStreamerBase;
@@ -285,7 +285,6 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 }  // namespace
 
 void init_whisper_pipeline(py::module_& m) {
-    m.doc() = "Pybind11 binding for Whisper Pipeline";
     OPENVINO_SUPPRESS_DEPRECATED_START
     py::class_<ChunkStreamerBase, ConstructableChunkStreamer, std::shared_ptr<ChunkStreamerBase>, StreamerBase>(
         m,

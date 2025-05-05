@@ -17,7 +17,7 @@
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
 
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;

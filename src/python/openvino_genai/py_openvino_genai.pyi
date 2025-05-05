@@ -1,11 +1,11 @@
 """
-Pybind11 binding for Whisper Pipeline
+Pybind11 binding for OpenVINO GenAI library
 """
 from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -1589,10 +1589,10 @@ class SchedulerConfig:
         max_num_seqs:               max number of scheduled sequences (you can think of it as "max batch size").
         enable_prefix_caching:      Enable caching of KV-blocks.
             When turned on all previously calculated KV-caches are kept in memory for future usages.
-            KV-caches can be rewritten if KV-cache limit is reached, but blocks are not released.
+            KV-caches can be overridden if KV-cache limit is reached, but blocks are not released.
             This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
-            When turend off only KV-cache required for batch calculation is kept in memory and
-            when a sequence has finished genegartion its cache is released.
+            When turned off only KV-cache required for batch calculation is kept in memory and
+            when a sequence has finished generation its cache is released.
     """
     cache_eviction_config: CacheEvictionConfig
     cache_size: int
@@ -1851,6 +1851,107 @@ class Text2ImagePipeline:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
+class TextEmbeddingPipeline:
+    """
+    Text embedding pipeline
+    """
+    class Config:
+        """
+        
+        Structure to keep TextEmbeddingPipeline configuration parameters.
+        
+        Attributes:
+            max_length (int, optional):
+                Maximum length of tokens passed to the embedding model.
+            pooling_type (TextEmbeddingPipeline.PoolingType, optional):
+                Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
+            normalize (bool, optional):
+                If True, L2 normalization is applied to embeddings. Defaults to True.
+            query_instruction (str, optional):
+                Instruction to use for embedding a query.
+            embed_instruction (str, optional):
+                Instruction to use for embedding a document.
+        """
+        embed_instruction: str | None
+        max_length: int | None
+        normalize: bool
+        pooling_type: TextEmbeddingPipeline.PoolingType
+        query_instruction: str | None
+        @typing.overload
+        def __init__(self) -> None:
+            ...
+        @typing.overload
+        def __init__(self, **kwargs) -> None:
+            ...
+    class PoolingType:
+        """
+        Members:
+        
+          CLS : First token embeddings
+        
+          MEAN : The average of all token embeddings
+        """
+        CLS: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.CLS: 0>
+        MEAN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.MEAN: 1>
+        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>}
+        def __eq__(self, other: typing.Any) -> bool:
+            ...
+        def __getstate__(self) -> int:
+            ...
+        def __hash__(self) -> int:
+            ...
+        def __index__(self) -> int:
+            ...
+        def __init__(self, value: int) -> None:
+            ...
+        def __int__(self) -> int:
+            ...
+        def __ne__(self, other: typing.Any) -> bool:
+            ...
+        def __repr__(self) -> str:
+            ...
+        def __setstate__(self, state: int) -> None:
+            ...
+        def __str__(self) -> str:
+            ...
+        @property
+        def name(self) -> str:
+            ...
+        @property
+        def value(self) -> int:
+            ...
+    def __init__(self, models_path: os.PathLike, device: str, config: TextEmbeddingPipeline.Config | None = None, **kwargs) -> None:
+        """
+        Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+        models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
+        device (str): Device to run the model on (e.g., CPU, GPU).
+        config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
+        kwargs: Plugin and/or config properties
+        """
+    def embed_documents(self, texts: list[str]) -> list[list[float]] | list[list[int]] | list[list[int]]:
+        """
+        Computes embeddings for a vector of texts
+        """
+    def embed_query(self, text: str) -> list[float] | list[int] | list[int]:
+        """
+        Computes embeddings for a query
+        """
+    def start_embed_documents_async(self, texts: list[str]) -> None:
+        """
+        Asynchronously computes embeddings for a vector of texts
+        """
+    def start_embed_query_async(self, text: str) -> None:
+        """
+        Asynchronously computes embeddings for a query
+        """
+    def wait_embed_documents(self) -> list[list[float]] | list[list[int]] | list[list[int]]:
+        """
+        Waits computed embeddings of a vector of texts
+        """
+    def wait_embed_query(self) -> list[float] | list[int] | list[int]:
+        """
+        Waits computed embeddings for a query
+        """
 class TextStreamer(StreamerBase):
     """
     
@@ -1884,12 +1985,10 @@ class Tokenizer:
         4. chat_template entry from rt_info section of openvino.Model
         5. If the template is known to be not supported by GenAI, it's
             replaced with a simplified supported version.
-        6. Patch chat_template replacing not supported instructions with
-            equivalents.
-        7. If the template was not in the list of not supported GenAI
-            templates from (5), it's blindly replaced with
-            simplified_chat_template entry from rt_info section of
-            openvino.Model if the entry exists.
+        6. If the template was not in the list of not supported GenAI
+            templates from (5), it's replaced with simplified_chat_template entry
+            from rt_info section of ov::Model.
+        7. Replace not supported instructions with equivalents.
     """
     chat_template: str
     @typing.overload
@@ -2098,6 +2197,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         
@@ -2134,6 +2234,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         
@@ -2169,6 +2270,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         

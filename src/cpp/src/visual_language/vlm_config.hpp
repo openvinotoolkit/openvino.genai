@@ -16,6 +16,7 @@ enum class VLMModelType {
     INTERNVL_CHAT,
     PHI3_V,
     QWEN2_VL,
+    QWEN2_5_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -74,6 +75,9 @@ public:
     std::string image_pad_token = "<|image_pad|>";
     /// @brief A string token denoting end of vision embeddings for Qwen2VL model.
     std::string vision_end_token = "<|vision_end|>";
+    
+    /// @brief A size of a window for Qwen2.5VL model, used in window attention.
+    size_t vision_config_window_size = 112;
 
     /// @brief Default constructor.
     VLMConfig() = default;

@@ -9,7 +9,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 
 #include "py_utils.hpp"
 
@@ -65,10 +65,10 @@ auto scheduler_config_docstring = R"(
     max_num_seqs:               max number of scheduled sequences (you can think of it as "max batch size").
     enable_prefix_caching:      Enable caching of KV-blocks.
         When turned on all previously calculated KV-caches are kept in memory for future usages.
-        KV-caches can be rewritten if KV-cache limit is reached, but blocks are not released.
+        KV-caches can be overridden if KV-cache limit is reached, but blocks are not released.
         This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
-        When turend off only KV-cache required for batch calculation is kept in memory and
-        when a sequence has finished genegartion its cache is released.
+        When turned off only KV-cache required for batch calculation is kept in memory and
+        when a sequence has finished generation its cache is released.
 )";
 
 auto generation_result_docstring = R"(
