@@ -101,7 +101,7 @@ priority = "explicit"
 
 [tool.poetry.dependencies]
 openvino_tokenizers = { version = "~=2025.2.0.dev", source = "openvino-nightly" }
-torchvision = {source = "pytorch-cpu"}
+torchvision = { version = "*", source = "pytorch-cpu" }
 
 [tool.poetry.group.dev]
 optional = true

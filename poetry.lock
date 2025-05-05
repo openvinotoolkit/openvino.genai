@@ -2851,7 +2851,7 @@ resolved_reference = "fa87c66967595b8af4de529500868840a3443611"
 
 [[package]]
 name = "optimum-intel"
-version = "1.23.0.dev0+303bc50"
+version = "1.23.0.dev0+303bc50f"
 description = "Optimum Library is an extension of the Hugging Face Transformers library, providing a framework to integrate third-party libraries from Hardware Partners and interface with their specific functionality."
 optional = false
 python-versions = "*"
@@ -5235,4 +5235,4 @@ samples = ["diffusers", "einops", "hf_transfer", "librosa", "numpy", "optimum-in
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "8e79bec188f741c110ca0a6f7ae1a932ddfd1ccb17dfb54c2de1f8413336c883"
+content-hash = "49c7cfdfbddd4d997aff9cc518b90e1fbcedcbd540b5924b3f1e96e7f0f43abd"
