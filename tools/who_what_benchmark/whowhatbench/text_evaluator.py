@@ -193,9 +193,6 @@ class TextEvaluator(BaseEvaluator):
                 device = model.device
 
             if use_chat_template:
-                # Temporary debug output
-                print("Chat template (during generation):")
-                print([tokenizer.chat_template])
                 message = [{"role": "user", "content": prompt}]
                 inputs = tokenizer.apply_chat_template(message, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_dict=True).to(device)
             else:
