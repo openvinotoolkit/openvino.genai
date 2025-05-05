@@ -1,8 +1,8 @@
-# Retrieval Augmented Generation sample
+# Retrieval Augmented Generation Sample
 
-This example showcases inference of Text Embedding Models. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.TextEmbeddingPipeline` and uses text as an input source.
+This example showcases inference of Text Embedding Models. The application limited configuration configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.TextEmbeddingPipeline` and uses text as an input source.
 
-## Download and convert the model and tokenizers
+## Download and Convert the Model and Tokenizers
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
@@ -21,7 +21,7 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 
 See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-embeddings-models) for the list of supported models.
 
-# Text embedding pipeline usage
+# Text Embedding Pipeline Usage
 
 ```python
 import argparse
