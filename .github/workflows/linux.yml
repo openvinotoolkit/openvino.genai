@@ -434,9 +434,6 @@ jobs:
         with:
           wheels_dir: '${{ env.INSTALL_DIR }}/wheels'
           package_name: 'whowhatbench'
-          
-      - name: Install whowhatbench wheel
-        run: poetry add ${{ steps.whowhatbench_wheel.outputs.wheel_path }}
       
       - name: Find GenAI wheel
         uses: ./.github/actions/find_wheel
@@ -447,6 +444,9 @@ jobs:
         
       - name: Install GenAI wheel
         run: python3 -m pip install --no-deps ${{ steps.genai_wheel.outputs.wheel_path }}
+        
+      - name: Install whowhatbench wheel
+        run: poetry add ${{ steps.whowhatbench_wheel.outputs.wheel_path }}
         
       - name: Tests
         run: python -m pytest -v ./${{ matrix.test.cmd }}
