@@ -24,11 +24,11 @@ jobs:
         run: |
           echo "Cache info: "
           du -h -d2 ${{ env.OV_CACHE }}
-
+             
       - name: Cleanup cache
         run: |
-          echo "Delete the cached test data"
-            [ ! -z "${{ env.OV_CACHE }}" ] && rm -rf ${{ env.OV_CACHE }}/*
+          echo "Delete cache files if they have not been used in over 3 days"
+          [ ! -z "${{ env.OV_CACHE }}" ] && find ${{ env.OV_CACHE }} ! -type d -atime +3 -delete
 
       - name: Post-Collecting Cache Info
         run: |
