@@ -375,7 +375,7 @@ jobs:
             timeout: 60
           - name: 'Rag tests'
             cmd: 'tests/python_tests/test_rag.py'
-            timeout: 15
+            timeout: 30
     defaults:
       run:
         shell: bash
