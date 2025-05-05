@@ -23,8 +23,8 @@ int32_t main(int32_t argc, char* argv[]) try {
                 ov::genai::width(512),
                 ov::genai::height(512),
                 ov::genai::num_inference_steps(20),
-                ov::genai::num_images_per_prompt(1)},
-            1);  // request_idx
+                ov::genai::num_images_per_prompt(1)}
+    );//1);  // request_idx
 
         // TODO: GenerationRequest will wrap request_idx
         /*
@@ -39,7 +39,7 @@ int32_t main(int32_t argc, char* argv[]) try {
         */
 
         // writes `num_images_per_prompt` images by pattern name
-        imwrite("image_2_%d.bmp", image, true);
+        imwrite("image_1_%d.bmp", image, true);
         std::cout << "Generation ended" << std::endl;
 
     });
@@ -52,18 +52,35 @@ int32_t main(int32_t argc, char* argv[]) try {
                 ov::genai::width(256),
                 ov::genai::height(256),
                 ov::genai::num_inference_steps(20),
-                ov::genai::num_images_per_prompt(1)},
-            2);
+                ov::genai::num_images_per_prompt(1)}
+    );//2);
 
         // writes `num_images_per_prompt` images by pattern name
-        imwrite("image_1_%d.bmp", image, true);
+        imwrite("image_2_%d.bmp", image, true);
+        std::cout << "Generation ended" << std::endl;
+
+    });
+
+    std::thread t2([&pipe, prompt] () {
+
+        std::cout << "Generating..." << std::endl;
+        ov::Tensor image = pipe.generate("yellow raspberry",
+            ov::AnyMap{
+                ov::genai::width(512),
+                ov::genai::height(512),
+                ov::genai::num_inference_steps(20),
+                ov::genai::num_images_per_prompt(1)}
+    );//2);
+
+        // writes `num_images_per_prompt` images by pattern name
+        imwrite("image_3_%d.bmp", image, true);
         std::cout << "Generation ended" << std::endl;
 
     });
 
     t.join();
     t1.join();
-
+    t2.join();
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {

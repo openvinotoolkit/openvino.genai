@@ -3,6 +3,7 @@
 
 #pragma once
 #include <type_traits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -222,6 +223,22 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
+
+
+class RequestIdxQueueImpl;
+
+class RequestIdxQueue {
+    std::shared_ptr<RequestIdxQueueImpl> m_impl;
+public:
+    RequestIdxQueue(size_t concurrency_limit);
+    ~RequestIdxQueue() = default;
+
+    // Blocking op to get free request index
+    size_t get();
+
+    // Returning free request index to the queue
+    void return_to(size_t value);
+};
 
 }  // namespace utils
 }  // namespace genai

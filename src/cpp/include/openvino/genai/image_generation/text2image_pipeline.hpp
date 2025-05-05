@@ -8,6 +8,11 @@
 namespace ov {
 namespace genai {
 
+namespace utils {
+class RequestIdxQueue;
+}
+
+
 /**
  * Text to image pipelines which provides unified API to all supported models types.
  * Models specific aspects are hidden in image generation config, which includes multiple prompts support or
@@ -248,6 +253,7 @@ public:
 
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;
+    std::shared_ptr<ov::genai::utils::RequestIdxQueue> m_request_idx_queue;
 
     explicit Text2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl);
 };
