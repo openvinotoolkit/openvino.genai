@@ -47,7 +47,8 @@ samples = [
     "transformers_stream_generator==0.0.5",  # For Qwen
     "diffusers==0.33.1",  # For image generation pipelines
     "timm==1.0.15",  # For exporting InternVL2
-    "torchvision",  # For visual language models
+    "torchvision==0.22.0",  # For visual language models
+    "torch",
     "transformers>=4.43",  # For Whisper
     "hf_transfer",  # For faster models download, should be used with env var HF_HUB_ENABLE_HF_TRANSFER=1
     "librosa==0.11.0",  # For Whisper
@@ -97,11 +98,12 @@ priority = "supplemental"
 [[tool.poetry.source]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
-priority = "explicit"
+priority = "supplemental"
 
 [tool.poetry.dependencies]
-openvino_tokenizers = { version = "~=2025.2.0.dev", source = "openvino-nightly" }
-torchvision = { version = "*", source = "pytorch-cpu" }
+openvino_tokenizers = { version = "*", source = "openvino-nightly" }
+torchvision = {  version = "*", source = "pytorch-cpu" }
+torch = {  version = "*", source = "pytorch-cpu" }
 
 [tool.poetry.group.dev]
 optional = true
