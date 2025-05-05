@@ -4,7 +4,13 @@ version = "2025.2.0.0"
 description = "Library of the most popular Generative AI model pipelines, optimized execution methods, and samples"
 requires-python = ">=3.9"
 readme = { file = "src/README.md", content-type="text/markdown" }
-license = { "file" = "LICENSE" }
+license = { "text" = "Apache-2.0" }
+license-files = [
+    "LICENSE",
+    "third-party-programs.txt",
+    "SECURITY.md",
+    "README.md"
+]
 authors = [
     { name = "OpenVINO Developers", email = "openvino@intel.com" },
 ]
@@ -32,8 +38,21 @@ classifiers = [
 dependencies = [
     "openvino_tokenizers~=2025.2.0.0.dev"
 ]
+
 [project.optional-dependencies]
-testing = ["pytest>=6.0"]
+samples = [
+    "optimum-intel[nncf] ~= 1.23.0.dev; python_version >= '3.9' and python_version <= '3.13'",
+    "numpy<2.0.0; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "einops==0.8.1",  # For Qwen
+    "transformers_stream_generator==0.0.5",  # For Qwen
+    "diffusers==0.33.1",  # For image generation pipelines
+    "timm==1.0.15",  # For exporting InternVL2
+    "torchvision",  # For visual language models
+    "transformers>=4.43",  # For Whisper
+    "hf_transfer",  # For faster models download, should be used with env var HF_HUB_ENABLE_HF_TRANSFER=1
+    "librosa==0.11.0",  # For Whisper
+    "pillow==11.2.1"  # Image processing for VLMs
+]
 
 [tool.py-build-cmake.module]
 directory = "src/python"
@@ -66,3 +85,69 @@ markers = [
     "nightly",
     "precommit: (deselect with '-m \"precommit\"')",
 ]
+
+[tool.poetry]
+package-mode = false
+
+[[tool.poetry.source]]
+name = "openvino-nightly"
+url = "https://storage.openvinotoolkit.org/simple/wheels/nightly"
+priority = "supplemental"
+
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
+
+[tool.poetry.dependencies]
+openvino_tokenizers = { version = "~=2025.2.0.dev", source = "openvino-nightly" }
+torchvision = {source = "pytorch-cpu"}
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+optimum-intel = { git = "https://github.com/huggingface/optimum-intel.git", rev = "303bc50fdeb34b427dc1b04be741bf4f11415b2d", extras = ["nncf"], allow-prereleases = true, markers = "python_version >= '3.9' and python_version <= '3.13'" }
+
+[tool.poetry.group.tests]
+optional = true
+
+[tool.poetry.group.tests.dependencies]
+pytest = ">=7.0.0,<=8.3.5"
+pytest-html = ">=3.0.0,<=4.1.1"
+diffusers = ">=0.30.0,<=0.33.1"
+onnx = ">=1.16.0,<=1.17.0"
+hf_transfer = ">=0.1.0,<=0.1.9"
+gguf = ">=0.9.1,<=0.16.2"
+
+[tool.poetry.group.test_models]
+optional = true
+
+[tool.poetry.group.test_models.dependencies]
+# requirements for specific models
+# - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
+rjieba = ">=0.1.10,<=0.1.13"
+# - baichuan-inc/Baichuan2-7B-Chat
+bitsandbytes = ">=0.45.0,<=0.45.5"
+# - nomic-ai/gpt4all-falcon
+# - Qwen/Qwen-7B
+# - Qwen/Qwen-7B-Chat
+# - mosaicml/mpt-7b
+# - internlm/internlm2-7b
+einops = ">=0.8.0,<=0.8.1"
+# - Qwen/Qwen-7B
+# - Qwen/Qwen-7B-Chat
+transformers_stream_generator = ">=0.0.4,<=0.0.5"
+# - openbmb/MiniCPM-V-2
+timm = ">=1.0.13,<=1.0.15"
+# - Qwen/Qwen-7B
+# - Qwen/Qwen-7B-Chat
+# - Salesforce/xgen-7b-8k-base
+tiktoken = ">=0.8.0,<=0.9.0"
+# - microsoft/biogpt
+sacremoses = "==0.1.1"
+# - openai/whisper-base
+librosa = ">=0.10.1,<=0.11.0"
+soundfile = ">=0.12.0,<=0.13.1"
+datasets = ">=3.3.0,<=3.5.1"
+rouge = "==1.0.1"
