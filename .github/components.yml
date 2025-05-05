@@ -1,0 +1,127 @@
+tokenizers:
+  revalidate: 'all'
+
+text streamer:
+  revalidate:
+    - LLM
+    - visual language
+    - sampling
+    - whisper
+    - speculative decoding
+    - prompt lookup
+    - continuous batching
+    - LLM samples
+    - Whisper samples
+    - VLM samples
+
+sampling:
+  revalidate:
+    - LLM
+    - visual language
+    - whisper
+    - continuous batching
+    - speculative decoding
+    - prompt lookup
+    - LLM samples
+    - Whisper samples
+    - VLM samples
+    - llm_bench
+    - WWB
+
+LoRA:
+  revalidate:
+    - LLM
+    - text to image
+    - LLM samples
+    - llm_bench
+
+LLM:
+  revalidate:
+    - sampling
+    - continuous batching
+    - speculative decoding
+    - prompt lookup
+    - LLM samples
+    - GGUF
+    - llm_bench
+    - WWB
+
+visual language:
+  revalidate:
+    - VLM samples
+    - llm_bench
+    - WWB
+
+whisper:
+  revalidate:
+    - Whisper samples
+    - llm_bench
+    - WWB
+
+text to image:
+  revalidate:
+    - Image generation samples
+    - llm_bench
+    - WWB
+
+continuous batching:
+  revalidate:
+    - LLM
+    - visual language
+    - speculative decoding
+    - prompt lookup
+    - sampling
+    - LLM samples
+    - VLM samples
+    - llm_bench
+    - WWB
+
+speculative decoding:
+  revalidate:
+    - LLM
+    - LLM samples
+    - llm_bench
+    - WWB
+
+prompt lookup:
+  revalidate:
+    - LLM
+    - LLM samples
+    - llm_bench
+    - WWB
+
+LLM samples:
+  revalidate:
+    - LLM samples
+
+Whisper samples:
+  revalidate:
+    - Whisper samples
+
+Image generation samples:
+  revalidate:
+    - Image generation samples
+
+VLM samples:
+  revalidate:
+    - VLM samples
+
+GGUF:
+  revalidate:
+    - LLM # GGUF is tested via test_llm_pipeline.py
+
+C API:
+  revalidate:
+    - LLM samples
+
+JS API:
+  revalidate:
+    - LLM samples
+
+llm_bench:
+  revalidate:
+    - llm_bench
+
+WWB:
+  revalidate:
+    - WWB
