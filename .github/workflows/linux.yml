@@ -369,6 +369,9 @@ jobs:
           - name: 'API tests'
             cmd: 'tests/python_tests/test_continuous_batching.py tests/python_tests/test_generation_config.py tests/python_tests/test_sampling.py tests/python_tests/test_text_streamer.py'
             timeout: 60
+          - name: 'Rag tests'
+            cmd: 'tests/python_tests/test_rag.py'
+            timeout: 30
           - name: 'WWB tests'
             cmd: '/tools/who_what_benchmark/tests'
             timeout: 90
