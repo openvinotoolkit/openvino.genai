@@ -117,7 +117,7 @@ public:
     EmbeddingResults embed_documents(const std::vector<std::string>& texts);
 
     /**
-     * @brief Asynchronously computes embeddings for a vector of texts
+     * @brief Asynchronously computes embeddings for a vector of texts. Only one method of async family can be active.
      */
     void start_embed_documents_async(const std::vector<std::string>& texts);
 
@@ -132,7 +132,7 @@ public:
     EmbeddingResult embed_query(const std::string& text);
 
     /**
-     * @brief Asynchronously computes embeddings for a query
+     * @brief Asynchronously computes embeddings for a query. Only one method of async family can be active.
      */
     void start_embed_query_async(const std::string& text);
 
