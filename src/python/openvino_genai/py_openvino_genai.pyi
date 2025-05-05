@@ -1861,15 +1861,15 @@ class TextEmbeddingPipeline:
         Structure to keep TextEmbeddingPipeline configuration parameters.
         
         Attributes:
-            max_length (int, optional): 
+            max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
-            pooling_type (TextEmbeddingPipeline.PoolingType, optional): 
+            pooling_type (TextEmbeddingPipeline.PoolingType, optional):
                 Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
-            normalize (bool, optional): 
-                If True, normalization is applied to embeddings. Defaults to True.
-            query_instruction (str, optional): 
+            normalize (bool, optional):
+                If True, L2 normalization is applied to embeddings. Defaults to True.
+            query_instruction (str, optional):
                 Instruction to use for embedding a query.
-            embed_instruction (str, optional): 
+            embed_instruction (str, optional):
                 Instruction to use for embedding a document.
         """
         embed_instruction: str | None

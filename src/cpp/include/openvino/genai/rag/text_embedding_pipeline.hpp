@@ -41,7 +41,7 @@ public:
         PoolingType pooling_type = PoolingType::CLS;
 
         /**
-         * @brief If 'true' normalization is applied to embeddings
+         * @brief If 'true', L2 normalization is applied to embeddings
          */
         bool normalize = true;
 
