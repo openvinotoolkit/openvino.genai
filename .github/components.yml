@@ -1,131 +1,127 @@
+GHA:
+  revalidate: 'all'
+
 tokenizers:
   revalidate: 'all'
 
-text streamer:
+text_streamer:
   revalidate:
     - LLM
-    - visual language
+    - visual_language
     - sampling
     - whisper
-    - speculative decoding
-    - prompt lookup
-    - continuous batching
-    - LLM samples
-    - Whisper samples
-    - VLM samples
+    - speculative_decoding
+    - prompt_lookup
+    - continuous_batching
+    - LLM_samples
+    - Whisper_samples
+    - VLM_samples
 
 sampling:
   revalidate:
     - LLM
-    - visual language
+    - visual_language
     - whisper
-    - continuous batching
-    - speculative decoding
-    - prompt lookup
-    - LLM samples
-    - Whisper samples
-    - VLM samples
+    - continuous_batching
+    - speculative_decoding
+    - prompt_lookup
+    - LLM_samples
+    - Whisper_samples
+    - VLM_samples
     - llm_bench
     - WWB
 
 LoRA:
   revalidate:
     - LLM
-    - text to image
-    - LLM samples
+    - image_generation
+    - LLM_samples
     - llm_bench
 
 LLM:
   revalidate:
     - sampling
-    - continuous batching
-    - speculative decoding
-    - prompt lookup
-    - LLM samples
+    - continuous_batching
+    - speculative_decoding
+    - prompt_lookup
+    - LLM_samples
     - GGUF
     - llm_bench
     - WWB
 
-visual language:
+visual_language:
   revalidate:
-    - VLM samples
+    - VLM_samples
     - llm_bench
     - WWB
 
 whisper:
   revalidate:
-    - Whisper samples
+    - Whisper_samples
     - llm_bench
     - WWB
 
-image generation:
+image_generation:
   revalidate:
-    - Image generation samples
+    - Image_generation_samples
     - llm_bench
     - WWB
 
-continuous batching:
+continuous_batching:
   revalidate:
     - LLM
-    - visual language
-    - speculative decoding
-    - prompt lookup
+    - visual_language
+    - speculative_decoding
+    - prompt_lookup
     - sampling
-    - LLM samples
-    - VLM samples
+    - LLM_samples
+    - VLM_samples
     - llm_bench
     - WWB
 
-speculative decoding:
+speculative_decoding:
   revalidate:
     - LLM
-    - LLM samples
+    - LLM_samples
     - llm_bench
     - WWB
 
-prompt lookup:
+prompt_lookup:
   revalidate:
     - LLM
-    - LLM samples
+    - LLM_samples
     - llm_bench
     - WWB
 
-LLM samples:
-  revalidate:
-    - LLM samples
+LLM_samples:
+  revalidate: []
 
-Whisper samples:
-  revalidate:
-    - Whisper samples
+Whisper_samples:
+  revalidate: []
 
-Image generation samples:
-  revalidate:
-    - Image generation samples
+Image_generation_samples:
+  revalidate: []
 
-VLM samples:
-  revalidate:
-    - VLM samples
+VLM_samples:
+  revalidate: []
 
 GGUF:
   revalidate:
     - LLM # GGUF is tested via test_llm_pipeline.py
 
-C API:
+C_API:
   revalidate:
-    - LLM samples
+    - LLM_samples
 
-JS API:
+JS_API:
   revalidate:
-    - LLM samples
+    - LLM_samples
 
 llm_bench:
-  revalidate:
-    - llm_bench
+  revalidate: []
 
 WWB:
-  revalidate:
-    - WWB
+  revalidate: []
 
-GH Pages Docs:
-  revalidate:
-    - []
+GH_Pages_Docs:
+  revalidate: []

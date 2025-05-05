@@ -41,14 +41,11 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         timeout-minutes: 15
         with:
-          repository: 'openvinotoolkit/openvino'
-          path: 'openvino'
-          ref: ${{ env.OV_BRANCH }}
-          sparse-checkout: .github/actions/smart-ci
+          sparse-checkout: .github
 
       - name: Get affected components
         id: smart_ci
-        uses: ./openvino/.github/actions/smart-ci
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@master
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -392,27 +389,27 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
-            run_condition: ${{ fromJSON(inputs.affected-components).whisper.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 45
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
-            run_condition: ${{ fromJSON(inputs.affected-components).continuous_batching.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 60
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
-            run_condition: ${{ fromJSON(inputs.affected-components).visual_language.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 60
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
-            run_condition: ${{ fromJSON(inputs.affected-components).tokenizers.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
             timeout: 60
           - name: 'API tests'
             cmd: 'tests/python_tests/test_continuous_batching.py tests/python_tests/test_generation_config.py tests/python_tests/test_sampling.py tests/python_tests/test_text_streamer.py'
-            run_condition: ${{ fromJSON(inputs.affected-components).continuous_batching.test || fromJSON(inputs.affected-components).sampling.test || fromJSON(inputs.affected-components).text_streamer.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
             timeout: 60
           - name: 'WWB tests'
             cmd: '/tools/who_what_benchmark/tests'
-            run_condition: ${{ fromJSON(inputs.affected-components).WWB.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
     defaults:
       run:
@@ -476,22 +473,22 @@ jobs:
           - name: 'LLM'
             marker: 'llm'
             cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(inputs.affected-components).LLM_samples.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
             runner: 'aks-linux-4-cores-16gb'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(inputs.affected-components).Whisper_samples.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Whisper_samples.test }}
             runner: 'aks-linux-4-cores-16gb'
           - name: 'Image generation'
             marker: 'image_generation'
             cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(inputs.affected-components).Image_generation_samples.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
             runner: 'aks-linux-16-cores-32gb'
           - name: 'VLM'
             marker: 'vlm'
             cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(inputs.affected-components).VLM_samples.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).VLM_samples.test }}
             runner: 'aks-linux-8-cores-64gb'
     timeout-minutes: 120
     defaults:
