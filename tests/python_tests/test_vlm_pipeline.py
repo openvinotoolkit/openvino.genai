@@ -559,10 +559,13 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_im
 
     current_iter = 0
     num_iters = 3
+    streamer_generation_result = ""
 
     def streamer(subword):
         nonlocal current_iter
         current_iter += 1
+        nonlocal streamer_generation_result
+        streamer_generation_result += subword
         return (
             StreamingStatus.CANCEL
             if current_iter == num_iters
@@ -581,20 +584,23 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_im
         images.append(get_image_by_link(link))
 
     ov_pipe.start_chat()
-    res_first = ov_pipe.generate(
+    _ = ov_pipe.generate(
         callback_questions[0],
         images=images,
         generation_config=generation_config,
         streamer=streamer,
-    ).texts[0]
+    )
+    res_first = streamer_generation_result
     current_iter = 0
-    res_second = ov_pipe.generate(
+    streamer_generation_result = ""
+    _ = ov_pipe.generate(
         callback_questions[0],
         images=images,
         generation_config=generation_config,
         streamer=streamer,
-    ).texts[0]
+    )
     ov_pipe.finish_chat()
+    res_second = streamer_generation_result
 
     assert res_first == res_second
 
@@ -843,7 +849,8 @@ class TestImageTags:
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336)),
     ],
 )
-def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size):
+@pytest.mark.parametrize("backend", attention_backend)
+def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size, backend):
     import numpy as np
 
     resized_image = get_pil_image_by_link(image_link, target_size=target_size)
@@ -874,7 +881,7 @@ def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size
     optimum_text = optimum_output[0]
 
     # Run the model with GenAI
-    vlm = VLMPipeline(model_path, "CPU")
+    vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
     genai_output = vlm.generate(prompt, images=[resized_image_tensor], max_new_tokens=max_new_tokens)
     genai_text = genai_output.texts[0]
 
