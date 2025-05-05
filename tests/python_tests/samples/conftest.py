@@ -292,7 +292,6 @@ def generate_test_content(request):
 
         from PIL import Image
         import numpy as np
-
         res = 28, 28
         lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
         lines = lines.reshape([*res, 3])

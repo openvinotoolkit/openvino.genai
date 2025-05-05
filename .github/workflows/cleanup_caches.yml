@@ -24,7 +24,6 @@ jobs:
         run: |
           echo "Cache info: "
           du -h -d2 ${{ env.OV_CACHE }}
-             
       - name: Cleanup cache
         run: |
           echo "Delete cache files if they have not been used in over 3 days"
