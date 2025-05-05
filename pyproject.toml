@@ -2,7 +2,7 @@
 name = "openvino-genai"
 version = "2025.2.0.0"
 description = "Library of the most popular Generative AI model pipelines, optimized execution methods, and samples"
-requires-python = ">=3.9"
+requires-python = ">=3.9,<=3.13"
 readme = { file = "src/README.md", content-type="text/markdown" }
 license = { "text" = "Apache-2.0" }
 license-files = [
@@ -36,12 +36,13 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython"
 ]
 dependencies = [
-    "openvino_tokenizers~=2025.2.0.0.dev"
+    "openvino_tokenizers~=2025.2.0.0.dev",
+    "whowhatbench @ file:///home/rmikhail/src/openvino.genai/tools/who_what_benchmark"
 ]
 
 [project.optional-dependencies]
 samples = [
-    "optimum-intel[nncf] ~= 1.23.0.dev; python_version >= '3.9' and python_version <= '3.13'",
+    "optimum-intel[nncf] ~= 1.23.0.dev",
     "numpy<2.0.0; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "einops==0.8.1",  # For Qwen
     "transformers_stream_generator==0.0.5",  # For Qwen
@@ -109,7 +110,7 @@ torch = {  version = "*", source = "pytorch-cpu" }
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-optimum-intel = { git = "https://github.com/huggingface/optimum-intel.git", rev = "303bc50fdeb34b427dc1b04be741bf4f11415b2d", extras = ["nncf"], allow-prereleases = true, markers = "python_version >= '3.9' and python_version <= '3.13'" }
+optimum-intel = { git = "https://github.com/huggingface/optimum-intel.git", rev = "303bc50fdeb34b427dc1b04be741bf4f11415b2d", extras = ["nncf"], allow-prereleases = true }
 
 [tool.poetry.group.tests]
 optional = true
