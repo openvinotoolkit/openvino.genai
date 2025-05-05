@@ -23,6 +23,7 @@ OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run f
  - Image generation using Diffuser models, for example, generation using Stable Diffusion models
  - Speech recognition using Whisper family models
  - Text generation using Large Visual Models, for instance, Image analysis using LLaVa or miniCPM models family
+ - Text embedding for Retrieval-Augmented Generation (RAG). For example, compute embeddings for documents and queries using to enable efficient retrieval in RAG workflows.
 
 Library efficiently supports LoRA adapters for Text and Image generation scenarios:
 - Load multiple adapters per model
@@ -390,6 +391,47 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automati
 
 </details>
 
+## Text Embedding Pipeline for Retrieval-Augmented Generation (RAG)
+<details>
+
+### Converting and preparing a text embedding model from Hugging Face library
+
+```sh
+# Download and convert the BAAI/bge-small-en-v1.5 model to OpenVINO format
+optimum-cli export openvino --trust-remote-code --model BAAI/bge-small-en-v1.5 BAAI/bge-small-en-v1.5
+```
+
+### Run Embedding Pipeline using TextEmbeddingPipeline API in Python
+
+```python
+import openvino_genai
+
+pipeline = openvino_genai.TextEmbeddingPipeline("./BAAI/bge-small-en-v1.5", "CPU")
+
+documents = ["Document 1", "Document 2"]
+embeddings = pipeline.embed_documents(documents)
+
+query = "The Sun is yellow because"
+query_embedding = pipeline.embed_query(query)
+```
+
+### Run Embedding Pipeline using TextEmbeddingPipeline API in C++
+
+```cpp
+#include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include <iostream>
+
+int main(int argc, char* argv[]) {
+    std::string models_path = argv[1];
+    std::vector<std::string> documents(argv + 2, argv + argc);
+    std::string device = "CPU";  // GPU can be used as well
+
+    ov::genai::TextEmbeddingPipeline pipeline(models_path, device);
+
+    const ov::genai::EmbeddingResults embeddings = pipeline.embed_documents(documents);
+}
+```
+</details>
 
 ## Additional materials
 

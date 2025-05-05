@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::TextEmbeddingPipeline pipeline(models_path, device, config);
 
-    std::vector<ov::genai::EmbeddingResult> embeddings = pipeline.embed_documents(documents);
+    ov::genai::EmbeddingResults embeddings = pipeline.embed_documents(documents);
 
 } catch (const std::exception& error) {
     try {
