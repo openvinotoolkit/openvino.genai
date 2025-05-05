@@ -488,6 +488,10 @@ jobs:
             marker: 'image_generation'
             cmd: 'tests/python_tests/samples'
             runner: 'aks-win-8-cores-16gb'
+          - name: 'Rag'
+            marker: 'rag'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-4-cores-16gb'
     needs: [ openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 120
     defaults:

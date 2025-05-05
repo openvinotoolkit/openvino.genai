@@ -435,6 +435,9 @@ jobs:
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
+          - name: 'Rag'
+            marker: 'rag'
+            cmd: 'tests/python_tests/samples'
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 45
     defaults:

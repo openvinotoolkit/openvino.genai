@@ -444,6 +444,10 @@ jobs:
             marker: 'vlm'
             cmd: 'tests/python_tests/samples'
             runner: 'aks-linux-8-cores-64gb'
+          - name: 'Rag'
+            marker: 'rag'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-4-cores-16gb'
 
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 120
