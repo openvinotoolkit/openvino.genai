@@ -4,7 +4,7 @@
 #include <gtest/gtest.h>
 #include <openvino/core/except.hpp>
 
-#include "logit_processor.hpp"
+#include "sampling/logit_processor.hpp"
 
 using namespace LogitTransformers;
 

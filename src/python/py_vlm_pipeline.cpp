@@ -12,7 +12,7 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;
@@ -35,6 +35,7 @@ auto vlm_generate_docstring = R"(
     MiniCPM-V-2_6: (<image>./</image>)\n
     Phi-3-vision: <|image_i|>\n - the index starts with one
     Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+    Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
     If the prompt doesn't contain image tags, but images are
     provided, the tags are prepended to the prompt.
 
@@ -69,6 +70,7 @@ auto vlm_generate_kwargs_docstring = R"(
     MiniCPM-V-2_6: (<image>./</image>)\n
     Phi-3-vision: <|image_i|>\n - the index starts with one
     Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+    Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
     If the prompt doesn't contain image tags, but images are
     provided, the tags are prepended to the prompt.
 

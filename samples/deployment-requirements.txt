@@ -3,3 +3,4 @@
 openvino_genai~=2025.2.0.0.dev
 librosa==0.10.2.post1  # For Whisper
 pillow==11.2.1  # Image processing for VLMs
+json5==0.10.0  # For ReAct

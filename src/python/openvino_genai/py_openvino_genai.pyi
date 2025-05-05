@@ -1589,10 +1589,10 @@ class SchedulerConfig:
         max_num_seqs:               max number of scheduled sequences (you can think of it as "max batch size").
         enable_prefix_caching:      Enable caching of KV-blocks.
             When turned on all previously calculated KV-caches are kept in memory for future usages.
-            KV-caches can be rewritten if KV-cache limit is reached, but blocks are not released.
+            KV-caches can be overridden if KV-cache limit is reached, but blocks are not released.
             This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
-            When turend off only KV-cache required for batch calculation is kept in memory and
-            when a sequence has finished genegartion its cache is released.
+            When turned off only KV-cache required for batch calculation is kept in memory and
+            when a sequence has finished generation its cache is released.
     """
     cache_eviction_config: CacheEvictionConfig
     cache_size: int
@@ -1884,12 +1884,10 @@ class Tokenizer:
         4. chat_template entry from rt_info section of openvino.Model
         5. If the template is known to be not supported by GenAI, it's
             replaced with a simplified supported version.
-        6. Patch chat_template replacing not supported instructions with
-            equivalents.
-        7. If the template was not in the list of not supported GenAI
-            templates from (5), it's blindly replaced with
-            simplified_chat_template entry from rt_info section of
-            openvino.Model if the entry exists.
+        6. If the template was not in the list of not supported GenAI
+            templates from (5), it's replaced with simplified_chat_template entry
+            from rt_info section of ov::Model.
+        7. Replace not supported instructions with equivalents.
     """
     chat_template: str
     @typing.overload
@@ -2098,6 +2096,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         
@@ -2134,6 +2133,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         
@@ -2169,6 +2169,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         
