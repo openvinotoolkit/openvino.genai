@@ -168,6 +168,7 @@ private:
     friend class InputsEmbedderInternVLChat;
     friend class InputsEmbedderPhi3V;
     friend class InputsEmbedderQwen2VL;
+    friend class InputsEmbedderQwen2_5_VL;
 };
 
 template <typename Func>

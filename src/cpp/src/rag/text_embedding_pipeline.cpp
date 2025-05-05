@@ -92,7 +92,7 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const 
     if (config.normalize) {
         processor.output().postprocess().custom([](const ov::Output<ov::Node>& node) {
             auto axis_const = std::make_shared<op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
-            return std::make_shared<op::v0::NormalizeL2>(node, axis_const, 1e-12, op::EpsMode::ADD);
+            return std::make_shared<op::v0::NormalizeL2>(node, axis_const, 1e-12, op::EpsMode::MAX);
         });
     }
 
@@ -116,13 +116,10 @@ class TextEmbeddingPipeline::TextEmbeddingPipelineImpl {
 public:
     TextEmbeddingPipelineImpl(const std::filesystem::path& models_path,
                               const std::string& device,
-                              const std::optional<Config>& config,
+                              const Config& config,
                               const ov::AnyMap& properties = {})
-        : m_tokenizer{models_path} {
-        if (config.has_value()) {
-            m_config = *config;
-        }
-
+        : m_config{config},
+          m_tokenizer{models_path} {
         ov::Core core = utils::singleton_core();
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
@@ -138,7 +135,7 @@ public:
         m_request = compiled_model.create_infer_request();
     };
 
-    std::vector<EmbeddingResult> embed_documents(const std::vector<std::string>& texts) {
+    EmbeddingResults embed_documents(const std::vector<std::string>& texts) {
         start_embed_documents_async(texts);
         return wait_embed_documents();
     };
@@ -148,7 +145,7 @@ public:
         start_embed_async(formatted_texts);
     };
 
-    std::vector<EmbeddingResult> wait_embed_documents() {
+    EmbeddingResults wait_embed_documents() {
         return wait_embed();
     };
 
@@ -163,7 +160,15 @@ public:
     };
 
     EmbeddingResult wait_embed_query() {
-        return wait_embed()[0];
+        const EmbeddingResults results = wait_embed();
+        if (auto floats = std::get_if<std::vector<std::vector<float>>>(&results)) {
+            return (*floats)[0];
+        } else if (auto int8s = std::get_if<std::vector<std::vector<int8_t>>>(&results)) {
+            return (*int8s)[0];
+        } else if (auto uint8s = std::get_if<std::vector<std::vector<uint8_t>>>(&results)) {
+            return (*uint8s)[0];
+        }
+        OPENVINO_THROW("Embedding result type is not supported");
     };
 
 private:
@@ -192,7 +197,7 @@ private:
         m_request.start_async();
     };
 
-    std::vector<EmbeddingResult> wait_embed() {
+    EmbeddingResults wait_embed() {
         m_request.wait();
 
         // [batch_size, hidden_size]
@@ -223,10 +228,10 @@ private:
         return *m_config.query_instruction + text;
     }
 
-    std::vector<EmbeddingResult> to_embedding_result(const Tensor& last_hidden_state) {
+    EmbeddingResults to_embedding_result(const Tensor& last_hidden_state) {
         const auto last_hidden_state_data = last_hidden_state.data<float>();
 
-        std::vector<EmbeddingResult> result;
+        std::vector<std::vector<float>> result;
         const auto shape = last_hidden_state.get_shape();
 
         const size_t batch_size = shape[0];
@@ -245,7 +250,7 @@ private:
 
 TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models_path,
                                              const std::string& device,
-                                             const std::optional<Config>& config,
+                                             const Config& config,
                                              const ov::AnyMap& properties) {
     m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, config, properties);
 };
@@ -258,7 +263,7 @@ TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models
     m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, Config(properties), plugin_properties);
 };
 
-std::vector<EmbeddingResult> TextEmbeddingPipeline::embed_documents(const std::vector<std::string>& texts) {
+EmbeddingResults TextEmbeddingPipeline::embed_documents(const std::vector<std::string>& texts) {
     return m_impl->embed_documents(texts);
 }
 
@@ -266,7 +271,7 @@ void TextEmbeddingPipeline::start_embed_documents_async(const std::vector<std::s
     return m_impl->start_embed_documents_async(texts);
 }
 
-std::vector<EmbeddingResult> TextEmbeddingPipeline::wait_embed_documents() {
+EmbeddingResults TextEmbeddingPipeline::wait_embed_documents() {
     return m_impl->wait_embed_documents();
 }
 

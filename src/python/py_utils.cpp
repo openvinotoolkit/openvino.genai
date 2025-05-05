@@ -11,7 +11,7 @@
 
 #include <openvino/runtime/auto/properties.hpp>
 
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"

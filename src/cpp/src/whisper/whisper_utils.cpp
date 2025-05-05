@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "whisper_utils.hpp"
+#include "whisper/whisper_utils.hpp"
 
 namespace {
 

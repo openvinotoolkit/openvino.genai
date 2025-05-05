@@ -9,13 +9,32 @@
 
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "py_utils.hpp"
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 
 namespace py = pybind11;
 using ov::genai::EmbeddingResult;
+using ov::genai::EmbeddingResults;
 using ov::genai::TextEmbeddingPipeline;
 
 namespace pyutils = ov::genai::pybind::utils;
+
+namespace {
+const auto text_embedding_config_docstring = R"(
+Structure to keep TextEmbeddingPipeline configuration parameters.
+
+Attributes:
+    max_length (int, optional): 
+        Maximum length of tokens passed to the embedding model.
+    pooling_type (TextEmbeddingPipeline.PoolingType, optional): 
+        Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
+    normalize (bool, optional): 
+        If True, normalization is applied to embeddings. Defaults to True.
+    query_instruction (str, optional): 
+        Instruction to use for embedding a query.
+    embed_instruction (str, optional): 
+        Instruction to use for embedding a document.
+)";
+}
 
 void init_rag_pipelines(py::module_& m) {
     auto text_embedding_pipeline =
@@ -23,8 +42,8 @@ void init_rag_pipelines(py::module_& m) {
             .def(
                 "embed_documents",
                 [](TextEmbeddingPipeline& pipe,
-                   std::vector<std::string>& texts) -> py::typing::Union<std::vector<EmbeddingResult>> {
-                    std::vector<EmbeddingResult> res;
+                   std::vector<std::string>& texts) -> py::typing::Union<EmbeddingResults> {
+                    EmbeddingResults res;
                     {
                         py::gil_scoped_release rel;
                         res = pipe.embed_documents(texts);
@@ -45,8 +64,8 @@ void init_rag_pipelines(py::module_& m) {
                 "Asynchronously computes embeddings for a vector of texts")
             .def(
                 "wait_embed_documents",
-                [](TextEmbeddingPipeline& pipe) -> py::typing::Union<std::vector<EmbeddingResult>> {
-                    std::vector<EmbeddingResult> res;
+                [](TextEmbeddingPipeline& pipe) -> py::typing::Union<EmbeddingResults> {
+                    EmbeddingResults res;
                     {
                         py::gil_scoped_release rel;
                         res = pipe.wait_embed_documents();
@@ -64,18 +83,18 @@ void init_rag_pipelines(py::module_& m) {
                     }
                     return py::cast(res);
                 },
-                py::arg("texts"),
-                "texts ",
-                "Computes embeddings for a text")
+                py::arg("text"),
+                "text ",
+                "Computes embeddings for a query")
             .def(
                 "start_embed_query_async",
                 [](TextEmbeddingPipeline& pipe, std::string& text) -> void {
                     py::gil_scoped_release rel;
                     pipe.start_embed_query_async(text);
                 },
-                py::arg("texts"),
-                "texts ",
-                "Asynchronously computes embeddings for a text")
+                py::arg("text"),
+                "text ",
+                "Asynchronously computes embeddings for a query")
             .def(
                 "wait_embed_query",
                 [](TextEmbeddingPipeline& pipe) -> py::typing::Union<EmbeddingResult> {
@@ -86,15 +105,13 @@ void init_rag_pipelines(py::module_& m) {
                     }
                     return py::cast(res);
                 },
-                "Waits computed embeddings for a text");
+                "Waits computed embeddings for a query");
 
     py::enum_<TextEmbeddingPipeline::PoolingType>(text_embedding_pipeline, "PoolingType")
         .value("CLS", TextEmbeddingPipeline::PoolingType::CLS, "First token embeddings")
         .value("MEAN", TextEmbeddingPipeline::PoolingType::MEAN, "The average of all token embeddings");
 
-    py::class_<TextEmbeddingPipeline::Config>(text_embedding_pipeline,
-                                              "Config",
-                                              "This class is used for storing TextEmbeddingPipeline config.")
+    py::class_<TextEmbeddingPipeline::Config>(text_embedding_pipeline, "Config", text_embedding_config_docstring)
         .def(py::init<>())
         .def(py::init([](py::kwargs kwargs) {
             return TextEmbeddingPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
@@ -121,17 +138,17 @@ void init_rag_pipelines(py::module_& m) {
             return std::make_unique<TextEmbeddingPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"),
-        "folder with openvino_model.xml and openvino_tokenizer.xml files",
+        "Path to the directory containing model xml/bin files and tokenizer",
         py::arg("device"),
-        "device on which inference will be done",
+        "Device to run the model on (e.g., CPU, GPU)",
         py::arg("config") = std::nullopt,
-        "optional config",
-        "openvino.properties map",
+        "Optional pipeline configuration",
+        "Plugin and/or config properties",
         R"(
-TextEmbeddingPipeline class constructor.
-models_path (os.PathLike): Path to the model file.
+Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
 device (str): Device to run the model on (e.g., CPU, GPU).
-config: (TextEmbeddingPipeline.Config): optional Config
-kwargs: Config or device properties.
+config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
+kwargs: Plugin and/or config properties
 )");
 }

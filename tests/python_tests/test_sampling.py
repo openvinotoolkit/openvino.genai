@@ -5,7 +5,7 @@ import sys
 import pytest
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, TypedDict
+from typing import TypedDict
 
 from openvino_genai import GenerationConfig, StopCriteria
 
@@ -139,12 +139,12 @@ def test_echo(generation_config):
 # and merge this tests with 'test_sampling_against_optimum' by extending a list of generation configs
 
 class PlatformsRefTexts(TypedDict, total=False):
-    linux: List[List[str]]
-    win32: List[List[str]]
-    darwin: List[List[str]]
+    linux: list[list[str]]
+    win32: list[list[str]]
+    darwin: list[list[str]]
 
 
-def get_current_platform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[str]]:
+def get_current_platform_ref_texts(ref_texts: PlatformsRefTexts) -> list[list[str]]:
     # mac and win often have identical results
     # to avoid duplication, use win32 ref_text if no mac ref_texts were found
     if sys.platform == "darwin":
@@ -159,8 +159,8 @@ def get_current_platform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[st
 @dataclass
 class RandomSamplingTestStruct:
     generation_config: GenerationConfig
-    prompts: List[str]
-    ref_texts: List[List[str]]
+    prompts: list[str]
+    ref_texts: list[list[str]]
 
 from utils.generation_config import get_multinomial_temperature, get_greedy_with_penalties, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \

@@ -3,7 +3,8 @@
 
 from os.path import sep
 from pathlib import Path
-from typing import List, Type
+from typing import Type
+
 from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
 
@@ -16,7 +17,7 @@ from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
-from utils.constants import get_default_llm_properties, get_ov_cache_models_dir
+from utils.constants import get_default_llm_properties, extra_generate_kwargs, get_ov_cache_models_dir
 from utils.network import retry_request
 import pytest
 
@@ -93,9 +94,9 @@ def generation_config_to_hf(
 def run_hugging_face(
     opt_model,
     hf_tokenizer,
-    prompts: List[str],
-    generation_configs: List[GenerationConfig] | GenerationConfig,
-) -> List[GenerationResult]:
+    prompts: list[str],
+    generation_configs: list[GenerationConfig] | GenerationConfig,
+) -> list[GenerationResult]:
     generation_results = []
 
     if type(generation_configs) is list:
@@ -111,7 +112,7 @@ def run_hugging_face(
             input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
             prompt_len = 0 if generation_config.echo else input_ids.numel()
 
-            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer, **extra_generate_kwargs())
             all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
             generation_result = GenerationResult()
@@ -132,7 +133,7 @@ def run_hugging_face(
             inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, padding_side='left')
         input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
         hf_generation_config = generation_config_to_hf(opt_model.generation_config, generation_configs)
-        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer, **extra_generate_kwargs())
 
         generation_ids = []
         scores = []
