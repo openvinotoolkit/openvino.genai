@@ -149,7 +149,7 @@ private:
 };
 
 /**
- * @brief If 'true' normalization applied to embeddings
+ * @brief If 'true', L2 normalization applied to embeddings
  */
 static constexpr ov::Property<bool> normalize{"normalize"};
 
