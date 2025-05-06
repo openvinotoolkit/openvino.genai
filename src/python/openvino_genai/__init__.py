@@ -92,3 +92,8 @@ from .py_openvino_genai import (
     CacheEvictionConfig,
     AggregationMode
 )
+
+# RAG
+from .py_openvino_genai import (
+    TextEmbeddingPipeline
+)

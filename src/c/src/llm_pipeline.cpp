@@ -81,7 +81,21 @@ ov_status_e ov_genai_llm_pipeline_create(const char* models_path, const char* de
             GET_PROPERTY_FROM_ARGS_LIST;
         }
         va_end(args_ptr);
-
+        // Check Property MAX_PROMPT_LEN and MIN_RESPONSE_LEN for NPU
+        // These two special properties, which only affect the genai level, should be manually converted to integers 
+        // before being passed to the constructor of LLMPipeline
+        if(std::string(device) == "NPU") {
+            if(property.find("MAX_PROMPT_LEN") != property.end()) {
+                std::string max_prompt_len = property["MAX_PROMPT_LEN"].as<std::string>();
+                property.erase("MAX_PROMPT_LEN");
+                property["MAX_PROMPT_LEN"] = std::stoi(max_prompt_len);
+            }
+            if(property.find("MIN_RESPONSE_LEN") != property.end()) {
+                std::string min_response_len = property["MIN_RESPONSE_LEN"].as<std::string>();
+                property.erase("MIN_RESPONSE_LEN");
+                property["MIN_RESPONSE_LEN"] = std::stoi(min_response_len);
+            }
+       }
         std::unique_ptr<ov_genai_llm_pipeline> _pipe = std::make_unique<ov_genai_llm_pipeline>();
         _pipe->object =
             std::make_shared<ov::genai::LLMPipeline>(std::filesystem::path(models_path), std::string(device), property);
