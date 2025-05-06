@@ -14,7 +14,6 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::TextEmbeddingPipeline::Config config;
     config.pooling_type = ov::genai::TextEmbeddingPipeline::PoolingType::MEAN;
-    config.normalize = false;
 
     ov::genai::TextEmbeddingPipeline pipeline(models_path, device, config);
 

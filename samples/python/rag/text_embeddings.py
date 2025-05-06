@@ -16,7 +16,6 @@ def main():
 
     config = openvino_genai.TextEmbeddingPipeline.Config()
     config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN
-    config.normalize = True
 
     pipeline = openvino_genai.TextEmbeddingPipeline(args.model_dir, device, config)
 
