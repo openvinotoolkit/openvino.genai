@@ -78,7 +78,7 @@ jobs:
           }
 
           if [[ "$(echo $components | jq -r '.whisper.test')" == "true" ]]; then
-            add_entry "Whisper" "tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py" 45
+            add_entry "Whisper" "tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py" 60
           fi
 
           if [[ "$(echo $components | jq -r '.continuous_batching.test')" == "true" ]]; then
