@@ -434,13 +434,6 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
-      - name: Early exit if test not affected
-        run: |
-          if [ "${{ matrix.test.run_condition }}" != "true" ]; then
-            echo "Test ${{ matrix.test.name }} not affected. Skipping job."
-            exit 78
-          fi
-          
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -482,7 +475,7 @@ jobs:
         run: poetry add ${{ steps.tokenizers_wheel.outputs.wheel_path }}
       
       - name: Install Test dependencies
-        run: poetry install --extras=samples --with dev,tests
+        run: poetry install --extras=samples --with dev,tests,test_models
         
       - name: Find whowhatbench wheel
         uses: ./.github/actions/find_wheel
@@ -506,8 +499,7 @@ jobs:
         
       - name: Tests
         if: ${{ matrix.test.run_condition }}
-        run: python -m pytest -v ./${{ matrix.test.cmd }}
-        working-directory: ${{ env.SRC_DIR }}
+        run: python3 -m pytest -v ./${{ matrix.test.cmd }}
 
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
