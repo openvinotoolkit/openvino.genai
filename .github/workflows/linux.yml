@@ -383,7 +383,6 @@ jobs:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ Smart_CI, openvino_download, genai_build_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
-    if: ${{ matrix.test.run_condition }}
     strategy:
       fail-fast: false
       matrix:
@@ -431,6 +430,13 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
+      - name: Early exit if test not affected
+        run: |
+          if [ "${{ matrix.test.run_condition }}" != "true" ]; then
+            echo "Test ${{ matrix.test.name }} not affected. Skipping job."
+            exit 78
+          fi
+          
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
