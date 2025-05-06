@@ -1,0 +1,127 @@
+GHA:
+  revalidate: 'all'
+
+tokenizers:
+  revalidate: 'all'
+
+text_streamer:
+  revalidate:
+    - LLM
+    - visual_language
+    - sampling
+    - whisper
+    - speculative_decoding
+    - prompt_lookup
+    - continuous_batching
+    - LLM_samples
+    - Whisper_samples
+    - VLM_samples
+
+sampling:
+  revalidate:
+    - LLM
+    - visual_language
+    - whisper
+    - continuous_batching
+    - speculative_decoding
+    - prompt_lookup
+    - LLM_samples
+    - Whisper_samples
+    - VLM_samples
+    - llm_bench
+    - WWB
+
+LoRA:
+  revalidate:
+    - LLM
+    - image_generation
+    - LLM_samples
+    - llm_bench
+
+LLM:
+  revalidate:
+    - sampling
+    - continuous_batching
+    - speculative_decoding
+    - prompt_lookup
+    - LLM_samples
+    - GGUF
+    - llm_bench
+    - WWB
+
+visual_language:
+  revalidate:
+    - VLM_samples
+    - llm_bench
+    - WWB
+
+whisper:
+  revalidate:
+    - Whisper_samples
+    - llm_bench
+    - WWB
+
+image_generation:
+  revalidate:
+    - Image_generation_samples
+    - llm_bench
+    - WWB
+
+continuous_batching:
+  revalidate:
+    - LLM
+    - visual_language
+    - speculative_decoding
+    - prompt_lookup
+    - sampling
+    - LLM_samples
+    - VLM_samples
+    - llm_bench
+    - WWB
+
+speculative_decoding:
+  revalidate:
+    - LLM
+    - LLM_samples
+    - llm_bench
+    - WWB
+
+prompt_lookup:
+  revalidate:
+    - LLM
+    - LLM_samples
+    - llm_bench
+    - WWB
+
+LLM_samples:
+  revalidate: []
+
+Whisper_samples:
+  revalidate: []
+
+Image_generation_samples:
+  revalidate: []
+
+VLM_samples:
+  revalidate: []
+
+GGUF:
+  revalidate:
+    - LLM # GGUF is tested via test_llm_pipeline.py
+
+C_API:
+  revalidate:
+    - LLM_samples
+
+JS_API:
+  revalidate:
+    - LLM_samples
+
+llm_bench:
+  revalidate: []
+
+WWB:
+  revalidate: []
+
+GH_Pages_Docs:
+  revalidate: []
