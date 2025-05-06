@@ -463,9 +463,9 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: ./.github/actions/find_wheel
         id: tokenizers_wheel
-        run: |
-          python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
-        working-directory: ${{ env.INSTALL_DIR }}
+        with:
+          wheels_dir: '${{ env.INSTALL_DIR }}/wheels'
+          package_name: 'openvino_tokenizers'
           
       - name: Install OpenVINO tokenizers wheel
         if: ${{ github.actor != 'dependabot[bot]' && matrix.test.run_condition }}
