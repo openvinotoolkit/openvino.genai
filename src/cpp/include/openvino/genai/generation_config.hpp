@@ -31,9 +31,10 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * be used while greedy and beam search parameters will not affect decoding at all.
  *
  * Generic parameters:
- * @param max_length the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
+ * @param max_length the maximum length of generated tokens for each processed audio chunk (30 seconds). Corresponds to the length of the input prompt +
  *        `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
- * @param max_new_tokens the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+ * @param max_new_tokens the maximum numbers of tokens to generate for each processed audio chunk (30 seconds), excluding the number of tokens in the prompt.
+ *        max_new_tokens has priority over max_length.
  * @param ignore_eos if set to true, then generation will not stop even if <eos> token is met.
  * @param eos_token_id token_id of <eos> (end of sentence)
  * @param min_new_tokens set 0 probability for eos_token_id for the first eos_token_id generated tokens.
@@ -43,7 +44,7 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param stop_token_ids A set of tokens that will cause pipeline to stop generating further tokens.
  * @param echo if set to true, output will include user prompt (default: false).
  * @param logprobs number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
- *                 Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+ *        Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
  *
  * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty.
  * @param presence_penalty reduces absolute log prob if the token was generated at least once.
