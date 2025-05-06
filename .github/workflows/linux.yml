@@ -107,7 +107,8 @@ jobs:
             add_entry "WWB tests" "tools/who_what_benchmark/tests" 90
           fi
 
-          matrix_json=$(jq -nc --argjson arr "[${matrix[*]}]" '$arr')
+          IFS=, matrix_joined="${matrix[*]}"
+          matrix_json=$(jq -nc --argjson arr "[$matrix_joined]" '$arr')
           echo "Generated matrix: $matrix_json"
           echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
 
