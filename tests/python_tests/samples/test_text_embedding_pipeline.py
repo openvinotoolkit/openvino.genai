@@ -19,7 +19,7 @@ class TestTextEmbeddingPipeline:
         py_result = run_sample(py_command)
 
         # Run C++ sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'rag/text_embeddings')
+        cpp_sample = os.path.join(SAMPLES_CPP_DIR, "text_embeddings")
         cpp_command = [cpp_sample, convert_model, "Document 1", "Document 2"]
         cpp_result = run_sample(cpp_command)
         
