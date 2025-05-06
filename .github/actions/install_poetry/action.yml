@@ -21,5 +21,3 @@ runs:
       shell: bash
       run: |
         poetry --version
-        # Configure Poetry to use the system Python
-        poetry config virtualenvs.create false

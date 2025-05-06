@@ -482,7 +482,7 @@ jobs:
           package_name: 'openvino_genai'
 
       - name: Install GenAI wheel
-        run: python3 -m pip install --no-deps ${{ steps.genai_wheel.outputs.wheel_path }}
+        run: poetry run pip install --no-deps ${{ steps.genai_wheel.outputs.wheel_path }}
         
       - name: Find whowhatbench wheel
         uses: ./.github/actions/find_wheel
@@ -499,7 +499,7 @@ jobs:
         
       - name: Tests
         if: ${{ matrix.test.run_condition }}
-        run: python3 -m pytest -v ./${{ matrix.test.cmd }}
+        run: poetry run pytest -v ./${{ matrix.test.cmd }}
 
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
