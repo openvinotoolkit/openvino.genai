@@ -383,6 +383,7 @@ jobs:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ Smart_CI, openvino_download, genai_build_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
+    if: ${{ matrix.test.run_condition }}
     strategy:
       fail-fast: false
       matrix:
