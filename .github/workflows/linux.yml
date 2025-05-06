@@ -497,6 +497,7 @@ jobs:
             marker: 'rag'
             cmd: 'tests/python_tests/samples'
             runner: 'aks-linux-4-cores-16gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
 
     timeout-minutes: 120
     defaults:
