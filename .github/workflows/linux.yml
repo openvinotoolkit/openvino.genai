@@ -133,6 +133,11 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
 
     steps:
+      - name: Early exit if test not affected
+        run: |
+          echo "Test ${{ matrix.test.name }} not affected. Skipping job."
+          exit 78
+    
       - name: Clone openvino.genai
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
