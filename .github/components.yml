@@ -67,6 +67,9 @@ image_generation:
     - llm_bench
     - WWB
 
+RAG:
+  revalidate: []
+
 continuous_batching:
   revalidate:
     - LLM
@@ -103,6 +106,9 @@ Image_generation_samples:
   revalidate: []
 
 VLM_samples:
+  revalidate: []
+
+RAG_samples:
   revalidate: []
 
 GGUF:
