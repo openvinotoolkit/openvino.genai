@@ -473,9 +473,16 @@ jobs:
       - name: Install OpenVINO tokenizers wheel
         if: ${{ github.actor != 'dependabot[bot]' && matrix.test.run_condition }}
         run: poetry add ${{ steps.tokenizers_wheel.outputs.wheel_path }}
-      
-      - name: Install Test dependencies
-        run: poetry install --extras=samples --with dev,tests,test_models
+        
+      - name: Find GenAI wheel
+        uses: ./.github/actions/find_wheel
+        id: genai_wheel
+        with:
+          wheels_dir: '${{ env.INSTALL_DIR }}/wheels'
+          package_name: 'openvino_genai'
+
+      - name: Install GenAI wheel
+        run: python3 -m pip install --no-deps ${{ steps.genai_wheel.outputs.wheel_path }}
         
       - name: Find whowhatbench wheel
         uses: ./.github/actions/find_wheel
@@ -484,18 +491,11 @@ jobs:
           wheels_dir: '${{ env.INSTALL_DIR }}/wheels'
           package_name: 'whowhatbench'
       
-      - name: Find GenAI wheel
-        uses: ./.github/actions/find_wheel
-        id: genai_wheel
-        with:
-          wheels_dir: '${{ env.INSTALL_DIR }}/wheels'
-          package_name: 'openvino_genai'
-        
-      - name: Install GenAI wheel
-        run: python3 -m pip install --no-deps ${{ steps.genai_wheel.outputs.wheel_path }}
-        
       - name: Install whowhatbench wheel
         run: poetry add ${{ steps.whowhatbench_wheel.outputs.wheel_path }}
+        
+      - name: Install Test dependencies
+        run: poetry install --extras=samples --with dev,tests,test_models
         
       - name: Tests
         if: ${{ matrix.test.run_condition }}
