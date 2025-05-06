@@ -233,8 +233,6 @@ def run_pipeline_with_ref(
     for _sample in sample:
         genai_result = run_genai(genai_pipe, _sample, generation_config, streamer)
         hf_result = run_huggingface(hf_pipe, _sample, generation_config)
-        print(f"HF result: {hf_result['text']}")
-        print(f"GenAI result: {genai_result.texts[0]}")
 
         compare_results(hf_result, genai_result)
 
