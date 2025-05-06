@@ -33,6 +33,12 @@
 - 'src/python/py_vlm_pipeline.cpp'
 - 'tests/python_tests/test_vlm_pipeline.py'
 
+'category: RAG':
+- 'src/cpp/include/openvino/genai/rag/**/*'
+- 'src/cpp/src/rag/**/*'
+- 'src/python/py_rag.cpp'
+- 'tests/python_tests/test_rag.py'
+
 'category: sampling':
 - 'src/cpp/include/openvino/genai/generation_config.hpp'
 - 'src/cpp/src/generation_config.cpp'
