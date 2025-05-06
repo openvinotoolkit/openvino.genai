@@ -26,7 +26,7 @@ env:
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win
 
 jobs:
-  Smart_CI:
+  smart_ci:
     runs-on: ubuntu-latest
     outputs:
       affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
@@ -57,7 +57,7 @@ jobs:
         shell: bash
 
   openvino_download:
-    needs: Smart_CI
+    needs: smart_ci
     name: Download prebuilt OpenVINO
     outputs:
       status: ${{ steps.openvino_download.outcome }}
@@ -432,7 +432,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ Smart_CI, openvino_download, genai_build_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
@@ -534,7 +534,7 @@ jobs:
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
             runner: 'aks-win-8-cores-16gb'
-    needs: [ Smart_CI, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
+    needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 120
     defaults:
       run:
@@ -626,7 +626,7 @@ jobs:
       fail-fast: false
       matrix:
         build-type: [Release]
-    needs: [ Smart_CI, openvino_download, genai_build_cpack, genai_build_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheel ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
     timeout-minutes: 90
     defaults:
@@ -682,7 +682,7 @@ jobs:
 
   genai_nodejs_tests:
     name: Node.js bindings tests
-    needs: [ Smart_CI, openvino_download, genai_build_nodejs ]
+    needs: [ smart_ci, openvino_download, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
     defaults:
@@ -755,7 +755,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_windows
-    needs: [Smart_CI, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_tools_tests, genai_samples_tests]
+    needs: [smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_tools_tests, genai_samples_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
