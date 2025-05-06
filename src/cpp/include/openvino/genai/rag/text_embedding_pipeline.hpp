@@ -41,7 +41,11 @@ public:
         PoolingType pooling_type = PoolingType::CLS;
 
         /**
+<<<<<<< HEAD
          * @brief If 'true' normalization is applied to embeddings
+=======
+         * @brief If 'true', L2 normalization is applied to embeddings
+>>>>>>> upstream/master
          */
         bool normalize = true;
 
@@ -149,7 +153,7 @@ private:
 };
 
 /**
- * @brief If 'true' normalization applied to embeddings
+ * @brief If 'true', L2 normalization applied to embeddings
  */
 static constexpr ov::Property<bool> normalize{"normalize"};
 

@@ -103,7 +103,11 @@ def run_pipeline_with_ref(
     max_error = np.abs(np_genai_result - np_langchain_result).max()
     print(f"Max error: {max_error}")
     assert (
+<<<<<<< HEAD
         np.abs(np_genai_result - np_langchain_result).max() < 2e-6
+=======
+        np.abs(np_genai_result - np_langchain_result).max() < 1e-6
+>>>>>>> upstream/master
     ), f"Max error: {max_error}"
 
 
@@ -143,17 +147,27 @@ def test_constructors(download_and_convert_embeddings_models):
 @pytest.mark.parametrize(
     "config",
     [
+<<<<<<< HEAD
         TextEmbeddingPipeline.Config(normalize=False),
         TextEmbeddingPipeline.Config(
             normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
+=======
+        TextEmbeddingPipeline.Config(),
+        TextEmbeddingPipeline.Config(
+            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
+>>>>>>> upstream/master
         ),
         TextEmbeddingPipeline.Config(normalize=True),
         TextEmbeddingPipeline.Config(
             normalize=True, pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
         ),
         TextEmbeddingPipeline.Config(
+<<<<<<< HEAD
             normalize=False,
             embed_instruction="Represent this document for searching relevant passages: ",
+=======
+            embed_instruction="Represent this document for searching relevant passages: "
+>>>>>>> upstream/master
         ),
     ],
     ids=[
@@ -178,17 +192,27 @@ def test_embed_documents(
 @pytest.mark.parametrize(
     "config",
     [
+<<<<<<< HEAD
         TextEmbeddingPipeline.Config(normalize=False),
         TextEmbeddingPipeline.Config(
             normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
+=======
+        TextEmbeddingPipeline.Config(),
+        TextEmbeddingPipeline.Config(
+            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
+>>>>>>> upstream/master
         ),
         TextEmbeddingPipeline.Config(normalize=True),
         TextEmbeddingPipeline.Config(
             normalize=True, pooling_type=TextEmbeddingPipeline.PoolingType.MEAN
         ),
         TextEmbeddingPipeline.Config(
+<<<<<<< HEAD
             normalize=False,
             query_instruction="Represent this query for searching relevant passages: ",
+=======
+            query_instruction="Represent this query for searching relevant passages: "
+>>>>>>> upstream/master
         ),
     ],
     ids=[
