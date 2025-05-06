@@ -68,7 +68,10 @@ image_generation:
     - WWB
 
 RAG:
-  revalidate: []
+  revalidate:
+    - RAG_samples
+    - llm_bench
+    - WWB
 
 continuous_batching:
   revalidate:
