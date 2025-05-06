@@ -28,7 +28,7 @@ bool is_wav_buffer(const std::string buf) {
     if (chunk_size + 8 != buf.size()) {
         return false;
     }
-
+ 
     return true;
 }
 }  // namespace
