@@ -36,8 +36,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython"
 ]
 dependencies = [
-    "openvino_tokenizers~=2025.2.0.0.dev",
-    "whowhatbench @ file:///home/rmikhail/src/openvino.genai/tools/who_what_benchmark"
+    "openvino_tokenizers~=2025.2.0.0.dev"
 ]
 
 [project.optional-dependencies]
