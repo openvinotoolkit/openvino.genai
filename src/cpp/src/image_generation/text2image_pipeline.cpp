@@ -216,21 +216,8 @@ void Text2ImagePipeline::compile(const std::string& text_encode_device,
 }
 
 // Move to separate infer request class
-ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties, size_t request_idx) {
-    // Taking new free infer request from the pool
-    size_t request_idx_new = m_request_idx_queue->get();
-
-    // Actual inference with given index
-    ov::Tensor result = m_impl->generate(positive_prompt, {}, {}, properties, request_idx_new);
-
-    // Clone the result to be able to return infer request to the pool
-    ov::Tensor copied(result.get_element_type(), result.get_shape());
-    result.copy_to(copied);
-
-    // Returning infer request to the pool
-    m_request_idx_queue->return_to(request_idx_new);
-
-    return copied;
+ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
+    return  m_impl->generate(positive_prompt, {}, {}, properties);
 }
 
 ov::Tensor Text2ImagePipeline::decode(const ov::Tensor latent) {
@@ -239,6 +226,22 @@ ov::Tensor Text2ImagePipeline::decode(const ov::Tensor latent) {
 
 ImageGenerationPerfMetrics Text2ImagePipeline::get_performance_metrics() {
     return m_impl->get_performance_metrics();
+}
+
+Text2ImagePipeline::GenerationRequest::GenerationRequest(size_t request_idx, Text2ImagePipeline& pipeline) : m_pipeline(pipeline), m_request_idx(request_idx) {
+}
+
+Text2ImagePipeline::GenerationRequest::~GenerationRequest() {
+    m_pipeline.m_request_idx_queue->return_to(m_request_idx);
+}
+
+ov::Tensor Text2ImagePipeline::GenerationRequest::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
+    return m_pipeline.m_impl->generate(positive_prompt, {}, {}, properties, m_request_idx);
+}
+
+Text2ImagePipeline::GenerationRequest Text2ImagePipeline::create_generation_request() {
+    size_t free_request_idx = m_request_idx_queue->get();
+    return GenerationRequest(free_request_idx, *this);
 }
 
 }  // namespace genai

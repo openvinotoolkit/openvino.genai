@@ -32,14 +32,15 @@ int32_t main(int32_t argc, char* argv[]) try {
         const std::string p = prompts[i];
         threads.emplace_back([i, &pipe, p] () {
             std::cout << "Generating... " << i << std::endl;
-            ov::Tensor image = pipe.generate(p,
+            ov::genai::Text2ImagePipeline::GenerationRequest request = pipe.create_generation_request();
+            ov::Tensor image = request.generate(p,
                 ov::AnyMap{
                     ov::genai::width(512),
                     ov::genai::height(512),
                     ov::genai::num_inference_steps(20),
                     ov::genai::num_images_per_prompt(1)});
             std::cout << "Generated " << i << std::endl;
-            imwrite("mt_image_" + std::to_string(i) + "_%d.bmp", image, true);
+            imwrite("mt_image_512" + std::to_string(i) + "_%d.bmp", image, true);
             std::cout << "Generation saved" << std::endl;
         });
     }

@@ -233,7 +233,7 @@ public:
      * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
      * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
      */
-    ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties = {}, size_t request_idx = 0);
+    ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
     ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
@@ -241,6 +241,22 @@ public:
             Properties&&... properties) {
         return generate(positive_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
     }
+
+    class OPENVINO_GENAI_EXPORTS GenerationRequest {
+        Text2ImagePipeline& m_pipeline;
+        size_t m_request_idx;
+    public:
+        GenerationRequest(size_t request_idx, Text2ImagePipeline& pipeline);
+        ~GenerationRequest();
+        GenerationRequest(const GenerationRequest&) = delete;
+        GenerationRequest& operator=(const GenerationRequest&) = delete;
+
+        ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties = {});
+
+        friend class Text2ImagePipeline;
+    };
+
+    GenerationRequest create_generation_request();
 
     /**
      * Performs latent image decoding. It can be useful to use within 'callback' which accepts current latent image
