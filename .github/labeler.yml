@@ -24,6 +24,7 @@
 - 'src/cpp/src/lm_encoding.cpp'
 - 'src/python/py_llm_pipeline.cpp'
 - 'tests/python_tests/test_llm_pipeline.py'
+- 'tests/python_tests/test_llm_pipeline_static.py'
 
 'category: visual language':
 - 'src/include/openvino/genai/visual_language/**/*'
@@ -48,6 +49,7 @@
 - 'tests/cpp/generate_config.cpp'
 - 'tests/cpp/sampler.cpp'
 - 'tests/python_tests/test_sampling.py'
+- 'tests/python_tests/test_generation_config.py'
 
 'category: LoRA':
 - 'src/cpp/include/openvino/genai/lora_adapter.hpp'
@@ -59,18 +61,48 @@
 - 'samples/cpp/text_generation/**/*'
 - 'samples/js/text_generation/**/*'
 - 'samples/python/text_generation/**/*'
+- 'samples/deployment-requirements.txt'
+- 'samples/export-requirements.txt'
+- 'samples/requirements.txt'
+- 'tests/python_tests/samples/test_beam_search_causal_lm.py'
+- 'tests/python_tests/samples/test_benchmark_genai.py'
+- 'tests/python_tests/samples/test_chat_sample.py'
+- 'tests/python_tests/samples/test_encrypted_model_causal_lm.py'
+- 'tests/python_tests/samples/test_greedy_causal_lm.py'
+- 'tests/python_tests/samples/test_lora.py'
+- 'tests/python_tests/samples/test_multinomial_causal_lm.py'
+- 'tests/python_tests/samples/test_prompt_lookup_decoding_lm.py'
+- 'tests/python_tests/samples/test_react_sample.py'
+- 'tests/python_tests/samples/test_speculative_decoding_lm.py'
 
 'category: Whisper samples':
 - 'samples/cpp/whisper_speech_recognition/**/*'
 - 'samples/python/whisper_speech_recognition/**/*'
+- 'samples/deployment-requirements.txt'
+- 'samples/export-requirements.txt'
+- 'samples/requirements.txt'
 
 'category: Image generation samples':
 - 'samples/cpp/image_generation/**/*'
 - 'samples/python/image_generation/**/*'
+- 'samples/deployment-requirements.txt'
+- 'samples/export-requirements.txt'
+- 'samples/requirements.txt'
+- 'tests/python_tests/samples/test_benchmark_image_gen.py'
+- 'tests/python_tests/samples/test_heterogeneous_stable_diffusion.py'
+- 'tests/python_tests/samples/test_text2image.py'
+- 'tests/python_tests/samples/test_image2image.py'
+- 'tests/python_tests/samples/test_inpainting.py'
+- 'tests/python_tests/samples/test_lora_text2image.py'
 
 'category: VLM samples':
 - 'samples/cpp/visual_language_chat/**/*'
 - 'samples/python/visual_language_chat/**/*'
+- 'samples/deployment-requirements.txt'
+- 'samples/export-requirements.txt'
+- 'samples/requirements.txt'
+- 'tests/python_tests/samples/test_benchmark_vlm.py'
+- 'tests/python_tests/samples/test_visual_language_chat.py'
 
 'category: whisper':
 - 'src/cpp/include/openvino/genai/whisper_generation_config.hpp'
@@ -79,6 +111,7 @@
 - 'src/python/py_whisper_pipeline.cpp'
 - 'tests/python_tests/test_whisper_pipeline.py'
 - 'tests/python_tests/test_whisper_pipeline_static.py'
+- 'tests/python_tests/samples/test_whisper_speech_recognition.py'
 
 'category: image generation':
 - 'src/include/openvino/genai/image_generation/**/*'
@@ -100,14 +133,22 @@
 - 'src/cpp/include/openvino/genai/scheduler_config.hpp'
 - 'src/cpp/src/continuous_batching/**/*'
 - 'src/python/py_continuous_batching_pipeline.cpp'
+- 'tools/continuous_batching/**/*'
+- 'tools/cacheviz/**/*'
 - 'tests/python_tests/test_continuous_batching.py'
 - 'tests/python_tests/test_kv_cache_eviction.py'
+- 'tests/cpp/data/**/*'
 - 'tests/cpp/block_allocator.cpp'
 - 'tests/cpp/block_hash_store.cpp'
 - 'tests/cpp/block_manager.cpp'
 - 'tests/cpp/cache_eviction.cpp'
 - 'tests/cpp/cache_manager.cpp'
 - 'tests/cpp/scheduler.cpp'
+- 'tests/python_tests/data/long_prompts.txt'
+- 'tests/python_tests/data/short_prompts.txt'
+- 'tests/python_tests/data/test_dataset.py'
+- 'tests/python_tests/models/**/*'
+- 'tests/python_tests/samples/test_continuous_batching_tools.py'
 
 'category: GGUF':
 - 'src/cpp/src/gguf_utils/**/*'
@@ -117,11 +158,12 @@
 - '**/CMakeLists.txt'
 - '**/*.cmake'
 - 'pyproject.toml'
+- 'requirements-build.txt'
 
 'category: Python API':
 - 'src/python/**/*'
 
-'category: C++ API':
+'category: CPP API':
 - 'src/cpp/include/openvino/genai/**/*'
 
 'category: C API':
@@ -135,6 +177,7 @@
 'category: llm_bench':
 - 'tools/llm_bench/**/*'
 - '.github/workflows/llm_bench-python.yml'
+- 'tests/python_tests/samples/test_tools_llm_benchmark.py'
 
 'category: WWB':
 - 'tools/who_what_benchmark/**/*'
