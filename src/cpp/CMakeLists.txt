@@ -121,6 +121,14 @@ if(NOT ENABLE_GGUF)
     list(REMOVE_ITEM SOURCE_FILES ${GGUF_SOURCES})
 endif()
 
+if(NOT ENABLE_XGRAMMAR)
+    set(XGRAMMAR_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/structured_output/xgrammar_backend.hpp
+                         ${CMAKE_CURRENT_SOURCE_DIR}/src/structured_output/xgrammar_backend.cpp
+                         ${CMAKE_CURRENT_SOURCE_DIR}/src/structured_output/structured_output_controller.hpp
+                         ${CMAKE_CURRENT_SOURCE_DIR}/src/structured_output/structured_output_controller.cpp)
+    list(REMOVE_ITEM SOURCE_FILES ${XGRAMMAR_SOURCES})
+endif()
+
 set(TARGET_NAME openvino_genai)
 set(TARGET_NAME_OBJ ${TARGET_NAME}_obj)
 

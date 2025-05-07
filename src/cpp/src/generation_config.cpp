@@ -271,7 +271,14 @@ void GenerationConfig::validate() const {
     }
 
     if(is_structured_output()) {
-        OPENVINO_ASSERT((json.has_value() + regex.has_value() + choices.has_value() + grammar.has_value()) == 1, "Only one of json, regex, choices or grammar can be set to true");
+        #ifndef ENABLE_XGRAMMAR
+            OPENVINO_THROW("Structured output is not supported in this build. Please, recompile with -DENABLE_XGRAMMAR=ON");
+        #else
+            OPENVINO_ASSERT(
+                (json.has_value() + regex.has_value() + choices.has_value() + grammar.has_value()) == 1,
+                "Only one of json, regex, choices or grammar can be set to true"
+            );
+        #endif
     }
 }
 
