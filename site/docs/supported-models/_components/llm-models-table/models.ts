@@ -680,6 +680,8 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/microsoft/Phi-3-medium-128k-instruct',
           'https://huggingface.co/microsoft/Phi-3.5-mini-instruct',
           'https://huggingface.co/microsoft/Phi-4-mini-instruct',
+          'https://huggingface.co/microsoft/phi-4',
+          'https://huggingface.co/microsoft/Phi-4-reasoning'
         ],
       },
     ],
