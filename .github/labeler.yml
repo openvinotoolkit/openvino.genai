@@ -104,6 +104,11 @@
 - 'tests/python_tests/samples/test_benchmark_vlm.py'
 - 'tests/python_tests/samples/test_visual_language_chat.py'
 
+'category: RAG samples':
+- 'samples/cpp/rag/**/*'
+- 'samples/python/rag/**/*'
+- 'tests/python_tests/samples/test_text_embedding_pipeline.py'
+
 'category: whisper':
 - 'src/cpp/include/openvino/genai/whisper_generation_config.hpp'
 - 'src/cpp/include/openvino/genai/whisper_pipeline.hpp'
