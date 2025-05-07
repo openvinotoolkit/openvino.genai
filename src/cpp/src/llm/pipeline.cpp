@@ -16,6 +16,9 @@
 #include "utils.hpp"
 
 namespace ov {
+
+namespace genai {
+
 std::pair<std::string, Any> streamer(StreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
         return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
