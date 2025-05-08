@@ -61,6 +61,11 @@ UNet2DConditionModel::UNet2DConditionModel(const std::string& model,
 
 UNet2DConditionModel::UNet2DConditionModel(const UNet2DConditionModel&) = default;
 
+UNet2DConditionModel UNet2DConditionModel::clone() {
+    OPENVINO_ASSERT(m_model, "Model has not been compiled yet. Cannot clone non-compiled model");
+    // ?
+}
+
 const UNet2DConditionModel::Config& UNet2DConditionModel::get_config() const {
     return m_config;
 }

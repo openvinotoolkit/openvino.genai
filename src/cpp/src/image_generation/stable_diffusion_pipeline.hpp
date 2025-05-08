@@ -168,7 +168,7 @@ public:
         // TODO clone m_scheduler
         std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
         std::shared_ptr<CLIPTextModel> clip_text_encoder = std::make_shared<CLIPTextModel>(m_clip_text_encoder->clone());
-        // TODO: m_unet
+        std::shared_ptr<UNet2DConditionModel> unet = std::make_shared<UNet2DConditionModel>(m_unet->clone());
         return nullptr;
     }
 
