@@ -185,6 +185,11 @@ public:
         m_vae->compile(vae_device, *updated_properties);
     }
 
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_THROW("StableDiffusionXLPipeline::clone() is not implemented");
+        return nullptr;
+    }
+
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG

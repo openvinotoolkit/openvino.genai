@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <memory>
 #include <fstream>
 #include <tuple>
 
@@ -99,6 +100,8 @@ public:
     }
 
     virtual void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) = 0;
+
+    virtual std::shared_ptr<DiffusionPipeline> clone() = 0;
 
     virtual void compile(const std::string& device, const ov::AnyMap& properties)
     {

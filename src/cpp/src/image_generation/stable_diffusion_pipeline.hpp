@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cassert>
+#include <memory>
 #include <filesystem>
 
 #include "image_generation/diffusion_pipeline.hpp"
@@ -161,6 +162,10 @@ public:
         m_clip_text_encoder->compile(text_encode_device, *updated_properties);
         m_unet->compile(denoise_device, *updated_properties);
         m_vae->compile(vae_device, *updated_properties);
+    }
+
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        return nullptr;
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
