@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cassert>
+#include <iostream>
 #include <memory>
 #include <filesystem>
 
@@ -99,9 +100,10 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
-            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
+                std::cout << "Created AutoEncoder" << std::endl;
+            } else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");

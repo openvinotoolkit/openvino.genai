@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <iostream>
 #include <memory>
 
 #include "image_generation/models/unet_inference.hpp"
@@ -16,6 +17,7 @@ public:
     virtual std::shared_ptr<UNetInference> clone() override {
         UNetInferenceDynamic cloned(*this);
         cloned.m_request = m_request.get_compiled_model().create_infer_request();
+        std::cout << "New UNetInferenceDynamic has been created" << std::endl;
         return std::make_shared<UNetInferenceDynamic>(cloned);
     }
 
