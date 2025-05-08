@@ -1,6 +1,6 @@
 # Whisper automatic speech recognition sample
 
-This example showcases inference of speech recognition Whisper Models. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::WhisperPipeline` and uses audio file in wav format as an input source.
+This example showcases inference of speech recognition Whisper Models. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.WhisperPipeline` and uses audio file in wav format as an input source.
 
 ## Download and convert the model and tokenizers
 
