@@ -18,7 +18,6 @@ public:
     virtual std::shared_ptr<UNet2DConditionModel> clone() override {
         // TODO: implement clone
         OPENVINO_ASSERT(false, "UNetInferenceStaticBS1::clone() is not implemented");
-        return nullptr;
     }
 
     virtual void compile(std::shared_ptr<ov::Model> model,

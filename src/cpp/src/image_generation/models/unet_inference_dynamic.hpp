@@ -14,9 +14,12 @@ namespace genai {
 class UNet2DConditionModel::UNetInferenceDynamic : public UNet2DConditionModel::UNetInference {
 public:
     virtual std::shared_ptr<UNet2DConditionModel> clone() override {
-        // TODO: implement clone
-        OPENVINO_ASSERT(false, "UNetInferenceDynamic::clone() is not implemented");
-        return nullptr;
+        UNetInferenceDynamic cloned(*this);
+        cloned.m_request = m_request.get_compiled_model().create_infer_request();
+        //return std::make_shared<UNetInferenceDynamic>(cloned);
+        // cast and return
+        return std::dynamic_pointer_cast<UNet2DConditionModel>(
+            std::make_shared<UNetInferenceDynamic>(cloned));
     }
 
     virtual void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) override {
