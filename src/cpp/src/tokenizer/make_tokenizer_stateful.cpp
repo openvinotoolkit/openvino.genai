@@ -185,12 +185,25 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     // Save targets before adding new target with ReadValue to avoid recursion.
     auto target_inputs = const_node->output(0).get_target_inputs();
     auto max_length_rv = std::make_shared<v6::ReadValue>(default_max_length_const, max_length_var);
-    auto subtract_node = std::make_shared<v1::Subtract>(max_length_rv, num_added_tokens_const);
+    model->add_sinks({std::make_shared<v6::Assign>(max_length_rv, max_length_var)});
+    model->add_variables({max_length_var});
+    auto max_length_node = std::make_shared<v1::Subtract>(max_length_rv, num_added_tokens_const);
+
+    var_info = {ov::Shape{}, ov::element::boolean, ov::genai::IS_MAX_LENGTH_SET};
+    auto is_max_len_set_var = std::make_shared<op::util::Variable>(var_info);
+    auto defaul_false_const = std::make_shared<v0::Constant>(ov::element::boolean, ov::Shape{}, std::vector{false});
+    auto is_max_len_set_rv = std::make_shared<v6::ReadValue>(defaul_false_const, is_max_len_set_var);
+    auto is_max_len_set_assign = std::make_shared<v6::Assign>(is_max_len_set_rv, is_max_len_set_var);
+    model->add_sinks({is_max_len_set_assign});
+
+    auto int32_max_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{std::numeric_limits<int32_t>::max() - 1000});
+    // auto int32_max_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{10000});
+    auto max_length_for_trunc = std::make_shared<v1::Select>(is_max_len_set_rv, max_length_node, int32_max_constant);
     
     for (auto target_input : target_inputs) {
-        target_input.replace_source_output(subtract_node->output(0));
+        target_input.replace_source_output(max_length_for_trunc->output(0));
     }
-
+    
     // We need to check if user requested to not add special tokens.
     std::shared_ptr<v6::ReadValue> read_value_spec_tokens;
     for (const auto& sink : model->get_sinks()) {
@@ -205,14 +218,11 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
 
     // If user requested to not add special tokens in order to correctly calculate 
     // truncation we need to enforce num_added_tokens to 0 regardless the hardcoded value of Constant.
+    auto zero_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{0});
     if (read_value_spec_tokens && num_added_tokens_const) {
-        auto zero_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{0});
         auto select_node = std::make_shared<v1::Select>(read_value_spec_tokens, num_added_tokens_const, zero_constant);
-        subtract_node->input(1).replace_source_output(select_node->output(0));
+        max_length_node->input(1).replace_source_output(select_node->output(0));
     }
-    
-    model->add_sinks({std::make_shared<v6::Assign>(max_length_rv, max_length_var)});
-    model->add_variables({max_length_var});
 
     std::vector<std::shared_ptr<ov::Node>> ragged_to_dense_nodes;
     for (auto node: model->get_ordered_ops()) {
@@ -232,7 +242,6 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     model->add_sinks({std::make_shared<v6::Assign>(pad_to_max_length_rv, pad_to_max_length_var)});
     model->add_variables({pad_to_max_length_var});
     
-    auto zero_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{0});
     auto select_node = std::make_shared<v1::Select>(pad_to_max_length_rv, max_length_rv, zero_constant);
 
     for (auto ragged_to_dense_node : ragged_to_dense_nodes) {

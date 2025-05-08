@@ -327,7 +327,7 @@ def hf_ov_genai_models(request, tmp_path_factory):
 
 prompts = [
     ["1+1=", "What is the previous answer?"],
-    long sentence exceeding max_length, check that is truncated
+    # long sentence exceeding max_length, check that is truncated
     "What is the previous answers? " * 1000,
     # check that short sentence is padded to long
     "what",
@@ -379,10 +379,12 @@ def test_padding(
     # which cannot store irregular/ragged array.
     # Therefore, for default mode truncation=True.
     # For the same reason runcation is always applied.
+    # Truncate only if max_length is set.
+    is_max_len_set = max_length is not None
     hf_pad_params_map = {
-        None: {"padding": "longest", "truncation": True},
-        False: {"padding": "longest", "truncation": True},
-        True: {"padding": "max_length", "truncation": True},
+        None: {"padding": "longest", "truncation": is_max_len_set},
+        False: {"padding": "longest", "truncation": is_max_len_set},
+        True: {"padding": "max_length", "truncation": is_max_len_set},
     }
     hf_params = dict(
         add_special_tokens=add_special_tokens,
