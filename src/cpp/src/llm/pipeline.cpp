@@ -94,11 +94,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     // try to call CB adapter one more time, but with safe guard to silent exception
     if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
         try {
-            // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
-            // but cannot perform its inference later
-#ifdef OPENVINO_ARCH_X86_64
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties);
-#endif
         } catch (ov::Exception&) {
             // ignore exceptions from PA
         }
@@ -134,11 +130,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     // try to call CB adapter one more time, but with safe guard to silent exception
     if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
         try {
-            // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
-            // but cannot perform its inference later
-#ifdef OPENVINO_ARCH_X86_64
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, utils::get_latency_oriented_scheduler_config(), device, properties);
-#endif
         } catch (ov::Exception&) {
             // ignore exceptions from PA
         }
