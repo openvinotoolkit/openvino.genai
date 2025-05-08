@@ -327,7 +327,7 @@ def hf_ov_genai_models(request, tmp_path_factory):
 
 prompts = [
     ["1+1=", "What is the previous answer?"],
-    # long sentence exceeding max_length, check that is truncated
+    long sentence exceeding max_length, check that is truncated
     "What is the previous answers? " * 1000,
     # check that short sentence is padded to long
     "what",
@@ -356,7 +356,7 @@ prompts = [
         ("katuni4ka/tiny-random-phi3", {"padding_side": None}),
         ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None}),
         ("katuni4ka/tiny-random-llava-next", {"padding_side": "right"}),
-        ("katuni4ka/tiny-random-llava-next", {"padding_side": "left"}),
+        ("katuni4ka/tiny-random-llava-next", {"padding_side": "left"}),  # This fails
         (
             "BAAI/bge-small-en-v1.5",
             {"padding_side": None},

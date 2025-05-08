@@ -19,6 +19,7 @@ using namespace ov;
 using namespace ov::op;
 
 bool ov::genai::MakeAddSpecialTokensSatateful::run_on_model(const std::shared_ptr<ov::Model>& model) {
+    // Inserts Selects to add special tokens inputs, so that they can be requlated in runtime.
     std::shared_ptr<ov::Node> combine_seg_node;
     for (auto node: model->get_ordered_ops()) {
         if (strcmp(node->get_type_info().name, "CombineSegments") == 0) {
@@ -30,17 +31,18 @@ bool ov::genai::MakeAddSpecialTokensSatateful::run_on_model(const std::shared_pt
     }
     
     size_t num_segments = (combine_seg_node->get_input_size() - 1) / 3;
-    std::vector<Input<Node>> const_inputs;
-    const_inputs.reserve(num_segments);
+    // Inputs responsible for adding special tokens are at 3*i + 1.
+    std::vector<Input<Node>> add_spec_inputs;
+    add_spec_inputs.reserve(num_segments);
 
     for (size_t i = 0; i < num_segments; i++) {
-        // If input is constant then it's special tokens, otherwise it's tokens from input text.
-        auto const_input = std::dynamic_pointer_cast<v0::Constant>(combine_seg_node->get_input_node_shared_ptr(3*i + 1));
-        if (const_input) { 
-            const_inputs.emplace_back(combine_seg_node->input(3*i + 1));
+        auto tmp_input = combine_seg_node->get_input_node_shared_ptr(3*i + 1);
+        // If it's not a main sequence inputs, then it's a special tokens.
+        if (!ov::as_type_ptr<v1::Add>(tmp_input) && !ov::as_type_ptr<v1::Subtract>(tmp_input) && strcmp(tmp_input->get_type_name(), "Truncate") != 0) {
+            add_spec_inputs.emplace_back(combine_seg_node->input(3*i + 1));
         }
     }
-    if (const_inputs.empty()) { 
+    if (add_spec_inputs.empty()) { 
         return false; 
     }
 
@@ -50,9 +52,9 @@ bool ov::genai::MakeAddSpecialTokensSatateful::run_on_model(const std::shared_pt
     auto read_value = std::make_shared<v6::ReadValue>(default_mode_const, variable);
     auto zero_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{0});
 
-    for (size_t i = 0; i < const_inputs.size(); i++) {
-        auto select_node = std::make_shared<v1::Select>(read_value, const_inputs[i].get_source_output(), zero_constant);
-        const_inputs[i].replace_source_output(select_node);
+    for (size_t i = 0; i < add_spec_inputs.size(); i++) {
+        auto select_node = std::make_shared<v1::Select>(read_value, add_spec_inputs[i].get_source_output(), zero_constant);
+        add_spec_inputs[i].replace_source_output(select_node);
     }
 
     auto assign = std::make_shared<v6::Assign>(read_value, variable);
@@ -141,7 +143,7 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     }
     
     // Exit if couldn't find main input or there are several.
-    if (number_of_main_tokens_inputs != 1) { return false; }
+    if (number_of_main_tokens_inputs != 1 && number_of_main_tokens_inputs != 2) { return false; }
     
     std::shared_ptr<ov::op::v0::Constant> const_node;
     if (add_or_sub_node) {
@@ -158,8 +160,7 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
 
     } else if (trunc_node) {
         // If truncation is done by Truncate node then we need to check if it has a constant input.
-        const_node = ov::as_type_ptr<v0::Constant>(trunc_node->get_input_node_shared_ptr(number_of_main_tokens_inputs*3 + 1));
-
+        const_node = ov::as_type_ptr<v0::Constant>(trunc_node->get_input_node_shared_ptr(number_of_main_tokens_inputs*3));
     } else {
         return false;
     }

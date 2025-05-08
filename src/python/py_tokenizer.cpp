@@ -135,26 +135,26 @@ void init_tokenizer(py::module_& m) {
             
             // TODO: fails in pybind with error:
             // std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >&, bool, bool, std::optional<long unsigned int> >::has_kwargs)))’ evaluates to false
-            .def("encode", [](Tokenizer& tok, 
-                            std::vector<std::string>& prompts_1, 
-                            std::vector<std::string>& prompts_2,
-                            bool add_special_tokens, 
-                            bool pad_to_max_length,
-                            std::optional<size_t> max_length) {
-                ov::AnyMap tokenization_params;
-                tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
-                tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
-                if (max_length.has_value()) {
-                    tokenization_params[ov::genai::max_length.name()] = *max_length;
-                }
+            // .def("encode", [](Tokenizer& tok, 
+            //                 std::vector<std::string>& prompts_1, 
+            //                 std::vector<std::string>& prompts_2,
+            //                 bool add_special_tokens, 
+            //                 bool pad_to_max_length,
+            //                 std::optional<size_t> max_length) {
+            //     ov::AnyMap tokenization_params;
+            //     tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+            //     tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
+            //     if (max_length.has_value()) {
+            //         tokenization_params[ov::genai::max_length.name()] = *max_length;
+            //     }
 
-                return tok.encode(prompts_1, prompts_2, tokenization_params);
-            },
-            py::arg("prompts"),
-            py::arg("add_special_tokens") = true,
-            py::arg("pad_to_max_length") = false,
-            py::arg("max_length") = std::nullopt,
-            R"(Encodes a list of prompts into tokenized inputs.)")
+            //     return tok.encode(prompts_1, prompts_2, tokenization_params);
+            // },
+            // py::arg("prompts"),
+            // py::arg("add_special_tokens") = true,
+            // py::arg("pad_to_max_length") = false,
+            // py::arg("max_length") = std::nullopt,
+            // R"(Encodes a list of prompts into tokenized inputs.)")
             
             .def(
             "decode",

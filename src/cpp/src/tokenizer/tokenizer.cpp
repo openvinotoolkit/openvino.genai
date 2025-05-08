@@ -11,6 +11,7 @@
 #include <jinja2cpp/generic_list_iterator.h>
 
 #include "openvino/pass/manager.hpp"
+#include "openvino/pass/visualize_tree.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
@@ -280,6 +281,7 @@ public:
             ov::pass::Manager manager;
             manager.register_pass<MakeAddSpecialTokensSatateful>();
             manager.register_pass<MakePaddingSatateful>();
+            manager.register_pass<ov::pass::VisualizeTree>("after.svg");
             manager.run_passes(ov_tokenizer);
             ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, properties);
             ov::genai::utils::print_compiled_model_properties(tokenizer, "OV Tokenizer");
@@ -460,7 +462,7 @@ public:
                                                 "Tokenizer::encode is not available");
 
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_tokenizer.get());
-        // set_state_if_necessary(infer_request_guard, tokenization_params);
+        set_state_if_necessary(infer_request_guard, tokenization_params);
         size_t batch_size = 1;
         infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {batch_size}, &prompt});
         infer_request_guard.get().infer();
