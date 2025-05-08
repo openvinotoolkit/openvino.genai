@@ -182,7 +182,15 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
     compile(device, *extract_adapters_from_properties(properties));
 }
 
-AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
+AutoencoderKL::AutoencoderKL(const AutoencoderKL& rhs) = default;
+
+AutoencoderKL AutoencoderKL::clone() {
+    OPENVINO_ASSERT(m_encoder_model && m_decoder_model, "AutoencoderKL must be compiled first. Cannot clone non-compiled model");
+    AutoencoderKL cloned = *this;
+    cloned.m_encoder_request = m_encoder_request.get_compiled_model().create_infer_request();
+    cloned.m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
+    return cloned;
+}
 
 AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");

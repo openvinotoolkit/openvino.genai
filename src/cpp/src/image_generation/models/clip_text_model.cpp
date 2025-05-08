@@ -67,6 +67,14 @@ CLIPTextModel::CLIPTextModel(const std::string& model,
 
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
 
+CLIPTextModel CLIPTextModel::clone() {
+    OPENVINO_ASSERT(m_model, "CLIP text encoder model must be compiled first. Cannot clone non-compiled model");
+    CLIPTextModel cloned = *this;
+    cloned.m_request = m_request.get_compiled_model().create_infer_request();
+    // TODO: tokenizer?
+    return cloned;
+}
+
 const CLIPTextModel::Config& CLIPTextModel::get_config() const {
     return m_config;
 }

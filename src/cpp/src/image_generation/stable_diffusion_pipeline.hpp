@@ -165,6 +165,10 @@ public:
     }
 
     std::shared_ptr<DiffusionPipeline> clone() override {
+        // TODO clone m_scheduler
+        std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
+        std::shared_ptr<CLIPTextModel> clip_text_encoder = std::make_shared<CLIPTextModel>(m_clip_text_encoder->clone());
+        // TODO: m_unet
         return nullptr;
     }
 
