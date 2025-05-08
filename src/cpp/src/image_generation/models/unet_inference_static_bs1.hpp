@@ -15,7 +15,7 @@ namespace genai {
 // Static Batch-Size 1 variant of UNetInference
 class UNet2DConditionModel::UNetInferenceStaticBS1 : public UNet2DConditionModel::UNetInference {
 public:
-    virtual std::shared_ptr<UNet2DConditionModel> clone() override {
+    virtual std::shared_ptr<UNetInference> clone() override {
         // TODO: implement clone
         OPENVINO_ASSERT(false, "UNetInferenceStaticBS1::clone() is not implemented");
     }
