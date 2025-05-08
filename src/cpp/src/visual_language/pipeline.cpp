@@ -343,7 +343,7 @@ VLMPipeline::VLMPipeline(
     if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
         try {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-            // we need use CB only for x86, as for other architectures like risc-v we can create Paged Attention based model
+            // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #ifdef OPENVINO_ARCH_X86_64 || OPENVINO_ARCH_ARM64
             m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
@@ -386,7 +386,7 @@ VLMPipeline::VLMPipeline(
     if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
         try {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-            // we need use CB only for x86, as for other architectures like risc-v we can create Paged Attention based model
+            // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #ifdef OPENVINO_ARCH_X86_64 || OPENVINO_ARCH_ARM64
             std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
