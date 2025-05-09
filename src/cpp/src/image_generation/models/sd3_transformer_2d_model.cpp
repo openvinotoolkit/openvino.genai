@@ -9,6 +9,7 @@
 
 #include "json_utils.hpp"
 #include "utils.hpp"
+#include "lora/helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -86,6 +87,12 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size,
 
 SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
+    std::optional<AdapterConfig> adapters;
+    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
+        adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("transformer"));
+        m_adapter_controller = AdapterController(m_model, *adapters, device);
+    }
 
     if (device.find("NPU") != std::string::npos) {
         m_impl = std::make_shared<SD3Transformer2DModel::InferenceStaticBS1>();
@@ -94,12 +101,19 @@ SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device,
         m_impl = std::make_shared<SD3Transformer2DModel::InferenceDynamic>();
     }
 
-    m_impl->compile(m_model, device, properties);
+    m_impl->compile(m_model, device, *filtered_properties);
 
     // release the original model
     m_model.reset();
 
     return *this;
+}
+
+void SD3Transformer2DModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    OPENVINO_ASSERT(m_impl, "Transformer model must be compiled first");
+    if(adapters) {
+        m_impl->set_adapters(m_adapter_controller, adapters);
+    }
 }
 
 void SD3Transformer2DModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
