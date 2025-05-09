@@ -41,6 +41,7 @@ function(ov_genai_build_jinja2cpp)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-suggest-override")
         endif()
 
+        set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
 
         target_compile_definitions(jinja2cpp PUBLIC JINJA2CPP_LINK_AS_SHARED=0)
