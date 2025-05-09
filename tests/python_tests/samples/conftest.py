@@ -115,6 +115,10 @@ MODELS = {
         "name": "katuni4ka/tiny-random-llava",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     },
+    "BAAI/bge-small-en-v1.5": {
+        "name": "BAAI/bge-small-en-v1.5",
+        "convert_args": ['--trust-remote-code']
+    }
 }
 
 TEST_FILES = {
