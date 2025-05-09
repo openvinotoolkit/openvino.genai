@@ -191,7 +191,7 @@ private:
         if (tokens_in_last_block == 0) {
             tokens_in_last_block = block_size;
         }
-        preempted_tokens = tokens_in_last_block + std::max<size_t>((int)logical_blocks_released - 1, 0) * block_size;
+        preempted_tokens = tokens_in_last_block + (logical_blocks_released == 0 ? 0 : logical_blocks_released - 1) * block_size;
 
         // case when preemption requires preempt prompt tokens
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
