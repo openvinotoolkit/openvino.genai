@@ -95,6 +95,7 @@ struct AutoSafetensor: public safetensors_File {
 // Each Constant holds a shared pointer to the block in the runtime info.
 // The memory block will be deallocated when the last Constant is destroyed.
 ConstantMap safetensor_to_constant_map(const ov::Tensor& safetensor) {
+    std::cout << "safetensor_to_constant_map: \n";
     AutoSafetensor safe_tensors_file{};
 
     OPENVINO_ASSERT(safetensors_file_init(safetensor.data<char>(), safetensor.get_byte_size(), &safe_tensors_file) == nullptr,
@@ -137,6 +138,7 @@ LoRAPartsParser default_lora_patterns () {
 
 // Group tensors loaded from LoRA adapter file into triads A, B and alpha grouped by layer names.
 LoRATensors group_lora_tensors(const ConstantMap& tensors, const LoRAPartsParser& parts_parser) {
+    std::cout << "group_lora_tensors: \n";
     LoRATensors result;
     for(const auto& named_tensor: tensors) {
         if(auto parsed = parts_parser.A(named_tensor.first)) {
@@ -147,6 +149,7 @@ LoRATensors group_lora_tensors(const ConstantMap& tensors, const LoRAPartsParser
             result[*parsed].alpha = named_tensor.second;
         } else {
             DEBUG_PRINT("Ignored LoRA tensor \"" << named_tensor.first << "\" because couldn't recognize expected name pattern." );
+            std::cerr << "[ WARNING ] Ignored LoRA tensor \"" << named_tensor.first << "\" because couldn't recognize expected name pattern.\n";
         }
     }
 
@@ -1025,6 +1028,7 @@ struct AdapterControllerImpl {
 
     void apply (ov::InferRequest& infer_request, std::optional<AdapterConfig> config) {
         // FIXME: If a part of LoRA state tensors are not set here, then need to carefully reset state in LLMPipeline where global reset is called after the generation
+        std::cout << "void apply (ov::InferRequest& infer_request, std::optional<AdapterConfig> config) called\n";
         ConfigChanged diff;
         if(config) {
             diff = compare_configs(current_config, *config);
@@ -1036,6 +1040,7 @@ struct AdapterControllerImpl {
                 "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
             current_config.update(*config);
         }
+        std::cout << "need_full_apply: " << need_full_apply << "\n";
         if(need_full_apply) {
             need_full_apply = false;
             set_new_adapter_tensors(infer_request);
@@ -1057,6 +1062,7 @@ struct AdapterControllerImpl {
     }
 
     void set_new_adapter_tensors (ov::InferRequest& infer_request, bool alpha_only = false) {
+        std::cout << "set_new_adapter_tensors (ov::InferRequest& infer_request, bool alpha_only = false) called\n";
         if(current_config.get_mode() != AdapterConfig::MODE_AUTO && current_config.get_mode() != AdapterConfig::MODE_DYNAMIC && current_config.get_mode() != AdapterConfig::MODE_STATIC_RANK ) {
             return;
         }
@@ -1069,7 +1075,8 @@ struct AdapterControllerImpl {
         }
 
         auto state = infer_request.query_state();
-
+        std::cout << "state.size(): " << state.size() << "\n";
+        //std::cout << "state[0].get_name() name: " << state[0].get_name() << "\n";
         // TODO: Forced to use variable_id instead of index to address the state tensors, require the same order for state as for variables from plugins
 
         // Convert LoRAVarIDs to LoRAIndices to speedup search for state with a given name
@@ -1077,6 +1084,7 @@ struct AdapterControllerImpl {
         std::map<std::string, size_t> state_name_to_index;
         for(size_t i = 0; i < state.size(); ++i) {
             auto name = state[i].get_name();
+            std::cout << "state[" << i << "].get_name() name: " << name << "\n";
             state_name_to_index[name] = i;
         }
 
@@ -1086,6 +1094,7 @@ struct AdapterControllerImpl {
             lora_indices.alpha = state_name_to_index.at(lora_var_ids.second.alpha.variable_id);
             lora_indices.A = state_name_to_index.at(lora_var_ids.second.A.variable_id);
             lora_indices.B = state_name_to_index.at(lora_var_ids.second.B.variable_id);
+            //std::cout << "set_new_adapter_tensors: lora_var_ids: " << lora_var_ids.first << " alpha: " << lora_var_ids.second.alpha.variable_id << " A: " << lora_var_ids.second.A.variable_id << " B: " << lora_var_ids.second.B.variable_id << "\n";
             set_lora_tensors(state, lora_var_ids.first, lora_var_ids.second, lora_indices, weight_getters, alpha_only);
         }
     }
@@ -1095,8 +1104,12 @@ struct AdapterControllerImpl {
         OPENVINO_ASSERT(weight_getters.size() == adapters.size());
         std::vector<LoRAWeight> result;
         result.reserve(weight_getters.size());
+        std::cout << "adapters.size() " << adapters.size() << "\n";
+        std::cout << "weight_getters.size() " << weight_getters.size() << "\n";
         for(size_t i = 0; i < adapters.size(); ++i) {
+            std::cout << "lora_name: " << lora_name << "\n";
             if(auto lora_tensors = weight_getters[i](lora_name)) {
+                std::cout << "Name matched !!!!!!!!!! \n";
                 // TODO: Is it practical to use alpha from the adapter file itself. In the current code it is ignored and only alpha from config is used.
                 OPENVINO_ASSERT(lora_tensors->A);
                 OPENVINO_ASSERT(lora_tensors->B);
@@ -1306,9 +1319,12 @@ struct AdapterControllerImpl {
     ) {
         auto lora_tensors = collect_applicable_tensors(name, weight_getters);  // request A and B regardless of alpha_only, because it is a way to get lora_rank later when alpha is broadcasted
         LoRAParts<ov::Tensor> new_tensors;
+        std::cout << "set_empty_adapters: " << set_empty_adapters << "\n";
         if(!lora_tensors.empty()) {
+            std::cout << "!lora_tensors.empty(),  concat_adapters(lora_tensors, output, alpha_only) called\n";
             new_tensors = concat_adapters(lora_tensors, output, alpha_only);
         } else if(set_empty_adapters) {
+            std::cout << "set_empty_adapters,  empty_adapters(lora_tensors, output);\n";
             new_tensors = empty_adapters(lora_tensors, output);
         }
         return new_tensors;
@@ -1358,6 +1374,7 @@ void AdapterController::apply(ov::InferRequest request, const std::optional<Adap
         "Adapters are passed to AdapterController but it was not configured to use adapters. "
         "Enable using adapters by pass them in the constructor first.");
     if (m_pimpl) {
+        std::cout << "m_pimpl->apply(request, config);\n";
         m_pimpl->apply(request, config);
     }
 }
