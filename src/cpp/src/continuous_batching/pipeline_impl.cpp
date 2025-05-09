@@ -32,13 +32,11 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const std::shared_ptr<ov::Model>& model,
-    const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config,
     bool is_validation_mode_enabled) {
-    m_tokenizer = tokenizer;
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
@@ -48,20 +46,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     utils::apply_gather_before_matmul_transformation(model);
 
     initialize_pipeline(model, scheduler_config, device, properties);
-}
-
-ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
-    const std::shared_ptr<ov::Model>& model,
-    std::shared_ptr<InputsEmbedder> inputs_embedder,
-    const Tokenizer& tokenizer,
-    const SchedulerConfig& scheduler_config,
-    const std::string& device,
-    const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config,
-    bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
-    m_inputs_embedder = inputs_embedder;
-    m_model_runner->set_embedding_model(inputs_embedder->get_embedding_model());
-    m_model_input_type = ModelInputType::EMBEDDINGS;
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
@@ -180,6 +164,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     if (m_generation_config.eos_token_id == -1)
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
 };
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
+    IContinuousBatchingPipeline::set_embedder(inputs_embedder);
+    m_model_runner->set_embedding_model(inputs_embedder->get_embedding_model());
+}
 
 
 GenerationHandle
