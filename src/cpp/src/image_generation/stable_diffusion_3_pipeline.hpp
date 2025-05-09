@@ -267,6 +267,11 @@ public:
         m_vae->compile(vae_device, properties);
     }
 
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_THROW("StableDiffusion3Pipeline::clone() is not implemented");
+        return nullptr;
+    }
+
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto& transformer_config = m_transformer->get_config();
         const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG

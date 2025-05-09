@@ -4,6 +4,8 @@
 #pragma once
 
 #include <cassert>
+#include <iostream>
+#include <memory>
 #include <filesystem>
 
 #include "image_generation/diffusion_pipeline.hpp"
@@ -161,6 +163,19 @@ public:
         m_clip_text_encoder->compile(text_encode_device, *updated_properties);
         m_unet->compile(denoise_device, *updated_properties);
         m_vae->compile(vae_device, *updated_properties);
+    }
+
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        // m_scheduler is not cloned, but rather set_scheduler exposed for users via GenerationRequest
+        std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
+        std::shared_ptr<CLIPTextModel> clip_text_encoder = std::make_shared<CLIPTextModel>(m_clip_text_encoder->clone());
+        std::shared_ptr<UNet2DConditionModel> unet = std::make_shared<UNet2DConditionModel>(m_unet->clone());
+        std::shared_ptr<StableDiffusionPipeline> pipeline = std::make_shared<StableDiffusionPipeline>(
+            m_pipeline_type,
+            *clip_text_encoder,
+            *unet,
+            *vae);
+        return pipeline;
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {

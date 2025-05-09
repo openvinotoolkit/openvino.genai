@@ -69,6 +69,8 @@ public:
 
     CLIPTextModel(const CLIPTextModel&);
 
+    CLIPTextModel clone();
+
     const Config& get_config() const;
 
     CLIPTextModel& reshape(int batch_size);

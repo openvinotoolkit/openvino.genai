@@ -269,6 +269,11 @@ public:
         m_transformer->compile(denoise_device, *updated_properties);
     }
 
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_THROW("FluxPipelin::clone() is not implemented");
+        return nullptr;
+    }
+
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         // encode_prompt
         std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
