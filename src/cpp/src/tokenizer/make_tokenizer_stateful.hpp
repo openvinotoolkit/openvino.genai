@@ -88,6 +88,7 @@ public:
 inline const std::string ADD_SPECIAL_TOKENS_VAR_ID = "add_special_tokens";
 inline const std::string SKIP_SPECIAL_TOKENS_VAR_ID = "skip_special_tokens";
 inline const std::string MAX_LENGTH_VAR_ID = "max_length";
+inline const std::string IS_MAX_LENGTH_SET = "is_max_length_set";
 inline const std::string PAD_TO_MAX_LENGTH_VAR_ID = "pad_to_max_length";
 
 } // namespace genai
