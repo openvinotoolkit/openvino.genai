@@ -23,7 +23,7 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win
+  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/d1432d3e24711c3f82132dbf82bebb79d7a49dd6
 
 jobs:
   smart_ci:
@@ -48,7 +48,7 @@ jobs:
           pr: ${{ github.event.number }}
           commit_sha: ${{ github.sha }}
           ref_name: ${{ github.ref_name }}
-          component_pattern: "category: (?!Python API|CPP API).*"
+          component_pattern: "category: ((?!Python API|CPP API).*)"
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           skip_when_only_listed_labels_set: 'GH Pages Docs'
           skip_when_only_listed_files_changed: '*.md,*.rst,*.png,*.jpg,*.svg,*.gif'
