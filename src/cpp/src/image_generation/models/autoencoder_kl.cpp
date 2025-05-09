@@ -187,11 +187,9 @@ AutoencoderKL::AutoencoderKL(const AutoencoderKL& rhs) = default;
 AutoencoderKL AutoencoderKL::clone() {
     OPENVINO_ASSERT(!m_decoder_model, "AutoencoderKL must be compiled first. Cannot clone non-compiled model");
     AutoencoderKL cloned = *this;
-    std::cout << "New AutoencoderKL creation has started" << std::endl;
     if (m_encoder_request)
         cloned.m_encoder_request = m_encoder_request.get_compiled_model().create_infer_request();
     cloned.m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
-    std::cout << "New AutoencoderKL has been created" << std::endl;
     return cloned;
 }
 
@@ -224,12 +222,9 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
 
-    std::cout << "AutoencoderKL::compile" << std::endl;
-
     if (m_encoder_model) {
         ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, properties));
         ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
-        std::cout << "AutoencoderKL request creation..." << std::endl;
         m_encoder_request = encoder_compiled_model.create_infer_request();
         // release the original model
         m_encoder_model.reset();

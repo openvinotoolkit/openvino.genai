@@ -100,10 +100,9 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
-                std::cout << "Created AutoEncoder" << std::endl;
-            } else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
+            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
@@ -167,7 +166,7 @@ public:
     }
 
     std::shared_ptr<DiffusionPipeline> clone() override {
-        // TODO clone m_scheduler
+        // m_scheduler is not cloned, but rather set_scheduler exposed for users via GenerationRequest
         std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
         std::shared_ptr<CLIPTextModel> clip_text_encoder = std::make_shared<CLIPTextModel>(m_clip_text_encoder->clone());
         std::shared_ptr<UNet2DConditionModel> unet = std::make_shared<UNet2DConditionModel>(m_unet->clone());
@@ -284,14 +283,12 @@ public:
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
-        std::cout << "StableDiffusionPipeline::generate 1" << std::endl;
         const auto gen_start = std::chrono::steady_clock::now();
         using namespace numpy_utils;
         m_perf_metrics.clean_up();
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
-        std::cout << "StableDiffusionPipeline::generate 2" << std::endl;
         // use callback if defined
         std::function<bool(size_t, size_t, ov::Tensor&)> callback = nullptr;
         auto callback_iter = properties.find(ov::genai::callback.name());
@@ -299,7 +296,6 @@ public:
             callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
         }
 
-        std::cout << "StableDiffusionPipeline::generate 3" << std::endl;
         // Stable Diffusion pipeline
         // see https://huggingface.co/docs/diffusers/using-diffusers/write_own_pipeline#deconstruct-the-stable-diffusion-pipeline
 
@@ -307,7 +303,6 @@ public:
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
-        std::cout << "StableDiffusionPipeline::generate 4" << std::endl;
         if (generation_config.height < 0)
             compute_dim(generation_config.height, initial_image, 1 /* assume NHWC */);
         if (generation_config.width < 0)
@@ -315,19 +310,14 @@ public:
 
         check_inputs(generation_config, initial_image);
 
-        std::cout << "StableDiffusionPipeline::generate 5" << std::endl;
         set_lora_adapters(generation_config.adapters);
-        std::cout << "StableDiffusionPipeline::generate 5.1" << (long long)m_scheduler.get() << std::endl;
 
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
-        std::cout << "StableDiffusionPipeline::generate 5.2" << std::endl;
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
 
-        std::cout << "StableDiffusionPipeline::generate 5.3" << std::endl;
         // compute text encoders and set hidden states
         compute_hidden_states(positive_prompt, generation_config);
 
-        std::cout << "StableDiffusionPipeline::generate 6" << std::endl;
         // preparate initial / image latents
         ov::Tensor latent, processed_image, image_latent, noise;
         std::tie(latent, processed_image, image_latent, noise) = prepare_latents(initial_image, generation_config);
@@ -338,14 +328,12 @@ public:
             std::tie(mask, masked_image_latent) = prepare_mask_latents(mask_image, processed_image, generation_config, batch_size_multiplier);
         }
 
-        std::cout << "StableDiffusionPipeline::generate 7" << std::endl;
         // prepare latents passed to models taking into account guidance scale (batch size multipler)
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
 
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg), denoised, noisy_residual_tensor(ov::element::f32, {}), latent_model_input;
 
-        std::cout << "StableDiffusionPipeline::generate 8" << std::endl;
         for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
             auto step_start = std::chrono::steady_clock::now();
             numpy_utils::batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
