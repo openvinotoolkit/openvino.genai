@@ -273,6 +273,20 @@ public:
         auto core = get_core_singleton();
         std::string device = "CPU"; // only CPU is supported for now
 
+        auto supported_properties = core.get_property(device, ov::supported_properties);
+        auto supported = [&](const std::string& key) {
+            return std::find(std::begin(supported_properties), std::end(supported_properties), key) != std::end(supported_properties);
+        };
+        for (auto&& property : properties) {
+            if (supported(property.first)) {
+                try {
+                    core.set_property(device, property);
+                } catch (std::exception& ex) {
+                    std::cout << ex.what() << std::endl;
+                }
+            }
+        }
+
         // Saving IR version was added only in 24.5, so if it's missing, then it's older than 24.5
         m_older_than_24_5 = !(ov_tokenizer ? ov_tokenizer: ov_detokenizer)->has_rt_info("openvino_tokenizers_version");
 
@@ -281,7 +295,7 @@ public:
             manager.register_pass<MakeAddSpecialTokensSatateful>();
             manager.register_pass<MakePaddingSatateful>();
             manager.run_passes(ov_tokenizer);
-            ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, properties);
+            ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device);
             ov::genai::utils::print_compiled_model_properties(tokenizer, "OV Tokenizer");
 
             m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -312,7 +326,7 @@ public:
             ov::pass::Manager manager_detok;
             manager_detok.register_pass<MakeVocabDecoderSatateful>();
             manager_detok.run_passes(ov_detokenizer);
-            ov::CompiledModel detokenizer = core.compile_model(ov_detokenizer, device, properties);
+            ov::CompiledModel detokenizer = core.compile_model(ov_detokenizer, device);
             ov::genai::utils::print_compiled_model_properties(detokenizer, "OV Detokenizer");
 
             m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
