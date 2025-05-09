@@ -14,6 +14,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     ov::genai::Text2ImagePipeline pipe(models_path, device);
     ov::genai::Text2ImagePipeline pipe_cloned = pipe.clone();
+    pipe_cloned.set_scheduler(ov::genai::Scheduler::from_config(std::filesystem::path(models_path) / "scheduler/scheduler_config.json"));
     ov::Tensor image = pipe_cloned.generate(prompt,
         ov::genai::width(512),
         ov::genai::height(512),
