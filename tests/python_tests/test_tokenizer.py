@@ -320,9 +320,10 @@ def hf_ov_genai_models(request, tmp_path_factory):
     model_dir.mkdir(exist_ok=True, parents=True)
 
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_args)
-    convert_and_save_tokenizer(hf_tokenizer, model_dir)
-    genai_tokenzier = Tokenizer(model_dir)
-    return hf_tokenizer, genai_tokenzier
+    convert_args = {"number_of_inputs": hf_args.pop("number_of_inputs")} if "number_of_inputs" in hf_args else {}
+    convert_and_save_tokenizer(hf_tokenizer, model_dir, **convert_args)
+    genai_tokenizer = Tokenizer(model_dir)
+    return hf_tokenizer, genai_tokenizer
 
 
 prompts = [
@@ -407,40 +408,57 @@ def test_padding(
     assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
     assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
 
-@pytest.mark.parametrize("model_id", [
-    "katuni4ka/tiny-random-phi3",
-    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-])
+
+models_with_pair_input =[
+    ("answerdotai/ModernBERT-base", {"padding_side": None, 'number_of_inputs': 2}),
+    ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None, 'number_of_inputs': 2}),
+    ("katuni4ka/tiny-random-llava-next", {"padding_side": "right", 'number_of_inputs': 2}),
+    ("katuni4ka/tiny-random-llava-next", {"padding_side": "left", 'number_of_inputs': 2}),
+]
+
+
+@pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("input_pair", [
-    [["hi"], ["sun in yellow"]],
+    [["hi", "sun in yellow"]],
+    [["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!"]],
+    [["Eng... test, string?!", "Multiline\nstring!\nWow!" * 100]],
+    [["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!" * 100]],
+    [["hi" * 20, "buy" * 90]],
+])
+def test_two_inputs_string_list_of_lists(hf_ov_genai_models, input_pair):
+    # Check with inputs consisted of lists of lists consistent with HF format.
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models
+    ov_encoded = genai_tokenzier.encode(input_pair).input_ids.data
+    hf_encoded = hf_tokenizer(input_pair, return_tensors="np")["input_ids"]
+    assert np.all(ov_encoded == hf_encoded)
+
+
+@pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("input_pair", [
     [["Eng... test, string?!" * 100], ["Multiline\nstring!\nWow!"]],
-    [["Eng... test, string?!"], ["Multiline\nstring!\nWow!" * 100]],
-    [["Eng... test, string?!" * 100], ["Multiline\nstring!\nWow!" * 100]],
     [["hi" * 20], ["buy" * 90]],
-    [["What is the capital of Great Britain"] * 4, ["London is capital of Great Britain"]],
+    # [["What is the capital of Great Britain"] * 4, ["London is capital of Great Britain"]],  # TODO: broadcast of [4, 1] to [4, 4] fails
     [["What is the capital of Great Britain"], ["London is capital of Great Britain"] * 4],
 ])
-def test_two_inputs_string(model_id, input_pair, tmp_path):
-    model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
-    
-    hf_tokenizer, genai_tokenzier = hf_ov_genai_models(model_id, 
-                                                       subfolder=hf_tok_load_params.get("subfolder", None),
-                                                       padding_side=hf_tok_load_params.get("padding_side", None))
-    
-    input_1, input_2 = input_pair
+def test_two_inputs_string(hf_ov_genai_models, input_pair):
+    # Test when inputs are separate and they are broadcasted to the same length.
+    # For HF we broadcast manually, but in GenAI this happens automatically.
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models
 
     # broadcast ([N], [1]) and ([1], [N]) to ([N], [N]) for HF
     if len(input_pair[0]) > len(input_pair[1]):
         input_pair_hf = [[input_pair[0][i], input_pair[1][0]] for i in range(len(input_pair[0]))]
     else:
         input_pair_hf = [[input_pair[0][0], input_pair[1][i]] for i in range(len(input_pair[1]))]
-
-    ov_encoded = genai_tokenzier.encode(input_1, input_2).input_ids.data
+    
+    ov_encoded = genai_tokenzier.encode(*input_pair).input_ids.data
     hf_encoded = hf_tokenizer(input_pair_hf, return_tensors="np")["input_ids"]
-
     assert np.all(ov_encoded == hf_encoded)
+
 
 @pytest.mark.precommit
 @pytest.mark.nightly

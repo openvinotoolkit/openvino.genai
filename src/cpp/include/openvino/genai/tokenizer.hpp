@@ -127,7 +127,7 @@ public:
     TokenizedInputs encode(const std::string prompt, const ov::AnyMap& tokenization_params = {});
 
     /**
-    * @brief encode batch of prompts. Left padding will be applied by default
+    * @brief encode batch of prompts.
     * @param prompts vector storing batch of prompts
     * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
     * @return pair of [input_ids, attention_mask]
@@ -137,12 +137,23 @@ public:
     TokenizedInputs encode(std::initializer_list<std::string>& prompts, const ov::AnyMap& tokenization_params = {});
    
     /**
-    * @brief encode paired prompts. Left padding will be applied by default
+    * @brief encode paired prompts.
+    * 
     * @param prompts vector storing batch of prompts
     * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
     * @return pair of [input_ids, attention_mask]
     */
-    TokenizedInputs encode(std::vector<std::pair<std::string, std::string>>& prompt, const ov::AnyMap& tokenization_params = {});
+   TokenizedInputs encode(std::vector<std::pair<std::string, std::string>>& prompt, const ov::AnyMap& tokenization_params = {});
+
+   /**
+   * @brief encode paired prompts.
+   * 
+   * Prompts should be of the same length, or one of them should be of length 1. In the latest case, the prompt will be
+   * broadcasted to the length of the other prompt.
+   * @param prompts vector storing batch of prompts
+   * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
+   * @return pair of [input_ids, attention_mask]
+   */
     TokenizedInputs encode(std::vector<std::string>& prompts_1, std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params = {});
 
     /**
@@ -159,7 +170,7 @@ public:
     }
 
     /**
-    * @brief encode batch of prompts. Left padding will be applied by default
+    * @brief encode batch of prompts.
     * @param prompts vector storing batch of prompts
     * @param add_special_tokens whether to add special tokens
     * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.

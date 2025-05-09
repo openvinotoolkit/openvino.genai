@@ -11,7 +11,6 @@
 #include <jinja2cpp/generic_list_iterator.h>
 
 #include "openvino/pass/manager.hpp"
-#include "openvino/pass/visualize_tree.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
@@ -284,7 +283,6 @@ public:
             ov::pass::Manager manager;
             manager.register_pass<MakeAddSpecialTokensSatateful>();
             manager.register_pass<MakePaddingSatateful>();
-            manager.register_pass<ov::pass::VisualizeTree>("after.svg");
             manager.run_passes(ov_tokenizer);
             ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, properties);
             ov::genai::utils::print_compiled_model_properties(tokenizer, "OV Tokenizer");
@@ -508,7 +506,7 @@ public:
 
     TokenizedInputs encode(std::vector<ov::Tensor> prompts, const ov::AnyMap& tokenization_params = {}) {
         OPENVINO_ASSERT(prompts.size() <= 2, "Two inputs are expected for encode method");
-        TokenizedInputs unpadded;
+        TokenizedInputs result;
         {
             CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
             set_state_if_necessary(infer_request_guard, tokenization_params);
@@ -518,12 +516,12 @@ public:
     
             infer_request_guard.get().infer();
 
-            unpadded = get_copied_results(
+            result = get_copied_results(
                 infer_request_guard.get().get_tensor("input_ids"),
                 infer_request_guard.get().get_tensor("attention_mask")
             );
         }
-        return {unpadded.input_ids, unpadded.attention_mask};
+        return {result.input_ids, result.attention_mask};
     }
 
     TokenizedInputs encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params = {}) {

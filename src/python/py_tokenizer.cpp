@@ -107,7 +107,28 @@ void init_tokenizer(py::module_& m) {
             py::arg("pad_to_max_length") = false,
             py::arg("max_length") = std::nullopt,
             R"(Encodes a single prompt into tokenized input.)")
-
+            
+            .def("encode", [](Tokenizer& tok, 
+                std::vector<std::string>& prompts_1, 
+                std::vector<std::string>& prompts_2,
+                bool add_special_tokens, 
+                bool pad_to_max_length,
+                std::optional<size_t> max_length) {
+                ov::AnyMap tokenization_params;
+                tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+                tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
+                if (max_length.has_value()) {
+                    tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
+                return tok.encode(prompts_1, prompts_2, tokenization_params);
+            },
+            py::arg("prompts_1"),
+            py::arg("prompts_2"),
+            py::arg("add_special_tokens") = true,
+            py::arg("pad_to_max_length") = false,
+            py::arg("max_length") = std::nullopt,
+            R"(Encodes a list of prompts into tokenized inputs. Prompts should be of the same length, or one of them should be of length 1. 
+            In the latest case, the prompt will be broadcasted to the length of the other prompt)")
 
             .def("encode", [](Tokenizer& tok, py::list& prompts, 
                             bool add_special_tokens, 
@@ -123,6 +144,10 @@ void init_tokenizer(py::module_& m) {
                 // Convert py::list to std::vector<std::string>
                 std::vector<std::pair<std::string, std::string>> prompts_vector;
                 for (auto item : prompts) {
+                    if (!py::isinstance<py::list>(item) && py::len(item) != 2) {
+                        throw std::runtime_error("Expected a list of lists with sizes 2. E.g. [[\"What is the capital of GB?\", \"London in the capital of GB\"], ...]");
+                    } 
+
                     prompts_vector.push_back(py::cast<std::pair<std::string, std::string>>(item));
                 }
                 return tok.encode(prompts_vector, tokenization_params);
@@ -131,8 +156,8 @@ void init_tokenizer(py::module_& m) {
             py::arg("add_special_tokens") = true,
             py::arg("pad_to_max_length") = false,
             py::arg("max_length") = std::nullopt,
-            R"(Encodes a list of paired prompts into tokenized inputs.)")
-                       
+            R"(Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].)")
+            
             .def(
             "decode",
             [](Tokenizer& tok, std::vector<int64_t>& tokens, bool skip_special_tokens) -> py::str {

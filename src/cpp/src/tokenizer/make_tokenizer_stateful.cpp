@@ -195,9 +195,11 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     auto is_max_len_set_rv = std::make_shared<v6::ReadValue>(defaul_false_const, is_max_len_set_var);
     auto is_max_len_set_assign = std::make_shared<v6::Assign>(is_max_len_set_rv, is_max_len_set_var);
     model->add_sinks({is_max_len_set_assign});
-
-    auto int32_max_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{std::numeric_limits<int32_t>::max() - 1000});
-    // auto int32_max_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{10000});
+    
+    // TODO: int32_max 2147483647 becomes -2147483648 when accessed from Truncate be inputs[inputs.size() - 3].data<const int32_t>()[0]
+    // int32_max - 1 (-2, -3, etc.) also strangely becomes still -2147483648.
+    // Only starting from int32_max - 64 it is casted to adequate positive value.
+    auto int32_max_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector<int32_t>{std::numeric_limits<int32_t>::max() - 64});
     auto max_length_for_trunc = std::make_shared<v1::Select>(is_max_len_set_rv, max_length_node, int32_max_constant);
     
     for (auto target_input : target_inputs) {
