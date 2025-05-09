@@ -2048,9 +2048,15 @@ class Tokenizer:
         Encodes a single prompt into tokenized input.
         """
     @typing.overload
+    def encode(self, prompts_1: list[str], prompts_2: list[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
+        """
+        Encodes a list of prompts into tokenized inputs. Prompts should be of the same length, or one of them should be of length 1. 
+                    In the latest case, the prompt will be broadcasted to the length of the other prompt
+        """
+    @typing.overload
     def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
         """
-        Encodes a list of paired prompts into tokenized inputs.
+        Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
         """
     def get_bos_token(self) -> str:
         ...
