@@ -80,8 +80,8 @@ def get_scheduler_config(num_kv_blocks: Optional[int]) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
     if num_kv_blocks is not None:
         scheduler_config.num_kv_blocks = num_kv_blocks
+        scheduler_config.max_num_batched_tokens = 32 * num_kv_blocks
     scheduler_config.dynamic_split_fuse = True
-    scheduler_config.max_num_batched_tokens = 32 * num_kv_blocks
     scheduler_config.max_num_seqs = 256
     scheduler_config.use_cache_eviction = False
     return scheduler_config
