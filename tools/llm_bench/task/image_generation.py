@@ -171,7 +171,11 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
     callback.reset()
 
     start = time.perf_counter()
-    res = pipe.generate(input_text, **input_args, num_images_per_prompt=args['batch_size']).data
+    if(args['empty_lora'] and (pipe.get_generation_config().adapters is not None)):
+        import openvino_genai
+        res = pipe.generate(input_text, **input_args, adapters=openvino_genai.AdapterConfig(), num_images_per_prompt=args['batch_size']).data
+    else:
+        res = pipe.generate(input_text, **input_args, num_images_per_prompt=args['batch_size']).data
     end = time.perf_counter()
     callback.duration = end - start
 
