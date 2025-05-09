@@ -15,6 +15,7 @@ enum class VLMModelType {
     LLAVA_NEXT,
     INTERNVL_CHAT,
     PHI3_V,
+    PHI4MM,
     QWEN2_VL,
     QWEN2_5_VL,
 };

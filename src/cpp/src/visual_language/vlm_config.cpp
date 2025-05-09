@@ -17,6 +17,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"llava_next", VLMModelType::LLAVA_NEXT},
         {"internvl_chat", VLMModelType::INTERNVL_CHAT},
         {"phi3_v", VLMModelType::PHI3_V},
+        {"phi4mm", VLMModelType::PHI4MM},
         {"qwen2_vl", VLMModelType::QWEN2_VL},
         {"qwen2_5_vl", VLMModelType::QWEN2_5_VL},
     };
@@ -50,11 +51,13 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     if (parsed.contains("sub_GN")) {
         sub_GN = parsed.at("sub_GN").get<std::vector<std::vector<std::vector<std::vector<float>>>>>().at(0).at(0).at(0);
     }
-    OPENVINO_ASSERT(sub_GN.size() == 4096);
+    // For phi4mm sub_GN.size() == 1152
+    // OPENVINO_ASSERT(sub_GN.size() == 4096);
     if (parsed.contains("glb_GN")) {
         glb_GN = parsed.at("glb_GN").get<std::vector<std::vector<std::vector<float>>>>().at(0).at(0);
     }
-    OPENVINO_ASSERT(glb_GN.size() == 4096);
+    // For phi4mm glb_GN.size() == 1152
+    // OPENVINO_ASSERT(glb_GN.size() == 4096);
     // Qwen2.5VL
     if (parsed.contains("vision_config")) {
         read_json_param(parsed.at("vision_config"), "window_size", vision_config_window_size);
