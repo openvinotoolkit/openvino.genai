@@ -52,10 +52,12 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
         m_kv_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
         state.resize(m_prev_hist_length);
         m_kv_cache_state.reset_mem_state = state.empty();
+        m_image_id = m_prev_image_id;
     } else {
         // Tail of chat template is missing in KV cache.
         // Find the tail to concatenate it with the next input prompt.
         m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
+        m_prev_image_id = m_image_id;
     }
 }
 
@@ -249,8 +251,8 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
     return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
-ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
-    return m_impl->get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings);
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
+    return m_impl->get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
@@ -293,6 +295,14 @@ bool InputsEmbedder::prompt_has_image_tag(const std::string& prompt) const {
     return m_impl->prompt_has_image_tag(prompt);
 }
 
+std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(
+    const std::string& prompt,
+    size_t base_id,
+    size_t n_images
+) const {
+     return m_impl->normalize_prompt(prompt, base_id, n_images);
+}
+
 void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images) {
     for (size_t idx : image_ids) {
         OPENVINO_ASSERT(base_id <= idx, "Referring to older images isn't implemented");
@@ -300,13 +310,13 @@ void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_i
     }
 }
 
-std::pair<std::string, std::vector<size_t>> normalize_prompt(
+std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::normalize(
     const std::string& prompt,
     const std::string& native_tag,
     const std::string& automatic_tag,
     size_t base_id,
     size_t n_images
-) {
+) const {
     size_t pos = prompt.find(native_tag);
     auto [image_prompt, image_sequence] = universal_to_native(prompt, [&](std::ostream& os, size_t) {
         os << automatic_tag;

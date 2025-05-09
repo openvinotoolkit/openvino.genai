@@ -228,12 +228,26 @@ InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
 
-ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
+
+std::pair<std::string, std::vector<size_t>> InputsEmbedderInternVLChat::normalize_prompt(const std::string& prompt, size_t base_id, size_t n_images) const {
+    return normalize(prompt, NATIVE_TAG, NATIVE_TAG + '\n', base_id, n_images);
+}
+
+ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
     std::string image_start_token = m_vlm_config.image_start_token;
     std::string image_context_token = m_vlm_config.image_context_token;
     std::string image_end_token = m_vlm_config.image_end_token;
-    auto [unified_prompt, images_sequence] = normalize_prompt(prompt, NATIVE_TAG, NATIVE_TAG + '\n', m_image_id, images.size());
+    std::string unified_prompt;
+    std::vector<size_t> images_sequence;
 
+    if (image_sequence.size()) {
+        images_sequence = image_sequence;
+        unified_prompt = prompt;
+    } else {
+        auto normalized = normalize_prompt(prompt, m_image_id, images.size());
+        unified_prompt = normalized.first;
+        images_sequence = normalized.second;
+    }
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     size_t searched_pos = 0;

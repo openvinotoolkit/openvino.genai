@@ -35,7 +35,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 
@@ -44,6 +44,12 @@ public:
     void finish_chat() override;
 
     bool prompt_has_image_tag(const std::string& prompt) const override;
+
+    std::pair<std::string, std::vector<size_t>> normalize_prompt(
+        const std::string& prompt,
+        size_t base_id,
+        size_t n_images
+    ) const override;
 
 protected:
     // A model for merging image embeddings (hidden states), rotary_pos_emb and attension_mask.
