@@ -21,14 +21,9 @@ public:
     }
 
     virtual void set_adapters(AdapterController& m_adapter_controller, const std::optional<AdapterConfig>& adapters) override {
-        std::cout << "virtual void set_adapters(AdapterController& m_adapter_controller, const std::optional<AdapterConfig>& adapters) override\n";
         OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
         if(adapters) {
-            std::cout << "m_impl->set_adapters(m_adapter_controller, adapters); called\n";
             m_adapter_controller.apply(m_request, *adapters);
-        }
-        else{
-            std::cout << "adapters is empty\n";
         }
     }
 
