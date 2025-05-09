@@ -2047,6 +2047,11 @@ class Tokenizer:
         """
         Encodes a single prompt into tokenized input.
         """
+    @typing.overload
+    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
+        """
+        Encodes a list of paired prompts into tokenized inputs.
+        """
     def get_bos_token(self) -> str:
         ...
     def get_bos_token_id(self) -> int:
