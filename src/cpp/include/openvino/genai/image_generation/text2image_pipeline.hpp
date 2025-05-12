@@ -148,27 +148,6 @@ public:
     // TODO: Doc
     Text2ImagePipeline clone();
 
-    // TODO: Doc
-    class OPENVINO_GENAI_EXPORTS GenerationRequest {
-        std::shared_ptr<Text2ImagePipeline> m_cloned_pipeline;
-        GenerationRequest(Text2ImagePipeline* pipeline);
-    public:
-        ~GenerationRequest();
-    
-        GenerationRequest() = delete;
-        GenerationRequest(GenerationRequest&&) = delete;
-        GenerationRequest(const GenerationRequest&) = delete;
-        GenerationRequest& operator=(const GenerationRequest&) = delete;
-
-        ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties = {});
-        void set_scheduler(std::shared_ptr<Scheduler> scheduler);
-
-        friend class Text2ImagePipeline;
-    };
-
-    // TODO: Doc
-    GenerationRequest create_generation_request();
-
     /**
      * Returns default image generation config created internally based on model type.
      * @returns Image generation config

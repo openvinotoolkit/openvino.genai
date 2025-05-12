@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+#include <filesystem>
 #include <fstream>
 #include <tuple>
 
@@ -231,6 +232,7 @@ protected:
     ImageGenerationConfig m_generation_config;
     float m_load_time_ms = 0.0f;
     ImageGenerationPerfMetrics m_perf_metrics;
+    std::filesystem::path m_root_dir;
 
     std::shared_ptr<AutoencoderKL> m_vae = nullptr;
     std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor_rgb = nullptr, m_mask_processor_gray = nullptr;

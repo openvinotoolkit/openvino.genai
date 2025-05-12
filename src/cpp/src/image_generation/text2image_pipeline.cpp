@@ -232,23 +232,5 @@ Text2ImagePipeline Text2ImagePipeline::clone() {
     return pipe;
 }
 
-Text2ImagePipeline::GenerationRequest::GenerationRequest(Text2ImagePipeline* pipeline) {
-    m_cloned_pipeline = std::make_shared<Text2ImagePipeline>(pipeline->clone());
-}
-
-Text2ImagePipeline::GenerationRequest::~GenerationRequest() {}
-
-ov::Tensor Text2ImagePipeline::GenerationRequest::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
-    return m_cloned_pipeline->generate(positive_prompt, properties);
-}
-
-void Text2ImagePipeline::GenerationRequest::set_scheduler(std::shared_ptr<Scheduler> scheduler) {
-    m_cloned_pipeline->set_scheduler(scheduler);
-}
-
-Text2ImagePipeline::GenerationRequest Text2ImagePipeline::create_generation_request() {
-    return GenerationRequest(this);
-}
-
 }  // namespace genai
 }  // namespace ov

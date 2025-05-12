@@ -1,55 +1,27 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-#include <iostream>
 
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
-
 
 #include "imwrite.hpp"
 #include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");  // TODO: <PROMPT> unused
+    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
 
     const std::string models_path = argv[1], prompt = argv[2];
     const std::string device = "CPU";  // GPU can be used as well
 
-    std::vector<std::string> prompts = {
-        "happy dog",
-        "black cat",
-        "yellow raspberry",
-        "retro personal computer",
-        "walking astronaut",
-        "fish with a hat",
-        "flying car",
-    };
-
     ov::genai::Text2ImagePipeline pipe(models_path, device);
-    
-    std::vector<std::thread> threads;
+    ov::Tensor image = pipe.generate(prompt,
+        ov::genai::width(512),
+        ov::genai::height(512),
+        ov::genai::num_inference_steps(20),
+        ov::genai::num_images_per_prompt(1),
+        ov::genai::callback(progress_bar));
 
-    for (size_t i = 0; i < prompts.size(); ++i) {
-        const std::string p = prompts[i];
-        threads.emplace_back([i, &pipe, models_path, p] () {
-            std::cout << "Generating... " << i << std::endl;
-            ov::genai::Text2ImagePipeline::GenerationRequest request = pipe.create_generation_request();
-            request.set_scheduler(ov::genai::Scheduler::from_config(std::filesystem::path(models_path) / "scheduler/scheduler_config.json"));
-            ov::Tensor image = request.generate(p,
-                ov::AnyMap{
-                    ov::genai::width(512),
-                    ov::genai::height(512),
-                    ov::genai::num_inference_steps(20),
-                    ov::genai::num_images_per_prompt(1)});
-            std::cout << "Generated " << i << std::endl;
-            imwrite("mt_image_512" + std::to_string(i) + "_%d.bmp", image, true);
-            std::cout << "Generation saved" << std::endl;
-        });
-    }
-
-    // join all threads
-    for (auto& thread : threads) {
-        thread.join();
-    }
+    // writes `num_images_per_prompt` images by pattern name
+    imwrite("image_%d.bmp", image, true);
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
