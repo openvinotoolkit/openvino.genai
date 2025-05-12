@@ -1069,7 +1069,6 @@ struct AdapterControllerImpl {
         }
 
         auto state = infer_request.query_state();
-
         // TODO: Forced to use variable_id instead of index to address the state tensors, require the same order for state as for variables from plugins
 
         // Convert LoRAVarIDs to LoRAIndices to speedup search for state with a given name
