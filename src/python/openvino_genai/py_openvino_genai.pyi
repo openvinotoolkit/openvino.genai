@@ -2050,8 +2050,8 @@ class Tokenizer:
     @typing.overload
     def encode(self, prompts_1: list[str], prompts_2: list[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
         """
-        Encodes a list of prompts into tokenized inputs. Prompts should be of the same length, or one of them should be of length 1. 
-                    In the latest case, the prompt will be broadcasted to the length of the other prompt
+        Encodes a list of prompts into tokenized inputs. The number of strings must be the same, or one of the inputs can contain one string.
+                    In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.
         """
     @typing.overload
     def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
