@@ -171,7 +171,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
     callback.reset()
 
     start = time.perf_counter()
-    res = pipe.generate(input_text, **input_args).data
+    res = pipe.generate(input_text, **input_args, num_images_per_prompt=args['batch_size']).data
     end = time.perf_counter()
     callback.duration = end - start
 

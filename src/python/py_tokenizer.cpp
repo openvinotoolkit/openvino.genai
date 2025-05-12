@@ -9,7 +9,7 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 
 #include "py_utils.hpp"
 
@@ -26,12 +26,10 @@ constexpr char class_docstring[] = R"(
     4. chat_template entry from rt_info section of openvino.Model
     5. If the template is known to be not supported by GenAI, it's
         replaced with a simplified supported version.
-    6. Patch chat_template replacing not supported instructions with
-        equivalents.
-    7. If the template was not in the list of not supported GenAI
-        templates from (5), it's blindly replaced with
-        simplified_chat_template entry from rt_info section of
-        openvino.Model if the entry exists.
+    6. If the template was not in the list of not supported GenAI
+        templates from (5), it's replaced with simplified_chat_template entry
+        from rt_info section of ov::Model.
+    7. Replace not supported instructions with equivalents.
 )";
 
 }  // namespace
@@ -169,5 +167,19 @@ void init_tokenizer(py::module_& m) {
         .def("get_eos_token_id", &Tokenizer::get_eos_token_id)
         .def("get_pad_token", &Tokenizer::get_pad_token)
         .def("get_bos_token", &Tokenizer::get_bos_token)
-        .def("get_eos_token", &Tokenizer::get_eos_token);
+        .def("get_eos_token", &Tokenizer::get_eos_token)
+        .def("get_vocab",
+            [](Tokenizer& tok) {
+                const auto vocab = tok.get_vocab();
+                py::dict result;
+                for (const auto& [key, value] : vocab) {
+                    py::bytes key_bytes(key);  // Use bytes for keys to avoid UTF-8 encoding issues
+                    result[key_bytes] = value;
+                }
+                return result;
+            },
+             R"(Returns the vocabulary as a Python dictionary with bytes keys and integer values.
+
+Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.)"
+        );
 }

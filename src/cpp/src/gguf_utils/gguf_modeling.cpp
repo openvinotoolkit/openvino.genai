@@ -28,10 +28,19 @@ auto set_name = [](auto node, const std::string& name) {
 };
 
 // Also valid for other models, e.g. SmolLMs
-std::shared_ptr<ov::Model> create_llama_model(
-    const std::map<std::string, GGUFMetaData>& configs,
-    std::unordered_map<std::string, ov::Tensor>& consts) {
+// CVS-166108: Adding shared_embedding as true by default based on following two reason:
+// 1. For optimum-cli converted LLM OpenVINO IR, original input embedding weight will be reused for last make_lm_head layer
+//    Which can reduce both model size on disk and runtime memory usage via storing only single embeddding consts
+//    (e.g. Qwen2.5-7B-Instruct-Q4_0 token_embd.weight & output.weight shape [3584, 152064]
+// 2. For some GGUF model that contains both token_embd.weight & output.weight, e.g. Qwen2.5-3B-Instruct Q4_0
+//    meet accuracy issue on MTL/LNL GPU due to use both token_embd.weight & output.weight in OpenVINO IR.
+// WA Known issue: Qwen2.5-3B-Instruct-Q4_K_M meet accuracy issue on MTL/LNL CPU if only re-used token_embd.weight
 
+std::shared_ptr<ov::Model> create_language_model(
+    const std::map<std::string, GGUFMetaData>& configs,
+    std::unordered_map<std::string, ov::Tensor>& consts,
+    std::unordered_map<std::string, gguf_tensor_type>& qtypes,
+    bool shared_embedding = false) {
     // Create input parameters
     auto input_ids = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
@@ -54,11 +63,9 @@ std::shared_ptr<ov::Model> create_llama_model(
         "model.embed_tokens",
         input_ids->output(0),
         consts,
-        static_cast<QType>(std::get<int>(configs.at("qtype"))));
+        qtypes.at("model.embed_tokens.qtype"));
 
     auto hidden_states = inputs_embeds;
-
-    auto qtype = static_cast<QType>(std::get<int>(configs.at("qtype")));
 
     // Initialize RoPE
     auto rope_const = init_rope(
@@ -86,6 +93,7 @@ std::shared_ptr<ov::Model> create_llama_model(
         auto [new_hidden, layer_sinks, new_mask, new_cos_sin, new_shape] = layer(
             configs,
             consts,
+            qtypes,
             i,
             hidden_states,
             attention_mask,
@@ -119,7 +127,8 @@ std::shared_ptr<ov::Model> create_llama_model(
         final_norm,
         consts,
         embeddings,
-        qtype);
+        qtypes.at("lm_head.qtype"),
+        shared_embedding);
 
     // Create results
     auto logits = std::make_shared<ov::op::v0::Result>(embed_out);
@@ -130,10 +139,13 @@ std::shared_ptr<ov::Model> create_llama_model(
     auto model = std::make_shared<ov::Model>(ov::OutputVector({logits->output(0)}), sinks, inputs);
 
     // Set runtime options
-    if (qtype == QType::FP16) {
-        model->set_rt_info("f16", {"runtime_options", "KV_CACHE_PRECISION"});
+    if (std::get<int>(configs.at("file_type")) == 1 || std::get<int>(configs.at("file_type")) == 0) {
+        model->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     }
-    model->set_rt_info("8.0", {"runtime_options", "ACTIVATIONS_SCALE_FACTOR"});
+    model->set_rt_info(8.0f, {"runtime_options", ov::hint::activations_scale_factor.name()});
+    // CVS-166554: Dynamic quatnization enabled by default with gourp size 32 on MTL platfrom cause the runtime issue
+    // Apply WA to disable dynamic quantization with rt_info to fix GPU plugin issue on MTL
+    model->set_rt_info(0, {"runtime_options", ov::hint::dynamic_quantization_group_size.name()});
 
     return model;
 }
@@ -141,16 +153,23 @@ std::shared_ptr<ov::Model> create_llama_model(
 } // namespace
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
-    auto [config, consts] = load_gguf(model_path);
-
+    auto start_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Loading and unpacking model from: " << model_path << std::endl;
+    auto [config, consts, qtypes] = load_gguf(model_path);
+    auto load_finish_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Loading and unpacking model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms" << std::endl;
+    std::cout << "Start generating OV model..." << std::endl;
+    
     std::shared_ptr<ov::Model> model;
 
     const std::string model_arch = std::get<std::string>(config.at("architecture"));
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
-        model = create_llama_model(config, consts);
+        model = create_language_model(config, consts, qtypes);
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }
-
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - load_finish_time).count();
+    std::cout << "Model generation done. Time: " << duration << "ms" << std::endl;
     return model;
 }

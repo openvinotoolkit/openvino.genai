@@ -116,7 +116,9 @@ public:
     }
 
     void add_inputs(const ov::Tensor& inputs_ids) {
+        OPENVINO_SUPPRESS_DEPRECATED_START
         std::copy_n(inputs_ids.data<int64_t>(), inputs_ids.get_size(), std::back_inserter(state));
+        OPENVINO_SUPPRESS_DEPRECATED_END
     }
 
     void reset_state() {
@@ -129,6 +131,8 @@ public:
 void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller);
 
 ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
+
+bool env_setup_for_print_debug_info();
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 

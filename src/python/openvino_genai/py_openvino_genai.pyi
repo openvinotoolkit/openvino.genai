@@ -1,11 +1,11 @@
 """
-Pybind11 binding for Whisper Pipeline
+Pybind11 binding for OpenVINO GenAI library
 """
 from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -20,6 +20,12 @@ class Adapter:
         """
                     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
                     path (os.PathLike): Path to adapter file in safetensors format.
+        """
+    @typing.overload
+    def __init__(self, safetensor: openvino._pyopenvino.Tensor) -> None:
+        """
+                    Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
+                    safetensor (ov.Tensor): Pre-read LoRA Adapter safetensor.
         """
 class AdapterConfig:
     """
@@ -265,18 +271,10 @@ class CLIPTextModel:
         ...
     def set_adapters(self, adapters: AdapterConfig | None) -> None:
         ...
-class CLIPTextModelWithProjection:
+class CLIPTextModelWithProjection(CLIPTextModel):
     """
     CLIPTextModelWithProjection class.
     """
-    class Config:
-        """
-        This class is used for storing CLIPTextModelWithProjection config.
-        """
-        max_position_embeddings: int
-        num_hidden_layers: int
-        def __init__(self, config_path: os.PathLike) -> None:
-            ...
     @typing.overload
     def __init__(self, root_dir: os.PathLike) -> None:
         """
@@ -294,26 +292,10 @@ class CLIPTextModelWithProjection:
     @typing.overload
     def __init__(self, model: CLIPTextModelWithProjection) -> None:
         """
-        CLIPTextModelWithProjection model
+        CLIPText model
                     CLIPTextModelWithProjection class
-                    model (CLIPTextModelWithProjection): CLIPTextModelWithProjection model
+                    model (CLIPTextModelWithProjection): CLIPText model with projection
         """
-    def compile(self, device: str, **kwargs) -> None:
-        """
-                        Compiles the model.
-                        device (str): Device to run the model on (e.g., CPU, GPU).
-                        kwargs: Device properties.
-        """
-    def get_config(self) -> CLIPTextModelWithProjection.Config:
-        ...
-    def get_output_tensor(self, idx: int) -> openvino._pyopenvino.Tensor:
-        ...
-    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool) -> openvino._pyopenvino.Tensor:
-        ...
-    def reshape(self, batch_size: int) -> CLIPTextModelWithProjection:
-        ...
-    def set_adapters(self, adapters: AdapterConfig | None) -> None:
-        ...
 class CacheEvictionConfig:
     """
     
@@ -939,7 +921,7 @@ class ImageGenerationPerfMetrics:
         If mean and std were already calculated, getters return cached values.
     
         :param get_text_encoder_infer_duration: Returns the inference duration of every text encoder in milliseconds.
-        :type get_text_encoder_infer_duration: Dict[str, float]
+        :type get_text_encoder_infer_duration: dict[str, float]
     
         :param get_vae_encoder_infer_duration: Returns the inference duration of vae encoder in milliseconds.
         :type get_vae_encoder_infer_duration: float
@@ -1117,16 +1099,16 @@ class LLMPipeline:
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
             :param inputs: inputs in the form of string, list of strings or tokenized input_ids
-            :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
+            :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in encoded, or decoded form depending on inputs type
             :rtype: DecodedResults, EncodedResults, str
@@ -1214,16 +1196,16 @@ class LLMPipeline:
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
             :param inputs: inputs in the form of string, list of strings or tokenized input_ids
-            :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
+            :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in encoded, or decoded form depending on inputs type
             :rtype: DecodedResults, EncodedResults, str
@@ -1420,13 +1402,13 @@ class RawImageGenerationPerfMetrics:
         Structure with raw performance metrics for each generation before any statistics are calculated.
     
         :param unet_inference_durations: Durations for each unet inference in microseconds.
-        :type unet_inference_durations: List[float]
+        :type unet_inference_durations: list[float]
     
         :param transformer_inference_durations: Durations for each transformer inference in microseconds.
-        :type transformer_inference_durations: List[float]
+        :type transformer_inference_durations: list[float]
     
         :param iteration_durations: Durations for each step iteration in microseconds.
-        :type iteration_durations: List[float]
+        :type iteration_durations: list[float]
     """
     def __init__(self) -> None:
         ...
@@ -1445,31 +1427,31 @@ class RawPerfMetrics:
         Structure with raw performance metrics for each generation before any statistics are calculated.
     
         :param generate_durations: Durations for each generate call in milliseconds.
-        :type generate_durations: List[float]
+        :type generate_durations: list[float]
     
         :param tokenization_durations: Durations for the tokenization process in milliseconds.
-        :type tokenization_durations: List[float]
+        :type tokenization_durations: list[float]
     
         :param detokenization_durations: Durations for the detokenization process in milliseconds.
-        :type detokenization_durations: List[float]
+        :type detokenization_durations: list[float]
     
         :param m_times_to_first_token: Times to the first token for each call in milliseconds.
-        :type m_times_to_first_token: List[float]
+        :type m_times_to_first_token: list[float]
     
         :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
-        :type m_new_token_times: List[double]
+        :type m_new_token_times: list[double]
     
         :param token_infer_durations : Inference time for each token in milliseconds.
-        :type batch_sizes: List[float]
+        :type batch_sizes: list[float]
     
         :param m_batch_sizes: Batch sizes for each generate call.
-        :type m_batch_sizes: List[int]
+        :type m_batch_sizes: list[int]
     
         :param m_durations: Total durations for each generate call in milliseconds.
-        :type m_durations: List[float]
+        :type m_durations: list[float]
     
         :param inference_durations : Total inference duration for each generate call in milliseconds.
-        :type batch_sizes: List[float]
+        :type batch_sizes: list[float]
     """
     def __init__(self) -> None:
         ...
@@ -1628,10 +1610,10 @@ class SchedulerConfig:
         max_num_seqs:               max number of scheduled sequences (you can think of it as "max batch size").
         enable_prefix_caching:      Enable caching of KV-blocks.
             When turned on all previously calculated KV-caches are kept in memory for future usages.
-            KV-caches can be rewritten if KV-cache limit is reached, but blocks are not released.
+            KV-caches can be overridden if KV-cache limit is reached, but blocks are not released.
             This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
-            When turend off only KV-cache required for batch calculation is kept in memory and
-            when a sequence has finished genegartion its cache is released.
+            When turned off only KV-cache required for batch calculation is kept in memory and
+            when a sequence has finished generation its cache is released.
     """
     cache_eviction_config: CacheEvictionConfig
     cache_size: int
@@ -1890,6 +1872,107 @@ class Text2ImagePipeline:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
+class TextEmbeddingPipeline:
+    """
+    Text embedding pipeline
+    """
+    class Config:
+        """
+        
+        Structure to keep TextEmbeddingPipeline configuration parameters.
+        
+        Attributes:
+            max_length (int, optional):
+                Maximum length of tokens passed to the embedding model.
+            pooling_type (TextEmbeddingPipeline.PoolingType, optional):
+                Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
+            normalize (bool, optional):
+                If True, L2 normalization is applied to embeddings. Defaults to True.
+            query_instruction (str, optional):
+                Instruction to use for embedding a query.
+            embed_instruction (str, optional):
+                Instruction to use for embedding a document.
+        """
+        embed_instruction: str | None
+        max_length: int | None
+        normalize: bool
+        pooling_type: TextEmbeddingPipeline.PoolingType
+        query_instruction: str | None
+        @typing.overload
+        def __init__(self) -> None:
+            ...
+        @typing.overload
+        def __init__(self, **kwargs) -> None:
+            ...
+    class PoolingType:
+        """
+        Members:
+        
+          CLS : First token embeddings
+        
+          MEAN : The average of all token embeddings
+        """
+        CLS: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.CLS: 0>
+        MEAN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.MEAN: 1>
+        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>}
+        def __eq__(self, other: typing.Any) -> bool:
+            ...
+        def __getstate__(self) -> int:
+            ...
+        def __hash__(self) -> int:
+            ...
+        def __index__(self) -> int:
+            ...
+        def __init__(self, value: int) -> None:
+            ...
+        def __int__(self) -> int:
+            ...
+        def __ne__(self, other: typing.Any) -> bool:
+            ...
+        def __repr__(self) -> str:
+            ...
+        def __setstate__(self, state: int) -> None:
+            ...
+        def __str__(self) -> str:
+            ...
+        @property
+        def name(self) -> str:
+            ...
+        @property
+        def value(self) -> int:
+            ...
+    def __init__(self, models_path: os.PathLike, device: str, config: TextEmbeddingPipeline.Config | None = None, **kwargs) -> None:
+        """
+        Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+        models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
+        device (str): Device to run the model on (e.g., CPU, GPU).
+        config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
+        kwargs: Plugin and/or config properties
+        """
+    def embed_documents(self, texts: list[str]) -> list[list[float]] | list[list[int]] | list[list[int]]:
+        """
+        Computes embeddings for a vector of texts
+        """
+    def embed_query(self, text: str) -> list[float] | list[int] | list[int]:
+        """
+        Computes embeddings for a query
+        """
+    def start_embed_documents_async(self, texts: list[str]) -> None:
+        """
+        Asynchronously computes embeddings for a vector of texts
+        """
+    def start_embed_query_async(self, text: str) -> None:
+        """
+        Asynchronously computes embeddings for a query
+        """
+    def wait_embed_documents(self) -> list[list[float]] | list[list[int]] | list[list[int]]:
+        """
+        Waits computed embeddings of a vector of texts
+        """
+    def wait_embed_query(self) -> list[float] | list[int] | list[int]:
+        """
+        Waits computed embeddings for a query
+        """
 class TextStreamer(StreamerBase):
     """
     
@@ -1923,12 +2006,10 @@ class Tokenizer:
         4. chat_template entry from rt_info section of openvino.Model
         5. If the template is known to be not supported by GenAI, it's
             replaced with a simplified supported version.
-        6. Patch chat_template replacing not supported instructions with
-            equivalents.
-        7. If the template was not in the list of not supported GenAI
-            templates from (5), it's blindly replaced with
-            simplified_chat_template entry from rt_info section of
-            openvino.Model if the entry exists.
+        6. If the template was not in the list of not supported GenAI
+            templates from (5), it's replaced with simplified_chat_template entry
+            from rt_info section of ov::Model.
+        7. Replace not supported instructions with equivalents.
     """
     chat_template: str
     @typing.overload
@@ -1978,6 +2059,12 @@ class Tokenizer:
         ...
     def get_pad_token_id(self) -> int:
         ...
+    def get_vocab(self) -> dict:
+        """
+        Returns the vocabulary as a Python dictionary with bytes keys and integer values.
+        
+        Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        """
     def set_chat_template(self, chat_template: str) -> None:
         """
         Override a chat_template read from tokenizer_config.json.
@@ -2104,7 +2191,7 @@ class VLMPipeline:
     def __init__(self, models: dict[str, tuple[str, openvino._pyopenvino.Tensor]], tokenizer: Tokenizer, config_dir_path: os.PathLike, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
         """
                     VLMPipeline class constructor.
-                    models (typing.Dict[str, typing.Tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+                    models (dict[str, tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
                     tokenizer (Tokenizer): Genai Tokenizers.
                     config_dir_path (os.PathLike): Path to folder with model configs.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
@@ -2125,23 +2212,27 @@ class VLMPipeline:
             images used in previous prompts isn't implemented.
             A model's native image tag can be used instead of
             <ov_genai_image_i>. These tags are:
+            InternVL2: <image>\\n
+            llava-1.5-7b-hf: <image>
+            LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
-            :type images: List[ov.Tensor] or ov.Tensor
+            :type images: list[ov.Tensor] or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -2158,23 +2249,27 @@ class VLMPipeline:
             images used in previous prompts isn't implemented.
             A model's native image tag can be used instead of
             <ov_genai_image_i>. These tags are:
+            InternVL2: <image>\\n
+            llava-1.5-7b-hf: <image>
+            LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
-            :type images: List[ov.Tensor] or ov.Tensor
+            :type images: list[ov.Tensor] or ov.Tensor
         
             :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a Dict
+            :type generation_config: GenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -2190,9 +2285,13 @@ class VLMPipeline:
             images used in previous prompts isn't implemented.
             A model's native image tag can be used instead of
             <ov_genai_image_i>. These tags are:
+            InternVL2: <image>\\n
+            llava-1.5-7b-hf: <image>
+            LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         
@@ -2202,7 +2301,7 @@ class VLMPipeline:
         
             Expected parameters list:
             image: ov.Tensor - input image,
-            images: List[ov.Tensor] - input images,
+            images: list[ov.Tensor] - input images,
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
         
@@ -2225,7 +2324,7 @@ class VLMRawPerfMetrics:
         Structure with VLM specific raw performance metrics for each generation before any statistics are calculated.
     
         :param prepare_embeddings_durations: Durations of embeddings preparation.
-        :type prepare_embeddings_durations: List[MicroSeconds]
+        :type prepare_embeddings_durations: list[MicroSeconds]
     """
     def __init__(self) -> None:
         ...
@@ -2315,7 +2414,7 @@ class WhisperGenerationConfig(GenerationConfig):
         :type language: Optional[str]
     
         :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
-        :type lang_to_id: Dict[str, int]
+        :type lang_to_id: dict[str, int]
     
         :param task: Task to use for generation, either “translate” or “transcribe”
         :type task: int
@@ -2451,17 +2550,17 @@ class WhisperPipeline:
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         
             :param raw_speech_input: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-            :type raw_speech_input: List[float]
+            :type raw_speech_input: list[float]
         
             :param generation_config: generation_config
-            :type generation_config: WhisperGenerationConfig or a Dict
+            :type generation_config: WhisperGenerationConfig or a dict
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
                              Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
-            :type : Dict
+            :type : dict
         
             :return: return results in decoded form
             :rtype: WhisperDecodedResults
@@ -2502,7 +2601,7 @@ class WhisperPipeline:
             :type language: Optional[str]
         
             :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
-            :type lang_to_id: Dict[str, int]
+            :type lang_to_id: dict[str, int]
         
             :param task: Task to use for generation, either “translate” or “transcribe”
             :type task: int
@@ -2591,7 +2690,7 @@ class WhisperRawPerfMetrics:
         Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
     
         :param features_extraction_durations: Duration for each features extraction call.
-        :type features_extraction_durations: List[MicroSeconds]
+        :type features_extraction_durations: list[MicroSeconds]
     """
     def __init__(self) -> None:
         ...

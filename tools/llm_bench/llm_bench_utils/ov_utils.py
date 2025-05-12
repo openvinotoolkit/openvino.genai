@@ -520,12 +520,14 @@ def create_genai_speech_2_txt_model(model_path, device, memory_monitor, **kwargs
     return genai_pipe, processor, from_pretrained_time, True
 
 
-def create_speech_2txt_model(model_path, device, memory_monitor, **kwargs):
+def create_speech_2_txt_model(model_path, device, memory_monitor, **kwargs):
     """Create speech generation model.
     - model_path: can be model_path or IR path
     - device: can be CPU
     - model_type:
     """
+    from optimum.intel.utils.import_utils import is_transformers_version
+
     default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
     model_type = kwargs.get('model_type', default_model_type)
     model_class = OV_MODEL_CLASSES_MAPPING.get(model_type, OV_MODEL_CLASSES_MAPPING[default_model_type])
@@ -555,6 +557,13 @@ def create_speech_2txt_model(model_path, device, memory_monitor, **kwargs):
             memory_monitor.log_data('for copmpilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    if is_transformers_version(">=", "4.51.0"):
+        ov_model.config.forced_decoder_ids = None
+
+        if hasattr(ov_model, 'generation_config'):
+            if hasattr(ov_model.generation_config, 'forced_decoder_ids'):
+                ov_model.generation_config.forced_decoder_ids = None
+
     processor = AutoProcessor.from_pretrained(model_path)
     pipe = pipeline(
         "automatic-speech-recognition",
