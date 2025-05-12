@@ -269,7 +269,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
                 print(word, end='', flush=True)
         printer_thread = threading.Thread(target=token_printer, daemon=True)
         printer_thread.start()
-        if(args['empty_lora'] and (gen_config.adapters is not None)):
+        if (args['empty_lora'] and (gen_config.adapters is not None)):
             import openvino_genai
             generation_result = model.generate(
                 input_data,
@@ -282,10 +282,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
                 input_data,
                 gen_config,
                 streamer=text_print_streamer
-            )      
+            )
         printer_thread.join()
     else:
-        if(args['empty_lora'] and (gen_config.adapters is not None)):
+        if (args['empty_lora'] and (gen_config.adapters is not None)):
             import openvino_genai
             generation_result = model.generate(input_data, gen_config, adapters=openvino_genai.AdapterConfig())
         else:
