@@ -227,7 +227,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         input_ids = input_data.input_ids.data
         if tokenizer.get_bos_token_id() == -1:
             input_ids[:, 0] = num + 1
-        else: 
+        else:
             if tokenizer.get_eos_token_id() != num + 1:
                 input_ids[:, 1] = num + 1
             else:
