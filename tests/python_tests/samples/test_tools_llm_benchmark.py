@@ -123,7 +123,7 @@ class TestBenchmarkLLM:
         
         
     @pytest.mark.samples
-    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4"]])
+    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4"], ["-d", "cpu", "-n", "1", "--num_steps", "4", "--empty_lora"]])
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
     @pytest.mark.parametrize("download_model", ["tiny-random-latent-consistency-lora"], indirect=True)
     @pytest.mark.parametrize("generate_image_generation_jsonl", [("image_generation.jsonl", image_generation_json)], indirect=True)
