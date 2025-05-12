@@ -7,10 +7,6 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
 
-#ifdef ENABLE_XGRAMMAR
-#include "structured_output/structured_output_controller.hpp"
-#endif
-
 namespace ov {
 namespace genai {
 
@@ -69,10 +65,6 @@ protected:
     Tokenizer m_tokenizer;
     GenerationConfig m_generation_config;
     std::optional<AdapterController> m_adapter_controller;
-
-#ifdef ENABLE_XGRAMMAR
-    std::unique_ptr<StructuredOutputController> m_structured_output_controller;
-#endif
 
     float m_load_time_ms = 0.0f;
 };

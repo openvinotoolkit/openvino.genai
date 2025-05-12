@@ -21,6 +21,10 @@
 #include "sequence_group.hpp"
 #include "threadpool.hpp"
 
+#ifdef ENABLE_XGRAMMAR
+#include "structured_output/structured_output_controller.hpp"
+#endif
+
 namespace ov::genai {
 // Handle stop_token_ids
 inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t> & stop_token_ids) {
@@ -97,6 +101,10 @@ class Sampler {
     Tokenizer m_tokenizer;
 
     ThreadPool m_thread_pool;
+
+    #ifdef ENABLE_XGRAMMAR
+    std::unique_ptr<StructuredOutputController> m_structured_output_controller;
+    #endif
 
 public:
     Sampler(const Sampler& rhs) = delete;

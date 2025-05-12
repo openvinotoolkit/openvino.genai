@@ -7,13 +7,14 @@
 namespace ov {
 namespace genai {
 
-StructuredOutputController::StructuredOutputController(const Tokenizer& tokenizer)
+StructuredOutputController::StructuredOutputController(const Tokenizer& tokenizer,
+                                                       std::optional<int> vocab_size)
     : m_impl(nullptr) {
     // Initialize xgrammar backend if needed.
 }
 
-void StructuredOutputController::render_output(const std::string &data) {
-    m_impl->render_output(data);
+LogitTransformers::IStructuredOutputBaseLogitTransformer get_json_schema_logits_transformer(const std::string& json_schema) {
+    return m_impl->get_json_schema_logits_transformer(json_schema);
 }
 
 } // namespace genai
