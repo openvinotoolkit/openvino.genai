@@ -112,7 +112,7 @@ SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device,
 void SD3Transformer2DModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
     OPENVINO_ASSERT(m_impl, "Transformer model must be compiled first");
     if(adapters) {
-        m_impl->set_adapters(m_adapter_controller, adapters);
+        m_impl->set_adapters(m_adapter_controller, *adapters);
     }
 }
 

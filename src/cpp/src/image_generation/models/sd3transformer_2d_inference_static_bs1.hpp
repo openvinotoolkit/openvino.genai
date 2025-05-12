@@ -45,12 +45,10 @@ public:
         }
     }
 
-    virtual void set_adapters(AdapterController& m_adapter_controller, const std::optional<AdapterConfig>& adapters) override {
-        if(adapters) {
-            for (auto& m_request : m_requests) {
-                OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
-                m_adapter_controller.apply(m_request, *adapters);
-            }
+    virtual void set_adapters(AdapterController& m_adapter_controller, const AdapterConfig& adapters) override {
+        for (auto& m_request : m_requests) {
+            OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
+            m_adapter_controller.apply(m_request, adapters);
         }
     }
 

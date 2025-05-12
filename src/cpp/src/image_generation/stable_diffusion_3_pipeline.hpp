@@ -456,7 +456,7 @@ public:
             if(auto updated_adapters = derived_adapters(*adapters)) {
                 adapters = updated_adapters;
             }
-            //m_clip_text_encoder->set_adapters(adapters);
+            // TODO: Add LoRA Adapter support for text encoders
             m_transformer->set_adapters(adapters);
         }
     }
@@ -591,7 +591,7 @@ public:
     }
 
 protected:
-    // Returns non-empty updated adapters iff they are required to be updated
+    // Returns non-empty updated adapters if they are required to be updated
     static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
         return ov::genai::derived_adapters(adapters, flux_adapter_normalization);
     }
