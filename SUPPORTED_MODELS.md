@@ -263,7 +263,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <td>Supported</td>
       <td>Supported</td>
       <td>Supported</td>
-      <td>Not supported</td>
+      <td>Partially supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-3-medium-diffusers"><code>stabilityai/stable-diffusion-3-medium-diffusers</code></a></li>
