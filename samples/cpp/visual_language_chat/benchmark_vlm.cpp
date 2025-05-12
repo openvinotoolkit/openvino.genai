@@ -3,10 +3,23 @@
 
 #include <cxxopts.hpp>
 #include <filesystem>
+#include <sstream>
+#include <iostream>
 
 #include "load_image.hpp"
 #include <openvino/genai/visual_language/pipeline.hpp>
 
+std::vector<ov::Tensor> parse_all_images(const std::string &input) {
+    std::vector<ov::Tensor> images;
+    std::stringstream ss(input);
+    std::string image_path;
+    while (std::getline(ss, image_path, ';')) {
+        ov::Tensor image = utils::load_image(image_path);
+        images.push_back(image);
+        std::cout << "input image:" << image_path << std::endl;
+    }
+    return images;
+}
 
 int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_vlm", "Help command");
@@ -41,20 +54,26 @@ int main(int argc, char* argv[]) try {
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
-    ov::Tensor image = utils::load_image(image_path);
+    std::vector<ov::Tensor> images;
+    images = parse_all_images(image_path);
   
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
+    config.ignore_eos = true;
 
-    ov::genai::VLMPipeline pipe(models_path, device);
+    ov::genai::SchedulerConfig scheduler_config;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.max_num_batched_tokens = 2147483647;
+
+    ov::genai::VLMPipeline pipe(models_path, device, ov::genai::scheduler_config(scheduler_config));
     
     for (size_t i = 0; i < num_warmup; i++)
-        pipe.generate(prompt, ov::genai::image(image), ov::genai::generation_config(config));
+        pipe.generate(prompt, ov::genai::image(images), ov::genai::generation_config(config));
     
-    auto res = pipe.generate(prompt, ov::genai::image(image), ov::genai::generation_config(config));
+    auto res = pipe.generate(prompt, ov::genai::image(images), ov::genai::generation_config(config));
     auto metrics = res.perf_metrics;
     for (size_t i = 0; i < num_iter - 1; i++) {
-        res = pipe.generate(prompt, ov::genai::image(image), ov::genai::generation_config(config));
+        res = pipe.generate(prompt, ov::genai::image(images), ov::genai::generation_config(config));
         metrics = metrics + res.perf_metrics;
     }
 

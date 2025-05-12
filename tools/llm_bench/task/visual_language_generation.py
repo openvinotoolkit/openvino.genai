@@ -201,7 +201,9 @@ def run_visual_language_generation_genai(
     inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
         if "media" in input_data:
-            images.append(load_image_genai(input_data["media"]))
+            image_paths = input_data["media"].split(';')
+            for path in image_paths:
+                images.append(load_image_genai(path))
         prompts.append(input_data["prompt"])
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
@@ -221,7 +223,10 @@ def run_visual_language_generation_genai(
     if hasattr(gen_config, 'apply_chat_template'):
         gen_config.apply_chat_template = False
     kwargs = {}
-    if len(images) >= 1:
+    if len(images) > 1:
+        # multi images 
+        kwargs["images"] = images
+    elif len(images) == 1:
         kwargs["images"] = images[0]
     start = time.perf_counter()
     generation_result = model.generate(prompts[0], generation_config=gen_config, **kwargs)
