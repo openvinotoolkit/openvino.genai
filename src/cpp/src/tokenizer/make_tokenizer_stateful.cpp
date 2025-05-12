@@ -36,9 +36,11 @@ bool ov::genai::MakeAddSpecialTokensSatateful::run_on_model(const std::shared_pt
     add_spec_inputs.reserve(num_segments);
 
     for (size_t i = 0; i < num_segments; i++) {
-        auto tmp_input = combine_seg_node->get_input_node_shared_ptr(3*i + 1);
+        auto begin_input = combine_seg_node->input_value(3*i + 0).get_node_shared_ptr();
+        auto end_input = combine_seg_node->input_value(3*i + 1).get_node_shared_ptr();
+
         // If it's not a main sequence inputs, then it's a special tokens.
-        if (!ov::as_type_ptr<v1::Add>(tmp_input) && !ov::as_type_ptr<v1::Subtract>(tmp_input) && strcmp(tmp_input->get_type_name(), "Truncate") != 0) {
+        if (!ov::as_type_ptr<v1::Add>(end_input) && !ov::as_type_ptr<v1::Subtract>(begin_input) && strcmp(end_input->get_type_name(), "Truncate") != 0) {
             add_spec_inputs.emplace_back(combine_seg_node->input(3*i + 1));
         }
     }
