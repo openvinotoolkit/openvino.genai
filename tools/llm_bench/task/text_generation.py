@@ -225,7 +225,13 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         import openvino as ov
 
         input_ids = input_data.input_ids.data
-        input_ids[:, 0] = num + 1
+        if tokenizer.get_bos_token_id() == -1:
+            input_ids[:, 0] = num + 1
+        else: 
+            if tokenizer.get_eos_token_id() != num + 1:
+                input_ids[:, 1] = num + 1
+            else:
+                input_ids[:, 1] = num + 3
         attention_mask = input_data.attention_mask
         input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
     num_input_tokens = input_data.input_ids.shape[1]
