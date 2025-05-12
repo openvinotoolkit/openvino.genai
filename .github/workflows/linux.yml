@@ -578,7 +578,6 @@ jobs:
         if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
-          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*
           npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
 
@@ -729,7 +728,7 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
-          npm install ${{ env.OV_INSTALL_DIR }}/openvino-node-*
+          npm install ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*
           npm install --verbose
 
       - name: Check lint
@@ -743,7 +742,6 @@ jobs:
       - name: Install openvino-genai-node samples dependencies
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
-          npm install ${{ env.OV_INSTALL_DIR }}/openvino-node-*
           npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
 
