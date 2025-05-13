@@ -17,7 +17,8 @@ int main(int argc, char* argv[]) try {
     Adapter adapter(adapter_path);
     // Adapter adapter1("/home/alikh/projects/openvino.genai/llm_models/TinyPixel/tinyllama-lora/adapter_model.safetensors");
     // LLMPipeline pipe(models_path, device, adapters(adapter, adapter1));    // register all required adapters here
-    LLMPipeline pipe(models_path, device, adapters(adapter));
+    LLMPipeline pipe(models_path, device, adapters(adapter, AdapterConfig::MODE_FUSE));
+    // LLMPipeline pipe(models_path, device, adapters(adapter));
 
     // Resetting config to set greedy behaviour ignoring generation config from model directory.
     // It helps to compare two generations with and without LoRA adapter.

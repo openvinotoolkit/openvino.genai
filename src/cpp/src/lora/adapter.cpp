@@ -517,7 +517,7 @@ NodePtr tensors_multiplication(NodePtr input,
                 // TODO: Apply alpha multiplication separately
 
                 // scale alpha to align with Peft: self.scaling[adapter] = scale * self.lora_alpha[adapter] / self.r[adapter]
-                normalized = set_scale(tensor_A, alpha, target_type);
+                normalized = set_scale(tensor_A, normalized, target_type);
                 input = std::make_shared<v1::Multiply>(input, normalized);
             } else { // MatMul for A and B
                 input = std::make_shared<v0::MatMul>(input, normalized, /*transpose_a = */false, transpose_weights);  // FIXME: verify transpose_a == true
