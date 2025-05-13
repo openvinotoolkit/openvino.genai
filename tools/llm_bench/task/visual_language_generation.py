@@ -224,7 +224,7 @@ def run_visual_language_generation_genai(
         gen_config.apply_chat_template = False
     kwargs = {}
     if len(images) > 1:
-        # multi images 
+        # multi images
         kwargs["images"] = images
     elif len(images) == 1:
         kwargs["images"] = images[0]
