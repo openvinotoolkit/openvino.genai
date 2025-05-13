@@ -201,9 +201,10 @@ def run_visual_language_generation_genai(
     inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
         if "media" in input_data:
-            image_paths = input_data["media"].split(';')
-            for path in image_paths:
-                images.append(load_image_genai(path))
+            if input_data["media"] is not None:
+                image_paths = input_data["media"].split(';')
+                for path in image_paths:
+                    images.append(load_image_genai(path))
         prompts.append(input_data["prompt"])
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
