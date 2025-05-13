@@ -38,7 +38,8 @@ def run_visual_language_generation_optimum(
     inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
         if "media" in input_data:
-            images.append(load_image(input_data["media"]))
+            if input_data["media"] is not None:
+                images.append(load_image(input_data["media"]))
         prompts.append(input_data["prompt"])
 
     if args["output_dir"] is not None and num == 0:
