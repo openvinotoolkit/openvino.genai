@@ -23,10 +23,11 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win
+  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/d1432d3e24711c3f82132dbf82bebb79d7a49dd6
 
 jobs:
   smart_ci:
+    name: Smart CI
     runs-on: ubuntu-latest
     outputs:
       affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
@@ -47,10 +48,10 @@ jobs:
           pr: ${{ github.event.number }}
           commit_sha: ${{ github.sha }}
           ref_name: ${{ github.ref_name }}
-          component_pattern: "category: (.*)"
+          component_pattern: "category: ((?!Python API|CPP API).*)"
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           skip_when_only_listed_labels_set: 'GH Pages Docs'
-          skip_when_only_listed_files_changed: '*.md,*.rst,*.png,*.jpg,*.svg'
+          skip_when_only_listed_files_changed: '*.md,*.rst,*.png,*.jpg,*.svg,*.gif'
 
       - name: Show affected components
         run: echo "${{ toJSON(steps.smart_ci.outputs.affected_components) }}"
@@ -534,6 +535,12 @@ jobs:
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
             runner: 'aks-win-8-cores-16gb'
+          - name: 'Rag'
+            marker: 'rag'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-win-4-cores-8gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
+
     needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 120
     defaults:

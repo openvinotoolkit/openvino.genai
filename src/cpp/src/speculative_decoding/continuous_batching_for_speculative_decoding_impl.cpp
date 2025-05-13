@@ -286,10 +286,6 @@ bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::i
     return m_requests.empty();
 }
 
-std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_awaiting_requests() {
-    return m_awaiting_requests;
-}
-
 size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_processed_tokens_per_iteration() {
     return m_batch_size;
 }
