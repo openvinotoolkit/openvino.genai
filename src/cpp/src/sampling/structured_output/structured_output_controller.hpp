@@ -5,15 +5,16 @@
 
 #include <string>
 #include <memory>
+#include <optional>
+#include <vector>
 
 #include "openvino/genai/tokenizer.hpp"
+#include "sampling/logit_processor.hpp"
 
 namespace ov {
 namespace genai {
 
 namespace LogitTransformers {
-
-class ILogitTransformer;
 //class ILogitTransformer {
 //public:
 //    virtual void apply(Logits& logits) = 0;
@@ -29,21 +30,20 @@ public:
     void register_sampled_token(const TokenIds& input_ids);
 //private:
 //    std::vector<TokenIds> m_sampled_tokens;
-}
+};
 } // namespace LogitTransformers
 
 class IStructuredOutputBaseImpl {
 public:
     virtual ~IStructuredOutputBaseImpl() = default;
-    virtual void render_output(const std::string& data) = 0;
-    virtual LogitTransformers::IStructuredOutputBaseLogitTransformer get_json_logits_transformer(const std::string& json_schema) = 0;
+    virtual LogitTransformers::IStructuredOutputBaseLogitTransformer get_logits_transformer(const GenerationConfig& sampling_parameters) = 0;
 };
 
 class StructuredOutputController {
 public:
     StructuredOutputController(const Tokenizer& tokenizer,
                                std::optional<int> vocab_size=std::nullopt);
-    LogitTransformers::IStructuredOutputBaseLogitTransformer get_json_schema_logits_transformer(const std::string& json_schema);
+    LogitTransformers::IStructuredOutputBaseLogitTransformer get_logits_transformer(const GenerationConfig& sampling_parameters);
 
 private:
     std::unique_ptr<IStructuredOutputBaseImpl> m_impl;

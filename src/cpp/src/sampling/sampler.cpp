@@ -994,10 +994,11 @@ LogitProcessor& Sampler::get_logit_processor(uint64_t request_id) {
 
 
 void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_params, const TokenIds& prompt) {
-    m_logit_processors.insert({request_id, LogitProcessor(sampling_params, prompt)});
+    // todo: check if m_structured_output_controller exists if sampling_params.is_structured_output()
+    m_logit_processors.insert({request_id, LogitProcessor(sampling_params, prompt, m_structured_output_controller)});
 }
 
-void Sampler::clear_request_info(uint64_t request_id) { 
+void Sampler::clear_request_info(uint64_t request_id) {
     m_beam_search_info.erase(request_id);
     m_logit_processors.erase(request_id);
     m_stop_strings.erase(request_id);

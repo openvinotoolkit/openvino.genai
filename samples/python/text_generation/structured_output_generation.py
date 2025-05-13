@@ -4,6 +4,7 @@
 
 import argparse
 import json
+from pprint import pprint
 from typing import Literal
 
 import openvino_genai
@@ -26,7 +27,10 @@ def main():
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
+    config.repetition_penalty = 2
+    config.do_sample = True
     config.json = json.dumps(Person.model_json_schema())
+    pprint(config.json)
 
     prompt = "Generate a json about a person."
     print(pipe.generate(prompt, config))

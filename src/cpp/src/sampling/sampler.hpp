@@ -22,7 +22,7 @@
 #include "threadpool.hpp"
 
 #ifdef ENABLE_XGRAMMAR
-#include "structured_output/structured_output_controller.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 #endif
 
 namespace ov::genai {
@@ -103,7 +103,7 @@ class Sampler {
     ThreadPool m_thread_pool;
 
     #ifdef ENABLE_XGRAMMAR
-    std::unique_ptr<StructuredOutputController> m_structured_output_controller;
+    std::shared_ptr<ov::genai::StructuredOutputController> m_structured_output_controller;
     #endif
 
 public:

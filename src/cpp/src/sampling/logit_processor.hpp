@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "openvino/genai/generation_config.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 
 struct Token {
     float m_log_prob = 0.;
@@ -321,7 +322,8 @@ protected:
 
 public:
     LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
-                   const LogitTransformers::TokenIds& input_ids) {
+                   const LogitTransformers::TokenIds& input_ids,
+                   std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr)) {
         for (const auto& input_id : input_ids) {
             m_unique_prompt_token_ids->insert(input_id);
         }
@@ -332,9 +334,15 @@ public:
             );
         }
 
+        std::cerr << "LogitProcessor: sampling_params.is_multinomial() = " << sampling_params.is_multinomial() << std::endl;
+        if (sampling_params.is_structured_output()) {
+            std::cerr << "Structured output!" << std::endl;
+            m_logit_transformers.emplace_back(new structured_output_controller->get_logits_transformer(sampling_params));
+        }
+
         if (sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) {
             if (sampling_params.repetition_penalty != 1.0f) {
-                std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform> transformer = 
+                std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform> transformer =
                     std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform>(new LogitTransformers::RepetitionPenaltyTransform(sampling_params.repetition_penalty));
                 transformer->set_unique_prompt_token_ids(m_unique_prompt_token_ids);
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
