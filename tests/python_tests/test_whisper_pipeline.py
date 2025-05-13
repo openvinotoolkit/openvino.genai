@@ -281,6 +281,10 @@ def test_smoke(model_descr, sample_from_dataset):
         model_id=model_descr[0],
         tmp_path=model_descr[1],
         sample=sample_from_dataset,
+        generation_config=ov_genai.WhisperGenerationConfig(
+            language="en",
+            task="transcribe",
+        ),
     )
 
 
