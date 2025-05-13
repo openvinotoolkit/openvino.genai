@@ -234,12 +234,15 @@ def run_pipeline_with_ref(
         genai_result = run_genai(genai_pipe, _sample, generation_config, streamer)
         hf_result = run_huggingface(hf_pipe, _sample, generation_config)
 
-        compare_results(hf_result, genai_result)
-
         genai_with_past_result = run_genai(
             genai_with_past_pipe, _sample, generation_config, streamer
         )
 
+        print(f"GenAI result: {genai_result.texts[0]}")
+        print(f"HuggingFace result: {hf_result['text']}")
+        print(f"GenAI with past result: {genai_with_past_result.texts[0]}")
+
+        compare_results(hf_result, genai_result)
         compare_results(hf_result, genai_with_past_result)
 
 
@@ -271,9 +274,10 @@ def compare_results(hf_result, genai_result):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 3}], indirect=True)
 @pytest.mark.precommit
 def test_smoke(model_descr, sample_from_dataset):
+    print(len(sample_from_dataset))
     run_pipeline_with_ref(
         model_id=model_descr[0],
         tmp_path=model_descr[1],
