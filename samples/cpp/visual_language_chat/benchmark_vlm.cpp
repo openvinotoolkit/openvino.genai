@@ -64,16 +64,15 @@ int main(int argc, char* argv[]) try {
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.enable_prefix_caching = false;
     scheduler_config.max_num_batched_tokens = 2147483647;
-
     ov::genai::VLMPipeline pipe(models_path, device, ov::genai::scheduler_config(scheduler_config));
     
     for (size_t i = 0; i < num_warmup; i++)
-        pipe.generate(prompt, ov::genai::image(images), ov::genai::generation_config(config));
+        pipe.generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
     
-    auto res = pipe.generate(prompt, ov::genai::image(images), ov::genai::generation_config(config));
+    auto res = pipe.generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
     auto metrics = res.perf_metrics;
     for (size_t i = 0; i < num_iter - 1; i++) {
-        res = pipe.generate(prompt, ov::genai::image(images), ov::genai::generation_config(config));
+        res = pipe.generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
         metrics = metrics + res.perf_metrics;
     }
 
