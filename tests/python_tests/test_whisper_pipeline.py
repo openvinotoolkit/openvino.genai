@@ -47,7 +47,7 @@ def get_whisper_models_list(tiny_only=False):
             if model_id in pytest.selected_model_ids.split(" ")
         ]
 
-    prefix = pathlib.Path("./test_models")
+    prefix = get_ov_cache_models_dir()
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
@@ -140,6 +140,8 @@ def run_huggingface(
             if hasattr(pipeline.model.generation_config, 'forced_decoder_ids'):
                 pipeline.model.generation_config.forced_decoder_ids = None
 
+    print(pipeline.model.generation_config)
+
     return pipeline(
         sample,
         return_timestamps=config.return_timestamps,
@@ -150,7 +152,7 @@ def run_huggingface(
             "top_p": config.top_p,
             "do_sample": config.do_sample,
             "num_beams": config.num_beams,
-        },
+        } | extra_generate_kwargs(),
     )
 
 
@@ -177,6 +179,7 @@ def run_genai(
 
 MAX_DATASET_LENGTH = 30
 
+@functools.lru_cache(16)
 def get_whisper_dataset(language: str, long_form: bool) -> list:
     if not long_form:
         ds = datasets.load_dataset(
@@ -230,18 +233,15 @@ def run_pipeline_with_ref(
         sample = np.expand_dims(sample, 0)
 
     for _sample in sample:
-        hf_result = run_huggingface(hf_pipe, _sample, generation_config)
         genai_result = run_genai(genai_pipe, _sample, generation_config, streamer)
+        hf_result = run_huggingface(hf_pipe, _sample, generation_config)
+
+        compare_results(hf_result, genai_result)
 
         genai_with_past_result = run_genai(
             genai_with_past_pipe, _sample, generation_config, streamer
         )
 
-        print(f"GenAI result: {genai_result.texts[0]}")
-        print(f"HuggingFace result: {hf_result['text']}")
-        print(f"GenAI with past result: {genai_with_past_result.texts[0]}")
-
-        compare_results(hf_result, genai_result)
         compare_results(hf_result, genai_with_past_result)
 
 
@@ -276,15 +276,10 @@ def compare_results(hf_result, genai_result):
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
 @pytest.mark.precommit
 def test_smoke(model_descr, sample_from_dataset):
-    print(len(sample_from_dataset))
     run_pipeline_with_ref(
         model_id=model_descr[0],
         tmp_path=model_descr[1],
         sample=sample_from_dataset,
-        generation_config=ov_genai.WhisperGenerationConfig(
-            language="en",
-            task="transcribe",
-        ),
     )
 
 
