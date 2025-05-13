@@ -476,13 +476,13 @@ def test_vlm_npu_no_exception(model_id, backend):
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_images, backend):
     callback_questions = [
-        "1+1=",
+        "Explain in details 1+1=",
         "Why is the Sun yellow?",
         "What is the previous answer?",
     ]
 
     current_iter = 0
-    num_iters = 3
+    num_iters = 1
 
     def streamer(subword):
         nonlocal current_iter

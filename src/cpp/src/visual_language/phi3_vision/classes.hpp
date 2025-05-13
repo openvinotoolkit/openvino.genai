@@ -56,8 +56,6 @@ public:
 
     void finish_chat() override;
 
-    bool prompt_has_image_tag(const std::string& prompt) const override;
-
     std::pair<std::string, std::vector<size_t>> normalize_prompt(
         const std::string& prompt,
         size_t base_id,

@@ -26,8 +26,6 @@ public:
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
-    bool prompt_has_image_tag(const std::string& prompt) const override;
-
     std::pair<std::string, std::vector<size_t>> normalize_prompt(
         const std::string& prompt,
         size_t base_id,

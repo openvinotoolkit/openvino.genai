@@ -7,6 +7,7 @@
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
+#include "debug_utils.hpp"
 
 namespace ov::genai {
 
@@ -581,26 +582,17 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_pro
 }
 
 
-ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
-    std::string unified_prompt;
-    std::vector<size_t> images_sequence;
-    
-    if (image_sequence.size()) {
-        images_sequence = image_sequence;
-        unified_prompt = prompt;
-    } else {
-        auto normalized = normalize_prompt(prompt, m_image_id, images.size());
-        unified_prompt = normalized.first;
-        images_sequence = normalized.second;
-    }
-
+ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    std::string unified_prompt = prompt;
     std::string unk64;
     for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
         unk64 += m_vlm_config.unk;
     }
-
+    auto base_id = 0;
+    if (images_sequence.size() > 0)
+        base_id = *std::min_element(images_sequence.begin(), images_sequence.end());
     for (size_t new_image_id : images_sequence) {
-        const EncodedImage& encoded_image = images.at(new_image_id - m_prev_image_id);
+        const EncodedImage& encoded_image = images.at(new_image_id - base_id);
         std::string expanded_tag;
         if (m_vlm_config.use_image_id) {
             expanded_tag += m_vlm_config.im_id_start + std::to_string(new_image_id) + m_vlm_config.im_id_end;
@@ -618,8 +610,6 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
         }
         unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
     }
-    m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
-
     ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
@@ -654,7 +644,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     int64_t* end = ids + encoded_input_size;
     float* inputs_embeds_data = inputs_embeds.data<float>();
     for (size_t image_id : images_sequence) {
-        const EncodedImage& encoded_image = images.at(image_id - m_prev_image_id);
+        const EncodedImage& encoded_image = images.at(image_id - base_id);
         const ov::Tensor& resampled_source = encoded_image.resampled_image.resampled_source;
         auto emb = resampled_source.data<float>();
         ids = std::find(ids, end, im_start_id);
@@ -678,37 +668,11 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
         }
     }
 
-    if (!m_is_chat_conversation) {
-        m_image_id = 0;
-        m_prev_image_id = 0;
-    }
     // inputs_embeds is bound to infer request that can be used by another thread after leaving this scope
     // so we need to return a copy to make sure data does not get corrupted 
     ov::Tensor inputs_embeds_copy(inputs_embeds.get_element_type(), inputs_embeds.get_shape());
     std::memcpy(inputs_embeds_copy.data(), inputs_embeds.data(), inputs_embeds.get_byte_size());
     return inputs_embeds_copy;
-}
-
-void InputsEmbedderMiniCPM::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
-    IInputsEmbedder::update_chat_history(decoded_results, generation_finish_status);
-    if (generation_finish_status == ov::genai::GenerationStatus::CANCEL)
-        m_image_id = m_prev_image_id;
-    else
-        m_prev_image_id = m_image_id;
-}
-
-void InputsEmbedderMiniCPM::start_chat(const std::string& system_message) {
-    IInputsEmbedder::start_chat(system_message);
-    m_prev_image_id = 0;
-}
-
-void InputsEmbedderMiniCPM::finish_chat() {
-    IInputsEmbedder::finish_chat();
-    m_prev_image_id = 0;
-}
-
-bool InputsEmbedderMiniCPM::prompt_has_image_tag(const std::string& prompt) const {
-    return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(NATIVE_TAG) != std::string::npos;
 }
 
 ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes) {

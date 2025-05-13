@@ -35,7 +35,7 @@ public:
                    const ov::AnyMap device_config);
 
     // compute input embedding for prompt and multiple images
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence);
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
@@ -99,16 +99,11 @@ private:
         utils::KVCacheState m_kv_cache_state;
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
-        // Verifies no previous image is referenced.
-        // InputsEmbedderMiniCPM Uses to insert <image_id>i</image_id> per image (not a slice).
-        size_t m_image_id = 0;
-        // image id at the beginning of generation
-        size_t m_prev_image_id = 0;
 
     public:
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
 
-        ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
+        ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence);
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
     
@@ -136,8 +131,16 @@ private:
     
         virtual void finish_chat();
 
-        virtual bool prompt_has_image_tag(const std::string& prompt) const;
-
+    /// @brief 1. Verify native and universal tags aren't mixed.
+    /// 2. Replace universal tags with native and save image order.
+    /// 3. If there were no universal tags, restore image order from native.
+    /// 4. If no tags were found, prepend native tags and assume incremental
+    /// ordering.
+    /// @param automatic_tag MiniCPM-V-2_6 inserts
+    /// (<image>./</image>)\n per image but it only replaces
+    /// <image>./</image> leaving ()\n untouched.
+    /// automatic_tag allows to handle this by being separated
+    /// from native_tag param.
         virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
             const std::string& prompt,
             size_t base_id,
@@ -215,23 +218,5 @@ std::pair<std::string, std::vector<size_t>> universal_to_native(
 }
 
 void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images);
-
-/// @brief 1. Verify native and universal tags aren't mixed.
-/// 2. Replace universal tags with native and save image order.
-/// 3. If there were no universal tags, restore image order from native.
-/// 4. If no tags were found, prepend native tags and assume incremental
-/// ordering.
-/// @param automatic_tag MiniCPM-V-2_6 inserts
-/// (<image>./</image>)\n per image but it only replaces
-/// <image>./</image> leaving ()\n untouched.
-/// automatic_tag allows to handle this by being separated
-/// from native_tag param.
-std::pair<std::string, std::vector<size_t>> normalize_prompt(
-    const std::string& prompt,
-    const std::string& native_tag,
-    const std::string& automatic_tag,
-    size_t base_id,
-    size_t n_images
-);
 
 } // namespace ov::genai

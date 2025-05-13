@@ -49,7 +49,6 @@ protected:
 
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
-    std::vector<ov::genai::EncodedImage> m_history_images;
     size_t m_image_id = 0;
 
     float m_load_time_ms = 0.0f;
