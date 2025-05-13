@@ -357,7 +357,7 @@ prompts = [
         ("katuni4ka/tiny-random-phi3", {"padding_side": None}),
         ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None}),
         ("katuni4ka/tiny-random-llava-next", {"padding_side": "right"}),
-        ("katuni4ka/tiny-random-llava-next", {"padding_side": "left"}),  # This fails
+        ("katuni4ka/tiny-random-llava-next", {"padding_side": "left"}),
         (
             "BAAI/bge-small-en-v1.5",
             {"padding_side": None},
