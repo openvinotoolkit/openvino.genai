@@ -104,6 +104,22 @@ install(TARGETS image2image
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create image2image concurrent sample executable
+
+add_executable(image2image_concurrency image2image_concurrency.cpp load_image.cpp imwrite.cpp)
+
+target_include_directories(image2image_concurrency PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(image2image_concurrency PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(image2image_concurrency PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS image2image_concurrency
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # create inpainting executable
 
 add_executable(inpainting inpainting.cpp load_image.cpp imwrite.cpp)
