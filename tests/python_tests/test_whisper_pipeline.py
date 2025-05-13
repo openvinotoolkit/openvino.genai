@@ -140,8 +140,6 @@ def run_huggingface(
             if hasattr(pipeline.model.generation_config, 'forced_decoder_ids'):
                 pipeline.model.generation_config.forced_decoder_ids = None
 
-    print(pipeline.model.generation_config)
-
     return pipeline(
         sample,
         return_timestamps=config.return_timestamps,
