@@ -712,8 +712,8 @@ public:
                 parameters.push_back(std::make_shared<v0::Parameter>(multiplier->get_output_element_type(0), multiplier->get_output_partial_shape(0)));
             }
             auto result = std::make_shared<v0::Result>(tensors_multiplication(nullptr,        // input
-                                                                              parameters[3],  // A
-                                                                              parameters[2],  // B
+                                                                              parameters[2],  // A
+                                                                              parameters[3],  // B
                                                                               parameters[1],  // alpha
                                                                               target,
                                                                               false,  // transpose_weights

@@ -15,10 +15,7 @@ int main(int argc, char* argv[]) try {
     using namespace ov::genai;
 
     Adapter adapter(adapter_path);
-    // Adapter adapter1("/home/alikh/projects/openvino.genai/llm_models/TinyPixel/tinyllama-lora/adapter_model.safetensors");
-    // LLMPipeline pipe(models_path, device, adapters(adapter, adapter1));    // register all required adapters here
-    LLMPipeline pipe(models_path, device, adapters(adapter, AdapterConfig::MODE_FUSE));
-    // LLMPipeline pipe(models_path, device, adapters(adapter));
+    LLMPipeline pipe(models_path, device, adapters(adapter));    // register all required adapters here
 
     // Resetting config to set greedy behaviour ignoring generation config from model directory.
     // It helps to compare two generations with and without LoRA adapter.
@@ -27,16 +24,11 @@ int main(int argc, char* argv[]) try {
     pipe.set_generation_config(config);
 
     std::cout << "Generate with LoRA adapter and alpha set to 0.75:" << std::endl;
-    // std::cout << pipe.generate(prompt, max_new_tokens(100), adapters({{adapter, 0.01}, {adapter1, 0.2}})) << std::endl;
-    std::cout << pipe.generate(prompt, max_new_tokens(100), adapters({{adapter, 0.75}})) << std::endl;
+    std::cout << pipe.generate(prompt, max_new_tokens(100), adapters(adapter, 0.75)) << std::endl;
 
-    // std::cout << "\n-----------------------------";
-    // std::cout << "Generate with LoRA adapter1 and alpha set to 0.75:" << std::endl;
-    // std::cout << pipe.generate(prompt, max_new_tokens(100), adapters(adapter1, 0.75)) << std::endl;
-
-    // std::cout << "\n-----------------------------";
-    // std::cout << "\nGenerate without LoRA adapter:" << std::endl;
-    // std::cout << pipe.generate(prompt, max_new_tokens(100), adapters()) << std::endl;
+    std::cout << "\n-----------------------------";
+    std::cout << "\nGenerate without LoRA adapter:" << std::endl;
+    std::cout << pipe.generate(prompt, max_new_tokens(100), adapters()) << std::endl;
 
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
