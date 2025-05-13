@@ -47,7 +47,7 @@ def get_whisper_models_list(tiny_only=False):
             if model_id in pytest.selected_model_ids.split(" ")
         ]
 
-    prefix = get_ov_cache_models_dir()
+    prefix = pathlib.Path("./test_models")
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
