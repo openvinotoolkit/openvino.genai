@@ -7,6 +7,7 @@ import openvino_genai as ov_genai
 from PIL import Image
 from openvino import Tensor
 import numpy as np
+from pathlib import Path
 
 
 def read_image(path: str) -> Tensor:
@@ -22,6 +23,11 @@ def read_image(path: str) -> Tensor:
     image_data = np.array(pic)
     return Tensor(image_data)
 
+def read_images(path: str) -> list[Tensor]:
+    entry = Path(path)
+    if entry.is_dir():
+        return [read_image(str(file)) for file in sorted(entry.iterdir())]
+    return [read_image(path)]
 
 def main():
     parser = argparse.ArgumentParser(description="Help command")
@@ -39,7 +45,7 @@ def main():
     # In order to get VLMDecodedResults instead of a string input should be a list.
     prompt = args.prompt
     models_path = args.model
-    image = read_image(args.image)
+    image = read_images(args.image)
     device = args.device
     num_warmup = args.num_warmup
     num_iter = args.num_iter
