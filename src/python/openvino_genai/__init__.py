@@ -94,6 +94,11 @@ from .py_openvino_genai import (
     AggregationMode
 )
 
+# RAG
+from .py_openvino_genai import (
+    TextEmbeddingPipeline
+)
+
 # Speech generation
 from .py_openvino_genai import (
     SpeechGenerationConfig,
