@@ -4,8 +4,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "devDependencies": {
-    "openvino-node": "^2025.0.0",
-    "openvino-genai-node": "file:../../../src/js/"
+    "openvino-genai-node": "2025.2.0"
   },
   "engines": {
     "node": ">=21.0.0"
