@@ -85,11 +85,11 @@ def load_text_llamacpp_pipeline(model_dir):
     return model
 
 
-def load_text_hf_pipeline(model_id, device):
+def load_text_hf_pipeline(model_id, device, cache_dir=None):
     model_kwargs = {}
 
     if not torch.cuda.is_available or device.lower() == "cpu":
-        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True, cache_dir=cache_dir)
         is_gptq = False
         is_awq = False
         if getattr(config, "quantization_config", None):
@@ -111,11 +111,11 @@ def load_text_hf_pipeline(model_id, device):
 
 
 def load_text_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs,
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, cache_dir=None, **kwargs,
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
-        model = load_text_hf_pipeline(model_id, device)
+        model = load_text_hf_pipeline(model_id, device, cache_dir)
     elif use_genai:
         model = load_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_llamacpp:
@@ -366,7 +366,7 @@ def load_inpainting_model(
 
 
 def load_model(
-    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
+    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, cache_dir=None, **kwargs
 ):
     if model_id is None:
         return None
@@ -378,7 +378,7 @@ def load_model(
         ov_options = {}
 
     if model_type == "text":
-        return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
+        return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, cache_dir, **kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(
             model_id, device, ov_options, use_hf, use_genai
