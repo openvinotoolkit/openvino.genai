@@ -133,17 +133,18 @@ public:
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(const std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
-    TokenizedInputs encode(const std::vector<std::string>&& prompts, const ov::AnyMap& tokenization_params = {});
     TokenizedInputs encode(const std::initializer_list<std::string>& prompts, const ov::AnyMap& tokenization_params = {});
    
     /**
     * @brief encode paired prompts.
     * 
+    * This overload copies prompts to the the pair of vectors, thus is less efficient than encode(prompts_1, prompts_2).
+    * In case if efficiency is important, please use encode(prompts_1, prompts_2).
     * @param prompts vector storing batch of prompts
     * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
     * @return pair of [input_ids, attention_mask]
     */
-   TokenizedInputs encode(const std::vector<std::pair<std::string, std::string>>& prompt, const ov::AnyMap& tokenization_params = {});
+   TokenizedInputs encode(const std::vector<std::pair<std::string, std::string>>& prompts, const ov::AnyMap& tokenization_params = {});
 
    /**
    * @brief encode paired prompts.
