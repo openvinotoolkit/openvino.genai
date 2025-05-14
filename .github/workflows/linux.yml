@@ -87,7 +87,7 @@ jobs:
       id: openvino_download
       with:
         platform: ubuntu22
-        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_js_package.tar.gz
+        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
         revision: latest_available_commit
 
     - name: Clone docker tag from OpenVINO repo
@@ -571,18 +571,16 @@ jobs:
         if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
+          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
-          cd ${{ env.SRC_DIR }}/samples/js/text_generation
 
       - name: Install NPM dependencies for samples
         if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Test Samples (Python and C++)
         if: ${{ matrix.test.run_condition }}
@@ -731,9 +729,9 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
+          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Check lint
         working-directory: ${{ env.SRC_DIR }}/src/js
@@ -746,9 +744,8 @@ jobs:
       - name: Install openvino-genai-node samples dependencies
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Run samples tests
         run: npm test
