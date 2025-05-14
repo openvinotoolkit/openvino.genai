@@ -1924,6 +1924,106 @@ class Text2SpeechPipeline:
 
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
         ...
+class TextEmbeddingPipeline:
+    """
+    Text embedding pipeline
+    """
+    class Config:
+        """
+        
+        Structure to keep TextEmbeddingPipeline configuration parameters.
+        
+        Attributes:
+            max_length (int, optional):
+                Maximum length of tokens passed to the embedding model.
+            pooling_type (TextEmbeddingPipeline.PoolingType, optional):
+                Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
+            normalize (bool, optional):
+                If True, L2 normalization is applied to embeddings. Defaults to True.
+            query_instruction (str, optional):
+                Instruction to use for embedding a query.
+            embed_instruction (str, optional):
+                Instruction to use for embedding a document.
+        """
+        embed_instruction: str | None
+        max_length: int | None
+        normalize: bool
+        pooling_type: TextEmbeddingPipeline.PoolingType
+        query_instruction: str | None
+        @typing.overload
+        def __init__(self) -> None:
+            ...
+        @typing.overload
+        def __init__(self, **kwargs) -> None:
+            ...
+    class PoolingType:
+        """
+        Members:
+        
+          CLS : First token embeddings
+        
+          MEAN : The average of all token embeddings
+        """
+        CLS: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.CLS: 0>
+        MEAN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.MEAN: 1>
+        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>}
+        def __eq__(self, other: typing.Any) -> bool:
+            ...
+        def __getstate__(self) -> int:
+            ...
+        def __hash__(self) -> int:
+            ...
+        def __index__(self) -> int:
+            ...
+        def __init__(self, value: int) -> None:
+            ...
+        def __int__(self) -> int:
+            ...
+        def __ne__(self, other: typing.Any) -> bool:
+            ...
+        def __repr__(self) -> str:
+            ...
+        def __setstate__(self, state: int) -> None:
+            ...
+        def __str__(self) -> str:
+            ...
+        @property
+        def name(self) -> str:
+            ...
+        @property
+        def value(self) -> int:
+            ...
+    def __init__(self, models_path: os.PathLike, device: str, config: TextEmbeddingPipeline.Config | None = None, **kwargs) -> None:
+        """
+        Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+        models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
+        device (str): Device to run the model on (e.g., CPU, GPU).
+        config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
+        kwargs: Plugin and/or config properties
+        """
+    def embed_documents(self, texts: list[str]) -> list[list[float]] | list[list[int]] | list[list[int]]:
+        """
+        Computes embeddings for a vector of texts
+        """
+    def embed_query(self, text: str) -> list[float] | list[int] | list[int]:
+        """
+        Computes embeddings for a query
+        """
+    def start_embed_documents_async(self, texts: list[str]) -> None:
+        """
+        Asynchronously computes embeddings for a vector of texts
+        """
+    def start_embed_query_async(self, text: str) -> None:
+        """
+        Asynchronously computes embeddings for a query
+        """
+    def wait_embed_documents(self) -> list[list[float]] | list[list[int]] | list[list[int]]:
+        """
+        Waits computed embeddings of a vector of texts
+        """
+    def wait_embed_query(self) -> list[float] | list[int] | list[int]:
+        """
+        Waits computed embeddings for a query
 class TextStreamer(StreamerBase):
     """
     
