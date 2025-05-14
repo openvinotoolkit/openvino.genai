@@ -120,7 +120,7 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
             std::copy_n(input_ids_token.data<int32_t>(), std::min(input_ids_token.get_size(), input_ids.get_size()), input_ids.data<int32_t>());
         } else {
             std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
-            std::copy_n(input_ids_token.data<int64_t>(), std::min(input_ids_token.get_size(), input_ids.get_size()), input_ids.data<int64_t>());;
+            std::copy_n(input_ids_token.data<int64_t>(), std::min(input_ids_token.get_size(), input_ids.get_size()), input_ids.data<int64_t>());
         }
     };
 
