@@ -534,6 +534,8 @@ public:
             // When the model has more than one input, calling set_input_tensor without specifying an index may fail.
             // If the model has two inputs, explicitly set the first input while leaving the second input tensor empty.
             // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
+            // The use of const_cast here is necessary because the ov::Tensor API does not accept const data pointers.
+            // The prompts vector is not declared as const, and the underlying data is not modified by this operation.
             infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {prompts.size()}, const_cast<std::string*>(prompts.data())});
             if (infer_request_guard.get().get_compiled_model().inputs().size() > 1) {
                 // Set the second input tensor to an empty tensor to avoid errors.
