@@ -16,7 +16,7 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
+from utils.constants import get_ov_cache_models_dir
 
 from utils.network import retry_request
 from typing import Any
@@ -131,15 +131,6 @@ def run_huggingface(
     if not config:
         config = ov_genai.WhisperGenerationConfig()
 
-    from optimum.intel.utils.import_utils import is_transformers_version
-    if is_transformers_version(">=", "4.51"):
-        if hasattr(pipeline.model.config, 'forced_decoder_ids'):
-            pipeline.model.config.forced_decoder_ids = None
-
-        if hasattr(pipeline.model, 'generation_config'):
-            if hasattr(pipeline.model.generation_config, 'forced_decoder_ids'):
-                pipeline.model.generation_config.forced_decoder_ids = None
-
     return pipeline(
         sample,
         return_timestamps=config.return_timestamps,
@@ -150,7 +141,7 @@ def run_huggingface(
             "top_p": config.top_p,
             "do_sample": config.do_sample,
             "num_beams": config.num_beams,
-        } | extra_generate_kwargs(),
+        },
     )
 
 
