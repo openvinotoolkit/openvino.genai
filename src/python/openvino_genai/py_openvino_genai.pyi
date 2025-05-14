@@ -1,5 +1,5 @@
 """
-Pybind11 binding for Whisper Pipeline
+Pybind11 binding for OpenVINO GenAI library
 """
 from __future__ import annotations
 
@@ -2024,6 +2024,7 @@ class TextEmbeddingPipeline:
     def wait_embed_query(self) -> list[float] | list[int] | list[int]:
         """
         Waits computed embeddings for a query
+        """
 class TextStreamer(StreamerBase):
     """
     
