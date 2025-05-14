@@ -21,6 +21,14 @@
 
 #include "sampling/sampler.hpp"
 
+namespace ov {
+
+namespace genai {
+const std::string PA_BACKEND = "PA";
+const std::string SDPA_BACKEND = "SDPA";
+}
+}
+
 namespace {
 
 void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
