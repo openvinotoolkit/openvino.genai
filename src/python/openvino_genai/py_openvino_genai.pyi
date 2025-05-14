@@ -291,6 +291,27 @@ class CLIPTextModelWithProjection(CLIPTextModel):
     """
     CLIPTextModelWithProjection class.
     """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike) -> None:
+        """
+                    CLIPTextModelWithProjection class
+                    root_dir (os.PathLike): Model root directory.
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+        """
+                    CLIPTextModelWithProjection class
+                    root_dir (os.PathLike): Model root directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, model: CLIPTextModelWithProjection) -> None:
+        """
+        CLIPText model
+                    CLIPTextModelWithProjection class
+                    model (CLIPTextModelWithProjection): CLIPText model with projection
+        """
 class CacheEvictionConfig:
     """
     
