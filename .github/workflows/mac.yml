@@ -79,7 +79,7 @@ jobs:
       id: openvino_download
       with:
         platform: macos_12_6
-        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_js_package.tar.gz,openvino_node_npm_package.tar.gz
+        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
         revision: latest_available_commit
 
   genai_build_cmake:
@@ -549,7 +549,8 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
-          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*
+          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
+          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Install NPM dependencies for samples
@@ -679,7 +680,8 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
-          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*
+          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
+          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Run npm package tests

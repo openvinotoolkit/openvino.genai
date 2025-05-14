@@ -82,7 +82,7 @@ jobs:
       id: openvino_download
       with:
         platform: windows
-        commit_packages_to_provide: wheels,openvino_js_package.zip,openvino_node_npm_package.zip
+        commit_packages_to_provide: wheels,openvino_node_npm_package.zip
         revision: latest_available_commit
 
   genai_build_cpack:
@@ -605,7 +605,8 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
-          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*
+          npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
       
       - name: Install NPM dependencies for samples
@@ -733,7 +734,8 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
-          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*
+          npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Check lint
