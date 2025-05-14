@@ -21,13 +21,6 @@
 
 #include "sampling/sampler.hpp"
 
-namespace ov {
-
-namespace genai {
-const std::string PA_BACKEND = "PA";
-const std::string SDPA_BACKEND = "SDPA";
-}
-}
 
 namespace {
 
@@ -582,8 +575,8 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
     return false;
 }
 
-std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
-    std::string attention_backend = PA_BACKEND;
+std::pair<ov::AnyMap, std::string_view> extract_attention_backend(const ov::AnyMap& external_properties) {
+    std::string_view attention_backend = PA_BACKEND;
     ov::AnyMap properties = external_properties;
 
     auto it = properties.find("ATTENTION_BACKEND");
