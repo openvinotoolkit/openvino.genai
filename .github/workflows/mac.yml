@@ -21,7 +21,7 @@ env:
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: ~/.cache/hf
-  OV_CACHE: ~/.cache/ov_cache/pr2080
+  OV_CACHE: ~/.cache/ov_cache
 
 jobs:
   smart_ci:
