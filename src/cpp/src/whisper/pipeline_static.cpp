@@ -568,10 +568,10 @@ void remove_input_kv_tensors(std::shared_ptr<ov::Model>& model) {
                 results_to_remove.push_back(result_to_remove);
                 results_to_add.push_back(result_to_add);
             }
-            if (strstr(cat_reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr) {
+            if (strstr(cat_reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr || strstr(cat_reader.get_node()->get_type_name(), "FakeConvert") != nullptr) {
                 auto sdpa_in = cat_reader;
 
-                // Redirect KV from concat to SDPA
+                // Redirect KV from concat to SDPA or FakeConvert(for fp8)
                 auto curr_kv = concat_node->inputs()[CONCAT_CURR_KV_PORT].get_source_output();
                 sdpa_in.replace_source_output(curr_kv);
             }
@@ -659,10 +659,11 @@ void expose_runtime_states_as_outputs(std::shared_ptr<ov::Model>& model) {
         OPENVINO_ASSERT(rv_readers.size() == 2);
         // Input port for SDPA node
         for (const auto& reader : rv_readers) {
-            if (strstr(reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr) {
+            bool is_fake_cvt = strstr(reader.get_node()->get_type_name(), "FakeConvert") != nullptr;
+            if (strstr(reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr || is_fake_cvt) {
                 auto sdpa_in = reader;
                 // Remove ReadValue, store new Result and Assign
-                auto key_or_value = (sdpa_in.get_index() == 1) ? "key" : "value";
+                auto key_or_value = (sdpa_in.get_index() == 1 || is_fake_cvt) ? "key" : "value";
                 auto [result, assign] = remove_encoder_attn_read_value(rv_node, rv_in.get_source_output(), sdpa_in);
                 auto normalized_name = transform_key_value_name(
                     rv_node->inputs()[0].get_source_output().get_node()->get_friendly_name(),
@@ -761,17 +762,18 @@ void expose_runtime_states_as_inputs(std::shared_ptr<ov::Model>& model) {
         auto rv_out = rv_node->outputs()[0];
         auto rv_readers = rv_out.get_target_inputs();
         for (auto rv_reader: rv_readers) {
+            bool is_fake_cvt = strstr(rv_reader.get_node()->get_type_name(), "FakeConvert") != nullptr;
             if (strstr(rv_reader.get_node()->get_type_name(), "Assign") != nullptr) {
                 auto assign_node = ov::as_type_ptr<ov::op::v6::Assign>(rv_reader.get_node()->shared_from_this());
                 assigns.push_back(assign_node);
-            } else if (strstr(rv_reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr) {
+            } else if (strstr(rv_reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr || is_fake_cvt) {
                 auto sdpa_in = rv_reader;
                 auto sdpa_node = rv_reader.get_node();
 
                 auto shape = rv_node->get_output_partial_shape(0);
                 auto new_param = std::make_shared<ov::op::v0::Parameter>(rv_node->get_output_element_type(0), shape);
                 
-                auto key_or_value = (sdpa_in.get_index() == 1) ? "key" : "value";
+                auto key_or_value = (sdpa_in.get_index() == 1 || is_fake_cvt) ? "key" : "value";
                 auto normalized_name = transform_key_value_name(sdpa_in.get_node()->get_friendly_name(),
                                                                     "past_key_values",
                                                                     ".encoder.",
