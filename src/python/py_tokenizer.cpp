@@ -144,7 +144,7 @@ void init_tokenizer(py::module_& m) {
                 // Convert py::list to std::vector<std::string>
                 std::vector<std::pair<std::string, std::string>> prompts_vector;
                 for (auto item : prompts) {
-                    if (!py::isinstance<py::list>(item) && py::len(item) != 2) {
+                    if (!py::isinstance<py::list>(item) || py::len(item) != 2) {
                         throw std::runtime_error("Expected a list of lists with sizes 2. E.g. [[\"What is the capital of GB?\", \"London in the capital of GB\"], ...]");
                     } 
 

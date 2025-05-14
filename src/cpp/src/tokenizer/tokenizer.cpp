@@ -502,7 +502,7 @@ public:
         OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                                 "Tokenizer::encode is not available");
         size_t batch_size = prompts_1.size();
-        OPENVINO_ASSERT(prompts_1.size() == prompts_2.size() || prompts_1.size() == 1 | prompts_2.size() == 1, 
+        OPENVINO_ASSERT(prompts_1.size() == prompts_2.size() || prompts_1.size() == 1 || prompts_2.size() == 1, 
                         "prompts_1 and prompts_2 should be of the same size or one of them should be of size 1");
 
         TokenizedInputs result;
