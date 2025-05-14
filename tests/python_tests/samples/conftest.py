@@ -8,6 +8,7 @@ import gc
 import requests
 
 from utils.network import retry_request
+from utils.constants import get_ov_cache_dir
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -113,6 +114,10 @@ MODELS = {
     "tiny-random-llava": {
         "name": "katuni4ka/tiny-random-llava",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
+    },
+    "BAAI/bge-small-en-v1.5": {
+        "name": "BAAI/bge-small-en-v1.5",
+        "convert_args": ['--trust-remote-code']
     },
     "tiny-random-SpeechT5ForTextToSpeech": {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
