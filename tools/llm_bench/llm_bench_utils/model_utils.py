@@ -338,19 +338,11 @@ def init_timestamp(num_iters, prompt_list, prompt_idx_list):
 
 
 def resolve_media_file_path(file_path, prompt_file_path):
-    file_path = None
-    if file_path is not None:
-        paths_ori = file_path.split(';')
-        paths_new = []
-        for path in paths_ori:
-            if not path:
-                continue
-            if not (path.startswith("http://") or path.startswith("https://")):
-                paths_new.append(os.path.join(os.path.dirname(prompt_file_path), path.replace("./", "")))
-        new_file_path = ";".join(paths_new)
-        return new_file_path
-    else:
+    if not file_path:
         return file_path
+    if not (file_path.startswith("http://") or file_path.startswith("https://")):
+        return os.path.join(os.path.dirname(prompt_file_path), file_path.replace("./", ""))
+    return file_path
 
 
 def get_version_in_format_to_pars(version):
