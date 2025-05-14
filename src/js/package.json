@@ -9,6 +9,7 @@
     "directory": "src/js"
   },
   "main": "./dist/index.js",
+  "types": "./types/index.d.ts",
   "os": [
     "linux",
     "darwin",
