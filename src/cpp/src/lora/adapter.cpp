@@ -502,6 +502,7 @@ NodePtr tensors_multiplication(NodePtr input,
 
     for(size_t i = 0; i < multipliers.size(); ++i) {
         NodePtr normalized = multipliers[i];
+        std::cout << "multiplier size " << normalized << std::endl;
         if(normalized->get_output_element_type(0) != target_type) {
             normalized = std::make_shared<v0::Convert>(normalized, target_type);
             if(std::dynamic_pointer_cast<v0::Constant>(normalized)) {
@@ -526,6 +527,8 @@ NodePtr tensors_multiplication(NodePtr input,
             input = normalized;
         }
     }
+
+    std::cout << "!!!!!!!!!!!!!!!!!!!!" << std::endl;
 
     if(transpose_in_end) {
         // FIXME: Check the dimensions we really need to move, currently it is hardcoded 2 + 2 dimensions that usually appears in 2D Convolution case
@@ -711,6 +714,11 @@ public:
             for(auto multiplier : adapter) {
                 parameters.push_back(std::make_shared<v0::Parameter>(multiplier->get_output_element_type(0), multiplier->get_output_partial_shape(0)));
             }
+            std::cout << "parameters len  "<< parameters.size() << std::endl;
+            std::cout << "parameters[0] "<< parameters[0] << std::endl;
+            std::cout << "parameters[1] "<< parameters[1] << std::endl;
+            std::cout << "parameters[2] "<< parameters[2] << std::endl;
+            std::cout << "parameters[3] "<< parameters[3] << std::endl;
             auto result = std::make_shared<v0::Result>(tensors_multiplication(nullptr,        // input
                                                                               parameters[2],  // A
                                                                               parameters[3],  // B
