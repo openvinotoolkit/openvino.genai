@@ -139,5 +139,7 @@ public:
      * Updates LoRA adapters for current generation call
      */
     void set_adapters(const std::optional<AdapterConfig>& adapters);
+
+    std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 };
 } // namespace ov::genai
