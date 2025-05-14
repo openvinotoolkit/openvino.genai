@@ -166,11 +166,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
         const auto& rgbs = rgbs_vector[0];
-        const auto prompt = prompts[0];
-        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, rgbs.size());
+        const auto& prompt = prompts[0];
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         encoded_images = m_inputs_embedder->encode_images(rgbs);
-
+        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images.size());
         input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[0], rgbs.size() > 0, image_sequence));
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
@@ -232,8 +231,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
-        const auto [unified_prompt, image_sequrnce] = m_inputs_embedder->normalize_prompt(prompt, 0, rgbs.size());
-        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, rgbs, metrics, image_sequrnce);
+        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, rgbs.size());
+        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, rgbs, metrics, image_sequence);
     }
     return add_request(request_id, inputs, sampling_params);
 }

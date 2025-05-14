@@ -7,7 +7,6 @@
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
-#include "debug_utils.hpp"
 
 namespace ov::genai {
 
