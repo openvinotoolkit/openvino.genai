@@ -11,8 +11,8 @@
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
-
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 
 namespace ov {
 namespace genai {
@@ -75,6 +75,8 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
+    void set_adapters(const std::optional<AdapterConfig>& adapters);
+
     void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states);
 
     ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep);
@@ -87,6 +89,7 @@ private:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
     size_t m_vae_scale_factor;
+    AdapterController m_adapter_controller;
 
     class InferenceDynamic;
     class InferenceStaticBS1;
