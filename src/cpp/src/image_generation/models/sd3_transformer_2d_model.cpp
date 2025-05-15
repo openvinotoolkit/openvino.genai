@@ -62,6 +62,13 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
 
 SD3Transformer2DModel::SD3Transformer2DModel(const SD3Transformer2DModel&) = default;
 
+SD3Transformer2DModel SD3Transformer2DModel::clone() {
+    OPENVINO_ASSERT(!m_model, "Model has not been compiled yet. Cannot clone non-compiled model");
+    SD3Transformer2DModel cloned = *this;
+    cloned.m_impl = m_impl->clone();
+    return cloned;
+}
+
 const SD3Transformer2DModel::Config& SD3Transformer2DModel::get_config() const {
     return m_config;
 }

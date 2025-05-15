@@ -44,6 +44,13 @@ T5EncoderModel::T5EncoderModel(const std::string& model,
 
 T5EncoderModel::T5EncoderModel(const T5EncoderModel&) = default;
 
+std::shared_ptr<T5EncoderModel> T5EncoderModel::clone() {
+    OPENVINO_ASSERT(!m_model, "T5Encoder model must be compiled first. Cannot clone non-compiled model");
+    std::shared_ptr<T5EncoderModel> cloned = std::make_shared<T5EncoderModel>(*this);
+    cloned->m_request = m_request.get_compiled_model().create_infer_request();
+    return cloned;
+}
+
 T5EncoderModel& T5EncoderModel::reshape(int batch_size, int max_sequence_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
