@@ -188,8 +188,7 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
 }
 
 SpeechGenerationPerfMetrics SpeechT5TTSImpl::get_performance_metrics() {
-    SpeechGenerationPerfMetrics res;
-    return res;
+    return m_perf_metrics;
 }
 
 }  // namespace genai
