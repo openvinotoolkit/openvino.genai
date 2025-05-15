@@ -11,6 +11,7 @@
 #include <openvino/openvino.hpp>
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
+#include "openvino/pass/serialize.hpp"
 
 #include "gguf_utils/building_blocks.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
@@ -151,6 +152,15 @@ std::shared_ptr<ov::Model> create_language_model(
 }
 
 } // namespace
+void save_openvino_model(const std::string& model_path, const std::shared_ptr<ov::Model>& model) {
+    std::filesystem::path gguf_model_path(model_path);
+    std::filesystem::path openvino_model_path = gguf_model_path.parent_path() / "openvino_model.xml";
+    auto serialize_start_time = std::chrono::high_resolution_clock::now();
+    ov::serialize(model, openvino_model_path.string());
+    auto serialize_finish_time = std::chrono::high_resolution_clock::now();
+    auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
+    std::cout << "Save generated OpenVINO model to: " << openvino_model_path.string() << " done. Time: " << serialize_duration << " ms\n";
+}
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -158,13 +168,14 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     auto [config, consts, qtypes] = load_gguf(model_path);
     auto load_finish_time = std::chrono::high_resolution_clock::now();
     std::cout << "Loading and unpacking model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms" << std::endl;
-    std::cout << "Start generating OV model..." << std::endl;
+    std::cout << "Start generating OpenVINO model..." << std::endl;
     
     std::shared_ptr<ov::Model> model;
 
     const std::string model_arch = std::get<std::string>(config.at("architecture"));
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
         model = create_language_model(config, consts, qtypes);
+        save_openvino_model(model_path, model);
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }
