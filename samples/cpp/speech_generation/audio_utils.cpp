@@ -17,7 +17,7 @@ namespace audio {
 
 void save_to_wav(const float* waveform_ptr,
                  size_t waveform_size,
-                 const std::string& file_name,
+                 const std::filesystem::path& file_path,
                  uint32_t bits_per_sample) {
     drwav_data_format format;
     format.container = drwav_container_riff;
@@ -27,7 +27,7 @@ void save_to_wav(const float* waveform_ptr,
     format.bitsPerSample = bits_per_sample;
 
     drwav wav;
-    OPENVINO_ASSERT(drwav_init_file_write(&wav, file_name.c_str(), &format, nullptr),
+    OPENVINO_ASSERT(drwav_init_file_write(&wav, file_path.string().c_str(), &format, nullptr),
                     "Failed to initialize WAV writer");
 
     size_t total_samples = waveform_size * format.channels;
@@ -38,9 +38,9 @@ void save_to_wav(const float* waveform_ptr,
     drwav_uninit(&wav);
 }
 
-ov::Tensor read_speaker_embedding(const std::string& file_name) {
-    std::ifstream input(file_name, std::ios::binary);
-    OPENVINO_ASSERT(input, "Failed to open file: " + file_name);
+ov::Tensor read_speaker_embedding(const std::filesystem::path& file_path) {
+    std::ifstream input(file_path, std::ios::binary);
+    OPENVINO_ASSERT(input, "Failed to open file: " + file_path.string());
 
     // Get file size
     input.seekg(0, std::ios::end);
