@@ -12,11 +12,6 @@
 #define DR_WAV_IMPLEMENTATION
 #include <dr_wav.h>
 
-#ifdef _WIN32
-#    include <fcntl.h>
-#    include <io.h>
-#endif
-
 namespace utils {
 namespace audio {
 
