@@ -126,8 +126,7 @@ void SpeechT5TTSImpl::init_model_config_params(const std::filesystem::path& root
 Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::string>& texts,
                                                     const ov::Tensor& speaker_embedding,
                                                     const SpeechGenerationConfig& generation_config) {
-    const ov::Tensor& used_speaker_embedding =
-        (speaker_embedding.get_size() == 0) ? get_default_speaker_embedding() : speaker_embedding;
+    const ov::Tensor& used_speaker_embedding = speaker_embedding ? speaker_embedding : get_default_speaker_embedding();
 
     Text2SpeechDecodedResults gen_speech_res;
 

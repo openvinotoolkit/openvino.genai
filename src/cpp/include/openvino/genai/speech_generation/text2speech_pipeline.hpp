@@ -43,12 +43,14 @@ public:
     /**
      * Generates speeches based on input texts
      * @param text input text for which to generate speech
-     * @param speaker_embedding  that is a vector representing the unique characteristics of a speaker's voice
+     * @param speaker_embedding Optional speaker embedding tensor representing the unique characteristics of a speaker's
+     * voice. If not provided for SpeechT5 TSS model, the 7306th vector from the validation set of the
+     * `Matthijs/cmu-arctic-xvectors` dataset is used by default.
      * @param properties Speech generation parameters specified as properties
      * @returns raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
      */
     Text2SpeechDecodedResults generate(const std::string& text,
-                                       const ov::Tensor& speaker_embedding = ov::Tensor(ov::element::f32, Shape{0}),
+                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        const ov::AnyMap& properties = {}) {
         return generate(std::vector<std::string>{text}, speaker_embedding, properties);
     }
@@ -56,17 +58,19 @@ public:
     /**
      * Generates speeches based on input texts
      * @param texts input texts for which to generate speeches
-     * @param speaker_embedding  that is a vector representing the unique characteristics of a speaker's voice
+     * @param speaker_embedding Optional speaker embedding tensor representing the unique characteristics of a speaker's
+     * voice. If not provided for SpeechT5 TSS model, the 7306th vector from the validation set of the
+     * `Matthijs/cmu-arctic-xvectors` dataset is used by default.
      * @param properties Speech generation parameters specified as properties
      * @returns raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
      */
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
-                                       const ov::Tensor& speaker_embedding = ov::Tensor(ov::element::f32, Shape{0}),
+                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        const ov::AnyMap& properties = {});
 
     template <typename... Properties>
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
-                                       const ov::Tensor& speaker_embedding = ov::Tensor(ov::element::f32, Shape{0}),
+                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        Properties&&... properties) {
         return generate(texts, speaker_embedding, ov::AnyMap{std::forward<Properties>(properties)...});
     }
