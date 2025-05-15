@@ -79,9 +79,9 @@ Here is an example how to run the sample with a single adapter. First download a
 
 `wget -O soulcard.safetensors https://civitai.com/api/download/models/72591`
 
-Then run `lora_stable_diffusion` executable:
+Then run `lora_text2image` executable:
 
-`./lora_stable_diffusion dreamlike_anime_1_0_ov/FP16 'curly-haired unicorn in the forest, anime, line' soulcard.safetensors 0.7`
+`./lora_text2image dreamlike_anime_1_0_ov/FP16 'curly-haired unicorn in the forest, anime, line' soulcard.safetensors 0.7`
 
 The sample generates two images with and without adapters applied using the same prompt:
    - `lora.bmp` with adapters applied

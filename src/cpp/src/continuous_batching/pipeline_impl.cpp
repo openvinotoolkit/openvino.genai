@@ -387,7 +387,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         generations.push_back(add_request(request_id, input_ids[request_id], sampling_params[request_id]));
     }
-    auto all_requests = m_awaiting_requests; // we need to store all requests to get results from them once generation has finished
+
+    auto all_requests = get_awaiting_requests(); // we need to store all requests to get results from them once generation has finished
 
     GenerationHandle& generation = generations.at(0);
 
@@ -709,4 +710,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
         }
     }
 }
+
+std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingImpl::get_awaiting_requests() {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    return m_awaiting_requests;
 }
+} // namespace ov::genai
