@@ -30,7 +30,7 @@ public:
     LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
                    const LogitTransformers::TokenIds& input_ids
                    #ifdef ENABLE_XGRAMMAR
-                   ,std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller
+                   ,std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr
                    #endif
                    ) {
         for (const auto& input_id : input_ids) {
@@ -123,6 +123,6 @@ public:
         m_unique_generated_token_ids->at(token_id)--;
     }
 
-}
+};
 
 } // namespace ov::genai

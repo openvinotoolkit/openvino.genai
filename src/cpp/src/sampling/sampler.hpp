@@ -16,6 +16,7 @@
 
 #include "openvino/runtime/tensor.hpp"
 
+#include "sampling/logit_transformers.hpp"
 #include "sampling/logit_processor.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "sequence_group.hpp"

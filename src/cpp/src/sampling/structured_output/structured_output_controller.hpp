@@ -10,6 +10,7 @@
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "sampling/logit_transformers.hpp"
 
 namespace ov {
 namespace genai {
@@ -17,7 +18,7 @@ namespace genai {
 class IStructuredOutputImpl {
 public:
     virtual ~IStructuredOutputImpl() = default;
-    virtual std::shared_ptr<LogitTransformers::ILogitTransformer>
+    virtual std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer>
         get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) = 0;
 
 };
@@ -26,7 +27,7 @@ class StructuredOutputController {
 public:
     StructuredOutputController(const ov::genai::Tokenizer& tokenizer,
                               std::optional<int> vocab_size=std::nullopt);
-    std::shared_ptr<LogitTransformers::ILogitTransformer>
+    std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer>
         get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters);
 
 private:
