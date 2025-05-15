@@ -11,6 +11,10 @@ namespace ov {
 namespace genai {
 class Text2SpeechPipelineImpl;
 
+/**
+ * Structure that stores the result from the generate method, including a list of waveform tensors
+ * sampled at 16 kHz, along with performance metrics
+ */
 struct Text2SpeechDecodedResults {
     std::vector<ov::Tensor> speeches;
     SpeechGenerationPerfMetrics perf_metrics;
@@ -41,7 +45,7 @@ public:
      * @param text input text for which to generate speech
      * @param speaker_embedding  that is a vector representing the unique characteristics of a speaker's voice
      * @param properties Speech generation parameters specified as properties
-     * @returns raw audios of the input texts spoken in the specified speaker's voice
+     * @returns raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
      */
     Text2SpeechDecodedResults generate(const std::string& text,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(ov::element::f32, Shape{0}),
@@ -54,7 +58,7 @@ public:
      * @param texts input texts for which to generate speeches
      * @param speaker_embedding  that is a vector representing the unique characteristics of a speaker's voice
      * @param properties Speech generation parameters specified as properties
-     * @returns raw audios of the input texts spoken in the specified speaker's voice
+     * @returns raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
      */
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(ov::element::f32, Shape{0}),

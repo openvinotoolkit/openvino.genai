@@ -47,10 +47,14 @@ auto speech_generation_perf_metrics_docstring = R"(
 )";
 
 auto text_to_speech_decoded_results = R"(
-    Structure with raw performance metrics for each generation before any statistics are calculated.
+    Structure that stores the result from the generate method, including a list of waveform tensors
+    sampled at 16 kHz, along with performance metrics
 
-    :param num_generated_samples: Returns a number of generated samples in output
-    :type num_generated_samples: int
+    :param speeches: a list of waveform tensors sampled at 16 kHz
+    :type speeches: list
+
+    :param perf_metrics: performance metrics
+    :type perf_metrics: SpeechGenerationPerfMetrics
 )";
 
 auto text_to_speech_generate_docstring = R"(
@@ -65,7 +69,7 @@ auto text_to_speech_generate_docstring = R"(
     :param properties: speech generation parameters specified as properties
     :type properties: dict
 
-    :returns: raw audios of the input texts spoken in the specified speaker's voice
+    :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
     :rtype: Text2SpeechDecodedResults
 )";
 
