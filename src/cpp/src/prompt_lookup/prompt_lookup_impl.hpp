@@ -29,6 +29,8 @@ public:
         m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model, scheduler_config, device, properties, generation_config);
     };
 
+    void set_tokenizer(const ov::genai::Tokenizer& tokenizer) override;
+
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  ov::genai::GenerationConfig sampling_params) override;

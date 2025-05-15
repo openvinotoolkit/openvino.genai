@@ -40,6 +40,9 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::set_tokenizer(cons
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::set_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
+    if (inputs_embedder == nullptr) {
+        OPENVINO_THROW("Inputs embedder was not initialized correctly");
+    }
     m_inputs_embedder = inputs_embedder;
     m_model_input_type = ModelInputType::EMBEDDINGS;
 }
