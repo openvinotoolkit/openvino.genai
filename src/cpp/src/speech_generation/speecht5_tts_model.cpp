@@ -82,7 +82,9 @@ ov::Tensor vocoder(ov::InferRequest& request, const ov::Tensor& spectrogram, ov:
 }
 
 const ov::Tensor get_default_speaker_embedding() {
-    return ov::Tensor(ov::element::f32, ov::Shape{1, 512}, ov::genai::default_speaker_embedding);
+    return ov::Tensor(ov::element::f32,
+                      ov::Shape{1, 512},
+                      reinterpret_cast<float*>(ov::genai::default_speaker_embedding_bytes));
 }
 
 }  // namespace
