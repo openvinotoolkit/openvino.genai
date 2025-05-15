@@ -58,6 +58,13 @@ FluxTransformer2DModel::FluxTransformer2DModel(const std::string& model,
 
 FluxTransformer2DModel::FluxTransformer2DModel(const FluxTransformer2DModel&) = default;
 
+FluxTransformer2DModel FluxTransformer2DModel::clone() {
+    OPENVINO_ASSERT(!m_model, "Model has not been compiled yet. Cannot clone non-compiled model");
+    FluxTransformer2DModel cloned = *this;
+    cloned.m_request = m_request.get_compiled_model().create_infer_request();
+    return cloned;
+}
+
 const FluxTransformer2DModel::Config& FluxTransformer2DModel::get_config() const {
     return m_config;
 }
