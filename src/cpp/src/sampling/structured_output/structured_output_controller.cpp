@@ -7,11 +7,12 @@
 namespace ov {
 namespace genai {
 
-StructuredOutputController::StructuredOutputController(const Tokenizer& tokenizer,
+StructuredOutputController::StructuredOutputController(const ov::genai::Tokenizer& tokenizer,
                                                        std::optional<int> vocab_size)
     : m_impl(nullptr) {}
 
-LogitTransformers::IStructuredOutputBaseLogitTransformer get_json_schema_logits_transformer(const GenerationConfig& sampling_parameters) {
+std::shared_ptr<LogitTransformers::ILogitTransformer>
+StructuredOutputController::get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) {
     return m_impl->get_logits_transformer(sampling_parameters);
 }
 

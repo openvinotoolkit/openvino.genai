@@ -24,7 +24,7 @@ namespace LogitTransformers {
 //};
 
 
-class XGrammarLogitsTransformer : public IStructuredOutputBaseLogitTransformer {
+class XGrammarLogitsTransformer : public ILogitTransformer {
 public:
     XGrammarLogitsTransformer(const CompiledGrammar& compiled_grammar,
                               std::optional<std::vector<int>> override_stop_tokens = std::nullopt,
@@ -46,7 +46,7 @@ protected:
 } // namespace LogitTransformers
 
 
-class XGrammarStructuredOutput : public IStructuredOutputBaseImpl {
+class XGrammarStructuredOutput : public IStructuredOutputImpl {
 public:
     XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size = std::nullopt) {
         auto vocab_vector = tokenizer.get_vocab_vector();
@@ -64,9 +64,9 @@ public:
         m_grammar_compiler = std::make_unique<xgrammar::GrammarCompiler>(std::move(tokenizer_info));
     }
 
-    LogitTransformers::XGrammarLogitsTransformer get_logits_transformer(const GenerationConfig& sampling_parameters) {
+    std::shared_ptr<LogitTransformers::XGrammarLogitsTransformer> get_logits_transformer(const GenerationConfig& sampling_parameters) {
         auto compiled_grammar = m_grammar_compiler->CompileJSONSchema(sampling_parameters.json);
-        return XGrammarLogitsTransformer(compiled_grammar);
+        return std::make_shared<XGrammarLogitsTransformer>(std::move(compiled_grammar));
     };
 
 private:
