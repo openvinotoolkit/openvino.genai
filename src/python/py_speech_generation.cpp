@@ -81,7 +81,7 @@ SpeechGenerationConfig update_speech_generation_config_from_kwargs(const SpeechG
     if (kwargs.empty())
         return config;
 
-    SpeechGenerationConfig res_config;
+    SpeechGenerationConfig res_config = config;
     if (!kwargs.empty())
         res_config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
 
