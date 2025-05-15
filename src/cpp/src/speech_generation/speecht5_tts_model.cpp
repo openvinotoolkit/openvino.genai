@@ -16,8 +16,6 @@
 #include "speecht5_tts_decoder.hpp"
 #include "utils.hpp"
 
-using ov::genai::MicroSeconds;
-
 namespace {
 
 ov::InferRequest init_model(const std::filesystem::path& models_path,
@@ -53,7 +51,6 @@ std::tuple<ov::Tensor, ov::Tensor> encode(ov::InferRequest& request,
     const auto infer_start = std::chrono::steady_clock::now();
     request.infer();
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-    // raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
 
     auto last_hidden_state = request.get_tensor("last_hidden_state");
     auto encoder_attention_mask = request.get_tensor("encoder_attention_mask");
@@ -68,7 +65,6 @@ ov::Tensor postnet(ov::InferRequest& request,
     const auto infer_start = std::chrono::steady_clock::now();
     request.infer();
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-    // raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
 
     auto postnet_spectrogram = request.get_tensor("postnet_spectrogram");
     return postnet_spectrogram;
@@ -80,7 +76,6 @@ ov::Tensor vocoder(ov::InferRequest& request, const ov::Tensor& spectrogram, ov:
     const auto infer_start = std::chrono::steady_clock::now();
     request.infer();
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-    // raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
 
     auto waveform = request.get_tensor("waveform");
     return waveform;
