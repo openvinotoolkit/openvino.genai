@@ -630,7 +630,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         auto seq_id = seq_id_and_attention_scores.first;
         const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
         if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
-            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_block_size, num_decoder_layers);
+            constexpr size_t MAX_POOL_WINDOW_SIZE = 7;
+            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_block_size, num_decoder_layers, MAX_POOL_WINDOW_SIZE);
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
         cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
