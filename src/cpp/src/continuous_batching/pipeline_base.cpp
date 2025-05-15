@@ -293,4 +293,9 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
     streamer_ptr->write(tokens);
 }
 
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::~IContinuousBatchingPipeline() {
+    m_tokenizer = {};
+    utils::release_core_plugin(m_device);
+}
+
 }
