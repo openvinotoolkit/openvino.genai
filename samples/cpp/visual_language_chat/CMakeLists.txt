@@ -44,8 +44,7 @@ install(TARGETS encrypted_model_vlm
         EXCLUDE_FROM_ALL)
 
 # create benchmark executable
-
-add_executable(benchmark_vlm benchmark_vlm.cpp load_image.cpp ../utils/read_prompt_from_file.cpp)
+add_executable(benchmark_vlm benchmark_vlm.cpp load_image.cpp ../text_generation/read_prompt_from_file.cpp)
 target_include_directories(benchmark_vlm PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
 target_link_libraries(benchmark_vlm PRIVATE openvino::genai cxxopts::cxxopts)
 set_target_properties(benchmark_vlm PROPERTIES

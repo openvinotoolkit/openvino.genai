@@ -3,7 +3,7 @@
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include <cxxopts.hpp>
-#include "../utils/read_prompt_from_file.h"
+#include "read_prompt_from_file.h"
 
 int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_vanilla_genai", "Help command");

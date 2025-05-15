@@ -8,7 +8,7 @@
 
 #include "load_image.hpp"
 #include <openvino/genai/visual_language/pipeline.hpp>
-#include "../utils/read_prompt_from_file.h"
+#include "../text_generation/read_prompt_from_file.h"
 
 int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_vlm", "Help command");
