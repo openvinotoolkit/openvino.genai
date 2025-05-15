@@ -65,6 +65,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
+    // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
+    if (m_model_runner) {
+        m_model_runner->get_infer_request().get_compiled_model().release_memory();
+    }
+
     if (m_scheduler) {
         m_scheduler->release();
     }
@@ -82,6 +87,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& properties) {
+    m_device = device;
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
@@ -398,7 +404,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         generations.push_back(add_request(request_id, input_ids[request_id], sampling_params[request_id]));
     }
-    auto all_requests = m_awaiting_requests; // we need to store all requests to get results from them once generation has finished
+
+    auto all_requests = get_awaiting_requests(); // we need to store all requests to get results from them once generation has finished
 
     GenerationHandle& generation = generations.at(0);
 
@@ -720,4 +727,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
         }
     }
 }
+
+std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingImpl::get_awaiting_requests() {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    return m_awaiting_requests;
 }
+} // namespace ov::genai

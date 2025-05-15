@@ -641,7 +641,7 @@ protected:
         }
     }
 
-    // Returns non-empty updated adapters iff they are required to be updated
+    // Returns non-empty updated adapters if they are required to be updated
     static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
         return ov::genai::derived_adapters(adapters, flux_adapter_normalization);
     }
