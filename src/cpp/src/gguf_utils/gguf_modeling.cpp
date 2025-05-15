@@ -156,7 +156,12 @@ void save_openvino_model(const std::string& model_path, const std::shared_ptr<ov
     std::filesystem::path gguf_model_path(model_path);
     std::filesystem::path openvino_model_path = gguf_model_path.parent_path() / "openvino_model.xml";
     auto serialize_start_time = std::chrono::high_resolution_clock::now();
-    ov::serialize(model, openvino_model_path.string());
+    try {
+        ov::serialize(model, openvino_model_path.string());
+    }
+    catch (const ov::Exception& e) {
+        std::cerr << "[Warning] Exception during model serialization: " << e.what() << std::endl;
+    }
     auto serialize_finish_time = std::chrono::high_resolution_clock::now();
     auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
     std::cout << "Save generated OpenVINO model to: " << openvino_model_path.string() << " done. Time: " << serialize_duration << " ms\n";
