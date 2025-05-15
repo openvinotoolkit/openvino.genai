@@ -6,7 +6,7 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "sequence_group.hpp"
-#include "scheduler.hpp"
+#include "continuous_batching/scheduler.hpp"
 
 TEST(TestBlockManager, general_test) {
     ov::genai::BlockManager bm = ov::genai::BlockManager(6, false, 4);

@@ -155,9 +155,20 @@ For more information how performance metrics are calculated please follow [perfo
 - `-m, --model`: Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `-mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
+- `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
+
+### 10. LLM ReAct Agent Sample (`react_sample`)
+- **Description:**
+Interactive ReAct Agent powered by OpenVINO.
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-native-agent-react) that provides an example of LLM-powered reasoning engine to execute an action in Python.
+Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
+- **Main Feature:** Real-time reasoning-action from user's input.
+- **Run Command:**
+  ```bash
+  python react_sample.py model_dir
+  ```
 
 
 ## Troubleshooting

@@ -17,9 +17,6 @@ import hashlib
 import pathlib
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict
-from typing import List
-from typing import Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import tqdm
@@ -48,15 +45,15 @@ def get_hashed_rgb_color(idx: int) -> str:
 class StepDumpData:
     dump_file_name: str = None
     num_blocks: int = None
-    occupied_blocks: Dict[int, List[Tuple[int, int]]] = field(default_factory=lambda: defaultdict(list))
-    occupied_blocks_per_sequence: Dict[int, List[int]] = field(default_factory=lambda: defaultdict(list))
-    sequence_groups: Dict[int, List[int]] = field(default_factory=dict)
+    occupied_blocks: dict[int, list[tuple[int, int]]] = field(default_factory=lambda: defaultdict(list))
+    occupied_blocks_per_sequence: dict[int, list[int]] = field(default_factory=lambda: defaultdict(list))
+    sequence_groups: dict[int, list[int]] = field(default_factory=dict)
 
 
-def load_data(dump_dir: pathlib.Path) -> List[StepDumpData]:
+def load_data(dump_dir: pathlib.Path) -> list[StepDumpData]:
     retval = []
     num_step_files = 0
-    step_file_names_dict: Dict[int, List[pathlib.Path]] = defaultdict(list)
+    step_file_names_dict: dict[int, list[pathlib.Path]] = defaultdict(list)
 
     for f in dump_dir.iterdir():
         if f.is_file() and f.suffix == '.txt' and 'usage' not in f.name:
@@ -100,7 +97,7 @@ def load_data(dump_dir: pathlib.Path) -> List[StepDumpData]:
     return retval
 
 
-def get_allocated_usage_series(step_data: List[StepDumpData]) -> List[float]:
+def get_allocated_usage_series(step_data: list[StepDumpData]) -> list[float]:
     return [len(sd.occupied_blocks) / sd.num_blocks * 100 for sd in step_data]
 
 
@@ -110,7 +107,7 @@ def draw_from_step_data(plot_axes: plt.Axes, step_data: StepDumpData) -> plt.Axe
     occupied_blocks_per_sequence = step_data.occupied_blocks_per_sequence
     sequence_groups = step_data.sequence_groups
 
-    seq_id_to_sequence_group_id: Dict[int, int] = { seq_id: seq_group_id for seq_group_id, seq_id_list in sequence_groups.items() for seq_id in seq_id_list }
+    seq_id_to_sequence_group_id: dict[int, int] = { seq_id: seq_group_id for seq_group_id, seq_id_list in sequence_groups.items() for seq_id in seq_id_list }
 
     nrows = 1
     ncols = num_blocks // nrows
@@ -194,8 +191,8 @@ def draw_from_step_data(plot_axes: plt.Axes, step_data: StepDumpData) -> plt.Axe
     return plot_axes
 
 
-def load_and_draw_usage(plot_axes: plt.Axes, usage_dump_file: pathlib.Path, current_step: int, allocated_usage_series: List[float], eviction_relation='before') -> Tuple[plt.Axes, float, Tuple[List, List]]:
-    usage_values: Dict[int, Tuple[float, float]] = {}
+def load_and_draw_usage(plot_axes: plt.Axes, usage_dump_file: pathlib.Path, current_step: int, allocated_usage_series: list[float], eviction_relation='before') -> tuple[plt.Axes, float, tuple[list, list]]:
+    usage_values: dict[int, tuple[float, float]] = {}
     with open(usage_dump_file, "r") as f:
         while True:
             before_eviction_line = f.readline()

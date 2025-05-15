@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "lora_helper.hpp"
+#include "lora/helper.hpp"
 #include "image_generation/models/unet_inference.hpp"
 #include "utils.hpp"
 

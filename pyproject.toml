@@ -49,13 +49,13 @@ find_python3 = true
 build_args = ["--parallel", "--target", "py_openvino_genai_stub"]
 install_args = ["--strip"]
 install_components = ["wheel_genai"]
-options = {"BUILD_TOKENIZERS" = "OFF", "ENABLE_SAMPLES" = "OFF", "CMAKE_SKIP_INSTALL_RPATH" = "OFF"}
+options = {"ENABLE_PYTHON" = "ON", "BUILD_TOKENIZERS" = "OFF", "ENABLE_SAMPLES" = "OFF", "CMAKE_SKIP_INSTALL_RPATH" = "OFF"}
 
 [build-system]
 requires = [
-    "py-build-cmake==0.4.2",
+    "py-build-cmake==0.4.3",
     "openvino~=2025.2.0.0.dev",
-    "pybind11-stubgen==2.5.3",
+    "pybind11-stubgen==2.5.4",
     "cmake~=3.23.0; platform_system != 'Darwin' or platform_machine == 'x86_64'",
     "cmake~=3.24.0; platform_system == 'Darwin' and platform_machine == 'arm64'",
 ]

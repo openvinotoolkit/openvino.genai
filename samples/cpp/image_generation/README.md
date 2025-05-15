@@ -3,8 +3,8 @@
 Examples in this folder showcase inference of text to image models like Stable Diffusion 1.5, 2.1, LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::Text2ImagePipeline` and uses a text prompt as input source.
 
 There are several sample files:
- - [`text2image.cpp`](./main.cpp) demonstrates basic usage of the text to image pipeline
- - [`text2image_lora.cpp`](./lora.cpp) shows how to apply LoRA adapters to the pipeline
+ - [`text2image.cpp`](./text2image.cpp) demonstrates basic usage of the text to image pipeline
+ - [`lora_text2image.cpp`](./lora_text2image.cpp) shows how to apply LoRA adapters to the pipeline
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
@@ -79,9 +79,9 @@ Here is an example how to run the sample with a single adapter. First download a
 
 `wget -O soulcard.safetensors https://civitai.com/api/download/models/72591`
 
-Then run `lora_stable_diffusion` executable:
+Then run `lora_text2image` executable:
 
-`./lora_stable_diffusion dreamlike_anime_1_0_ov/FP16 'curly-haired unicorn in the forest, anime, line' soulcard.safetensors 0.7`
+`./lora_text2image dreamlike_anime_1_0_ov/FP16 'curly-haired unicorn in the forest, anime, line' soulcard.safetensors 0.7`
 
 The sample generates two images with and without adapters applied using the same prompt:
    - `lora.bmp` with adapters applied

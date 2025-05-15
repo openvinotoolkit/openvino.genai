@@ -85,9 +85,15 @@ from .py_openvino_genai import (
 # Continuous batching
 from .py_openvino_genai import (
     ContinuousBatchingPipeline,
+    GenerationFinishReason,
     GenerationResult,
     GenerationStatus,
     SchedulerConfig,
     CacheEvictionConfig,
     AggregationMode
+)
+
+# RAG
+from .py_openvino_genai import (
+    TextEmbeddingPipeline
 )

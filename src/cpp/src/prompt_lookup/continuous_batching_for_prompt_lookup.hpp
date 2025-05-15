@@ -5,7 +5,7 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
-#include "continuous_batching_impl.hpp"
+#include "continuous_batching/pipeline_impl.hpp"
 
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
@@ -35,7 +35,6 @@ public:
     std::map<uint64_t, SequenceLen> get_generated_request_len();
 
     bool is_requests_empty();
-    std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 
     size_t get_processed_tokens_per_iteration();
 

@@ -20,17 +20,6 @@ public:
 };
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
-    // A model for merging image embeddings (hidden states), rotary_pos_emb and attension_mask.
-    // Inputs:
-    //  - hidden_states: [N, embed_dim]
-    //  - rotary_pos_emb: [?, 40]
-    //  - attention_mask: [1, ?, ?]
-    // Output: [N, hidden_size]
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_merger;
-
-    ov::Tensor m_position_ids;
-    int64_t m_rope_delta = 0;
-
 public:
     InputsEmbedderQwen2VL(
         const VLMConfig& vlm_config,
@@ -46,7 +35,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 
@@ -57,21 +46,46 @@ public:
     bool prompt_has_image_tag(const std::string& prompt) const override;
 
 protected:
-    ov::Tensor merge_text_and_image_embeddings_qwen2vl(
-        const ov::Tensor& input_ids,
-        const ov::Tensor& text_embeds,
-        const std::vector<ov::Tensor>& image_embeds,
-        const std::vector<std::array<size_t, 3>> images_grid_thw,
-        const int64_t image_pad_token_id
-    );
+    // A model for merging image embeddings (hidden states), rotary_pos_emb and attension_mask.
+    // Inputs:
+    //  - hidden_states: [N, embed_dim]
+    //  - rotary_pos_emb: [?, 40]
+    //  - attention_mask: [1, ?, ?]
+    // Output: [N, hidden_size]
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_merger;
+
+    ov::Tensor m_position_ids;
+    int64_t m_rope_delta = 0;
+    ov::Tensor m_merged_image_embeddings;
+
+    virtual ov::Tensor run_image_embeddings_merger(
+        const std::vector<EncodedImage>& images, 
+        const std::vector<size_t>& images_sequence, 
+        const size_t image_id);
 
     ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw);
 
     ov::Tensor create_position_ids(
         const ov::Tensor& input_ids_tensor,
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
+        const std::vector<size_t>& images_sequence,
+        const size_t image_id,
         const int64_t vision_start_token_id
     );
 };
+
+namespace qwen2_vl_utils {
+
+std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_embeds_and_grid_thw(
+    const std::vector<EncodedImage>& encoded_images,
+    const std::vector<size_t>& images_sequence,
+    const size_t image_id
+);
+
+ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw);
+
+ov::Tensor concatenate_image_embeds(const std::vector<ov::Tensor>& reordered_image_embeds);
+
+} // namespace qwen2vl_utils
 
 } // namespace ov::genai

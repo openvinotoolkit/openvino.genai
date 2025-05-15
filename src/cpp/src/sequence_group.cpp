@@ -19,9 +19,11 @@ size_t Sequence::_make_hash(size_t content_length) {
 
         // hash of current block depends on prefix hashes
         std::vector<int64_t> content;
-        size_t prefix_hashes_needed_count = block_start_idx / block_size;
-        OPENVINO_ASSERT(prefix_hashes_needed_count <= m_prefix_hashes.size()); 
-        content.insert(content.end(), m_prefix_hashes.begin(), m_prefix_hashes.begin() + prefix_hashes_needed_count);
+        size_t filled_blocks_count = block_start_idx / block_size;
+        OPENVINO_ASSERT(filled_blocks_count <= m_prefix_hashes.size());
+        if (filled_blocks_count > 0) {
+            content.emplace_back(m_prefix_hashes[filled_blocks_count - 1]);
+        }
 
         // get tokens corresponding to current block
         if (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS) {
@@ -68,9 +70,9 @@ size_t Sequence::_make_hash(size_t content_length) {
 
 std::vector<int64_t> Sequence::_reduce_embedding(const std::vector<float>& embedding) {
     size_t res_size = std::min((size_t)ceil(float(embedding.size()) / m_embeddings_hash_calculation_stride), m_embeddings_hash_max_num_values);
-    std::vector<int64_t> res(res_size);
+    std::vector<int64_t> res(res_size, 0);
     for (size_t i = 0, idx=0; idx < res_size; i+= m_embeddings_hash_calculation_stride, idx++) {
-        res[idx] = std::round(embedding[i] * m_multiplier);
+        std::memcpy(&(res[idx]), &(embedding[i]), sizeof(embedding[i]));
     }
     return res;
 }

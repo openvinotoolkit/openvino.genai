@@ -4,22 +4,28 @@
 #pragma once
 
 #include <cstddef>
-#include "cache_eviction.hpp"
+
+#include "openvino/genai/cache_eviction.hpp"
 
 namespace ov::genai {
 struct SchedulerConfig {
     // a maximum number of tokens to batch
     // (in contrast to max_batch_size which combines independent sequences, we consider total amount of tokens in a batch)
     // TODO: benchmark this value and understand a required value to ensure inference is not memory bound
+    // When ContinuousBatching is invoked from LLMPipeline (client scenario) by default max_num_batched_tokens is not limited.
     std::size_t max_num_batched_tokens = 256;
 
     // total number of KV blocks available to scheduler logic
     std::size_t num_kv_blocks = 0;
 
     // total size of KV cache in GB
+    // When both num_kv_blocks and cache_size are set, num_kv_blocks is used. 
+    // When both num_kv_blocks and cache_size are equal to zero dynamic KV-cache allocation is turned on.
     std::size_t cache_size = 0;
 
     // whether to split prompt / generate to different scheduling phases
+    // Allows to process prompt partially in case when batch size is limited. 
+    // If dynamic_split_fuse is turned off any prompt that is longer than batch size will lead to error.
     bool dynamic_split_fuse = true;
 
 
@@ -40,15 +46,17 @@ struct SchedulerConfig {
     // vLLM-like settings
     //
 
-    // max number of scheduled sequences (you can think of it as "max batch size")
+    // max number of scheduled sequences. 
+    // You can think of it as "max batch size" on generate phase, on prompt phase number of scheduled tokens usually more than number of sequences.
     std::size_t max_num_seqs = 256;
 
     // Enable caching of KV-blocks.
     // When turned on all previously calculated KV-caches are kept in memory for future usages.
-    // KV-caches can be rewritten if KV-cache limit is reached, but blocks are not released.
+    // KV-caches can be overridden if KV-cache limit is reached, but blocks are not released.
     // This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters. 
-    // When turend off only KV-cache required for batch calculation is kept in memory and 
-    // when a sequence has finished genegartion its cache is released.
+    // When turned off only KV-cache required for batch calculation is kept in memory and
+    // when a sequence has finished generation its cache is released.
+    // When ContinuousBatching is invoked from LLMPipeline (client scenario) by default prefix caching is turned on.
     bool enable_prefix_caching = false;
 
     bool operator==(const SchedulerConfig& other) const {

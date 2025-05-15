@@ -58,14 +58,13 @@ To convert InternVL2 models, `timm` and `einops` are required:
 pip install timm einops
 ```
 #### phi3_v {#phi3_v-notes}
-  - GPU isn't supported
   - Example models' configs aren't consistent. It's required to override the default `eos_token_id` with the one from a tokenizer:
     ```python
     generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())
     ```
 :::
 
-## Speech Processing Models (Whisper-based)
+## Speech Recognition Models (Whisper-based)
 
 <WhisperModelsTable />
 

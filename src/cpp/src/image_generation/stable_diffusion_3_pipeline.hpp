@@ -13,6 +13,7 @@
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 
 #include "utils.hpp"
+#include "lora/helper.hpp"
 
 namespace {
 
@@ -136,7 +137,6 @@ public:
         using utils::read_json_param;
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
-
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModelWithProjection") {
             m_clip_text_encoder_1 =
@@ -144,14 +144,12 @@ public:
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
-
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
             m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
-
         const auto text_encoder_3_json = data["text_encoder_3"][1];
         if (!text_encoder_3_json.is_null()) {
             const std::string text_encoder_3 = text_encoder_3_json.get<std::string>();
@@ -161,7 +159,6 @@ public:
                 OPENVINO_THROW("Unsupported '", text_encoder_3, "' text encoder type");
             }
         }
-
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "SD3Transformer2DModel") {
             m_transformer = std::make_shared<SD3Transformer2DModel>(root_dir / "transformer", device, properties);
@@ -184,7 +181,6 @@ public:
 
         // initialize generation config
         initialize_generation_config(data["_class_name"].get<std::string>());
-
         update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
@@ -456,7 +452,13 @@ public:
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
-        OPENVINO_THROW("LORA adapters are not implemented for Stable Diffusion 3 yet");
+        if(adapters) {
+            if(auto updated_adapters = derived_adapters(*adapters)) {
+                adapters = updated_adapters;
+            }
+            // TODO: Add LoRA Adapter support for text encoders
+            m_transformer->set_adapters(adapters);
+        }
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
@@ -485,6 +487,8 @@ public:
             compute_dim(generation_config.width, initial_image, 2 /* assume NHWC */);
 
         check_inputs(generation_config, initial_image);
+
+        set_lora_adapters(generation_config.adapters);
 
         // 3. Prepare timesteps
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
@@ -584,6 +588,12 @@ public:
     ImageGenerationPerfMetrics get_performance_metrics() override {
         m_perf_metrics.load_time = m_load_time_ms;
         return m_perf_metrics;
+    }
+
+protected:
+    // Returns non-empty updated adapters if they are required to be updated
+    static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
+        return ov::genai::derived_adapters(adapters, flux_adapter_normalization);
     }
 
 private:

@@ -56,7 +56,6 @@ class Sequence {
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
     static constexpr size_t m_embeddings_hash_calculation_stride = 50; // the stride with which values are taken from embeddings vector
-    static constexpr size_t m_multiplier = 10000; // multiplier by which float values are multiplied before conversion to size_t
 
     size_t _make_hash(size_t content_length);
 
@@ -231,7 +230,7 @@ public:
 };
 
 // contains a list of Sequences in generic case (beam search or parallel sampling)
-// - each sequence shares the same prompt and KV-caches for promp
+// - each sequence shares the same prompt and KV-caches for prompt
 // - in case of beam search each sequence also shares specific part of generic phase
 //   via reference counter mechanism on BlockManager level
 class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
@@ -302,14 +301,18 @@ public:
 
         if (input_ids.get_element_type() == ov::element::i64) {
             m_prompt_ids.resize(prompt_len);
+            OPENVINO_SUPPRESS_DEPRECATED_START
             std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
+            OPENVINO_SUPPRESS_DEPRECATED_END
             m_sequence_group_type = SequenceGroupType::TOKENS;
         } else if (input_ids.get_element_type() == ov::element::f32) {
             hidden_size = input_ids.get_shape()[2];
             m_input_embeds.resize(prompt_len);
             for (size_t i = 0; i < prompt_len; i++) {
                 m_input_embeds[i].resize(hidden_size);
-              std::copy_n(input_ids.data<float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
+                OPENVINO_SUPPRESS_DEPRECATED_START
+                std::copy_n(input_ids.data<float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
+                OPENVINO_SUPPRESS_DEPRECATED_END
             }
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
         }

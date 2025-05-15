@@ -5,12 +5,12 @@ import sys
 import pytest
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, TypedDict
+from typing import TypedDict
 
 from openvino_genai import GenerationConfig, StopCriteria
 
-from utils.ov_genai_pipelines import PipelineType, generate_and_compare, run_ov_pipeline, get_main_pipeline_types
-from utils.hugging_face import get_hugging_face_models, convert_models
+from utils.ov_genai_pipelines import generate_and_compare, run_ov_pipeline, get_main_pipeline_types
+from utils.hugging_face import download_and_convert_model
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("generation_config,prompt",
@@ -28,9 +28,9 @@ from utils.hugging_face import get_hugging_face_models, convert_models
                               "stop_token_ids",
                             #   "echo_with_generation",
                               ])
-def test_basic_stop_criteria(tmp_path, generation_config, prompt):
+def test_basic_stop_criteria(generation_config, prompt):
     model_id : str = "katuni4ka/tiny-random-phi3"
-    generate_and_compare(model_id, [prompt], generation_config, tmp_path=tmp_path)
+    generate_and_compare(model_id, [prompt], generation_config)
 
 
 @pytest.mark.precommit
@@ -52,9 +52,9 @@ def test_basic_stop_criteria(tmp_path, generation_config, prompt):
                               "multiple_stop_strings_include_to_output",
                               "multiple_stop_strings_one_no_match_and_long_exclude_from_output"])
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
-def test_stop_strings(tmp_path, generation_config, model_id, pipeline_type):
+def test_stop_strings(generation_config, model_id, pipeline_type):
     prompts = [ "What is OpenVINO?" ]
-    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path, pipeline_type=pipeline_type)
+    generate_and_compare(model_id, prompts, generation_config, pipeline_type=pipeline_type)
 
 
 @pytest.mark.precommit
@@ -70,14 +70,13 @@ def test_stop_strings(tmp_path, generation_config, model_id, pipeline_type):
     '你好！ 你好嗎？'.encode('unicode_escape'),  # to escape Win limitation on Unicode tmp path
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
-def test_greedy(tmp_path, generation_config, prompt):
+def test_greedy(generation_config, prompt):
     model_id : str = "katuni4ka/tiny-random-phi3"
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
     generate_and_compare(model=model_id, 
                          prompts=prompt, 
-                         generation_config=generation_config, 
-                         tmp_path=tmp_path)
+                         generation_config=generation_config)
 
 
 @pytest.mark.precommit
@@ -100,10 +99,10 @@ def test_greedy(tmp_path, generation_config, prompt):
                               "multiple_groups",
                               "single_group_min_new_tokens",
                               "single_group_with_multiple_stop_strings_no_match",])
-def test_beam_search(tmp_path, generation_config):
+def test_beam_search(generation_config):
     prompts = [ "What is OpenVINO?" ]
     model_id : str = "facebook/opt-125m"
-    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
+    generate_and_compare(model_id, prompts, generation_config)
 
 
 @pytest.mark.precommit
@@ -116,10 +115,10 @@ def test_beam_search(tmp_path, generation_config):
                          [dict(max_new_tokens=50, num_beams=6, num_beam_groups=3, diversity_penalty=1.0, num_return_sequences=6, stop_strings={"open sour"}, include_stop_str_in_output=True),
                           dict(max_new_tokens=50, num_beams=6, num_beam_groups=3, diversity_penalty=1.0, num_return_sequences=6, stop_strings={".", "software", "Intel"}, include_stop_str_in_output=True),],
                          ids=["single_stop_string_match", "multiple_stop_strings_match"])
-def test_beam_search_with_stop_string(tmp_path, generation_config):
+def test_beam_search_with_stop_string(generation_config):
     prompts = [ "What is OpenVINO?" ]
     model_id : str = "facebook/opt-125m"
-    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
+    generate_and_compare(model_id, prompts, generation_config)
 
 
 @pytest.mark.precommit
@@ -128,24 +127,24 @@ def test_beam_search_with_stop_string(tmp_path, generation_config):
                           dict(max_new_tokens=30, num_beams=2, echo=True),],
                          ids=["echo_with_generation",
                               "single_group_with_echo",])
-def test_echo(tmp_path, generation_config):
+def test_echo(generation_config):
     prompts = [ "What is OpenVINO?" ]
     model_id : str = "facebook/opt-125m"
     # TODO: support in stateful mode and remove 'use_cb=True' and this test at all
     # as we can enable new parameters set in other tests
-    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
+    generate_and_compare(model_id, prompts, generation_config)
 
 
 # TODO: remove platform specific reference texts once CVS-159912 is done and use comparison with HF
 # and merge this tests with 'test_sampling_against_optimum' by extending a list of generation configs
 
 class PlatformsRefTexts(TypedDict, total=False):
-    linux: List[List[str]]
-    win32: List[List[str]]
-    darwin: List[List[str]]
+    linux: list[list[str]]
+    win32: list[list[str]]
+    darwin: list[list[str]]
 
 
-def get_current_platform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[str]]:
+def get_current_platform_ref_texts(ref_texts: PlatformsRefTexts) -> list[list[str]]:
     # mac and win often have identical results
     # to avoid duplication, use win32 ref_text if no mac ref_texts were found
     if sys.platform == "darwin":
@@ -160,8 +159,8 @@ def get_current_platform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[st
 @dataclass
 class RandomSamplingTestStruct:
     generation_config: GenerationConfig
-    prompts: List[str]
-    ref_texts: List[List[str]]
+    prompts: list[str]
+    ref_texts: list[list[str]]
 
 from utils.generation_config import get_multinomial_temperature, get_greedy_with_penalties, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
@@ -326,18 +325,14 @@ RANDOM_SAMPLING_TEST_CASES = [
              "multinomial_temperature_and_frequence_penalty",
              "greedy_with_penalties",
              "multinomial_max_and_min_token"])
-def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSamplingTestStruct):
+def test_multinomial_sampling_against_reference(test_struct: RandomSamplingTestStruct):
     generation_config = test_struct.generation_config
 
     prompts = test_struct.prompts
     generation_config.rng_seed = 0
-    generation_configs = generation_config
 
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_hugging_face_models(model_id)
-
-    models_path : Path = tmp_path / model_id
-    convert_models(model, hf_tokenizer, models_path)
+    _, _, models_path = download_and_convert_model(model_id)
 
     # Run multinomial without comparison with HF reference.
     _ = run_ov_pipeline(models_path=models_path,
