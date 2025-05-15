@@ -49,7 +49,7 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
     if (class_name == "SpeechT5ForTextToSpeech") {
         m_impl = std::make_shared<SpeechT5TTSImpl>(root_dir, device, properties, tokenizer);
     } else {
-        OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
+        OPENVINO_THROW("Unsupported text to speech generation pipeline '", class_name, "'");
     }
 }
 
