@@ -55,7 +55,7 @@ options = {"ENABLE_PYTHON" = "ON", "BUILD_TOKENIZERS" = "OFF", "ENABLE_SAMPLES" 
 requires = [
     "py-build-cmake==0.4.3",
     "openvino~=2025.2.0.0.dev",
-    "pybind11-stubgen==2.5.3",
+    "pybind11-stubgen==2.5.4",
     "cmake~=3.23.0; platform_system != 'Darwin' or platform_machine == 'x86_64'",
     "cmake~=3.24.0; platform_system == 'Darwin' and platform_machine == 'arm64'",
 ]
