@@ -18,7 +18,7 @@ constexpr size_t DEFAULT_NUM_DECODER_LAYERS = 2;
 class DefaultCacheEvictionAlgoTest : public testing::Test {
 protected:
     DefaultCacheEvictionAlgoTest() {
-        algo = ov::genai::CacheEvictionAlgorithm(eviction_config, block_size, num_decoder_layers);
+        algo = ov::genai::CacheEvictionAlgorithm(eviction_config, block_size, num_decoder_layers, /* max_pool_window_size = */ 1);
     }
     size_t block_size = DEFAULT_BLOCK_SIZE;
     size_t num_decoder_layers = DEFAULT_NUM_DECODER_LAYERS;
@@ -123,7 +123,7 @@ using CacheEvictionAlgoConfigurationTest = ::testing::TestWithParam<size_t>;
 
 TEST_P(CacheEvictionAlgoConfigurationTest, EvictedBlocksAreLayeredAsConfigured) {
     size_t ref_num_layers = GetParam();
-    auto algo = ov::genai::CacheEvictionAlgorithm(DEFAULT_CACHE_EVICTION_CONFIG, DEFAULT_BLOCK_SIZE, ref_num_layers);
+    auto algo = ov::genai::CacheEvictionAlgorithm(DEFAULT_CACHE_EVICTION_CONFIG, DEFAULT_BLOCK_SIZE, ref_num_layers, /* max_pool_window_size = */ 1);
     auto blocks_to_evict = algo.evict_logical_blocks();
     ASSERT_EQ(blocks_to_evict.size(), ref_num_layers);
 }
@@ -208,7 +208,7 @@ const std::vector<LowScoreBlocksTestStruct> LOW_SCORE_BLOCK_EVICTION_TEST_CASES 
 TEST_P(CacheEvictionLowScoreBlocksParameterizedTest, EvictsLowestScoredBlocks) {
     auto test_struct = GetParam();
     size_t num_decoder_layers = DEFAULT_NUM_DECODER_LAYERS;
-    auto algo = ov::genai::CacheEvictionAlgorithm(test_struct.eviction_config, DEFAULT_BLOCK_SIZE, num_decoder_layers);
+    auto algo = ov::genai::CacheEvictionAlgorithm(test_struct.eviction_config, DEFAULT_BLOCK_SIZE, num_decoder_layers, /* max_pool_window_size = */ 1);
     std::vector<std::set<size_t>> ref_lowest_scored_block_indices = test_struct.zero_filled_blocks;
     ASSERT_EQ(ref_lowest_scored_block_indices.size(), num_decoder_layers);
 
@@ -277,7 +277,7 @@ TEST_P(CacheEvictionNormalizationSettingTest, TokenLifetimeNormalizationHasEffec
     config.aggregation_mode = test_struct.normalization_mode;
 
     const size_t NUM_DECODER_LAYERS = 1;
-    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS);
+    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS, /* max_pool_window_size = */ 1);
     auto scores = get_mock_scores(NUM_DECODER_LAYERS, algo.get_max_cache_size_after_eviction() + BLOCKS_TO_EVICT * DEFAULT_BLOCK_SIZE);
     for (auto& scores_per_layer : scores) {
         const size_t SCORES_SIZE = scores_per_layer.get_size();
@@ -339,7 +339,7 @@ TEST_P(CacheEvictionConfigModeCommonBehaviour, ScoresAreAccumulated) {
     auto config = DEFAULT_CACHE_EVICTION_CONFIG;
     config.aggregation_mode = aggregation_mode;
     const size_t NUM_DECODER_LAYERS = 1;
-    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS);
+    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS, /* max_pool_window_size = */ 1);
 
     auto scores_phase_1 = get_mock_scores(NUM_DECODER_LAYERS, algo.get_max_cache_size_after_eviction() + BLOCKS_TO_EVICT * DEFAULT_BLOCK_SIZE);
     for (auto& scores_per_layer : scores_phase_1) {
@@ -429,7 +429,7 @@ const std::vector<CacheEvictionAlgoInitParamsForTest> INVALID_ALGO_INIT_PARAMS_C
 };
 TEST_P(CacheEvictionAlgoInitializationTest, ThrowsForInvalidConfigs) {
     auto params = GetParam();
-    EXPECT_THROW(ov::genai::CacheEvictionAlgorithm(params.config, params.block_size, params.num_decoder_layers), ov::Exception);
+    EXPECT_THROW(ov::genai::CacheEvictionAlgorithm(params.config, params.block_size, params.num_decoder_layers, /* max_pool_window_size = */ 1), ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionAlgoInitializationTest,
