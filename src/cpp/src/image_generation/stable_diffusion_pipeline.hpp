@@ -169,7 +169,7 @@ public:
 
     std::shared_ptr<DiffusionPipeline> clone() override {
         std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
-        std::shared_ptr<CLIPTextModel> clip_text_encoder = std::make_shared<CLIPTextModel>(m_clip_text_encoder->clone());
+        std::shared_ptr<CLIPTextModel> clip_text_encoder = m_clip_text_encoder->clone();
         std::shared_ptr<UNet2DConditionModel> unet = std::make_shared<UNet2DConditionModel>(m_unet->clone());
         std::shared_ptr<StableDiffusionPipeline> pipeline = std::make_shared<StableDiffusionPipeline>(
             m_pipeline_type,

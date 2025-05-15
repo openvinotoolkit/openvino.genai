@@ -4,6 +4,7 @@
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 
 #include <iostream>
+#include <memory>
 #include <fstream>
 
 #include "json_utils.hpp"
@@ -68,10 +69,10 @@ CLIPTextModel::CLIPTextModel(const std::string& model,
 
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
 
-CLIPTextModel CLIPTextModel::clone() {
+std::shared_ptr<CLIPTextModel> CLIPTextModel::clone() {
     OPENVINO_ASSERT(!m_model, "CLIP text encoder model must be compiled first. Cannot clone non-compiled model");
-    CLIPTextModel cloned = *this;
-    cloned.m_request = m_request.get_compiled_model().create_infer_request();
+    std::shared_ptr<CLIPTextModel> cloned = std::make_shared<CLIPTextModel>(*this);
+    cloned->m_request = m_request.get_compiled_model().create_infer_request();
     // TODO: tokenizer?
     // We should be able to increase the number of ireqs in the Tokenizer queue
     return cloned;

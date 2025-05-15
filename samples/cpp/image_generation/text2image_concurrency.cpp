@@ -20,7 +20,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     }
 
     ov::genai::Text2ImagePipeline pipe(models_path, device);
-    
+
     std::vector<std::thread> threads;
 
     for (size_t i = 0; i < prompts.size(); ++i) {

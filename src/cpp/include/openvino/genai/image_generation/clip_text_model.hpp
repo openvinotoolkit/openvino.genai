@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include "openvino/genai/visibility.hpp"
@@ -69,7 +70,7 @@ public:
 
     CLIPTextModel(const CLIPTextModel&);
 
-    CLIPTextModel clone();
+    std::shared_ptr<CLIPTextModel> clone();
 
     const Config& get_config() const;
 
@@ -93,9 +94,12 @@ public:
 private:
     Config m_config;
     AdapterController m_adapter_controller;
+
+protected:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
 
+private:
     Tokenizer m_clip_tokenizer;
 
     bool m_slice_batch1_output = false;
