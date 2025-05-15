@@ -5,11 +5,13 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <numeric>
 #include <openvino/openvino.hpp>
 #include <variant>
 
 #include "default_speaker_embedding.hpp"
+#include "json_utils.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "speecht5_tts_decoder.hpp"
 #include "utils.hpp"
@@ -97,12 +99,33 @@ SpeechT5TTSImpl::SpeechT5TTSImpl(const std::filesystem::path& models_path,
                                  const std::string& device,
                                  const ov::AnyMap& properties,
                                  const Tokenizer& tokenizer)
-    : m_tokenizer(tokenizer) {
+    : m_tokenizer(tokenizer),
+      m_reduction_factor(2),
+      m_num_mel_bins(80) {
+    init_model_config_params(models_path);
+
     m_encoder = init_model(models_path, "openvino_encoder_model.xml", "speecht5_tts encoder model", device, properties);
     m_postnet = init_model(models_path, "openvino_postnet.xml", "speecht5_tts postnet model", device, properties);
     m_vocoder = init_model(models_path, "openvino_vocoder.xml", "speecht5_tts vocoder model", device, properties);
 
     m_decoder = std::make_shared<SpeechT5TTSDecoder>(models_path, device, properties);
+}
+
+void SpeechT5TTSImpl::init_model_config_params(const std::filesystem::path& root_dir) {
+    const std::filesystem::path model_index_path = root_dir / "config.json";
+    std::ifstream file(model_index_path);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
+
+    nlohmann::json data = nlohmann::json::parse(file);
+    using ov::genai::utils::read_json_param;
+
+    if (data.contains("reduction_factor") && data["reduction_factor"].is_number_unsigned()) {
+        m_reduction_factor = data["reduction_factor"];
+    }
+
+    if (data.contains("num_mel_bins") && data["num_mel_bins"].is_number_unsigned()) {
+        m_num_mel_bins = data["num_mel_bins"];
+    }
 }
 
 Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::string>& texts,
@@ -128,17 +151,15 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
         auto [last_hidden_state, encoder_attention_mask] = encode(m_encoder, input_ids, raw_perf_metrics);
 
         auto last_hidden_state_len = static_cast<float>(last_hidden_state.get_shape()[1]);
-        auto reduction_factor = static_cast<float>(generation_config.reduction_factor);
+        auto reduction_factor = static_cast<float>(m_reduction_factor);
 
         int64_t maxlen = static_cast<int64_t>(last_hidden_state_len * generation_config.maxlenratio / reduction_factor);
         int64_t minlen = static_cast<int64_t>(last_hidden_state_len * generation_config.minlenratio / reduction_factor);
 
         // prepare inputs for decoder
-        std::vector<float> zeros(bsz * 1 * generation_config.num_mel_bins, 0.0f);
-        ov::Tensor inputs_embeds(ov::element::f32, ov::Shape{bsz, 1, generation_config.num_mel_bins}, zeros.data());
-        ov::Tensor spectrogram(ov::element::f32,
-                               ov::Shape{0, bsz, 2, generation_config.num_mel_bins},
-                               std::vector<float>{}.data());
+        std::vector<float> zeros(bsz * 1 * m_num_mel_bins, 0.0f);
+        ov::Tensor inputs_embeds(ov::element::f32, ov::Shape{bsz, 1, m_num_mel_bins}, zeros.data());
+        ov::Tensor spectrogram(ov::element::f32, ov::Shape{0, bsz, 2, m_num_mel_bins}, std::vector<float>{}.data());
 
         int64_t iter = 0;
         // decoder loop

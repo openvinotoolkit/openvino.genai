@@ -29,15 +29,6 @@ auto speech_generation_config_docstring = R"(
     SpeechGenerationConfig
     
     Speech-generation specific parameters:
-    :param pad_token_id: padding token id.
-    :type pad_token_id: int
-
-    :param reduction_factor: reduction factor.
-    :type reduction_factor: int
-
-    :param num_mel_bins: number of Mel-filterbank channels.
-    :type num_mel_bins: int
-
     :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
     :type minlenratio: float
 
@@ -103,8 +94,6 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def(py::init([](const py::kwargs& kwargs) {
             return update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
         }))
-        .def_readwrite("reduction_factor", &SpeechGenerationConfig::reduction_factor)
-        .def_readwrite("num_mel_bins", &SpeechGenerationConfig::num_mel_bins)
         .def_readwrite("minlenratio", &SpeechGenerationConfig::minlenratio)
         .def_readwrite("maxlenratio", &SpeechGenerationConfig::maxlenratio)
         .def_readwrite("threshold", &SpeechGenerationConfig::threshold)

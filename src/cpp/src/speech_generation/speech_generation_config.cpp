@@ -11,10 +11,6 @@
 namespace ov {
 namespace genai {
 
-//
-// GenerationConfig
-//
-
 SpeechGenerationConfig::SpeechGenerationConfig() {
     validate();
 }
@@ -27,9 +23,6 @@ SpeechGenerationConfig::SpeechGenerationConfig(const std::filesystem::path& json
 void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     using ov::genai::utils::read_anymap_param;
 
-    //read_anymap_param(config_map, "pad_token_id", pad_token_id);
-    read_anymap_param(config_map, "reduction_factor", reduction_factor);
-    read_anymap_param(config_map, "num_mel_bins", num_mel_bins);
     read_anymap_param(config_map, "minlenratio", minlenratio);
     read_anymap_param(config_map, "maxlenratio", maxlenratio);
     read_anymap_param(config_map, "threshold", threshold);
@@ -38,8 +31,6 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
 }
 
 void SpeechGenerationConfig::validate() const {
-    OPENVINO_ASSERT(reduction_factor > 0, "reduction_factor must be positive");
-    OPENVINO_ASSERT(num_mel_bins > 0, "num_mel_bins must be positive");
     OPENVINO_ASSERT(minlenratio >= 0.0f, "minlenratio must be non-negative");
     OPENVINO_ASSERT(maxlenratio > minlenratio, "maxlenratio must be greater than minlenratio");
     OPENVINO_ASSERT(0.0f <= threshold && threshold <= 1.0f, "threshold must be in the range [0; 1]");

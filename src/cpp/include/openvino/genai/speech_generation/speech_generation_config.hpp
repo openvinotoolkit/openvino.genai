@@ -21,15 +21,6 @@ public:
     SpeechGenerationConfig();
     explicit SpeechGenerationConfig(const std::filesystem::path& json_path);
 
-    // Padding token id.
-    //int64_t pad_token_id = 1;
-
-    // Reduction factor
-    int64_t reduction_factor = 2;
-
-    // Number of Mel filterbank channels
-    uint64_t num_mel_bins = 80;
-
     // Minimum ratio of output length to input text length; prevents output that's too short
     float minlenratio = 0.0;
 
@@ -51,9 +42,6 @@ public:
     void validate() const;
 };
 
-//static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
-static constexpr ov::Property<int64_t> reduction_factor{"reduction_factor"};
-static constexpr ov::Property<uint64_t> num_mel_bins{"num_mel_bins"};
 static constexpr ov::Property<float> minlenratio{"minlenratio"};
 static constexpr ov::Property<float> maxlenratio{"maxlenratio"};
 static constexpr ov::Property<float> threshold{"threshold"};

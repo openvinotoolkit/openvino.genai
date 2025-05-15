@@ -28,11 +28,16 @@ public:
     SpeechGenerationPerfMetrics get_performance_metrics() override;
 
 private:
+    void init_model_config_params(const std::filesystem::path& root_dir);
+
+private:
     ov::InferRequest m_encoder;
     std::shared_ptr<SpeechT5TTSDecoder> m_decoder;
     ov::InferRequest m_postnet;
     ov::InferRequest m_vocoder;
     Tokenizer m_tokenizer;
+    uint64_t m_reduction_factor;
+    uint64_t m_num_mel_bins;
 };
 
 }  // namespace genai
