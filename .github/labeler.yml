@@ -124,6 +124,13 @@
 - 'src/python/py_image_generation_models.cpp'
 - 'src/python/py_image_generation_pipelines.cpp'
 
+'category: speech generation':
+- 'src/include/openvino/genai/speech_generation/**/*'
+- 'src/cpp/src/speech_generation/**/*'
+- 'src/python/py_speech_generation.cpp'
+- 'samples/cpp/speech_generation/**/*'
+- 'samples/python/speech_generation/**/*'
+
 'category: speculative decoding':
 - 'src/cpp/src/speculative_decoding/**/*'
 - 'tests/cpp/speculative_decoding.cpp'
