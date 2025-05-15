@@ -108,6 +108,8 @@ public:
     
     virtual ~ContinuousBatchingImpl();
 
+    void set_tokenizer(const ov::genai::Tokenizer& tokenizer) override;
+    
     void set_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) override;
 
     GenerationHandle add_request(uint64_t request_id,

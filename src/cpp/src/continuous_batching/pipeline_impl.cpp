@@ -163,13 +163,17 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
             std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
     }
 
-    m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
+    m_sampler = std::make_shared<Sampler>(sampler_num_threads);
     m_sampler->set_seed(m_generation_config.rng_seed);
+};
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_tokenizer(const Tokenizer& tokenizer) {
+    IContinuousBatchingPipeline::set_tokenizer(tokenizer);
+    m_sampler->set_tokenizer(tokenizer);
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1)
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
-};
+}
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
     IContinuousBatchingPipeline::set_embedder(inputs_embedder);
