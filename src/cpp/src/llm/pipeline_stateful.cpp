@@ -421,4 +421,8 @@ void StatefulLLMPipeline::finish_chat() {
     }
 }
 
+StatefulLLMPipeline::~StatefulLLMPipeline() {
+    m_model_runner.get_compiled_model().release_memory();
+}
+
 } // namespace ov::genai

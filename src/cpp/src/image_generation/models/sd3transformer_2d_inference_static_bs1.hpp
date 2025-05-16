@@ -45,6 +45,13 @@ public:
         }
     }
 
+    virtual void set_adapters(AdapterController& m_adapter_controller, const AdapterConfig& adapters) override {
+        for (auto& m_request : m_requests) {
+            OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
+            m_adapter_controller.apply(m_request, adapters);
+        }
+    }
+
     virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) override {
         OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
                         "Transformer model must be compiled first");

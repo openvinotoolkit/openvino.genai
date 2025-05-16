@@ -263,7 +263,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <td>Supported</td>
       <td>Supported</td>
       <td>Supported</td>
-      <td>Not supported</td>
+      <td>Partially supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-3-medium-diffusers"><code>stabilityai/stable-diffusion-3-medium-diffusers</code></a></li>
@@ -424,6 +424,63 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
           <li><a href="https://huggingface.co/distil-whisper/distil-small.en"><code>distil-whisper/distil-small.en</code></a></li>
           <li><a href="https://huggingface.co/distil-whisper/distil-medium.en"><code>distil-whisper/distil-medium.en</code></a></li>
           <li><a href="https://huggingface.co/distil-whisper/distil-large-v3"><code>distil-whisper/distil-large-v3</code></a></li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+## Text embeddings models
+
+<table>
+  <tbody style="vertical-align: top;">
+    <tr>
+      <th>Architecture</th>
+      <th>LoRA support</th>
+      <th>Example HuggingFace Models</th>
+    </tr>
+    <tr>
+      <td><code>BertModel</code></td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/BAAI/bge-small-en-v1.5"><code>BAAI/bge-small-en-v1.5</code></a></li>
+          <li><a href="https://huggingface.co/BAAI/bge-base-en-v1.5"><code>BAAI/bge-base-en-v1.5</code></a></li>
+          <li><a href="https://huggingface.co/BAAI/bge-large-en-v1.5"><code>BAAI/bge-large-en-v1.5</code></a></li>
+          <li><a href="https://huggingface.co/sentence-transformers/all-MiniLM-L12-v2"><code>sentence-transformers/all-MiniLM-L12-v2</code></a></li>
+          <li><a href="https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1"><code>mixedbread-ai/mxbai-embed-large-v1</code></a></li>
+          <li><a href="https://huggingface.co/mixedbread-ai/mxbai-embed-xsmall-v1"><code>mixedbread-ai/mxbai-embed-xsmall-v1</code></a></li>
+          <li><a href="https://huggingface.co/WhereIsAI/UAE-Large-V1"><code>WhereIsAI/UAE-Large-V1</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>MPNetForMaskedLM</code></td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/sentence-transformers/all-mpnet-base-v2"><code>sentence-transformers/all-mpnet-base-v2</code></a></li>
+          <li><a href="https://huggingface.co/sentence-transformers/multi-qa-mpnet-base-dot-v1"><code>sentence-transformers/multi-qa-mpnet-base-dot-v1</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>RobertaForMaskedLM</code></td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/sentence-transformers/all-distilroberta-v1"><code>sentence-transformers/all-distilroberta-v1</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>XLMRobertaModel</code></td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/mixedbread-ai/deepset-mxbai-embed-de-large-v1"><code>mixedbread-ai/deepset-mxbai-embed-de-large-v1</code></a></li>
+          <li><a href="https://huggingface.co/intfloat/multilingual-e5-large-instruct"><code>intfloat/multilingual-e5-large-instruct</code></a></li>
+          <li><a href="https://huggingface.co/intfloat/multilingual-e5-large"><code>intfloat/multilingual-e5-large</code></a></li>
         </ul>
       </td>
     </tr>

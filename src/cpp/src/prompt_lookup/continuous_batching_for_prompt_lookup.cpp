@@ -87,12 +87,7 @@ bool ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::is_reque
     return m_requests.empty();
 }
 
-std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_awaiting_requests() {
-    return m_awaiting_requests;
-}
-
 size_t ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_processed_tokens_per_iteration() {
     return m_batch_size;
 }
-
 }
