@@ -10,8 +10,9 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG = {32, 32, 192, ov::genai::AggregationMode::NORM_SUM};
-const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG = {32, 32, 72, ov::genai::AggregationMode::NORM_SUM};
+//kvcrush - for testing | cache budget is 64
+const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG = {32, 32, 192, 8, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::NORM_SUM};
+const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG = {32, 32, 72, 8, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::NORM_SUM};
 constexpr size_t DEFAULT_BLOCK_SIZE = 4;
 constexpr size_t DEFAULT_NUM_DECODER_LAYERS = 2;
 
@@ -152,7 +153,7 @@ using CacheEvictionLowScoreBlocksParameterizedTest = ::testing::TestWithParam<Lo
 
 // clang-format off
 const std::vector<LowScoreBlocksTestStruct> LOW_SCORE_BLOCK_EVICTION_TEST_CASES = {
-        // low-scored blocks in evictable area
+        //low-scored blocks in evictable area
         {
                 "one_block",
                 1,  // one overflowing token amounting to one extra block to be evicted
@@ -177,7 +178,7 @@ const std::vector<LowScoreBlocksTestStruct> LOW_SCORE_BLOCK_EVICTION_TEST_CASES 
                 {{15, 36, 13, 10}, {9, 39, 31, 11}},  // 4 zeroed blocks
                 {{10, 13}, {9, 11}}
         },
-        // will prefer to evict lower-indexed blocks if there are multiple same-scored blocks
+        //will prefer to evict lower-indexed blocks if there are multiple same-scored blocks
         {
                 "less_zeroed_than_to_evict",
                 5 * 4 + 2,  // 6 blocks to be evicted
@@ -227,7 +228,18 @@ TEST_P(CacheEvictionLowScoreBlocksParameterizedTest, EvictsLowestScoredBlocks) {
     auto test_evicted_blocks = algo.evict_logical_blocks();
     auto ref_evicted_blocks = test_struct.ref_evicted_blocks;
     for (size_t layer_idx = 0; layer_idx < num_decoder_layers; layer_idx++) {
-        EXPECT_EQ(test_evicted_blocks[layer_idx], ref_evicted_blocks[layer_idx]);
+        //if kvcrush is enabled
+        bool is_kvcrush_enabled = (test_struct.eviction_config.get_kvcrush_budget() > 0) && (std::ceil(static_cast<double>(test_struct.tokens_over_max_cache_size) / DEFAULT_BLOCK_SIZE) >= std::floor(static_cast<double>(test_struct.eviction_config.get_kvcrush_budget()) / DEFAULT_BLOCK_SIZE));
+        if (is_kvcrush_enabled) {
+            // check test_evicted_blocks is a subset of ref_evicted_blocks
+            EXPECT_TRUE(std::includes(ref_evicted_blocks[layer_idx].begin(), ref_evicted_blocks[layer_idx].end(),
+                                      test_evicted_blocks[layer_idx].begin(), test_evicted_blocks[layer_idx].end()));
+            EXPECT_EQ(static_cast<int>(test_evicted_blocks[layer_idx].size()), static_cast<int>(ref_evicted_blocks[layer_idx].size()) - static_cast<int>(test_struct.eviction_config.get_kvcrush_budget() / DEFAULT_BLOCK_SIZE));
+        }
+        //if kvcrush is disabled
+        else {
+            EXPECT_EQ(test_evicted_blocks[layer_idx], ref_evicted_blocks[layer_idx]);
+        }
     }
 }
 
@@ -384,23 +396,24 @@ struct CacheEvictionConfigInitParamsForTest {
     size_t start_size;
     size_t recent_size;
     size_t max_cache_size;
+    size_t cl_size;
 };
 
 using CacheEvictionConfigInitializationTest = ::testing::TestWithParam<CacheEvictionConfigInitParamsForTest>;
 
 const std::vector<CacheEvictionConfigInitParamsForTest> INVALID_CONFIG_INIT_PARAMS_CASES = {
         // zero area sizes
-        {32, 32, 64},
-        {0, 13, 39},
-        {128, 0, 384},
+        {32, 32, 64, 10},
+        {0, 13, 39, 10},
+        {128, 0, 384, 10},
 
         // max_cache_size less than start_size + recent_size
-        {32, 64, 32},
+        {32, 64, 32, 10},
 };
 
 TEST_P(CacheEvictionConfigInitializationTest, ThrowsForInvalidConfigParams) {
     auto params = GetParam();
-    EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size, params.recent_size, params.max_cache_size, ov::genai::AggregationMode::NORM_SUM), ov::Exception);
+    EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size, params.recent_size, params.max_cache_size, params.cl_size, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::NORM_SUM), ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionConfigInitializationTest,
@@ -416,12 +429,12 @@ using CacheEvictionAlgoInitializationTest = ::testing::TestWithParam<CacheEvicti
 
 const std::vector<CacheEvictionAlgoInitParamsForTest> INVALID_ALGO_INIT_PARAMS_CASES = {
         // area sizes not multiple of block size
-        { {32, 32, 97, ov::genai::AggregationMode::SUM}, 16, 8},
-        { {11, 13, 50, ov::genai::AggregationMode::NORM_SUM}, 13, 1},
-        { {128, 200, 584, ov::genai::AggregationMode::NORM_SUM}, 128, 19},
+        { {32, 32, 97, 10, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::SUM}, 16, 8},
+        { {11, 13, 50, 10, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::NORM_SUM}, 13, 1},
+        { {128, 200, 584, 10, ov::genai::AnchorPoints::RANDOM,ov::genai::AggregationMode::NORM_SUM}, 128, 19},
 
         // zero decoder layers
-        { {32, 64, 192, ov::genai::AggregationMode::SUM}, 32, 0},
+        { {32, 64, 192, 10, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::SUM}, 32, 0},
 };
 TEST_P(CacheEvictionAlgoInitializationTest, ThrowsForInvalidConfigs) {
     auto params = GetParam();

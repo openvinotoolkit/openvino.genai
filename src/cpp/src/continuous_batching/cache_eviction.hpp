@@ -94,6 +94,7 @@ public:
      * evicted by the external cache-controlling mechanism.
      */
     std::vector<std::set<std::size_t>> evict_logical_blocks();
+    std::vector<std::size_t> get_indices_of_blocks_to_retain_using_kvcrush(size_t decoder_layer_idx, size_t k, std::vector<std::size_t>& evicted_block_indices);
 
 
 private:
