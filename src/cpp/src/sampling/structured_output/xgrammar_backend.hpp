@@ -73,6 +73,17 @@ private:
     std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
 };
 
+// Static initializer for XGrammar backend registration
+static bool registerXGrammarBackend() {
+    StructuredOutputController::register_backend("xgrammar",
+        [](const ov::genai::Tokenizer& tokenizer, std::optional<int> vocab_size) {
+            return std::make_unique<XGrammarStructuredOutput>(tokenizer, vocab_size);
+        });
+    return true;
+}
+
+// This ensures the function is called during static initialization
+static bool xgrammar_registered = registerXGrammarBackend();
 
 } // namespace genai
 }// namespace ov

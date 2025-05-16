@@ -139,7 +139,8 @@ public:
     std::optional<std::string> regex;
     std::optional<std::vector<std::string>> choices;
     std::optional<std::string> grammar;
-
+    // todo: add structural tag for function calling
+    // todo: add structured_output_backend
 
     std::optional<AdapterConfig> adapters;
 

@@ -994,8 +994,22 @@ LogitProcessor& Sampler::get_logit_processor(uint64_t request_id) {
 
 
 void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_params, const TokenIds& prompt) {
-    // todo: check if m_structured_output_controller exists if sampling_params.is_structured_output()
-    m_logit_processors.insert({request_id, LogitProcessor(sampling_params, prompt, m_structured_output_controller)});
+    std::cerr << "Creating logit processor for request id: " << request_id << std::endl;
+    #ifdef ENABLE_XGRAMMAR
+    if (sampling_params.is_structured_output() && !m_structured_output_controller) {
+        std::cerr << "Structured output controller is created" << std::endl;
+        m_structured_output_controller = std::make_shared<StructuredOutputController>(m_tokenizer);
+    }
+    #endif
+
+    m_logit_processors.insert(
+        {request_id,
+        LogitProcessor(sampling_params,
+                       prompt
+                       #ifdef ENABLE_XGRAMMAR
+                       ,m_structured_output_controller
+                        #endif
+                       )});
 }
 
 void Sampler::clear_request_info(uint64_t request_id) {
