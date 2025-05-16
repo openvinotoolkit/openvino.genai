@@ -1357,24 +1357,24 @@ struct AdapterControllerImpl {
             set_lora_tensors(state, lora_var_ids.first, lora_var_ids.second, lora_indices, weight_getters, alpha_only);
         }
 
-        for (const auto& constant_variable_id : constant_variable_ids) {
-            auto b = constant_variable_id.second.variable_id;
-            // variable_info
-            if (constant_variable_id.first.find("const") != std::string::npos) {
-                auto a = std::vector<bool>{true};
-                ov::Tensor if_input_true = ov::Tensor(ov::element::boolean, ov::Shape(1), a);
-                // ov::Tensor if_input_true = ov::Tensor(ov::element::boolean, ov::Shape{1});
-                size_t lora_index = state_name_to_index.at(b);
-                // NodePtr node = const_getter[0](constant_variable_id.first)->tensor;
-                // // auto a = std::dynamic_pointer_cast<ov::op::v0::Constant>(node);
-                state[lora_index].set_state(if_input_true);
-            }
-            size_t lora_index = state_name_to_index.at(b);
-            NodePtr node = const_getter[0](constant_variable_id.first)->tensor;
-            auto a = std::dynamic_pointer_cast<ov::op::v0::Constant>(node);
-            state[lora_index].set_state(a->get_tensor_view());
-            // set_lora_tensors(state, constant_variable_id.first, constant_variable_id.second, lora_indices, weight_getters, alpha_only);
-        }
+        // for (const auto& constant_variable_id : constant_variable_ids) {
+        //     auto b = constant_variable_id.second.variable_id;
+        //     // variable_info
+        //     if (constant_variable_id.first.find("const") != std::string::npos) {
+        //         auto a = std::vector<bool>{true};
+        //         ov::Tensor if_input_true = ov::Tensor(ov::element::boolean, ov::Shape(1), a);
+        //         // ov::Tensor if_input_true = ov::Tensor(ov::element::boolean, ov::Shape{1});
+        //         size_t lora_index = state_name_to_index.at(b);
+        //         // NodePtr node = const_getter[0](constant_variable_id.first)->tensor;
+        //         // // auto a = std::dynamic_pointer_cast<ov::op::v0::Constant>(node);
+        //         state[lora_index].set_state(if_input_true);
+        //     }
+        //     size_t lora_index = state_name_to_index.at(b);
+        //     NodePtr node = const_getter[0](constant_variable_id.first)->tensor;
+        //     auto a = std::dynamic_pointer_cast<ov::op::v0::Constant>(node);
+        //     state[lora_index].set_state(a->get_tensor_view());
+        //     // set_lora_tensors(state, constant_variable_id.first, constant_variable_id.second, lora_indices, weight_getters, alpha_only);
+        // }
     }
 
     std::vector<LoRAWeight> collect_applicable_tensors (const std::string& lora_name, const std::vector<LoRAWeightGetter>& weight_getters) {
