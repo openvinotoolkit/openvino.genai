@@ -8,7 +8,7 @@ Additionally, you can choose the inference device (e.g., CPU, GPU) to control wh
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model. 
+Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
@@ -30,17 +30,19 @@ You can generate a speaker embedding using the [`create_speaker_embedding.py`](c
 This script records 5 seconds of audio from your microphone and extracts a speaker embedding vector from the recording.
 
 To run the script:
+
 ```
 python create_speaker_embedding.py
 ```
 
 ## Run Text-to-speech sample
 
-Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
+Install [deployment-requirements.txt](../../deployment-requirements.txt)
+via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
-`python text2speech.py --speaker_embedding_file_path speaker_embedding.bin speecht5_tts "Hello everyone"`
+`python text2speech.py --speaker_embedding_file_path speaker_embedding.bin speecht5_tts "Hello OpenVINO GenAI"`
 
-It generates `output_audio.wav` file containing the phrase `Hello world` spoken in the target voice.
+It generates `output_audio.wav` file containing the phrase `Hello OpenVINO GenAI` spoken in the target voice.
 
 See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
 

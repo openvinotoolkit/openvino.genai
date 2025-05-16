@@ -8,7 +8,7 @@ Additionally, you can choose the inference device (e.g., CPU, GPU) to control wh
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model. 
+Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
@@ -26,17 +26,20 @@ The model will use these characteristics to synthesize the input text in the spe
 
 If no speaker embedding is provided, the model will default to a built-in speaker for speech generation.
 
-You can generate a speaker embedding using the [`create_speaker_embedding.py`](../../python/speech_generation/create_speaker_embedding.py) script.
+You can generate a speaker embedding using
+the [`create_speaker_embedding.py`](../../python/speech_generation/create_speaker_embedding.py) script.
 This script records 5 seconds of audio from your microphone and extracts a speaker embedding vector from the recording.
 
 To run the script:
+
 ```
 python create_speaker_embedding.py
 ```
 
 ## Run Text-to-speech sample
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
+Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html)
+to run the sample.
 
 `text-to-speech speecht5_tts "Hello OpenVINO GenAI" speaker_embedding.bin`
 
