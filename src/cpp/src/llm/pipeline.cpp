@@ -84,12 +84,16 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (utils::explicitly_requires_paged_attention(user_properties)) {
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
-    } else if (device == "NPU") {
+    }
+
+    if (m_pimpl == nullptr && device == "NPU") {
         m_pimpl = properties.count("STATIC_PIPELINE")
             ? static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties)
             : std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
-    } else if (attention_backend == PA_BACKEND) {
-        // try to call CB adapter one more time, but with safe guard to silent exception
+    }
+
+    // try to call CB adapter one more time, but with safe guard to silent exception
+    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
@@ -121,12 +125,16 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (utils::explicitly_requires_paged_attention(user_properties)) {
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
-    } else if (device == "NPU") {
+    }
+
+    if (m_pimpl == nullptr && device == "NPU") {
         m_pimpl = properties.count("STATIC_PIPELINE")
             ? static_llm::LLMPipelineFactory::create(models_path, properties)
             : std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
-    } else if (attention_backend == PA_BACKEND) {
-        // try to call CB adapter one more time, but with safe guard to silent exception
+    }
+
+    // try to call CB adapter one more time, but with safe guard to silent exception
+    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
@@ -162,7 +170,9 @@ ov::genai::LLMPipeline::LLMPipeline(
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
                                                               tokenizer, scheduler_config, device, device_properties, generation_config);
-    } else if (device == "NPU") {
+    }
+
+    if (m_pimpl == nullptr && device == "NPU") {
         m_pimpl = properties.count("STATIC_PIPELINE")
             ? static_llm::LLMPipelineFactory::create(
                   utils::singleton_core().read_model(model_str, weights_tensor),
@@ -175,8 +185,10 @@ ov::genai::LLMPipeline::LLMPipeline(
                 device,
                 properties,
                 generation_config);
-    } else if (attention_backend == PA_BACKEND) {
-        // try to call CB adapter one more time, but with safe guard to silent exception
+    }
+
+    // try to call CB adapter one more time, but with safe guard to silent exception
+    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
