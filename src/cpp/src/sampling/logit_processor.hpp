@@ -44,9 +44,8 @@ public:
         }
 
         #ifdef ENABLE_XGRAMMAR
-        std::cerr << "LogitProcessor: sampling_params.is_multinomial() = " << sampling_params.is_multinomial() << std::endl;
+        OPENVINO_ASSERT(structured_output_controller != nullptr, "Structured output controller is not initialized");
         if (sampling_params.is_structured_output()) {
-            std::cerr << "Structured output!" << std::endl;
             auto transformer = structured_output_controller->get_logits_transformer(sampling_params);
             m_logit_transformers.push_back(transformer);
         }
