@@ -145,6 +145,9 @@ public:
         const FluxTransformer2DModel& transformer,
         const AutoencoderKL& vae);
 
+    // TODO: Doc
+    Text2ImagePipeline clone();
+
     /**
      * Returns default image generation config created internally based on model type.
      * @returns Image generation config

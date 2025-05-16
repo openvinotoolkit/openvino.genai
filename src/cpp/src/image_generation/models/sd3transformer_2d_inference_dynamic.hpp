@@ -11,6 +11,12 @@ namespace genai {
 
 class SD3Transformer2DModel::InferenceDynamic : public SD3Transformer2DModel::Inference {
 public:
+    virtual std::shared_ptr<Inference> clone() override {
+        InferenceDynamic cloned(*this);
+        cloned.m_request = m_request.get_compiled_model().create_infer_request();
+        return std::make_shared<InferenceDynamic>(cloned);
+    }
+
     virtual void compile(std::shared_ptr<ov::Model> model,
                          const std::string& device,
                          const ov::AnyMap& properties) override {
