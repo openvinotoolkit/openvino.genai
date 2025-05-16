@@ -20,48 +20,6 @@ void write_native(std::ostream& os, size_t idx) {
     os << "<|image_" << idx + 1 << "|>\n";
 }
 
-std::string normalize_prompt(
-    const std::string& prompt, size_t base_id, size_t n_images
-) {
-    std::smatch match;
-    std::regex_search(prompt, match, NATIVE_PATTERN);
-    auto [image_prompt, image_sequence] = universal_to_native(prompt, write_native);
-    if (!image_sequence.empty()) {
-        OPENVINO_ASSERT(match.empty(), "Prompt can contain only one type of image tags.");
-        verify_ids(image_sequence, base_id, n_images);
-        return image_prompt;
-    }
-    // Restore ids from native tags
-    if (!match.empty()) {
-        size_t image_id = std::stoul(match.str(1));
-        OPENVINO_ASSERT(image_id != 0, "Image tags must be greater than 0");
-        image_sequence.push_back(image_id - 1);
-        constexpr int submatch_id_to_return = 1;
-        for (std::sregex_token_iterator iter{
-            match.suffix().first,
-            prompt.end(),
-            NATIVE_PATTERN,
-            submatch_id_to_return
-        }; iter != std::sregex_token_iterator{}; ++iter) {
-            size_t image_id = std::stoul(*iter);
-            OPENVINO_ASSERT(image_id != 0, "Image tags must be greater than 0");
-            image_sequence.push_back(image_id - 1);
-        }
-        if (!image_sequence.empty()) {
-            verify_ids(image_sequence, base_id, n_images);
-            return image_prompt;
-        }
-    }
-    // Prepend native tags
-    std::stringstream stream;
-    for (size_t relative_id = 0; relative_id < n_images; relative_id++) {
-        image_sequence.push_back(base_id + relative_id);
-        write_native(stream, image_sequence.back());
-    }
-    stream << prompt;
-    return stream.str();
-}
-
 ov::Tensor padding_336(const ov::Tensor& unpadded) {
     ov::Shape _1ss3 = unpadded.get_shape();
     size_t s1 = _1ss3.at(1), s2 = _1ss3.at(2);
@@ -467,6 +425,51 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
     return res;
 }
 
+} // namespace
+
+namespace util {
+std::string normalize_prompt(
+    const std::string& prompt, size_t base_id, size_t n_images
+) {
+    std::smatch match;
+    std::regex_search(prompt, match, NATIVE_PATTERN);
+    auto [image_prompt, image_sequence] = universal_to_native(prompt, write_native);
+    if (!image_sequence.empty()) {
+        OPENVINO_ASSERT(match.empty(), "Prompt can contain only one type of image tags.");
+        verify_ids(image_sequence, base_id, n_images);
+        return image_prompt;
+    }
+    // Restore ids from native tags
+    if (!match.empty()) {
+        size_t image_id = std::stoul(match.str(1));
+        OPENVINO_ASSERT(image_id != 0, "Image tags must be greater than 0");
+        image_sequence.push_back(image_id - 1);
+        constexpr int submatch_id_to_return = 1;
+        for (std::sregex_token_iterator iter{
+            match.suffix().first,
+            prompt.end(),
+            NATIVE_PATTERN,
+            submatch_id_to_return
+        }; iter != std::sregex_token_iterator{}; ++iter) {
+            size_t image_id = std::stoul(*iter);
+            OPENVINO_ASSERT(image_id != 0, "Image tags must be greater than 0");
+            image_sequence.push_back(image_id - 1);
+        }
+        if (!image_sequence.empty()) {
+            verify_ids(image_sequence, base_id, n_images);
+            return image_prompt;
+        }
+    }
+    // Prepend native tags
+    std::stringstream stream;
+    for (size_t relative_id = 0; relative_id < n_images; relative_id++) {
+        image_sequence.push_back(base_id + relative_id);
+        write_native(stream, image_sequence.back());
+    }
+    stream << prompt;
+    return stream.str();
+}
+
 /// @brief ov::Tensor is tokenized text, size_t is image tag
 std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text, ov::genai::Tokenizer& tokenizer) {
     std::vector<std::variant<ov::Tensor, size_t>> tokenized;
@@ -579,7 +582,7 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
     return chunks;
 }
 
-} // namespace
+}  // namespace util
 
 EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
@@ -664,7 +667,7 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
 
 ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
     size_t base_id = m_tokens_per_images.size();
-    std::string image_prompt = normalize_prompt(prompt, base_id, images.size());
+    std::string image_prompt = util::normalize_prompt(prompt, base_id, images.size());
     std::vector<ov::Tensor> images_features_proj;
     for (const ov::genai::EncodedImage& encoded_image : images) {
         images_features_proj.push_back(encoded_image.images_features_projection);
@@ -676,7 +679,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
         constexpr bool add_generation_prompt = true;
         std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = split_tokenize(new_templated_chat_history, m_tokenizer);
+        new_chat_tokens = util::split_tokenize(new_templated_chat_history, m_tokenizer);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     } else {
@@ -689,16 +692,16 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
             templated_prompt = std::move(image_prompt);
         }
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = split_tokenize(templated_prompt, m_tokenizer);
+        new_chat_tokens = util::split_tokenize(templated_prompt, m_tokenizer);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     }
-    ov::Tensor new_merged_tokens = insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
+    ov::Tensor new_merged_tokens = util::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     ov::Tensor new_tokens = update_history(new_merged_tokens);
     m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_tokens);
 
-    std::vector<std::variant<ov::Tensor, size_t>> tokens = drop_image_placeholders(new_tokens);
+    std::vector<std::variant<ov::Tensor, size_t>> tokens = util::drop_image_placeholders(new_tokens);
     ov::Tensor inputs_embeds{ov::element::f32, {1, new_tokens.get_shape().at(1), m_vlm_config.hidden_size}};
     size_t offset = 0;
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
