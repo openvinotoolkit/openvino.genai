@@ -160,6 +160,41 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     auto logits = m_llm.get_tensor("logits");
 
+    float *logits_data = logits.data<float>();
+    auto *last_logits = &logits_data[logits.get_size() - logits.get_shape().at(2)];
+    std::vector<float> logits_YN = {last_logits[56], last_logits[45]};
+    auto softmax=[](const std::vector<float>& z) {    
+        // Find the maximum value in the input vector
+        float max_val = z[0];
+        for (size_t i = 1; i < z.size(); ++i) {
+            if (z[i] > max_val) {
+                max_val = z[i];
+            }
+        }
+    
+        // Subtract the maximum value from each element and exponentiate
+        std::vector<float> exp_z(z.size());
+        for (size_t i = 0; i < z.size(); ++i) {
+            exp_z[i] = std::exp(z[i] - max_val);
+        }
+    
+        // Calculate the sum of the exponentiated values
+        float sum_exp_z = 0.0;
+        for (size_t i = 0; i < exp_z.size(); ++i) {
+            sum_exp_z += exp_z[i];
+        }
+    
+        // Divide each exponentiated value by the sum to get the probabilities
+        std::vector<float> softmax_output(z.size());
+        for (size_t i = 0; i < z.size(); ++i) {
+            softmax_output[i] = exp_z[i] / sum_exp_z;
+        }
+    
+        return softmax_output;
+    };
+    auto softmax_output = softmax(logits_YN);
+    // std::cout << " Y: " << softmax_output[0] << ", N: " << softmax_output[1] << std::endl;
+
     int64_t output_sequence_len = logits.get_shape().at(1);
     for (auto& sequence_group : sequence_groups) {
         sequence_group->schedule_tokens(sequence_group->get_prompt_len());
@@ -286,7 +321,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
 
             finish_info.results.tokens.push_back(sequence->get_generated_ids());
-            finish_info.results.scores.push_back(score);
+            // finish_info.results.scores.push_back(score);
+            finish_info.results.scores.push_back(softmax_output[0]);
         }
     }
 
