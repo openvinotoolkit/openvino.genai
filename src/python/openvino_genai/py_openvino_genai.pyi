@@ -1,5 +1,5 @@
 """
-Pybind11 binding for OpenVINO GenAI library
+Pybind11 binding for Text-to-speech Pipeline
 """
 from __future__ import annotations
 import openvino._pyopenvino
