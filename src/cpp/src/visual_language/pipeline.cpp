@@ -367,14 +367,10 @@ VLMPipeline::VLMPipeline(
     if (utils::explicitly_requires_paged_attention(properties)) {
         auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
-    }
-
-    if (m_pimpl == nullptr && device == "NPU") {
+    } else if (device == "NPU") {
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
-    }
-
-    // try to call CB adapter one more time, but with safe guard to silent exception
-    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
+    } else if (attention_backend == PA_BACKEND) {
+        // try to call CB adapter one more time, but with safe guard to silent exception
         try {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
@@ -410,14 +406,10 @@ VLMPipeline::VLMPipeline(
     if (utils::explicitly_requires_paged_attention(properties)) {
         auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
-    }
-
-    if (m_pimpl == nullptr && device == "NPU") {
+    } else if (device == "NPU") {
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
-    }
-
-    // try to call CB adapter one more time, but with safe guard to silent exception
-    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
+    } else if (attention_backend == PA_BACKEND) {
+        // try to call CB adapter one more time, but with safe guard to silent exception
         try {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
