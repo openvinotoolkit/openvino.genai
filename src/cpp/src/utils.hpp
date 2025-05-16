@@ -20,8 +20,8 @@
 namespace ov {
 namespace genai {
 
-inline constexpr std::string_view PA_BACKEND = "PA";
-inline constexpr std::string_view SDPA_BACKEND = "SDPA";
+extern const std::string PA_BACKEND;
+extern const std::string SDPA_BACKEND;
 
 }  // namespace genai
 }  // namespace ov
@@ -244,7 +244,7 @@ SchedulerConfig get_latency_oriented_scheduler_config();
 
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties);
 
-std::pair<ov::AnyMap, std::string_view> extract_attention_backend(const ov::AnyMap& external_properties);
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties);
 
 }  // namespace utils
 }  // namespace genai
