@@ -335,7 +335,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
     else:
         log.warning("No generated tokens")
-    first_token_time = (perf_metrics.get_ttft().mean) * args["batch_size"]
+    first_token_time = (perf_metrics.get_ttft().mean)
     second_tokens_durations = (
         np.array(perf_metrics.raw_metrics.m_new_token_times[1:])
         - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1])
