@@ -292,16 +292,26 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 } // namespace
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
-        std::filesystem::path model_path = model_dir.parent_path() / (model_dir.stem().string() + "_openvino_model.xml");
-        if (std::filesystem::exists(model_path)) {
-            std::cout << "Found generated OpenVINO model: " << model_path.string() << ", skip creating from GGUF model.\n";
-            return singleton_core().read_model(model_path, {}, config);
-        }
-        else {
-            return create_from_gguf(model_dir.string());
+        if (properties.find(ov::cache_dir.name()) != properties.end()) {
+            std::string cache_dir = properties.at(ov::cache_dir.name()).as<std::string>();
+            if (!cache_dir.empty()) {
+                std::filesystem::path model_cache_dir(cache_dir);
+                std::filesystem::path model_path = model_cache_dir / (model_dir.stem().string() + "_openvino_model.xml");
+                if (std::filesystem::exists(model_path)) {
+                    std::cout << "Found generated OpenVINO model: " << model_path.string() << ", skip creating from GGUF model.\n";
+                    auto start_time = std::chrono::high_resolution_clock::now();
+                    auto model = singleton_core().read_model(model_path, {}, properties);
+                    auto load_finish_time = std::chrono::high_resolution_clock::now();
+                    std::cout << "Loading OpenVINO model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms" << std::endl;
+                    return model;
+                }
+            }
+            return create_from_gguf(model_dir.string(), properties);
+        } else {
+            return create_from_gguf(model_dir.string(), properties);
         }
 #else
         OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
@@ -317,7 +327,7 @@ std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  c
             OPENVINO_THROW("Could not find a model in the directory '", model_dir, "'");
         }
 
-        return singleton_core().read_model(model_path, {}, config);
+        return singleton_core().read_model(model_path, {}, properties);
     }
 }
 

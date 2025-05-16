@@ -153,35 +153,41 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-void save_openvino_model(const std::string& model_path, const std::shared_ptr<ov::Model>& model) {
-    std::filesystem::path gguf_model_path(model_path);
-    std::filesystem::path openvino_model_path = gguf_model_path.parent_path() / (gguf_model_path.stem().string() + "_openvino_model.xml");
+void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path) {
     try {
         auto serialize_start_time = std::chrono::high_resolution_clock::now();
-        ov::serialize(model, openvino_model_path.string());
+        ov::serialize(model, save_path);
         auto serialize_finish_time = std::chrono::high_resolution_clock::now();
         auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
-        std::cout << "Save generated OpenVINO model to: " << openvino_model_path.string() << " done. Time: " << serialize_duration << " ms\n";
+        std::cout << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms\n";
     }
     catch (const ov::Exception& e) {
         std::cerr << "[Warning] Exception during model serialization: " << e.what() << std::endl;
     }
 }
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
+std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const ov::AnyMap& properties) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::cout << "Loading and unpacking model from: " << model_path << std::endl;
     auto [config, consts, qtypes] = load_gguf(model_path);
     auto load_finish_time = std::chrono::high_resolution_clock::now();
     std::cout << "Loading and unpacking model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms" << std::endl;
     std::cout << "Start generating OpenVINO model..." << std::endl;
-    
+
     std::shared_ptr<ov::Model> model;
 
     const std::string model_arch = std::get<std::string>(config.at("architecture"));
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
         model = create_language_model(config, consts, qtypes);
-        save_openvino_model(model_path, model);
+        if (properties.find(ov::cache_dir.name()) != properties.end()) {
+            std::string cache_dir = properties.at(ov::cache_dir.name()).as<std::string>();
+            if (!cache_dir.empty()) {
+                std::filesystem::path model_cache_dir(cache_dir);
+                std::filesystem::path gguf_model_path(model_path);
+                std::filesystem::path save_path = model_cache_dir / (gguf_model_path.stem().string() + "_openvino_model.xml");
+                save_openvino_model(model, save_path.string());
+            }
+        }
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }
