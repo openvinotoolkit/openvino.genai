@@ -6,7 +6,6 @@
 #include <chrono>
 #include <regex>
 
-#include "debug_utils.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "utils.hpp"
 #include "whisper/logit_processor.hpp"
