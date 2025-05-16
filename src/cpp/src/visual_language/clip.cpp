@@ -131,6 +131,83 @@ void bicubic_resize(const clip_image_u8 &img, clip_image_u8 &dst, int target_wid
     }
 }
 
+void bicubic_resize_reorder_normalize(const uint8_t* input, const int nx, const int ny,
+                                      float* target, int target_width, int target_height,
+                                      const float* img_mean3, const float* img_std3) {
+
+    float Cc;
+    float C[5];
+    float d0, d2, d3, a0, a1, a2, a3;
+    int i, j, k, jj;
+    int x, y;
+    float dx, dy;
+    float tx, ty;
+
+    size_t img_size = target_width * target_height;
+    tx = (float)nx / (float)target_width;
+    ty = (float)ny / (float)target_height;
+
+    // Bicubic interpolation; adapted from ViT.cpp, inspired from :
+    //    -> https://github.com/yglukhov/bicubic-interpolation-image-processing/blob/master/libimage.c#L36
+    //    -> https://en.wikipedia.org/wiki/Bicubic_interpolation
+
+    for (i = 0; i < target_height; i++) {
+        for (j = 0; j < target_width; j++) {
+            x = (int)(tx * j);
+            y = (int)(ty * i);
+
+            dx = tx * j - x;
+            dy = ty * i - y;
+
+            float dx2 = dx * dx;
+            float dx3 = dx2 * dx;
+            float dy2 = dy * dy;
+            float dy3 = dy2 * dy;
+
+            int y_clip[4] = {clip(y - 1 + 0, 0, ny - 1),
+                             clip(y - 1 + 1, 0, ny - 1),
+                             clip(y - 1 + 2, 0, ny - 1),
+                             clip(y - 1 + 3, 0, ny - 1)};
+            int cx0 = clip(x - 1, 0, nx - 1);
+            int cx1 = clip(x - 0, 0, nx - 1);
+            int cx2 = clip(x + 1, 0, nx - 1);
+            int cx3 = clip(x + 2, 0, nx - 1);
+
+            for (k = 0; k < 3; k++) {
+                for (jj = 0; jj <= 3; jj++) {
+                    int cy = y_clip[jj] * nx;
+                    a0 = input[(cy + cx1) * 3 + k];
+                    d0 = input[(cy + cx0) * 3 + k] - a0;
+                    d2 = input[(cy + cx2) * 3 + k] - a0;
+                    d3 = input[(cy + cx3) * 3 + k] - a0;
+
+                    a1 = -1.0 / 3 * d0 + d2 - 1.0 / 6 * d3;
+                    a2 =  1.0 / 2 * d0 +      1.0 / 2 * d2;
+                    a3 = -1.0 / 6 * d0 -      1.0 / 2 * d2 + 1.0 / 6 * d3;
+                    C[jj] = a0 + a1 * dx + a2 * dx2 + a3 * dx3;
+                }
+
+                d0 = C[0] - C[1];
+                d2 = C[2] - C[1];
+                d3 = C[3] - C[1];
+                a0 = C[1];
+                a1 = -1.0 / 3 * d0 + d2 - 1.0 / 6 * d3;
+                a2 =  1.0 / 2 * d0 +      1.0 / 2 * d2;
+                a3 = -1.0 / 6 * d0 -      1.0 / 2 * d2 + 1.0 / 6 * d3;
+                Cc = a0 + a1 * dy + a2 * dy2 + a3 * dy3;
+
+                //rgb hwc ->chw
+                //float v2 = clip(roundf(Cc), 0, 255);
+                Cc = Cc < 0.0f ? 0.0f : (Cc > 255.0f ? 255.0f : Cc);
+
+                //const uint8_t Cc2 = std::min(std::max(std::round(Cc), 0.0f), 255.0f);
+                //target[(i * target_width + j) * 3 + k] = ((Cc / 255.0f) - img_mean3[k]) / img_std3[k];
+                target[k* img_size + (i * target_width + j)] = ((Cc / 255.0f) - img_mean3[k]) / img_std3[k];
+            }
+        }
+    }
+}
+
 // llava-1.6 type of resize_and_pad (black)
 static clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution) {
     int target_width = target_resolution.first;
