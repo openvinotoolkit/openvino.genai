@@ -292,6 +292,7 @@ ov::Core singleton_core() {
     return core;
 }
 
+
 namespace {
 
 bool is_gguf_model(const std::filesystem::path& file_path) {
@@ -594,6 +595,15 @@ std::pair<ov::AnyMap, std::string_view> extract_attention_backend(const ov::AnyM
 
     return {properties, attention_backend};
 };
+
+void release_core_plugin(const std::string& device) {
+    try {
+        singleton_core().unload_plugin(device);
+    } catch (const ov::Exception&) {
+        // Note: in a theory it can throw an exception when 2 different pipelines are created from
+        // different threads and then both of them unload plugin for 'device' from ov::Core
+    }
+}
 
 }  // namespace utils
 }  // namespace genai

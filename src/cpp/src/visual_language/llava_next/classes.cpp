@@ -379,6 +379,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
     ov::Tensor image_newline;
     size_t searched_pos = 0;
     std::vector<ov::Tensor> image_embeds;
+    image_embeds.reserve(images_sequence.size());
     for (size_t new_image_id : images_sequence) {
         const EncodedImage& encoded_image = images.at(new_image_id);
         if (!image_newline) {
