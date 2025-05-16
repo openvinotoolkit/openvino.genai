@@ -12,13 +12,13 @@ import numpy as np
 import openvino as ov
 import hashlib
 import llm_bench_utils.metrics_print as metrics_print
-import llm_bench_utils.output_csv
 from transformers import set_seed
 from transformers.image_utils import load_image
-import llm_bench_utils.output_json
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
 import llm_bench_utils.parse_json_data as parse_json_data
+from pathlib import Path
+
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
@@ -38,7 +38,13 @@ def run_visual_language_generation_optimum(
     inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
         if "media" in input_data:
-            images.append(load_image(input_data["media"]))
+            if input_data["media"] is not None:
+                entry = Path(input_data["media"])
+                if entry.is_dir():
+                    for file in sorted(entry.iterdir()):
+                        images.append(load_image_genai(str(file)))
+                else:
+                    images.append(load_image_genai(input_data["media"]))
         prompts.append(input_data["prompt"])
 
     if args["output_dir"] is not None and num == 0:
@@ -201,7 +207,13 @@ def run_visual_language_generation_genai(
     inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
         if "media" in input_data:
-            images.append(load_image_genai(input_data["media"]))
+            if input_data["media"] is not None:
+                entry = Path(input_data["media"])
+                if entry.is_dir():
+                    for file in sorted(entry.iterdir()):
+                        images.append(load_image_genai(str(file)))
+                else:
+                    images.append(load_image_genai(input_data["media"]))
         prompts.append(input_data["prompt"])
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
@@ -221,7 +233,10 @@ def run_visual_language_generation_genai(
     if hasattr(gen_config, 'apply_chat_template'):
         gen_config.apply_chat_template = False
     kwargs = {}
-    if len(images) >= 1:
+    if len(images) > 1:
+        # multi images
+        kwargs["images"] = images
+    elif len(images) == 1:
         kwargs["images"] = images[0]
     start = time.perf_counter()
     generation_result = model.generate(prompts[0], generation_config=gen_config, **kwargs)
