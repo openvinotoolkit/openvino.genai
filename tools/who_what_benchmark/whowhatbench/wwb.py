@@ -173,6 +173,12 @@ def parse_args():
         default=42,
         help="Text-to-image specific parameter that defines the seed value.",
     )
+    parser.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Path to the local (non-standard) Huggingface cache containing the model files.",
+    )
 
     return parser.parse_args()
 
@@ -512,6 +518,7 @@ def main():
             args.ov_config,
             args.hf,
             args.genai,
+            args.cache_dir,
             **kwargs,
         )
         evaluator = create_evaluator(base_model, args)
@@ -536,6 +543,7 @@ def main():
                 args.hf,
                 args.genai,
                 args.llamacpp,
+                args.cache_dir,
                 **kwargs
             )
             all_metrics_per_question, all_metrics = evaluator.score(
