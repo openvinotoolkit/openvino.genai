@@ -152,19 +152,20 @@ std::shared_ptr<ov::Model> create_language_model(
 }
 
 } // namespace
+
 void save_openvino_model(const std::string& model_path, const std::shared_ptr<ov::Model>& model) {
     std::filesystem::path gguf_model_path(model_path);
-    std::filesystem::path openvino_model_path = gguf_model_path.parent_path() / "openvino_model.xml";
-    auto serialize_start_time = std::chrono::high_resolution_clock::now();
+    std::filesystem::path openvino_model_path = gguf_model_path.parent_path() / (gguf_model_path.stem().string() + "_openvino_model.xml");
     try {
+        auto serialize_start_time = std::chrono::high_resolution_clock::now();
         ov::serialize(model, openvino_model_path.string());
+        auto serialize_finish_time = std::chrono::high_resolution_clock::now();
+        auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
+        std::cout << "Save generated OpenVINO model to: " << openvino_model_path.string() << " done. Time: " << serialize_duration << " ms\n";
     }
     catch (const ov::Exception& e) {
         std::cerr << "[Warning] Exception during model serialization: " << e.what() << std::endl;
     }
-    auto serialize_finish_time = std::chrono::high_resolution_clock::now();
-    auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
-    std::cout << "Save generated OpenVINO model to: " << openvino_model_path.string() << " done. Time: " << serialize_duration << " ms\n";
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
@@ -187,5 +188,6 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - load_finish_time).count();
     std::cout << "Model generation done. Time: " << duration << "ms" << std::endl;
+
     return model;
 }
