@@ -39,9 +39,9 @@ from openvino_genai.py_openvino_genai import StreamerBase
 from openvino_genai.py_openvino_genai import StreamingStatus
 from openvino_genai.py_openvino_genai import T5EncoderModel
 from openvino_genai.py_openvino_genai import Text2ImagePipeline
-from openvino_genai.py_openvino_genai import TextEmbeddingPipeline
 from openvino_genai.py_openvino_genai import Text2SpeechDecodedResults
 from openvino_genai.py_openvino_genai import Text2SpeechPipeline
+from openvino_genai.py_openvino_genai import TextEmbeddingPipeline
 from openvino_genai.py_openvino_genai import TextStreamer
 from openvino_genai.py_openvino_genai import TokenizedInputs
 from openvino_genai.py_openvino_genai import Tokenizer
