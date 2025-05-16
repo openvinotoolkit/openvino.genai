@@ -570,27 +570,21 @@ void adjust_pos_cache(
 
 } // namespace
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_prompt(const std::string& prompt, size_t base_id, size_t n_images) const {
-    return normalize(
+std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+    
+    auto [unified_prompt, image_sequence] = normalize(
         prompt,
         NATIVE_TAG,
         '(' + NATIVE_TAG + ")\n",
         base_id,
-        n_images
+        images.size()
     );
-}
-
-
-ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
-    std::string unified_prompt = prompt;
     std::string unk64;
+
     for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
         unk64 += m_vlm_config.unk;
     }
-    auto base_id = 0;
-    if (images_sequence.size() > 0)
-        base_id = *std::min_element(images_sequence.begin(), images_sequence.end());
-    for (size_t new_image_id : images_sequence) {
+    for (size_t new_image_id : image_sequence) {
         const EncodedImage& encoded_image = images.at(new_image_id - base_id);
         std::string expanded_tag;
         if (m_vlm_config.use_image_id) {
@@ -609,6 +603,13 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
         }
         unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
     }
+
+    return {std::move(unified_prompt), std::move(image_sequence)};
+}
+
+
+ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    std::string unk64;
     ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
@@ -643,7 +644,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, c
     int64_t* end = ids + encoded_input_size;
     float* inputs_embeds_data = inputs_embeds.data<float>();
     for (size_t image_id : images_sequence) {
-        const EncodedImage& encoded_image = images.at(image_id - base_id);
+        const EncodedImage& encoded_image = images.at(image_id);
         const ov::Tensor& resampled_source = encoded_image.resampled_image.resampled_source;
         auto emb = resampled_source.data<float>();
         ids = std::find(ids, end, im_start_id);

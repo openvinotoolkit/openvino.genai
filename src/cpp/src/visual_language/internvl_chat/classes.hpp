@@ -40,7 +40,7 @@ public:
     std::pair<std::string, std::vector<size_t>> normalize_prompt(
         const std::string& prompt,
         size_t base_id,
-        size_t n_images
+        const std::vector<EncodedImage>& images
     ) const override;
 };
 

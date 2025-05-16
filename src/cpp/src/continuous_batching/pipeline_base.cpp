@@ -28,9 +28,6 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::start_chat(const s
     if (!system_message.empty()) {
         m_history.push_back({{"role", "system"}, {"content", system_message}});
     }
-    if (m_inputs_embedder) {
-        m_inputs_embedder->start_chat(system_message);
-    }
     m_image_id = 0;
     m_is_chat_conversation = true;
 };
@@ -38,6 +35,8 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::start_chat(const s
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
+    m_history_images.clear();
+    m_history_image_ids.clear();
     if (m_inputs_embedder) {
         m_inputs_embedder->finish_chat();
     }
@@ -169,8 +168,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         const auto& prompt = prompts[0];
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         encoded_images = m_inputs_embedder->encode_images(rgbs);
-        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images.size());
-        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[0], rgbs.size() > 0, image_sequence));
+        m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
+
+        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
+        m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
+        m_history_image_ids.insert(m_history_image_ids.end(), image_sequence.begin(), image_sequence.end());
+
+        std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
+
+        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids));
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
 
@@ -178,10 +184,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
             const auto& rgbs = rgbs_vector[i];
-            const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, rgbs.size());
+            auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_inputs_embedder->encode_images(rgbs));
 
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
+
             input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, rgbs, vlm_perf_metrics[i], image_sequence));
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
             vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
@@ -215,6 +222,14 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_inputs_embedder->update_chat_history(results[0].texts[0], encoded_results[0].m_status);
         if (encoded_results[0].m_status != ov::genai::GenerationStatus::CANCEL) {
             m_image_id += encoded_images.size();
+            m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
+        }
+        else {
+            m_history.pop_back();
+            for (size_t idx = 0; idx < encoded_images.size(); idx++) {
+                m_history_image_ids.pop_back();
+                m_history_images.pop_back();
+            }
         }
     }
     return results;
@@ -231,7 +246,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
-        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, rgbs.size());
+        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, m_inputs_embedder->encode_images(rgbs));
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, rgbs, metrics, image_sequence);
     }
     return add_request(request_id, inputs, sampling_params);

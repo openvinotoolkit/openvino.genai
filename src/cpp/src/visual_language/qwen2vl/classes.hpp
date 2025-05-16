@@ -46,7 +46,7 @@ public:
     std::pair<std::string, std::vector<size_t>> normalize_prompt(
         const std::string& prompt,
         size_t base_id,
-        size_t n_images
+        const std::vector<EncodedImage>& images
     ) const override;
 
 protected:
@@ -64,8 +64,7 @@ protected:
 
     virtual ov::Tensor run_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
-        const std::vector<size_t>& images_sequence, 
-        const size_t image_id);
+        const std::vector<size_t>& images_sequence);
 
     ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw);
 
@@ -82,8 +81,7 @@ namespace qwen2_vl_utils {
 
 std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_embeds_and_grid_thw(
     const std::vector<EncodedImage>& encoded_images,
-    const std::vector<size_t>& images_sequence,
-    const size_t image_id
+    const std::vector<size_t>& images_sequence
 );
 
 ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw);

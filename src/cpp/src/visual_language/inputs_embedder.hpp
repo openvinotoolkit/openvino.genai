@@ -65,12 +65,10 @@ public:
     // finishes chat and clears a chat history 
     void finish_chat();
 
-    bool prompt_has_image_tag(const std::string& prompt) const;
-
     virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
         const std::string& prompt,
         size_t base_id,
-        size_t n_images
+        const std::vector<EncodedImage>& images
     ) const;
 
 private:
@@ -90,7 +88,6 @@ private:
         // history between generate() calls.
         bool m_is_chat_conversation = false;
         // Chat history
-        ChatHistory m_history;
         // True if chat template should be applied for non-chat scenario
         bool m_apply_chat_template = true;
         // Finish reason of last generation for chat scenario
@@ -131,20 +128,10 @@ private:
     
         virtual void finish_chat();
 
-    /// @brief 1. Verify native and universal tags aren't mixed.
-    /// 2. Replace universal tags with native and save image order.
-    /// 3. If there were no universal tags, restore image order from native.
-    /// 4. If no tags were found, prepend native tags and assume incremental
-    /// ordering.
-    /// @param automatic_tag MiniCPM-V-2_6 inserts
-    /// (<image>./</image>)\n per image but it only replaces
-    /// <image>./</image> leaving ()\n untouched.
-    /// automatic_tag allows to handle this by being separated
-    /// from native_tag param.
         virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
             const std::string& prompt,
             size_t base_id,
-            size_t n_images
+            const std::vector<EncodedImage>& images
         ) const = 0;
     
     protected:
@@ -218,5 +205,23 @@ std::pair<std::string, std::vector<size_t>> universal_to_native(
 }
 
 void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images);
+
+/// @brief 1. Verify native and universal tags aren't mixed.
+/// 2. Replace universal tags with native and save image order.
+/// 3. If there were no universal tags, restore image order from native.
+/// 4. If no tags were found, prepend native tags and assume incremental
+/// ordering.
+/// @param automatic_tag MiniCPM-V-2_6 inserts
+/// (<image>./</image>)\n per image but it only replaces
+/// <image>./</image> leaving ()\n untouched.
+/// automatic_tag allows to handle this by being separated
+/// from native_tag param.
+std::pair<std::string, std::vector<size_t>> normalize_prompt(
+    const std::string& prompt,
+    const std::string& native_tag,
+    const std::string& automatic_tag,
+    size_t base_id,
+    size_t n_images
+);
 
 } // namespace ov::genai

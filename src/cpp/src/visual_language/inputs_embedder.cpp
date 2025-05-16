@@ -31,36 +31,27 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
     m_is_chat_conversation = true;
     if (!m_kv_cache_state.get_state().empty()) {
-        m_history.clear();
         m_kv_cache_state.reset_state();
     }
     if (system_message.empty()) {
         return;
     }
-    m_history = {{{"role", "system"}, {"content", system_message}}};
 }
 
 void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
     m_kv_cache_state.num_tokens_to_trim = 0;
     if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
-        // If chat generation process was cancelled by user, let's rollback to previous state of history
-        m_history.pop_back();
-
+        // If chat generation process was cancelled by user, let's rollback to previous state of kv cache
         std::vector<int64_t>& state = m_kv_cache_state.get_state();
 
         m_kv_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
         state.resize(m_prev_hist_length);
         m_kv_cache_state.reset_mem_state = state.empty();
-    } else {
-        // Tail of chat template is missing in KV cache.
-        // Find the tail to concatenate it with the next input prompt.
-        m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
     }
 }
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_is_chat_conversation = false;
-    m_history.clear();
     m_kv_cache_state.reset_state();
 }
 
@@ -100,12 +91,9 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     if (m_is_chat_conversation) {
-        m_history.push_back({{"role", "user"}, {"content", prompt}});
-        constexpr bool add_generation_prompt = true;
-        std::string new_templated_chat_history;
-        new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        std::string prompt_to_encode = prompt;
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
+        ov::Tensor new_chat_tokens = m_tokenizer.encode(prompt_to_encode, ov::genai::add_special_tokens(false)).input_ids;
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         return new_chat_tokens;
@@ -286,9 +274,9 @@ void InputsEmbedder::finish_chat() {
 std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(
     const std::string& prompt,
     size_t base_id,
-    size_t n_images
+    const std::vector<EncodedImage>& images
 ) const {
-     return m_impl->normalize_prompt(prompt, base_id, n_images);
+     return m_impl->normalize_prompt(prompt, base_id, images);
 }
 
 void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images) {

@@ -114,19 +114,11 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
     return embeds;
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, size_t n_images) const {
+std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
-    return normalize(prompt, image_token, image_token, base_id, n_images);
-}
+    auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
 
-ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
-    std::string unified_prompt = prompt;
-    std::string image_token = m_vlm_config.im_start;
     std::vector<ov::Tensor> image_embeds;
-    auto base_id = 0;
-    if (images_sequence.size() > 0)
-        base_id = *std::min_element(images_sequence.begin(), images_sequence.end());
-
     image_embeds.reserve(images_sequence.size());
     size_t searched_pos = 0;
     for (size_t new_image_id : images_sequence) {
@@ -141,6 +133,15 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
         OPENVINO_ASSERT(searched_pos != std::string::npos);
         unified_prompt.replace(searched_pos, image_token.length(), expanded_tag);
         searched_pos += expanded_tag.length();
+    }
+    return {std::move(unified_prompt), std::move(images_sequence)};
+}
+
+ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    std::vector<ov::Tensor> image_embeds;
+    image_embeds.reserve(images_sequence.size());
+    for (size_t new_image_id : images_sequence) {
+        image_embeds.push_back(images.at(new_image_id).resized_source);
     }
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);

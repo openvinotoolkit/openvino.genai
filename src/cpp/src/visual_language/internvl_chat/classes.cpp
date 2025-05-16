@@ -229,19 +229,12 @@ InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
 
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderInternVLChat::normalize_prompt(const std::string& prompt, size_t base_id, size_t n_images) const {
-    return normalize(prompt, NATIVE_TAG, NATIVE_TAG + '\n', base_id, n_images);
-}
-
-ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+std::pair<std::string, std::vector<size_t>> InputsEmbedderInternVLChat::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+    auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG + '\n', base_id, images.size());
+    
     std::string image_start_token = m_vlm_config.image_start_token;
     std::string image_context_token = m_vlm_config.image_context_token;
     std::string image_end_token = m_vlm_config.image_end_token;
-    std::string unified_prompt = prompt;
-    auto base_id = 0;
-    if (images_sequence.size() > 0)
-        base_id = *std::min_element(images_sequence.begin(), images_sequence.end());
-
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     size_t searched_pos = 0;
@@ -262,6 +255,18 @@ ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prom
         unified_prompt.replace(searched_pos, NATIVE_TAG.length(), expanded_tag);
         searched_pos += expanded_tag.length();
     }
+
+    return {std::move(unified_prompt), std::move(images_sequence)};
+}
+
+ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    std::vector<ov::Tensor> image_embeds;
+    image_embeds.reserve(images_sequence.size());
+    size_t searched_pos = 0;
+    for (size_t new_image_id : images_sequence) {
+        image_embeds.push_back(images.at(new_image_id).resized_source);
+    }
+    std::string image_context_token = m_vlm_config.image_context_token;
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());

@@ -662,8 +662,8 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderPhi3V::normalize_prompt(const std::string& prompt, size_t base_id, size_t n_images) const {
-    return {normalize_prompt_phi3(prompt, base_id, n_images), {}};
+std::pair<std::string, std::vector<size_t>> InputsEmbedderPhi3V::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+    return {normalize_prompt_phi3(prompt, base_id, images.size()), {}};
 }
 
 ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
@@ -675,11 +675,8 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
     }
     std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
     if (m_is_chat_conversation) {
-        m_history.push_back({{"role", "user"}, {"content", std::move(image_prompt)}});
-        constexpr bool add_generation_prompt = true;
-        std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = split_tokenize(new_templated_chat_history, m_tokenizer);
+        new_chat_tokens = split_tokenize(image_prompt, m_tokenizer);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     } else {
