@@ -12,7 +12,15 @@
 
 namespace ov::genai {
 
-
+/**
+ * @class VisionEncoderPhi4MM
+ * @brief A specialized vision encoder for the Phi4MM model.
+ *
+ * This class is responsible for encoding images into a format suitable for
+ * multimodal processing in the Phi4MM model. It supports initialization
+ * with model directories or preloaded models and provides an interface
+ * for encoding images.
+ */
 class VisionEncoderPhi4MM : public VisionEncoder {
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_projection;
     VLMConfig m_vlm_config;
