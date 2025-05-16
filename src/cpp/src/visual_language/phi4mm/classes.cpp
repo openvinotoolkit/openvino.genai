@@ -7,10 +7,6 @@
 
 #include "utils.hpp"
 
-// TODO Remove debug utils
-#include "print_tensor.hpp"
-#include "compare_tensors.hpp"
-
 namespace ov::genai {
 
 namespace {
@@ -261,24 +257,24 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     // Using mocked tensors
     EncodedImage encoded_image;
 
-    ov::Tensor img_features = read_tensor_from_file("./temp/tensors/phi4mm/img_features.bin");
+    // ov::Tensor img_features = read_tensor_from_file("./temp/tensors/phi4mm/img_features.bin");
 
-    encoded_image.resized_source = img_features;
+    // encoded_image.resized_source = img_features;
     
-    ov::Shape shape = img_features.get_shape();
-    encoded_image.resized_source_size = {
-        static_cast<size_t>(shape[1] / m_processor_config.patch_size),
-        static_cast<size_t>(shape[2] / m_processor_config.patch_size)
-    };
+    // ov::Shape shape = img_features.get_shape();
+    // encoded_image.resized_source_size = {
+    //     static_cast<size_t>(shape[1] / m_processor_config.patch_size),
+    //     static_cast<size_t>(shape[2] / m_processor_config.patch_size)
+    // };
     
-    encoded_image.original_image_size = {
-        static_cast<size_t>(image.get_shape()[2]),
-        static_cast<size_t>(image.get_shape()[1])
-    };
+    // encoded_image.original_image_size = {
+    //     static_cast<size_t>(image.get_shape()[2]),
+    //     static_cast<size_t>(image.get_shape()[1])
+    // };
 
-    ov::Tensor img_feature_proj = read_tensor_from_file("./temp/tensors/phi4mm/img_feature_proj.bin");
+    // ov::Tensor img_feature_proj = read_tensor_from_file("./temp/tensors/phi4mm/img_feature_proj.bin");
     
-    encoded_image.images_features_projection = img_feature_proj;
+    // encoded_image.images_features_projection = img_feature_proj;
     
     return encoded_image;
 }
@@ -346,11 +342,6 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
     m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_tokens);
 
-    ov::Tensor input_ids_python = read_tensor_from_file("./temp/tensors/phi4mm/input_ids.bin");
-    print_tensor(new_tokens, "new_tokens");
-    print_tensor(input_ids_python, "input_ids_python");
-    compare_tensors_auto(new_tokens, input_ids_python, "new_tokens", "input_ids_python");
-    
     std::vector<std::variant<ov::Tensor, size_t>> tokens = drop_image_placeholders(new_tokens);
     ov::Tensor inputs_embeds{ov::element::f32, {1, new_tokens.get_shape().at(1), m_vlm_config.hidden_size}};
     size_t offset = 0;
@@ -385,8 +376,6 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
         m_tokens_per_images.clear();
     }
 
-    print_tensor(inputs_embeds, "inputs_embeds");
-    
     return inputs_embeds;
 }
 

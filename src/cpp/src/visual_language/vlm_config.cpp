@@ -47,17 +47,23 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     if (parsed.contains("vision_config")) {
         read_json_param(parsed.at("vision_config"), "patch_size", vision_config_patch_size);
     }
-    // phi3_v
+    // phi3_v and phi4mm
     if (parsed.contains("sub_GN")) {
         sub_GN = parsed.at("sub_GN").get<std::vector<std::vector<std::vector<std::vector<float>>>>>().at(0).at(0).at(0);
     }
-    // For phi4mm sub_GN.size() == 1152
-    // OPENVINO_ASSERT(sub_GN.size() == 4096);
+    if (model_type == VLMModelType::PHI3_V) {
+        OPENVINO_ASSERT(sub_GN.size() == 4096);
+    } else if (model_type == VLMModelType::PHI4MM) {
+        OPENVINO_ASSERT(sub_GN.size() == 1152);
+    }
     if (parsed.contains("glb_GN")) {
         glb_GN = parsed.at("glb_GN").get<std::vector<std::vector<std::vector<float>>>>().at(0).at(0);
     }
-    // For phi4mm glb_GN.size() == 1152
-    // OPENVINO_ASSERT(glb_GN.size() == 4096);
+    if (model_type == VLMModelType::PHI3_V) {
+        OPENVINO_ASSERT(glb_GN.size() == 4096);
+    } else if (model_type == VLMModelType::PHI4MM) {
+        OPENVINO_ASSERT(glb_GN.size() == 1152);
+    }
     // Qwen2.5VL
     if (parsed.contains("vision_config")) {
         read_json_param(parsed.at("vision_config"), "window_size", vision_config_window_size);
