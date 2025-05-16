@@ -5,23 +5,7 @@ from __future__ import annotations
 
 import os
 import typing
-
-import openvino._pyopenvino
-
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel',
-           'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline',
-           'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel',
-           'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult',
-           'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig',
-           'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics',
-           'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler',
-           'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline',
-           'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel',
-           'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk',
-           'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline',
-           'WhisperRawPerfMetrics', 'draft_model', 'get_version']
-
-
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -1641,6 +1625,56 @@ class SchedulerConfig:
     use_cache_eviction: bool
     def __init__(self) -> None:
         ...
+class SpeechGenerationConfig(GenerationConfig):
+    """
+    
+        SpeechGenerationConfig
+        
+        Speech-generation specific parameters:
+        :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+        :type minlenratio: float
+    
+        :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+        :type minlenratio: float
+    
+        :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+        :type threshold: float
+    """
+    maxlenratio: float
+    minlenratio: float
+    threshold: float
+    @typing.overload
+    def __init__(self, json_path: os.PathLike) -> None:
+        """
+        path where generation_config.json is stored
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        ...
+    def update_generation_config(self, **kwargs) -> None:
+        ...
+class SpeechGenerationPerfMetrics(PerfMetrics):
+    """
+    
+        Structure with raw performance metrics for each generation before any statistics are calculated.
+    
+        :param num_generated_samples: Returns a number of generated samples in output
+        :type num_generated_samples: int
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def generate_duration(self) -> MeanStdPair:
+        ...
+    @property
+    def m_evaluated(self) -> bool:
+        ...
+    @property
+    def num_generated_samples(self) -> int:
+        ...
+    @property
+    def throughput(self) -> MeanStdPair:
+        ...
 class StopCriteria:
     """
     
@@ -1888,40 +1922,102 @@ class Text2ImagePipeline:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
+class Text2SpeechDecodedResults:
+    """
+    
+        Structure that stores the result from the generate method, including a list of waveform tensors
+        sampled at 16 kHz, along with performance metrics
+    
+        :param speeches: a list of waveform tensors sampled at 16 kHz
+        :type speeches: list
+    
+        :param perf_metrics: performance metrics
+        :type perf_metrics: SpeechGenerationPerfMetrics
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def perf_metrics(self) -> SpeechGenerationPerfMetrics:
+        ...
+    @property
+    def speeches(self) -> list[openvino._pyopenvino.Tensor]:
+        ...
 class Text2SpeechPipeline:
     """
     Text-to-speech pipeline
     """
-
     def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
         """
-            Text2SpeechPipeline class constructor.
-            models_path (os.PathLike): Path to the model file.
-            device (str): Device to run the model on (e.g., CPU, GPU).
+                    Text2SpeechPipeline class constructor.
+                    models_path (os.PathLike): Path to the model file.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
         """
-
-    def generate(self, texts: str | list[str], speaker_embedding: ov.Tensor | None = None,
-                 **kwargs) -> SpeechGenerationDecodedResults:
+    @typing.overload
+    def generate(self, text: str, speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
-
-            :param text: input text for which to generate speech
-            :type text: str
-
-            :param speaker_embedding: a vector representing the unique characteristics of a speaker's voice
-            :type speaker_embedding: openvino.Tensor
-
+        
+            :param text(s): input text(s) for which to generate speech
+            :type text(s): str or list[str]
+        
+            :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
+                                     voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
+                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+            :type speaker_embedding: openvino.Tensor or None
+        
             :param properties: speech generation parameters specified as properties
             :type properties: dict
-
-            :returns: raw audios of the input texts spoken in the specified speaker's voice
+        
+            :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
             :rtype: Text2SpeechDecodedResults
+         
+         
+            SpeechGenerationConfig
+            
+            Speech-generation specific parameters:
+            :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+            :type minlenratio: float
+        
+            :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+            :type minlenratio: float
+        
+            :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+            :type threshold: float
         """
-
+    @typing.overload
+    def generate(self, texts: list[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speeches based on input texts
+        
+            :param text(s): input text(s) for which to generate speech
+            :type text(s): str or list[str]
+        
+            :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
+                                     voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
+                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+            :type speaker_embedding: openvino.Tensor or None
+        
+            :param properties: speech generation parameters specified as properties
+            :type properties: dict
+        
+            :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+            :rtype: Text2SpeechDecodedResults
+         
+         
+            SpeechGenerationConfig
+            
+            Speech-generation specific parameters:
+            :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+            :type minlenratio: float
+        
+            :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+            :type minlenratio: float
+        
+            :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+            :type threshold: float
+        """
     def get_generation_config(self) -> SpeechGenerationConfig:
         ...
-
-
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
         ...
 class TextEmbeddingPipeline:
