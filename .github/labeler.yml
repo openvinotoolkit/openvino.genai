@@ -130,6 +130,7 @@
 - 'src/python/py_speech_generation.cpp'
 - 'samples/cpp/speech_generation/**/*'
 - 'samples/python/speech_generation/**/*'
+- 'tests/python_tests/samples/test_text2speech.py'
 
 'category: speculative decoding':
 - 'src/cpp/src/speculative_decoding/**/*'
