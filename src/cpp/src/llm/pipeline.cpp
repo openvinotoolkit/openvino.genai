@@ -157,11 +157,25 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
     }
 
-    if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = properties.count("STATIC_PIPELINE")
-            ? static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties)
-            : std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
+if (m_pimpl == nullptr && device == "NPU") {
+    if (!properties.count("STATIC_PIPELINE")) {
+        properties["STATIC_PIPELINE"] = true;
     }
+    if (!properties.count("MAX_PROMPT_LEN")) {
+        properties["MAX_PROMPT_LEN"] = 64;
+    }
+    if (!properties.count("MIN_RESPONSE_LEN")) {
+        properties["MIN_RESPONSE_LEN"] = 64;
+    }
+    if (!properties.count("CACHE_DIR")) {
+        properties["CACHE_DIR"] = "./ov_cache";
+    }
+    if (!properties.count("NUM_STREAMS")) {
+        properties["NUM_STREAMS"] = 1;
+    }
+
+    m_pimpl = static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties);
+}
 
     // try to call CB adapter one more time, but with safe guard to silent exception
     if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
