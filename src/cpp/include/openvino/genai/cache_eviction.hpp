@@ -20,13 +20,38 @@ enum class AggregationMode {
 };
 
 /**
+ * @brief Represents the mode of how anchor points are formed in KVCrush Cache eviction algorithm
+ */
+enum class KVCrushAnchorPointMode {
+    RANDOM, /**<In this mode the anchor point is a random binary vector of 0s and 1s > */
+    ZEROS,  /**<In this mode the anchor point is a vector of 0s */
+    ONES,   /**<In this mode the anchor point is a vector of 1s */
+    MEAN, /**<In this mode the anchor point is a random binary vector of 0s and 1s, where individual values are decided
+             based on majority value */
+    ALTERNATE /**In this mode the anchor point is a vector of alternate 0s and 1s */
+};
+
+/**
 * @brief Configuration struct for the cache eviction algorithm.
 */
 class CacheEvictionConfig {
 public:
     CacheEvictionConfig() = default;
 
-    CacheEvictionConfig(size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode_, bool apply_rotation_ = false) : aggregation_mode(aggregation_mode_), apply_rotation(apply_rotation_), m_start_size(start_size), m_recent_size(recent_size), m_max_cache_size(max_cache_size) {
+    CacheEvictionConfig(size_t start_size,
+                        size_t recent_size,
+                        size_t max_cache_size,
+                        AggregationMode aggregation_mode_,
+                        size_t kvcrush_budget,
+                        KVCrushAnchorPointMode anchor_point_,
+                        bool apply_rotation_ = false)
+        : aggregation_mode(aggregation_mode_),
+          apply_rotation(apply_rotation_),
+          m_start_size(start_size),
+          m_recent_size(recent_size),
+          m_max_cache_size(max_cache_size),
+          m_kvcrush_budget(kvcrush_budget),
+          anchor_point(anchor_point_) {
         OPENVINO_ASSERT(start_size, "CacheEvictionConfig.start_size must be non-zero");
         OPENVINO_ASSERT(recent_size, "CacheEvictionConfig.recent_size must be non-zero");
         OPENVINO_ASSERT(max_cache_size, "CacheEvictionConfig.max_cache_size must be non-zero");
@@ -34,7 +59,6 @@ public:
         OPENVINO_ASSERT(max_cache_size > (start_size + recent_size),
                         "CacheEvictionConfig.max_cache_size must be larger than CacheEvictionConfig.start_size + CacheEvictionConfig.recent_size");
         m_evictable_size = m_max_cache_size - m_start_size - m_recent_size;
-
     }
 
     /** @return Number of tokens between the "start" and "recent" areas of KV cache that
@@ -55,6 +79,12 @@ public:
         return m_max_cache_size;
     }
 
+    /** @return Cache budget (number of tokens) used by KVCrush for representative tokens -
+    on top of tokens with high attention scores */
+    std::size_t get_kvcrush_budget() const {
+        return m_kvcrush_budget;
+    }
+
     /** @return Number of tokens between the "start" and "recent" areas of KV cache that
      * will be considered for eviction. */
     std::size_t get_evictable_size() const {
@@ -69,6 +99,10 @@ public:
      *  original llama model and you experience accuracy issues with cache eviction enabled
      *  and apply_rotation=true.**/
     bool apply_rotation = false;
+    /*KVCrush Cache budget - number of tokens*/
+    std::size_t m_kvcrush_budget = 128;
+    /*KVCrush Anchor point mode*/
+    KVCrushAnchorPointMode anchor_point = KVCrushAnchorPointMode::RANDOM;
 
 private:
     /** Number of tokens in the *beginning* of KV cache that should be retained
@@ -88,7 +122,6 @@ private:
      */
     std::size_t m_max_cache_size = 672;
     std::size_t m_evictable_size = 512;
-
 };
 
 } // namespace ov::genai

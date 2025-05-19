@@ -151,8 +151,13 @@ SchedulerConfig get_scheduler_config(size_t max_num_batched_tokens,
     return retval;
 }
 
-const ov::genai::CacheEvictionConfig LONG_EVICTION_CONFIG = ov::genai::CacheEvictionConfig(32, 32, 128, ov::genai::AggregationMode::NORM_SUM);
-
+const ov::genai::CacheEvictionConfig LONG_EVICTION_CONFIG =
+    ov::genai::CacheEvictionConfig(32,
+                                   32,
+                                   128,
+                                   ov::genai::AggregationMode::NORM_SUM,
+                                   10,
+                                   ov::genai::KVCrushAnchorPointMode::RANDOM);
 
 using AppendSlotsSchedulerTest = ::testing::TestWithParam<SchedulerConfig>;
 const std::vector<SchedulerConfig> APPEND_SLOTS_TEST_CASES = {
@@ -938,7 +943,12 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     scheduler_config.dynamic_split_fuse = false;
     scheduler_config.max_num_seqs = 5;
     scheduler_config.use_cache_eviction = true;
-    scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(2, 2, 6, ov::genai::AggregationMode::NORM_SUM);
+    scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(2,
+                                                                            2,
+                                                                            6,
+                                                                            ov::genai::AggregationMode::NORM_SUM,
+                                                                            2,
+                                                                            ov::genai::KVCrushAnchorPointMode::RANDOM);
 
     std::vector<uint64_t> tokens1 = {0, 1};  // 1 full block
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0,
