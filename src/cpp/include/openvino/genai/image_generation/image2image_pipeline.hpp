@@ -74,7 +74,11 @@ public:
         const SD3Transformer2DModel& transformer,
         const AutoencoderKL& vae);
     
-     // TODO: Doc
+    /**
+     * Method to clone the pipeline to be used in parallel by another thread.
+     * Reuses underlying models and recreates scheduler and generation config.
+     * @returns A new pipeline for concurrent usage
+     */
     Image2ImagePipeline clone();
 
     ImageGenerationConfig get_generation_config() const;
