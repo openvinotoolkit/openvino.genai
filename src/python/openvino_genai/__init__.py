@@ -91,7 +91,7 @@ from .py_openvino_genai import (
     SchedulerConfig,
     CacheEvictionConfig,
     AggregationMode,
-    AnchorPoints
+    KVCrushAnchorPointMode
 )
 
 # RAG

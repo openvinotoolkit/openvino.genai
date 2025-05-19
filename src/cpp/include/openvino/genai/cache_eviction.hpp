@@ -6,7 +6,7 @@
 #include <cstddef>
 
 #include "openvino/core/except.hpp"
-
+#include "openvino/genai/kvcrush.hpp"
 namespace ov::genai {
 
 /**
@@ -19,15 +19,6 @@ enum class AggregationMode {
                 * of a given token in cache */
 };
 
-//anchor points for kvcrush
-enum class AnchorPoints {
-    RANDOM,
-    ZEROS,
-    ONES,
-    MEAN,
-    ALTERNATE
-};
-
 /**
 * @brief Configuration struct for the cache eviction algorithm.
 */
@@ -35,7 +26,18 @@ class CacheEvictionConfig {
 public:
     CacheEvictionConfig() = default;
 
-    CacheEvictionConfig(size_t start_size, size_t recent_size, size_t max_cache_size, size_t cl_size, AnchorPoints anchor_point_, AggregationMode aggregation_mode_, bool apply_rotation_ = false) : anchor_point(anchor_point_),aggregation_mode(aggregation_mode_), apply_rotation(apply_rotation_), m_start_size(start_size), m_recent_size(recent_size), m_max_cache_size(max_cache_size), m_cl_size(cl_size) {
+    CacheEvictionConfig(size_t start_size,
+                        size_t recent_size,
+                        size_t max_cache_size,
+                        AggregationMode aggregation_mode_,
+                        bool apply_rotation_ = false,
+                        const KVCrushConfig& kvcrush_config_ = KVCrushConfig(128, KVCrushAnchorPointMode::RANDOM))
+        : aggregation_mode(aggregation_mode_),
+          apply_rotation(apply_rotation_),
+          m_start_size(start_size),
+          m_recent_size(recent_size),
+          m_max_cache_size(max_cache_size),
+          kvcrush_config(kvcrush_config_) {
         OPENVINO_ASSERT(start_size, "CacheEvictionConfig.start_size must be non-zero");
         OPENVINO_ASSERT(recent_size, "CacheEvictionConfig.recent_size must be non-zero");
         OPENVINO_ASSERT(max_cache_size, "CacheEvictionConfig.max_cache_size must be non-zero");
@@ -43,7 +45,6 @@ public:
         OPENVINO_ASSERT(max_cache_size > (start_size + recent_size),
                         "CacheEvictionConfig.max_cache_size must be larger than CacheEvictionConfig.start_size + CacheEvictionConfig.recent_size");
         m_evictable_size = m_max_cache_size - m_start_size - m_recent_size;
-
     }
 
     /** @return Number of tokens between the "start" and "recent" areas of KV cache that
@@ -64,28 +65,39 @@ public:
         return m_max_cache_size;
     }
 
-    /** @return cache budget (number of tokens) used by KVCrush for representative tokens - 
-    on top  of tokens with high attention scores*/
-     std::size_t get_kvcrush_budget() const {
-        return m_cl_size;
-    }
-
     /** @return Number of tokens between the "start" and "recent" areas of KV cache that
      * will be considered for eviction. */
     std::size_t get_evictable_size() const {
         return m_evictable_size;
     }
 
+    /** @return Cache budget (number of blocks) used by KVCrush for representative tokens -
+    on top of tokens with high attention scores */
+    std::size_t get_kvcrush_budget() const {
+        return kvcrush_config.budget;
+    }
+    /** @return Anchor point mode used by KVCrush for hamming distance calculation */
+    KVCrushAnchorPointMode get_anchor_point() const {
+        return kvcrush_config.anchor_point_mode;
+    }
+
+    /** @return Anchor point mode used by KVCrush for hamming distance calculation */
+    KVCrushConfig get_kvcrush_config() const {
+        return kvcrush_config;
+    }
+
     /** The mode used to compute the importance of tokens for eviction */
     AggregationMode aggregation_mode = AggregationMode::NORM_SUM;
-
-    AnchorPoints anchor_point = AnchorPoints::RANDOM;
 
     /** Whether to apply cache rotation (RoPE-based) after each eviction.
      *  Set this to false if your model has different RoPE scheme from the one used in the
      *  original llama model and you experience accuracy issues with cache eviction enabled
      *  and apply_rotation=true.**/
     bool apply_rotation = false;
+    /** KVCrush configuration for this cache eviction algorithm.
+     * KVCrush is an additional mechanism that allows to retain some tokens in the cache
+     * even if they are not among the most important ones.*/
+    KVCrushConfig kvcrush_config;
 
 private:
     /** Number of tokens in the *beginning* of KV cache that should be retained
@@ -105,9 +117,6 @@ private:
      */
     std::size_t m_max_cache_size = 672;
     std::size_t m_evictable_size = 512;
-
-    /*KVCrush Cache budget - number of tokens*/
-    std::size_t m_cl_size = 128;
 };
 
 } // namespace ov::genai

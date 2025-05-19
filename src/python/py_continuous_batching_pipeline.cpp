@@ -16,18 +16,19 @@
 namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
-using ov::genai::AnchorPoints;
 using ov::genai::AggregationMode;
 using ov::genai::CacheEvictionConfig;
 using ov::genai::ContinuousBatchingPipeline;
-using ov::genai::GenerationResult;
 using ov::genai::EncodedGenerationResult;
+using ov::genai::GenerationFinishReason;
 using ov::genai::GenerationHandleImpl;
 using ov::genai::GenerationOutput;
-using ov::genai::GenerationFinishReason;
+using ov::genai::GenerationResult;
 using ov::genai::GenerationStatus;
-using ov::genai::SchedulerConfig;
+using ov::genai::KVCrushAnchorPointMode;
+using ov::genai::KVCrushConfig;
 using ov::genai::PipelineMetrics;
+using ov::genai::SchedulerConfig;
 
 namespace {
 
@@ -225,28 +226,62 @@ void init_continuous_batching_pipeline(py::module_& m) {
                                :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache)")
             .value("SUM", AggregationMode::SUM)
             .value("NORM_SUM", AggregationMode::NORM_SUM);
-    py::enum_<AnchorPoints>(m, "AnchorPoints",
-                R"(Represents the anchor point types for KVCrush cache eviction
-                  :param AnchorPoints.RANDOM: Random binary vector will be used as anchor point
-                  :param AnchorPoints.ONES: Vector of all ones will be used as anchor point)")
-            .value("RANDOM", AnchorPoints::RANDOM)
-            .value("ZEROS", AnchorPoints::ZEROS)
-            .value("ONES", AnchorPoints::ONES)
-            .value("MEAN", AnchorPoints::MEAN)
-            .value("ALTERNATE", AnchorPoints::ALTERNATE);
+    py::enum_<KVCrushAnchorPointMode>(m,
+                                      "KVCrushAnchorPointMode",
+                                      R"(Represents the anchor point types for KVCrush cache eviction
+                  :param KVCrushAnchorPointMode.RANDOM: Random binary vector will be used as anchor point
+                  :param KVCrushAnchorPointMode.ZEROS: Vector of all zeros will be used as anchor point
+                  :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
+                  :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
+                  :param KVCrushAnchorPointMode.ALTERNATE: Alternating 0s and 1s will be used as anchor point)")
+        .value("RANDOM", KVCrushAnchorPointMode::RANDOM)
+        .value("ZEROS", KVCrushAnchorPointMode::ZEROS)
+        .value("ONES", KVCrushAnchorPointMode::ONES)
+        .value("MEAN", KVCrushAnchorPointMode::MEAN)
+        .value("ALTERNATE", KVCrushAnchorPointMode::ALTERNATE);
+
+    py::class_<KVCrushConfig>(m, "KVCrushConfig", "Configuration for KVCrush cache eviction algorithm")
+        .def(py::init<>([](std::size_t budget, KVCrushAnchorPointMode anchor_point_mode, std::size_t rng_seed) {
+                 KVCrushConfig config;
+                 config.budget = budget;
+                 config.anchor_point_mode = anchor_point_mode;
+                 config.rng_seed = rng_seed;
+                 return config;
+             }),
+             py::arg("budget") = 128,
+             py::arg("anchor_point_mode") = KVCrushAnchorPointMode::RANDOM,
+             py::arg("rng_seed") = 0)
+        .def_readwrite("budget", &KVCrushConfig::budget)
+        .def_readwrite("anchor_point_mode", &KVCrushConfig::anchor_point_mode)
+        .def_readwrite("rng_seed", &KVCrushConfig::rng_seed);
 
     py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
-            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, size_t cl_size, AnchorPoints anchor_point, AggregationMode aggregation_mode, bool apply_rotation) {
-                return CacheEvictionConfig{start_size, recent_size, max_cache_size, cl_size, anchor_point, aggregation_mode, apply_rotation}; }),
-                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("cl_size"), py::arg("anchor_point"), py::arg("aggregation_mode"), py::arg("apply_rotation") = false)
-            .def_readwrite("anchor_point", &CacheEvictionConfig::anchor_point)
-            .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode)
-            .def_readwrite("apply_rotation", &CacheEvictionConfig::apply_rotation)
-            .def("get_start_size", &CacheEvictionConfig::get_start_size)
-            .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
-            .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
-            .def("get_kvcrush_budget", &CacheEvictionConfig::get_kvcrush_budget)
-            .def("get_evictable_size", &CacheEvictionConfig::get_evictable_size);
+        .def(py::init<>([](const size_t start_size,
+                           size_t recent_size,
+                           size_t max_cache_size,
+                           AggregationMode aggregation_mode,
+                           bool apply_rotation,
+                           const KVCrushConfig& kvcrush_config) {
+                 return CacheEvictionConfig{start_size,
+                                            recent_size,
+                                            max_cache_size,
+                                            aggregation_mode,
+                                            apply_rotation,
+                                            kvcrush_config};
+             }),
+             py::arg("start_size"),
+             py::arg("recent_size"),
+             py::arg("max_cache_size"),
+             py::arg("aggregation_mode"),
+             py::arg("apply_rotation") = false,
+             py::arg("kvcrush_config") = KVCrushConfig())
+        .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode)
+        .def_readwrite("apply_rotation", &CacheEvictionConfig::apply_rotation)
+        .def_readwrite("kvcrush_config", &CacheEvictionConfig::kvcrush_config)
+        .def("get_start_size", &CacheEvictionConfig::get_start_size)
+        .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
+        .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
+        .def("get_evictable_size", &CacheEvictionConfig::get_evictable_size);
 
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
         .def(py::init<>())
@@ -357,7 +392,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 {
                     py::gil_scoped_release rel;
                     generated_results = pipe.generate(prompts, images, generation_config, streamer);
-                }  
+                }
                 return py::cast(generated_results);
             },
             py::arg("prompts"),

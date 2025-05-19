@@ -3,20 +3,20 @@
 
 #pragma once
 
-
-#include <vector>
-#include <cstdlib>
 #include <cmath>
+#include <cstdlib>
+#include <vector>
 
-#include "openvino/openvino.hpp"
 #include "continuous_batching/attention_output.hpp"
+#include "continuous_batching/kvcrush.hpp"
 #include "openvino/genai/cache_eviction.hpp"
+#include "openvino/openvino.hpp"
 
 namespace ov::genai {
 
 /**
- * @brief Determines blocks to be evicted from the KV cache of a sequence based on the importance score calculated from the
- * attention scores of each token at each attention layer in the LLM.
+ * @brief Determines blocks to be evicted from the KV cache of a sequence based on the importance score calculated from
+ * the attention scores of each token at each attention layer in the LLM.
  *
  * The KV cache is conceptually divided into three areas as shown below:
  *
@@ -30,24 +30,25 @@ namespace ov::genai {
  * are filled, the algorithm determines the blocks from the *evictable area* that should be freed from this sequence
  * based on the importance scores accumulated after each previous generation step in the pipeline. The least important
  * tokens according to this score are to be evicted. Only the tokens from the *evictable area* are evicted - the tokens
- * in the *start* and *recent* areas are never evicted, but throughout the eviction process the *recent* blocks naturally
- * move into the *evictable* area.
+ * in the *start* and *recent* areas are never evicted, but throughout the eviction process the *recent* blocks
+ * naturally move into the *evictable* area.
  *
- * Eviction only starts when at least one block *past* the *recent area* is completely filled, and the corresponding number
- * of blocks is selected to be evicted, so that the remaining blocks completely fit into the arena defined by the *start*,
- * *evictable* and *recent* areas. This effectively caps the cache usage for the sequence by the size of the arena (plus,
- * in general, one partially filled block past the recent area).
+ * Eviction only starts when at least one block *past* the *recent area* is completely filled, and the corresponding
+ * number of blocks is selected to be evicted, so that the remaining blocks completely fit into the arena defined by the
+ * *start*, *evictable* and *recent* areas. This effectively caps the cache usage for the sequence by the size of the
+ * arena (plus, in general, one partially filled block past the recent area).
  *
  * Sizes of *start*, *evictable* and *recent* areas are configurable, but the *evictable* area size specifies the
  * _minimal_ size of the evictable area. When tokens overflow the eviction arena, the actual evictable area is
- * determined as the tokens between the fixed-size *start area* and the fixed-size *end area*, so at a given eviction step
- * there are in general more tokens considered for eviction than the specified *evictable* size.
+ * determined as the tokens between the fixed-size *start area* and the fixed-size *end area*, so at a given eviction
+ * step there are in general more tokens considered for eviction than the specified *evictable* size.
  *
  */
 class CacheEvictionAlgorithm {
 public:
     /**
-     * @brief A pair of indices specifying the logical block interval where the blocks may be evicted at this point in time.
+     * @brief A pair of indices specifying the logical block interval where the blocks may be evicted at this point in
+     * time.
      */
     class CacheEvictionRange : public std::pair<std::size_t, std::size_t> {
     public:
@@ -57,18 +58,23 @@ public:
             return inv;
         }
     };
-    CacheEvictionAlgorithm() = default;  // needed only to satisfy DefaultConstructible so that algo objects may be used as values in std::map
+    CacheEvictionAlgorithm() =
+        default;  // needed only to satisfy DefaultConstructible so that algo objects may be used as values in std::map
 
     /**
      * Constructs a CacheEvictionAlgorithm.
      * @param eviction_config The configuration struct for this algorithm.
      * @param block_size Block size of the KV cache to evict from.
-     * @param num_decoder_layers Number of independent KV caches (each corresponding to a single attention layer) in the underlying LLM.
+     * @param num_decoder_layers Number of independent KV caches (each corresponding to a single attention layer) in the
+     * underlying LLM.
      */
-    explicit CacheEvictionAlgorithm(const CacheEvictionConfig& eviction_config, size_t block_size, size_t num_decoder_layers);
+    explicit CacheEvictionAlgorithm(const CacheEvictionConfig& eviction_config,
+                                    size_t block_size,
+                                    size_t num_decoder_layers);
 
     /**
-     * @return Maximum cache size (in tokens) after each eviction step. Could be used as an estimate of the maximum per-sequence cache usage.
+     * @return Maximum cache size (in tokens) after each eviction step. Could be used as an estimate of the maximum
+     * per-sequence cache usage.
      */
     std::size_t get_max_cache_size_after_eviction() const;
 
@@ -79,23 +85,21 @@ public:
 
     /**
      * Registers attention scores (for each layer) of each token in this sequence that is currently still represented
-     * (i.e. not evicted) in the corresponding KV cache. Must be called after each generation step to properly keep track of
-     * the tokens' lifetime in the KV cache and of the accumulated importance score of each token.
-     * @param attention_scores_for_all_decoder_layers A vector with a size equal to the configured num_decoder_layers, where each entry is a
-     * vector of per-token attention scores calculated within this layer.
+     * (i.e. not evicted) in the corresponding KV cache. Must be called after each generation step to properly keep
+     * track of the tokens' lifetime in the KV cache and of the accumulated importance score of each token.
+     * @param attention_scores_for_all_decoder_layers A vector with a size equal to the configured num_decoder_layers,
+     * where each entry is a vector of per-token attention scores calculated within this layer.
      */
     void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers);
 
     /**
-     * Returns the per-layer sets of logical block indices that should be evicted according to the internally computed importance scores
-     * and removes the corresponding blocks from the internal algorithm tracking.
+     * Returns the per-layer sets of logical block indices that should be evicted according to the internally computed
+     * importance scores and removes the corresponding blocks from the internal algorithm tracking.
      *
-     * @return A vector with size equal to the configured num_decoder_layers, where each entry is a set of logical indices that are to be
-     * evicted by the external cache-controlling mechanism.
+     * @return A vector with size equal to the configured num_decoder_layers, where each entry is a set of logical
+     * indices that are to be evicted by the external cache-controlling mechanism.
      */
     std::vector<std::set<std::size_t>> evict_logical_blocks();
-    std::vector<std::size_t> get_indices_of_blocks_to_retain_using_kvcrush(size_t decoder_layer_idx, size_t k, std::vector<std::size_t>& evicted_block_indices);
-
 
 private:
     std::size_t get_num_blocks(std::size_t num_tokens) const;
@@ -106,11 +110,14 @@ private:
 
     std::vector<double> get_scores_for_all_evictable_blocks(size_t decoder_layer_idx) const;
 
-    std::vector<std::size_t> get_indices_of_blocks_to_evict(const std::vector<double>& scores_for_each_evictable_block, size_t num_blocks_to_evict) const;
+    std::vector<std::size_t> get_indices_of_blocks_to_evict(const std::vector<double>& scores_for_each_evictable_block,
+                                                            size_t num_blocks_to_evict) const;
 
-    void remove_scores_of_evicted_blocks(const std::vector<std::size_t>& evicted_block_indices, size_t decoder_layer_idx);
+    void remove_scores_of_evicted_blocks(const std::vector<std::size_t>& evicted_block_indices,
+                                         size_t decoder_layer_idx);
 
     CacheEvictionConfig m_eviction_config;
+    KVCrushAlgorithm m_kvcrush_algo;
     std::size_t m_block_size;
     std::size_t m_num_evicted_tokens = 0;
     std::size_t m_num_decoder_layers;
@@ -159,10 +166,10 @@ public:
         bool operator==(const BlockRotationData& rhs) const {
             return (logical_block_idx == rhs.logical_block_idx) && (sines == rhs.sines) && (cosines == rhs.cosines);
         }
-        size_t logical_block_idx;             /** Logical index of the block AFTER eviction to which the rotation
-                                                 should be applied */
-        size_t rotation_delta;                /** Delta, in token positions, that should be applied to block contents
-                                                via rotation **/
+        size_t logical_block_idx; /** Logical index of the block AFTER eviction to which the rotation
+                                     should be applied */
+        size_t rotation_delta;    /** Delta, in token positions, that should be applied to block contents
+                                    via rotation **/
 
         // Fields below are currently only used for testing purposes
         RotationCoefficientsPerToken sines;   /** The sine coefficients to be applied to this block's contents for
@@ -183,8 +190,8 @@ public:
      * rotated, and the pre-computed trigonometric coefficients necessary for rotation.
      */
     std::vector<BlockRotationData> get_rotation_data(const std::set<size_t>& evicted_block_logical_indices,
-                                                             size_t num_logical_blocks_before_eviction,
-                                                             bool deltas_only = true);
+                                                     size_t num_logical_blocks_before_eviction,
+                                                     bool deltas_only = true);
 
     /**
      * @return The size of the embedding dimension that this CacheRotationCalculator was initialized with.
@@ -202,4 +209,4 @@ private:
     std::vector<std::vector<float>> m_rope_sin_lut;  // dimensions: [ max_context_length, head_size / 2]
     std::vector<std::vector<float>> m_rope_cos_lut;  // dimensions: [ max_context_length, head_size / 2]
 };
-}
+}  // namespace ov::genai
