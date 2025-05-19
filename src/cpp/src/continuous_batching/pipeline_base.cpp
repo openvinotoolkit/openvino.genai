@@ -185,12 +185,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
             const auto& rgbs = rgbs_vector[i];
-            auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_inputs_embedder->encode_images(rgbs));
+            const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+            auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
-            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, rgbs, vlm_perf_metrics[i], image_sequence));
+            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence));
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
             vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
         }
@@ -247,8 +248,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
-        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, m_inputs_embedder->encode_images(rgbs));
-        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, rgbs, metrics, image_sequence);
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+
+        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
+        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
     }
     return add_request(request_id, inputs, sampling_params);
 }
