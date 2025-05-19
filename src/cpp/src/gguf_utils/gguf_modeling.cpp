@@ -153,10 +153,10 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path) {
+void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
     try {
         auto serialize_start_time = std::chrono::high_resolution_clock::now();
-        ov::serialize(model, save_path);
+        ov::save_model(model, save_path, compress_to_fp16);
         auto serialize_finish_time = std::chrono::high_resolution_clock::now();
         auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
         std::cout << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms\n";
@@ -185,7 +185,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
                 std::filesystem::path model_cache_dir(cache_dir);
                 std::filesystem::path gguf_model_path(model_path);
                 std::filesystem::path save_path = model_cache_dir / (gguf_model_path.stem().string() + "_openvino_model.xml");
-                save_openvino_model(model, save_path.string());
+                save_openvino_model(model, save_path.string(), true);
             }
         }
     } else {
