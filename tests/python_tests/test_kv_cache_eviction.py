@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 from tqdm import tqdm
 
-from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode, AnchorPoints
+from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode, KVCrushAnchorPointMode, KVCrushConfig
 
 from utils.ov_genai_pipelines import PipelineType, generate_and_compare
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
@@ -46,8 +46,22 @@ class CacheOptTestStruct:
     max_cache_usage_optimization_ratio: float
 
 
-SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, cl_size=8, anchor_point=AnchorPoints.RANDOM, aggregation_mode=AggregationMode.NORM_SUM)
-LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, cl_size=0, anchor_point=AnchorPoints.RANDOM, aggregation_mode=AggregationMode.NORM_SUM)
+SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(
+    start_size=32, 
+    recent_size=32, 
+    max_cache_size=96, 
+    aggregation_mode=AggregationMode.NORM_SUM,
+    apply_rotation=False,
+    kvcrush_config=KVCrushConfig(budget=0, anchor_point_mode=KVCrushAnchorPointMode.RANDOM)
+)
+LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(
+    start_size=32, 
+    recent_size=128, 
+    max_cache_size=672, 
+    aggregation_mode=AggregationMode.NORM_SUM,
+    apply_rotation=False,
+    kvcrush_config=KVCrushConfig(budget=0, anchor_point_mode=KVCrushAnchorPointMode.RANDOM)
+)
 
 
 @pytest.mark.precommit
@@ -193,7 +207,6 @@ class LongBenchTestData:
 def test_optimized_generation_longbench(device, test_struct):
     seqs_per_request = 32
     num_kv_blocks = 1000 if device == "CPU" else 500
-    print("device", device, "num_kv_blocks", num_kv_blocks)
     model_id = "Qwen/Qwen2-0.5B-Instruct"
     _, _, models_path = download_and_convert_model(model_id)
     scheduler_config = get_scheduler_config(num_kv_blocks)
