@@ -10,43 +10,32 @@
 namespace ov::genai {
 
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config) {
-    bool do_resize = true;
-    bool do_center_crop = true;
-
     // Resize
     clip_image_u8 resized_image;
-    if (do_resize) {
-        int target_size = config.size_shortest_edge;
-        float scale = static_cast<float>(target_size) / std::min(image.nx, image.ny);
-        int new_width = static_cast<int>(image.nx * scale);
-        int new_height = static_cast<int>(image.ny * scale);
-        bicubic_resize(image, resized_image, new_width, new_height);
-    } else {
-        resized_image = image;
-    }
+    int target_size = config.size_shortest_edge;
+    float scale = static_cast<float>(target_size) / std::min(image.nx, image.ny);
+    int new_width = static_cast<int>(image.nx * scale);
+    int new_height = static_cast<int>(image.ny * scale);
+    bicubic_resize(image, resized_image, new_width, new_height);
 
     // Center crop
     clip_image_u8 cropped_image;
-    if (do_center_crop) {
-        int crop_height = config.crop_size_height;
-        int crop_width = config.crop_size_width;
-        int start_x = (resized_image.nx - crop_width) / 2;
-        int start_y = (resized_image.ny - crop_height) / 2;
+    int crop_height = config.crop_size_height;
+    int crop_width = config.crop_size_width;
+    int start_x = (resized_image.nx - crop_width) / 2;
+    int start_y = (resized_image.ny - crop_height) / 2;
 
-        cropped_image.nx = crop_width;
-        cropped_image.ny = crop_height;
-        cropped_image.buf.resize(3 * crop_width * crop_height);
+    cropped_image.nx = crop_width;
+    cropped_image.ny = crop_height;
+    cropped_image.buf.resize(3 * crop_width * crop_height);
 
-        for (int y = 0; y < crop_height; ++y) {
-            for (int x = 0; x < crop_width; ++x) {
-                for (int c = 0; c < 3; ++c) {
-                    cropped_image.buf[(y * crop_width + x) * 3 + c] =
-                        resized_image.buf[((start_y + y) * resized_image.nx + (start_x + x)) * 3 + c];
-                }
+    for (int y = 0; y < crop_height; ++y) {
+        for (int x = 0; x < crop_width; ++x) {
+            for (int c = 0; c < 3; ++c) {
+                cropped_image.buf[(y * crop_width + x) * 3 + c] =
+                    resized_image.buf[((start_y + y) * resized_image.nx + (start_x + x)) * 3 + c];
             }
         }
-    } else {
-        cropped_image = resized_image;
     }
 
     // Normalize
