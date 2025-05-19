@@ -11,8 +11,10 @@
 #include "gtest/gtest.h"
 
 //kvcrush - for testing | cache budget is 64
-const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG = {32, 32, 192, 8, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::NORM_SUM};
-const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG = {32, 32, 72, 8, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::NORM_SUM};
+const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG =
+    {32, 32, 192, ov::genai::AggregationMode::NORM_SUM, 8, ov::genai::KVCrushAnchorPointMode::RANDOM};
+const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG =
+    {32, 32, 72, ov::genai::AggregationMode::NORM_SUM, 8, ov::genai::KVCrushAnchorPointMode::RANDOM};
 constexpr size_t DEFAULT_BLOCK_SIZE = 4;
 constexpr size_t DEFAULT_NUM_DECODER_LAYERS = 2;
 
@@ -229,14 +231,17 @@ TEST_P(CacheEvictionLowScoreBlocksParameterizedTest, EvictsLowestScoredBlocks) {
     auto ref_evicted_blocks = test_struct.ref_evicted_blocks;
     for (size_t layer_idx = 0; layer_idx < num_decoder_layers; layer_idx++) {
         //if kvcrush is enabled
-        bool is_kvcrush_enabled = (test_struct.eviction_config.get_kvcrush_budget() > 0) && (std::ceil(static_cast<double>(test_struct.tokens_over_max_cache_size) / DEFAULT_BLOCK_SIZE) >= std::floor(static_cast<double>(test_struct.eviction_config.get_kvcrush_budget()) / DEFAULT_BLOCK_SIZE));
-        if (is_kvcrush_enabled) {
+        bool should_apply_kvcrush =
+            (test_struct.eviction_config.get_kvcrush_budget() > 0) &&
+            (std::ceil(static_cast<double>(test_struct.tokens_over_max_cache_size) / DEFAULT_BLOCK_SIZE) >=
+             (test_struct.eviction_config.get_kvcrush_budget() / DEFAULT_BLOCK_SIZE));
+        if (should_apply_kvcrush) {
             // check test_evicted_blocks is a subset of ref_evicted_blocks
             EXPECT_TRUE(std::includes(ref_evicted_blocks[layer_idx].begin(), ref_evicted_blocks[layer_idx].end(),
                                       test_evicted_blocks[layer_idx].begin(), test_evicted_blocks[layer_idx].end()));
             EXPECT_EQ(static_cast<int>(test_evicted_blocks[layer_idx].size()), static_cast<int>(ref_evicted_blocks[layer_idx].size()) - static_cast<int>(test_struct.eviction_config.get_kvcrush_budget() / DEFAULT_BLOCK_SIZE));
         }
-        //if kvcrush is disabled
+        // if kvcrush is disabled
         else {
             EXPECT_EQ(test_evicted_blocks[layer_idx], ref_evicted_blocks[layer_idx]);
         }
@@ -396,7 +401,7 @@ struct CacheEvictionConfigInitParamsForTest {
     size_t start_size;
     size_t recent_size;
     size_t max_cache_size;
-    size_t cl_size;
+    size_t kvcrush_budget;
 };
 
 using CacheEvictionConfigInitializationTest = ::testing::TestWithParam<CacheEvictionConfigInitParamsForTest>;
@@ -413,7 +418,13 @@ const std::vector<CacheEvictionConfigInitParamsForTest> INVALID_CONFIG_INIT_PARA
 
 TEST_P(CacheEvictionConfigInitializationTest, ThrowsForInvalidConfigParams) {
     auto params = GetParam();
-    EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size, params.recent_size, params.max_cache_size, params.cl_size, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::NORM_SUM), ov::Exception);
+    EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size,
+                                                params.recent_size,
+                                                params.max_cache_size,
+                                                ov::genai::AggregationMode::NORM_SUM,
+                                                params.kvcrush_budget,
+                                                ov::genai::KVCrushAnchorPointMode::RANDOM),
+                 ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionConfigInitializationTest,
@@ -428,13 +439,13 @@ struct CacheEvictionAlgoInitParamsForTest {
 using CacheEvictionAlgoInitializationTest = ::testing::TestWithParam<CacheEvictionAlgoInitParamsForTest>;
 
 const std::vector<CacheEvictionAlgoInitParamsForTest> INVALID_ALGO_INIT_PARAMS_CASES = {
-        // area sizes not multiple of block size
-        { {32, 32, 97, 10, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::SUM}, 16, 8},
-        { {11, 13, 50, 10, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::NORM_SUM}, 13, 1},
-        { {128, 200, 584, 10, ov::genai::AnchorPoints::RANDOM,ov::genai::AggregationMode::NORM_SUM}, 128, 19},
+    // area sizes not multiple of block size
+    {{32, 32, 97, ov::genai::AggregationMode::SUM, 10, ov::genai::KVCrushAnchorPointMode::RANDOM}, 16, 8},
+    {{11, 13, 50, ov::genai::AggregationMode::NORM_SUM, 10, ov::genai::KVCrushAnchorPointMode::RANDOM}, 13, 1},
+    {{128, 200, 584, ov::genai::AggregationMode::NORM_SUM, 10, ov::genai::KVCrushAnchorPointMode::RANDOM}, 128, 19},
 
-        // zero decoder layers
-        { {32, 64, 192, 10, ov::genai::AnchorPoints::RANDOM, ov::genai::AggregationMode::SUM}, 32, 0},
+    // zero decoder layers
+    {{32, 64, 192, ov::genai::AggregationMode::SUM, 10, ov::genai::KVCrushAnchorPointMode::RANDOM}, 32, 0},
 };
 TEST_P(CacheEvictionAlgoInitializationTest, ThrowsForInvalidConfigs) {
     auto params = GetParam();

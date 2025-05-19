@@ -3,6 +3,7 @@
 
 #include "continuous_batching/cache_eviction.hpp"
 
+#include <random>
 namespace ov::genai {
     CacheEvictionAlgorithm::CacheEvictionAlgorithm(const CacheEvictionConfig &eviction_config, size_t block_size,
                                                    size_t num_decoder_layers) :
@@ -25,58 +26,77 @@ namespace ov::genai {
         return m_eviction_config.get_max_cache_size() + m_block_size - 1;
     }
 
-    std::vector<std::size_t> CacheEvictionAlgorithm::get_indices_of_blocks_to_retain_using_kvcrush(size_t decoder_layer_idx, size_t k, std::vector<std::size_t>& evicted_block_indices)
-    {
-        const auto& keep_clus_eligible = evicted_block_indices;
-        k = std::min(k, m_scores[decoder_layer_idx].size()); //k is number of tokens
-        std::vector<size_t> indices(k);
+    // step 1: create_indicators_kvcrush()
+    std::vector<size_t> CacheEvictionAlgorithm::create_indicators_kvcrush(size_t decoder_layer_idx,
+                                                                          size_t num_tokens_in_evictable_blocks,
+                                                                          size_t m_block_size,
+                                                                          std::vector<size_t>& evicted_block_indices) {
+        // Step 1: Sort the scores of the blocks to be evicted
+        const auto& blocks_eligible_for_kvcrush = evicted_block_indices;
+        num_tokens_in_evictable_blocks = std::min(num_tokens_in_evictable_blocks, m_block_size);
+        std::vector<size_t> indices(num_tokens_in_evictable_blocks);
         std::iota(indices.begin(), indices.end(), 0);
-        std::partial_sort(
-            indices.begin(),
-            indices.begin() + k/2,
-            indices.end(),
-            [&](size_t i, size_t j) {
-                return m_scores[decoder_layer_idx][i] > m_scores[decoder_layer_idx][j];
-            }
-        );
-        std::vector<int> indicators(k, 0);
-        for (size_t i = 0; i < k/2; ++i) {
+        std::partial_sort(indices.begin(),
+                          indices.begin() + num_tokens_in_evictable_blocks / 2,
+                          indices.end(),
+                          [&](size_t i, size_t j) {
+                              return m_scores[decoder_layer_idx][i] > m_scores[decoder_layer_idx][j];
+                          });
+        std::vector<size_t> indicators(num_tokens_in_evictable_blocks, 0);
+        for (size_t i = 0; i < num_tokens_in_evictable_blocks / 2; ++i) {
             indicators[indices[i]] = 1;
         }
-
-        // Step 2: Create a random binary vector of size m_block_size as anchor point
-        std::vector<int> anchor_point(m_block_size);
+        return indicators;
+    }
+    // step 2: create_anchor_point_kvcrush()
+    std::vector<size_t> CacheEvictionAlgorithm::create_anchor_point_kvcrush(size_t num_tokens_in_evictable_blocks,
+                                                                            size_t m_block_size,
+                                                                            std::vector<size_t>& indicators) {
+        // Step 2: Create a binary vector of size m_block_size as anchor point
+        std::vector<size_t> anchor_point(m_block_size);
         // Initialize anchor_point based on anchor using switch-case
         switch (m_eviction_config.anchor_point) {
-            case AnchorPoints::RANDOM:
-            std::generate(anchor_point.begin(), anchor_point.end(), []() { return rand() % 2; });
-            break;
-            case AnchorPoints::ZEROS:
+        case KVCrushAnchorPointMode::RANDOM: {
+            static thread_local std::mt19937 rng(123);
+            std::uniform_int_distribution<int> dist(0, 1);
+            std::generate(anchor_point.begin(), anchor_point.end(), [&]() {
+                return dist(rng);
+            });
+        } break;
+        case KVCrushAnchorPointMode::ZEROS:
             std::fill(anchor_point.begin(), anchor_point.end(), 0);
             break;
-            case AnchorPoints::ONES:
+        case KVCrushAnchorPointMode::ONES:
             std::fill(anchor_point.begin(), anchor_point.end(), 1);
             break;
-            case AnchorPoints::MEAN: {
+        case KVCrushAnchorPointMode::MEAN: {
             // Mean here is 1 if the average of the indicators is greater than 0.5
             // and 0 otherwise
-            double mean = std::accumulate(indicators.begin(), indicators.end(), 0.0) / k;
+            double mean = std::accumulate(indicators.begin(), indicators.end(), 0.0) / num_tokens_in_evictable_blocks;
             for (size_t i = 0; i < m_block_size; ++i) {
                 anchor_point[i] = (mean > 0.5) ? 1 : 0;
             }
             break;
-            }
-            case AnchorPoints::ALTERNATE:
+        }
+        case KVCrushAnchorPointMode::ALTERNATE:
             for (size_t i = 0; i < m_block_size; ++i) {
                 anchor_point[i] = i % 2;
             }
             break;
             default:
-            throw std::invalid_argument("Invalid anchor point type");
+                OPENVINO_THROW("Invalid anchor point type");
         }
-        
+        return anchor_point;
+    }
+
+    // step 3: calculate_hamming_distance()
+    std::vector<std::pair<size_t, size_t>> CacheEvictionAlgorithm::calculate_hamming_distance_kvcrush(
+        size_t num_tokens_in_evictable_blocks,
+        size_t m_block_size,
+        std::vector<size_t>& indicators,
+        std::vector<size_t>& anchor_point) {
         // Step 3: Calculate Hamming distances between anchor point and each block
-        size_t num_blocks = k / m_block_size;
+        size_t num_blocks = num_tokens_in_evictable_blocks / m_block_size;
         std::vector<std::pair<size_t, size_t>> block_distances; // pair<hamming_distance, block_idx>
         block_distances.reserve(num_blocks);
 
@@ -84,7 +104,7 @@ namespace ov::genai {
             size_t hamming_distance = 0;
             for (size_t j = 0; j < m_block_size; ++j) {
                 size_t token_idx = block_idx * m_block_size + j;
-                if (token_idx < k) {
+                if (token_idx < num_tokens_in_evictable_blocks) {
                     // Use the indicators vector to determine the bit value of this position
                     int bit_value = indicators[token_idx];
                     if (bit_value != anchor_point[j]) {
@@ -94,15 +114,25 @@ namespace ov::genai {
             }
             block_distances.emplace_back(hamming_distance, block_idx);
         }
+        return block_distances;
+    }
 
-        // Step 4: Filter block indices that are in keep_clus_eligible
+    // step 4: get_representative_blocks()
+    std::vector<std::size_t> CacheEvictionAlgorithm::get_representative_blocks_kvcrush(
+        size_t decoder_layer_idx,
+        size_t num_tokens_in_evictable_blocks,
+        std::vector<std::pair<size_t, size_t>>& block_distances,
+        const std::vector<size_t>& blocks_eligible_for_kvcrush) {
+        // Step 4: Find the representative blocks
+        // Filter block indices that are in blocks_eligible_for_kvcrush
         std::vector<size_t> filtered_block_indices;
         filtered_block_indices.reserve(block_distances.size());
 
         for (const auto& entry : block_distances) {
             size_t block_idx = entry.second;
-            // Check if block_idx is in keep_clus_eligible
-            if (std::find(keep_clus_eligible.begin(), keep_clus_eligible.end(), block_idx) != keep_clus_eligible.end()) {
+            // Check if block_idx is in blocks_eligible_for_kvcrush
+            if (std::find(blocks_eligible_for_kvcrush.begin(), blocks_eligible_for_kvcrush.end(), block_idx) !=
+                blocks_eligible_for_kvcrush.end()) {
                 filtered_block_indices.push_back(block_idx);
             }
         }
@@ -111,18 +141,48 @@ namespace ov::genai {
                     [&](size_t a, size_t b) {
                         return block_distances[a].first < block_distances[b].first;
                     });
-        // select num_clusters blocks from filtered_block_indices, uniformly spaced
-        size_t num_clusters = m_eviction_config.get_kvcrush_budget() / m_block_size;
-        size_t step = filtered_block_indices.size() / num_clusters;
+        // select num_representative blocks from filtered_block_indices, uniformly spaced
+        size_t num_representative = m_eviction_config.get_kvcrush_budget() / m_block_size;
+        size_t step = filtered_block_indices.size() / num_representative;
         std::vector<std::size_t> kvcrush_retained_block_indices;
-        kvcrush_retained_block_indices.reserve(num_clusters);
-        for (size_t i = 0; i < num_clusters; ++i) {
+        kvcrush_retained_block_indices.reserve(num_representative);
+        for (size_t i = 0; i < num_representative; ++i) {
             size_t idx = i * step;
             if (idx < filtered_block_indices.size()) {
                 kvcrush_retained_block_indices.push_back(filtered_block_indices[idx]);
             }
         }
         return kvcrush_retained_block_indices;
+    }
+
+    std::vector<std::size_t> CacheEvictionAlgorithm::get_indices_of_blocks_to_retain_using_kvcrush(
+        size_t decoder_layer_idx,
+        size_t num_tokens_in_evictable_blocks,
+        std::vector<std::size_t>& evicted_block_indices) {
+        // step 1: Create indicators_kvcrush makes binary feature vectors based on top-k/2 scores
+        const auto& blocks_eligible_for_kvcrush =
+            evicted_block_indices;  // only the blocks that are evicted by the score based eviction are eligible for
+                                    // kvcrush
+        std::vector<size_t> indicators = create_indicators_kvcrush(decoder_layer_idx,
+                                                                   num_tokens_in_evictable_blocks,
+                                                                   m_block_size,
+                                                                   evicted_block_indices);
+
+        // Step 2: Create anchor_point based on the selected anchor point type
+        std::vector<size_t> anchor_point =
+            create_anchor_point_kvcrush(num_tokens_in_evictable_blocks, m_block_size, indicators);
+
+        // Step 3: Calculate Hamming distances between anchor point and each block, where each block is represented by
+        // its binary feature vector called indicators
+        std::vector<std::pair<size_t, size_t>> block_distances =
+            calculate_hamming_distance_kvcrush(num_tokens_in_evictable_blocks, m_block_size, indicators, anchor_point);
+
+        // Step 4: Find the representative blocks
+        // Filter block indices that are in blocks_eligible_for_kvcrush
+        return get_representative_blocks_kvcrush(decoder_layer_idx,
+                                                 num_tokens_in_evictable_blocks,
+                                                 block_distances,
+                                                 blocks_eligible_for_kvcrush);
     }
 
     std::vector<std::set<std::size_t>> CacheEvictionAlgorithm::evict_logical_blocks() {
@@ -150,14 +210,18 @@ namespace ov::genai {
             size_t num_blocks_to_evict = get_num_blocks_to_evict(decoder_layer_idx);
             auto evicted_block_indices = get_indices_of_blocks_to_evict(scores_for_all_evictable_blocks, num_blocks_to_evict);
 
-            //KVCrush: start 
-            bool is_kvcrush_enabled = (m_eviction_config.get_kvcrush_budget() > 0) && (std::ceil(static_cast<double>(evicted_block_indices.size())) >= std::floor(static_cast<double>(m_eviction_config.get_kvcrush_budget()) / m_block_size));
-            if(is_kvcrush_enabled)
-            {
-                size_t k = scores_for_all_evictable_blocks.size() * m_block_size;
-                auto kvcrush_retained_block_indices = get_indices_of_blocks_to_retain_using_kvcrush(decoder_layer_idx, k, evicted_block_indices);
+            //KVCrush: start
+            bool should_apply_kvcrush =
+                (m_eviction_config.get_kvcrush_budget() > 0) &&
+                (evicted_block_indices.size() >= (m_eviction_config.get_kvcrush_budget() / m_block_size));
+            if (should_apply_kvcrush) {
+                size_t num_tokens_in_evictable_blocks = scores_for_all_evictable_blocks.size() * m_block_size;
+                auto kvcrush_retained_block_indices =
+                    get_indices_of_blocks_to_retain_using_kvcrush(decoder_layer_idx,
+                                                                  num_tokens_in_evictable_blocks,
+                                                                  evicted_block_indices);
 
-                // Remove the indcies in kvcrush_retained_block_indices from evicted_block_indices
+                // Remove the indices in kvcrush_retained_block_indices from evicted_block_indices
                 if (!kvcrush_retained_block_indices.empty()) {
                     // Convert both vectors to sets for efficient operations
                     std::unordered_set<std::size_t> retained_set(
@@ -177,7 +241,6 @@ namespace ov::genai {
                     // Replace the original vector with the filtered one
                     evicted_block_indices = std::move(filtered_evicted_indices);
                 }
-                
             }
             //KVCrush: end
             m_num_evicted_tokens += evicted_block_indices.size() * m_block_size;
