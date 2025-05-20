@@ -179,15 +179,9 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
     const std::string model_arch = std::get<std::string>(config.at("architecture"));
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
         model = create_language_model(config, consts, qtypes);
-        if (properties.find(ov::cache_dir.name()) != properties.end()) {
-            std::string cache_dir = properties.at(ov::cache_dir.name()).as<std::string>();
-            if (!cache_dir.empty()) {
-                std::filesystem::path model_cache_dir(cache_dir);
-                std::filesystem::path gguf_model_path(model_path);
-                std::filesystem::path save_path = model_cache_dir / (gguf_model_path.stem().string() + "_openvino_model.xml");
-                save_openvino_model(model, save_path.string(), true);
-            }
-        }
+        std::filesystem::path gguf_model_path(model_path);
+        std::filesystem::path save_path = gguf_model_path.parent_path() / (gguf_model_path.stem().string() + "_openvino_model.xml");
+        save_openvino_model(model, save_path.string(), true);
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }
