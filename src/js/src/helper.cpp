@@ -58,7 +58,7 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
                 bool done;
                 do {
                     Napi::Object result = next.Call(iterator, {}).As<Napi::Object>();
-                    auto done = !result.Get("done").As<Napi::Boolean>();
+                    done = !result.Get("done").As<Napi::Boolean>();
                     if (!done) {
                         auto v = result.Get("value").As<Napi::String>().Utf8Value();
                         set.insert(v);

@@ -1,5 +1,6 @@
 #include "include/helper.hpp"
 
+#include <future>
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 #include "include/llm_pipeline/start_chat_worker.hpp"
 #include "include/llm_pipeline/finish_chat_worker.hpp"
@@ -58,7 +59,7 @@ void performInferenceThread(TsfnContext* context) {
                 }
 
                 // Return flag corresponds whether generation should be stopped.
-                return resultPromise.get_future().get();;
+                return resultPromise.get_future().get();
             };
         }
 

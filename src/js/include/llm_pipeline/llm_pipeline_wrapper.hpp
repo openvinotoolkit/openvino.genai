@@ -1,6 +1,5 @@
 #pragma once
 
-#include <future>
 #include <thread>
 #include <napi.h>
 #include "openvino/genai/llm_pipeline.hpp"
