@@ -285,17 +285,32 @@ ov::Core singleton_core() {
 
 
 namespace {
-
 bool is_gguf_model(const std::filesystem::path& file_path) {
     return file_path.extension() == ".gguf";
 }
 
 } // namespace
 
+const bool ENABLE_SAVE_OV_MODEL = true;
+
+std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
+    bool enable_save_ov_model = ENABLE_SAVE_OV_MODEL;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find("ENABLE_SAVE_OV_MODEL");
+    if (it != properties.end()) {
+        enable_save_ov_model = it->second.as<bool>();
+        properties.erase(it);
+    }
+
+    return {properties, enable_save_ov_model};
+}
+
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
+    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string());
+        return create_from_gguf(model_dir.string(), enable_save_ov_model);
 #else
         OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif
@@ -310,7 +325,7 @@ std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  c
             OPENVINO_THROW("Could not find a model in the directory '", model_dir, "'");
         }
 
-        return singleton_core().read_model(model_path, {}, properties);
+        return singleton_core().read_model(model_path, {}, filtered_properties);
     }
 }
 

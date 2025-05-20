@@ -165,7 +165,7 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
     }
 }
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
+std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const bool enable_save_ov_model) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::cout << "Loading and unpacking model from: " << model_path << std::endl;
     auto [config, consts, qtypes] = load_gguf(model_path);
@@ -178,9 +178,11 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
     const std::string model_arch = std::get<std::string>(config.at("architecture"));
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
         model = create_language_model(config, consts, qtypes);
-        std::filesystem::path gguf_model_path(model_path);
-        std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";
-        save_openvino_model(model, save_path.string(), true);
+        if (enable_save_ov_model){
+            std::filesystem::path gguf_model_path(model_path);
+            std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";
+            save_openvino_model(model, save_path.string(), true);
+        }
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }

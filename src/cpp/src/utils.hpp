@@ -93,6 +93,8 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 
 ov::Core singleton_core();
 
+std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties);
+
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
 
 void release_core_plugin(const std::string& device);
