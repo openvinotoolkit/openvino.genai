@@ -284,15 +284,6 @@ public:
             m_request.set_tensor("sampled_tokens_indices", gather_indices);
         }
 
-        // print_tensor("input_ids", input_ids);
-        // print_tensor("position_ids", position_ids);
-
-        // print_tensor("past_lens", past_lens);
-        // print_tensor("subsequence_begins", subsequence_begins);
-        // print_tensor("block_indices", block_indices);
-        // print_tensor("block_indices_begins", block_indices_begins);
-        // print_tensor("max_context_len", max_context_len);
-
         {
             static ManualTimer timer("pure generate inference");
             timer.start();
