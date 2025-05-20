@@ -105,6 +105,6 @@ export type GenericGenerationConfig = {
  * be used while greedy and beam search parameters will not affect decoding at all.
 */
 export type GenerationConfig = GenericGenerationConfig
-    | BeamSearchGenerationConfig
-    | RandomSamplingsGenerationConfig
-    | AssistingGenerationConfig;
+    & BeamSearchGenerationConfig
+    & RandomSamplingsGenerationConfig
+    & AssistingGenerationConfig;

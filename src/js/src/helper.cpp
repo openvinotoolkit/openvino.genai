@@ -58,14 +58,14 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
                 bool done;
                 do {
                     Napi::Object result = next.Call(iterator, {}).As<Napi::Object>();
-                    done = !result.Get("done").As<Napi::Boolean>();
+                    done = result.Get("done").As<Napi::Boolean>();
                     if (!done) {
                         auto v = result.Get("value").As<Napi::String>().Utf8Value();
                         set.insert(v);
                     }
                 } while(done);
                 return ov::Any(set);
-            } catch (std::exception e) {
+            } catch (std::exception& e) {
                 std::cerr << "Cannot convert to set: " << e.what() << std::endl;
             }
         }
