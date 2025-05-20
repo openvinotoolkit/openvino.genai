@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
 
     std::getline(std::cin, prompt);
     pipe.generate(prompt,
-                //   ov::genai::images(rgbs),
+                  ov::genai::images(rgbs),
                   ov::genai::generation_config(generation_config),
                   ov::genai::streamer(print_subword));
     std::cout << "\n----------\n"
