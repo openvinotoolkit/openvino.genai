@@ -100,6 +100,7 @@ ov::Tensor HD_transform(const ov::Tensor& uint8, size_t num_crops) {
         ++scale;
     }
     --scale;
+    OPENVINO_ASSERT(scale > 0);
     size_t new_w = scale * INPUT_IMAGE_SIZE;
     size_t new_h = new_w / ratio;
     clip_image_u8 src{}, dst{};
