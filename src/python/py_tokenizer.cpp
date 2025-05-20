@@ -38,6 +38,7 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::ChatHistory;
+using ov::genai::Tools;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
 
@@ -199,6 +200,19 @@ void init_tokenizer(py::module_& m) {
             py::arg("add_generation_prompt"),
             py::arg("chat_template") = "",
             R"(Embeds input prompts with special tags for a chat scenario.)")
+
+        .def("apply_chat_template", [](Tokenizer& tok,
+                                        ChatHistory history,
+                                        Tools tools,
+                                        bool add_generation_prompt,
+                                        const std::string& chat_template) {
+            return tok.apply_chat_template(history, tools, add_generation_prompt, chat_template);
+        },
+            py::arg("history"),
+            py::arg("tools"),
+            py::arg("add_generation_prompt"),
+            py::arg("chat_template") = "",
+            R"(Embeds input prompts with special tags for a chat scenario. Includes tools.)")
 
         .def(
             "set_chat_template", &Tokenizer::set_chat_template,

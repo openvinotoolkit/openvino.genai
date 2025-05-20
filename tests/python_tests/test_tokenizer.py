@@ -203,6 +203,81 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
+def test_apply_chat_template_with_tools(ov_hf_tokenizers):
+    ov_tokenizer, _ = ov_hf_tokenizers
+
+    tools = ["""
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get current temperature for a given location.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City and country e.g. Bogotá, Colombia"
+                    }
+                },
+                "required": [
+                    "location"
+                ],
+                "additionalProperties": False
+            },
+            "strict": True
+        }
+    }
+             """,
+             """
+    {
+        "type": "function",
+        "function": {
+            "name": "get_pollution",
+            "description": "Get current level of air pollution for a given location.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City and country e.g. Bogotá, Colombia"
+                    }
+                },
+                "required": [
+                    "location"
+                ],
+                "additionalProperties": False
+            },
+            "strict": True
+        }
+    }
+             """]
+    
+    dummy_conversation = [
+        {"role": "user", "content": "What is the weather like in Paris today?"},
+    ]
+
+    # This is a fake template to test tools. Real life templates contain parts that cannot be processed by Jinja2Cpp.
+    template = "{% if tools is defined %}{{ 'Below are the tools you can use. Respond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.\n\n' }}{% for tool in tools %}{{ tool + '\n\n'}}{% endfor %}{% endif %}{% for message in messages %}{{ message['content'] }}{% endfor %}"
+    templated_prompt_inline = ov_tokenizer.apply_chat_template(
+        dummy_conversation,
+        tools,
+        add_generation_prompt=False,
+        chat_template=template
+    )
+
+    ov_tokenizer.set_chat_template(template)
+    templated_prompt = ov_tokenizer.apply_chat_template(dummy_conversation, tools, add_generation_prompt=False)
+
+    assert templated_prompt_inline == templated_prompt
+    assert templated_prompt.endswith("What is the weather like in Paris today?")
+    assert tools[0] in templated_prompt
+    assert tools[1] in templated_prompt
+    
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 def test_set_chat_template(ov_hf_tokenizers):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
 

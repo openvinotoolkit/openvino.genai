@@ -615,20 +615,9 @@ public:
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
 
-    std::string apply_chat_template(ChatHistory history,
-                                    bool add_generation_prompt,
-                                    const std::string& chat_template) const {
-        std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_and_patch(chat_template);
-        OPENVINO_ASSERT(!chat_tpl.empty(),
-                        "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
-                        " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
-                        " For more information see the section Troubleshooting in README.md");
-        jinja2::TemplateEnv env;
-        env.GetSettings().lstripBlocks = true;
-        env.GetSettings().trimBlocks = true;
-        jinja2::Template tpl(&env);
-        tpl.Load(chat_tpl);
-
+    jinja2::ValuesMap prepare_jinja_params(const ChatHistory& history, const Tools& tools, bool add_generation_prompt) const {
+        jinja2::ValuesMap params;
+        // Slice callable
         jinja2::UserCallable slice_callable = jinja2::MakeCallable(
             [](const jinja2::GenericList& messages, const size_t& start) {
                 jinja2::ValuesList result;
@@ -644,23 +633,83 @@ public:
             },
             jinja2::ArgInfo{"messages"}, jinja2::ArgInfo{"start"}
         );
+        params["slice"] = slice_callable;
 
+        // Messages
         jinja2::ValuesList jinja_messages;
         jinja2::ValuesMap jinja_message;
         for (const auto& message : history) {
             jinja_message = {{"role", message.at("role")}, {"content", message.at("content")}};
             jinja_messages.emplace_back(jinja_message);
         }
+        params["messages"] = jinja_messages;
 
-        jinja2::ValuesMap params = {
-            {"messages", jinja_messages},
-            {"bos_token",  m_bos_token},
-            {"eos_token", m_eos_token},
-            {"pad_token", m_pad_token},
-            {"add_generation_prompt", add_generation_prompt},
-            {"slice", slice_callable},
-        };
+        // Control variables
+        params["bos_token"] = m_bos_token;
+        params["eos_token"] = m_eos_token;
+        params["pad_token"] = m_pad_token;
+        params["add_generation_prompt"] = add_generation_prompt;
 
+        // Tools
+        if (!tools.empty()) {
+            jinja2::ValuesList jinja_tools;
+            for (const auto& tool: tools) {
+                jinja_tools.emplace_back(tool);
+            }
+            params["tools"] = jinja_tools;
+        }
+
+        return params;
+    }
+
+    std::string apply_chat_template(ChatHistory history,
+                                    bool add_generation_prompt,
+                                    const std::string& chat_template) const {
+        std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_and_patch(chat_template);
+        OPENVINO_ASSERT(!chat_tpl.empty(),
+                        "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
+                        " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
+                        " For more information see the section Troubleshooting in README.md");
+        jinja2::TemplateEnv env;
+        env.GetSettings().lstripBlocks = true;
+        env.GetSettings().trimBlocks = true;
+        jinja2::Template tpl(&env);
+        tpl.Load(chat_tpl);
+
+        jinja2::ValuesMap params = prepare_jinja_params(history, {}, add_generation_prompt);
+        std::string result;
+        try {
+            result = tpl.RenderAsString(params).value();
+        } catch (const std::exception& error) {
+            OPENVINO_THROW("Jinja2Cpp failed to apply chat template. Possible solutions are\n"
+                           "* Provide a simplified chat template with set_chat_template().\n"
+                           "* Set apply_chat_template to false in GenerationConfig. "
+                           "It's possible to apply the template manually to your prompt before calling generate. "
+                           "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
+                           "Jinja2Cpp's error: ", error.what());
+        }
+        OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
+                                         "Please check the chat template or apply template manually to your prompt before calling generate."
+                                         "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+        return result;
+    }
+
+    std::string apply_chat_template(ChatHistory history,
+                                    Tools tools,
+                                    bool add_generation_prompt,
+                                    const std::string& chat_template) const {
+        std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_and_patch(chat_template);
+        OPENVINO_ASSERT(!chat_tpl.empty(),
+                        "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
+                        " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
+                        " For more information see the section Troubleshooting in README.md");
+        jinja2::TemplateEnv env;
+        env.GetSettings().lstripBlocks = true;
+        env.GetSettings().trimBlocks = true;
+        jinja2::Template tpl(&env);
+        tpl.Load(chat_tpl);
+
+        jinja2::ValuesMap params = prepare_jinja_params(history, tools, add_generation_prompt);
         std::string result;
         try {
             result = tpl.RenderAsString(params).value();
@@ -791,6 +840,13 @@ std::string Tokenizer::apply_chat_template(ChatHistory history,
                                            bool add_generation_prompt,
                                            const std::string& chat_template) const {
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);
+}
+
+std::string Tokenizer::apply_chat_template(ChatHistory history,
+                                           Tools tools,
+                                           bool add_generation_prompt,
+                                           const std::string& chat_template) const {
+    return m_pimpl->apply_chat_template(history, tools, add_generation_prompt, chat_template);
 }
 
 std::string Tokenizer::get_chat_template() const {
