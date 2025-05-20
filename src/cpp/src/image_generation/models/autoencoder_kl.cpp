@@ -185,11 +185,13 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
 AutoencoderKL::AutoencoderKL(const AutoencoderKL& rhs) = default;
 
 AutoencoderKL AutoencoderKL::clone() {
-    OPENVINO_ASSERT(!m_decoder_model, "AutoencoderKL must be compiled first. Cannot clone non-compiled model");
+    // Support for cloning before compilation implemented below. TODO: Remove assertion when approved
+    //OPENVINO_ASSERT(!m_decoder_model, "AutoencoderKL must be compiled first. Cannot clone non-compiled model");
     AutoencoderKL cloned = *this;
     if (m_encoder_request)
         cloned.m_encoder_request = m_encoder_request.get_compiled_model().create_infer_request();
-    cloned.m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
+    if (m_decoder_request)
+        cloned.m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
     return cloned;
 }
 

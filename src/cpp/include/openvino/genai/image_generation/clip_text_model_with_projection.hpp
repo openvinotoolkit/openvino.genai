@@ -13,9 +13,11 @@ public:
     using CLIPTextModel::CLIPTextModel;
 
     std::shared_ptr<CLIPTextModel> clone() {
-        OPENVINO_ASSERT(!m_model, "CLIP text encoder model must be compiled first. Cannot clone non-compiled model");
+        // Support for cloning before compilation implemented below. TODO: Remove assertion when approved
+        //OPENVINO_ASSERT(!m_model, "CLIP text encoder model must be compiled first. Cannot clone non-compiled model");
         std::shared_ptr<CLIPTextModelWithProjection> cloned = std::make_shared<CLIPTextModelWithProjection>(*this);
-        cloned->m_request = m_request.get_compiled_model().create_infer_request();
+        if (m_request)
+            cloned->m_request = m_request.get_compiled_model().create_infer_request();
         return cloned;
     }
 
