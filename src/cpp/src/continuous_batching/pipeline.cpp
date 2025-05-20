@@ -14,7 +14,6 @@
 #include "prompt_lookup/prompt_lookup_impl.hpp"
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
-#include "debug_utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 using namespace ov::genai;
