@@ -93,17 +93,34 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
-      - name: Download coverity tool
+      - name: Download & install coverity tool
         run: |
-          wget -q https://scan.coverity.com/download/linux64 --post-data "token=${{ secrets.COVERITY_SECRET_TOKEN }}&project=openvino.genai" -O coverity_tool.tgz
-          tar -I pigz -xf coverity_tool.tgz
-          echo "ENV_COV_TOOL_DIR=$(tar -tzf coverity_tool.tgz | head -1 | cut -f1 -d'/')" >> $GITHUB_ENV
-          rm coverity_tool.tgz
+          wget https://ubit-artifactory-or.intel.com/artifactory/coverity-or-local/Enterprise/license.dat -O license.dat
+          wget https://ubit-artifactory-or.intel.com/artifactory/coverity-or-local/Enterprise/cov-analysis-linux64-2024.6.1.sh -O cov-analysis-2024.6.1.sh
+          chmod u+x cov-analysis-2024.6.1.sh
+          ./cov-analysis-2024.6.1.sh --unattended --skip-license --prefix ${ENV_COV_TOOL_DIR}
+          ./cov-analysis-2024.6.1.sh \
+            -q \
+            --installation.dir=${COVERITY_TOOL_DIR} \
+            --license.agreement=agree \
+            --license.region=0 \
+            --license.type.choice=0 \
+            --license.cov.path=${COVERITY_TOOL_DIR}/license.dat \
+            --component.sdk=false \
+            --component.skip.documentation=true
+          rm cov-analysis-2024.6.1.sh
+          export PATH=$PATH:${ENV_COV_TOOL_DIR}/bin/
 
-      - name: Create config file for coverity build
+      - name: Create config file for coverity build (create coverity artifacts)
         run: |
-          ${ENV_COV_TOOL_DIR}/bin/cov-configure --delete-compiler-config template-python-config-0
-          ${ENV_COV_TOOL_DIR}/bin/cov-configure --python --no-capture-config-files --version 3
+          cov-configure --template --compiler cc --comptype gcc --config coverity_config.xml
+          cov-configure --template --compiler c++ --comptype g++ --config coverity_config.xml
+          cov-configure --python --no-capture-config-files --version 3 --config coverity_config.xml
+          cov-configure --template --compiler javascript --comptype javascript --config coverity_config.xml
+          cov-configure --template --compiler python --comptype python --config coverity_config.xml
+          cov-configure --template --compiler clangcc --comptype clangcc --config coverity_config.xml
+          cov-configure --template --compiler clangcxx --comptype clangcxx --config coverity_config.xml
+          cov-configure --template --compiler javac --comptype javac --config coverity_config.xml
 
       - name: Create build.sh
         run: |
@@ -115,39 +132,45 @@ jobs:
 
       - name: Build for coverity
         run: |
-          ${ENV_COV_TOOL_DIR}/bin/cov-build --config ${ENV_COV_TOOL_DIR}/config/coverity_config.xml --tmpdir cov_temp --dir ${BUILD_DIR}/cov-int --fs-capture-search ./openvino.genai sh build.sh
+          cov-build --config coverity_config.xml --tmpdir cov_temp --dir ${BUILD_DIR}/cov-int --fs-capture-search .. sh build.sh
 
-      - name: Pack for analysis submission
-        run: tar -cvf - cov-int | pigz > openvino-genai.tgz
-        working-directory: ${{ env.BUILD_DIR }}
-
-      - name: Submit to coverity
+      - name: Exclude folders from analysis
         run: |
-          apt-get update && apt-get install -y curl jq
-          pushd ${BUILD_DIR}
-            curl -X POST -d token=${{ secrets.COVERITY_SECRET_TOKEN }} \
-              -d email=${{ secrets.COVERITY_USER }} \
-              -d file_name="openvino-genai.tgz" \
-              -d version="${{ github.sha }}" \
-              -d description="https://github.com/openvinotoolkit/openvino.genai/actions/runs/${{ github.run_id }}" \
-              https://scan.coverity.com/projects/30357/builds/init | tee response
+          cov-manage-emit --dir cov-int --tu-pattern "file('$INTEL_OPENVINO_DIR/.*')" delete
+          cov-manage-emit --dir cov-int --tu-pattern "file('/build/_deps/.*')" delete
+          cov-manage-emit --dir cov-int --tu-pattern "file('/tools/.*')" delete
 
-            upload_url=$(jq -r '.url' response)
-            build_id=$(jq -r '.build_id' response)
+      - name: Coverity - analyze created artifacts
+        run: |
+          cov-analyze \
+            --dir cov-int \
+            --concurrency \
+            --security \
+            --rule \
+            --enable-constraint-fpp \
+            --enable-fnptr \
+            --enable-virtual \
+            --enable-default \
+            --webapp-security \
+            --enable-audit-checkers \
+            --enable-audit-mode \
+            --fs-capture-search ${{ github.workspace }} \
+            --strip-path ${{ github.workspace }}
 
-            curl -X PUT \
-              --header 'Content-Type: application/json' \
-              --upload-file openvino-genai.tgz \
-              $upload_url
-
-            curl -X PUT \
-              -d token=${{ secrets.COVERITY_SECRET_TOKEN }} \
-            https://scan.coverity.com/projects/30357/builds/$build_id/enqueue
-          popd
+      - name: Submit artefacts
+        run: |
+          cov-commit-defects \
+            --dir cov-int \
+            --stream OpenVINO-master-stream \
+            --url  https://coverityent.devtools.intel.com/prod3 \
+            --version "${{ github.sha }}" \
+            --user <user> \
+            --password <coverity> \
+            --strip-path ${{ env.OPENVINO_REPO }} --noxrefs
 
       - name: Show Coverity configure logs
         continue-on-error: true
-        run: ${ENV_COV_TOOL_DIR}/bin/cov-configure -c ${ENV_COV_TOOL_DIR}/config/coverity_config.xml -lscc text
+        run: cov-configure -c ${COVERITY_TOOL_DIR}/coverity_config.xml -lscc text
 
       - name: Upload Coverity build log
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -155,12 +178,4 @@ jobs:
         with:
           name: coverity_logs
           path: ${{ env.BUILD_DIR }}/cov-int/build-log.txt
-          if-no-files-found: 'error'
-
-      - name: Upload Coverity build archive
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with:
-          name: coverity_archive
-          path: ${{ env.BUILD_DIR }}/openvino-genai.tgz
           if-no-files-found: 'error'
