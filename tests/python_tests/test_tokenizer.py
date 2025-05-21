@@ -223,9 +223,9 @@ def test_apply_chat_template_with_tools(ov_hf_tokenizers):
                 "required": [
                     "location"
                 ],
-                "additionalProperties": False
+                "additionalProperties": false
             },
-            "strict": True
+            "strict": true
         }
     }
              """,
@@ -246,9 +246,9 @@ def test_apply_chat_template_with_tools(ov_hf_tokenizers):
                 "required": [
                     "location"
                 ],
-                "additionalProperties": False
+                "additionalProperties": false
             },
-            "strict": True
+            "strict": true
         }
     }
              """]
@@ -257,8 +257,28 @@ def test_apply_chat_template_with_tools(ov_hf_tokenizers):
         {"role": "user", "content": "What is the weather like in Paris today?"},
     ]
 
-    # This is a fake template to test tools. Real life templates contain parts that cannot be processed by Jinja2Cpp.
-    template = "{% if tools is defined %}{{ 'Below are the tools you can use. Respond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.\n\n' }}{% for tool in tools %}{{ tool + '\n\n'}}{% endfor %}{% endif %}{% for message in messages %}{{ message['content'] }}{% endfor %}"
+    # Template from Qwen2.5 Instruct: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/blob/main/tokenizer_config.json#L198
+    template = "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- messages[0]['content'] }}\n    {%- else %}\n        {{- 'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.' }}\n    {%- endif %}\n    {{- \"\\n\\n# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- '<|im_start|>system\\n' + messages[0]['content'] + '<|im_end|>\\n' }}\n    {%- else %}\n        {{- '<|im_start|>system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- for message in messages %}\n    {%- if (message.role == \"user\") or (message.role == \"system\" and not loop.first) or (message.role == \"assistant\" and not message.tool_calls) %}\n        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {{- '<|im_start|>' + message.role }}\n        {%- if message.content %}\n            {{- '\\n' + message.content }}\n        {%- endif %}\n        {%- for tool_call in message.tool_calls %}\n            {%- if tool_call.function is defined %}\n                {%- set tool_call = tool_call.function %}\n            {%- endif %}\n            {{- '\\n<tool_call>\\n{\"name\": \"' }}\n            {{- tool_call.name }}\n            {{- '\", \"arguments\": ' }}\n            {{- tool_call.arguments | tojson }}\n            {{- '}\\n</tool_call>' }}\n        {%- endfor %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- message.content }}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n{%- endif %}\n"
+    expected_prompt = """<|im_start|>system
+You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
+
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+<tools>
+{"type":"function","function":{"name":"get_weather","strict":true,"parameters":{"type":"object","required":["location"],"properties":{"location":{"type":"string","description":"City and country e.g. Bogotá, Colombia"}},"additionalProperties":false},"description":"Get current temperature for a given location."}}
+{"type":"function","function":{"name":"get_pollution","strict":true,"parameters":{"type":"object","required":["location"],"properties":{"location":{"type":"string","description":"City and country e.g. Bogotá, Colombia"}},"additionalProperties":false},"description":"Get current level of air pollution for a given location."}}
+</tools>
+
+For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+<tool_call>
+{"name": <function-name>, "arguments": <args-json-object>}
+</tool_call><|im_end|>
+<|im_start|>user
+What is the weather like in Paris today?<|im_end|>
+"""
     templated_prompt_inline = ov_tokenizer.apply_chat_template(
         dummy_conversation,
         tools,
@@ -268,11 +288,9 @@ def test_apply_chat_template_with_tools(ov_hf_tokenizers):
 
     ov_tokenizer.set_chat_template(template)
     templated_prompt = ov_tokenizer.apply_chat_template(dummy_conversation, tools, add_generation_prompt=False)
-
+    print(templated_prompt)
     assert templated_prompt_inline == templated_prompt
-    assert templated_prompt.endswith("What is the weather like in Paris today?")
-    assert tools[0] in templated_prompt
-    assert tools[1] in templated_prompt
+    assert templated_prompt == expected_prompt
     
 
 @pytest.mark.precommit

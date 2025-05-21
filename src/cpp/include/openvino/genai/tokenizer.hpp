@@ -15,8 +15,8 @@
 namespace ov {
 namespace genai {
 
-using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
 using Tools = std::vector<std::string>;
+using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
 using Vocab = std::unordered_map<std::string, int64_t>;  // similar to huggingface .get_vocab() output format
 
 struct TokenizedInputs {

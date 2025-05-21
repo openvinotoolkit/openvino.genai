@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
 #include <jinja2cpp/user_callable.h>
@@ -615,6 +616,60 @@ public:
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
 
+    static void json_array_to_jinja(nlohmann::json::array_t array, jinja2::ValuesList& output) {
+        for (auto item: array) {
+            if (item.is_string()) {
+                std::string string_val = item.get<std::string>();
+                output.emplace_back(string_val);
+            } else if (item.is_number_integer()) {
+                int64_t int_val = item.get<int64_t>();
+                output.emplace_back(int_val);
+            } else if (item.is_boolean()) {
+                bool bool_val = item.get<bool>();
+                output.emplace_back(bool_val);
+            } else if (item.is_number_float()) {
+                double float_val = item.get<double>();
+                output.emplace_back(float_val);
+            } else if(item.is_array()) {
+                jinja2::ValuesList nested_array;
+                json_array_to_jinja(item, nested_array);
+                output.emplace_back(nested_array);
+            } else if(item.is_object()) {
+                jinja2::ValuesMap nested_object;
+                json_object_to_jinja(item, nested_object);
+                output.emplace_back(nested_object);
+            }
+        }
+        return;
+    }
+
+    static void json_object_to_jinja(nlohmann::json& object, jinja2::ValuesMap& output) {;
+        for (auto it = object.begin(); it != object.end(); ++it) {
+            if (it.value().is_string()) {
+                std::string string_val = it.value().get<std::string>();
+                output[it.key()] = string_val;
+            } else if (it.value().is_number_integer()) {
+                int64_t int_val = it.value().get<int64_t>();
+                output[it.key()] = int_val;
+            } else if (it.value().is_boolean()) {
+                bool bool_val = it.value().get<bool>();
+                output[it.key()] = bool_val;
+            } else if (it.value().is_number_float()) {
+                double float_val = it.value().get<double>();
+                output[it.key()] = float_val;
+            } else if(it.value().is_array()) {
+                jinja2::ValuesList nested_array;
+                json_array_to_jinja(it.value(), nested_array);
+                output[it.key()] = nested_array;
+            } else if(it.value().is_object()) {
+                jinja2::ValuesMap nested_object;
+                json_object_to_jinja(it.value(), nested_object);
+                output[it.key()] = nested_object;
+            }
+        }
+        return;
+    }
+
     jinja2::ValuesMap prepare_jinja_params(const ChatHistory& history, const Tools& tools, bool add_generation_prompt) const {
         jinja2::ValuesMap params;
         // Slice callable
@@ -651,12 +706,17 @@ public:
         params["add_generation_prompt"] = add_generation_prompt;
 
         // Tools
+        using utils::read_json_param;
         if (!tools.empty()) {
-            jinja2::ValuesList jinja_tools;
-            for (const auto& tool: tools) {
-                jinja_tools.emplace_back(tool);
+            jinja2::ValuesList tools_jinja;
+            for (const auto& tool_str: tools) {
+                // TODO handle failed parsing
+                nlohmann::json tool_json = nlohmann::json::parse(tool_str);
+                jinja2::ValuesMap tool_jinja;
+                json_object_to_jinja(tool_json, tool_jinja);
+                tools_jinja.emplace_back(tool_jinja);
             }
-            params["tools"] = jinja_tools;
+            params["tools"] = tools_jinja;
         }
 
         return params;
