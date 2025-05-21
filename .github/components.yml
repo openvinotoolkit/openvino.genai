@@ -71,6 +71,10 @@ RAG:
   revalidate:
     - RAG_samples
 
+speech_generation:
+  revalidate:
+    - Speech_generation_samples
+
 continuous_batching:
   revalidate:
     - LLM
@@ -110,6 +114,9 @@ VLM_samples:
   revalidate: []
 
 RAG_samples:
+  revalidate: []
+
+Speech_generation_samples:
   revalidate: []
 
 GGUF:

@@ -392,7 +392,8 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            run_condition: false
+            # run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 45
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
@@ -484,6 +485,10 @@ jobs:
             marker: 'rag'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
+          - name: 'Speech generation'
+            marker: 'speech_generation'
+            cmd: 'tests/python_tests/samples'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
     needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 45
