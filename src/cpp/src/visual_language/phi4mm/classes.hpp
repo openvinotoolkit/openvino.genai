@@ -22,9 +22,9 @@ namespace ov::genai {
  * for encoding images.
  */
 class VisionEncoderPhi4MM : public VisionEncoder {
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_projection;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_image_preprocessors;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_separator_inserters;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_projection;
     VLMConfig m_vlm_config;
 
 public:

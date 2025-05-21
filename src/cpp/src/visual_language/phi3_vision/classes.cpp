@@ -500,7 +500,6 @@ std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& 
     return tokenized;
 }
 
-
 ov::Tensor insert_image_placeholders(
     const std::vector<std::variant<ov::Tensor, size_t>>& chunks,
     const std::vector<size_t>& tokens_per_images
