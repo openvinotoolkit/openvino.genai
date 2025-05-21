@@ -12,7 +12,7 @@
 
 namespace ov::genai {
 
-namespace util {
+namespace phi_utils {
 
 std::string normalize_prompt(
     const std::string& prompt, size_t base_id, size_t n_images, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
