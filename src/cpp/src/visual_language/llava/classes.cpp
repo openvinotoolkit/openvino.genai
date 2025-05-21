@@ -103,15 +103,15 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
     return embeds;
 }
 
-ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
+std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
-    auto [unified_prompt, images_sequence] = normalize_prompt(prompt, image_token, image_token, m_image_id, images.size());
+    auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
 
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     size_t searched_pos = 0;
     for (size_t new_image_id : images_sequence) {
-        image_embeds.push_back(images.at(new_image_id - m_image_id).resized_source);
+        image_embeds.push_back(images.at(new_image_id - base_id).resized_source);
         std::string expanded_tag;
         for (size_t idx = 0; idx < image_embeds.back().get_shape().at(1); ++idx) {
             expanded_tag += image_token;
@@ -122,6 +122,15 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
         OPENVINO_ASSERT(searched_pos != std::string::npos);
         unified_prompt.replace(searched_pos, image_token.length(), expanded_tag);
         searched_pos += expanded_tag.length();
+    }
+    return {std::move(unified_prompt), std::move(images_sequence)};
+}
+
+ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    std::vector<ov::Tensor> image_embeds;
+    image_embeds.reserve(images_sequence.size());
+    for (size_t new_image_id : images_sequence) {
+        image_embeds.push_back(images.at(new_image_id).resized_source);
     }
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
@@ -140,11 +149,6 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
-    if (m_is_chat_conversation) {
-        m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
-    } else {
-        m_image_id = 0;
-    }
     return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 }
 
@@ -193,10 +197,6 @@ ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(const ov::
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
     std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
     return inputs_embeds;
-}
-
-bool InputsEmbedderLLaVA::prompt_has_image_tag(const std::string& prompt) const {
-    return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(m_vlm_config.im_start) != std::string::npos;
 }
 
 } // namespace ov::genai
