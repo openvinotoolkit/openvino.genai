@@ -22,6 +22,7 @@ namespace genai {
 
 extern const std::string PA_BACKEND;
 extern const std::string SDPA_BACKEND;
+extern const bool ENABLE_SAVE_OV_MODEL;
 
 }  // namespace genai
 }  // namespace ov
