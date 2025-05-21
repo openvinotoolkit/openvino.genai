@@ -624,16 +624,19 @@ InputsEmbedderPhi4MM::InputsEmbedderPhi4MM(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
+std::pair<std::string, std::vector<size_t>> InputsEmbedderPhi4MM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+    return {util::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}};
+}
+
 // FIXME Copied from Phi3 (except debug tensors printing and comparing) - reuse
 ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
-    const std::string& prompt, 
-    const std::vector<ov::genai::EncodedImage>& images, 
-    ov::genai::VLMPerfMetrics& metrics, 
-    bool recalculate_merged_embeddings
+    const std::string& image_prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence
 ) {
     size_t base_id = m_tokens_per_images.size();
-    std::string image_prompt = util::normalize_prompt(prompt, base_id, images.size());
-
     std::vector<ov::Tensor> images_features_proj;
     for (const ov::genai::EncodedImage& encoded_image : images) {
         images_features_proj.push_back(encoded_image.images_features_projection);
@@ -642,11 +645,8 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
 
     std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
     if (m_is_chat_conversation) {
-        m_history.push_back({{"role", "user"}, {"content", std::move(image_prompt)}});
-        constexpr bool add_generation_prompt = true;
-        std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = util::split_tokenize(new_templated_chat_history, m_tokenizer);
+        new_chat_tokens = util::split_tokenize(image_prompt, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     } else {
@@ -659,11 +659,10 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
             templated_prompt = std::move(image_prompt);
         }
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = util::split_tokenize(templated_prompt, m_tokenizer);
+        new_chat_tokens = util::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     }
-    
     ov::Tensor new_merged_tokens = util::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     ov::Tensor new_tokens = update_history(new_merged_tokens);
     m_prev_hist_length = m_kv_cache_state.get_state().size();
@@ -698,11 +697,10 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
             }
         }, chunk);
     }
-    
+
     if (!m_is_chat_conversation) {
         m_tokens_per_images.clear();
     }
-
     return inputs_embeds;
 }
 
@@ -729,11 +727,6 @@ void InputsEmbedderPhi4MM::start_chat(const std::string& system_message) {
 void InputsEmbedderPhi4MM::finish_chat() {
     IInputsEmbedder::finish_chat();
     m_tokens_per_images.clear();
-}
-
-// FIXME Copied from Phi3 - reuse
-bool InputsEmbedderPhi4MM::prompt_has_image_tag(const std::string& prompt) const {
-    return IInputsEmbedder::prompt_has_image_tag(prompt) || std::regex_search(prompt, NATIVE_PATTERN);
 }
 
 } // namespace ov::genai
