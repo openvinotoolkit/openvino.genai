@@ -66,7 +66,7 @@ public:
     std::string image_context_token = "<IMG_CONTEXT>";
     /// @brief A string token denoting end of image embeddings for InternVL2 model.
     std::string image_end_token = "</img>";
-    /// @brief phi3_v new line token embedding to separate images.
+    /// @brief phi3_v and phi4mm new line token embedding to separate images.
     std::vector<float> sub_GN = std::vector(4096, 0.0f);
     std::vector<float> glb_GN = std::vector(4096, 0.0f);
     
