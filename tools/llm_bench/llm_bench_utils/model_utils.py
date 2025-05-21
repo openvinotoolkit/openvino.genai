@@ -148,6 +148,7 @@ def analyze_args(args):
     model_args['lora'] = args.lora
     model_args['lora_alphas'] = args.lora_alphas
     model_args['lora_mode'] = args.lora_mode
+    model_args['empty_lora'] = args.empty_lora
     use_cb = args.use_cb or args.draft_model
     if args.device == "NPU" and use_cb:
         log.warning("Continious batching and Speculative Decoding are not supported for NPU device")
