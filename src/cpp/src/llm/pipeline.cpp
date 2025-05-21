@@ -15,6 +15,30 @@
 #include "speculative_decoding/speculative_decoding_impl.hpp"
 #include "utils.hpp"
 
+// Patch properties with safe default values for NPU inference
+// This ensures stable behavior by enabling static pipeline execution
+// and reducing prompt/response sizes to prevent memory issues.
+void patch_npu_properties(ov::AnyMap& properties) {
+    // Enable static pipeline (required for NPU)
+    if (!properties.count("STATIC_PIPELINE"))
+        properties["STATIC_PIPELINE"] = true;
+
+    // Set maximum allowed tokens for the input prompt
+    if (!properties.count("MAX_PROMPT_LEN"))
+        properties["MAX_PROMPT_LEN"] = 64;
+
+    // Set minimum number of tokens to generate in the response
+    if (!properties.count("MIN_RESPONSE_LEN"))
+        properties["MIN_RESPONSE_LEN"] = 64;
+
+    // Set cache directory to store compiled pipeline
+    if (!properties.count("CACHE_DIR"))
+        properties["CACHE_DIR"] = "./ov_cache";
+
+    // Limit to single stream to avoid parallel execution issues on NPU
+    if (!properties.count("NUM_STREAMS"))
+        properties["NUM_STREAMS"] = 1;
+}
 namespace ov {
 
 namespace genai {
@@ -84,16 +108,31 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (utils::explicitly_requires_paged_attention(user_properties)) {
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
+
     }
 
-    if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = properties.count("STATIC_PIPELINE")
-            ? static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties)
-            : std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
-    }
+// Apply default NPU-safe settings before pipeline creation
+if (device == "NPU") {
+    patch_npu_properties(properties);
+}    
+if (m_pimpl == nullptr && device == "NPU") {
+    m_pimpl = static_llm::LLMPipelineFactory::create(
+        utils::singleton_core().read_model(model_str, weights_tensor),
+        tokenizer,
+        properties,
+        generation_config);
+}
 
     // try to call CB adapter one more time, but with safe guard to silent exception
     if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
+
+    } else if (device == "NPU") {
+        m_pimpl = properties.count("STATIC_PIPELINE")
+            ? static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties)
+            : std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
+    } else if (attention_backend == PA_BACKEND) {
+        // try to call CB adapter one more time, but with safe guard to silent exception
+
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
