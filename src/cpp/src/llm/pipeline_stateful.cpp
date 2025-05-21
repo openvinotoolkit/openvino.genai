@@ -55,9 +55,11 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     }
 
     // FIXME: slicing produces incorrect results for some models on NPU.
+    // apply_slice deals with relative indexes while NPUW pass slices with absolute indexes
     if (!m_is_npu) {
         utils::apply_slice_before_matmul_transformation(model);
     }
+
     auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
 
     if (!m_use_full_chat_history)
