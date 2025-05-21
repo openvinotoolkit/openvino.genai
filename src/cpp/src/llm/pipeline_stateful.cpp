@@ -55,7 +55,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     }
 
     // FIXME: slicing produces incorrect results for some models on NPU.
-    // apply_slice deals with relative indexes while NPUW pass slices with absolute indexes
+    // On NPU, applying slice the safe way is done by the underlying plugin
     if (!m_is_npu) {
         utils::apply_slice_before_matmul_transformation(model);
     }
