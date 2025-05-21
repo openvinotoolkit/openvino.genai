@@ -487,7 +487,7 @@ std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& 
         } else {
             std::string regular_text{prefix_begin, iter->first};
             if (!regular_text.empty()) {
-                tokenized.push_back(tokenizer.encode(regular_text, ov::genai::add_special_tokens(true)).input_ids);
+                tokenized.push_back(tokenizer.encode(regular_text, {ov::genai::add_special_tokens(true)}).input_ids);
             }
             prefix_begin = iter->second;
         }
@@ -495,7 +495,7 @@ std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& 
     }
     std::string regular_text{prefix_begin, text.end()};
     if (!regular_text.empty()) {
-        tokenized.push_back(tokenizer.encode(regular_text, ov::genai::add_special_tokens(true)).input_ids);
+        tokenized.push_back(tokenizer.encode(regular_text, {ov::genai::add_special_tokens(true)}).input_ids);
     }
     return tokenized;
 }

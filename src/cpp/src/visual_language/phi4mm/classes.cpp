@@ -483,16 +483,6 @@ VisionEncoderPhi4MM::VisionEncoderPhi4MM(
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
 }
 
-// infer preprocess:
-//             "input_image_embeds"
-//             "image_sizes"
-//             "image_attention_mask"
-//             "num_img_tokens"
-//             "patch_position_ids"
-// encoder()
-// my C++
-// vision_projection
-
 EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
     ov::Tensor input_image_embeds, image_attention_mask, patch_position_ids;
@@ -500,7 +490,6 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     {
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_image_preprocessors.get()};
         ov::InferRequest& image_preprocessor = lock.get();
-        ov::Shape image_shape = image.get_shape();
         image_preprocessor.set_input_tensor(image);
         image_preprocessor.infer();
         image_preprocessor.get_tensor("input_image_embeds").copy_to(input_image_embeds);
