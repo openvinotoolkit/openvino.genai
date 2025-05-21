@@ -20,7 +20,7 @@ void write_native(std::ostream& os, size_t idx) {
     os << "<|image_" << idx + 1 << "|>\n";
 }
 
-std::string normalize_prompt(
+std::string normalize_prompt_phi3(
     const std::string& prompt, size_t base_id, size_t n_images
 ) {
     std::smatch match;
@@ -100,6 +100,7 @@ ov::Tensor HD_transform(const ov::Tensor& uint8, size_t num_crops) {
         ++scale;
     }
     --scale;
+    OPENVINO_ASSERT(scale > 0);
     size_t new_w = scale * INPUT_IMAGE_SIZE;
     size_t new_h = new_w / ratio;
     clip_image_u8 src{}, dst{};
@@ -662,9 +663,12 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
+std::pair<std::string, std::vector<size_t>> InputsEmbedderPhi3V::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+    return {normalize_prompt_phi3(prompt, base_id, images.size()), {}};
+}
+
+ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
     size_t base_id = m_tokens_per_images.size();
-    std::string image_prompt = normalize_prompt(prompt, base_id, images.size());
     std::vector<ov::Tensor> images_features_proj;
     for (const ov::genai::EncodedImage& encoded_image : images) {
         images_features_proj.push_back(encoded_image.images_features_projection);
@@ -672,11 +676,8 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
     }
     std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
     if (m_is_chat_conversation) {
-        m_history.push_back({{"role", "user"}, {"content", std::move(image_prompt)}});
-        constexpr bool add_generation_prompt = true;
-        std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = split_tokenize(new_templated_chat_history, m_tokenizer);
+        new_chat_tokens = split_tokenize(image_prompt, m_tokenizer);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     } else {
@@ -750,10 +751,6 @@ void InputsEmbedderPhi3V::start_chat(const std::string& system_message) {
 void InputsEmbedderPhi3V::finish_chat() {
     IInputsEmbedder::finish_chat();
     m_tokens_per_images.clear();
-}
-
-bool InputsEmbedderPhi3V::prompt_has_image_tag(const std::string& prompt) const {
-    return IInputsEmbedder::prompt_has_image_tag(prompt) || std::regex_search(prompt, NATIVE_PATTERN);
 }
 
 } // namespace ov::genai
