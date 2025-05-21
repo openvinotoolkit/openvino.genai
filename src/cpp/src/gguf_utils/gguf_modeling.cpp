@@ -161,7 +161,7 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
         std::cout << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms\n";
     }
     catch (const ov::Exception& e) {
-        std::cerr << "[Warning] Exception during model serialization: " << e.what() << std::endl;
+        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disble it by setting 'ENABLE_SAVE_OV_MODEL' property to false");
     }
 }
 
