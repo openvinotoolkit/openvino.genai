@@ -42,9 +42,9 @@ def run_visual_language_generation_optimum(
                 entry = Path(input_data["media"])
                 if entry.is_dir():
                     for file in sorted(entry.iterdir()):
-                        images.append(load_image_genai(str(file)))
+                        images.append(load_image(str(file)))
                 else:
-                    images.append(load_image_genai(input_data["media"]))
+                    images.append(load_image(input_data["media"]))
         prompts.append(input_data["prompt"])
 
     if args["output_dir"] is not None and num == 0:
