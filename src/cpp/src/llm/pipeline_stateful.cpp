@@ -49,15 +49,16 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
-    // FIXME: slicing produces incorrect results for some models.
-    // For now relying on NPUW slicing
-    // utils::apply_slice_before_matmul_transformation(model);
-    auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
-
     if (device.find("NPU") != std::string::npos) {
         m_is_npu = true;
         m_use_full_chat_history = true;
     }
+
+    // FIXME: slicing produces incorrect results for some models on NPU.
+    if (!m_is_npu) {
+        utils::apply_slice_before_matmul_transformation(model);
+    }
+    auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
 
     if (!m_use_full_chat_history)
         m_kv_cache_state.seq_length_axis = kv_pos.seq_len;
