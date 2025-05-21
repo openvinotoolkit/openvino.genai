@@ -49,7 +49,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
-    utils::apply_slice_before_matmul_transformation(model);
+    // FIXME: slicing produces incorrect results for some models.
+    // For now relying on NPUW slicing
+    // utils::apply_slice_before_matmul_transformation(model);
     auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
 
     if (device.find("NPU") != std::string::npos) {
