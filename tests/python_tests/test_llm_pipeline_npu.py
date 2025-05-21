@@ -1,12 +1,14 @@
 # Copyright (C) 2024-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline, StreamerBase
+from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline, StreamerBase, TokenizedInputs
+from openvino import Tensor
 import os
 
 import pytest
 import platform
 import sys
+import re
 
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model
@@ -287,3 +289,150 @@ def test_chat_generation(config, model_id):
         print(f'hf_output: {chat_history_static}')
         print(f'ov_output: {chat_history_stateful}')
     assert chat_history_stateful == chat_history_static
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+def test_terminate_by_too_long_tokenized_inputs(config):
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
+    pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
+    pipeline_config |= config
+
+    long_prompt = 'The Sun is yellow because' * 20
+    tokenizer = Tokenizer(model_path)
+    tokenized_input = tokenizer.encode(long_prompt)
+    assert(isinstance(tokenized_input, TokenizedInputs))
+
+    pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
+
+    exception_pattern = r'Stateful LLM pipeline on NPU may only process prompts.*up to 64 ' +\
+                        r'tokens\..*[\n]?Set the "MAX_PROMPT_LEN" config option to increase ' +\
+                        r'the limit\.\n'
+    with pytest.raises(RuntimeError, match=exception_pattern):
+        pipe.generate(tokenized_input, max_new_tokens=2, ignore_eos=True)
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+def test_terminate_by_too_long_tensor_inputs(config):
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
+    pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
+    pipeline_config |= config
+
+    long_prompt = 'The Sun is yellow because' * 20
+    tokenizer = Tokenizer(model_path)
+    tensor_input = tokenizer.encode(long_prompt).input_ids
+    assert(isinstance(input_ids, Tensor))
+
+    pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
+
+    exception_pattern = r'Stateful LLM pipeline on NPU may only process prompts.*up to 64 ' +\
+                        r'tokens\..*[\n]?Set the "MAX_PROMPT_LEN" config option to increase ' +\
+                        r'the limit\.\n'
+    with pytest.raises(RuntimeError, match=exception_pattern):
+        pipe.generate(tensor_input, max_new_tokens=2, ignore_eos=True)
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+def test_terminate_by_too_long_string_inputs(config):
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
+    pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
+    pipeline_config |= config
+
+    pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
+
+    long_prompt = 'The Sun is yellow because' * 20
+
+    exception_pattern = r'Stateful LLM pipeline on NPU may only process prompts.*up to 64 ' +\
+                        r'tokens\..*[\n]?Set the "MAX_PROMPT_LEN" config option to increase ' +\
+                        r'the limit\.\n'
+    with pytest.raises(RuntimeError, match=exception_pattern):
+        pipe.generate(long_prompt, max_new_tokens=2, ignore_eos=True)
+
+
+# FIXME: Should this work: call of generate() with tokenized input in chat mode?
+@pytest.mark.skip(reason="Not verified that the use case is valid")
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+def test_terminate_by_too_long_history_for_tokenized_inputs(config):
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
+    pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
+    pipeline_config |= config
+
+    prompt_1 = 'The Sun is yellow because'
+    prompt_2 = 'Thank you for the explanation!'
+    tokenizer = Tokenizer(model_path)
+    tokenized_input_1 = tokenizer.encode(prompt_1)
+    assert(isinstance(tokenized_input_1, TokenizedInputs))
+    tokenized_input_2 = tokenizer.encode(prompt_2)
+    assert(isinstance(tokenized_input_2, TokenizedInputs))
+
+    pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
+    pipe.start_chat()
+    pipe.generate(tokenized_input_1, max_new_tokens=64, ignore_eos=True)
+
+    exception_pattern = r'Stateful LLM pipeline on NPU may only process prompts.*up to 64 ' +\
+                        r'tokens\..*[\n]?Set the "MAX_PROMPT_LEN" config option to increase ' +\
+                        r'the limit\.\n'
+    with pytest.raises(RuntimeError, match=exception_pattern):
+        pipe.generate(tokenized_input_2, max_new_tokens=2, ignore_eos=True)
+    # pipe.finish_chat()
+
+
+# FIXME: Should this work: call of generate() with tensor input in chat mode?
+@pytest.mark.skip(reason="Not verified that the use case is valid")
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+def test_terminate_by_too_long_history_for_tensor_inputs(config):
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
+    pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
+    pipeline_config |= config
+
+    prompt_1 = 'The Sun is yellow because'
+    prompt_2 = 'Thank you for the explanation!'
+    tokenizer = Tokenizer(model_path)
+    tensor_input_1 = tokenizer.encode(prompt_1).input_ids
+    assert(isinstance(tensor_input_1, Tensor))
+    tensor_input_2 = tokenizer.encode(prompt_2).input_ids
+    assert(isinstance(tensor_input_2, Tensor))
+
+    pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
+    pipe.start_chat()
+    pipe.generate(tensor_input_1, max_new_tokens=64, ignore_eos=True)
+
+    exception_pattern = r'Stateful LLM pipeline on NPU may only process prompts.*up to 64 ' +\
+                        r'tokens\..*[\n]?Set the "MAX_PROMPT_LEN" config option to increase ' +\
+                        r'the limit\.\n'
+    with pytest.raises(RuntimeError, match=exception_pattern):
+        pipe.generate(tensor_input_2, max_new_tokens=2, ignore_eos=True)
+    # pipe.finish_chat()
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+def test_terminate_by_too_long_history_for_string_inputs(config):
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
+    pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
+    pipeline_config |= config
+
+    pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
+
+    prompt_1 = 'The Sun is yellow because'
+    prompt_2 = 'Thank you for the explanation!'
+
+    pipe.start_chat()
+    pipe.generate(prompt_1, max_new_tokens=64, ignore_eos=True)
+
+    exception_pattern = r'Stateful LLM pipeline on NPU may only process prompts.*up to 64 ' +\
+                        r'tokens\..*[\n]?Set the "MAX_PROMPT_LEN" config option to increase ' +\
+                        r'the limit\.\n'
+    with pytest.raises(RuntimeError, match=exception_pattern):
+        pipe.generate(prompt_2, max_new_tokens=2, ignore_eos=True)
+    # pipe.finish_chat()
