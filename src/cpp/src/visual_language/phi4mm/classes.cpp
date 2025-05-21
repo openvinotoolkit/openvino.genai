@@ -541,6 +541,18 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         encoder.get_output_tensor().copy_to(_1le);
     }
     std::cout << "CCCCCCCCCCCCCCCCCCCCC\n";
+    EncodedImage encoded_image;
+    {
+        CircularBufferQueueElementGuard<ov::InferRequest> lock{m_ireq_queue_vision_projection.get()};
+        ov::InferRequest& projector = lock.get();
+        projector.set_input_tensor(_1le);
+        projector.infer();
+        projector.get_output_tensor().copy_to(encoded_image.resized_source);
+    }
+    std::cout << "DDDDDDDDDDDDDDDDd\n";
+    // assert projected.back().get_shape().at(1) == tokens_per_images
+    return encoded_image;
+
     // CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     // ov::InferRequest& encoder = infer_request_guard.get();
 
@@ -582,7 +594,7 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
 
 
     // Using mocked tensors
-    EncodedImage encoded_image;
+    // EncodedImage encoded_image;
 
     // ov::Tensor img_features = read_tensor_from_file("./temp/tensors/phi4mm/img_features.bin");
 
