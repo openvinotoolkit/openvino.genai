@@ -19,6 +19,7 @@ const std::regex NATIVE_PATTERN{R"(<\|image_(\d+)\|>)"};
 void write_native(std::ostream& os, size_t idx) {
     os << "<|image_" << idx + 1 << "|>\n";
 }
+// trigger
 
 std::string normalize_prompt_phi3(
     const std::string& prompt, size_t base_id, size_t n_images
