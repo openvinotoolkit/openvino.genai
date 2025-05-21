@@ -43,6 +43,8 @@ int main(int argc, char* argv[]) try {
         prompt = utils::read_prompt(result["prompt_file"].as<std::string>());
     }
 
+    std::cout << ov::get_openvino_version() << std::endl;
+
     const std::string models_path = result["model"].as<std::string>();
     const std::string image_path = result["image"].as<std::string>();
     std::string device = result["device"].as<std::string>();

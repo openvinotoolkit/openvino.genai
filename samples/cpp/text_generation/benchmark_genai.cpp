@@ -42,6 +42,8 @@ int main(int argc, char* argv[]) try {
         prompt = utils::read_prompt(result["prompt_file"].as<std::string>());
     }
 
+    std::cout << ov::get_openvino_version() << std::endl;
+
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
 
