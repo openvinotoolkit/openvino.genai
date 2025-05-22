@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) try {
 
     options.add_options()
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
-    ("p,prompt", "One prompt", cxxopts::value<std::string>())
+    ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("What is on the image?"))
     ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
@@ -43,15 +43,10 @@ int main(int argc, char* argv[]) try {
         std::cout << "Prompt and prompt file should not exist together!" << std::endl;
         return EXIT_FAILURE;
     } else {
-        if (result.count("prompt")) {
-            prompt = result["prompt"].as<std::string>();
-        }
-        else if (result.count("prompt_file")) {
+        if (result.count("prompt_file")) {
             prompt = utils::read_prompt(result["prompt_file"].as<std::string>());
-        }
-        else {
-            prompt = "What is on the image?";
-            std::cout << "Run with default prompt:" << prompt << std::endl;
+        } else {
+            prompt = result["prompt"].as<std::string>();
         }
     }
 
