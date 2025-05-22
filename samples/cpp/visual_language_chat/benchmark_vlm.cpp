@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) try {
 
     options.add_options()
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
-    ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("What is on the image?"))
+    ("p,prompt", "One prompt", cxxopts::value<std::string>())
     ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
@@ -38,12 +38,22 @@ int main(int argc, char* argv[]) try {
         return EXIT_SUCCESS;
     }
 
-    std::string prompt = result["prompt"].as<std::string>();
-    if (result.count("prompt_file")) {
-        prompt = utils::read_prompt(result["prompt_file"].as<std::string>());
+    std::string prompt;
+    if (result.count("prompt") && result.count("prompt_file")) {
+        std::cout << "Prompt and prompt file should not exist together!" << std::endl;
+        return EXIT_FAILURE;
+    } else {
+        if (result.count("prompt")) {
+            prompt = result["prompt"].as<std::string>();
+        }
+        else if (result.count("prompt_file")) {
+            prompt = utils::read_prompt(result["prompt_file"].as<std::string>());
+        }
+        else {
+            prompt = "What is on the image?";
+            std::cout << "Run with default prompt:" << prompt << std::endl;
+        }
     }
-
-    std::cout << ov::get_openvino_version() << std::endl;
 
     const std::string models_path = result["model"].as<std::string>();
     const std::string image_path = result["image"].as<std::string>();
@@ -59,6 +69,9 @@ int main(int argc, char* argv[]) try {
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.enable_prefix_caching = false;
     scheduler_config.max_num_batched_tokens = 2147483647;
+
+    std::cout << ov::get_openvino_version() << std::endl;
+
     ov::genai::VLMPipeline pipe(models_path, device, ov::genai::scheduler_config(scheduler_config));
 
     auto input_data = pipe.get_tokenizer().encode(prompt);
