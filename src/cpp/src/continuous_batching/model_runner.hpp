@@ -9,7 +9,6 @@
 #include <openvino/runtime/infer_request.hpp>
 
 #include "visual_language/embedding_model.hpp"
-#include "debug_utils.hpp"
 #include "sequence_group.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/timer.hpp"
@@ -283,15 +282,6 @@ public:
             std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
             m_request.set_tensor("sampled_tokens_indices", gather_indices);
         }
-
-        // print_tensor("input_ids", input_ids);
-        // print_tensor("position_ids", position_ids);
-
-        // print_tensor("past_lens", past_lens);
-        // print_tensor("subsequence_begins", subsequence_begins);
-        // print_tensor("block_indices", block_indices);
-        // print_tensor("block_indices_begins", block_indices_begins);
-        // print_tensor("max_context_len", max_context_len);
 
         {
             static ManualTimer timer("pure generate inference");

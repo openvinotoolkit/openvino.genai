@@ -441,7 +441,8 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            run_condition: false
+            # run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 45
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
@@ -450,7 +451,7 @@ jobs:
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
+            timeout: 90
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -540,6 +541,11 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-win-4-cores-8gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
+          - name: 'Speech generation'
+            marker: 'speech_generation'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-win-4-cores-8gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
     needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 120

@@ -19,6 +19,15 @@
 
 namespace ov {
 namespace genai {
+
+extern const std::string PA_BACKEND;
+extern const std::string SDPA_BACKEND;
+
+}  // namespace genai
+}  // namespace ov
+
+namespace ov {
+namespace genai {
 namespace utils {
 
 // Variable template that checks if a type has begin() and end() member functions
@@ -230,6 +239,12 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
+
+SchedulerConfig get_latency_oriented_scheduler_config();
+
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties);
+
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties);
 
 }  // namespace utils
 }  // namespace genai
