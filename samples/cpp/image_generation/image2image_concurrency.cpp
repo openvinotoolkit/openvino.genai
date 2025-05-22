@@ -31,8 +31,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     std::vector<std::thread> threads;
 
     for (size_t i = 0; i < prompts.size(); ++i) {
+        std::cout << "Starting to generate with prompt: '" << prompts[i] << "'..." << std::endl;
         threads.emplace_back([i, &pipe, models_path, prompts, image] () {
-            std::cout << "Starting to generate with prompt: '" << prompts[i] << "'..." << std::endl;
 
             ov::genai::Image2ImagePipeline request = pipe.clone();
             
@@ -42,10 +42,7 @@ int32_t main(int32_t argc, char* argv[]) try {
                 ov::genai::num_inference_steps(4));
 
             // writes `num_images_per_prompt` images by pattern name
-            std::cout << "Generated image for prompt: '" << prompts[i] << "', saving..." << std::endl;
             imwrite("image_" + std::to_string(i) + "_%d.bmp", generated_image, true);
-    
-            std::cout << "Saved image for prompt: '" << prompts[i] << "'" << std::endl;
         });
     }
 
