@@ -112,17 +112,16 @@ export const LLM_MODELS: LLMModelType[] = [
       {
         name: 'Aya',
         links: [
-          'https://huggingface.co/CohereForAI/aya-23-8B',
-          'https://huggingface.co/CohereForAI/aya-expanse-8b',
-          'https://huggingface.co/CohereForAI/aya-23-35B',
-          'https://huggingface.co/CohereForAI/aya-expanse-35b',
+          'https://huggingface.co/CohereLabs/aya-23-8B',
+          'https://huggingface.co/CohereLabs/aya-expanse-8b',
+          'https://huggingface.co/CohereLabs/aya-23-35B',
         ],
       },
       {
         name: 'C4AI Command R',
         links: [
-          'https://huggingface.co/CohereForAI/c4ai-command-r7b-12-2024',
-          'https://huggingface.co/CohereForAI/c4ai-command-r-v01',
+          'https://huggingface.co/CohereLabs/c4ai-command-r7b-12-2024',
+          'https://huggingface.co/CohereLabs/c4ai-command-r-v01',
         ],
       },
     ],
@@ -171,8 +170,7 @@ export const LLM_MODELS: LLMModelType[] = [
         links: [
           'https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite',
           'https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite-Chat',
-          'https://huggingface.co/deepseek-ai/DeepSeek-Coder-V2-Lite',
-          'https://huggingface.co/deepseek-ai/DeepSeek-Coder-V2-Lite-Chat',
+          'https://huggingface.co/deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct',
         ],
       },
     ],
@@ -235,7 +233,6 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/google/gemma-7b-it',
           'https://huggingface.co/google/gemma-1.1-7b-it',
           'https://huggingface.co/google/codegemma-7b',
-          'https://huggingface.co/google/codegemma-1.1-7b',
           'https://huggingface.co/google/codegemma-7b-it',
           'https://huggingface.co/google/codegemma-1.1-7b-it',
         ],
@@ -411,9 +408,9 @@ export const LLM_MODELS: LLMModelType[] = [
         name: 'GraniteMoE',
         links: [
           'https://huggingface.co/ibm-granite/granite-3.1-1b-a400m-instruct',
-          'https://huggingface.co/iibm-granite/granite-3.1-3b-a800m-instruct',
+          'https://huggingface.co/ibm-granite/granite-3.1-3b-a800m-instruct',
           'https://huggingface.co/ibm-granite/granite-3.0-1b-a400m-instruct',
-          'https://huggingface.co/iibm-granite/granite-3.0-3b-a800m-instruct',
+          'https://huggingface.co/ibm-granite/granite-3.0-3b-a800m-instruct',
         ],
       },
     ],
@@ -442,11 +439,11 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/internlm/internlm2-7b',
           'https://huggingface.co/internlm/internlm2-chat-20b',
           'https://huggingface.co/internlm/internlm2-20b',
-          'https://huggingface.co/internlm/internlm2_5-chat-1_8b',
+          'https://huggingface.co/internlm/internlm2_5-1_8b-chat',
           'https://huggingface.co/internlm/internlm2_5-1_8b',
-          'https://huggingface.co/internlm/internlm2_5-chat-7b',
+          'https://huggingface.co/internlm/internlm2_5-7b-chat',
           'https://huggingface.co/internlm/internlm2_5-7b',
-          'https://huggingface.co/internlm/internlm2_5-chat-20b',
+          'https://huggingface.co/internlm/internlm2_5-20b-chat',
           'https://huggingface.co/internlm/internlm2_5-20b',
         ],
       },
@@ -478,7 +475,7 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct',
           'https://huggingface.co/meta-llama/Meta-Llama-3-8B',
           'https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct',
-          'https://huggingface.co/meta-llama/Llama-3.2-70B-Instruct',
+          'https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct',
           'https://huggingface.co/meta-llama/Llama-3.1-70B',
           'https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct',
           'https://huggingface.co/meta-llama/Meta-Llama-3-70B',
@@ -589,7 +586,7 @@ export const LLM_MODELS: LLMModelType[] = [
       },
       {
         name: 'Zephyr',
-        links: ['https://huggingface.co/HuggingFaceH4/zephyr-7b-bet1'],
+        links: ['https://huggingface.co/HuggingFaceH4/zephyr-7b-beta'],
       },
       {
         name: 'Neural Chat',
@@ -680,9 +677,11 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct',
           'https://huggingface.co/microsoft/Phi-3-mini-128k-instruct',
           'https://huggingface.co/microsoft/Phi-3-medium-4k-instruct',
-          'https://huggingface.co/microsoft/Phi-3-medimum-128k-instruct',
+          'https://huggingface.co/microsoft/Phi-3-medium-128k-instruct',
           'https://huggingface.co/microsoft/Phi-3.5-mini-instruct',
           'https://huggingface.co/microsoft/Phi-4-mini-instruct',
+          'https://huggingface.co/microsoft/phi-4',
+          'https://huggingface.co/microsoft/Phi-4-reasoning'
         ],
       },
     ],
@@ -765,6 +764,39 @@ export const LLM_MODELS: LLMModelType[] = [
         ],
       },
     ],
+  },
+  {
+   architecture: 'Qwen3ForCausalLM',
+   models: [
+    {
+      name: 'Qwen3',
+      links: [
+        'https://huggingface.co/Qwen/Qwen3-0.6B',
+        'https://huggingface.co/Qwen/Qwen3-1.7B',
+        'https://huggingface.co/Qwen/Qwen3-4B',
+        'https://huggingface.co/Qwen/Qwen3-8B',
+        'https://huggingface.co/Qwen/Qwen3-14B',
+        'https://huggingface.co/Qwen/Qwen3-32B',
+        'https://huggingface.co/Qwen/Qwen3-0.6B-Base',
+        'https://huggingface.co/Qwen/Qwen3-1.7B-Base',
+        'https://huggingface.co/Qwen/Qwen3-4B-Base',
+        'https://huggingface.co/Qwen/Qwen3-8B-Base',
+        'https://huggingface.co/Qwen/Qwen3-14B-Base',
+      ]
+    }
+   ]
+  },
+  {
+    architecture: 'Qwen3MoeForCausalLM',
+    models: [
+      {
+      name: 'Qwen3MoE',
+      links: [
+        'https://huggingface.co/Qwen/Qwen3-30B-A3B',
+        'https://huggingface.co/Qwen/Qwen3-30B-A3B-Base',
+      ]
+    }
+  ]
   },
   {
     architecture: 'StableLmForCausalLM',

@@ -17,7 +17,7 @@
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
 
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;
@@ -98,7 +98,7 @@ void init_clip_text_model(py::module_& m) {
 }
 
 void init_clip_text_model_with_projection(py::module_& m) {
-    auto clip_text_model_with_projection = py::class_<ov::genai::CLIPTextModelWithProjection>(m, "CLIPTextModelWithProjection", "CLIPTextModelWithProjection class.")
+    py::class_<ov::genai::CLIPTextModelWithProjection, ov::genai::CLIPTextModel>(m, "CLIPTextModelWithProjection", "CLIPTextModelWithProjection class.")
         .def(py::init([](const std::filesystem::path& root_dir) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir);
@@ -114,7 +114,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir, device,  pyutils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory",
         py::arg("device"), "Device on which inference will be done",
@@ -127,47 +127,11 @@ void init_clip_text_model_with_projection(py::module_& m) {
         .def(py::init([](const ov::genai::CLIPTextModelWithProjection& model) {
             return std::make_unique<ov::genai::CLIPTextModelWithProjection>(model);
         }),
-        py::arg("model"), "CLIPTextModelWithProjection model"
+        py::arg("model"), "CLIPText model"
         R"(
             CLIPTextModelWithProjection class
-            model (CLIPTextModelWithProjection): CLIPTextModelWithProjection model
+            model (CLIPTextModelWithProjection): CLIPText model with projection
         )");
-
-    py::class_<ov::genai::CLIPTextModelWithProjection::Config>(clip_text_model_with_projection, "Config", "This class is used for storing CLIPTextModelWithProjection config.")
-        .def(py::init([](const std::filesystem::path& config_path) {
-            return std::make_unique<ov::genai::CLIPTextModelWithProjection::Config>(config_path);
-        }),
-        py::arg("config_path"))
-        .def_readwrite("max_position_embeddings", &ov::genai::CLIPTextModelWithProjection::Config::max_position_embeddings)
-        .def_readwrite("num_hidden_layers", &ov::genai::CLIPTextModelWithProjection::Config::num_hidden_layers);
-
-    clip_text_model_with_projection.def("reshape", &ov::genai::CLIPTextModelWithProjection::reshape, py::arg("batch_size"))
-        .def("infer", &ov::genai::CLIPTextModelWithProjection::infer, 
-            py::call_guard<py::gil_scoped_release>(), 
-            py::arg("pos_prompt"), 
-            py::arg("neg_prompt"), 
-            py::arg("do_classifier_free_guidance"))
-        .def("get_config", &ov::genai::CLIPTextModelWithProjection::get_config)
-        .def("get_output_tensor", &ov::genai::CLIPTextModelWithProjection::get_output_tensor, py::arg("idx"))
-        .def("set_adapters", &ov::genai::CLIPTextModelWithProjection::set_adapters, py::arg("adapters"))
-        .def(
-            "compile",
-            [](ov::genai::CLIPTextModelWithProjection& self,
-                const std::string& device,
-                const py::kwargs& kwargs
-            ) {
-                auto map = pyutils::kwargs_to_any_map(kwargs);
-                {
-                    py::gil_scoped_release rel;
-                    self.compile(device, map);
-                }
-            },
-            py::arg("device"), "device on which inference will be done",
-            R"(
-                Compiles the model.
-                device (str): Device to run the model on (e.g., CPU, GPU).
-                kwargs: Device properties.
-            )");
 }
 
 void init_t5_encoder_model(py::module_& m) {

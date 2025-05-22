@@ -11,7 +11,7 @@ The cache eviction algorithm is designed to manage KV (Key-Value) cache memory f
 ## Conceptual Model
 The KV cache for each sequence is divided into three logical areas:
 
-![KV cache layout with cache eviction](/img/kv-cache-areas-diagram.svg)
+![KV cache layout with cache eviction](./../../../static/img/kv-cache-areas-diagram.svg)
 
 * Start Area: Initial tokens that are never evicted
 * Evictable Area: Tokens that can be evicted based on importance scores

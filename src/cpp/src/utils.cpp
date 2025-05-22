@@ -19,7 +19,15 @@
 #include "gguf_utils/gguf_modeling.hpp"
 
 
-#include "sampler.hpp"
+#include "sampling/sampler.hpp"
+
+namespace ov {
+
+namespace genai {
+const std::string PA_BACKEND = "PA";
+const std::string SDPA_BACKEND = "SDPA";
+}
+}
 
 namespace {
 
@@ -84,6 +92,14 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
     rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
+}
+
+inline bool is_paged_attention_available() {
+#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+    return true;
+#else
+    return false;
+#endif
 }
 
 } // anonymous
@@ -283,6 +299,7 @@ ov::Core singleton_core() {
     return core;
 }
 
+
 namespace {
 
 bool is_gguf_model(const std::filesystem::path& file_path) {
@@ -409,40 +426,44 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
     return new_tensor;
 }
 
-void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
+bool env_setup_for_print_debug_info() {
     // Specify the name of the environment variable
     const char* env_var_name = "OPENVINO_LOG_LEVEL";
     const char* env_var_value = std::getenv(env_var_name);
-
     // Check if the environment variable was found
-    if (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING)) {
-        // output of the actual settings that the device selected
-        auto supported_properties = compiled_Model.get_property(ov::supported_properties);
-        std::cout << "Model: " << model_title << std::endl;
-        for (const auto& cfg : supported_properties) {
-            if (cfg == ov::supported_properties)
-                continue;
-            auto prop = compiled_Model.get_property(cfg);
-            if (cfg == ov::device::properties) {
-                auto devices_properties = prop.as<ov::AnyMap>();
-                for (auto& item : devices_properties) {
-                    std::cout << "  " << item.first << ": " << std::endl;
-                    for (auto& item2 : item.second.as<ov::AnyMap>()) {
-                        std::cout << "    " << item2.first << ": " << item2.second.as<std::string>() << std::endl;
-                    }
-                }
-            } else {
-                std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
-            }
-        }
+    return (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING));
+}
 
-        ov::Core core;
-        std::vector<std::string> exeTargets;
-        exeTargets = compiled_Model.get_property(ov::execution_devices);
-        std::cout << "EXECUTION_DEVICES:" << std::endl;
-        for (const auto& device : exeTargets) {
-            std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+    // output of the actual settings that the device selected
+    auto supported_properties = compiled_Model.get_property(ov::supported_properties);
+    std::cout << "Model: " << model_title << std::endl;
+    for (const auto& cfg : supported_properties) {
+        if (cfg == ov::supported_properties)
+            continue;
+        auto prop = compiled_Model.get_property(cfg);
+        if (cfg == ov::device::properties) {
+            auto devices_properties = prop.as<ov::AnyMap>();
+            for (auto& item : devices_properties) {
+                std::cout << "  " << item.first << ": " << std::endl;
+                for (auto& item2 : item.second.as<ov::AnyMap>()) {
+                    std::cout << "    " << item2.first << ": " << item2.second.as<std::string>() << std::endl;
+                }
+            }
+        } else {
+            std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
         }
+    }
+
+    ov::Core core;
+    std::vector<std::string> exeTargets;
+    exeTargets = compiled_Model.get_property(ov::execution_devices);
+    std::cout << "EXECUTION_DEVICES:" << std::endl;
+    for (const auto& device : exeTargets) {
+        std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
     }
 }
 
@@ -526,6 +547,70 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
     }
     return {plugin_config, scheduler_config};
 };
+
+SchedulerConfig get_latency_oriented_scheduler_config() {
+    SchedulerConfig default_config;
+    default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
+    default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
+    return default_config;
+}
+
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
+    auto attention_backend_it = properties.find("ATTENTION_BACKEND");
+
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
+        (attention_backend_it != properties.end() && attention_backend_it->second.as<std::string>() == PA_BACKEND)) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+        }
+    }
+    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+        }
+    }
+    if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Prompt lookup decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+        }
+    }
+    return false;
+}
+
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
+    std::string attention_backend = PA_BACKEND;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find("ATTENTION_BACKEND");
+    if (it != properties.end()) {
+        attention_backend = it->second.as<std::string>();
+        OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SDPA_BACKEND,
+            "Attention backend must be either '", PA_BACKEND, "' or '", SDPA_BACKEND, "', got '", attention_backend, "'");
+        properties.erase(it);
+    }
+
+    if (explicitly_requires_paged_attention(external_properties)) {
+        OPENVINO_ASSERT(attention_backend == PA_BACKEND,
+            "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
+    }
+
+    return {properties, attention_backend};
+};
+
+void release_core_plugin(const std::string& device) {
+    try {
+        singleton_core().unload_plugin(device);
+    } catch (const ov::Exception&) {
+        // Note: in a theory it can throw an exception when 2 different pipelines are created from
+        // different threads and then both of them unload plugin for 'device' from ov::Core
+    }
+}
 
 }  // namespace utils
 }  // namespace genai

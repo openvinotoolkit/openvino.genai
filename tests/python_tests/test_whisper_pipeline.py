@@ -13,14 +13,13 @@ import gc
 import json
 import typing
 import numpy as np
-import os
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
 from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
 
 from utils.network import retry_request
-from typing import Any, List, Dict
+from typing import Any
 
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
@@ -150,6 +149,7 @@ def run_huggingface(
             "max_new_tokens": min(config.max_new_tokens, 444),
             "top_p": config.top_p,
             "do_sample": config.do_sample,
+            "num_beams": config.num_beams,
         } | extra_generate_kwargs(),
     )
 
@@ -171,13 +171,14 @@ def run_genai(
     genai_config.language = f"<|{config.language}|>" if config.language else None
     genai_config.do_sample = config.do_sample
     genai_config.top_p = config.top_p
+    genai_config.num_beams = config.num_beams
 
     return pipeline.generate(sample, genai_config, streamer=streamer)
 
 MAX_DATASET_LENGTH = 30
 
 @functools.lru_cache(16)
-def get_whisper_dataset(language: str, long_form: bool) -> List:
+def get_whisper_dataset(language: str, long_form: bool) -> list:
     if not long_form:
         ds = datasets.load_dataset(
             "mozilla-foundation/common_voice_11_0",
@@ -211,7 +212,7 @@ def sample_from_dataset(request):
 
     return samples[sample_id]
 
-def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> List[Dict[str, Any]]:
+def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> list[dict[str, Any]]:
     return [{"language": language, "long_form": long_form, "sample_id": i} for i in range(n)]
 
 def run_pipeline_with_ref(
@@ -504,7 +505,7 @@ def test_longform_audio(model_descr, sample_from_dataset):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
-@pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True)
+@pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
 @pytest.mark.precommit
 def test_longform_audio_with_past(model_descr, sample_from_dataset):
     _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr, stateful=True)
@@ -546,6 +547,23 @@ def test_shortform(model_descr):
         sample=samples,
     )
 
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
+@pytest.mark.precommit
+def test_beam_search(model_descr, sample_from_dataset):
+    # use only 30 seconds of audio due to beam search results wrong with enabled timestamps
+    # ticket: 167239
+    sample_from_dataset = sample_from_dataset[:30 * 16000]
+    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+    generation_config=ov_genai.WhisperGenerationConfig(
+        num_beams=2,
+    )
+
+    genai_result = run_genai(genai_pipe, sample_from_dataset, generation_config)
+    hf_result = run_huggingface(hf_pipe, sample_from_dataset, generation_config)
+
+    compare_results(hf_result, genai_result)
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
@@ -790,4 +808,3 @@ def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
-        

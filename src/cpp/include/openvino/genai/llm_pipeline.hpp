@@ -275,7 +275,9 @@ public:
     * Turns off keeping KV cache between generate calls.
     */
     void finish_chat();
+
 private:
+    std::string m_device;
     std::unique_ptr<LLMPipelineImplBase> m_pimpl;
 };
 

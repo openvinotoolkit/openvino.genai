@@ -16,6 +16,7 @@ namespace ov {
 namespace genai {
 
 using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
+using Vocab = std::unordered_map<std::string, int64_t>;  // similar to huggingface .get_vocab() output format
 
 struct TokenizedInputs {
     ov::Tensor input_ids;
@@ -33,12 +34,10 @@ struct TokenizedInputs {
  * 4. chat_template entry from rt_info section of ov::Model
  * 5. If the template is known to be not supported by GenAI, it's
  *     replaced with a simplified supported version.
- * 6. Patch chat_template replacing not supported instructions with
- *     equivalents.
- * 7. If the template was not in the list of not supported GenAI
- *     templates from (5), it's blindly replaced with
- *     simplified_chat_template entry from rt_info section of
- *     ov::Model if the entry exists.
+ * 6. If the template was not in the list of not supported GenAI
+ *     templates from (5), it's replaced with simplified_chat_template entry
+ *     from rt_info section of ov::Model.
+ * 7. Replace not supported instructions with equivalents.
 */
 class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
@@ -125,17 +124,38 @@ public:
     * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
     * @return pair of [input_ids, attention_mask]
     */
-    TokenizedInputs encode(const std::string prompt, const ov::AnyMap& tokenization_params = {});
+    TokenizedInputs encode(const std::string& prompt, const ov::AnyMap& tokenization_params = {});
 
     /**
-    * @brief encode batch of prompts. Left padding will be applied by default
+    * @brief encode batch of prompts.
     * @param prompts vector storing batch of prompts
     * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
     * @return pair of [input_ids, attention_mask]
     */
-    TokenizedInputs encode(std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
-    TokenizedInputs encode(std::vector<std::string>&& prompts, const ov::AnyMap& tokenization_params = {});
-    TokenizedInputs encode(std::initializer_list<std::string>& prompts, const ov::AnyMap& tokenization_params = {});
+    TokenizedInputs encode(const std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
+    TokenizedInputs encode(const std::initializer_list<std::string>& prompts, const ov::AnyMap& tokenization_params = {});
+   
+    /**
+    * @brief encode paired prompts.
+    * 
+    * This overload copies prompts to the the pair of vectors, thus is less efficient than encode(prompts_1, prompts_2).
+    * In case if efficiency is important, please use encode(prompts_1, prompts_2).
+    * @param prompts vector storing batch of prompts
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
+    * @return pair of [input_ids, attention_mask]
+    */
+   TokenizedInputs encode(const std::vector<std::pair<std::string, std::string>>& prompts, const ov::AnyMap& tokenization_params = {});
+
+   /**
+   * @brief encode paired prompts.
+   * 
+   * Prompts should be of the same length, or one of them should be of length 1. In the latest case, the prompt will be
+   * broadcasted to the length of the other prompt.
+   * @param prompts vector storing batch of prompts
+   * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
+   * @return pair of [input_ids, attention_mask]
+   */
+    TokenizedInputs encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params = {});
 
     /**
     * @brief encode a single prompt
@@ -146,12 +166,12 @@ public:
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
-    util::EnableIfAllStringAny<TokenizedInputs, Properties...> encode(std::string& prompt, Properties&&... properties) {
+    util::EnableIfAllStringAny<TokenizedInputs, Properties...> encode(const std::string& prompt, Properties&&... properties) {
         return encode(prompt, AnyMap{std::forward<Properties>(properties)...});
     }
 
     /**
-    * @brief encode batch of prompts. Left padding will be applied by default
+    * @brief encode batch of prompts.
     * @param prompts vector storing batch of prompts
     * @param add_special_tokens whether to add special tokens
     * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
@@ -159,7 +179,7 @@ public:
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
-    util::EnableIfAllStringAny<TokenizedInputs, Properties...> encode(std::vector<std::string>& prompts, Properties&&... properties) {
+    util::EnableIfAllStringAny<TokenizedInputs, Properties...> encode(const std::vector<std::string>& prompts, Properties&&... properties) {
         return encode(prompts, AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -169,7 +189,7 @@ public:
     * @param detokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
     * @return sequence string
     */
-    std::string decode(std::vector<int64_t> tokens, const ov::AnyMap& detokenization_params = {});
+    std::string decode(const std::vector<int64_t>& tokens, const ov::AnyMap& detokenization_params = {});
 
     /**
     * @brief decode sequence of tokens
@@ -178,7 +198,7 @@ public:
     * @return sequence string
     */
     template <typename... Properties>
-    util::EnableIfAllStringAny<std::string, Properties...> decode(std::vector<int64_t>& tokens, Properties&&... detokenization_params) {
+    util::EnableIfAllStringAny<std::string, Properties...> decode(const std::vector<int64_t>& tokens, Properties&&... detokenization_params) {
         return decode(tokens, AnyMap{std::forward<Properties>(detokenization_params)...});
     }
 
@@ -188,7 +208,7 @@ public:
     * @param detokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
     * @return vector of std::string, with size = batch_size
     */
-    std::vector<std::string> decode(ov::Tensor tokens, const ov::AnyMap& detokenization_params = {});
+    std::vector<std::string> decode(const ov::Tensor& tokens, const ov::AnyMap& detokenization_params = {});
 
     /**
     * @brief decode sequence of tokens
@@ -197,7 +217,7 @@ public:
     * @return vector of std::string, with size = batch_size
     */
     template <typename... Properties>
-    util::EnableIfAllStringAny<std::vector<std::string>, Properties...> decode(ov::Tensor tokens, Properties&&... detokenization_params) {
+    util::EnableIfAllStringAny<std::vector<std::string>, Properties...> decode(const ov::Tensor& tokens, Properties&&... detokenization_params) {
         return decode(tokens, AnyMap{std::forward<Properties>(detokenization_params)...});
     }
 
@@ -207,7 +227,7 @@ public:
     * @param detokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
     * @return vector of std::string, with size equal to batch_size
     */
-    std::vector<std::string> decode(std::vector<std::vector<int64_t>> tokens, const ov::AnyMap& detokenization_params = {});
+    std::vector<std::string> decode(const std::vector<std::vector<int64_t>>& tokens, const ov::AnyMap& detokenization_params = {});
 
     /**
     * @brief decode sequence of tokens
@@ -216,7 +236,7 @@ public:
     * @return vector of std::string, with size = batch_size
     */
     template <typename... Properties>
-    util::EnableIfAllStringAny<std::vector<std::string>, Properties...> decode(std::vector<std::vector<int64_t>> tokens, Properties&&... detokenization_params) {
+    util::EnableIfAllStringAny<std::vector<std::string>, Properties...> decode(const std::vector<std::vector<int64_t>>& tokens, Properties&&... detokenization_params) {
         return decode(tokens, AnyMap{std::forward<Properties>(detokenization_params)...});
     }
 
@@ -252,6 +272,20 @@ public:
     std::string get_bos_token() const;
     std::string get_eos_token() const;
     std::string get_pad_token() const;
+
+    /**
+     * @brief Get the vocabulary of the tokenizer.
+     *
+     * This function retrieves the vocabulary from the detokenizer, which maps
+     * token strings to their corresponding integer IDs. Note that some token strings
+     * may not be valid UTF-8 encoded. The resulting vocabulary may differ from the
+     * original tokenizer's vocabulary due to optimizations during conversion (space symbol
+     * swaps, byte fallback reverse, and other preprocessing changes).
+     *
+     * @return A map of string tokens to int64_t IDs.
+     * @throws Exception if the detokenizer is not available.
+     */
+    Vocab get_vocab() const;
 
     Tokenizer() = default;
     ~Tokenizer();

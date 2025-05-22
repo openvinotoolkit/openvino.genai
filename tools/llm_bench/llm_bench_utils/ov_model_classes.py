@@ -5,7 +5,7 @@
 import time
 import inspect
 from pathlib import Path
-from typing import Optional, Union, Dict, List, Tuple, Callable, Iterable, Any
+from typing import Optional, Union
 from tempfile import TemporaryDirectory
 import PIL
 import numpy as np
@@ -15,13 +15,9 @@ from diffusers.utils.torch_utils import randn_tensor
 from diffusers.utils import PIL_INTERPOLATION
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline, ImagePipelineOutput
 from optimum.intel.openvino import OVModelForCausalLM
-from optimum.intel.openvino.utils import ONNX_WEIGHTS_NAME, OV_XML_FILE_NAME
 from openvino import Model, Core, Tensor, Type
 from transformers import PretrainedConfig
 from transformers.modeling_outputs import CausalLMOutputWithPast, ModelOutput
-from transformers import GenerationConfig, StoppingCriteriaList
-from transformers.generation.logits_process import LogitsProcessorList, LogitsProcessor
-from transformers.generation.utils import GenerateOutput
 
 
 class OVMPTModel(OVModelForCausalLM):
@@ -50,7 +46,7 @@ class OVMPTModel(OVModelForCausalLM):
         self,
         input_ids: torch.LongTensor,
         attention_mask: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        past_key_values: Optional[tuple[tuple[torch.FloatTensor]]] = None,
         position_ids: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
@@ -176,12 +172,12 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
         batch_size: Optional[int] = 1,
         num_inference_steps: Optional[int] = 100,
         eta: Optional[float] = 0.0,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
+        generator: Optional[Union[torch.Generator, list[torch.Generator]]] = None,
         output_type: Optional[str] = 'pil',
         return_dict: bool = True,
-        tm_list: Optional[List] = None,
+        tm_list: Optional[list] = None,
         **kwargs,
-    ) -> Union[Tuple, ImagePipelineOutput]:
+    ) -> Union[tuple, ImagePipelineOutput]:
         r'''
         Args:
             image (`torch.Tensor` or `PIL.Image.Image`):
@@ -283,7 +279,7 @@ class OVChatGLMModel(OVModelForCausalLM):
         config: PretrainedConfig = None,
         device: str = 'CPU',
         dynamic_shapes: bool = True,
-        ov_config: Optional[Dict[str, str]] = None,
+        ov_config: Optional[dict[str, str]] = None,
         model_save_dir: Optional[Union[str, Path, TemporaryDirectory]] = None,
         **kwargs,
     ):
@@ -437,7 +433,7 @@ class OVChatGLMModel(OVModelForCausalLM):
         self,
         input_ids: torch.LongTensor,
         attention_mask: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        past_key_values: Optional[tuple[tuple[torch.FloatTensor]]] = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
         

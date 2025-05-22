@@ -6,7 +6,7 @@ import datasets
 import pytest
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 from tqdm import tqdm
 
 from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode
@@ -18,7 +18,7 @@ from utils.hugging_face import download_and_convert_model
 from data.test_dataset import get_test_dataset
 
 
-def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
+def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
     TESTS_ROOT = Path(__file__).parent
     file_path = TESTS_ROOT / 'data' / file_name
     with open(file_path, 'r', encoding="utf-8") as f:
@@ -51,7 +51,14 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform in ("win32", "darwin"), reason="doesn't work on win due to optimum-intel export bug, segfault on mac")
+@pytest.mark.skipif(
+    sys.platform in ("win32", "darwin", "linux"),
+    reason=(
+        "doesn't work on win due to optimum-intel export bug, "
+        "segfault on mac. And it doesn't work on Linux due to error "
+        "'Port for tensor name rotation_trig_lut was not found'."
+    ),
+)
 @pytest.mark.parametrize("test_struct", [
     # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
     CacheOptTestStruct(test_id="prompts_longer_than_eviction_arena",

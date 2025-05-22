@@ -19,6 +19,15 @@
 
 namespace ov {
 namespace genai {
+
+extern const std::string PA_BACKEND;
+extern const std::string SDPA_BACKEND;
+
+}  // namespace genai
+}  // namespace ov
+
+namespace ov {
+namespace genai {
 namespace utils {
 
 // Variable template that checks if a type has begin() and end() member functions
@@ -95,6 +104,8 @@ ov::Core singleton_core();
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
 
+void release_core_plugin(const std::string& device);
+
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
 
 struct KVAxesPosition {
@@ -116,7 +127,9 @@ public:
     }
 
     void add_inputs(const ov::Tensor& inputs_ids) {
+        OPENVINO_SUPPRESS_DEPRECATED_START
         std::copy_n(inputs_ids.data<int64_t>(), inputs_ids.get_size(), std::back_inserter(state));
+        OPENVINO_SUPPRESS_DEPRECATED_END
     }
 
     void reset_state() {
@@ -129,6 +142,8 @@ public:
 void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller);
 
 ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
+
+bool env_setup_for_print_debug_info();
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 
@@ -224,6 +239,12 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
+
+SchedulerConfig get_latency_oriented_scheduler_config();
+
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties);
+
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties);
 
 }  // namespace utils
 }  // namespace genai

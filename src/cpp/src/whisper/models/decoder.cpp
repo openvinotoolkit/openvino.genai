@@ -45,7 +45,7 @@ std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& enco
 
 /**
  * Encoder hidden states expected to be with batch 1
- * Copy encoder hidden state tensor from batch 1 to requested batch_size.
+ * Expand encoder hidden state tensor from batch 1 to requested batch_size.
  * Set new encoder hidden states tensor to infer request.
  */
 void WhisperDecoder::_set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,
@@ -85,5 +85,6 @@ void WhisperDecoder::_set_encoder_hidden_states_tensor(const Tensor& encoder_hid
 ov::Tensor WhisperDecoder::create_host_tensor(const element::Type element_type, const Shape& shape) {
     return ov::Tensor(element_type, shape);
 }
+
 WhisperDecoder::~WhisperDecoder() = default;
 }  // namespace ov::genai

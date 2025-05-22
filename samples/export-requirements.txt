@@ -2,7 +2,7 @@
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino-tokenizers~=2025.2.0.0.dev
-optimum-intel[nncf] @ git+https://github.com/huggingface/optimum-intel.git@main
+optimum-intel[nncf] @ git+https://github.com/huggingface/optimum-intel.git@dba7dced0145b539bb0563e5d5741d00daeb8025
 numpy<2.0.0; sys_platform == 'darwin'
 einops==0.8.1  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
@@ -11,3 +11,4 @@ timm==1.0.15  # For exporting InternVL2
 torchvision  # For visual language models
 transformers>=4.43 # For Whisper
 hf_transfer # for faster models download, should used with env var HF_HUB_ENABLE_HF_TRANSFER=1
+backoff # for microsoft/Phi-3.5-vision-instruct

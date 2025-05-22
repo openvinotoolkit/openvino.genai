@@ -19,6 +19,11 @@ public:
         m_request = compiled_model.create_infer_request();
     }
 
+    virtual void set_adapters(AdapterController& m_adapter_controller, const AdapterConfig& adapters) override {
+        OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
+        m_adapter_controller.apply(m_request, adapters);
+    }
+
     virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) override {
         OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
         m_request.set_tensor(tensor_name, encoder_hidden_states);

@@ -16,7 +16,7 @@
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 #include "utils.hpp"
 
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;
@@ -62,13 +62,13 @@ auto raw_image_generation_perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
     :param unet_inference_durations: Durations for each unet inference in microseconds.
-    :type unet_inference_durations: List[float]
+    :type unet_inference_durations: list[float]
 
     :param transformer_inference_durations: Durations for each transformer inference in microseconds.
-    :type transformer_inference_durations: List[float]
+    :type transformer_inference_durations: list[float]
 
     :param iteration_durations: Durations for each step iteration in microseconds.
-    :type iteration_durations: List[float]
+    :type iteration_durations: list[float]
 )";
 
 auto image_generation_perf_metrics_docstring = R"(
@@ -90,7 +90,7 @@ auto image_generation_perf_metrics_docstring = R"(
     If mean and std were already calculated, getters return cached values.
 
     :param get_text_encoder_infer_duration: Returns the inference duration of every text encoder in milliseconds.
-    :type get_text_encoder_infer_duration: Dict[str, float]
+    :type get_text_encoder_infer_duration: dict[str, float]
 
     :param get_vae_encoder_infer_duration: Returns the inference duration of vae encoder in milliseconds.
     :type get_vae_encoder_infer_duration: float

@@ -343,15 +343,15 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(cons
     return embeds;
 }
 
-ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
+std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVANext::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
-
-    std::string formatted_prompt;
+    auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
     std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(images.size());
+    image_embeds.reserve(images_sequence.size());
     ov::Tensor image_newline;
-
-    for (const auto& encoded_image : images) {
+    size_t searched_pos = 0;
+    for (size_t new_image_id : images_sequence) {
+        const EncodedImage& encoded_image = images.at(new_image_id - base_id);
         if (!image_newline) {
             size_t embed_dim = encoded_image.resized_source.get_shape().at(2);
             image_newline = ov::Tensor(encoded_image.resized_source.get_element_type(), {embed_dim});
@@ -359,16 +359,40 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& prompt,
             std::copy(m_vlm_config.image_newline.begin(), m_vlm_config.image_newline.end(), image_newline_data);
         }
 
-        ov::Tensor packed_features = pack_image_features_llava_next(encoded_image, image_newline);
-        for (size_t idx = 0; idx < packed_features.get_shape().at(1); ++idx) {
-            formatted_prompt += image_token;
+        image_embeds.push_back(pack_image_features_llava_next(encoded_image, image_newline));
+        std::string expanded_tag;
+        for (size_t idx = 0; idx < image_embeds.back().get_shape().at(1); ++idx) {
+            expanded_tag += image_token;
         }
-        formatted_prompt += "\n";
-        image_embeds.push_back(std::move(packed_features));
+        expanded_tag += '\n';
+        OPENVINO_ASSERT(searched_pos < unified_prompt.length());
+        searched_pos = unified_prompt.find(image_token, searched_pos);
+        OPENVINO_ASSERT(searched_pos != std::string::npos);
+        unified_prompt.replace(searched_pos, image_token.length(), expanded_tag);
+        searched_pos += expanded_tag.length();
     }
-    formatted_prompt += prompt;
+    return {std::move(unified_prompt), std::move(images_sequence)};
+}
 
-    ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
+ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    
+    ov::Tensor image_newline;
+    size_t searched_pos = 0;
+    std::vector<ov::Tensor> image_embeds;
+    image_embeds.reserve(images_sequence.size());
+    for (size_t new_image_id : images_sequence) {
+        const EncodedImage& encoded_image = images.at(new_image_id);
+        if (!image_newline) {
+            size_t embed_dim = encoded_image.resized_source.get_shape().at(2);
+            image_newline = ov::Tensor(encoded_image.resized_source.get_element_type(), {embed_dim});
+            float* image_newline_data = image_newline.data<float>();
+            std::copy(m_vlm_config.image_newline.begin(), m_vlm_config.image_newline.end(), image_newline_data);
+        }
+
+        image_embeds.push_back(pack_image_features_llava_next(encoded_image, image_newline));
+    }
+    
+    ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);

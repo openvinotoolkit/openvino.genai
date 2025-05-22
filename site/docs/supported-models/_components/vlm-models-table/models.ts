@@ -97,4 +97,17 @@ export const VLM_MODELS: VLMModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'Qwen2.5-VL',
+    models: [
+      {
+        name: 'Qwen2.5-VL',
+        loraSupport: false,
+        links: [
+          'https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct',
+          'https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct',
+        ],
+      },
+    ],
+  },
 ];
