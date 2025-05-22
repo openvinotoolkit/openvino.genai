@@ -880,7 +880,7 @@ def test_pipelines_with_gguf_generate_with_enable_save_ov_model_property(pipelin
     encoded_result_1  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
     res_string_input_1 = hf_tokenizer.batch_decode([encoded_result_1.tokens[0]], skip_special_tokens=True)[0]
 
-    ov_pipe_native = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
+    ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type)
     encoded_result_2  = ov_pipe_native.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
     res_string_input_2 = hf_tokenizer.batch_decode([encoded_result_2.tokens[0]], skip_special_tokens=True)[0]
 
