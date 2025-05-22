@@ -319,7 +319,6 @@ private:
             if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
-                OPENVINO_ASSERT(num_running_seqs);
                 size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t available_tokens_per_seq_in_megabatch = num_tokens_in_megabatch / num_running_seqs;
 
