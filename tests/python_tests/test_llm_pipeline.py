@@ -854,10 +854,9 @@ def test_pipelines_with_gguf_generate_with_enable_save_ov_model_property(pipelin
     prompt = 'Why is the Sun yellow?'
 
     from utils.network import retry_request
-    from transformers import AutoTokenizer, AutoModelForCausalLM
+    from transformers import AutoTokenizer
     from openvino_tokenizers import convert_tokenizer
 
-    opt_model = retry_request(lambda: AutoModelForCausalLM.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
     hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
 
     ov_generation_config = ov_genai.GenerationConfig()
@@ -866,12 +865,7 @@ def test_pipelines_with_gguf_generate_with_enable_save_ov_model_property(pipelin
     ov_generation_config.set_eos_token_id(hf_tokenizer.eos_token_id)
 
     inputs = hf_tokenizer(prompt, return_tensors="pt")
-    input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
-    hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
-    generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
-    prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
-    all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
-    res_string_input_1 = all_text_batch[0]
+    input_ids = inputs['input_ids']
 
     ov_tokenizer, ov_detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
 
@@ -881,11 +875,13 @@ def test_pipelines_with_gguf_generate_with_enable_save_ov_model_property(pipelin
     ov_detokenizer_path = gguf_full_path.parent / "openvino_detokenizer.xml"
     ov.save_model(ov_tokenizer, ov_tokenizer_path)
     ov.save_model(ov_detokenizer, ov_detokenizer_path)
-    ov_pipe_gguf = create_ov_gguf_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model)
-    encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
-    res_string_input_2 = hf_tokenizer.batch_decode([encoded_result.tokens[0]], skip_special_tokens=True)[0]
 
-    ov_model_saved_on_disk = False
-    if Path(gguf_full_path / "openvino_model.xml").exists():
-        ov_model_saved_on_disk = True
-    assert enable_save_ov_model == ov_model_saved_on_disk
+    ov_pipe_gguf = create_ov_gguf_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model)
+    encoded_result_1  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
+    res_string_input_1 = hf_tokenizer.batch_decode([encoded_result_1.tokens[0]], skip_special_tokens=True)[0]
+
+    ov_pipe_native = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
+    encoded_result_2  = ov_pipe_native.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
+    res_string_input_2 = hf_tokenizer.batch_decode([encoded_result_2.tokens[0]], skip_special_tokens=True)[0]
+
+    assert res_string_input_1 == res_string_input_2

@@ -55,7 +55,7 @@ def get_gguf_pipeline_types():
     return [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION]
 
 def get_gguf_enable_save_ov_model_property_list():
-    return [True, False]
+    return [True]
 
 class StreamerWithResults:
     # Return a streamer which accumulates results in order to compare with results returned from generate.
@@ -104,12 +104,15 @@ def create_ov_gguf_pipeline(models_path: Path,
                        ov_config: dict = get_default_llm_properties(),
                        scheduler_config: SchedulerConfig = SchedulerConfig(),
                        enable_save_ov_model: bool = True):
+    local_ov_config = ov_config.copy()
     if pipeline_type == PipelineType.AUTO:
-        return LLMPipeline(models_path, Tokenizer(models_path.parent), device, ov_config, ENABLE_SAVE_OV_MODEL=enable_save_ov_model)
+        return LLMPipeline(models_path, Tokenizer(models_path.parent), device, local_ov_config)
     elif pipeline_type == PipelineType.STATEFUL:
-        return LLMPipeline(models_path, Tokenizer(models_path.parent), device, ov_config, ATTENTION_BACKEND="SDPA", ENABLE_SAVE_OV_MODEL=enable_save_ov_model)
+        local_ov_config["enable_save_ov_model"] = enable_save_ov_model
+        return LLMPipeline(models_path, Tokenizer(models_path.parent), device, local_ov_config, ATTENTION_BACKEND="SDPA")
     elif pipeline_type == PipelineType.PAGED_ATTENTION:
-        return LLMPipeline(models_path, Tokenizer(models_path.parent), device, ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA", ENABLE_SAVE_OV_MODEL=enable_save_ov_model)
+        local_ov_config["enable_save_ov_model"] = enable_save_ov_model
+        return LLMPipeline(models_path, Tokenizer(models_path.parent), device, local_ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
     else:
         raise Exception(f"Unsupported pipeline type: {pipeline_type}")
 
