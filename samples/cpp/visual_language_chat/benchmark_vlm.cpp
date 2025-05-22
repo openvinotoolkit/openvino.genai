@@ -3,8 +3,6 @@
 
 #include <cxxopts.hpp>
 #include <filesystem>
-#include <sstream>
-#include <iostream>
 
 #include "load_image.hpp"
 #include <openvino/genai/visual_language/pipeline.hpp>
