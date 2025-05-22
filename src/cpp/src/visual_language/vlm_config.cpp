@@ -32,8 +32,6 @@ VLMModelType to_vlm_model_type(const std::string& value) {
 void assert_size(size_t size, VLMModelType model_type) {
     if (model_type == VLMModelType::PHI3_V) {
         OPENVINO_ASSERT(size == 4096, "Expected size 4096 for PHI3_V model type");
-    } else if (model_type == VLMModelType::PHI4MM) {
-        OPENVINO_ASSERT(size == 1152, "Expected size 1152 for PHI4MM model type");
     }
 }
 
