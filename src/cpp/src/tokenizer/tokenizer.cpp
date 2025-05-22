@@ -722,6 +722,59 @@ public:
         return params;
     }
 
+jinja2::ValuesMap prepare_jinja_params(const ChatHistoryRaw& history, const Tools& tools, bool add_generation_prompt) const {
+        jinja2::ValuesMap params;
+        // Slice callable
+        jinja2::UserCallable slice_callable = jinja2::MakeCallable(
+            [](const jinja2::GenericList& messages, const size_t& start) {
+                jinja2::ValuesList result;
+
+                size_t iter_num = 0;
+                for (auto message = messages.begin(); message != messages.end(); message++, iter_num++) {
+                    if (iter_num < start)
+                        continue;
+                    result.emplace_back(*message);
+                }
+
+                return result;
+            },
+            jinja2::ArgInfo{"messages"}, jinja2::ArgInfo{"start"}
+        );
+        params["slice"] = slice_callable;
+
+        // Messages
+        jinja2::ValuesList messages_jinja;
+        for (const auto& message_str : history) {
+            nlohmann::json message_json = nlohmann::json::parse(message_str);
+            jinja2::ValuesMap message_jinja;
+            json_object_to_jinja(message_json, message_jinja);
+            messages_jinja.emplace_back(message_jinja);
+        }
+        params["messages"] = messages_jinja;
+
+        // Control variables
+        params["bos_token"] = m_bos_token;
+        params["eos_token"] = m_eos_token;
+        params["pad_token"] = m_pad_token;
+        params["add_generation_prompt"] = add_generation_prompt;
+
+        // Tools
+        using utils::read_json_param;
+        if (!tools.empty()) {
+            jinja2::ValuesList tools_jinja;
+            for (const auto& tool_str: tools) {
+                // TODO handle failed parsing
+                nlohmann::json tool_json = nlohmann::json::parse(tool_str);
+                jinja2::ValuesMap tool_jinja;
+                json_object_to_jinja(tool_json, tool_jinja);
+                tools_jinja.emplace_back(tool_jinja);
+            }
+            params["tools"] = tools_jinja;
+        }
+
+        return params;
+    }
+
     std::string apply_chat_template(ChatHistory history,
                                     bool add_generation_prompt,
                                     const std::string& chat_template) const {
@@ -786,6 +839,40 @@ public:
                                          "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
         return result;
     }
+
+std::string apply_chat_template(ChatHistoryRaw history,
+                                Tools tools,
+                                bool add_generation_prompt,
+                                const std::string& chat_template) const {
+        std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_and_patch(chat_template);
+        OPENVINO_ASSERT(!chat_tpl.empty(),
+                        "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
+                        " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
+                        " For more information see the section Troubleshooting in README.md");
+        jinja2::TemplateEnv env;
+        env.GetSettings().lstripBlocks = true;
+        env.GetSettings().trimBlocks = true;
+        jinja2::Template tpl(&env);
+        tpl.Load(chat_tpl);
+
+        jinja2::ValuesMap params = prepare_jinja_params(history, tools, add_generation_prompt);
+        std::string result;
+        try {
+            result = tpl.RenderAsString(params).value();
+        } catch (const std::exception& error) {
+            OPENVINO_THROW("Jinja2Cpp failed to apply chat template. Possible solutions are\n"
+                           "* Provide a simplified chat template with set_chat_template().\n"
+                           "* Set apply_chat_template to false in GenerationConfig. "
+                           "It's possible to apply the template manually to your prompt before calling generate. "
+                           "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
+                           "Jinja2Cpp's error: ", error.what());
+        }
+        OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
+                                         "Please check the chat template or apply template manually to your prompt before calling generate."
+                                         "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+        return result;
+    }
+
 
     void set_chat_template(const std::string& chat_template) {
         m_chat_template = remap_and_patch(chat_template);

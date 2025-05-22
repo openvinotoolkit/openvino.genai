@@ -17,6 +17,7 @@ namespace genai {
 
 using Tools = std::vector<std::string>;
 using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
+using ChatHistoryRaw = std::vector<std::string>; // vector of strings that represent chat turns in json (they are then parsed via nlohnann)
 using Vocab = std::unordered_map<std::string, int64_t>;  // similar to huggingface .get_vocab() output format
 
 struct TokenizedInputs {
@@ -271,6 +272,25 @@ public:
      * @throws Exception if the chat template was unable to parse the input history.
      */
     std::string apply_chat_template(ChatHistory history,
+                                    Tools tools,
+                                    bool add_generation_prompt,
+                                    const std::string& chat_template = {}) const;
+
+    /**
+     * @brief Embeds input prompts with special tags for a chat scenario. Includes tools.
+     * Accepts vector of strings that represent chat turns in raw json format.
+     *
+     * For example, for Qwen family models, the prompt "1+1=" would be transformed into
+     * <|im_start|>user\n1+1=<|im_end|>\n<|im_start|>assistant\n.
+     *
+     * @param history A vector of strings with chat history, e.g. ["{'role': 'user','content': 'prompt'}", ...].
+     * @param tools A vector of strings, with tools to be used in the chat.
+     * @param add_generation_prompt Whether to add an ending that indicates the start of generation.
+     * @param chat_template An optional chat template string, if not specified will be taken from the tokenizer.
+     * @return A string with the transformed and concatenated prompts from the chat history.
+     * @throws Exception if the chat template was unable to parse the input history.
+     */
+    std::string apply_chat_template(ChatHistoryRaw history,
                                     Tools tools,
                                     bool add_generation_prompt,
                                     const std::string& chat_template = {}) const;

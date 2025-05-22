@@ -38,6 +38,7 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::ChatHistory;
+using ov::genai::ChatHistoryRaw;
 using ov::genai::Tools;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
