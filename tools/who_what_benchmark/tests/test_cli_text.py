@@ -2,7 +2,6 @@ import subprocess  # nosec B404
 import os
 import shutil
 import tempfile
-import pytest
 import logging
 import json
 
