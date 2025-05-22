@@ -26,7 +26,6 @@ namespace ov {
 namespace genai {
 const std::string PA_BACKEND = "PA";
 const std::string SDPA_BACKEND = "SDPA";
-const bool ENABLE_SAVE_OV_MODEL = true;
 }
 }
 
@@ -309,10 +308,10 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 } // namespace
 
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
-    bool enable_save_ov_model = ENABLE_SAVE_OV_MODEL;
+    bool enable_save_ov_model = false;
     ov::AnyMap properties = external_properties;
 
-    auto it = properties.find("ENABLE_SAVE_OV_MODEL");
+    auto it = properties.find(ov::genai::enable_save_ov_model.name());
     if (it != properties.end()) {
         enable_save_ov_model = it->second.as<bool>();
         properties.erase(it);
