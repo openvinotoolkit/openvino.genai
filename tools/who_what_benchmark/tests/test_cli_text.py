@@ -2,11 +2,9 @@ import subprocess  # nosec B404
 import os
 import shutil
 import tempfile
-import pandas as pd
 import pytest
 import logging
 import json
-import sys
 
 from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
