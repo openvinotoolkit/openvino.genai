@@ -365,7 +365,9 @@ def create_evaluator(base_model, args):
             else:
                 gen_answer_fn = None
 
-            use_chat_template = not args.omit_chat_template and tokenizer.chat_template is not None
+            use_chat_template = (
+                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
+            )
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
