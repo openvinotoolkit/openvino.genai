@@ -336,104 +336,97 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_separat
     auto t0 = make_shared<Parameter>(f32, PartialShape{1, -1, -1, -1});  //  -> f32[1,?,?,?]
     t0->output(0).get_tensor().set_names({"img_features"});
     auto t1 = make_shared<Parameter>(i32, PartialShape{});      //  -> i32[]
-    t1->output(0).get_tensor().set_names({"base_feat_size"});
+    t1->output(0).get_tensor().set_names({"height"});
     auto t2 = make_shared<Parameter>(i32, PartialShape{});      //  -> i32[]
-    t2->output(0).get_tensor().set_names({"embedding_len"});
-    auto t3 = make_shared<Parameter>(i32, PartialShape{});      //  -> i32[]
-    t3->output(0).get_tensor().set_names({"height"});
-    auto t4 = make_shared<Parameter>(i32, PartialShape{});      //  -> i32[]
-    t4->output(0).get_tensor().set_names({"width"});
-    auto t5 = make_shared<Parameter>(f32, PartialShape{1, 1, 1, -1});  //  -> f32[1,1,1,?]
-    t5->output(0).get_tensor().set_names({"sub_GN"});
-    auto t6 = make_shared<Parameter>(f32, PartialShape{1, 1, -1});  //  -> f32[1,1,?]
-    t6->output(0).get_tensor().set_names({"glb_GN"});
-    auto t7 = make_shared<Constant>(i64, Shape{1}, 1);          //  -> i64[1]([1])
-    auto t8 = make_shared<Constant>(i64, Shape{1}, -1);         //  -> i64[1]([-1])
-    auto t9 = make_shared<Constant>(i32, Shape{}, 2);           //  -> i32[](2)
-    auto t10 = make_shared<Power>(t1, t9, "numpy");             // i32[], i32[] -> i32[]
-    auto t11 = make_shared<Convert>(t10, i64);                  // i32[] -> i64[]
-    auto t12 = make_shared<Constant>(i32, Shape{}, 0);          //  -> i32[](0)
-    auto t13 = make_shared<Unsqueeze>(t11, t12);                // i64[], i32[] -> i64[1]
-    auto t14 = make_shared<Convert>(t2, i64);                   // i32[] -> i64[]
-    auto t15 = make_shared<Unsqueeze>(t14, t12);                // i64[], i32[] -> i64[1]
-    auto t16 = make_shared<Concat>(NodeVector{t7, t8, t13, t15}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
-    auto t17 = make_shared<Reshape>(t0, t16, false);            // f32[1,?,?,?], i64[4] -> f32[?,?,?,?]
+    t2->output(0).get_tensor().set_names({"width"});
+    auto t3 = make_shared<Parameter>(f32, PartialShape{1, 1, 1, -1});  //  -> f32[1,1,1,?]
+    t3->output(0).get_tensor().set_names({"sub_GN"});
+    auto t4 = make_shared<Parameter>(f32, PartialShape{1, 1, -1});  //  -> f32[1,1,?]
+    t4->output(0).get_tensor().set_names({"glb_GN"});
+    auto t5 = make_shared<Constant>(i64, Shape{}, 0);           //  -> i64[](0)
+    auto t6 = make_shared<Constant>(i64, Shape{}, 0);           //  -> i64[](0)
+    auto t7 = make_shared<Gather>(t0, t5, t6);                  // f32[1,?,?,?], i64[], i64[] -> f32[?,?,?]
+    auto t8 = make_shared<Constant>(i64, Shape{1}, 1);          //  -> i64[1]([1])
+    auto t9 = make_shared<Constant>(i64, Shape{1}, -1);         //  -> i64[1]([-1])
+    auto t10 = make_shared<Constant>(i64, Shape{1}, 256);       //  -> i64[1]([256])
+    auto t11 = make_shared<ShapeOf>(t0);                        // f32[1,?,?,?] -> i64[4]
+    auto t12 = make_shared<Constant>(i64, Shape{1}, 3);         //  -> i64[1]([3])
+    auto t13 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t14 = make_shared<Gather>(t11, t12, t13);              // i64[4], i64[1], i64[] -> i64[1]
+    auto t15 = make_shared<Concat>(NodeVector{t8, t9, t10, t14}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
+    auto t16 = make_shared<Reshape>(t7, t15, false);            // f32[?,?,?], i64[4] -> f32[1,?,256,?]
+    auto t17 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
     auto t18 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
-    auto t19 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
-    auto t20 = make_shared<Gather>(t17, t18, t19);              // f32[?,?,?,?], i64[], i64[] -> f32[?,?,?]
-    auto t21 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t22 = make_shared<Constant>(i64, Shape{1}, 9223372036854775807);  //  -> i64[1]([9223372036854775807])
-    auto t23 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t24 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t25 = make_shared<Slice>(t20, t21, t22, t23, t24);     // f32[?,?,?], i64[1], i64[1], i64[1], i64[1] -> f32[?,?,?]
-    auto t26 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t27 = make_shared<Convert>(t3, i64);                   // i32[] -> i64[]
-    auto t28 = make_shared<Constant>(i64, Shape{}, 448);        //  -> i64[](448)
-    auto t29 = make_shared<Divide>(t27, t28, "numpy");          // i64[], i64[] -> i64[]
-    auto t30 = make_shared<Floor>(t29);                         // i64[] -> i64[]
-    auto t31 = make_shared<Convert>(t4, i64);                   // i32[] -> i64[]
-    auto t32 = make_shared<Constant>(i64, Shape{}, 448);        //  -> i64[](448)
-    auto t33 = make_shared<Divide>(t31, t32, "numpy");          // i64[], i64[] -> i64[]
-    auto t34 = make_shared<Floor>(t33);                         // i64[] -> i64[]
-    auto t35 = make_shared<Multiply>(t30, t34, "numpy");        // i64[], i64[] -> i64[]
-    auto t36 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
-    auto t37 = make_shared<Reshape>(t35, t36, false);           // i64[], i64[1] -> i64[1]
-    auto t38 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t39 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t40 = make_shared<Slice>(t25, t26, t37, t38, t39);     // f32[?,?,?], i64[1], i64[1], i64[1], i64[1] -> f32[?,?,?]
-    auto t41 = make_shared<Constant>(i32, Shape{}, 0);          //  -> i32[](0)
-    auto t42 = make_shared<Unsqueeze>(t30, t41);                // i64[], i32[] -> i64[1]
-    auto t43 = make_shared<Unsqueeze>(t34, t41);                // i64[], i32[] -> i64[1]
-    auto t44 = make_shared<Convert>(t1, i64);                   // i32[] -> i64[]
-    auto t45 = make_shared<Unsqueeze>(t44, t41);                // i64[], i32[] -> i64[1]
-    auto t46 = make_shared<Concat>(NodeVector{t42, t43, t45, t45, t15}, 0);  // i64[1], i64[1], i64[1], i64[1], i64[1] -> i64[5]
-    auto t47 = make_shared<Reshape>(t40, t46, false);           // f32[?,?,?], i64[5] -> f32[?,?,?,?,?]
-    auto t48 = make_shared<Constant>(i32, Shape{5}, vector<int32_t>{0, 2, 1, 3, 4});  //  -> i32[5]([0, 2, 1, 3, 4])
-    auto t49 = make_shared<Transpose>(t47, t48);                // f32[?,?,?,?,?], i32[5] -> f32[?,?,?,?,?]
-    auto t50 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t51 = make_shared<Multiply>(t30, t44, "numpy");        // i64[], i64[] -> i64[]
+    auto t19 = make_shared<Gather>(t16, t17, t18);              // f32[1,?,256,?], i64[], i64[] -> f32[?,256,?]
+    auto t20 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t21 = make_shared<Constant>(i64, Shape{1}, 9223372036854775807);  //  -> i64[1]([9223372036854775807])
+    auto t22 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t23 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
+    auto t24 = make_shared<Slice>(t19, t20, t21, t22, t23);     // f32[?,256,?], i64[1], i64[1], i64[1], i64[1] -> f32[?,256,?]
+    auto t25 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
+    auto t26 = make_shared<Convert>(t1, i64);                   // i32[] -> i64[]
+    auto t27 = make_shared<Constant>(i64, Shape{}, 448);        //  -> i64[](448)
+    auto t28 = make_shared<Divide>(t26, t27, "numpy");          // i64[], i64[] -> i64[]
+    auto t29 = make_shared<Floor>(t28);                         // i64[] -> i64[]
+    auto t30 = make_shared<Convert>(t2, i64);                   // i32[] -> i64[]
+    auto t31 = make_shared<Constant>(i64, Shape{}, 448);        //  -> i64[](448)
+    auto t32 = make_shared<Divide>(t30, t31, "numpy");          // i64[], i64[] -> i64[]
+    auto t33 = make_shared<Floor>(t32);                         // i64[] -> i64[]
+    auto t34 = make_shared<Multiply>(t29, t33, "numpy");        // i64[], i64[] -> i64[]
+    auto t35 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
+    auto t36 = make_shared<Reshape>(t34, t35, false);           // i64[], i64[1] -> i64[1]
+    auto t37 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t38 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
+    auto t39 = make_shared<Slice>(t24, t25, t36, t37, t38);     // f32[?,256,?], i64[1], i64[1], i64[1], i64[1] -> f32[?,256,?]
+    auto t40 = make_shared<Constant>(i32, Shape{}, 0);          //  -> i32[](0)
+    auto t41 = make_shared<Unsqueeze>(t29, t40);                // i64[], i32[] -> i64[1]
+    auto t42 = make_shared<Unsqueeze>(t33, t40);                // i64[], i32[] -> i64[1]
+    auto t43 = make_shared<Constant>(i64, Shape{1}, 16);        //  -> i64[1]([16])
+    auto t44 = make_shared<Constant>(i64, Shape{1}, 16);        //  -> i64[1]([16])
+    auto t45 = make_shared<Concat>(NodeVector{t41, t42, t43, t44, t14}, 0);  // i64[1], i64[1], i64[1], i64[1], i64[1] -> i64[5]
+    auto t46 = make_shared<Reshape>(t39, t45, false);           // f32[?,256,?], i64[5] -> f32[?,?,?,?,?]
+    auto t47 = make_shared<Constant>(i32, Shape{5}, vector<int32_t>{0, 2, 1, 3, 4});  //  -> i32[5]([0, 2, 1, 3, 4])
+    auto t48 = make_shared<Transpose>(t46, t47);                // f32[?,?,?,?,?], i32[5] -> f32[?,?,?,?,?]
+    auto t49 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t50 = make_shared<Constant>(i64, Shape{}, 16);         //  -> i64[](16)
+    auto t51 = make_shared<Multiply>(t29, t50, "numpy");        // i64[], i64[] -> i64[]
     auto t52 = make_shared<Constant>(i32, Shape{}, 0);          //  -> i32[](0)
     auto t53 = make_shared<Unsqueeze>(t51, t52);                // i64[], i32[] -> i64[1]
-    auto t54 = make_shared<Multiply>(t34, t44, "numpy");        // i64[], i64[] -> i64[]
-    auto t55 = make_shared<Unsqueeze>(t54, t52);                // i64[], i32[] -> i64[1]
-    auto t56 = make_shared<Concat>(NodeVector{t50, t53, t55, t15}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
-    auto t57 = make_shared<Reshape>(t49, t56, false);           // f32[?,?,?,?,?], i64[4] -> f32[?,?,?,?]
-    auto t58 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t59 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
-    auto t60 = make_shared<Reshape>(t51, t59, false);           // i64[], i64[1] -> i64[1]
-    auto t61 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t54 = make_shared<Constant>(i64, Shape{}, 16);         //  -> i64[](16)
+    auto t55 = make_shared<Multiply>(t33, t54, "numpy");        // i64[], i64[] -> i64[]
+    auto t56 = make_shared<Unsqueeze>(t55, t52);                // i64[], i32[] -> i64[1]
+    auto t57 = make_shared<Concat>(NodeVector{t49, t53, t56, t14}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
+    auto t58 = make_shared<Reshape>(t48, t57, false);           // f32[?,?,?,?,?], i64[4] -> f32[?,?,?,?]
+    auto t59 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t60 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
+    auto t61 = make_shared<Reshape>(t51, t60, false);           // i64[], i64[1] -> i64[1]
     auto t62 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t63 = make_shared<Concat>(NodeVector{t58, t60, t61, t62}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
-    auto t64 = make_shared<Tile>(t5, t63);                      // f32[1,1,1,?], i64[4] -> f32[?,?,?,?]
-    auto t65 = make_shared<Concat>(NodeVector{t57, t64}, 2);    // f32[?,?,?,?], f32[?,?,?,?] -> f32[?,?,?,?]
-    auto t66 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t67 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
-    auto t68 = make_shared<Concat>(NodeVector{t66, t67, t15}, 0);  // i64[1], i64[1], i64[1] -> i64[3]
-    auto t69 = make_shared<Reshape>(t65, t68, false);           // f32[?,?,?,?], i64[3] -> f32[?,?,?]
-    auto t70 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t71 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t63 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t64 = make_shared<Concat>(NodeVector{t59, t61, t62, t63}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
+    auto t65 = make_shared<Tile>(t3, t64);                      // f32[1,1,1,?], i64[4] -> f32[?,?,?,?]
+    auto t66 = make_shared<Concat>(NodeVector{t58, t65}, 2);    // f32[?,?,?,?], f32[?,?,?,?] -> f32[?,?,?,?]
+    auto t67 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t68 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
+    auto t69 = make_shared<Concat>(NodeVector{t67, t68, t14}, 0);  // i64[1], i64[1], i64[1] -> i64[3]
+    auto t70 = make_shared<Reshape>(t66, t69, false);           // f32[?,?,?,?], i64[3] -> f32[1,?,?]
+    auto t71 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
     auto t72 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t73 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t74 = make_shared<Slice>(t20, t70, t71, t72, t73);     // f32[?,?,?], i64[1], i64[1], i64[1], i64[1] -> f32[..1,?,?]
-    auto t75 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t76 = make_shared<Concat>(NodeVector{t75, t45, t45, t15}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
-    auto t77 = make_shared<Reshape>(t74, t76, false);           // f32[..1,?,?], i64[4] -> f32[?,?,?,?]
-    auto t78 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t79 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
-    auto t80 = make_shared<Reshape>(t44, t79, false);           // i64[], i64[1] -> i64[1]
-    auto t81 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t82 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t83 = make_shared<Concat>(NodeVector{t78, t80, t81, t82}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
-    auto t84 = make_shared<Tile>(t5, t83);                      // f32[1,1,1,?], i64[4] -> f32[?,?,?,?]
-    auto t85 = make_shared<Concat>(NodeVector{t77, t84}, 2);    // f32[?,?,?,?], f32[?,?,?,?] -> f32[?,?,?,?]
-    auto t86 = make_shared<Reshape>(t85, t68, false);           // f32[?,?,?,?], i64[3] -> f32[?,?,?]
-    auto t87 = make_shared<Concat>(NodeVector{t69, t6, t86}, 1);  // f32[?,?,?], f32[1,1,?], f32[?,?,?] -> f32[1,1..,?]
-    auto t88 = make_shared<Result>(t87);                        // f32[1,1..,?] -> f32[1,1..,?]
-    t88->output(0).get_tensor().set_names({});
+    auto t73 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t74 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
+    auto t75 = make_shared<Slice>(t19, t71, t72, t73, t74);     // f32[?,256,?], i64[1], i64[1], i64[1], i64[1] -> f32[..1,256,?]
+    auto t76 = make_shared<Constant>(i64, Shape{4}, vector<int64_t>{1, 16, 16, -1});  //  -> i64[4]([1, 16, 16, -1])
+    auto t77 = make_shared<Reshape>(t75, t76, true);            // f32[..1,256,?], i64[4] -> f32[1,16,16,?]
+    auto t78 = make_shared<Constant>(i64, Shape{4}, vector<int64_t>{1, 16, 1, 1});  //  -> i64[4]([1, 16, 1, 1])
+    auto t79 = make_shared<Tile>(t3, t78);                      // f32[1,1,1,?], i64[4] -> f32[1,16,1,?]
+    auto t80 = make_shared<Concat>(NodeVector{t77, t79}, 2);    // f32[1,16,16,?], f32[1,16,1,?] -> f32[1,16,17,?]
+    auto t81 = make_shared<Reshape>(t80, t69, false);           // f32[1,16,17,?], i64[3] -> f32[1,?,?]
+    auto t82 = make_shared<Concat>(NodeVector{t70, t4, t81}, 1);  // f32[1,?,?], f32[1,1,?], f32[1,?,?] -> f32[1,1..,?]
+    auto t83 = make_shared<Result>(t82);                        // f32[1,1..,?] -> f32[1,1..,?]
+    t83->output(0).get_tensor().set_names({});
 
-    ResultVector results{t88};
+    ResultVector results{t83};
     SinkVector sinks{};
-    ParameterVector parameters{t0, t1, t2, t3, t4, t5, t6};
+    ParameterVector parameters{t0, t1, t2, t3, t4};
     auto model = make_shared<Model>(results, sinks, parameters);
     using namespace ov::genai;
     CompiledModel compiled = utils::singleton_core().compile_model(model, "CPU");
@@ -513,22 +506,15 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     std::cout << "BBBBBBBBBBBBBBBBBBBBBBb\n";
     ov::Tensor _1le; // l - length, e - single embedding size
     {
-        ov::Tensor base_feat_size{ov::element::i32, {0}};
-        ov::Tensor embedding_len{ov::element::i32, {0}};
         ov::Tensor height{ov::element::i32, {0}};
         ov::Tensor width{ov::element::i32, {0}};
         ov::Tensor sub_GN{ov::element::f32, {1, 1, 1, m_vlm_config.sub_GN.size()}, m_vlm_config.sub_GN.data()};
         ov::Tensor glb_GN{ov::element::f32, {1, 1, m_vlm_config.glb_GN.size()}, m_vlm_config.glb_GN.data()};
-        base_feat_size.data<int32_t>()[0] = std::sqrt(img_features.get_shape()[2]);
-        std::cout << img_features.get_shape() << '\n';
-        embedding_len.data<int32_t>()[0] = img_features.get_shape()[3];
         height.data<int32_t>()[0] = image_height;
         width.data<int32_t>()[0] = image_width;
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_separator_inserters.get()};
         ov::InferRequest& encoder = lock.get();
         encoder.set_tensor("img_features", img_features);
-        encoder.set_tensor("base_feat_size", base_feat_size);
-        encoder.set_tensor("embedding_len", embedding_len);
         encoder.set_tensor("height", height);
         encoder.set_tensor("width", width);
         encoder.set_tensor("sub_GN", sub_GN);
