@@ -108,6 +108,26 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
     return metric_dict, metric_per_question
 
 
+def evaluate_multiple_choice(tokenizer, gt_data,  data_prediction):
+    answers_reference = gt_data["answers"].values
+    mapping = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
+    answers_gold = gt_data["ds_answers"].map(mapping).values
+    answers_prediction = data_prediction["answers"].values
+    accuracy_per_question = []
+    similarity_per_question = []
+    for reference, gold, prediction in tqdm(
+        zip(answers_reference, answers_gold, answers_prediction), desc="Multiple choice evaluation"
+    ):
+        ref = reference.strip()
+        pred = prediction.strip()
+        question_similarity = 1 if ref == pred else 0
+        similarity_per_question.append(question_similarity)
+        question_accuracy = 1 if gold == pred else 0
+        accuracy_per_question.append(question_accuracy)
+    metric_dict = {"accuracy": np.mean(accuracy_per_question), "similarity": np.mean(similarity_per_question)}
+    return metric_dict, {"accuracy": accuracy_per_question, "similarity": similarity_per_question}
+
+
 class TextSimilarity:
     def __init__(self, model_id) -> None:
         tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
@@ -127,6 +147,14 @@ class TextDivergency:
 
     def evaluate(self, gt, prediction):
         return evaluate_divergency(self.tokenizer, gt, prediction)
+
+
+class TextMultipleChoice:
+    def __init__(self, tokenizer) -> None:
+        self.tokenizer = tokenizer
+
+    def evaluate(self, gt_data, prediction):
+        return evaluate_multiple_choice(self.tokenizer, gt_data, prediction)
 
 
 # Image metrics

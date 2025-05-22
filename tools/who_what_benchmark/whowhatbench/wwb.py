@@ -200,8 +200,21 @@ def load_prompts(args):
         name = None
     data = load_dataset(path=path, name=name, split=split)
 
-    res = data[args.dataset_field]
-    res = {"prompts": list(res)}
+    if "mmlu" in path:
+        args.dataset_field = "question"
+        questions = data[args.dataset_field][:args.num_samples]
+        choices = data["choices"][:args.num_samples]
+        dataset_answers = data["answer"][:args.num_samples]
+        questions_with_choices = []
+        for question, choice_set in zip(questions, choices):
+            # use the same prompt like in lm-evaluation-harness for mmlu
+            full_prompt = f"{question.strip()}\nA. {choice_set[0]}\nB. {choice_set[1]}\nC. {choice_set[2]}\nD. {choice_set[3]}\nAnswer:"
+            questions_with_choices.append(full_prompt)
+        res = {"prompts": questions_with_choices, "answers": dataset_answers}
+    else:
+        res = data[args.dataset_field][:args.num_samples]
+        res = {"prompts": list(res)}
+
     return res
 
 
@@ -365,10 +378,13 @@ def create_evaluator(base_model, args):
             else:
                 gen_answer_fn = None
 
+            metric = ["choice_similarity"] if args.dataset and "mmlu" in args.dataset else ["similarity"]
+                
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
                 test_data=prompts,
+                metrics=metric,
                 tokenizer=tokenizer,
                 similarity_model_id=args.data_encoder,
                 num_samples=args.num_samples,

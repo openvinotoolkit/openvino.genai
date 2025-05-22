@@ -4,7 +4,7 @@ import os
 import pandas as pd
 from tqdm import tqdm
 from .registry import register_evaluator, BaseEvaluator
-from .whowhat_metrics import TextDivergency, TextSimilarity
+from .whowhat_metrics import TextDivergency, TextSimilarity, TextMultipleChoice
 from .utils import patch_awq_for_inference, get_ignore_parameters_flag
 
 default_data = {
@@ -83,7 +83,7 @@ class TextEvaluator(BaseEvaluator):
         tokenizer: Any = None,
         gt_data: str = None,
         test_data: Union[str, list] = None,
-        metrics="similarity",
+        metrics=["similarity"],
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
         max_new_tokens=128,
         crop_question=True,
@@ -101,7 +101,7 @@ class TextEvaluator(BaseEvaluator):
 
         self.test_data = test_data
         self.metrics = metrics
-        self.max_new_tokens = max_new_tokens
+        self.max_new_tokens = 1 if "choice_similarity" in metrics else max_new_tokens 
         self.tokenizer = tokenizer
         self._crop_question = crop_question
         self.num_samples = num_samples
@@ -129,12 +129,15 @@ class TextEvaluator(BaseEvaluator):
 
         self.similarity = None
         self.divergency = None
+        self.choice_similarity = None
         if "similarity" in self.metrics:
             self.similarity = TextSimilarity(similarity_model_id)
         if "divergency" in self.metrics:
             assert tokenizer is not None
             self.divergency = TextDivergency(tokenizer)
-
+        if "choice_similarity" in self.metrics:
+            assert tokenizer is not None
+            self.choice_similarity = TextMultipleChoice(tokenizer)
         self.last_cmp = None
 
     def get_generation_fn(self):
@@ -159,6 +162,13 @@ class TextEvaluator(BaseEvaluator):
 
         if self.divergency:
             metric_dict, metric_per_question = self.divergency.evaluate(
+                self.gt_data, predictions
+            )
+            all_metrics.update(metric_dict)
+            all_metrics_per_prompt.update(metric_per_question)
+
+        if self.choice_similarity:
+            metric_dict, metric_per_question = self.choice_similarity.evaluate(
                 self.gt_data, predictions
             )
             all_metrics.update(metric_dict)
@@ -223,7 +233,11 @@ class TextEvaluator(BaseEvaluator):
             data = pd.DataFrame.from_dict(default_data[self.language])
 
         prompt_data = data["prompts"]
-
+        if "answers" in data.columns:
+            dataset_answers = data["answers"]
+        else:
+            dataset_answers = None
+        
         answers = []
         prompts = (
             prompt_data.values
@@ -264,5 +278,6 @@ class TextEvaluator(BaseEvaluator):
         res_data = {"prompts": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)
         df["language"] = self.language
+        df["ds_answers"] = dataset_answers.values if dataset_answers is not None else None
 
         return df
