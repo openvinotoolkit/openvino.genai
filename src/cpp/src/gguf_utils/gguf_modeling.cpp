@@ -163,7 +163,7 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
         ov::genai::utils::print_gguf_debug_info(ss.str());
     }
     catch (const ov::Exception& e) {
-        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disble it by setting 'ov::genai::enable_save_ov_model' property to false");
+        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::enable_save_ov_model' property to false");
     }
 }
 
