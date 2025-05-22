@@ -480,6 +480,13 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
     }
 }
 
+void print_gguf_debug_info(const std::string &debug_info) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+    std::cout << "[GGUF Reader]: " << debug_info << std::endl;
+}
+
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                         const ov::AnyMap& config,

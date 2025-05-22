@@ -149,6 +149,8 @@ bool env_setup_for_print_debug_info();
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 
+void print_gguf_debug_info(const std::string& debug_info);
+
 struct KVDesc {
     uint32_t max_prompt_len;
     uint32_t min_response_len;

@@ -14,7 +14,7 @@
 
 #include "gguf_utils/building_blocks.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
-
+#include "utils.hpp"
 
 using namespace ov;
 using namespace ov::op::v13;
@@ -158,24 +158,32 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
         ov::save_model(model, save_path, compress_to_fp16);
         auto serialize_finish_time = std::chrono::high_resolution_clock::now();
         auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
-        std::cout << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms\n";
+        std::stringstream ss;
+        ss << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms";
+        ov::genai::utils::print_gguf_debug_info(ss.str());
     }
     catch (const ov::Exception& e) {
-        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disble it by setting 'ENABLE_SAVE_OV_MODEL' property to false");
+        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disble it by setting 'ov::genai::enable_save_ov_model' property to false");
     }
 }
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const bool enable_save_ov_model) {
     auto start_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Loading and unpacking model from: " << model_path << std::endl;
+    std::stringstream ss;
+    ss << "Loading and unpacking model from: " << model_path;
+    ov::genai::utils::print_gguf_debug_info(ss.str());
     auto [config, consts, qtypes] = load_gguf(model_path);
     auto load_finish_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Loading and unpacking model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms" << std::endl;
-    std::cout << "Start generating OpenVINO model..." << std::endl;
+
+    ss.str("");
+    ss << "Loading and unpacking model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms";
+    ov::genai::utils::print_gguf_debug_info(ss.str());
 
     std::shared_ptr<ov::Model> model;
-
     const std::string model_arch = std::get<std::string>(config.at("architecture"));
+    ss.str("");
+    ss << "Start generating OpenVINO model...";
+    ov::genai::utils::print_gguf_debug_info(ss.str());
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
         model = create_language_model(config, consts, qtypes);
         if (enable_save_ov_model){
@@ -188,7 +196,9 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
     }
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - load_finish_time).count();
-    std::cout << "Model generation done. Time: " << duration << "ms" << std::endl;
+    ss.str("");
+    ss << "Model generation done. Time: " << duration << "ms";
+    ov::genai::utils::print_gguf_debug_info(ss.str());
 
     return model;
 }
