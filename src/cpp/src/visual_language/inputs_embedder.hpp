@@ -179,6 +179,7 @@ private:
     friend class InputsEmbedderLLaVANext;
     friend class InputsEmbedderInternVLChat;
     friend class InputsEmbedderPhi3V;
+    friend class InputsEmbedderPhi4MM;
     friend class InputsEmbedderQwen2VL;
     friend class InputsEmbedderQwen2_5_VL;
 };

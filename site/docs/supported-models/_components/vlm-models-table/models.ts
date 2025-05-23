@@ -83,6 +83,18 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'Phi4MMForCausalLM',
+    models: [
+      {
+        name: 'phi4mm',
+        loraSupport: false,
+        links: [
+          'https://huggingface.co/microsoft/Phi-4-multimodal-instruct',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'Qwen2-VL',
     models: [
       {
