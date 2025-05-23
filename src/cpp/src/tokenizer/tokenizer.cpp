@@ -86,6 +86,9 @@ std::string patch_template(std::string&& chat_template) {
         // If chat template contains such slicing, we replace it with
         // a placeholder at the moment.
         {"messages[1:]", "slice(messages, 1)"},
+        // Jinja2Cpp cannot handle logical NOT for non-boolean types.
+        {"not message.tool_calls)", "message.tool_calls is undefined)"},
+        {"not message.tool_calls %}", "message.tool_calls is undefined %}"},
     };
 
     for (const auto& [from, to] : replace_str_map) {
@@ -670,7 +673,7 @@ public:
         return;
     }
 
-    jinja2::ValuesMap prepare_jinja_params(const ChatHistory& history, const Tools& tools, bool add_generation_prompt) const {
+    jinja2::ValuesMap prepare_jinja_params(const ChatHistory& history, bool add_generation_prompt) const {
         jinja2::ValuesMap params;
         // Slice callable
         jinja2::UserCallable slice_callable = jinja2::MakeCallable(
@@ -704,20 +707,6 @@ public:
         params["eos_token"] = m_eos_token;
         params["pad_token"] = m_pad_token;
         params["add_generation_prompt"] = add_generation_prompt;
-
-        // Tools
-        using utils::read_json_param;
-        if (!tools.empty()) {
-            jinja2::ValuesList tools_jinja;
-            for (const auto& tool_str: tools) {
-                // TODO handle failed parsing
-                nlohmann::json tool_json = nlohmann::json::parse(tool_str);
-                jinja2::ValuesMap tool_jinja;
-                json_object_to_jinja(tool_json, tool_jinja);
-                tools_jinja.emplace_back(tool_jinja);
-            }
-            params["tools"] = tools_jinja;
-        }
 
         return params;
     }
@@ -789,40 +778,7 @@ jinja2::ValuesMap prepare_jinja_params(const ChatHistoryRaw& history, const Tool
         jinja2::Template tpl(&env);
         tpl.Load(chat_tpl);
 
-        jinja2::ValuesMap params = prepare_jinja_params(history, {}, add_generation_prompt);
-        std::string result;
-        try {
-            result = tpl.RenderAsString(params).value();
-        } catch (const std::exception& error) {
-            OPENVINO_THROW("Jinja2Cpp failed to apply chat template. Possible solutions are\n"
-                           "* Provide a simplified chat template with set_chat_template().\n"
-                           "* Set apply_chat_template to false in GenerationConfig. "
-                           "It's possible to apply the template manually to your prompt before calling generate. "
-                           "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
-                           "Jinja2Cpp's error: ", error.what());
-        }
-        OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
-                                         "Please check the chat template or apply template manually to your prompt before calling generate."
-                                         "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
-        return result;
-    }
-
-    std::string apply_chat_template(ChatHistory history,
-                                    Tools tools,
-                                    bool add_generation_prompt,
-                                    const std::string& chat_template) const {
-        std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_and_patch(chat_template);
-        OPENVINO_ASSERT(!chat_tpl.empty(),
-                        "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
-                        " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
-                        " For more information see the section Troubleshooting in README.md");
-        jinja2::TemplateEnv env;
-        env.GetSettings().lstripBlocks = true;
-        env.GetSettings().trimBlocks = true;
-        jinja2::Template tpl(&env);
-        tpl.Load(chat_tpl);
-
-        jinja2::ValuesMap params = prepare_jinja_params(history, tools, add_generation_prompt);
+        jinja2::ValuesMap params = prepare_jinja_params(history, add_generation_prompt);
         std::string result;
         try {
             result = tpl.RenderAsString(params).value();
@@ -989,7 +945,7 @@ std::string Tokenizer::apply_chat_template(ChatHistory history,
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);
 }
 
-std::string Tokenizer::apply_chat_template(ChatHistory history,
+std::string Tokenizer::apply_chat_template(ChatHistoryRaw history,
                                            Tools tools,
                                            bool add_generation_prompt,
                                            const std::string& chat_template) const {

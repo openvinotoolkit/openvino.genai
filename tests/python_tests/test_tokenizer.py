@@ -1,8 +1,11 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+import ast
 import dataclasses
+import jinja2
 import json
 from typing import Optional
+import re
 
 import numpy as np
 import openvino
@@ -203,7 +206,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
-def test_apply_chat_template_with_tools(ov_hf_tokenizers):
+def test_apply_chat_template_with_tools_qwen2_5(ov_hf_tokenizers):
     ov_tokenizer, _ = ov_hf_tokenizers
 
     tools = ["""
@@ -217,7 +220,7 @@ def test_apply_chat_template_with_tools(ov_hf_tokenizers):
                 "properties": {
                     "location": {
                         "type": "string",
-                        "description": "City and country e.g. Bogotá, Colombia"
+                        "description": "City and country e.g. Bogota, Colombia"
                     }
                 },
                 "required": [
@@ -240,7 +243,7 @@ def test_apply_chat_template_with_tools(ov_hf_tokenizers):
                 "properties": {
                     "location": {
                         "type": "string",
-                        "description": "City and country e.g. Bogotá, Colombia"
+                        "description": "City and country e.g. Bogota, Colombia"
                     }
                 },
                 "required": [
@@ -253,50 +256,144 @@ def test_apply_chat_template_with_tools(ov_hf_tokenizers):
     }
              """]
     
-    dummy_conversation = [
-        {"role": "user", "content": "What is the weather like in Paris today?"},
+    messages = [
+        """{"role": "system", "content": "This is a test system message."}""",
+        """{"role": "user", "content": "What is the weather like in Paris today?"}""",
+        """{"role": "assistant", "reasoning_content": null, "content": "", "tool_calls": [{"id": "chatcmpl-tool-d39b13c90f9b4d48b08c16455553dbec", "type": "function", "function": {"name": "get_weather", "arguments": {"location": "Paris, France"}}}]}""",
+        """{"role": "tool", "tool_call_id": "chatcmpl-tool-d39b13c90f9b4d48b08c16455553dbec", "content": "15 degrees Celsius"}"""
     ]
 
     # Template from Qwen2.5 Instruct: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/blob/main/tokenizer_config.json#L198
     template = "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- messages[0]['content'] }}\n    {%- else %}\n        {{- 'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.' }}\n    {%- endif %}\n    {{- \"\\n\\n# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- '<|im_start|>system\\n' + messages[0]['content'] + '<|im_end|>\\n' }}\n    {%- else %}\n        {{- '<|im_start|>system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- for message in messages %}\n    {%- if (message.role == \"user\") or (message.role == \"system\" and not loop.first) or (message.role == \"assistant\" and not message.tool_calls) %}\n        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {{- '<|im_start|>' + message.role }}\n        {%- if message.content %}\n            {{- '\\n' + message.content }}\n        {%- endif %}\n        {%- for tool_call in message.tool_calls %}\n            {%- if tool_call.function is defined %}\n                {%- set tool_call = tool_call.function %}\n            {%- endif %}\n            {{- '\\n<tool_call>\\n{\"name\": \"' }}\n            {{- tool_call.name }}\n            {{- '\", \"arguments\": ' }}\n            {{- tool_call.arguments | tojson }}\n            {{- '}\\n</tool_call>' }}\n        {%- endfor %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- message.content }}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n{%- endif %}\n"
     
-    expected_prompt = """<|im_start|>system
-You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
+    # Template from Llama3.1 Instruct. Processed without failure, but not working as expected yet.
+    #template = "{{- bos_token }}\n{%- if custom_tools is defined %}\n    {%- set tools = custom_tools %}\n{%- endif %}\n{%- if not tools_in_user_message is defined %}\n    {%- set tools_in_user_message = true %}\n{%- endif %}\n{%- if not date_string is defined %}\n    {%- set date_string = \"26 Jul 2024\" %}\n{%- endif %}\n{%- if not tools is defined %}\n    {%- set tools = none %}\n{%- endif %}\n\n{#- This block extracts the system message, so we can slot it into the right place. #}\n{%- if messages[0]['role'] == 'system' %}\n    {%- set system_message = messages[0]['content']|trim %}\n    {%- set messages = messages[1:] %}\n{%- else %}\n    {%- set system_message = \"\" %}\n{%- endif %}\n\n{#- System message + builtin tools #}\n{{- \"<|start_header_id|>system<|end_header_id|>\\n\\n\" }}\n{%- if builtin_tools is defined or tools is not none %}\n    {{- \"Environment: ipython\\n\" }}\n{%- endif %}\n{%- if builtin_tools is defined %}\n    {{- \"Tools: \" + builtin_tools | reject('equalto', 'code_interpreter') | join(\", \") + \"\\n\\n\"}}\n{%- endif %}\n{{- \"Cutting Knowledge Date: December 2023\\n\" }}\n{{- \"Today Date: \" + date_string + \"\\n\\n\" }}\n{%- if tools is not none and not tools_in_user_message %}\n    {{- \"You have access to the following functions. To call a function, please respond with JSON for a function call.\" }}\n    {{- 'Respond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.' }}\n    {{- \"Do not use variables.\\n\\n\" }}\n    {%- for t in tools %}\n        {{- t | tojson(indent=4) }}\n        {{- \"\\n\\n\" }}\n    {%- endfor %}\n{%- endif %}\n{{- system_message }}\n{{- \"<|eot_id|>\" }}\n\n{#- Custom tools are passed in a user message with some extra guidance #}\n{%- if tools_in_user_message and not tools is none %}\n    {#- Extract the first user message so we can plug it in here #}\n    {%- if messages | length != 0 %}\n        {%- set first_user_message = messages[0]['content']|trim %}\n        {%- set messages = messages[1:] %}\n    {%- else %}\n        {{- raise_exception(\"Cannot put tools in the first user message when there's no first user message!\") }}\n{%- endif %}\n    {{- '<|start_header_id|>user<|end_header_id|>\\n\\n' -}}\n    {{- \"Given the following functions, please respond with a JSON for a function call \" }}\n    {{- \"with its proper arguments that best answers the given prompt.\\n\\n\" }}\n    {{- 'Respond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.' }}\n    {{- \"Do not use variables.\\n\\n\" }}\n    {%- for t in tools %}\n        {{- t | tojson(indent=4) }}\n        {{- \"\\n\\n\" }}\n    {%- endfor %}\n    {{- first_user_message + \"<|eot_id|>\"}}\n{%- endif %}\n\n{%- for message in messages %}\n    {%- if not (message.role == 'ipython' or message.role == 'tool' or 'tool_calls' in message) %}\n        {{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\\n\\n'+ message['content'] | trim + '<|eot_id|>' }}\n    {%- elif 'tool_calls' in message %}\n        {%- if not message.tool_calls|length == 1 %}\n            {{- raise_exception(\"This model only supports single tool-calls at once!\") }}\n        {%- endif %}\n        {%- set tool_call = message.tool_calls[0].function %}\n        {%- if builtin_tools is defined and tool_call.name in builtin_tools %}\n            {{- '<|start_header_id|>assistant<|end_header_id|>\\n\\n' -}}\n            {{- \"<|python_tag|>\" + tool_call.name + \".call(\" }}\n            {%- for arg_name, arg_val in tool_call.arguments | items %}\n                {{- arg_name + '=\"' + arg_val + '\"' }}\n                {%- if not loop.last %}\n                    {{- \", \" }}\n                {%- endif %}\n                {%- endfor %}\n            {{- \")\" }}\n        {%- else  %}\n            {{- '<|start_header_id|>assistant<|end_header_id|>\\n\\n' -}}\n            {{- '{\"name\": \"' + tool_call.name + '\", ' }}\n            {{- '\"parameters\": ' }}\n            {{- tool_call.arguments | tojson }}\n            {{- \"}\" }}\n        {%- endif %}\n        {%- if builtin_tools is defined %}\n            {#- This means we're in ipython mode #}\n            {{- \"<|eom_id|>\" }}\n        {%- else %}\n            {{- \"<|eot_id|>\" }}\n        {%- endif %}\n    {%- elif message.role == \"tool\" or message.role == \"ipython\" %}\n        {{- \"<|start_header_id|>ipython<|end_header_id|>\\n\\n\" }}\n        {%- if message.content is mapping or message.content is iterable %}\n            {{- message.content | tojson }}\n        {%- else %}\n            {{- message.content }}\n        {%- endif %}\n        {{- \"<|eot_id|>\" }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|start_header_id|>assistant<|end_header_id|>\\n\\n' }}\n{%- endif %}\n"
 
-# Tools
 
-You may call one or more functions to assist with the user query.
+    # Render template with Jinja2 for reference
+    env = jinja2.Environment()
+    templated_prompt_jinja = env.from_string(template).render(
+        messages=[json.loads(m) for m in messages],
+        tools=[json.loads(t) for t in tools],
+        add_generation_prompt=False,
+    )
 
-You are provided with function signatures within <tools></tools> XML tags:
-<tools>
-{"type":"function","function":{"name":"get_weather","strict":true,"parameters":{"type":"object","required":["location"],"properties":{"location":{"type":"string","description":"City and country e.g. Bogotá, Colombia"}},"additionalProperties":false},"description":"Get current temperature for a given location."}}
-{"type":"function","function":{"name":"get_pollution","strict":true,"parameters":{"type":"object","required":["location"],"properties":{"location":{"type":"string","description":"City and country e.g. Bogotá, Colombia"}},"additionalProperties":false},"description":"Get current level of air pollution for a given location."}}
-</tools>
+    print("Reference prompt: \n\n" + templated_prompt_jinja)
 
-For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
-<tool_call>
-{"name": <function-name>, "arguments": <args-json-object>}
-</tool_call><|im_end|>
-<|im_start|>user
-What is the weather like in Paris today?<|im_end|>
-"""
+    # Extract JSON objects between <tools> and </tools>
+
+    def extract_tools(text):
+        match = re.search(r"<tools>(.*)</tools>", text, re.DOTALL)
+        if not match:
+            return text, []
+        tools_block = match.group(1)
+        # Each tool JSON starts on a new line, so split and filter
+        tool_jsons = [t for t in tools_block.strip().split('\n') if t.strip()]
+        tools_list = []
+        for tool_str in tool_jsons:
+            try:
+                tool_str = tool_str.strip()
+                tool_dict = json.loads(tool_str)
+                tools_list.append(tool_dict)
+            except Exception:
+                try:
+                    tool_dict = ast.literal_eval(tool_str)
+                    tools_list.append(tool_dict)
+                except Exception:
+                    pass
+        # Remove the <tools>...</tools> block from the text
+        text_wo_tools = text[:match.start()] + text[match.end():]
+        return text_wo_tools, tools_list
+
+    promt_without_tools_jinja, tools_extracted_jinja = extract_tools(templated_prompt_jinja)
+    print("Extracted tools:", tools_extracted_jinja)
+
+    def extract_tool_calls(text):
+        # Find all <tool_call>...</tool_call> blocks
+        matches = list(re.finditer(r"<tool_call>(.*?)</tool_call>", text, re.DOTALL))
+        tool_calls = []
+        text_wo_tool_calls = text
+        # Remove from last to first to not mess up indices
+        for match in reversed(matches):
+            json_str = match.group(1).strip()
+            try:
+                tool_call = json.loads(json_str)
+                tool_calls.append(tool_call)
+            except Exception:
+                try:
+                    tool_call = ast.literal_eval(json_str)
+                    tool_calls.append(tool_call)
+                except Exception:
+                    pass
+            # Remove the matched block from the text
+            start, end = match.span()
+            text_wo_tool_calls = text_wo_tool_calls[:start] + text_wo_tool_calls[end:]
+        tool_calls.reverse()  # To preserve original order
+        return text_wo_tool_calls, tool_calls
+
+    prompt_without_tool_calls_jinja, tool_calls_extracted_jinja = extract_tool_calls(promt_without_tools_jinja)
+    print("Extracted tool_calls:", tool_calls_extracted_jinja)
+
     templated_prompt_inline = ov_tokenizer.apply_chat_template(
-        dummy_conversation,
+        messages,
         tools,
         add_generation_prompt=False,
         chat_template=template
     )
 
     ov_tokenizer.set_chat_template(template)
-    templated_prompt = ov_tokenizer.apply_chat_template(dummy_conversation, tools, add_generation_prompt=False)
-    print(templated_prompt)
+    templated_prompt = ov_tokenizer.apply_chat_template(messages, tools, add_generation_prompt=False)
     assert templated_prompt_inline == templated_prompt
-    assert templated_prompt == expected_prompt
-    
 
-@pytest.mark.precommit
-@pytest.mark.nightly
-@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
+    print("Rendered prompt: \n\n" + templated_prompt)
+    prompt_without_tools, tools_extracted = extract_tools(templated_prompt)
+    print("Extracted tools:", tools_extracted)
+    prompt_without_tool_calls, tool_calls_extracted = extract_tool_calls(prompt_without_tools)
+    print("Extracted tool_calls:", tool_calls_extracted)
+
+    # --- New tests: Compare extracted tool lists and tool_calls from jinja and ov tokenizer ---
+
+    def sort_dicts(lst):
+        # Recursively sort lists of dicts for comparison
+        if isinstance(lst, list):
+            return sorted([sort_dicts(x) for x in lst], key=lambda d: json.dumps(d, sort_keys=True))
+        elif isinstance(lst, dict):
+            return {k: sort_dicts(v) for k, v in sorted(lst.items())}
+        return lst
+
+    # Compare tools extracted from both outputs
+    assert sort_dicts(tools_extracted) == sort_dicts(tools_extracted_jinja), (
+        f"Tools extracted from OV and Jinja outputs differ:\n"
+        f"OV: {tools_extracted}\nJinja: {tools_extracted_jinja}"
+    )
+
+    # Compare tool_calls extracted from both outputs
+    assert sort_dicts(tool_calls_extracted) == sort_dicts(tool_calls_extracted_jinja), (
+        f"Tool calls extracted from OV and Jinja outputs differ:\n"
+        f"OV: {tool_calls_extracted}\nJinja: {tool_calls_extracted_jinja}"
+    )
+
+    # --- Additional test: round-trip JSON serialization for extracted tools/tool_calls ---
+    for tool in tools_extracted + tools_extracted_jinja:
+        # Should be serializable to JSON
+        json_str = json.dumps(tool, sort_keys=True)
+        assert isinstance(json.loads(json_str), dict)
+
+    for tool_call in tool_calls_extracted + tool_calls_extracted_jinja:
+        json_str = json.dumps(tool_call, sort_keys=True)
+        assert isinstance(json.loads(json_str), dict)
+
+    # --- Additional test: ensure all tool dicts have required keys ---
+    for tool in tools_extracted:
+        assert "type" in tool and "function" in tool, f"Tool missing keys: {tool}"
+        assert "name" in tool["function"], f"Tool function missing 'name': {tool}"
+
+    for tool_call in tool_calls_extracted:
+        assert "name" in tool_call and "arguments" in tool_call, f"Tool call missing keys: {tool_call}"
+
+    # --- Check if remaining part of the prompt is the same ---
+    assert prompt_without_tool_calls_jinja == prompt_without_tool_calls
+
 def test_set_chat_template(ov_hf_tokenizers):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
 

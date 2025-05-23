@@ -203,7 +203,7 @@ void init_tokenizer(py::module_& m) {
             R"(Embeds input prompts with special tags for a chat scenario.)")
 
         .def("apply_chat_template", [](Tokenizer& tok,
-                                        ChatHistory history,
+                                        ChatHistoryRaw history,
                                         Tools tools,
                                         bool add_generation_prompt,
                                         const std::string& chat_template) {
@@ -213,7 +213,7 @@ void init_tokenizer(py::module_& m) {
             py::arg("tools"),
             py::arg("add_generation_prompt"),
             py::arg("chat_template") = "",
-            R"(Embeds input prompts with special tags for a chat scenario. Includes tools.)")
+            R"(Embeds input prompts with special tags for a chat scenario. Accepts messages and tools in raw json format.)")
 
         .def(
             "set_chat_template", &Tokenizer::set_chat_template,
