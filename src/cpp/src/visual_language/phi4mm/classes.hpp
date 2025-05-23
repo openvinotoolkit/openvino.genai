@@ -6,7 +6,6 @@
 #include <filesystem>
 
 #include "visual_language/vlm_config.hpp"
-
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
