@@ -583,7 +583,7 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
     return chunks;
 }
 
-}  // namespace util
+}  // namespace phi_utils
 
 EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
