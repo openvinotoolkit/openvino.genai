@@ -114,6 +114,7 @@ public:
     /// LLaVA-NeXT: <image>
     /// MiniCPM-V-2_6: (<image>./</image>)\n
     /// Phi-3-vision: <|image_i|>\n - the index starts with one
+    /// Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
     /// Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// If the prompt doesn't contain image tags, but images are
@@ -143,6 +144,7 @@ public:
     /// LLaVA-NeXT: <image>
     /// MiniCPM-V-2_6: (<image>./</image>)\n
     /// Phi-3-vision: <|image_i|>\n - the index starts with one
+    /// Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
     /// Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// If the prompt doesn't contain image tags, but images are
@@ -173,6 +175,7 @@ public:
     /// LLaVA-NeXT: <image>
     /// MiniCPM-V-2_6: (<image>./</image>)\n
     /// Phi-3-vision: <|image_i|>\n - the index starts with one
+    /// Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
     /// Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// If the prompt doesn't contain image tags, but images are

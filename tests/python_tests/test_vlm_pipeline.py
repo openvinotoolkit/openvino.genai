@@ -68,7 +68,7 @@ def get_ov_model(model_id):
             ov_config=get_default_llm_properties(),
         )
     )
-    if tokenizer.chat_template is not None:
+    if tokenizer.chat_template is not None and processor.chat_template != tokenizer.chat_template:
         processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
@@ -95,6 +95,7 @@ image_links_for_testing = [
 model_ids = [
     "katuni4ka/tiny-random-minicpmv-2_6",
     "katuni4ka/tiny-random-phi3-vision",
+    "katuni4ka/tiny-random-phi-4-multimodal",
     "katuni4ka/tiny-random-llava",
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-internvl2",
