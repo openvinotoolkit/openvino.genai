@@ -12,10 +12,10 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     const std::string& device,
     const ov::AnyMap& plugin_config,
     bool is_validation_mode_enabled) {
-    m_tokenizer = tokenizer;
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
     initialize_pipeline(model, scheduler_config, device, plugin_config);
+    set_tokenizer(tokenizer);
 }
 
 void

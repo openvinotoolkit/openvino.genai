@@ -24,6 +24,18 @@ Tokenizer ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_tokenizer
     return m_tokenizer;
 }
 
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::set_tokenizer(const Tokenizer& tokenizer) {
+    m_tokenizer = tokenizer;
+}
+
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::set_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
+    if (inputs_embedder == nullptr) {
+        OPENVINO_THROW("Inputs embedder was not initialized correctly");
+    }
+    m_inputs_embedder = inputs_embedder;
+    m_model_input_type = ModelInputType::EMBEDDINGS;
+}
+
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::start_chat(const std::string& system_message) {
     if (!system_message.empty()) {
         m_history.push_back({{"role", "system"}, {"content", system_message}});

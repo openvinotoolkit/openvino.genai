@@ -12,6 +12,11 @@ namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
+void ContinuousBatchingPipeline::PromptLookupImpl::set_tokenizer(const ov::genai::Tokenizer& tokenizer) {
+    m_tokenizer = tokenizer;
+    m_pipeline->set_tokenizer(tokenizer);
+}
+
 GenerationHandle
 ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           const ov::Tensor& input_ids,
