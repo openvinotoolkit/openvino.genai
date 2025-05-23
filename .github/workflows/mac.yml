@@ -21,6 +21,7 @@ env:
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: ~/.cache/hf
+  SENTENCE_TRANSFORMERS_HOME: ~/.cache/sentence_transformers
   OV_CACHE: ~/.cache/ov_cache
 
 jobs:
