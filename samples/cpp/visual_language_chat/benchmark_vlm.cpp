@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.enable_prefix_caching = false;
-    scheduler_config.max_num_batched_tokens = 2147483647;
+    scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
 
     std::cout << ov::get_openvino_version() << std::endl;
 
