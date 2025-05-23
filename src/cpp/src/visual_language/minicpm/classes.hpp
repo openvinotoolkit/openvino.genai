@@ -38,7 +38,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
-    ResampledImage resample_encoded_image(const EncodedImage& image);
+    ResampledImage resample_encoded_image(const EncodedImage& image, const ov::Tensor slices, const ImageSize& target_sizes);
 };
 
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
