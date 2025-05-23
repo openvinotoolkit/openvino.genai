@@ -43,6 +43,10 @@ int main(int argc, char* argv[]) try {
             prompt = result["prompt"].as<std::string>();
         }
     }
+    if (prompt == "") {
+        std::cout << "Prompt is empty!" << std::endl;
+        return EXIT_FAILURE;
+    }
 
     const std::string models_path = result["model"].as<std::string>();
     std::string device = result["device"].as<std::string>();
@@ -61,10 +65,7 @@ int main(int argc, char* argv[]) try {
     ov::genai::LLMPipeline pipe(models_path, device, ov::genai::scheduler_config(scheduler_config));
 
     auto input_data = pipe.get_tokenizer().encode(prompt);
-    size_t prompt_token_size = 0;
-    if (input_data.input_ids.get_shape().size() > 1) {
-        prompt_token_size = input_data.input_ids.get_shape()[1];
-    }
+    size_t prompt_token_size = input_data.input_ids.get_shape()[1];
     std::cout << "Prompt token size:" << prompt_token_size << std::endl;
 
     for (size_t i = 0; i < num_warmup; i++)
