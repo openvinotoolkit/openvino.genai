@@ -301,17 +301,30 @@ ov::Core singleton_core() {
 
 
 namespace {
-
 bool is_gguf_model(const std::filesystem::path& file_path) {
     return file_path.extension() == ".gguf";
 }
 
 } // namespace
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
+std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
+    bool enable_save_ov_model = false;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find(ov::genai::enable_save_ov_model.name());
+    if (it != properties.end()) {
+        enable_save_ov_model = it->second.as<bool>();
+        properties.erase(it);
+    }
+
+    return {properties, enable_save_ov_model};
+}
+
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
+    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string());
+        return create_from_gguf(model_dir.string(), enable_save_ov_model);
 #else
         OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif
@@ -326,7 +339,7 @@ std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  c
             OPENVINO_THROW("Could not find a model in the directory '", model_dir, "'");
         }
 
-        return singleton_core().read_model(model_path, {}, config);
+        return singleton_core().read_model(model_path, {}, filtered_properties);
     }
 }
 
@@ -465,6 +478,13 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
     for (const auto& device : exeTargets) {
         std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
     }
+}
+
+void print_gguf_debug_info(const std::string &debug_info) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+    std::cout << "[GGUF Reader]: " << debug_info << std::endl;
 }
 
 std::pair<ov::CompiledModel, KVDesc>
