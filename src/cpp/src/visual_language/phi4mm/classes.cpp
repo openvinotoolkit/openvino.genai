@@ -339,22 +339,41 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_patch_p
     t0->output(0).get_tensor().set_names({"input_image_embeds"});
     auto t1 = make_shared<Parameter>(f32, PartialShape{-1, -1, -1, -1});  //  -> f32[?,?,?,?]
     t1->output(0).get_tensor().set_names({"image_attention_mask"});
+    auto t2 = make_shared<Constant>(i64, Shape{1}, -1);         //  -> i32[1]([-1])
+    auto t3 = make_shared<ShapeOf>(t1);                         // f32[?,?,?,?] -> i32[4]
+    auto t4 = make_shared<Constant>(i32, Shape{1}, 2);          //  -> i32[1]([2])
+    auto t5 = make_shared<Constant>(i32, Shape{1}, 2147483647);  //  -> i32[1]([2147483647])
+    auto t6 = make_shared<Constant>(i32, Shape{1}, 1);          //  -> i32[1]([1])
+    auto t7 = make_shared<Constant>(i32, Shape{1}, 0);          //  -> i64[1]([0])
+    auto t8 = make_shared<Slice>(t3, t4, t5, t6, t7);           // i32[4], i32[1], i32[1], i32[1], i64[1] -> i32[2]
+    auto t9 = make_shared<Concat>(NodeVector{t2, t8}, 0);       // i32[1], i32[2] -> i32[3]
+    auto t10 = make_shared<Reshape>(t1, t9, true);              // f32[?,?,?,?], i32[3] -> f32[?,?,?]
+    auto t11 = make_shared<Constant>(i64, Shape{2}, vector<int64_t>{0, -1});  //  -> i64[2]([0, -1])
+    auto t12 = make_shared<Reshape>(t10, t11, true);            // f32[?,?,?], i64[2] -> f32[?,?]
+    auto t13 = make_shared<Constant>(f32, Shape{32}, vector<float>{0.0, 0.03125, 0.0625, 0.09375, 0.125, 0.15625, 0.1875, 0.21875, 0.25, 0.28125, 0.3125, 0.34375, 0.375, 0.40625, 0.4375, 0.46875, 0.5, 0.53125, 0.5625, 0.59375, 0.625, 0.65625, 0.6875, 0.71875, 0.75, 0.78125, 0.8125, 0.84375, 0.875, 0.90625, 0.9375, 0.96875});  //  -> f32[32]
+    auto t14 = make_shared<Constant>(f32, Shape{31}, vector<float>{0.03125, 0.0625, 0.09375, 0.125, 0.15625, 0.1875, 0.21875, 0.25, 0.28125, 0.3125, 0.34375, 0.375, 0.40625, 0.4375, 0.46875, 0.5, 0.53125, 0.5625, 0.59375, 0.625, 0.65625, 0.6875, 0.71875, 0.75, 0.78125, 0.8125, 0.84375, 0.875, 0.90625, 0.9375, 0.96875});  //  -> f32[31]
+    auto t15 = make_shared<Bucketize>(t13, t14, i64, false);    // f32[32], f32[31] -> i64[32]
+    auto t16 = make_shared<Constant>(i64, Shape{}, 1);          //  -> i64[](1)
+    auto t17 = make_shared<Unsqueeze>(t15, t16);                // i64[32], i64[] -> i64[32,1]
+    auto t18 = make_shared<Constant>(i64, Shape{1, 1}, 32);     //  -> i64[1,1]([[32]])
+    auto t19 = make_shared<Multiply>(t17, t18, "numpy");        // i64[32,1], i64[1,1] -> i64[32,1]
+    auto t20 = make_shared<Add>(t19, t15);                      // i64[32,1], i64[32] -> i64[32,32]
+    auto t21 = make_shared<Constant>(i32, Shape{1}, -1);        //  -> i32[1]([-1])
+    auto t22 = make_shared<Reshape>(t20, t21, true);            // i64[32,32], i32[1] -> i64[1024]
+    auto t23 = make_shared<ShapeOf>(t10);                       // f32[?,?,?] -> i64[3]
+    auto t24 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
+    auto t25 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t26 = make_shared<Gather>(t23, t24, t25);              // i64[3], i64[1], i64[] -> i64[1]
+    auto t27 = make_shared<Tile>(t22, t26);                     // i64[1024], i64[1] -> i64[?]
+    auto t28 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
+    auto t29 = make_shared<Concat>(NodeVector{t26, t28}, 0);    // i64[1], i64[1] -> i64[2]
+    auto t30 = make_shared<Reshape>(t27, t29, false);           // i64[?], i64[2] -> i64[?,?]
+    auto t31 = make_shared<Convert>(t30, f32);                  // i64[?,?] -> f32[?,?]
+    auto t32 = make_shared<Multiply>(t12, t31, "numpy");        // f32[?,?], f32[?,?] -> f32[?,?]
+    auto t33 = make_shared<Result>(t32);                        // f32[?,?] -> f32[?,?]
+    t33->output(0).get_tensor().set_names({"patch_position_ids"});
 
-    // Mock data for patch_position_ids (cat.jpg image)
-    Shape output_shape = {7, 1024};
-    std::vector<int64_t> mock_data;
-    for (size_t batch = 0; batch < output_shape[0]; ++batch) {
-        for (size_t pos = 0; pos < output_shape[1]; ++pos) {
-            mock_data.push_back(static_cast<int64_t>(pos));
-        }
-    }
-    
-    auto constant_tensor = make_shared<Constant>(i64, output_shape, mock_data);
-    auto result = make_shared<Result>(constant_tensor);
-
-    result->output(0).get_tensor().set_names({"patch_position_ids"});
-
-    ResultVector results{result};
+    ResultVector results{t33};
     SinkVector sinks{};
     ParameterVector parameters{t0, t1};
     auto model = make_shared<Model>(results, sinks, parameters);
@@ -524,7 +543,7 @@ m_separator_inserters{create_separator_inserters()} {
 
 EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
-    ov::Tensor input_image_embeds{ov::element::f32, {}}, image_attention_mask{ov::element::f32, {}}, patch_position_ids{ov::element::i64, {}};
+    ov::Tensor input_image_embeds{ov::element::f32, {}}, image_attention_mask{ov::element::f32, {}}, patch_position_ids{ov::element::f32, {}};
     int32_t image_height = 0, image_width = 0, num_img_tokens = 0;
     {
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_image_preprocessors.get()};
@@ -533,7 +552,6 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         image_preprocessor.infer();
         image_preprocessor.get_tensor("input_image_embeds").copy_to(input_image_embeds);
         image_preprocessor.get_tensor("image_attention_mask").copy_to(image_attention_mask);
-        // image_preprocessor.get_tensor("patch_position_ids").copy_to(patch_position_ids);
         image_height = image_preprocessor.get_tensor("image_height").data<int64_t>()[0];
         image_width = image_preprocessor.get_tensor("image_width").data<int64_t>()[0];
         num_img_tokens = image_preprocessor.get_tensor("num_img_tokens").data<float>()[0];
@@ -548,9 +566,10 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         image_preprocessor.get_tensor("patch_position_ids").copy_to(patch_position_ids);
     }
 
-    std::cout << "AAAAAAAAAAAAAAAAAAAaa\n";
     ov::Tensor img_features{ov::element::f32, {}};
     {
+        ov::Tensor int64{ov::element::i64, patch_position_ids.get_shape()};
+        std::transform(patch_position_ids.data<float>(), patch_position_ids.data<float>() + patch_position_ids.get_size(), int64.data<int64_t>(), [](float v) {return static_cast<int64_t>(v);});
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_ireq_queue_vision_encoder.get()};
         ov::InferRequest& encoder = lock.get();
         ov::Shape shape = input_image_embeds.get_shape();
@@ -562,7 +581,7 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         ov::Tensor bools{ov::element::boolean, shape};
         std::transform(image_attention_mask.data<float>(), image_attention_mask.data<float>() + image_attention_mask.get_size(), bools.data<bool>(), [](float v) {return v > 0.5f;});
         encoder.set_tensor("patch_attention_mask", bools);
-        encoder.set_tensor("patch_position_ids", patch_position_ids);
+        encoder.set_tensor("patch_position_ids", int64);
         encoder.infer();
         encoder.get_output_tensor().copy_to(img_features);
     }
@@ -571,7 +590,6 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     shape.insert(shape.begin(), 1);
     img_features.set_shape(shape);
 
-    std::cout << "BBBBBBBBBBBBBBBBBBBBBBb\n";
     ov::Tensor _1le{ov::element::f32, {}}; // l - length, e - single embedding size
     {
         ov::Tensor height{ov::element::i32, {}};
@@ -590,7 +608,6 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         encoder.infer();
         encoder.get_output_tensor().copy_to(_1le);
     }
-    std::cout << "CCCCCCCCCCCCCCCCCCCCC\n";
     EncodedImage encoded_image;
     encoded_image.resized_source = _1le;
     encoded_image.images_features_projection = ov::Tensor{ov::element::f32, {}};
@@ -601,72 +618,6 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         projector.infer();
         projector.get_output_tensor().copy_to(encoded_image.images_features_projection);
     }
-    std::cout << "DDDDDDDDDDDDDDDDd\n";
-    // assert projected.back().get_shape().at(1) == tokens_per_images
-    return encoded_image;
-
-    // CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
-    // ov::InferRequest& encoder = infer_request_guard.get();
-
-    // Create attention mask for image patches
-    // int height = image.get_shape()[1];
-    // int width = image.get_shape()[2];
-    // ov::Tensor patch_attention_mask = ov::Tensor{ov::element::boolean, {1, height, width}};
-    // std::fill_n(patch_attention_mask.data<bool>(), patch_attention_mask.get_size(), true);
-
-    // // Get position IDs for the image
-    // ov::Tensor patch_position_ids = get_vision_position_ids(
-    //     image, 
-    //     patch_attention_mask, 
-    //     config.patch_size, 
-    //     config.vision_config_image_size / config.patch_size
-    // );
-    
-    // encoder.set_input_tensor("pixel_values", image);
-    // encoder.set_input_tensor("patch_attention_mask", patch_attention_mask);
-    // encoder.set_input_tensor("patch_position_ids", patch_position_ids);
-    // encoder.infer();
-    // ov::Tensor vision_features = encoder.get_output_tensor();
-
-    // // Create encoded image result
-    // EncodedImage encoded_image;
-    // encoded_image.resized_source = vision_features;
-    // encoded_image.resized_source_size = {
-    //     static_cast<size_t>(height / config.patch_size),
-    //     static_cast<size_t>(width / config.patch_size)
-    // };
-    
-    // CircularBufferQueueElementGuard<ov::InferRequest> vision_projection_ireq_guard(this->m_ireq_queue_vision_projection.get());
-    // ov::InferRequest& vision_projection = vision_projection_ireq_guard.get();
-    // vision_projection.set_input_tensor(vision_features);
-    // vision_projection.infer();
-    // encoded_image.images_features_projection = vision_projection.get_output_tensor();
-    
-    // return encoded_image;
-
-
-    // Using mocked tensors
-    // EncodedImage encoded_image;
-
-    // ov::Tensor img_features = read_tensor_from_file("./temp/tensors/phi4mm/img_features.bin");
-
-    // encoded_image.resized_source = img_features;
-    
-    // ov::Shape shape = img_features.get_shape();
-    // encoded_image.resized_source_size = {
-    //     static_cast<size_t>(shape[1] / m_processor_config.patch_size),
-    //     static_cast<size_t>(shape[2] / m_processor_config.patch_size)
-    // };
-    
-    // encoded_image.original_image_size = {
-    //     static_cast<size_t>(image.get_shape()[2]),
-    //     static_cast<size_t>(image.get_shape()[1])
-    // };
-
-    // ov::Tensor img_feature_proj = read_tensor_from_file("./temp/tensors/phi4mm/img_feature_proj.bin");
-    
-    // encoded_image.images_features_projection = img_feature_proj;
-    
     return encoded_image;
 }
 
