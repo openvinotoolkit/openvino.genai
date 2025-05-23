@@ -63,11 +63,16 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
 SD3Transformer2DModel::SD3Transformer2DModel(const SD3Transformer2DModel&) = default;
 
 SD3Transformer2DModel SD3Transformer2DModel::clone() {
-    // Support for cloning before compilation implemented below. TODO: Remove assertion when approved
-    //OPENVINO_ASSERT(!m_model, "Model has not been compiled yet. Cannot clone non-compiled model");
     SD3Transformer2DModel cloned = *this;
-    if (m_impl)
-        cloned.m_impl = m_impl->clone();
+    
+    if (m_model) {
+        cloned.m_model = m_model->clone();
+    } else {
+        if (m_impl) {
+            cloned.m_impl = m_impl->clone();
+        }
+    }
+
     return cloned;
 }
 

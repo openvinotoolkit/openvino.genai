@@ -222,11 +222,18 @@ Here in this example we load and compile the entire pipeline once, and then use 
 
 
 ```cpp
-ov::genai::Text2ImagePipeline pipe(models_path, device);
+std::vector<ov::genai::Text2ImagePipeline> pipelines;
+
+// Prepare initial pipeline and compiled models into device
+pipelines.emplace_back(models_path, device);
+// Clone pipeline for concurrent usage
+for (int i = 1; i < 4; i++)
+   pipelines.emplace_back(pipelines.begin()->clone());
 
 std::vector<std::thread> threads;
 
 for (int i = 0; i < 4; i++) {
+  auto& pipe = pipelines.at(i);
   threads.emplace_back([&pipe, i] {
     auto request = pipe.clone();
     std::string prompt = "A card with number " + std::to_string(i);

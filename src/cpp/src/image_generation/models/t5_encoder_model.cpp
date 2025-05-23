@@ -45,11 +45,14 @@ T5EncoderModel::T5EncoderModel(const std::string& model,
 T5EncoderModel::T5EncoderModel(const T5EncoderModel&) = default;
 
 std::shared_ptr<T5EncoderModel> T5EncoderModel::clone() {
-    // Support for cloning before compilation implemented below. TODO: Remove assertion when approved
-    //OPENVINO_ASSERT(!m_model, "T5Encoder model must be compiled first. Cannot clone non-compiled model");
     std::shared_ptr<T5EncoderModel> cloned = std::make_shared<T5EncoderModel>(*this);
-    if (m_request)
+
+    if (m_model) {
+        cloned->m_model = m_model->clone();
+    } else {
         cloned->m_request = m_request.get_compiled_model().create_infer_request();
+    }
+
     return cloned;
 }
 

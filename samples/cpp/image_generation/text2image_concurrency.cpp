@@ -14,26 +14,33 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string models_path = argv[1];
     const std::string device = "CPU";  // GPU can be used as well
 
-    std::vector<std::string> prompts;
-    for (int i = 2; i < argc; ++i) {
-        prompts.push_back(argv[i]);
-    }
-
-    ov::genai::Text2ImagePipeline pipe(models_path, device);
-
     std::vector<std::thread> threads;
+    std::vector<std::string> prompts;
+    std::vector<ov::genai::Text2ImagePipeline> pipelines;
+
+    for (int i = 2; i < argc; ++i)
+        prompts.push_back(argv[i]);
+
+    // Prepare initial pipeline and compiled models into device
+    pipelines.emplace_back(models_path, device);
+
+    // Clone pipeline for concurrent usage
+    for (size_t i = 1; i < prompts.size(); ++i)
+        pipelines.emplace_back(pipelines.begin()->clone());
 
     for (size_t i = 0; i < prompts.size(); ++i) {
-        std::cout << "Starting to generate with prompt: '" << prompts[i] << "'..." << std::endl;
-        threads.emplace_back([i, &pipe, models_path, prompts] () {
+        std::string prompt = prompts[i];
+        auto& pipe = pipelines.at(i);
 
-            ov::genai::Text2ImagePipeline request = pipe.clone();
+        std::cout << "Starting to generate with prompt: '" << prompt << "'..." << std::endl;
 
-            ov::Tensor image = request.generate(prompts[i],
+        threads.emplace_back([i, &pipe, prompt] () {
+
+            ov::Tensor image = pipe.generate(prompt,
                 ov::AnyMap{
                     ov::genai::width(512),
                     ov::genai::height(512),
-                    ov::genai::num_inference_steps(10),
+                    ov::genai::num_inference_steps(2),
                     ov::genai::num_images_per_prompt(1)});
 
             imwrite("image_" + std::to_string(i) + "_%d.bmp", image, true);

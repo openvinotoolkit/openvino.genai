@@ -59,11 +59,14 @@ FluxTransformer2DModel::FluxTransformer2DModel(const std::string& model,
 FluxTransformer2DModel::FluxTransformer2DModel(const FluxTransformer2DModel&) = default;
 
 FluxTransformer2DModel FluxTransformer2DModel::clone() {
-    // Support for cloning before compilation implemented below. TODO: Remove assertion when approved
-    //OPENVINO_ASSERT(!m_model, "Model has not been compiled yet. Cannot clone non-compiled model");
     FluxTransformer2DModel cloned = *this;
-    if (m_request)
+
+    if (m_model) {
+        cloned.m_model = m_model->clone();
+    } else {
         cloned.m_request = m_request.get_compiled_model().create_infer_request();
+    }
+
     return cloned;
 }
 

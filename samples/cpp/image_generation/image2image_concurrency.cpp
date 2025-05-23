@@ -14,29 +14,33 @@ int32_t main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc >= 4, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' '<PROMPT>' ... <IMAGE>");
 
     const std::string models_path = argv[1];
-
-    std::vector<std::string> prompts;
-    for (int32_t i = 2; i < argc - 1; ++i) {
-        prompts.push_back(argv[i]);
-    }
-
-    const std::string image_path = argv[argc - 1];
-
     const std::string device = "CPU";  // GPU can be used as well
-
+    const std::string image_path = argv[argc - 1];
     ov::Tensor image = utils::load_image(image_path);
 
-    ov::genai::Image2ImagePipeline pipe(models_path, device);
-
     std::vector<std::thread> threads;
+    std::vector<std::string> prompts;
+    std::vector<ov::genai::Image2ImagePipeline> pipelines;
+
+    for (int32_t i = 2; i < argc - 1; ++i)
+        prompts.push_back(argv[i]);
+
+    // Prepare initial pipeline and compiled models into device
+    pipelines.emplace_back(models_path, device);
+
+    // Clone pipeline for concurrent usage
+    for (size_t i = 1; i < prompts.size(); ++i)
+        pipelines.emplace_back(pipelines.begin()->clone());
 
     for (size_t i = 0; i < prompts.size(); ++i) {
-        std::cout << "Starting to generate with prompt: '" << prompts[i] << "'..." << std::endl;
-        threads.emplace_back([i, &pipe, models_path, prompts, image] () {
+        std::string prompt = prompts[i];
+        auto& pipe = pipelines.at(i);
 
-            ov::genai::Image2ImagePipeline request = pipe.clone();
-            
-            ov::Tensor generated_image = request.generate(prompts[i], image,
+        std::cout << "Starting to generate with prompt: '" << prompt << "'..." << std::endl;
+
+        threads.emplace_back([i, &pipe, prompt, image] () {
+
+            ov::Tensor generated_image = pipe.generate(prompt, image,
                 // controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
                 ov::genai::strength(0.8f),
                 ov::genai::num_inference_steps(4));
