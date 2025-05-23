@@ -9,7 +9,7 @@ bool print_subword(std::string&& subword) {
     return !(std::cout << subword << std::flush);
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) try {
     if (argc < 3 || argc > 4) {
         throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE>");
     }
@@ -50,4 +50,14 @@ int main(int argc, char* argv[]) {
             "question:\n";
     }
     pipe.finish_chat();
+} catch (const std::exception& error) {
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (const std::ios_base::failure&) {}
+    return EXIT_FAILURE;
+} catch (...) {
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (const std::ios_base::failure&) {}
+    return EXIT_FAILURE;
 }
