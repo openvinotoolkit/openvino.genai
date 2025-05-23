@@ -116,6 +116,8 @@ public:
 
     AutoencoderKL(const AutoencoderKL&);
 
+    AutoencoderKL clone();
+
     AutoencoderKL& reshape(int batch_size, int height, int width);
 
     AutoencoderKL& compile(const std::string& device, const ov::AnyMap& properties = {});

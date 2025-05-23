@@ -62,6 +62,20 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
 
 SD3Transformer2DModel::SD3Transformer2DModel(const SD3Transformer2DModel&) = default;
 
+SD3Transformer2DModel SD3Transformer2DModel::clone() {
+    SD3Transformer2DModel cloned = *this;
+    
+    if (m_model) {
+        cloned.m_model = m_model->clone();
+    } else {
+        if (m_impl) {
+            cloned.m_impl = m_impl->clone();
+        }
+    }
+
+    return cloned;
+}
+
 const SD3Transformer2DModel::Config& SD3Transformer2DModel::get_config() const {
     return m_config;
 }

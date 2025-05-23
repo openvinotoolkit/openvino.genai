@@ -63,6 +63,8 @@ public:
 
     SD3Transformer2DModel(const SD3Transformer2DModel&);
 
+    SD3Transformer2DModel clone();
+
     const Config& get_config() const;
 
     SD3Transformer2DModel& reshape(int batch_size, int height, int width, int tokenizer_model_max_length);

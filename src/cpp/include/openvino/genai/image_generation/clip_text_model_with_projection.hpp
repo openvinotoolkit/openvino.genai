@@ -11,6 +11,19 @@ namespace genai {
 class CLIPTextModelWithProjection : public CLIPTextModel {
 public:
     using CLIPTextModel::CLIPTextModel;
+
+    std::shared_ptr<CLIPTextModel> clone() {
+        std::shared_ptr<CLIPTextModelWithProjection> cloned = std::make_shared<CLIPTextModelWithProjection>(*this);
+
+        if (m_model) {
+            cloned->m_model = m_model->clone();
+        } else {
+            cloned->m_request = m_request.get_compiled_model().create_infer_request();
+        }
+
+        return cloned;
+    }
+
 };
 
 } // namespace genai
