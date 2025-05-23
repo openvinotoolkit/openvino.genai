@@ -14,6 +14,15 @@ namespace {
 
 std::string NATIVE_TAG = "<image>./</image>";
 
+/**
+ * @brief Represents the result of slicing an image into smaller patches.
+ *
+ * This struct is used in miniCPM inputs embedder to store the sliced image patches
+ * and the target size of the processed image.
+ *
+ * @param slices A tensor containing the sliced image patches.
+ * @param target_size The desired size of the image after processing.
+ */
 struct ImageSliceResult {
     ov::Tensor slices;
     ImageSize target_size;
