@@ -413,6 +413,14 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
             consts[format("model.layers[%d].self_attn.o_proj.bias", i)] = weights.at(format("blk.%d.attn_output.bias", i));
         }
 
+        //Qwen3
+        if (weights.count(format("blk.%d.attn_k_norm.weight", i))) {
+            consts[format("model.layers[%d].self_attn.k_norm.weight", i)] = weights.at(format("blk.%d.attn_k_norm.weight", i));
+        }
+        if (weights.count(format("blk.%d.attn_q_norm.weight", i))) {
+            consts[format("model.layers[%d].self_attn.q_norm.weight", i)] = weights.at(format("blk.%d.attn_q_norm.weight", i));
+        }
+
         // MLP weights
         consts[format("model.layers[%d].mlp.gate_proj.weight", i)] = weights.at(format("blk.%d.ffn_gate.weight", i));
         if (weights.count(format("blk.%d.ffn_gate.bias", i))) {
