@@ -81,6 +81,7 @@ jobs:
         platform: macos_12_6
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
         revision: b32ce8e50796811789f2f8f94d6d7e1fe6935175
+        event_name: pull_request
 
   genai_build_cmake:
     name: Build cpack - ${{ matrix.build-type }}
