@@ -329,6 +329,45 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_image_p
     );
 }
 
+std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_patch_position_ids_model() {
+    using namespace ov;
+    using namespace element;
+    using namespace opset13;
+    using namespace std;
+
+    auto t0 = make_shared<Parameter>(f32, PartialShape{-1, -1, -1, -1, -1});  //  -> f32[?,?,?,?,?]
+    t0->output(0).get_tensor().set_names({"input_image_embeds"});
+    auto t1 = make_shared<Parameter>(f32, PartialShape{-1, -1, -1, -1});  //  -> f32[?,?,?,?]
+    t1->output(0).get_tensor().set_names({"image_attention_mask"});
+
+    // Mock data for patch_position_ids (cat.jpg image)
+    Shape output_shape = {7, 1024};
+    std::vector<int64_t> mock_data;
+    for (size_t batch = 0; batch < output_shape[0]; ++batch) {
+        for (size_t pos = 0; pos < output_shape[1]; ++pos) {
+            mock_data.push_back(static_cast<int64_t>(pos));
+        }
+    }
+    
+    auto constant_tensor = make_shared<Constant>(i64, output_shape, mock_data);
+    auto result = make_shared<Result>(constant_tensor);
+
+    result->output(0).get_tensor().set_names({"patch_position_ids"});
+
+    ResultVector results{result};
+    SinkVector sinks{};
+    ParameterVector parameters{t0, t1};
+    auto model = make_shared<Model>(results, sinks, parameters);
+    using namespace ov::genai;
+    CompiledModel compiled = utils::singleton_core().compile_model(model, "CPU");
+    return make_unique<CircularBufferQueue<InferRequest>>(
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled]() -> ov::InferRequest {
+            return compiled.create_infer_request();
+        }
+    );
+}
+
 std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_separator_inserters() {
     using namespace ov;
     using namespace element;
@@ -451,6 +490,7 @@ VisionEncoderPhi4MM::VisionEncoderPhi4MM(
 ) :
 VisionEncoder(model_dir, device, properties),
 m_image_preprocessors{create_image_preprocessors()},
+m_patch_position_ids_model{create_patch_position_ids_model()},
 m_separator_inserters{create_separator_inserters()} {
     auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -466,7 +506,11 @@ VisionEncoderPhi4MM::VisionEncoderPhi4MM(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap properties
-) : VisionEncoder(models_map, config_dir_path, device, properties), m_image_preprocessors{create_image_preprocessors()}, m_separator_inserters{create_separator_inserters()} {
+) : 
+VisionEncoder(models_map, config_dir_path, device, properties),
+m_image_preprocessors{create_image_preprocessors()},
+m_patch_position_ids_model{create_patch_position_ids_model()},
+m_separator_inserters{create_separator_inserters()} {
     const auto& vision_projection_model = utils::get_model_weights_pair(models_map, "vision_projection").first;
     const auto& vision_projection_weights = utils::get_model_weights_pair(models_map, "vision_projection").second;
     auto compiled_model = utils::singleton_core().compile_model(vision_projection_model, vision_projection_weights, device, properties);
@@ -494,8 +538,18 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         image_width = image_preprocessor.get_tensor("image_width").data<int64_t>()[0];
         num_img_tokens = image_preprocessor.get_tensor("num_img_tokens").data<float>()[0];
     }
+
+    {
+        CircularBufferQueueElementGuard<ov::InferRequest> lock{m_patch_position_ids_model.get()};
+        ov::InferRequest& image_preprocessor = lock.get();
+        image_preprocessor.set_tensor("input_image_embeds", input_image_embeds);
+        image_preprocessor.set_tensor("image_attention_mask", image_attention_mask);
+        image_preprocessor.infer();
+        image_preprocessor.get_tensor("patch_position_ids").copy_to(patch_position_ids);
+    }
+
     std::cout << "AAAAAAAAAAAAAAAAAAAaa\n";
-    ov::Tensor img_features;
+    ov::Tensor img_features{ov::element::f32, {}};
     {
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_ireq_queue_vision_encoder.get()};
         ov::InferRequest& encoder = lock.get();
@@ -512,11 +566,16 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         encoder.infer();
         encoder.get_output_tensor().copy_to(img_features);
     }
+    // Reshape img_features to add batch dimension: [?, ?, ?] -> [1, ?, ?, ?]
+    ov::Shape shape = img_features.get_shape();
+    shape.insert(shape.begin(), 1);
+    img_features.set_shape(shape);
+
     std::cout << "BBBBBBBBBBBBBBBBBBBBBBb\n";
-    ov::Tensor _1le; // l - length, e - single embedding size
+    ov::Tensor _1le{ov::element::f32, {}}; // l - length, e - single embedding size
     {
-        ov::Tensor height{ov::element::i32, {0}};
-        ov::Tensor width{ov::element::i32, {0}};
+        ov::Tensor height{ov::element::i32, {}};
+        ov::Tensor width{ov::element::i32, {}};
         ov::Tensor sub_GN{ov::element::f32, {1, 1, 1, m_vlm_config.sub_GN.size()}, m_vlm_config.sub_GN.data()};
         ov::Tensor glb_GN{ov::element::f32, {1, 1, m_vlm_config.glb_GN.size()}, m_vlm_config.glb_GN.data()};
         height.data<int32_t>()[0] = image_height;
@@ -533,12 +592,14 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     }
     std::cout << "CCCCCCCCCCCCCCCCCCCCC\n";
     EncodedImage encoded_image;
+    encoded_image.resized_source = _1le;
+    encoded_image.images_features_projection = ov::Tensor{ov::element::f32, {}};
     {
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_ireq_queue_vision_projection.get()};
         ov::InferRequest& projector = lock.get();
         projector.set_input_tensor(_1le);
         projector.infer();
-        projector.get_output_tensor().copy_to(encoded_image.resized_source);
+        projector.get_output_tensor().copy_to(encoded_image.images_features_projection);
     }
     std::cout << "DDDDDDDDDDDDDDDDd\n";
     // assert projected.back().get_shape().at(1) == tokens_per_images
