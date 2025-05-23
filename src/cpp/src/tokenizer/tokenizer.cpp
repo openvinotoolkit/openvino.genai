@@ -201,7 +201,7 @@ public:
         std::optional<bool> skip_special_tokens_flag = true;
         std::optional<int32_t> max_length_val;
         std::optional<bool> pad_to_max_length_val = false;
-        
+
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
@@ -469,13 +469,13 @@ public:
         // If the model has two inputs, explicitly set the first input while leaving the second input tensor empty.
         // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
         infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(&prompt)});
-        
+
         if (infer_request_guard.get().get_compiled_model().inputs().size() > 1) {
             // Set the second input tensor to an empty tensor to avoid errors.
             // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
             infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {0}});
         }
-        
+
         infer_request_guard.get().infer();
 
         return get_copied_results(
@@ -502,7 +502,7 @@ public:
         OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                                 "Tokenizer::encode is not available");
         size_t batch_size = prompts_1.size();
-        OPENVINO_ASSERT(prompts_1.size() == prompts_2.size() || prompts_1.size() == 1 || prompts_2.size() == 1, 
+        OPENVINO_ASSERT(prompts_1.size() == prompts_2.size() || prompts_1.size() == 1 || prompts_2.size() == 1,
                         "prompts_1 and prompts_2 should be of the same size or one of them should be of size 1");
 
         TokenizedInputs result;
@@ -511,7 +511,7 @@ public:
             set_state_if_necessary(infer_request_guard, tokenization_params);
             infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(prompts_1.data())});
             infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(prompts_2.data())});
-    
+
             infer_request_guard.get().infer();
 
             result = get_copied_results(
@@ -734,7 +734,7 @@ TokenizedInputs Tokenizer::encode(const std::vector<std::pair<std::string, std::
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params) {
     check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
-    return m_pimpl->encode(prompts_1, prompts_2, tokenization_params);    
+    return m_pimpl->encode(prompts_1, prompts_2, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
@@ -810,6 +810,11 @@ Vocab Tokenizer::get_vocab() const {
         vocab[m_pimpl->m_vocab[i]] = i;
     }
     return vocab;
+}
+
+const std::vector<std::string>& Tokenizer::get_vocab_vector() const {
+    OPENVINO_ASSERT(!m_pimpl->m_vocab.empty(), "Tokenizer vocab is empty. Please check if the detokenizer model was provided and loaded correctly.");
+    return m_pimpl->m_vocab;
 }
 
 Tokenizer::~Tokenizer() {
