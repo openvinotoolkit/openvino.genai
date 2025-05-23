@@ -205,10 +205,11 @@ def load_prompts(args):
         questions = data[args.dataset_field][:args.num_samples]
         choices = data["choices"][:args.num_samples]
         dataset_answers = data["answer"][:args.num_samples]
+        contexts = [f"The following are multiple choice questions (with answers) about {subject}." for subject in data["subject"][:args.num_samples]]
         questions_with_choices = []
-        for question, choice_set in zip(questions, choices):
+        for context, question, choice_set in zip(contexts, questions, choices):
             # use the same prompt like in lm-evaluation-harness for mmlu
-            full_prompt = f"{question.strip()}\nA. {choice_set[0]}\nB. {choice_set[1]}\nC. {choice_set[2]}\nD. {choice_set[3]}\nAnswer:"
+            full_prompt = f"{context}\n\n{question.strip()}\nA. {choice_set[0]}\nB. {choice_set[1]}\nC. {choice_set[2]}\nD. {choice_set[3]}\nAnswer:"
             questions_with_choices.append(full_prompt)
         res = {"prompts": questions_with_choices, "answers": dataset_answers}
     else:
