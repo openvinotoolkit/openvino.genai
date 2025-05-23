@@ -14,6 +14,21 @@ namespace {
 
 std::string NATIVE_TAG = "<image>./</image>";
 
+/**
+ * @brief Represents the result of slicing an image into smaller patches.
+ *
+ * This struct is used in miniCPM inputs embedder to store the sliced image patches
+ * and the target size of the processed image.
+ *
+ * @param slices A tensor containing the sliced image patches.
+ * @param target_size The desired size of the image after processing.
+ */
+struct ImageSliceResult {
+    ov::Tensor slices;
+    ImageSize target_size;
+};
+
+
 int ensure_divide(int length, int patch_size) {
     return std::max(static_cast<int>(std::round(static_cast<float>(length) / patch_size) * patch_size), patch_size);
 }
@@ -279,7 +294,7 @@ ov::Tensor prepare_vis_position_ids(
     return position_ids;
 }
 
-EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, ov::InferRequest& encoder, int max_slice_nums, int scale_resolution, size_t patch_size, bool never_split) {
+std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, ov::InferRequest& encoder, int max_slice_nums, int scale_resolution, size_t patch_size, bool never_split) {
     clip_image_u8 source = tensor_to_clip_image_u8(img);
     std::vector<std::vector<clip_image_u8>> imgs = slice_image(source, max_slice_nums, scale_resolution, patch_size, never_split);
     std::vector<std::vector<ov::Tensor>> results;
@@ -379,6 +394,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
             }
         }
     }
+    ImageSliceResult image_slice_result;
     ov::Tensor position_ids = prepare_vis_position_ids(pixel_values, patch_attention_mask, tgt_sizes, patch_size, ctx_clip.image_size / patch_size);
     encoder.set_tensor("position_ids", position_ids);
     encoder.infer();
@@ -387,7 +403,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     if (1 == preprocessed.size()) {
         ov::Tensor resized_source{ov::element::f32, output_tensor.get_shape()};
         output_tensor.copy_to(resized_source);
-        return {std::move(resized_source), resized_source_size};
+        return {{std::move(resized_source), resized_source_size}, std::move(image_slice_result)};
     }
 
     size_t old_hidden_size = output_tensor.get_shape().at(2);
@@ -396,13 +412,14 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     std::copy_n(out, resized_source.get_size(), resized_source.data<float>());
 
     size_t n_patches = tgt_sizes.at(1).height * tgt_sizes.at(1).width;
-    ov::Tensor encoded_slices{ov::element::f32, {preprocessed.size() - 1, preprocessed.at(1).size(), n_patches, old_hidden_size}};
+    image_slice_result.slices = ov::Tensor{ov::element::f32, {preprocessed.size() - 1, preprocessed.at(1).size(), n_patches, old_hidden_size}};
     for (size_t col = 0; col < preprocessed.size() - 1; ++col) {
         for (size_t row = 0; row < preprocessed.at(1).size(); ++row) {
-            std::copy_n(out + (col * preprocessed.at(1).size() + row + 1) * n_patches * old_hidden_size, n_patches * old_hidden_size, encoded_slices.data<float>() + (col * preprocessed.at(1).size() + row) * n_patches * old_hidden_size);
+            std::copy_n(out + (col * preprocessed.at(1).size() + row + 1) * n_patches * old_hidden_size, n_patches * old_hidden_size, image_slice_result.slices.data<float>() + (col * preprocessed.at(1).size() + row) * n_patches * old_hidden_size);
         }
     }
-    return {resized_source, resized_source_size, encoded_slices, tgt_sizes.at(1)};
+    image_slice_result.target_size = tgt_sizes.at(1);
+    return {{std::move(resized_source), resized_source_size}, std::move(image_slice_result)};
 }
 
 } // namespace
@@ -416,17 +433,21 @@ EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::Any
     ctx_clip.image_size = config.image_size;
     std::copy(config.norm_mean.begin(), config.norm_mean.end(), ctx_clip.image_mean);
     std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
-    EncodedImage encoded_image = llava_image_embed_make_with_bytes_slice(ctx_clip, image, encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
-    encoded_image.resampled_image = resample_encoded_image(encoded_image);
+
+    auto [encoded_image, image_slice_result] = llava_image_embed_make_with_bytes_slice(ctx_clip, image, encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
+    encoded_image.resampled_image = resample_encoded_image(encoded_image, image_slice_result.slices, image_slice_result.target_size);
+    if (image_slice_result.slices) {
+        encoded_image.slices_shape = image_slice_result.slices.get_shape();
+    }
     return encoded_image;
 }
 
-ResampledImage VisionEncoderMiniCPM::resample_encoded_image(const EncodedImage& encoded_image) {
+ResampledImage VisionEncoderMiniCPM::resample_encoded_image(const EncodedImage& encoded_image, const ov::Tensor& slices, const ImageSize& target_size) {
     const ov::Tensor& resampled_source = resample(encoded_image.resized_source, {encoded_image.resized_source_size});
     std::vector<std::vector<ov::Tensor>> vision_embed_tensors;
-    if (encoded_image.slices) {
+    if (slices) {
         size_t token_idx = 0;
-        const ov::Shape& slices_shape = encoded_image.slices.get_shape();
+        const ov::Shape& slices_shape = slices.get_shape();
         vision_embed_tensors.resize(slices_shape.at(0));
         for (size_t i = 0; i < slices_shape.at(0); ++i) {
             std::vector<ov::Tensor> vision_embeds;
@@ -434,8 +455,8 @@ ResampledImage VisionEncoderMiniCPM::resample_encoded_image(const EncodedImage& 
             for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
                 size_t d2 = slices_shape.at(2);
                 size_t d3 = slices_shape.at(3);
-                ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, encoded_image.slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
-                vision_embeds[ja] = resample(encoded_view, {encoded_image.slices_size});
+                ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
+                vision_embeds[ja] = resample(encoded_view, {target_size});
             }
             vision_embed_tensors[i] = vision_embeds;
         }
@@ -591,8 +612,8 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_pro
             expanded_tag += m_vlm_config.im_id_start + std::to_string(new_image_id) + m_vlm_config.im_id_end;
         }
         expanded_tag += m_vlm_config.im_start + unk64 + m_vlm_config.im_end;
-        if (encoded_image.slices) {
-            ov::Shape slices_shape = encoded_image.slices.get_shape();
+        ov::Shape slices_shape = encoded_image.slices_shape;
+        if (slices_shape.size()) {
             for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
                 for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
                     expanded_tag += m_vlm_config.slice_start + unk64 + m_vlm_config.slice_end;
@@ -652,9 +673,9 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_p
         ++ids;
         std::copy_n(emb, resampled_source.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
         ids += m_vlm_config.query_num;
-        if (encoded_image.slices) {
+        ov::Shape slices_shape = encoded_image.slices_shape;
+        if (slices_shape.size()) {
             size_t token_idx = 0;
-            const ov::Shape& slices_shape = encoded_image.slices.get_shape();
             for (size_t i = 0; i < slices_shape.at(0); ++i) {
                 for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
                     const ov::Tensor& vision_embed_tensor_i_j = encoded_image.resampled_image.vision_embed_tensors[i][ja];
