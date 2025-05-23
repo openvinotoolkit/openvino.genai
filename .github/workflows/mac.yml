@@ -80,6 +80,7 @@ jobs:
       with:
         platform: macos_12_6
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
+        branch_name: master
         revision: 9ef617a28f0f3a39fa55a1b1e0490cc859a0ac2c
         event_name: pull_request
 

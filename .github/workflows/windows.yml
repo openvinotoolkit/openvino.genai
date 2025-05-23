@@ -83,6 +83,7 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
+        branch_name: master
         revision: 9ef617a28f0f3a39fa55a1b1e0490cc859a0ac2c
         event_name: pull_request
 
