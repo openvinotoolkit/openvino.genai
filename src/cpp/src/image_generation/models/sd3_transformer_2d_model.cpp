@@ -63,14 +63,14 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
 SD3Transformer2DModel::SD3Transformer2DModel(const SD3Transformer2DModel&) = default;
 
 SD3Transformer2DModel SD3Transformer2DModel::clone() {
+    OPENVINO_ASSERT((m_model != nullptr) ^ (m_impl != nullptr), "SD3Transformer2DModel must have exactly one of m_model or m_impl initialized");
+
     SD3Transformer2DModel cloned = *this;
     
     if (m_model) {
         cloned.m_model = m_model->clone();
     } else {
-        if (m_impl) {
-            cloned.m_impl = m_impl->clone();
-        }
+        cloned.m_impl = m_impl->clone();
     }
 
     return cloned;
