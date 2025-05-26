@@ -293,8 +293,7 @@ public:
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
     }
 
-    void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,
-                         const ov::AnyMap& properties) {
+    void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
 
         // temporary allow absense both tokenizer and detokenizer for GGUF support
@@ -543,7 +542,6 @@ public:
             set_state_if_necessary(infer_request_guard, tokenization_params);
             infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(prompts_1.data())});
             infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(prompts_2.data())});
-
 
             infer_request_guard.get().infer();
 
