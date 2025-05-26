@@ -191,8 +191,7 @@ public:
         }
     }
 
-    void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard,
-                                const ov::AnyMap& params) {
+    void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
         if (m_older_than_24_5) {
             // Changing add_special_tokens at runtime was introduced in
             // 24.5. Older tokenizers still allow manipulating their
