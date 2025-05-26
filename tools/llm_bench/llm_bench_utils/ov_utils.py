@@ -618,6 +618,86 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
 
     return llm_pipe, processor_config, end - start, None, True
 
+def create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs):
+    import openvino_genai
+
+    pooling_type = kwargs.get("pooling_type")
+    max_length = kwargs.get("max_length")
+
+    config = openvino_genai.TextEmbeddingPipeline.Config()
+    if pooling_type is not None:
+        config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN if pooling_type == "mean" else openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
+    if max_length is not None:
+        config.max_length = max_length
+    ov_config = kwargs['config']
+
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
+    start = time.perf_counter()
+    
+    pipe = openvino_genai.TextEmbeddingPipeline(model_path, device.upper(), config, **ov_config)
+    
+    end = time.perf_counter()
+
+    log.info("Selected OpenVINO GenAI for benchmarking")
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for copmpilation phase')
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+    except Exception:
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    return pipe, tokenizer, end - start, None, True
+
+
+def create_text_embeddings_model(model_path, device, memory_monitor, **kwargs):
+    model_path = Path(model_path)
+    if model_path.name.endswith('xml'):
+        model_path = model_path.parents[2]
+
+    ov_config = kwargs['config']
+
+    model_path_existed = Path(model_path).exists()
+    # load model
+    if not model_path_existed:
+        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+
+    trust_remote_code = False
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+    except Exception:
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        trust_remote_code = True
+    if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+        try:
+            return create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs)
+        except Exception as exp:
+            log.warning(
+                f"Model is not supported by OpenVINO GenAI. "
+                f"GenAI pipeline loading failed with following error: {exp}"
+                "Benchmark will be switched to Optimum Intel pipeline realization"
+            )
+
+        log.info("Selected Optimum Intel for benchmarking")
+    model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
+    start = time.perf_counter()
+    ov_model = model_class.from_pretrained(
+        model_path,
+        device=device,
+        ov_config=ov_config,
+        trust_remote_code=trust_remote_code
+    )
+    end = time.perf_counter()
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for copmpilation phase')
+    bench_hook = get_bench_hook(1, ov_model, embeds=True)
+    from_pretrained_time = end - start
+    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    return ov_model, tokenizer, from_pretrained_time, bench_hook, False
 
 def create_image_text_gen_model(model_path, device, memory_monitor, **kwargs):
     model_path = Path(model_path)

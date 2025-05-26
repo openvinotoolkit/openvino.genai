@@ -17,6 +17,7 @@ import task.text_generation as bench_text
 import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
+import task.text_embeddings as bench_text_embed
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 memory_monitor = MemMonitorWrapper()
@@ -193,7 +194,8 @@ CASE_TO_BENCH = {
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
     'speech2text': bench_speech.run_speech_2_txt_benchmark,
-    "vlm": bench_vlm.run_visual_language_generation_benchmark
+    "vlm": bench_vlm.run_visual_language_generation_benchmark,
+    "text_embed": bench_text_embed.run_text_embddings_benchmark
 }
 
 

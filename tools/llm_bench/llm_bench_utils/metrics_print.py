@@ -5,19 +5,19 @@ import logging as log
 
 
 def print_metrics(
-        iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None
+        iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None, latency_unit=None
 ):
     iter_str = str(iter_num)
     if warm_up:
         iter_str = 'warm-up'
     output_str = ''
-    latency_unit = 'token'
+    latency_unit = 'token' if latency_unit is None else latency_unit
     prefix = f'[{iter_str}][P{prompt_idx}]'
     if batch_size > 1:
-        latency_unit = '{}tokens'.format(batch_size)
+        latency_unit = '{}{}s'.format(batch_size, latency_unit)
     if iter_data['input_size'] != '':
         output_str += 'Input token size: {}, '.format(iter_data['input_size'])
-    if iter_data['output_size'] != '':
+    if iter_data.get('output_size', '') != '':
         output_str += 'Output size: {}, '.format(iter_data['output_size'])
     if iter_data['infer_count'] != '':
         output_str += 'Infer count: {}, '.format(iter_data['infer_count'])
@@ -25,10 +25,12 @@ def print_metrics(
         output_str += 'Tokenization Time: {:.2f}ms, '.format(tokenization_time[0])
         if len(tokenization_time) > 1:
             output_str += 'Detokenization Time: {:.2f}ms, '.format(tokenization_time[1])
-    if iter_data['mm_embeddings_preparation_time'] != '':
+    if iter_data.get('mm_embeddings_preparation_time', '') != '':
         output_str += ' Multimodal Embeddings Preparation Time: {:.2f}ms, '.format(iter_data['mm_embeddings_preparation_time'])
-    if iter_data['generation_time'] != '':
+    if iter_data.get('generation_time', '') != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
+    if iter_data.get('total_time', '') != '':
+        output_str += 'Total Time: {:2f}s, '.format(iter_data["total_time"])
     if iter_data['latency'] != '':
         output_str += 'Latency: {:.2f} ms/{}'.format(iter_data['latency'], latency_unit)
     if output_str != '':
@@ -72,7 +74,7 @@ def print_metrics(
     if output_str != '':
         output_str = ' '.join([prefix, output_str])
         log.info(output_str)
-    if iter_data['result_md5'] != '':
+    if iter_data.get('result_md5', '') != '':
         log.info(f"{prefix} Result MD5:{iter_data['result_md5']}")
 
 
