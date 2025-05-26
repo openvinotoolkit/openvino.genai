@@ -12,6 +12,7 @@ namespace genai {
 class SD3Transformer2DModel::InferenceDynamic : public SD3Transformer2DModel::Inference {
 public:
     virtual std::shared_ptr<Inference> clone() override {
+        OPENVINO_ASSERT(static_cast<bool>(m_request), "SD3Transformer2DModel must have m_request initialized");
         InferenceDynamic cloned(*this);
         cloned.m_request = m_request.get_compiled_model().create_infer_request();
         return std::make_shared<InferenceDynamic>(cloned);

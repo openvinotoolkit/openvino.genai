@@ -70,6 +70,8 @@ CLIPTextModel::CLIPTextModel(const std::string& model,
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
 
 std::shared_ptr<CLIPTextModel> CLIPTextModel::clone() {
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "CLIPTextModel must have exactly one of m_model or m_request initialized");
+
     std::shared_ptr<CLIPTextModel> cloned = std::make_shared<CLIPTextModel>(*this);
 
     if (m_model) {

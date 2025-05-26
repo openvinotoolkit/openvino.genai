@@ -16,6 +16,7 @@ namespace genai {
 class UNet2DConditionModel::UNetInferenceStaticBS1 : public UNet2DConditionModel::UNetInference {
 public:
     virtual std::shared_ptr<UNetInference> clone() override {
+        OPENVINO_ASSERT(m_requests.size(), "UNet2DConditionModel must have m_requests initialized");
         UNetInferenceStaticBS1 cloned(*this);
         cloned.m_requests.reserve(m_requests.size());
         for (auto& request : m_requests) {

@@ -185,14 +185,27 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
 AutoencoderKL::AutoencoderKL(const AutoencoderKL& rhs) = default;
 
 AutoencoderKL AutoencoderKL::clone() {
+    OPENVINO_ASSERT((m_decoder_model != nullptr) ^ static_cast<bool>(m_decoder_request), "AutoencoderKL must have exactly one of m_decoder_model or m_decoder_request initialized");  // encoder is optional
+
     AutoencoderKL cloned = *this;
+
+    // Required, decoder model
+    if (m_decoder_model) {
+        cloned.m_decoder_model = m_decoder_model->clone();
+    } else {
+        cloned.m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
+    }
+
+    // Optional encoder model
     if (m_encoder_model) {
         cloned.m_encoder_model = m_encoder_model->clone();
     } else {
+        // Might not be defined
         if (m_encoder_request) {
             cloned.m_encoder_request = m_encoder_request.get_compiled_model().create_infer_request();
         }
     }
+
     return cloned;
 }
 

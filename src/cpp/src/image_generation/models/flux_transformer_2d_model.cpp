@@ -59,6 +59,8 @@ FluxTransformer2DModel::FluxTransformer2DModel(const std::string& model,
 FluxTransformer2DModel::FluxTransformer2DModel(const FluxTransformer2DModel&) = default;
 
 FluxTransformer2DModel FluxTransformer2DModel::clone() {
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "FluxTransformer2DModel must have exactly one of m_model or m_request initialized");
+
     FluxTransformer2DModel cloned = *this;
 
     if (m_model) {

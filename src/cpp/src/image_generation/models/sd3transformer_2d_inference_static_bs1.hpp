@@ -15,6 +15,7 @@ namespace genai {
 class SD3Transformer2DModel::InferenceStaticBS1 : public SD3Transformer2DModel::Inference {
 public:
     virtual std::shared_ptr<Inference> clone() override {
+        OPENVINO_ASSERT(m_requests.size(), "SD3Transformer2DModel must have m_requests initialized");
         InferenceStaticBS1 cloned(*this);
         cloned.m_requests.reserve(m_requests.size());
         for (auto& request : m_requests) {

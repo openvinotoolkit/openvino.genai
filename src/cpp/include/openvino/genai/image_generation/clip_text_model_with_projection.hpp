@@ -13,6 +13,8 @@ public:
     using CLIPTextModel::CLIPTextModel;
 
     std::shared_ptr<CLIPTextModel> clone() {
+        OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "CLIPTextModelWithProjection must have exactly one of m_model or m_request initialized");
+
         std::shared_ptr<CLIPTextModelWithProjection> cloned = std::make_shared<CLIPTextModelWithProjection>(*this);
 
         if (m_model) {

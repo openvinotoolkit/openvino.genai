@@ -45,6 +45,8 @@ T5EncoderModel::T5EncoderModel(const std::string& model,
 T5EncoderModel::T5EncoderModel(const T5EncoderModel&) = default;
 
 std::shared_ptr<T5EncoderModel> T5EncoderModel::clone() {
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "T5EncoderModel must have exactly one of m_model or m_request initialized");
+
     std::shared_ptr<T5EncoderModel> cloned = std::make_shared<T5EncoderModel>(*this);
 
     if (m_model) {
