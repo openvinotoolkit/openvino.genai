@@ -1,6 +1,9 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <limits>
+#include <cstdint>
+
 #include "gguf_tokenizer.hpp"
 
 #include "openvino/op/add.hpp"
@@ -16,6 +19,7 @@
 #include "openvino/op/subtract.hpp"
 
 #ifdef _WIN32
+#    define NOMINMAX
 #    include <windows.h>
 #else
 #    include <dlfcn.h>
@@ -119,7 +123,6 @@ ov::OutputVector add_ragged_dimension(const ov::OutputVector& inputs) {
 
 bool is_special_token(int32_t token_type) {
     return token_type == 3 || token_type == 4;
-    // return token_type == 1;
 }
 
 std::string join_special_tokens(const std::vector<std::string>& special_tokens) {
@@ -214,12 +217,20 @@ const std::unordered_map<std::string, uint8_t>& unicode_to_bytes() {
     static const std::unordered_map<std::string, uint8_t> map = []() {
         std::vector<uint8_t> bs;
 
-        for (uint8_t i = static_cast<uint8_t>('!'); i <= static_cast<uint8_t>('~'); ++i)
+        // Range: '!' (33) to '~' (126)
+        for (uint8_t i = static_cast<uint8_t>('!'); i <= static_cast<uint8_t>('~'); ++i) {
             bs.push_back(i);
-        for (int i = static_cast<uint8_t>('¡'); i <= static_cast<uint8_t>('¬'); ++i)
+        }
+
+        // Range: '¡' (161) to '¬' (172)
+        for (uint8_t i = 0xA1; i <= 0xAC; ++i) {
             bs.push_back(i);
-        for (int i = static_cast<uint8_t>('®'); i <= static_cast<uint8_t>('ÿ'); ++i)
-            bs.push_back(i);
+        }
+
+        // Range: '®' (174) to 'ÿ' (255)
+        for (int32_t i = 0xAE; i <= 0xFF; ++i) {
+            bs.push_back(static_cast<uint8_t>(i));
+        }
 
         std::vector<int32_t> cs;
         cs.reserve(bs.size());
@@ -239,7 +250,7 @@ const std::unordered_map<std::string, uint8_t>& unicode_to_bytes() {
 
         std::unordered_map<std::string, uint8_t> result;
         for (size_t i = 0; i < cs.size(); ++i) {
-            char32_t cp = static_cast<char32_t>(cs[i]);
+            int32_t cp = cs[i];
             std::string utf8_char;
 
             if (cp <= 0x7F) {
@@ -395,8 +406,10 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
 
     // 4. Build BPETokenizer node
     std::string unk_token = "";
-    if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("unknown_token_id"))) {
-        auto unknown_token_id = (*val).data<uint32_t>()[0];
+    if (auto it = tokenizer_config.find("unknown_token_id");
+        it != tokenizer_config.end() && std::holds_alternative<ov::Tensor>(it->second)) {
+        const auto& tensor = std::get<ov::Tensor>(it->second);
+        uint32_t unknown_token_id = tensor.data<uint32_t>()[0];
         unk_token = vocab_from_config[unknown_token_id];
     }
 
@@ -536,8 +549,8 @@ create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_token
         std::make_shared<v0::Constant>(element::i32, ov::Shape{special_token_ids.size()}, special_token_ids);
     auto const_zero = std::make_shared<v0::Constant>(element::i32, ov::Shape{1}, 0);
     auto const_one = std::make_shared<v0::Constant>(element::i32, ov::Shape{1}, 1);
-    auto const_int32_max =
-        std::make_shared<v0::Constant>(element::i32, ov::Shape{1}, std::numeric_limits<int32_t>::max);
+    int32_t int32_max_value = std::numeric_limits<int32_t>::max();
+    auto const_int32_max = std::make_shared<v0::Constant>(element::i32, ov::Shape{1}, int32_max_value);
     auto sliced_skips =
         std::make_shared<v8::Slice>(special_ids_const, const_zero, const_int32_max, const_one)->outputs();
     detokenizer_outputs.insert(detokenizer_outputs.end(), sliced_skips.begin(), sliced_skips.end());

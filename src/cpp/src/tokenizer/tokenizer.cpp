@@ -247,9 +247,9 @@ public:
 
         std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
         std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
-        std::map<std::string, GGUFMetaData> tokenizer_config{};
 
         if (is_gguf_model(models_path)) {
+            std::map<std::string, GGUFMetaData> tokenizer_config{};
             const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
             auto ov_tokenizer_filesystem_path = std::filesystem::path(ov_tokenizer_path);
             m_shared_object_ov_tokenizers = load_shared_object(ov_tokenizer_filesystem_path);
