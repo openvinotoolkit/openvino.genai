@@ -152,7 +152,7 @@ def get_argprser():
         "--use_cb",
         action="store_true",
         help='Deprecated, will be removed soon! Continues batching mode is used by default. '
-        'To switch to SPDA mode, please, create .json file, set up ATTENTION_BACKEND="SDPA" in file and put it to --load_config.'
+        'To switch to SPDA mode, please, set up {"ATTENTION_BACKEND": "SDPA"} in --load_config.'
     )
     parser.add_argument("--cb_config", required=False, default=None, help="Path to file with Continuous Batching Scheduler settings or dict")
     parser.add_argument("--draft_model", required=False, default=None,

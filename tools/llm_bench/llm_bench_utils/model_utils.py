@@ -10,8 +10,7 @@ from llm_bench_utils.config_class import (
     USE_CASES,
     OV_MODEL_CLASSES_MAPPING,
     PT_MODEL_CLASSES_MAPPING,
-    PA_ATTENTION_BACKEND,
-    SDPA_ATTENTION_BACKEND
+    PA_ATTENTION_BACKEND
 )
 import librosa
 
@@ -181,19 +180,14 @@ def analyze_args(args):
             model_args['config'] = config
     if model_framework == 'ov':
         set_default_param_for_ov_config(model_args['config'])
-        if 'ATTENTION_BACKEND' not in model_args['config'] and use_case in ['text_gen', 'vlm'] and args.device != "NPU":
+        if 'ATTENTION_BACKEND' not in model_args['config'] and use_case in ['text_gen', 'vlm'] and args.device != "NPU" and not optimum:
             model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
-        if model_args['config'].get('ATTENTION_BACKEND', '') == PA_ATTENTION_BACKEND and args.device == "NPU":
-            model_args['config']['ATTENTION_BACKEND'] = SDPA_ATTENTION_BACKEND
-            log.warning("Continuous Batching, Speculative decoding and Prompt Lookup decoding is not supported for NPU device")
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
     model_args['model_type'] = get_model_type(model_name, use_case, model_framework)
     model_args['model_name'] = model_name
 
-    if model_args['config'].get('ATTENTION_BACKEND', '') == PA_ATTENTION_BACKEND and optimum:
-        raise RuntimeError("Continuous batching mode supported only via OpenVINO GenAI")
     cb_config = None
     if args.cb_config:
         cb_config = get_config(args.cb_config)
