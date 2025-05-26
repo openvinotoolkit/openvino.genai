@@ -102,7 +102,9 @@ std::string patch_template(std::string&& chat_template) {
 }
 
 std::string remap_and_patch(const std::string& chat_template) {
-    return patch_template(remap_template(chat_template).value_or(chat_template));
+    return patch_template(
+        remap_template(chat_template).value_or(chat_template)
+    );
 }
 
 std::vector<std::string> read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model) {
@@ -237,8 +239,7 @@ public:
         setup_tokenizer(models_path, properties);
     }
 
-    TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,
-                  const ov::AnyMap& properties) {
+    TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
         setup_tokenizer(models, properties);
     }
 
@@ -246,8 +247,7 @@ public:
         ScopedVar env_manager(tokenizers_relative_to_genai());
         auto core = get_core_singleton();
 
-        OPENVINO_ASSERT(models_path.extension() != ".xml",
-                        "'models_path' parameter should be a path to a dir not a xml file");
+        OPENVINO_ASSERT(models_path.extension() != ".xml", "'models_path' parameter should be a path to a dir not a xml file");
 
         std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
         std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
