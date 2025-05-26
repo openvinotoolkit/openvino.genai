@@ -103,17 +103,6 @@ void* get_symbol(const std::shared_ptr<void>& shared_object, const char* symbolN
 #endif
 }
 
-/*
-def add_ragged_dimension(input_node: list[ov.Output]) -> list[ov.Output]:
-    shape = opset.shape_of(input_node[0])
-    batch_size = opset.gather(shape, as_node(0), as_node(0))
-    ragged_begins = opset.range(as_node(0), batch_size, as_node(1), output_type="i32").outputs()
-    ragged_ends = opset.range(
-        as_node(1), opset.add(batch_size, make_constant_node(1, Type.i64)), as_node(1), output_type="i32"
-    ).outputs()
-    return ragged_begins + ragged_ends + input_node
-*/
-
 ov::OutputVector add_ragged_dimension(const ov::OutputVector& inputs) {
     auto input_shape = std::make_shared<v3::ShapeOf>(inputs[0], element::i32);
     auto const_zero = std::make_shared<v0::Constant>(element::i32, Shape{}, 0);
@@ -227,9 +216,9 @@ const std::unordered_map<std::string, uint8_t>& unicode_to_bytes() {
 
         for (uint8_t i = static_cast<uint8_t>('!'); i <= static_cast<uint8_t>('~'); ++i)
             bs.push_back(i);
-        for (int i = static_cast<uint8_t>('¡'); i <= static_cast<uint8_t>('¬'); ++i)
+        for (int i = static_cast<uint8_t>('Â¡'); i <= static_cast<uint8_t>('Â¬'); ++i)
             bs.push_back(i);
-        for (int i = static_cast<uint8_t>('®'); i <= static_cast<uint8_t>('ÿ'); ++i)
+        for (int i = static_cast<uint8_t>('Â®'); i <= static_cast<uint8_t>('Ã¿'); ++i)
             bs.push_back(i);
 
         std::vector<int32_t> cs;
