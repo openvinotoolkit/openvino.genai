@@ -126,6 +126,9 @@ def analyze_args(args):
     model_args['mask_image'] = args.mask_image
     model_args['task'] = args.task
     model_args['strength'] = args.strength
+    model_args['emb_pooling_type'] = args.embedding_pooling
+    model_args['emb_normalize'] = args.embedding_normalize
+    model_args["emb_max_length"] = args.embedding_max_length
 
     optimum = args.optimum
 

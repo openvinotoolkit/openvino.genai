@@ -15,7 +15,8 @@ def get_bench_hook(num_beams, ov_model, embed=False):
     search_type = 'beam search' if num_beams > 1 else 'greedy search'
     if embed:
         import llm_bench_utils.hook_forward
-        bench_hook == llm_bench_utils.hook_forward.EmbedForwardHook()
+        bench_hook = llm_bench_utils.hook_forward.EmbedForwardHook()
+        bench_hook.new_forward(ov_model)
         return bench_hook
 
     if trans_version >= min_version:

@@ -30,9 +30,9 @@ def print_metrics(
     if iter_data.get('generation_time', '') != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
     if iter_data.get('total_time', '') != '':
-        output_str += 'Total Time: {:2f}s, '.format(iter_data["total_time"])
+        output_str += 'Total Time: {:.4f}s, '.format(iter_data["total_time"])
     if iter_data['latency'] != '':
-        output_str += 'Latency: {:.2f} ms/{}'.format(iter_data['latency'], latency_unit)
+        output_str += 'Latency: {:.4f} ms/{}'.format(iter_data['latency'], latency_unit)
     if output_str != '':
         output_str = ' '.join([prefix, output_str])
         log.info(output_str)
@@ -162,13 +162,16 @@ def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=Fa
                  f"vqvae decoder step count: 1",)
 
 
-def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch_size, is_text_gen, loop_idx):
+def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch_size, is_text_gen, loop_idx, latency_unit=None):
     for p_idx in prompt_idx_list:
         avg_1st_token_latency = 0
         avg_2nd_tokens_latency = 0
         avg_2nd_token_tput = 0
         avg_input_size = 0
         index_num = 0
+
+        if latency_unit is None:
+            latency_unit = 'token' if is_text_gen else 'step'
         for iter_data in iter_data_list:
             # Exclude the warm-up iteration
             if iter_data['iteration'] == 0:
@@ -184,17 +187,14 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             avg_input_size = int(avg_input_size / index_num)
             if avg_2nd_tokens_latency > 0:
                 avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
-            tput_unit = latency_unit = 'token' if is_text_gen is True else 'step'
+            tput_unit = latency_unit
             if batch_size > 1:
-                if is_text_gen is True:
-                    latency_unit = '{}tokens'.format(batch_size)
-                else:
-                    latency_unit = '{}steps'.format(batch_size)
+                latency_unit = '{}{}s'.format(batch_size, latency_unit)
             avg_1st_token_latency = 'NA' if avg_1st_token_latency < 0 else f'{avg_1st_token_latency:.2f} ms/{latency_unit}'
             avg_2nd_tokens_latency = 'NA' if avg_2nd_tokens_latency < 0 else f'{avg_2nd_tokens_latency:.2f} ms/{latency_unit}'
             avg_2nd_token_tput = 'NA' if avg_2nd_tokens_latency == 'NA' else f'{avg_2nd_token_tput:.2f} {tput_unit}s/s'
             prefix = f'[ INFO ] [Average] P[{p_idx}]L[{loop_idx}]' if loop_idx != -1 else f'[ INFO ] [Average] P[{p_idx}]'
-            if is_text_gen is True:
+            if is_text_gen:
                 output_info = ''
                 if avg_input_size > 0:
                     output_info += f' Input token size: {avg_input_size},'
@@ -207,7 +207,7 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
                     .format(prefix, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
 
 
-def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False, loop_idx=-1):
+def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False, loop_idx=-1, latency_unit=None):
     if len(iter_data_list) <= 1:
         # 1st iteration is the warm-up iteration
         return
@@ -221,7 +221,7 @@ def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False
 
     if total_iters > 0:
         prompt_dict = {}
-        output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch_size, is_text_gen, loop_idx)
+        output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch_size, is_text_gen, loop_idx, latency_unit)
         log.info('<<< Warm-up iteration is excluded. >>>')
         out_str = '[Total] Iterations: {}'.format(total_iters)
         for prompt_key in prompt_dict:

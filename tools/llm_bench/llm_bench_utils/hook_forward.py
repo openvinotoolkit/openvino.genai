@@ -1,4 +1,5 @@
 import time
+import types
 
 
 class MeanStdPair():
@@ -104,3 +105,46 @@ class StableDiffusionHook:
             self.vae_decoder_step_count += 1
             return r
         pipe.vae_decoder.request = my_vae_decoder
+
+
+class EmbedForwardHook:
+    def __init__(self):
+        self.tm_list = []
+        self.tm_infer_list = []
+
+    def clear_time_list(self):
+        """Clear the time list."""
+        self.tm_list.clear()
+
+    def get_time_list(self):
+        """Return the time list."""
+        return self.tm_list
+
+    def clear_time_infer_list(self):
+        """Clear the infer time list."""
+        self.tm_infer_list = []
+
+    def get_time_infer_list(self):
+        """Return the infer time list."""
+        return self.tm_infer_list
+
+    def new_forward(self_, model):
+        model._orig_forward = model.forward
+        def new_forward(self, *args, **kwargs):
+            t1 = time.time()
+            result = self._orig_forward(*args, **kwargs)
+            t2 = time.time()
+            self_.tm_list.append(t2 - t1)
+            return result
+        
+        model.forward = types.MethodType(new_forward, model)
+        
+        if hasattr(model, "request"):
+            old_request = model.request
+            def new_request(inputs, share_inputs=True, **kwargs):
+                t1 = time.time()
+                r = old_request(inputs, share_inputs=share_inputs, **kwargs)
+                t2 = time.time()
+                self_.tm_infer_list.append(t2 - t1)
+                return r
+            model.request = new_request

@@ -621,14 +621,17 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
 def create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs):
     import openvino_genai
 
-    pooling_type = kwargs.get("pooling_type")
-    max_length = kwargs.get("max_length")
+    pooling_type = kwargs.get("emb_pooling_type")
+    max_length = kwargs.get("emb_max_length")
+    normalize = kwargs.get("emb_normalize", False)
 
     config = openvino_genai.TextEmbeddingPipeline.Config()
     if pooling_type is not None:
         config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN if pooling_type == "mean" else openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
     if max_length is not None:
         config.max_length = max_length
+    if normalize:
+        config.normalize = normalize
     ov_config = kwargs['config']
 
     if kwargs.get("mem_consumption"):
@@ -694,7 +697,7 @@ def create_text_embeddings_model(model_path, device, memory_monitor, **kwargs):
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
         memory_monitor.log_data('for copmpilation phase')
-    bench_hook = get_bench_hook(1, ov_model, embeds=True)
+    bench_hook = get_bench_hook(1, ov_model, embed=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
