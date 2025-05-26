@@ -35,8 +35,8 @@ int main(int argc, char* argv[]) try {
     pipe.start_chat();
     std::cout << "question:\n";
 
-    std::getline(std::cin, prompt);
-    pipe.generate(prompt,
+    // std::getline(std::cin, prompt);
+    pipe.generate("Describe the image",
                   ov::genai::images(rgbs),
                   ov::genai::generation_config(generation_config),
                   ov::genai::streamer(print_subword));
