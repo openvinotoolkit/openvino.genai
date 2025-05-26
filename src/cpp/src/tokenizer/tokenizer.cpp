@@ -1,28 +1,25 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/tokenizer.hpp"
-
-#include <jinja2cpp/generic_list.h>
-#include <jinja2cpp/generic_list_iterator.h>
-#include <jinja2cpp/template.h>
-#include <jinja2cpp/template_env.h>
-#include <jinja2cpp/user_callable.h>
-
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <jinja2cpp/template.h>
+#include <jinja2cpp/template_env.h>
+#include <jinja2cpp/user_callable.h>
+#include <jinja2cpp/generic_list.h>
+#include <jinja2cpp/generic_list_iterator.h>
 
-#include "gguf_utils/gguf_tokenizer.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
-//#include "gguf_utils/shared_object.hpp"
+#include "openvino/genai/tokenizer.hpp"
 
-#include "circular_buffer_queue.hpp"
-#include "json_utils.hpp"
+#include "gguf_utils/gguf_tokenizer.hpp"
 #include "tokenizer/chat_template_fallback_map.hpp"
 #include "tokenizer/make_tokenizer_stateful.hpp"
 #include "tokenizer/tokenizers_path.hpp"
+#include "circular_buffer_queue.hpp"
+#include "json_utils.hpp"
 #include "utils.hpp"
 
 namespace {
