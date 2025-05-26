@@ -258,7 +258,7 @@ std::unordered_map<std::string, GGUFMetaData> load_metadata(gguf_ctx* ctx) {
     while (gguf_get_key(ctx, &key)) {
         std::string key_name = std::string(key.name, key.namelen);
         auto& val = metadata.insert({key_name, GGUFMetaData{}}).first->second;
-        set_value_from_gguf(ctx, key.type, key.val, val, key_name);
+        set_value_from_gguf(ctx, key.type, key.val, val);
     }
     return metadata;
 }
