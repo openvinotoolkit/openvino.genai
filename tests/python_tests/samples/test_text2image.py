@@ -28,3 +28,9 @@ class TestText2Image:
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'text2image')
         cpp_command = [cpp_sample, convert_model, sample_args]
         run_sample(cpp_command)
+
+        # Run concurrency sample
+        cpp_sample_concurrency = os.path.join(SAMPLES_CPP_DIR, 'text2image_concurrency')
+        cpp_command_concurrency = [cpp_sample_concurrency, convert_model,
+            sample_args, sample_args, sample_args]  # multiple prompts for concurrency
+        run_sample(cpp_command_concurrency)

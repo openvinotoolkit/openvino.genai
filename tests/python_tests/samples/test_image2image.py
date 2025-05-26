@@ -29,3 +29,10 @@ class TestImage2Image:
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'image2image')
         cpp_command = [cpp_sample, download_model, prompt, download_test_content]
         run_sample(cpp_command)
+
+        # Run concurrency sample
+        cpp_sample_concurrency = os.path.join(SAMPLES_CPP_DIR, 'image2image_concurrency')
+        cpp_command_concurrency = [cpp_sample_concurrency, download_model,
+            prompt, prompt, prompt,  # multiple prompts for concurrency
+            download_test_content]
+        run_sample(cpp_command_concurrency)
