@@ -104,11 +104,7 @@ ov::Tensor extract_tensor_data(gguf_tensor* tensor) {
     return weights;
 }
 
-void set_value_from_gguf(gguf_ctx* ctx,
-                         uint32_t type,
-                         gguf_value* val,
-                         GGUFMetaData& value,
-                         const std::string& key_name) {
+void set_value_from_gguf(gguf_ctx* ctx, uint32_t type, gguf_value* val, GGUFMetaData& value) {
     switch (type) {
     case GGUF_VALUE_TYPE_UINT8:
         value = ov::Tensor(ov::element::u8, ov::Shape(0));
