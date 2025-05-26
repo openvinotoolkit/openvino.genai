@@ -89,7 +89,12 @@ def load_text_hf_pipeline(model_id, device):
     model_kwargs = {}
 
     if not torch.cuda.is_available or device.lower() == "cpu":
-        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        trust_remote_code = False
+        try:
+            config = AutoConfig.from_pretrained(model_id)
+        except Exception:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            trust_remote_code = True
         is_gptq = False
         is_awq = False
         if getattr(config, "quantization_config", None):
@@ -99,13 +104,19 @@ def load_text_hf_pipeline(model_id, device):
             # infer in FP32
             model_kwargs["torch_dtype"] = torch.float32
         with mock_torch_cuda_is_available(is_gptq or is_awq):
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map="cpu", **model_kwargs)
+            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
             model.is_awq = is_awq
     else:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
-        )
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id, trust_remote_code=False, device_map=device.lower(), **model_kwargs
+            )
+        except Exception:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
+            )
+
     model.eval()
     return model
 
