@@ -20,7 +20,10 @@ TargetType js_to_cpp(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::Any */
 template <>
 ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value);
-/** @brief  A template specialization for TargetType oov::genai::StringInputs */
+/** @brief  A template specialization for TargetType std::vector<std::string> */
+template <>
+std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::StringInputs */
 template <>
 ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value);
 
