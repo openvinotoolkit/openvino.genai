@@ -351,8 +351,10 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     config["architecture"] = arch;
     config["layer_num"] = metadata_to_int(metadata, arch + ".block_count");
     config["head_num"] = metadata_to_int(metadata, arch + ".attention.head_count");
-    config["head_size"] = metadata_to_int(metadata, arch + ".embedding_length") / 
-                     metadata_to_int(metadata, arch + ".attention.head_count");
+    config["head_size"] = metadata.count(arch + ".attention.key_length") ?
+                     metadata_to_int(metadata, arch + ".attention.key_length") :
+                     (metadata_to_int(metadata, arch + ".embedding_length") / 
+                     metadata_to_int(metadata, arch + ".attention.head_count"));
     config["head_num_kv"] = metadata.count(arch + ".attention.head_count_kv") ?
             metadata_to_int(metadata, arch + ".attention.head_count_kv") :
             metadata_to_int(metadata, arch + ".attention.head_count");

@@ -264,7 +264,6 @@ std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
                                             const std::unordered_map<std::string, ov::Tensor>& consts) {
     auto shape = std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, 0, num_h, head_dim});
     auto reshaped = std::make_shared<v1::Reshape>(x, shape, true);
-    std::cout << "debug: " << key << std::endl;
     if (consts.count(key + ".weight")) {
         auto eps_node = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1,1,1,1}, rms_norm_eps);
         auto square = std::make_shared<ov::op::v1::Power>(
@@ -275,7 +274,7 @@ std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
             square, 
             std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{1}, -1),
             true);
-        std::cout << "debug0: " << std::endl;
+
         auto add_eps = std::make_shared<ov::op::v1::Add>(variance, eps_node);
         auto sqrt_node = std::make_shared<ov::op::v0::Sqrt>(add_eps);
         auto reciprocal = std::make_shared<ov::op::v1::Divide>(
@@ -285,7 +284,7 @@ std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
 
         std::shared_ptr<ov::Node> mul = std::make_shared<ov::op::v1::Multiply>(
             reciprocal, reshaped, AutoBroadcastType::NUMPY);
-        std::cout << "debug1: " << std::endl;
+
         auto weight_tensor = consts.at(key + ".weight");
         // Check if all elements are 1.0
         bool all_ones = true;
@@ -311,14 +310,12 @@ std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
         }
 
         if (!all_ones) {
-            std::cout << "debug2: " << std::endl;
             weight_tensor.set_shape(ov::Shape{1, 1, 1,weight_tensor.get_shape()[0]});
             auto weights_const = std::make_shared<ov::op::v0::Constant>(weight_tensor);
             auto weights_f32 = std::make_shared<ov::op::v0::Convert>(weights_const, ov::element::f32);
             mul = std::make_shared<ov::op::v1::Multiply>(mul, weights_f32, AutoBroadcastType::NUMPY);
         }
         
-        std::cout << "debug2: " << std::endl;
         auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
         
         return std::make_shared<v1::Transpose>(mul, transpose_order);
@@ -353,8 +350,8 @@ multi_head_attention(
     float rms_norm_eps = std::get<float>(configs.at("rms_norm_eps"));
     // 1. Split heads
     auto q_split = split_heads(query, num_heads, head_dim, rms_norm_eps, key_name + ".self_attn.q_norm", consts);
-    auto k_split = split_heads(key, num_heads, head_dim, rms_norm_eps, key_name  + ".self_attn.k_norm", consts);
-    auto v_split = split_heads(value, num_heads, head_dim, rms_norm_eps, key_name + ".self_attn.v_norm", consts);
+    auto k_split = split_heads(key, num_heads_kv, head_dim, rms_norm_eps, key_name  + ".self_attn.k_norm", consts);
+    auto v_split = split_heads(value, num_heads_kv, head_dim, rms_norm_eps, key_name + ".self_attn.v_norm", consts);
 
     // 2. Apply rotary embeddings
     Output<Node> cos, sin;
