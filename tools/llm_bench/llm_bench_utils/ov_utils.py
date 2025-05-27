@@ -694,6 +694,34 @@ def create_text_embeddings_model(model_path, device, memory_monitor, **kwargs):
         trust_remote_code=trust_remote_code
     )
     end = time.perf_counter()
+    pooling_type = kwargs.get("emb_pooling_type", "cls")
+    normalize = kwargs.get("emb_normalize", False)
+
+    ov_model._embed_forward = ov_model.forward
+
+    def forward_with_pooling(self, input_ids, attention_mask, token_type_ids=None, **kwargs):
+        import torch
+        outputs = self._embed_forward(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, **kwargs)
+        token_embeddings = outputs.last_hidden_state
+        if pooling_type == "cls":
+            out_embd = token_embeddings[:, 0]
+        else:
+            input_mask_expanded = (
+                attention_mask.unsqueeze(-1).expand(token_embeddings.size()).to(token_embeddings.dtype)
+            )
+            sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+            sum_mask = input_mask_expanded.sum(1)
+
+            sum_mask = torch.clamp(sum_mask, min=1e-9)
+
+            out_embd = sum_embeddings / sum_mask
+        if normalize:
+            out_embd = torch.nn.functional.normalize(out_embd, p=2, dim=1)
+        
+        return out_embd
+    
+    ov_model.forward = types.MethodType(forward_with_pooling, ov_model)
+
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
         memory_monitor.log_data('for copmpilation phase')
