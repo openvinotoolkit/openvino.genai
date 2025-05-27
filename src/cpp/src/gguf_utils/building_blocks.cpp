@@ -256,7 +256,7 @@ std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
 }
 
 // Helper function to split heads
-// There are q_norm k_norm v_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built, if not it will go to else branch.
+// There are q_norm k_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built, if not it will go to else branch.
 std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
                                             int num_h,
                                             int  head_dim,
@@ -351,7 +351,7 @@ multi_head_attention(
     float rms_norm_eps = std::get<float>(configs.at("rms_norm_eps"));
     
     // 1. Split heads
-    // There are q_norm k_norm v_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built.
+    // There are q_norm k_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built.
     auto q_split = split_heads(query, num_heads, head_dim, rms_norm_eps, key_name + ".self_attn.q_norm", consts);
     auto k_split = split_heads(key, num_heads_kv, head_dim, rms_norm_eps, key_name  + ".self_attn.k_norm", consts);
     auto v_split = split_heads(value, num_heads_kv, head_dim, rms_norm_eps, key_name + ".self_attn.v_norm", consts);
