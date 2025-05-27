@@ -256,6 +256,7 @@ std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
 }
 
 // Helper function to split heads
+// There are q_norm k_norm v_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built, if not it will go to else branch.
 std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
                                             int num_h,
                                             int  head_dim,
@@ -264,7 +265,7 @@ std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
                                             const std::unordered_map<std::string, ov::Tensor>& consts) {
     auto shape = std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, 0, num_h, head_dim});
     auto reshaped = std::make_shared<v1::Reshape>(x, shape, true);
-    if (consts.count(key + ".weight")) {
+    if (consts.count(key + ".weight")) { //Qwen3 rms_norm
         auto eps_node = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1,1,1,1}, rms_norm_eps);
         auto square = std::make_shared<ov::op::v1::Power>(
             reshaped, 
@@ -319,7 +320,7 @@ std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
         auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
         
         return std::make_shared<v1::Transpose>(mul, transpose_order);
-    } else {
+    } else { //none-Qwen3 architecture
         auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
         return std::make_shared<v1::Transpose>(reshaped, transpose_order);
     } 
@@ -348,7 +349,9 @@ multi_head_attention(
     int head_dim = std::get<int>(configs.at("head_size"));
     int num_heads_kv = std::get<int>(configs.at("head_num_kv"));
     float rms_norm_eps = std::get<float>(configs.at("rms_norm_eps"));
+    
     // 1. Split heads
+    // There are q_norm k_norm v_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built.
     auto q_split = split_heads(query, num_heads, head_dim, rms_norm_eps, key_name + ".self_attn.q_norm", consts);
     auto k_split = split_heads(key, num_heads_kv, head_dim, rms_norm_eps, key_name  + ".self_attn.k_norm", consts);
     auto v_split = split_heads(value, num_heads_kv, head_dim, rms_norm_eps, key_name + ".self_attn.v_norm", consts);
