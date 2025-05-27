@@ -156,7 +156,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
-
+    // trigger llm test
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (utils::explicitly_requires_paged_attention(user_properties)) {
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
