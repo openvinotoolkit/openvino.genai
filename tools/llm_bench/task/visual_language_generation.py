@@ -230,8 +230,6 @@ def run_visual_language_generation_genai(
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
     gen_config.ignore_eos = True
-    if hasattr(gen_config, 'apply_chat_template'):
-        gen_config.apply_chat_template = False
     kwargs = {}
     if len(images) > 1:
         # multi images
