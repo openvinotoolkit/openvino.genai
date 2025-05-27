@@ -42,9 +42,9 @@ def parse_args():
         help="Tokenizer for divergency metric. If not provided, it will be load from base_model or target_model.",
     )
     parser.add_argument(
-        "--chat-template",
+        "--omit-chat-template",
         action="store_true",
-        help="Whether apply the default chat template.",
+        help="Do not apply the default chat template if it's present.",
     )
     parser.add_argument(
         "--gt-data",
@@ -365,6 +365,9 @@ def create_evaluator(base_model, args):
             else:
                 gen_answer_fn = None
 
+            use_chat_template = (
+                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
+            )
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -374,7 +377,7 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
-                use_chat_template=args.chat_template,
+                use_chat_template=use_chat_template,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
