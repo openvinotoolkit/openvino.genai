@@ -5,9 +5,14 @@ import os
 import json
 import logging as log
 from pathlib import Path
-from llm_bench_utils.config_class import DEFAULT_MODEL_CLASSES, USE_CASES, OV_MODEL_CLASSES_MAPPING, PT_MODEL_CLASSES_MAPPING
+from llm_bench_utils.config_class import (
+    DEFAULT_MODEL_CLASSES,
+    USE_CASES,
+    OV_MODEL_CLASSES_MAPPING,
+    PT_MODEL_CLASSES_MAPPING,
+    PA_ATTENTION_BACKEND
+)
 import librosa
-
 
 KNOWN_PRECISIONS = [
     'FP32', 'FP16',
@@ -149,12 +154,6 @@ def analyze_args(args):
     model_args['lora_alphas'] = args.lora_alphas
     model_args['lora_mode'] = args.lora_mode
     model_args['empty_lora'] = args.empty_lora
-    use_cb = args.use_cb or args.draft_model
-    if args.device == "NPU" and use_cb:
-        log.warning("Continious batching and Speculative Decoding are not supported for NPU device")
-        use_cb = False
-        args.draft_model = None
-    model_args["use_cb"] = use_cb
     model_args['devices'] = args.device
     model_args['prompt_index'] = [] if args.prompt_index is not None else None
     if model_args['prompt_index'] is not None:
@@ -181,18 +180,21 @@ def analyze_args(args):
             model_args['config'] = config
     if model_framework == 'ov':
         set_default_param_for_ov_config(model_args['config'])
+        if 'ATTENTION_BACKEND' not in model_args['config'] and use_case in ['text_gen', 'vlm'] and args.device != "NPU" and not optimum:
+            model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
     model_args['model_type'] = get_model_type(model_name, use_case, model_framework)
     model_args['model_name'] = model_name
 
-    if use_cb and optimum:
-        raise RuntimeError("Continuous batching mode supported only via OpenVINO GenAI")
     cb_config = None
     if args.cb_config:
         cb_config = get_config(args.cb_config)
     model_args["cb_config"] = cb_config
+    if args.draft_model and (args.device == "NPU" or model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
+        log.warning("Speculative Decoding is supported only with Page Attention Backend and not supported for NPU device")
+        args.draft_model = None
     model_args['draft_model'] = args.draft_model
     model_args['draft_device'] = args.draft_device
     draft_cb_config = None
