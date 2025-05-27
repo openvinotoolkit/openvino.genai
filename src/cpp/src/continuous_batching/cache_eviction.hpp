@@ -83,9 +83,11 @@ public:
      * the tokens' lifetime in the KV cache and of the accumulated importance score of each token.
      * @param attention_scores_for_all_decoder_layers A vector with a size equal to the configured num_decoder_layers, where each entry is a
      * vector of per-token attention scores calculated within this layer.
+     * @param skipped_logical_block_ids The set of logical indices that have been skipped from the scores as part of the sparse attention prefill process
      */
-    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers);
+    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers, const std::set<size_t>& skipped_logical_block_ids);
 
+    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_across_decoder_layers_for_current_sequence);
     /**
      * Returns the per-layer sets of logical block indices that should be evicted according to the internally computed importance scores
      * and removes the corresponding blocks from the internal algorithm tracking.
@@ -108,6 +110,8 @@ private:
     std::vector<std::size_t> get_indices_of_blocks_to_evict(const std::vector<double>& scores_for_each_evictable_block, size_t num_blocks_to_evict) const;
 
     void remove_scores_of_evicted_blocks(const std::vector<std::size_t>& evicted_block_indices, size_t decoder_layer_idx);
+
+    void add_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids) const;
 
     CacheEvictionConfig m_eviction_config;
     std::size_t m_block_size;

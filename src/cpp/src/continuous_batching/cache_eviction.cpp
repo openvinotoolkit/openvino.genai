@@ -80,6 +80,12 @@ namespace ov::genai {
 
     void CacheEvictionAlgorithm::register_new_token_scores(
             const AttentionScoresForEachDecoderLayer &attention_scores_for_all_decoder_layers) {
+        register_new_token_scores(attention_scores_for_all_decoder_layers, {});
+    }
+
+    void CacheEvictionAlgorithm::register_new_token_scores(
+            const AttentionScoresForEachDecoderLayer &attention_scores_for_all_decoder_layers,
+            const std::set<size_t>& skipped_logical_block_ids) {
         for (size_t decoder_layer_idx = 0; decoder_layer_idx < m_cache_counter.size(); decoder_layer_idx++) {
 
             const auto &attention_scores = attention_scores_for_all_decoder_layers[decoder_layer_idx];
@@ -120,7 +126,24 @@ namespace ov::genai {
             auto &accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
 
             if (accumulated_scores_for_current_decoder_layer.empty()) {
-                accumulated_scores_for_current_decoder_layer = max_pooled_hh_scores;
+                if (skipped_logical_block_ids.empty()) {
+                    accumulated_scores_for_current_decoder_layer = max_pooled_hh_scores;
+                }
+                else {
+                    accumulated_scores_for_current_decoder_layer.resize(max_pooled_hh_scores.size() + m_block_size * skipped_logical_block_ids.size(), 0.0);
+                    size_t src_idx = 0;
+                    for (size_t dst_idx = 0; dst_idx < accumulated_scores_for_current_decoder_layer.size(); dst_idx++) {
+                        size_t curr_logical_block_idx = dst_idx / m_block_size;
+                        if (skipped_logical_block_ids.find(curr_logical_block_idx) != skipped_logical_block_ids.end()) {
+                            dst_idx += m_block_size;
+                            continue;
+                        }
+                        accumulated_scores_for_current_decoder_layer[dst_idx] = accumulated_scores_for_current_decoder_layer[src_idx];
+                        src_idx++;
+                    }
+                    OPENVINO_ASSERT(src_idx == max_pooled_hh_scores.size());
+                }
+
                 if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
                     // New sequence to track - will simulate that the tokens comprising the sequence were added one-by-one
                     // from the standpoint of the occurrence tracker
@@ -132,8 +155,10 @@ namespace ov::genai {
                 }
             } else {
                 size_t old_size_in_tokens = accumulated_scores_for_current_decoder_layer.size();
-                OPENVINO_ASSERT(num_hh_scores >= old_size_in_tokens);
-                size_t num_new_tokens = num_hh_scores - old_size_in_tokens;
+                size_t new_size_in_tokens = max_pooled_hh_scores.size() + m_block_size * skipped_logical_block_ids.size();
+
+                OPENVINO_ASSERT(new_size_in_tokens >= old_size_in_tokens);
+                size_t num_new_tokens = new_size_in_tokens - old_size_in_tokens;
                 if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
                     // Increment occurrence counts of all currently tracked cache blocks
                     auto &counter_for_current_decoder_layer = m_cache_counter[decoder_layer_idx];
@@ -142,18 +167,31 @@ namespace ov::genai {
                         *it += num_new_tokens;
                     }
                     // Add occurrence counts for new tokens like above
-                    counter_for_current_decoder_layer.resize(num_hh_scores);
+                    counter_for_current_decoder_layer.resize(new_size_in_tokens);
                     for (size_t i = 0; i < num_new_tokens; i++) {
                         auto idx = old_size_in_tokens + i;
                         counter_for_current_decoder_layer[idx] = num_new_tokens - i;
                     }
                 }
-                accumulated_scores_for_current_decoder_layer.resize(num_hh_scores);
-                for (size_t i = 0; i < num_hh_scores; ++i) {
-                    accumulated_scores_for_current_decoder_layer[i] += max_pooled_hh_scores[i];
-                }
+                accumulated_scores_for_current_decoder_layer.resize(new_size_in_tokens);
+                add_with_skips(accumulated_scores_for_current_decoder_layer, max_pooled_hh_scores, skipped_logical_block_ids);
             }
         }
+    }
+
+    void CacheEvictionAlgorithm::add_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids) const {
+            OPENVINO_ASSERT(skipped_logical_block_ids.size() * m_block_size + src.size() == dst.size());
+            size_t src_idx = 0;
+            for (size_t dst_idx = 0; dst_idx < dst.size(); dst_idx++) {
+                size_t curr_logical_block_idx = dst_idx / m_block_size;
+                if (skipped_logical_block_ids.find(curr_logical_block_idx) != skipped_logical_block_ids.end()) {
+                    dst_idx = m_block_size * (curr_logical_block_idx + 1) - 1;
+                    continue;
+                }
+                dst[dst_idx] = src[src_idx];
+                src_idx++;
+            }
+            OPENVINO_ASSERT(src_idx == src.size());
     }
 
     std::size_t CacheEvictionAlgorithm::get_num_blocks(std::size_t num_tokens) const {
@@ -377,4 +415,5 @@ namespace ov::genai {
 
         return retval;
     }
+
 }

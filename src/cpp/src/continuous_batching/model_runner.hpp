@@ -5,6 +5,7 @@
 
 #include <vector>
 #include <cstdlib>
+#include <set>
 
 #include <openvino/runtime/infer_request.hpp>
 
@@ -194,7 +195,7 @@ public:
             matmul_gathering_is_available = true;
         } catch (const ov::Exception&) {}
 
-        std::map<size_t, size_t> seq_id_to_num_past_blocks_to_discard_map;
+        std::map<size_t, std::set<size_t>> seq_id_to_skipped_blocks_map;
 
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
@@ -247,10 +248,17 @@ public:
 
                 size_t num_blocks = sequence_group->get_num_logical_blocks();
                 size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
-                size_t num_past_blocks_to_ignore = _get_a_shape_num_past_blocks_to_ignore(sequence_group);
+                size_t num_past_blocks_to_ignore = 0;
 
+                if (scheduler_output.m_apply_sparse_attention_mask) {
+                    auto it = scheduler_output.m_sparse_attention_skipped_logical_blocks.find(sequence->get_id());
+                    if (it != scheduler_output.m_sparse_attention_skipped_logical_blocks.end()) {
+                        seq_id_to_skipped_blocks_map[sequence->get_id()] = it->second;
+                        num_past_blocks_to_ignore = seq_id_to_skipped_blocks_map[sequence->get_id()].size();
+                    }
+                }
 
-                seq_id_to_num_past_blocks_to_discard_map[sequence->get_id()] = num_past_blocks_to_ignore;
+                OPENVINO_ASSERT(num_blocks >= num_past_blocks_to_ignore);
                 size_t num_blocks_utilized = num_blocks - num_past_blocks_to_ignore;
 
                 past_lens_data[0] = expected_kv_cache_size - num_past_blocks_to_ignore * m_block_size;
@@ -304,7 +312,7 @@ public:
         m_request.set_tensor("past_lens", past_lens);
         m_request.set_tensor("subsequence_begins", subsequence_begins);
 
-        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_num_past_blocks_to_discard_map);
+        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_skipped_blocks_map);
         m_request.set_tensor("block_indices_begins", block_indices_begins);
         m_request.set_tensor("max_context_len", max_context_len);
 
@@ -397,18 +405,6 @@ public:
     }
 
 private:
-    size_t _get_a_shape_num_past_blocks_to_ignore(const SequenceGroup::CPtr sequence_group) {
-        size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
-        size_t num_past_blocks = expected_kv_cache_size / m_block_size;
-        size_t num_past_blocks_to_discard = 0;
-
-        if (!sequence_group->can_generate_tokens()) {
-            if (num_past_blocks > 2) { // keep block 0 and previous full block
-                num_past_blocks_to_discard = num_past_blocks - 2;
-            }
-        }
-        return num_past_blocks_to_discard;
-    }
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
         const std::vector<SequenceGroup::Ptr>& sequence_groups,
@@ -487,7 +483,7 @@ private:
     void _set_block_indices(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                             const Scheduler::Output& scheduler_output,
                             size_t total_num_blocks,
-                            const std::map<size_t, size_t>& seq_id_to_num_past_blocks_to_discard_map) {
+                            const std::map<size_t, std::set<size_t>>& seq_id_to_skipped_blocks_map) {
         std::vector<std::string> tensor_names = {"block_indices"};
 
         size_t num_layers = 1;
@@ -514,11 +510,15 @@ private:
                     Sequence::CPtr sequence = running_sequences[k];
                     size_t num_blocks = sequence_group->get_num_logical_blocks();
                     size_t seq_id = sequence->get_id();
-                    if (!sequence_group->can_generate_tokens()) {
-                        size_t num_past_blocks_to_discard = seq_id_to_num_past_blocks_to_discard_map.at(seq_id);
-                        std::vector<size_t> remaining_logical_block_ids = {0};
-                        for (size_t j = num_past_blocks_to_discard + 1; j < num_blocks; j++) {
-                            remaining_logical_block_ids.push_back(j);  // A-shape
+                    std::vector<size_t> remaining_logical_block_ids;
+                    if (seq_id_to_skipped_blocks_map.find(seq_id) != seq_id_to_skipped_blocks_map.end()) {
+                        const auto& skip_set = seq_id_to_skipped_blocks_map.at(seq_id);
+                        OPENVINO_ASSERT(num_blocks >= skip_set.size());
+                        remaining_logical_block_ids.reserve(num_blocks - skip_set.size());
+                        for (size_t j = 0; j < num_blocks; j++) {
+                            if (skip_set.find(j) == skip_set.end()) {
+                                remaining_logical_block_ids.push_back(j);
+                            }
                         }
                         seq_id_to_select_logical_idx_map[layer_idx][seq_id] = remaining_logical_block_ids;
                         num_blocks_per_layer[layer_idx] += remaining_logical_block_ids.size();
@@ -602,14 +602,21 @@ private:
 
             for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                 Sequence::CPtr sequence = running_sequences[seq_idx];
+                size_t global_sequence_id = sequence->get_id();
                 size_t subsequence_length = sequence_group->get_context_len() - sequence_group->get_num_evicted_tokens();
-                size_t num_past_blocks_to_discard = _get_a_shape_num_past_blocks_to_ignore(sequence_group);
-                subsequence_length -= num_past_blocks_to_discard * m_block_size;
+                if (scheduler_output.m_apply_sparse_attention_mask) {
+                    size_t num_past_blocks_to_discard = 0;
+                    const auto& skip_map = scheduler_output.m_sparse_attention_skipped_logical_blocks;
+                    auto it = skip_map.find(global_sequence_id);
+                    if (it != skip_map.end()) {
+                        num_past_blocks_to_discard = it->second.size();
+                    }
+                    subsequence_length -= num_past_blocks_to_discard * m_block_size;
+                }
 
                 IndexSpan span = {offset, offset + subsequence_length};
                 offset += subsequence_length;
 
-                size_t global_sequence_id = sequence->get_id();
 
                 bool is_prefill_finished = sequence_group->can_generate_tokens();
                 bool has_snapkv_scores = (scheduler_output.m_score_aggregation_windows.find(global_sequence_id) != scheduler_output.m_score_aggregation_windows.end());
