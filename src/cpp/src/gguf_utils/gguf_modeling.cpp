@@ -153,6 +153,7 @@ std::shared_ptr<ov::Model> create_language_model(
 } // namespace
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
+    // trigger
     auto start_time = std::chrono::high_resolution_clock::now();
     std::cout << "Loading and unpacking model from: " << model_path << std::endl;
     auto [config, consts, qtypes] = load_gguf(model_path);
