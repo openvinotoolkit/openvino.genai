@@ -32,7 +32,6 @@ class Scheduler {
     std::shared_ptr<CacheManager> m_cache_manager;
 
     size_t m_snapkv_window_size = 1;
-    std::map<uint64_t, size_t> m_remaining_score_token_positions_to_aggregate;
 public:
     struct Output {
         // IDs of scheduled groups
@@ -303,7 +302,8 @@ private:
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
 
-                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(seq_id, num_scheduled_tokens, /* is_prompt_tail = */ false);
+
+                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                     }
                 }
 
@@ -373,7 +373,7 @@ private:
 
                         if (seq->get_generated_len() == 0) {
                             // full prompt or its remaining tail part fit completely into the next inference
-                            scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(seq_id, num_scheduled_tokens_per_seq, /* is_prompt_tail = */ true);
+                            scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                         }
                     }
 
@@ -461,7 +461,7 @@ private:
                         uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
-                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(seq_id, sequence_len, /* is_prompt_tail = */ false);
+                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                     }
 
                     // update "is_prompt" flag
@@ -556,26 +556,23 @@ private:
         return true;
     }
 
-    size_t _schedule_scores_to_aggregate(size_t seq_id, size_t num_scheduled_prompt_tokens, bool is_prompt_tail) {
-        size_t retval = 0;
-        size_t num_scores_left_to_aggregate = m_snapkv_window_size;
-        if (m_remaining_score_token_positions_to_aggregate.find(seq_id) != m_remaining_score_token_positions_to_aggregate.end()) {
-            num_scores_left_to_aggregate = m_remaining_score_token_positions_to_aggregate[seq_id];
-        }
-
-        if (num_scheduled_prompt_tokens >= num_scores_left_to_aggregate) {
-            retval = num_scores_left_to_aggregate;
-            m_remaining_score_token_positions_to_aggregate.erase(seq_id);
-        } else {
-            retval = num_scheduled_prompt_tokens;
-            if (is_prompt_tail) {
-                m_remaining_score_token_positions_to_aggregate.erase(seq_id);
+    size_t _schedule_scores_to_aggregate(SequenceGroup::Ptr sequence_group) {
+        size_t prompt_len = sequence_group->get_prompt_len();
+        size_t first_scored_token_position = m_snapkv_window_size > prompt_len ? 0 : prompt_len - m_snapkv_window_size;
+        size_t num_scored_token_positions_in_this_chunk = 0;
+        size_t num_processed_tokens_before_this_chunk = sequence_group->get_num_processed_tokens();
+        size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        size_t num_processed_tokens_after_this_chunk = num_processed_tokens_before_this_chunk + num_scheduled_tokens;
+        if (num_processed_tokens_after_this_chunk > first_scored_token_position) {
+            if (num_processed_tokens_before_this_chunk > first_scored_token_position) {
+                num_scored_token_positions_in_this_chunk = num_scheduled_tokens;
             }
             else {
-                m_remaining_score_token_positions_to_aggregate[seq_id] = num_scores_left_to_aggregate - num_scheduled_prompt_tokens;
+                num_scored_token_positions_in_this_chunk = num_processed_tokens_after_this_chunk - first_scored_token_position;
             }
+
         }
-        return retval;
+        return num_scored_token_positions_in_this_chunk;
     }
 };
 
