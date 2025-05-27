@@ -65,7 +65,7 @@ public:
      * @param block_size Block size of the KV cache to evict from.
      * @param num_decoder_layers Number of independent KV caches (each corresponding to a single attention layer) in the underlying LLM.
      */
-    explicit CacheEvictionAlgorithm(const CacheEvictionConfig& eviction_config, size_t block_size, size_t num_decoder_layers);
+    explicit CacheEvictionAlgorithm(const CacheEvictionConfig& eviction_config, size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size);
 
     /**
      * @return Maximum cache size (in tokens) after each eviction step. Could be used as an estimate of the maximum per-sequence cache usage.
@@ -113,6 +113,7 @@ private:
     std::size_t m_block_size;
     std::size_t m_num_evicted_tokens = 0;
     std::size_t m_num_decoder_layers;
+    std::size_t m_max_pool_window_size;
     std::vector<std::vector<double>> m_scores;
     std::vector<std::vector<size_t>> m_cache_counter;
 };
@@ -201,4 +202,5 @@ private:
     std::vector<std::vector<float>> m_rope_sin_lut;  // dimensions: [ max_context_length, head_size / 2]
     std::vector<std::vector<float>> m_rope_cos_lut;  // dimensions: [ max_context_length, head_size / 2]
 };
-}
+
+} // namespace ov::genai
