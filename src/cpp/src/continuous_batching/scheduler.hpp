@@ -191,7 +191,7 @@ private:
         if (tokens_in_last_block == 0) {
             tokens_in_last_block = block_size;
         }
-        preempted_tokens = tokens_in_last_block + std::max<size_t>((int)logical_blocks_released - 1, 0) * block_size;
+        preempted_tokens = tokens_in_last_block + (logical_blocks_released == 0 ? 0 : logical_blocks_released - 1) * block_size;
 
         // case when preemption requires preempt prompt tokens
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
@@ -319,6 +319,7 @@ private:
             if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
+                OPENVINO_ASSERT(num_running_seqs);
                 size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t available_tokens_per_seq_in_megabatch = num_tokens_in_megabatch / num_running_seqs;
 

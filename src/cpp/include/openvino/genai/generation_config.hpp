@@ -183,7 +183,7 @@ static constexpr ov::Property<StopCriteria> stop_criteria{"stop_criteria"};
 
 static constexpr ov::Property<float> temperature{"temperature"};
 static constexpr ov::Property<float> top_p{"top_p"};
-static constexpr ov::Property<int> top_k{"top_k"};
+static constexpr ov::Property<size_t> top_k{"top_k"};
 static constexpr ov::Property<bool> do_sample{"do_sample"};
 static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
 static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};

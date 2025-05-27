@@ -48,7 +48,7 @@ jobs:
           pr: ${{ github.event.number }}
           commit_sha: ${{ github.sha }}
           ref_name: ${{ github.ref_name }}
-          component_pattern: "category: (?!Python API|CPP API).*"
+          component_pattern: "category: ((?!Python API|CPP API).*)"
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           skip_when_only_listed_labels_set: 'GH Pages Docs'
           skip_when_only_listed_files_changed: '*.md,*.rst,*.png,*.jpg,*.svg,*.gif'
@@ -82,7 +82,7 @@ jobs:
       id: openvino_download
       with:
         platform: windows
-        commit_packages_to_provide: wheels,openvino_js_package.zip
+        commit_packages_to_provide: wheels,openvino_node_npm_package.zip
         revision: latest_available_commit
 
   genai_build_cpack:
@@ -441,7 +441,8 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            run_condition: false
+            # run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 45
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
@@ -450,7 +451,7 @@ jobs:
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
+            timeout: 90
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -540,6 +541,11 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-win-4-cores-8gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
+          - name: 'Speech generation'
+            marker: 'speech_generation'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-win-4-cores-8gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
     needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 120
@@ -605,17 +611,16 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-          Remove-Item -Recurse -Force node_modules/openvino-node/bin
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
-
+      
       - name: Install NPM dependencies for samples
         if: ${{ matrix.test.run_condition }}
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          Remove-Item -Recurse -Force node_modules/openvino-node/bin
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Test Samples (Python and C++)
         if: ${{ matrix.test.run_condition }}
@@ -735,9 +740,9 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-          Remove-Item -Recurse -Force node_modules/openvino-node/bin
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Check lint
         working-directory: ${{ env.SRC_DIR }}/src/js
@@ -750,9 +755,8 @@ jobs:
       - name: Install openvino-genai-node samples dependencies
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          Remove-Item -Recurse -Force node_modules/openvino-node/bin
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Run samples tests
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation

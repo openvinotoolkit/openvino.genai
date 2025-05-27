@@ -263,7 +263,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <td>Supported</td>
       <td>Supported</td>
       <td>Supported</td>
-      <td>Not supported</td>
+      <td>Partially supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-3-medium-diffusers"><code>stabilityai/stable-diffusion-3-medium-diffusers</code></a></li>
@@ -487,5 +487,28 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
   </tbody>
 </table>
 Some models may require access request submission on the Hugging Face page to be downloaded.
+
+## Speech generation models
+
+<table>
+  <tbody style="vertical-align: top;">
+    <tr>
+      <th>Architecture</th>
+      <th>Models</th>
+      <th>LoRA support</th>
+      <th>Example HuggingFace Models</th>
+    </tr>
+    <tr>
+      <td rowspan=2><code>SpeechT5ForTextToSpeech</code></td>
+      <td>SpeechT5 TTS</td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/microsoft/speecht5_tts"><code>microsoft/speecht5_tts</code></a></li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 If https://huggingface.co/ is down, the conversion step won't be able to download the models.

@@ -225,7 +225,13 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         import openvino as ov
 
         input_ids = input_data.input_ids.data
-        input_ids[:, 0] = num + 1
+        if tokenizer.get_bos_token_id() == -1:
+            input_ids[:, 0] = num + 1
+        else:
+            if tokenizer.get_eos_token_id() != num + 1:
+                input_ids[:, 1] = num + 1
+            else:
+                input_ids[:, 1] = num + 3
         attention_mask = input_data.attention_mask
         input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
     num_input_tokens = input_data.input_ids.shape[1]
@@ -269,14 +275,27 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
                 print(word, end='', flush=True)
         printer_thread = threading.Thread(target=token_printer, daemon=True)
         printer_thread.start()
-        generation_result = model.generate(
-            input_data,
-            gen_config,
-            streamer=text_print_streamer
-        )
+        if (args['empty_lora'] and (gen_config.adapters is not None)):
+            import openvino_genai
+            generation_result = model.generate(
+                input_data,
+                gen_config,
+                streamer=text_print_streamer,
+                adapters=openvino_genai.AdapterConfig()
+            )
+        else:
+            generation_result = model.generate(
+                input_data,
+                gen_config,
+                streamer=text_print_streamer
+            )
         printer_thread.join()
     else:
-        generation_result = model.generate(input_data, gen_config)
+        if (args['empty_lora'] and (gen_config.adapters is not None)):
+            import openvino_genai
+            generation_result = model.generate(input_data, gen_config, adapters=openvino_genai.AdapterConfig())
+        else:
+            generation_result = model.generate(input_data, gen_config)
     end = time.perf_counter()
     generated_tokens = np.array(generation_result.tokens)
 
@@ -316,7 +335,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
     else:
         log.warning("No generated tokens")
-    first_token_time = (perf_metrics.get_ttft().mean) * args["batch_size"]
+    first_token_time = (perf_metrics.get_ttft().mean)
     second_tokens_durations = (
         np.array(perf_metrics.raw_metrics.m_new_token_times[1:])
         - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1])
