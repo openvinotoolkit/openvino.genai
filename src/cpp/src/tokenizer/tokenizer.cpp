@@ -256,18 +256,19 @@ public:
             std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
                 create_tokenizer_from_config(m_shared_object_ov_tokenizers, models_path);
 
-            if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("padding_token_id"))) {
+            if (auto val = get_if_exist<ov::Tensor>(tokenizer_config, "padding_token_id")) {
                 m_pad_token_id = static_cast<int64_t>((*val).data<uint32_t>()[0]);
             }
-            if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("bos_token_id"))) {
+            if (auto val = get_if_exist<ov::Tensor>(tokenizer_config, "bos_token_id")) {
                 m_bos_token_id = static_cast<int64_t>((*val).data<uint32_t>()[0]);
             }
-            if (auto val = std::get_if<ov::Tensor>(&tokenizer_config.at("eos_token_id"))) {
+            if (auto val = get_if_exist<ov::Tensor>(tokenizer_config, "eos_token_id")) {
                 m_eos_token_id = static_cast<int64_t>((*val).data<uint32_t>()[0]);
             }
-            if (auto val = std::get_if<std::string>(&tokenizer_config.at("chat_template"))) {
+            if (auto val = get_if_exist<std::string>(tokenizer_config, "chat_template")) {
                 m_chat_template = *val;
             }
+
             setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
             return;
         }

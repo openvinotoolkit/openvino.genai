@@ -21,5 +21,15 @@ create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_token
 std::shared_ptr<void> load_shared_object(const std::filesystem::path& path);
 
 void* get_symbol(const std::shared_ptr<void>& shared_object, const char* symbolName);
+
+template <typename T>
+const T* get_if_exist(const std::map<std::string, GGUFMetaData>& tokenizer_config, const std::string& attribute_name) {
+    if (tokenizer_config.count(attribute_name)) {
+        auto val = std::get_if<T>(&tokenizer_config.at(attribute_name));
+        return val;
+    }
+    return nullptr;
+}
+
 }  // namespace genai
 }  // namespace ov
