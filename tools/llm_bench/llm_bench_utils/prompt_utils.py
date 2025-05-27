@@ -5,6 +5,7 @@
 from .model_utils import get_param_from_file
 from .parse_json_data import parse_text_json_data
 
+
 def get_text_prompt(args):
     text_list = []
     output_data_list, is_json_data = get_param_from_file(args, 'prompt')

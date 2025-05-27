@@ -130,17 +130,19 @@ class EmbedForwardHook:
 
     def new_forward(self_, model):
         model._orig_forward = model.forward
+
         def new_forward(self, *args, **kwargs):
             t1 = time.time()
             result = self._orig_forward(*args, **kwargs)
             t2 = time.time()
             self_.tm_list.append(t2 - t1)
             return result
-        
+
         model.forward = types.MethodType(new_forward, model)
-        
+
         if hasattr(model, "request"):
             old_request = model.request
+
             def new_request(inputs, share_inputs=True, **kwargs):
                 t1 = time.time()
                 r = old_request(inputs, share_inputs=share_inputs, **kwargs)

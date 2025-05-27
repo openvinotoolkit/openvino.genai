@@ -41,6 +41,7 @@ def gen_iterate_data(
     iter_data["mm_embeddings_preparation_time"] = mm_embeddings_preparation_time
     return iter_data
 
+
 def embed_iterate_data(
     iter_idx='',
     in_size='',
@@ -72,4 +73,3 @@ def embed_iterate_data(
     iter_data['tokenization_time'] = tokenization_time[0] if len(tokenization_time) > 0 else ''
     iter_data['detokenization_time'] = ''
     return iter_data
-    

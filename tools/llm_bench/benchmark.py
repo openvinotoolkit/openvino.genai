@@ -187,7 +187,8 @@ def get_argprser():
     parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
     parser.add_argument("--embedding_pooling", choices=["cls", "mean"], default=None, help="Pooling type CLS or MEAN. Applicable only for text embeddings")
     parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
-    parser.add_argument("--embedding_max_length", type=int, default=None, help="Max length for text embeddings. Input text will be padded or truncated to specified value")
+    parser.add_argument("--embedding_max_length", type=int, default=None,
+                        help="Max length for text embeddings. Input text will be padded or truncated to specified value")
     return parser.parse_args()
 
 

@@ -5,7 +5,8 @@ import logging as log
 
 
 def print_metrics(
-        iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None, latency_unit=None
+        iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
+        stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None, latency_unit=None
 ):
     iter_str = str(iter_num)
     if warm_up:

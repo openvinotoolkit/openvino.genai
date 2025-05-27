@@ -618,6 +618,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
 
     return llm_pipe, processor_config, end - start, None, True
 
+
 def create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs):
     import openvino_genai
 
@@ -627,7 +628,10 @@ def create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs):
 
     config = openvino_genai.TextEmbeddingPipeline.Config()
     if pooling_type is not None:
-        config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN if pooling_type == "mean" else openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
+        if pooling_type == "mean":
+            config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN
+        else:
+            config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
     if max_length is not None:
         config.max_length = max_length
     if normalize:
@@ -637,9 +641,9 @@ def create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs):
     if kwargs.get("mem_consumption"):
         memory_monitor.start()
     start = time.perf_counter()
-    
+
     pipe = openvino_genai.TextEmbeddingPipeline(model_path, device.upper(), config, **ov_config)
-    
+
     end = time.perf_counter()
 
     log.info("Selected OpenVINO GenAI for benchmarking")
@@ -717,9 +721,9 @@ def create_text_embeddings_model(model_path, device, memory_monitor, **kwargs):
             out_embd = sum_embeddings / sum_mask
         if normalize:
             out_embd = torch.nn.functional.normalize(out_embd, p=2, dim=1)
-        
+
         return out_embd
-    
+
     ov_model.forward = types.MethodType(forward_with_pooling, ov_model)
 
     if kwargs.get("mem_consumption"):
@@ -729,6 +733,7 @@ def create_text_embeddings_model(model_path, device, memory_monitor, **kwargs):
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
+
 
 def create_image_text_gen_model(model_path, device, memory_monitor, **kwargs):
     model_path = Path(model_path)
