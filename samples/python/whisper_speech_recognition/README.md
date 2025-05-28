@@ -13,8 +13,6 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
 
-If NPU is the inference device, an additional option `--disable-stateful` is required. See [NPU with OpenVINO GenAI](https://docs.openvino.ai/nightly/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) for the detail.
-
 ## Prepare audio file
 
 Download example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
