@@ -89,8 +89,7 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: fa6fb88d792dae93d735e37fbc2bd42cc68404e6
-        event_name: pull_request
+        revision: latest_available_commit
 
     - name: Clone docker tag from OpenVINO repo
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -151,7 +150,7 @@ jobs:
           
       - name: Generate product manifest
         id: create_manifest
-        uses: openvinotoolkit/openvino/.github/actions/create_manifest@refs/pull/30742/head
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
         with:
           repos: ${{ env.SRC_DIR }}
           product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
@@ -246,7 +245,7 @@ jobs:
           
       - name: Set CI environment
         id: create_manifest
-        uses: openvinotoolkit/openvino/.github/actions/create_manifest@refs/pull/30742/head
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
         with:
           repos: ${{ env.SRC_DIR }}
           product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
