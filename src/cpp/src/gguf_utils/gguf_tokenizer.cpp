@@ -567,5 +567,22 @@ create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_token
     return {tokenizer, detokenizer, tokenizer_config};
 }
 
+std::string patch_gguf_chat_template(const std::string& chat_template) {
+    std::string patched_chat_template = chat_template;
+    // Define the exact pattern to find in orignal chat_template
+    // Using C++ raw string literals (R"(...)") to correctly represent the literal content,
+    const std::string qwen2_5_substring_to_find = R"({{\"name\": <function-name>, \"arguments\": <args-json-object>}})";
+    // Define the exact replacement substring for str2
+    const std::string qwen2_5_replacement_substring =
+        R"({\"name\": <function-name>, \"arguments\": <args-json-object>})";
+    // Find the position of the substring to be replaced
+    size_t pos = patched_chat_template.find(qwen2_5_substring_to_find);
+    if (pos != std::string::npos) {
+        // Substring found, perform the replacement
+        patched_chat_template.replace(pos, qwen2_5_substring_to_find.length(), qwen2_5_replacement_substring);
+    }
+    return patched_chat_template;
+}
+
 }  // namespace genai
 }  // namespace ov

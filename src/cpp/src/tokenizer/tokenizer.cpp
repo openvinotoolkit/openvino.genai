@@ -267,6 +267,9 @@ public:
             }
             if (auto val = get_if_exist<std::string>(tokenizer_config, "chat_template")) {
                 m_chat_template = *val;
+            }            
+            if (!m_chat_template.empty()) {
+                m_chat_template = patch_gguf_chat_template(m_chat_template);
             }
 
             setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
