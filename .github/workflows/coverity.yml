@@ -164,7 +164,7 @@ jobs:
         if: always() && github.event_name == 'schedule'
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          key: ${{ steps.cache-coverity.outputs.cache-primary-key }}
+          key: coverity-${{ runner.os }}-${{ github.sha }}
           path: ${{ env.COV_TOOL_DIR }}
         
       - name: Upload Coverity build log
