@@ -36,6 +36,18 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 dreamlike_anime_1_0_ov/FP16
 ```
 
+Alternatively, do it in Python code:
+
+```python
+from optimum.exporters.openvino.convert import export_tokenizer
+from optimum.intel import OVStableDiffusionPipeline
+
+output_dir = "dreamlike_anime_1_0_ov/FP16"
+pipeline = OVStableDiffusionPipeline.from_pretrained("dreamlike-art/dreamlike-anime-1.0", export=True)
+pipeline.save_pretrained(output_dir)
+export_tokenizer(pipeline.tokenizer, output_dir + "/tokenizer")
+```
+
 ## Run text to image
 
 Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
