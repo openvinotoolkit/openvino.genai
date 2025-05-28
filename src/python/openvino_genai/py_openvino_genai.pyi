@@ -2172,9 +2172,15 @@ class Tokenizer:
     @typing.overload
     def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
+    @typing.overload
     def apply_chat_template(self, history: list[dict[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
         """
         Embeds input prompts with special tags for a chat scenario.
+        """
+    @typing.overload
+    def apply_chat_template(self, history: list[str], tools: list[str], add_generation_prompt: bool, chat_template: str = '') -> str:
+        """
+        Embeds input prompts with special tags for a chat scenario. Accepts messages and tools in raw json format.
         """
     @typing.overload
     def decode(self, tokens: list[int], skip_special_tokens: bool = True) -> str:
