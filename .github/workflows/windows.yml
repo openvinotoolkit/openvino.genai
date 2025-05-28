@@ -160,9 +160,9 @@ jobs:
         uses: openvinotoolkit/openvino/.github/actions/create_manifest@refs/pull/30742/head
         with:
           repos: ${{ env.SRC_DIR }}
-          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build_type }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
           target_arch: 'x86_64'
-          build_type: ${{ matrix.build_type }}
+          build_type: ${{ matrix.build-type }}
           save_to: ${{ env.MANIFEST_PATH }}
 
       - name: Clean ccache stats
@@ -227,7 +227,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: manifest_${{ matrix.build_type }}
+          name: manifest_${{ matrix.build-type }}
           path: ${{ env.MANIFEST_PATH }}
           if-no-files-found: 'error'
 
