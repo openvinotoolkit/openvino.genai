@@ -134,3 +134,6 @@ TASK = {
     "text2img": "text-to-image",
     "inpainting": "inpainting"
 }
+
+PA_ATTENTION_BACKEND = "PA"
+SDPA_ATTENTION_BACKEND = "SDPA"
