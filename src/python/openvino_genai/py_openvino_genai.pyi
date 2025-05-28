@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'GuidedGenerationConfig', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -579,26 +579,18 @@ class GenerationConfig:
         top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
         num_return_sequences: the number of sequences to generate from a single prompt.
-    
-        Structured output parameters:
-        json:           if set, the output will be a JSON string constraint by the specified json-schema.
-        regex:          if set, the output will be constraint by specified regex.
-        choices:        if set, the output will be one of specified strings.
-        grammar:        if set, the output will be constraint by specified grammar.
     """
     adapters: AdapterConfig | None
     apply_chat_template: bool
     assistant_confidence_threshold: float
-    choices: list[str] | None
     diversity_penalty: float
     do_sample: bool
     echo: bool
     eos_token_id: int
     frequency_penalty: float
-    grammar: str | None
+    guided_generation_config: GuidedGenerationConfig | None
     ignore_eos: bool
     include_stop_str_in_output: bool
-    json: str | None
     length_penalty: float
     logprobs: int
     max_length: int
@@ -611,7 +603,6 @@ class GenerationConfig:
     num_beams: int
     num_return_sequences: int
     presence_penalty: float
-    regex: str | None
     repetition_penalty: float
     rng_seed: int
     stop_criteria: StopCriteria
@@ -791,6 +782,52 @@ class Generator:
     This class is used for storing pseudo-random generator.
     """
     def __init__(self) -> None:
+        ...
+class GuidedGenerationConfig:
+    """
+    
+        Structure to keep generation config parameters for guided generation.
+        It is used to store the configuration for guided generation, which includes
+        the JSON schema and other related parameters.
+    
+        Structured output parameters:
+        json:           if set, the output will be a JSON string constraint by the specified json-schema.
+        regex:          if set, the output will be constraint by specified regex.
+        choices:        if set, the output will be one of specified strings.
+        grammar:        if set, the output will be constraint by specified grammar.
+    
+    """
+    @property
+    def choises(self) -> list[str] | None:
+        """
+        List of choices for guided generation
+        """
+    @choises.setter
+    def choises(self, arg0: list[str] | None) -> None:
+        ...
+    @property
+    def grammar(self) -> str | None:
+        """
+        Grammar for guided generation
+        """
+    @grammar.setter
+    def grammar(self, arg0: str | None) -> None:
+        ...
+    @property
+    def json_schema(self) -> str | None:
+        """
+        JSON schema for guided generation
+        """
+    @json_schema.setter
+    def json_schema(self, arg0: str | None) -> None:
+        ...
+    @property
+    def regex(self) -> str | None:
+        """
+        Regular expression for guided generation
+        """
+    @regex.setter
+    def regex(self, arg0: str | None) -> None:
         ...
 class Image2ImagePipeline:
     """
@@ -1174,12 +1211,6 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
-        
-            Structured output parameters:
-            json:           if set, the output will be a JSON string constraint by the specified json-schema.
-            regex:          if set, the output will be constraint by specified regex.
-            choices:        if set, the output will be one of specified strings.
-            grammar:        if set, the output will be constraint by specified grammar.
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, device: str, config: dict[str, typing.Any] = {}, **kwargs) -> None:
@@ -1277,12 +1308,6 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
-        
-            Structured output parameters:
-            json:           if set, the output will be a JSON string constraint by the specified json-schema.
-            regex:          if set, the output will be constraint by specified regex.
-            choices:        if set, the output will be one of specified strings.
-            grammar:        if set, the output will be constraint by specified grammar.
         """
     def get_generation_config(self) -> GenerationConfig:
         ...

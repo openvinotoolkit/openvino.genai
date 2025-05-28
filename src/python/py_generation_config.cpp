@@ -14,6 +14,7 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::StopCriteria;
+using ov::genai::GuidedGenerationConfig;
 using ov::genai::GenerationConfig;
 
 namespace {
@@ -25,6 +26,19 @@ auto stop_criteria_docstring =  R"(
         "openvino_genai.StopCriteria.EARLY" stops as soon as there are `num_beams` complete candidates.
         "openvino_genai.StopCriteria.HEURISTIC" stops when is it unlikely to find better candidates.
         "openvino_genai.StopCriteria.NEVER" stops when there cannot be better candidates.
+)";
+
+auto guided_generation_config_docstring = R"(
+    Structure to keep generation config parameters for guided generation.
+    It is used to store the configuration for guided generation, which includes
+    the JSON schema and other related parameters.
+
+    Structured output parameters:
+    json:           if set, the output will be a JSON string constraint by the specified json-schema.
+    regex:          if set, the output will be constraint by specified regex.
+    choices:        if set, the output will be one of specified strings.
+    grammar:        if set, the output will be constraint by specified grammar.
+
 )";
 
 } // namespace
@@ -74,12 +88,6 @@ char generation_config_docstring[] = R"(
     top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
     do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
     num_return_sequences: the number of sequences to generate from a single prompt.
-
-    Structured output parameters:
-    json:           if set, the output will be a JSON string constraint by the specified json-schema.
-    regex:          if set, the output will be constraint by specified regex.
-    choices:        if set, the output will be one of specified strings.
-    grammar:        if set, the output will be constraint by specified grammar.
 )";
 
 void init_generation_config(py::module_& m) {
@@ -88,6 +96,14 @@ void init_generation_config(py::module_& m) {
         .value("EARLY", StopCriteria::EARLY)
         .value("HEURISTIC", StopCriteria::HEURISTIC)
         .value("NEVER", StopCriteria::NEVER);
+
+    py::class_<GuidedGenerationConfig>(m, "GuidedGenerationConfig", guided_generation_config_docstring)
+        .def(py::init<>(), "Default constructor for GuidedGenerationConfig")
+        .def_readwrite("json_schema", &GuidedGenerationConfig::json_schema, "JSON schema for guided generation")
+        .def_readwrite("choises", &GuidedGenerationConfig::choices, "List of choices for guided generation")
+        .def_readwrite("regex", &GuidedGenerationConfig::regex, "Regular expression for guided generation")
+        .def_readwrite("grammar", &GuidedGenerationConfig::grammar, "Grammar for guided generation");
+        
 
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
@@ -121,10 +137,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
-        .def_readwrite("json", &GenerationConfig::json)
-        .def_readwrite("regex", &GenerationConfig::regex)
-        .def_readwrite("choices", &GenerationConfig::choices)
-        .def_readwrite("grammar", &GenerationConfig::grammar)
+        .def_readwrite("guided_generation_config", &GenerationConfig::guided_generation_config)
         .def_readwrite("adapters", &GenerationConfig::adapters)
         .def_readwrite("apply_chat_template", &GenerationConfig::apply_chat_template)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
