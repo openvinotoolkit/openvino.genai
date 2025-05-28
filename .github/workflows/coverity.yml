@@ -79,6 +79,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       BUILD_DIR: ${{ github.workspace }}/build
       BUILD_TYPE: Release
+      COV_TOOL_DIR: ${{ github.workspace }}/coverity_tool
 
     steps:
       - name: Clone openvino.genai
@@ -92,36 +93,45 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
+          
+      - name: Cache Coverity Tool
+        if: github.event_name == 'pull_request'
+        id: cache-coverity
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ${{ env.COV_TOOL_DIR }}
+          key: coverity-${{ runner.os }}-${{ github.sha }}
+          restore-keys: coverity-${{ runner.os }}
 
       - name: Download coverity tool
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
           wget -q https://scan.coverity.com/download/linux64 --post-data "token=${{ secrets.COVERITY_SECRET_TOKEN }}&project=openvino.genai" -O coverity_tool.tgz
-          tar -I pigz -xf coverity_tool.tgz
-          echo "ENV_COV_TOOL_DIR=$(tar -tzf coverity_tool.tgz | head -1 | cut -f1 -d'/')" >> $GITHUB_ENV
-          rm coverity_tool.tgz
-
+          pigz -dc coverity_tool.tgz | tar --strip-components=1 -xf - -C ${{ env.COV_TOOL_DIR }}
+          
       - name: Create config file for coverity build
         run: |
-          ${ENV_COV_TOOL_DIR}/bin/cov-configure --delete-compiler-config template-python-config-0
-          ${ENV_COV_TOOL_DIR}/bin/cov-configure --python --no-capture-config-files --version 3
+          ${{ env.COV_TOOL_DIR }}/bin/cov-configure --delete-compiler-config template-python-config-0
+          ${{ env.COV_TOOL_DIR }}/bin/cov-configure --python --no-capture-config-files --version 3
 
       - name: Create build.sh
         run: |
           echo """
           mkdir -p ${{ github.workspace }}/build
           cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TOKENIZERS=NO -DOpenVINO_DIR=${OV_INSTALL_DIR}/runtime/cmake/ -DCMAKE_C_COMPILER_LAUNCHER= -DCMAKE_CXX_COMPILER_LAUNCHER= -B${BUILD_DIR} ${{ github.workspace }}/openvino.genai
-          cmake --build ${BUILD_DIR} --config ${BUILD_TYPE} -j
+          cmake --build ${BUILD_DIR} --config ${BUILD_TYPE} --parallel $(nproc)
           """ > build.sh
 
       - name: Build for coverity
         run: |
-          ${ENV_COV_TOOL_DIR}/bin/cov-build --config ${ENV_COV_TOOL_DIR}/config/coverity_config.xml --tmpdir cov_temp --dir ${BUILD_DIR}/cov-int --fs-capture-search ./openvino.genai sh build.sh
+          ${{ env.COV_TOOL_DIR }}/bin/cov-build --config ${{ env.COV_TOOL_DIR }}/config/coverity_config.xml --tmpdir cov_temp --dir ${BUILD_DIR}/cov-int --fs-capture-search ./openvino.genai sh build.sh
 
       - name: Pack for analysis submission
         run: tar -cvf - cov-int | pigz > openvino-genai.tgz
         working-directory: ${{ env.BUILD_DIR }}
 
       - name: Submit to coverity
+        if: github.event_name == 'schedule'
         run: |
           apt-get update && apt-get install -y curl jq
           pushd ${BUILD_DIR}
@@ -147,8 +157,15 @@ jobs:
 
       - name: Show Coverity configure logs
         continue-on-error: true
-        run: ${ENV_COV_TOOL_DIR}/bin/cov-configure -c ${ENV_COV_TOOL_DIR}/config/coverity_config.xml -lscc text
+        run: ${{ env.COV_TOOL_DIR }}/bin/cov-configure -c ${{ env.COV_TOOL_DIR }}/config/coverity_config.xml -lscc text
 
+      - name: Save ccache
+        if: always() && steps.cache-coverity.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.cache-coverity.outputs.cache-primary-key }}
+          path: ${{ env.CCACHE_DIR }}
+        
       - name: Upload Coverity build log
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
