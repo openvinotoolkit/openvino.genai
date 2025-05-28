@@ -212,17 +212,33 @@ def load_tokenizer(args):
             from llama_cpp.llama_tokenizer import LlamaHFTokenizer
             tokenizer = LlamaHFTokenizer.from_pretrained(args.tokenizer)
         else:
-            tokenizer = AutoTokenizer.from_pretrained(
-                args.tokenizer, trust_remote_code=True
-            )
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    args.tokenizer, trust_remote_code=False
+                )
+            except Exception:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    args.tokenizer, trust_remote_code=True
+                )
     elif args.base_model is not None:
-        tokenizer = AutoTokenizer.from_pretrained(
-            args.base_model, trust_remote_code=True
-        )
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.base_model, trust_remote_code=False
+            )
+        except Exception:
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.base_model, trust_remote_code=True
+            )
     elif args.target_model is not None:
-        tokenizer = AutoTokenizer.from_pretrained(
-            args.target_model, trust_remote_code=True
-        )
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.target_model, trust_remote_code=False
+            )
+        except:
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.target_model, trust_remoter_code=True
+            )
+
 
     return tokenizer
 
@@ -232,13 +248,20 @@ def load_processor(args):
     if model_id is None:
         return None, None
 
-    config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+    trust_remote_code = False
+    try:
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+    except Exception:
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        trust_remote_code = True
     if "llava-qwen" in config.model_type:
         preprocessor_id = config.mm_vision_tower
     else:
         preprocessor_id = model_id
 
-    return AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True), config
+    preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=trust_remote_code) 
+    
+    return preprocessor, config
 
 
 def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
