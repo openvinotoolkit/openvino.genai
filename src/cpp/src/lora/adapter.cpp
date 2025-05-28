@@ -28,9 +28,6 @@
 #include "openvino/op/read_value.hpp"
 #include "openvino/op/assign.hpp"
 #include "openvino/op/transpose.hpp"
-#include "openvino/op/gather.hpp"
-#include "openvino/op/divide.hpp"
-#include "openvino/op/shape_of.hpp"
 #include "openvino/op/util/variable.hpp"
 #include "openvino/pass/pattern/matcher.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
@@ -467,24 +464,6 @@ private:
 
 };
 
-std::shared_ptr<ov::Node> set_scale(const std::shared_ptr<ov::Node>& A,
-                                    const std::shared_ptr<ov::Node>& alpha,
-                                    const ov::element::Type& element_type) {
-    using namespace ov::op;
-
-    // rank = A_shape[0]
-    auto axis_0 = v0::Constant::create(ov::element::i32, {}, {0});
-    auto rank = std::make_shared<v8::Gather>(std::make_shared<v3::ShapeOf>(A),
-                                             v0::Constant::create(ov::element::i32, {1}, {0}),
-                                             axis_0);
-
-    // scaled_alpha = alpha / rank
-    auto lora_rank = std::make_shared<v0::Convert>(rank, element_type);
-    auto scaled_alpha = std::make_shared<v1::Divide>(alpha, lora_rank);
-
-    return scaled_alpha;
-}
-
 // Builds LoRA subgraph that consists of several matrix and element-wise multiplications with optional data type
 // conversions and reshapes to build a consistent graph.
 NodePtr tensors_multiplication(NodePtr input,
@@ -492,7 +471,6 @@ NodePtr tensors_multiplication(NodePtr input,
                                ov::Output<ov::Node> target,
                                bool transpose_weights,
                                size_t alpha_pos,
-                               size_t A_pos,
                                bool transpose_in_end) {
     const auto target_type = target.get_element_type();
     const auto target_shape = target.get_partial_shape();
@@ -514,8 +492,7 @@ NodePtr tensors_multiplication(NodePtr input,
             if (i == alpha_pos) {  // Multiply for alpha
                 // TODO: Apply alpha multiplication separately
 
-                // scale alpha to align with Peft: self.scaling[adapter] = scale * self.lora_alpha[adapter] / self.r[adapter]
-                normalized = set_scale(multipliers[A_pos], normalized, target_type);
+                // TODO: scale alpha to align with Peft: self.scaling[adapter] = scale * self.lora_alpha[adapter] / self.r[adapter]
                 input = std::make_shared<v1::Multiply>(input, normalized);
             } else {  // MatMul for A and B
                 input = std::make_shared<v0::MatMul>(input,
@@ -719,7 +696,6 @@ public:
                                        target,
                                        false,
                                        1, // alpha idx
-                                       2, // A idx
                                        false));
 
             ov::ResultVector results{result};
@@ -790,7 +766,6 @@ public:
                                              target,
                                              true,
                                              1, // alpha idx
-                                             0, // A idx
                                              transpose_in_end);
 
         replacement->get_output_tensor(0).add_names(target.get_names());
