@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include "image_generation/models/sd3transformer_2d_inference.hpp"
 #include "utils.hpp"
 
@@ -12,6 +14,16 @@ namespace genai {
 // Static Batch-Size 1 variant of SD3Transformer2DModel::Inference
 class SD3Transformer2DModel::InferenceStaticBS1 : public SD3Transformer2DModel::Inference {
 public:
+    virtual std::shared_ptr<Inference> clone() override {
+        OPENVINO_ASSERT(m_requests.size(), "SD3Transformer2DModel must have m_requests initialized");
+        InferenceStaticBS1 cloned(*this);
+        cloned.m_requests.reserve(m_requests.size());
+        for (auto& request : m_requests) {
+            cloned.m_requests.push_back(request.get_compiled_model().create_infer_request());
+        }
+        return std::make_shared<InferenceStaticBS1>(cloned);
+    }
+
     virtual void compile(std::shared_ptr<ov::Model> model,
                          const std::string& device,
                          const ov::AnyMap& properties) override {

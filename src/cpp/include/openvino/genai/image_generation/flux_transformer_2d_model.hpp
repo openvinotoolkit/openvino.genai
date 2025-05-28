@@ -62,6 +62,8 @@ public:
 
     FluxTransformer2DModel(const FluxTransformer2DModel&);
 
+    FluxTransformer2DModel clone();
+
     const Config& get_config() const;
 
     FluxTransformer2DModel& reshape(int batch_size, int height, int width, int tokenizer_model_max_length);
