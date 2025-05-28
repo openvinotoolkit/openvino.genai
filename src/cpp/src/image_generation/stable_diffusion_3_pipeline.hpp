@@ -266,6 +266,8 @@ public:
     }
 
     std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_ASSERT(!m_root_dir.empty(), "Cannot clone pipeline without root directory");
+
         std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
         std::shared_ptr<CLIPTextModelWithProjection> clip_text_encoder_1 = std::static_pointer_cast<CLIPTextModelWithProjection>(m_clip_text_encoder_1->clone());
         std::shared_ptr<CLIPTextModelWithProjection> clip_text_encoder_2 = std::static_pointer_cast<CLIPTextModelWithProjection>(m_clip_text_encoder_2->clone());

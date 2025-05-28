@@ -167,6 +167,8 @@ public:
     }
 
     std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_ASSERT(!m_root_dir.empty(), "Cannot clone pipeline without root directory");
+
         std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
         std::shared_ptr<CLIPTextModel> clip_text_encoder = m_clip_text_encoder->clone();
         std::shared_ptr<UNet2DConditionModel> unet = std::make_shared<UNet2DConditionModel>(m_unet->clone());
@@ -176,7 +178,6 @@ public:
             *unet,
             *vae);
 
-        // TODO: What if the pipeline was created with no root dir but manually?
         pipeline->m_root_dir = m_root_dir;
         pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
         return pipeline;

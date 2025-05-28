@@ -227,18 +227,17 @@ std::vector<ov::genai::Text2ImagePipeline> pipelines;
 // Prepare initial pipeline and compiled models into device
 pipelines.emplace_back(models_path, device);
 // Clone pipeline for concurrent usage
-for (int i = 1; i < 4; i++)
+for (size_t i = 1; i < 4; i++)
    pipelines.emplace_back(pipelines.begin()->clone());
 
 std::vector<std::thread> threads;
 
-for (int i = 0; i < 4; i++) {
+for (size_t i = 0; i < 4; i++) {
   auto& pipe = pipelines.at(i);
   threads.emplace_back([&pipe, i] {
-    auto request = pipe.clone();
     std::string prompt = "A card with number " + std::to_string(i);
 
-    ov::Tensor image = request.generate(prompt,
+    ov::Tensor image = pipe.generate(prompt,
       ov::AnyMap{
         ov::genai::width(512),
         ov::genai::height(512),

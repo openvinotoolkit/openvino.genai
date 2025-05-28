@@ -94,15 +94,12 @@ public:
 private:
     Config m_config;
     AdapterController m_adapter_controller;
+    Tokenizer m_clip_tokenizer;
+    bool m_slice_batch1_output = false;
 
 protected:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
-
-private:
-    Tokenizer m_clip_tokenizer;
-
-    bool m_slice_batch1_output = false;
 };
 
 } // namespace genai
