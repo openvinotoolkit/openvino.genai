@@ -44,6 +44,7 @@ from .py_openvino_genai import (
 # Generation config
 from .py_openvino_genai import (
     GenerationConfig,
+    GuidedGenerationConfig,
     StopCriteria
 )
 

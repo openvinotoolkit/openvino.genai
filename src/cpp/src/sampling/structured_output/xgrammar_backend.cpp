@@ -80,8 +80,27 @@ XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, s
 
 std::shared_ptr<LogitTransformers::ILogitTransformer>
 XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& sampling_parameters) {
-    std::cout << *sampling_parameters.json << std::endl;
-    auto compiled_grammar = m_grammar_compiler->CompileJSONSchema(*sampling_parameters.json);
+    OPENVINO_ASSERT(sampling_parameters.is_guided_generation(),
+                  "XGrammarStructuredOutput can only be used for guided generation");
+    
+    auto& guided_gen_config = *sampling_parameters.guided_generation_config;
+    guided_gen_config.validate();
+
+    xgrammar::Grammar grammar;
+    if (guided_gen_config.json_schema.has_value()) {
+        // std::cout << *guided_generation_config.json_schema << std::endl;
+        grammar = xgrammar::Grammar::FromJSONSchema(*guided_gen_config.json_schema);
+    } else if (guided_gen_config.regex.has_value()) {
+        grammar = xgrammar::Grammar::FromRegex(*guided_gen_config.regex);
+    } else if (guided_gen_config.choices.has_value()) {
+        // todo: check this
+        grammar = xgrammar::Grammar::FromStructuralTag(std::vector<xgrammar::StructuralTagItem>{}, *guided_gen_config.choices);
+    } else if (guided_gen_config.grammar.has_value()) {
+        grammar = xgrammar::Grammar::FromEBNF(*guided_gen_config.grammar);
+    }
+    
+    auto compiled_grammar = m_grammar_compiler->CompileGrammar(grammar);
+
     return std::make_shared<LogitTransformers::XGrammarLogitsTransformer>(std::move(compiled_grammar));
 }
 
