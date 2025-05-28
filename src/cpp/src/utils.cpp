@@ -573,7 +573,9 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
             OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
         }
     }
-    if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
+
+    auto prompt_lookup_prop = properties.find("prompt_lookup");
+    if (prompt_lookup_prop != properties.end() && prompt_lookup_prop->second.as<bool>() == true) {
         if (is_paged_attention_available()) {
             return true;
         } else {

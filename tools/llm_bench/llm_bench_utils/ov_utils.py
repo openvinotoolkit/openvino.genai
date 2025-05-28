@@ -18,7 +18,8 @@ from llm_bench_utils.config_class import (
     DEFAULT_MODEL_CLASSES,
     IMAGE_GEN_CLS,
     INPAINTING_IMAGE_GEN_CLS,
-    IMAGE_TO_IMAGE_GEN_CLS
+    IMAGE_TO_IMAGE_GEN_CLS,
+    PA_ATTENTION_BACKEND
 )
 from transformers import pipeline
 import queue
@@ -191,7 +192,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, *
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     draft_model_path = kwargs.get("draft_model", '')
-    cb = kwargs.get("use_cb", False)
+    cb = ov_config.get('ATTENTION_BACKEND', '') == PA_ATTENTION_BACKEND
     cb_config = kwargs.get("cb_config")
     use_streamer_metrics = False
     if cb or cb_config is not None or draft_model_path:
@@ -599,7 +600,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
 
     processor_config = get_vlm_processor(model_path)
 
-    cb = kwargs.get("use_cb", False)
+    cb = ov_config.get('ATTENTION_BACKEND', '') == PA_ATTENTION_BACKEND
     cb_config = kwargs.get("cb_config")
     if cb or cb_config is not None:
         log.info("Continuous Batching mode activated")
