@@ -110,7 +110,7 @@ jobs:
           echo """
           mkdir -p ${{ github.workspace }}/build
           cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TOKENIZERS=NO -DOpenVINO_DIR=${OV_INSTALL_DIR}/runtime/cmake/ -DCMAKE_C_COMPILER_LAUNCHER= -DCMAKE_CXX_COMPILER_LAUNCHER= -B${BUILD_DIR} ${{ github.workspace }}/openvino.genai
-          cmake --build ${BUILD_DIR} --config ${BUILD_TYPE} -j
+          cmake --build ${BUILD_DIR} --config ${BUILD_TYPE} --parallel $(nproc)
           """ > build.sh
 
       - name: Build for coverity
