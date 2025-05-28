@@ -107,6 +107,7 @@ jobs:
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
           wget -q https://scan.coverity.com/download/linux64 --post-data "token=${{ secrets.COVERITY_SECRET_TOKEN }}&project=openvino.genai" -O coverity_tool.tgz
+          mkdir -p ${{ env.COV_TOOL_DIR }}
           pigz -dc coverity_tool.tgz | tar --strip-components=1 -xf - -C ${{ env.COV_TOOL_DIR }}
           
       - name: Create config file for coverity build
