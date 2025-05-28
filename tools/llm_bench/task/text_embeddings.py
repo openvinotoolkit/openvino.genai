@@ -154,6 +154,7 @@ def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data
         text_emb=True
     )
 
+
 def run_text_embddings_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_embeddings_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
