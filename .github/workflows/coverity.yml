@@ -92,8 +92,17 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
+          
+      - name: Cache Coverity Tool
+        id: cache-coverity
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: coverity_tool
+          key: coverity-${{ runner.os }}-${{ github.sha }}
+          restore-keys: coverity-${{ runner.os }}
 
       - name: Download coverity tool
+        if: steps.cache-coverity.outputs.cache-hit != 'true' && github.event_name == 'schedule'
         run: |
           wget -q https://scan.coverity.com/download/linux64 --post-data "token=${{ secrets.COVERITY_SECRET_TOKEN }}&project=openvino.genai" -O coverity_tool.tgz
           tar -I pigz -xf coverity_tool.tgz
@@ -122,6 +131,7 @@ jobs:
         working-directory: ${{ env.BUILD_DIR }}
 
       - name: Submit to coverity
+        if: github.event_name == 'schedule'
         run: |
           apt-get update && apt-get install -y curl jq
           pushd ${BUILD_DIR}
@@ -149,6 +159,13 @@ jobs:
         continue-on-error: true
         run: ${ENV_COV_TOOL_DIR}/bin/cov-configure -c ${ENV_COV_TOOL_DIR}/config/coverity_config.xml -lscc text
 
+      - name: Save ccache
+        if: always() && steps.cache-coverity.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+          path: ${{ env.CCACHE_DIR }}
+        
       - name: Upload Coverity build log
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
