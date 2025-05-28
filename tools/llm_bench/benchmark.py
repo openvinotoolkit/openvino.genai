@@ -17,6 +17,7 @@ import task.text_generation as bench_text
 import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
+import task.text_embeddings as bench_text_embed
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 memory_monitor = MemMonitorWrapper()
@@ -189,6 +190,10 @@ def get_argprser():
         '--strength', type=float, default=None,
         help='Applicable for Image to imaage/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
     parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
+    parser.add_argument("--embedding_pooling", choices=["cls", "mean"], default=None, help="Pooling type CLS or MEAN. Applicable only for text embeddings")
+    parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
+    parser.add_argument("--embedding_max_length", type=int, default=None,
+                        help="Max length for text embeddings. Input text will be padded or truncated to specified value")
     return parser.parse_args()
 
 
@@ -198,7 +203,8 @@ CASE_TO_BENCH = {
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
     'speech2text': bench_speech.run_speech_2_txt_benchmark,
-    "vlm": bench_vlm.run_visual_language_generation_benchmark
+    "vlm": bench_vlm.run_visual_language_generation_benchmark,
+    "text_embed": bench_text_embed.run_text_embddings_benchmark
 }
 
 

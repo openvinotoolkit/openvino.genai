@@ -37,7 +37,7 @@ def get_param_from_file(args, input_key):
     if args['prompt_file'] is None:
         if not isinstance(input_key, (list, tuple)):
             if args[input_key] is None:
-                if args['use_case'] == 'text_gen':
+                if args['use_case'] in ['text_gen', 'text_embed']:
                     data_list.append('What is OpenVINO?')
                 elif args['use_case'] == 'code_gen':
                     data_list.append('def print_hello_world():')
@@ -131,6 +131,9 @@ def analyze_args(args):
     model_args['mask_image'] = args.mask_image
     model_args['task'] = args.task
     model_args['strength'] = args.strength
+    model_args['emb_pooling_type'] = args.embedding_pooling
+    model_args['emb_normalize'] = args.embedding_normalize
+    model_args["emb_max_length"] = args.embedding_max_length
 
     optimum = args.optimum
 
