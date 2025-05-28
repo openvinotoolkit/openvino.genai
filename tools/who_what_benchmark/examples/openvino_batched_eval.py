@@ -16,7 +16,7 @@ from openvino_genai import (
 
 from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
-from transformers import AutoTokenizer, AutoConfig
+from transformers import AutoTokenizer
 
 model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 MAX_NEW_TOKENS = 128
