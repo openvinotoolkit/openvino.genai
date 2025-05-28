@@ -4,6 +4,8 @@
 #pragma once
 
 #include <cassert>
+#include <iostream>
+#include <memory>
 #include <filesystem>
 
 #include "image_generation/diffusion_pipeline.hpp"
@@ -28,6 +30,7 @@ public:
 
     StableDiffusionPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
         StableDiffusionPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -70,6 +73,7 @@ public:
 
     StableDiffusionPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) :
         StableDiffusionPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -160,6 +164,23 @@ public:
         m_clip_text_encoder->compile(text_encode_device, *updated_properties);
         m_unet->compile(denoise_device, *updated_properties);
         m_vae->compile(vae_device, *updated_properties);
+    }
+
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_ASSERT(!m_root_dir.empty(), "Cannot clone pipeline without root directory");
+
+        std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
+        std::shared_ptr<CLIPTextModel> clip_text_encoder = m_clip_text_encoder->clone();
+        std::shared_ptr<UNet2DConditionModel> unet = std::make_shared<UNet2DConditionModel>(m_unet->clone());
+        std::shared_ptr<StableDiffusionPipeline> pipeline = std::make_shared<StableDiffusionPipeline>(
+            m_pipeline_type,
+            *clip_text_encoder,
+            *unet,
+            *vae);
+
+        pipeline->m_root_dir = m_root_dir;
+        pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
+        return pipeline;
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
