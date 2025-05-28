@@ -102,7 +102,7 @@ jobs:
           restore-keys: coverity-${{ runner.os }}
 
       - name: Download coverity tool
-        if: steps.cache-coverity.outputs.cache-hit != 'true' && github.event_name == 'schedule'
+        if: steps.cache-coverity.outputs.cache-hit != 'true'
         run: |
           wget -q https://scan.coverity.com/download/linux64 --post-data "token=${{ secrets.COVERITY_SECRET_TOKEN }}&project=openvino.genai" -O coverity_tool.tgz
           tar -I pigz -xf coverity_tool.tgz
