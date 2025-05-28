@@ -153,8 +153,7 @@ jobs:
         id: create_manifest
         uses: openvinotoolkit/openvino/.github/actions/create_manifest@refs/pull/30742/head
         with:
-          repos: |
-            ${{ github.workspace }}
+          repos: ${{ env.SRC_DIR }}
           product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build_type }}
           target_arch: 'x86_64'
           build_type: ${{ matrix.build_type }}
@@ -249,8 +248,7 @@ jobs:
         id: create_manifest
         uses: openvinotoolkit/openvino/.github/actions/create_manifest@refs/pull/30742/head
         with:
-          repos: |
-            ${{ github.workspace }}
+          repos: ${{ env.SRC_DIR }}
           product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
           target_arch: 'x86_64'
           build_type: Release
