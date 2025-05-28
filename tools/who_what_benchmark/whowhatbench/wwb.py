@@ -258,7 +258,7 @@ def load_processor(args):
     else:
         preprocessor_id = model_id
 
-    preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=trust_remote_code) 
+    preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=trust_remote_code)
     return preprocessor, config
 
 
