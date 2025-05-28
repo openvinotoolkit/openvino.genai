@@ -68,7 +68,7 @@ def get_ov_model(model_id):
             ov_config=get_default_llm_properties(),
         )
     )
-    if tokenizer.chat_template is not None and processor.chat_template != tokenizer.chat_template:
+    if tokenizer.chat_template is not None and hasattr(processor, 'chat_template') is not None and processor.chat_template != tokenizer.chat_template:
         processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
