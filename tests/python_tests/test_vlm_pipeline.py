@@ -846,10 +846,14 @@ class TestImageTags:
 @pytest.mark.parametrize(
     "model_id, image_link, target_size, backend",
     [
-        pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316"))
+        # pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "SDPA"),
+        # pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
+        # pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
+        # pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316"))
+        pytest.param("Qwen/Qwen2-VL-7B-Instruct", image_links[0], (336, 336), "SDPA"),
+        pytest.param("Qwen/Qwen2-VL-7B-Instruct", image_links[0], (336, 336), "PA"),
+        pytest.param("Qwen/Qwen2.5-VL-3B-Instruct", image_links[0], (336, 336), "SDPA"),
+        pytest.param("Qwen/Qwen2.5-VL-3B-Instruct", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316"))
     ],
 )
 def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size, backend):
@@ -886,5 +890,11 @@ def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size
     vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
     genai_output = vlm.generate(prompt, images=[resized_image_tensor], max_new_tokens=max_new_tokens)
     genai_text = genai_output.texts[0]
+
+    print("Optimum output")
+    print(optimum_text)
+    
+    print("GenAI output")
+    print(genai_text)
 
     assert optimum_text == genai_text
