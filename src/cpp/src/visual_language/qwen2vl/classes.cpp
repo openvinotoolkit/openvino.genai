@@ -7,6 +7,7 @@
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
+#include "visual_language/vl_sdpa_transformations.hpp"
 
 namespace ov::genai {
 
@@ -232,6 +233,29 @@ ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordere
     return attention_mask;
 }
 
+ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw) {
+    // Calculate cumulative sequence lengths for attention mask
+    std::vector<int32_t> cu_seqlens;
+    cu_seqlens.push_back(0);
+    int32_t cumsum = 0;
+    for (const auto& grid_thw : reordered_images_grid_thw) {
+        size_t slice_len = grid_thw.at(1) * grid_thw.at(2);
+        for (size_t t = 0; t < grid_thw.at(0); ++t) {
+            cumsum += slice_len;
+            cu_seqlens.push_back(cumsum);
+        }
+    }
+
+    ov::Tensor t_cu_seqlens = ov::Tensor(ov::element::i32, {cu_seqlens.size()});
+    auto* ptr = static_cast<int32_t*>(t_cu_seqlens.data());
+    for (size_t n = 0; n < cu_seqlens.size(); n++) {
+        ptr[n] = cu_seqlens[n];
+    }
+    return t_cu_seqlens;
+
+    // return ov::Tensor(ov::element::i32, {cu_seqlens.size()}, cu_seqlens.data());
+}
+
 ov::Tensor concatenate_image_embeds(const std::vector<ov::Tensor>& reordered_image_embeds) {
     ov::Tensor concatenated_embeds;
     if (reordered_image_embeds.size() == 1) {
@@ -374,7 +398,12 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_merger_model.xml", device, device_config);
+    auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_merger_model.xml");
+    if (std::getenv("OV_VLSDPA") != nullptr) {
+        utils::apply_vl_sdpa_transformations(model);
+        m_with_attention_mask_input = false;
+    }
+    auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
     m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -391,9 +420,14 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    auto compiled_model = utils::singleton_core().compile_model(
+    auto model = utils::singleton_core().read_model(
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
-        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second,
+        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
+    if (std::getenv("OV_VLSDPA") != nullptr) {
+        utils::apply_vl_sdpa_transformations(model);
+        m_with_attention_mask_input = false;
+    }
+    auto compiled_model = utils::singleton_core().compile_model(model,
         device,
         device_config
     );
@@ -508,12 +542,22 @@ ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(
 
     ov::Tensor concatenated_embeds = qwen2_vl_utils::concatenate_image_embeds(reordered_image_embeds);
     ov::Tensor attention_mask = qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw);
+    ov::Tensor attention_cu_seqlens = qwen2_vl_utils::get_cu_seqlens(reordered_images_grid_thw);
     ov::Tensor rotary_pos_emb = get_rotary_pos_emb(reordered_images_grid_thw);
+
+    // {
+    //     int32_t* ptr = static_cast<int32_t*>(attention_cu_seqlens.data());
+    //     for (auto i = 0; i < attention_cu_seqlens.get_size(); i++)
+    //         std::cout << "=========== attention_cu_seqlens i: " << i << " : " << ptr[i] << std::endl; 
+    // }
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
-    vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
+    if (m_with_attention_mask_input)
+        vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
+    else
+        vision_embeddings_merger.set_tensor("cu_seq_lens", attention_cu_seqlens);
     vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
     vision_embeddings_merger.infer();
     ov::Tensor processed_vision_embeds = vision_embeddings_merger.get_output_tensor();
