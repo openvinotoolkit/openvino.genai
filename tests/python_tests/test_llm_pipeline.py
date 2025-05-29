@@ -842,3 +842,38 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     res_string_input_2 = hf_tokenizer.batch_decode([encoded_result.tokens[0]], skip_special_tokens=True)[0]
 
     assert res_string_input_1 == res_string_input_2
+
+
+@pytest.mark.parametrize("model_ids", [
+        {
+            "gguf_model_id": "prithivMLmods/SmolLM2-135M-GGUF",
+            "gguf_filename": "SmolLM2-135M.F16.gguf"
+        },
+        {
+            "gguf_model_id": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+            "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf"
+        },
+    ])
+@pytest.mark.precommit
+def test_gguf_tokenizer_detokenizer(model_ids):
+    from llama_cpp import Llama
+
+    gguf_model_id = model_ids["gguf_model_id"]
+    gguf_filename = model_ids["gguf_filename"]
+    prompt = 'Why is the Sun yellow?'
+    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
+
+    # Test tokenizers
+    llama = Llama(model_path=gguf_full_path)
+    llama_tokens = llama.tokenize(prompt.encode("utf-8"))
+
+    ov_pipe_gguf = create_ov_pipeline(gguf_full_path)
+    ov_tokens = ov_pipe_gguf.get_tokenizer().encode(prompt).input_ids.data.tolist()[0]
+
+    assert ov_tokens == llama_tokens, "OV tokens are not equal to llama-cpp tokens"
+
+    # Test detokenizers
+    llama_decoded_tokens = llama.detokenize(llama_tokens).decode("utf-8")
+    ov_decoded_tokens = ov_pipe_gguf.get_tokenizer().decode(ov_tokens)
+
+    assert ov_decoded_tokens == llama_decoded_tokens, "OV decoded tokens are not equal to llama-cpp decoded tokens"
