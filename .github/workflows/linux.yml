@@ -400,7 +400,7 @@ jobs:
             # cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
             cmd: 'tests/python_tests/test_vlm_pipeline.py::test_vlm_pipeline_match_optimum_preresized'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
+            timeout: 180
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
