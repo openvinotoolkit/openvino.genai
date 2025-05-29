@@ -8,7 +8,6 @@ pytest-html
 hf_transfer
 langchain_community
 gguf>=0.10.0
-llama-cpp-python
 
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
