@@ -94,7 +94,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& plugin_config)
-    : StatefulLLMPipeline{models_path, Tokenizer(models_path), device, plugin_config} {}
+    : StatefulLLMPipeline{models_path, Tokenizer(models_path, plugin_config), device, plugin_config} {}
 
 DecodedResults StatefulLLMPipeline::generate(
     StringInputs inputs,
