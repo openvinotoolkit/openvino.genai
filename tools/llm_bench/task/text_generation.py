@@ -18,7 +18,7 @@ from llm_bench_utils.ov_utils import get_genai_chunk_streamer, OptimumChunkStrea
 import llm_bench_utils.output_json
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
-import llm_bench_utils.parse_json_data as parse_json_data
+from llm_bench_utils.prompt_utils import get_text_prompt
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
@@ -574,16 +574,3 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time, iter_timestamp
-
-
-def get_text_prompt(args):
-    text_list = []
-    output_data_list, is_json_data = model_utils.get_param_from_file(args, 'prompt')
-    if is_json_data is True:
-        text_param_list = parse_json_data.parse_text_json_data(output_data_list)
-        if len(text_param_list) > 0:
-            for text in text_param_list:
-                text_list.append(text)
-    else:
-        text_list.append(output_data_list[0])
-    return text_list
