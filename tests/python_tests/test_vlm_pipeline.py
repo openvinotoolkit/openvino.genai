@@ -849,7 +849,7 @@ class TestImageTags:
         pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316"))
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA")
     ],
 )
 def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size, backend):
