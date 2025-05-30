@@ -138,22 +138,36 @@ def test_different_input_types_works_same_and_change_nothing(model_id):
 
     assert res_string_input_1 == res_string_input_2
 
+from pydantic import BaseModel
+from typing import Literal
+class Person(BaseModel):
+    name: str
+    age: int
+    city: Literal["Dublin", "Dubai", "Munich"]
+
+class Transaction(BaseModel):
+    id: int
+    amount: float
+    currency: Literal["USD", "EUR", "GBP"]
+
+class RESTAPIResponse(BaseModel):
+    status: Literal["success", "error"]
+    data: str
+
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.parametrize("prompt", ["Generate a json about a person."])
-def test_guided_generation(model_id, prompt):
+@pytest.mark.parametrize("prompt_and_scheme", [("Generate a json about a person.", Person), 
+                                               ("Generate a json about a transaction.", Transaction),
+                                               ("Generate a json about a REST API response.", RESTAPIResponse)])
+def test_guided_generation(model_id, prompt_and_scheme):
+    prompt, SchemeType = prompt_and_scheme
     opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
-    from pydantic import BaseModel
-    from typing import Literal
-    class Person(BaseModel):
-        name: str
-        age: int
-        city: Literal["Dublin", "Dubai", "Munich"]    
+
     guided_generation_config = ov_genai.GuidedGenerationConfig()
-    guided_generation_config.json_schema = json.dumps(Person.model_json_schema())
+    guided_generation_config.json_schema = json.dumps(SchemeType.model_json_schema())
 
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 100
@@ -163,14 +177,14 @@ def test_guided_generation(model_id, prompt):
     res_str = ov_pipe.generate(prompt, generation_config=gen_config)
 
     # If it's invalid it will raise an error.
-    Person.model_validate_json(res_str)
+    SchemeType.model_validate_json(res_str)
 
     # If generation is not constrained by json schema, 
     # assert that output is not valid.
     gen_config.guided_generation_config = None
     res_str = ov_pipe.generate(prompt, generation_config=gen_config)
     with pytest.raises(ValueError):
-        Person.model_validate_json(res_str)
+        SchemeType.model_validate_json(res_str)
 
 
 #
@@ -919,7 +933,6 @@ def test_full_gguf_pipeline(pipeline_type, model_ids):
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     assert res_string_input_1 == res_string_input_2
-
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", [{"gguf_model_id": "Qwen/Qwen3-0.6B-GGUF", "gguf_filename": "Qwen3-0.6B-Q8_0.gguf"}])

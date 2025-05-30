@@ -30,8 +30,10 @@ public:
 
 protected:
     xgrammar::GrammarMatcher m_grammar_matcher;
-    std::shared_ptr<DLTensor> m_token_bitmask;
+
     ov::Tensor m_token_bitmask_ov;
+    std::shared_ptr<DLTensor> m_token_bitmask;
+    std::shared_ptr<DLTensor> m_next_token_logits;
     int m_vocab_size;
 };
 
