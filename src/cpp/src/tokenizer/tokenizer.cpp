@@ -254,6 +254,8 @@ public:
         auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
         auto filtered_properties = utils::extract_npu_properties(properties_without_draft_model_without_gguf);
 
+	// Test only: bypass no properties to tokenizer/detokenizer
+	filtered_properties = {};
         if (is_gguf_model(models_path)) {
             std::map<std::string, GGUFMetaData> tokenizer_config{};
             const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
