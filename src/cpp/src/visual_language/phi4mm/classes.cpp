@@ -220,8 +220,8 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_image_p
 ov::Tensor calculate_patch_position_ids(
     const ov::Tensor& input_image_embeds,
     const ov::Tensor& image_attention_mask,
-    int patch_size = 14,
-    int num_patches_per_side = 32
+    const size_t patch_size = 14,
+    const size_t num_patches_per_side = 32
 ) {
     // input_image_embeds: [batch, num_images, channels, height, width]
     ov::Shape image_embeds_shape = input_image_embeds.get_shape();
@@ -238,7 +238,7 @@ ov::Tensor calculate_patch_position_ids(
     
     std::vector<float> boundaries;
     boundaries.reserve(num_patches_per_side - 1);
-    for (int i = 1; i < num_patches_per_side; ++i) {
+    for (size_t i = 1; i < num_patches_per_side; ++i) {
         boundaries.push_back(static_cast<float>(i) / num_patches_per_side);
     }
     
@@ -296,31 +296,31 @@ ov::Tensor calculate_patch_position_ids(
         }
         
         // Bucket coordinates (equivalent to torch.bucketize with right=True)
-        std::vector<int> bucket_coords_h;
-        std::vector<int> bucket_coords_w;
+        std::vector<size_t> bucket_coords_h;
+        std::vector<size_t> bucket_coords_w;
         bucket_coords_h.reserve(fractional_coords_h.size());
         bucket_coords_w.reserve(fractional_coords_w.size());
         
         for (float coord : fractional_coords_h) {
-            int bucket = 0;
+            size_t bucket = 0;
             for (size_t i = 0; i < boundaries.size(); ++i) {
                 if (coord < boundaries[i]) {
-                    bucket = static_cast<int>(i);
+                    bucket = i;
                     break;
                 }
-                bucket = static_cast<int>(i + 1);
+                bucket = i + 1;
             }
             bucket_coords_h.push_back(bucket);
         }
         
         for (float coord : fractional_coords_w) {
-            int bucket = 0;
+            size_t bucket = 0;
             for (size_t i = 0; i < boundaries.size(); ++i) {
                 if (coord < boundaries[i]) {
-                    bucket = static_cast<int>(i);
+                    bucket = i;
                     break;
                 }
-                bucket = static_cast<int>(i + 1);
+                bucket = i + 1;
             }
             bucket_coords_w.push_back(bucket);
         }
@@ -328,8 +328,8 @@ ov::Tensor calculate_patch_position_ids(
         std::vector<int64_t> pos_ids;
         pos_ids.reserve(bucket_coords_h.size() * bucket_coords_w.size());
         
-        for (int h_coord : bucket_coords_h) {
-            for (int w_coord : bucket_coords_w) {
+        for (size_t h_coord : bucket_coords_h) {
+            for (size_t w_coord : bucket_coords_w) {
                 pos_ids.push_back(static_cast<int64_t>(h_coord * num_patches_per_side + w_coord));
             }
         }
