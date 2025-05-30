@@ -16,7 +16,7 @@ from utils.constants import get_default_llm_properties, extra_generate_kwargs
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model, download_gguf_model
 # model_tmp_path fixture import required
 from utils.tokenizers import delete_rt_info, model_tmp_path
-from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType, get_gguf_pipeline_types, create_ov_gguf_pipeline, get_gguf_enable_save_ov_model_property_list
+from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType, get_gguf_pipeline_types, get_gguf_enable_save_ov_model_property_list
 from data.models import get_models_list, get_chat_models_list, get_gguf_model_list
 
 #
@@ -846,8 +846,9 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
+@pytest.mark.parametrize("enable_save_ov_model", get_gguf_enable_save_ov_model_property_list())
 @pytest.mark.precommit
-def test_full_gguf_pipeline(pipeline_type, model_ids):
+def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
     prompt = 'Why is the Sun yellow?'
@@ -878,37 +879,11 @@ def test_full_gguf_pipeline(pipeline_type, model_ids):
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
-    assert res_string_input_1 == res_string_input_2
+    if enable_save_ov_model:
+        ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type)
+        res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
 
-@pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
-@pytest.mark.parametrize("model_ids", get_gguf_model_list())
-@pytest.mark.parametrize("enable_save_ov_model", get_gguf_enable_save_ov_model_property_list())
-@pytest.mark.precommit
-def test_full_gguf_pipeline_with_enable_save_ov_model_property(pipeline_type, model_ids, enable_save_ov_model):
-    gguf_model_id = model_ids["gguf_model_id"]
-    gguf_filename = model_ids["gguf_filename"]
-    prompt = 'Why is the Sun yellow?'
-
-    from utils.network import retry_request
-    from transformers import AutoTokenizer
-
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
-
-    # TODO: remove explicit switch-off of bos token
-    hf_tokenizer.add_bos_token = False
-
-    ov_generation_config = ov_genai.GenerationConfig()
-    ov_generation_config.max_new_tokens = 30
-    ov_generation_config.apply_chat_template = False
-    ov_generation_config.set_eos_token_id(hf_tokenizer.eos_token_id)
-
-    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
-    gguf_full_path = Path(gguf_full_path)
-
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model)
-    res_string_input_1  = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
-
-    ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type)
-    res_string_input_2  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
-
-    assert res_string_input_1 == res_string_input_2
+        assert res_string_input_1 == res_string_input_2
+        assert res_string_input_1 == res_string_input_3
+    else:
+        assert res_string_input_1 == res_string_input_2

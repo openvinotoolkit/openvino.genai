@@ -8,7 +8,7 @@ from shutil import rmtree
 
 from optimum.intel.openvino.utils import TemporaryDirectory
 from openvino_genai import SchedulerConfig, draft_model, ContinuousBatchingPipeline, \
-    LLMPipeline, GenerationConfig, GenerationResult, StreamerBase, DecodedResults, Tokenizer
+    LLMPipeline, GenerationConfig, GenerationResult, StreamerBase, DecodedResults
 
 from utils.constants import get_default_llm_properties
 from utils.comparation import compare_generation_results, compare_generation_results_vs_ref
@@ -55,7 +55,7 @@ def get_gguf_pipeline_types():
     return [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION]
 
 def get_gguf_enable_save_ov_model_property_list():
-    return [True]
+    return [True, False]
 
 class StreamerWithResults:
     # Return a streamer which accumulates results in order to compare with results returned from generate.
@@ -99,24 +99,6 @@ def create_ov_pipeline(models_path: Path,
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, draft_model=ov_draft_model)
     elif pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING:
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, prompt_lookup=True)
-    else:
-        raise Exception(f"Unsupported pipeline type: {pipeline_type}")
-
-def create_ov_gguf_pipeline(models_path: Path,
-                       pipeline_type: PipelineType = PipelineType.AUTO,
-                       device: str = "CPU",
-                       ov_config: dict = get_default_llm_properties(),
-                       scheduler_config: SchedulerConfig = SchedulerConfig(),
-                       enable_save_ov_model: bool = True):
-    local_ov_config = ov_config.copy()
-    if pipeline_type == PipelineType.AUTO:
-        return LLMPipeline(models_path, Tokenizer(models_path.parent), device, local_ov_config)
-    elif pipeline_type == PipelineType.STATEFUL:
-        local_ov_config["enable_save_ov_model"] = enable_save_ov_model
-        return LLMPipeline(models_path, Tokenizer(models_path.parent), device, local_ov_config, ATTENTION_BACKEND="SDPA")
-    elif pipeline_type == PipelineType.PAGED_ATTENTION:
-        local_ov_config["enable_save_ov_model"] = enable_save_ov_model
-        return LLMPipeline(models_path, Tokenizer(models_path.parent), device, local_ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
     else:
         raise Exception(f"Unsupported pipeline type: {pipeline_type}")
 
