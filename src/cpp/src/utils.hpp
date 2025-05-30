@@ -252,36 +252,6 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
-struct ModelDesc {
-    std::string device;
-    ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap properties;
-    ov::genai::GenerationConfig generation_config;
-    std::shared_ptr<ov::Model> model = nullptr;
-    ov::genai::Tokenizer tokenizer;
-
-    ModelDesc(const std::shared_ptr<ov::Model>& model,
-              const ov::genai::Tokenizer& tokenizer,
-              const std::string& device = {},
-              const ov::AnyMap& properties = {},
-              const ov::genai::SchedulerConfig& scheduler_config = {},
-              const ov::genai::GenerationConfig& generation_config = {}) :
-        model(model),
-        tokenizer(tokenizer),
-        device(device),
-        properties(properties),
-        scheduler_config(scheduler_config),
-        generation_config(generation_config) {}
-
-    ModelDesc() = default;
-};
-
-ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
-
-bool extract_prompt_lookup_from_config(ov::AnyMap& config);
-
-ov::AnyMap extract_npu_properties(const ov::AnyMap& external_properties);
-
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

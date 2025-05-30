@@ -44,7 +44,7 @@ std::pair<std::string, Any> draft_model(
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
     auto generation_config = utils::from_config_json_if_exists(models_path);
     auto tokenizer = ov::genai::Tokenizer(models_path);
-    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<utils::ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
+    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
 std::pair<std::string, Any> draft_model(
@@ -57,7 +57,7 @@ std::pair<std::string, Any> draft_model(
     auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
-    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<utils::ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
+    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
 // Public LLMPipeline

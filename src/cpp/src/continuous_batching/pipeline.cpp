@@ -19,6 +19,25 @@
 using namespace ov::genai;
 
 namespace {
+ov::genai::ModelDesc
+extract_draft_model_from_config(ov::AnyMap& config) {
+    ov::genai::ModelDesc draft_model;
+    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
+        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
+        config.erase(utils::DRAFT_MODEL_ARG_NAME);
+    }
+    return draft_model;
+}
+
+bool
+extract_prompt_lookup_from_config(ov::AnyMap& config) {
+    bool res = false;
+    if (config.find(ov::genai::prompt_lookup.name()) != config.end()) {
+        res = config.at(ov::genai::prompt_lookup.name()).as<bool>();
+        config.erase(ov::genai::prompt_lookup.name());
+    }
+    return res;
+}
 
 float get_load_time(std::chrono::steady_clock::time_point start_time) {
     auto stop_time = std::chrono::steady_clock::now();
@@ -34,8 +53,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
                                                         const ov::AnyMap& vision_encoder_properties) {
     auto start_time = std::chrono::steady_clock::now();
     auto properties_without_draft_model = properties;
-    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
-    auto is_prompt_lookup_enabled = utils::extract_prompt_lookup_from_config(properties_without_draft_model);
+    auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
+    auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
 
     auto model = utils::read_model(models_path, properties);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
@@ -53,7 +72,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = utils::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
     } else if (embedder) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, embedder, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
@@ -73,8 +92,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
     auto properties_without_draft_model = properties;
-    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
-    auto is_prompt_lookup_enabled = utils::extract_prompt_lookup_from_config(properties_without_draft_model);
+    auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
+    auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
 
     auto model = utils::read_model(models_path, properties_without_draft_model);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
@@ -92,7 +111,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = utils::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
     } else if (embedder) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, embedder, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
@@ -114,8 +133,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
-    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
-    auto is_prompt_lookup_enabled = utils::extract_prompt_lookup_from_config(properties_without_draft_model);
+    auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
+    auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
 
     auto rt_info = model->get_rt_info();
@@ -135,7 +154,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = utils::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
     } else if (embedder) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, embedder, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
@@ -157,8 +176,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
-    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
-    auto is_prompt_lookup_enabled = utils::extract_prompt_lookup_from_config(properties_without_draft_model);
+    auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
+    auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto model_pair = utils::get_model_weights_pair(models_map, "language");
     auto model = utils::singleton_core().read_model(model_pair.first, model_pair.second);
 
@@ -183,7 +202,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = utils::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
     } else if (embedder) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, embedder, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
