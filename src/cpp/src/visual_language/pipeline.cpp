@@ -362,6 +362,7 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    attention_backend = SDPA_BACKEND;
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (utils::explicitly_requires_paged_attention(properties)) {
@@ -401,6 +402,7 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    attention_backend = SDPA_BACKEND;
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (utils::explicitly_requires_paged_attention(properties)) {
