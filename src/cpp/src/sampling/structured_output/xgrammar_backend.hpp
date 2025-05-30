@@ -3,6 +3,7 @@
 
 #pragma once
 
+#ifdef ENABLE_XGRAMMAR
 #include <xgrammar/xgrammar.h>
 #include <xgrammar/compiler.h>
 #include <xgrammar/tokenizer_info.h>
@@ -64,3 +65,5 @@ static bool xgrammar_registered = registerXGrammarBackend();
 
 } // namespace genai
 } // namespace ov
+
+#endif ENABLE_XGRAMMAR
