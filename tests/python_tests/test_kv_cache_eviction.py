@@ -47,7 +47,7 @@ class CacheOptTestStruct:
 
 
 SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
-LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.NORM_SUM)
+LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=2048, aggregation_mode=AggregationMode.NORM_SUM)
 
 
 @pytest.mark.precommit
@@ -220,7 +220,7 @@ def test_optimized_generation_longbench(device, test_struct):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]')
+    data = datasets.load_dataset('THUDM/LongBench', subset, split='test')
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []
