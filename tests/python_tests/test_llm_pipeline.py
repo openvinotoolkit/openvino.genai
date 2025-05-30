@@ -884,41 +884,31 @@ def test_full_gguf_pipeline(pipeline_type, model_ids):
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
 @pytest.mark.parametrize("enable_save_ov_model", get_gguf_enable_save_ov_model_property_list())
 @pytest.mark.precommit
-
-def test_pipelines_with_gguf_generate_with_enable_save_ov_model_property(pipeline_type, model_ids, enable_save_ov_model):
+def test_full_gguf_pipeline_with_enable_save_ov_model_property(pipeline_type, model_ids, enable_save_ov_model):
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
     prompt = 'Why is the Sun yellow?'
 
     from utils.network import retry_request
     from transformers import AutoTokenizer
-    from openvino_tokenizers import convert_tokenizer
 
     hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+
+    # TODO: remove explicit switch-off of bos token
+    hf_tokenizer.add_bos_token = False
 
     ov_generation_config = ov_genai.GenerationConfig()
     ov_generation_config.max_new_tokens = 30
     ov_generation_config.apply_chat_template = False
     ov_generation_config.set_eos_token_id(hf_tokenizer.eos_token_id)
 
-    inputs = hf_tokenizer(prompt, return_tensors="pt")
-    input_ids = inputs['input_ids']
-
-    ov_tokenizer, ov_detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
-
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
     gguf_full_path = Path(gguf_full_path)
-    ov_tokenizer_path = gguf_full_path.parent / "openvino_tokenizer.xml"
-    ov_detokenizer_path = gguf_full_path.parent / "openvino_detokenizer.xml"
-    ov.save_model(ov_tokenizer, ov_tokenizer_path)
-    ov.save_model(ov_detokenizer, ov_detokenizer_path)
 
-    ov_pipe_gguf = create_ov_gguf_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model)
-    encoded_result_1  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
-    res_string_input_1 = hf_tokenizer.batch_decode([encoded_result_1.tokens[0]], skip_special_tokens=True)[0]
+    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model)
+    res_string_input_1  = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type)
-    encoded_result_2  = ov_pipe_native.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
-    res_string_input_2 = hf_tokenizer.batch_decode([encoded_result_2.tokens[0]], skip_special_tokens=True)[0]
+    res_string_input_2  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
 
     assert res_string_input_1 == res_string_input_2
