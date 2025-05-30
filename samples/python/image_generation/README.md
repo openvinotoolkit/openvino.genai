@@ -30,9 +30,13 @@ Users can change the sample code and play with the following generation paramete
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
 Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
-
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+```
+
+Then run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 dreamlike_anime_1_0_ov/FP16
 ```
 
