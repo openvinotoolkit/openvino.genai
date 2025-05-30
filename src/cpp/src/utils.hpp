@@ -250,6 +250,8 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties);
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties);
 
+void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

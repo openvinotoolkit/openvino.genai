@@ -152,21 +152,6 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
-    try {
-        auto serialize_start_time = std::chrono::high_resolution_clock::now();
-        ov::save_model(model, save_path, compress_to_fp16);
-        auto serialize_finish_time = std::chrono::high_resolution_clock::now();
-        auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
-        std::stringstream ss;
-        ss << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms";
-        ov::genai::utils::print_gguf_debug_info(ss.str());
-    }
-    catch (const ov::Exception& e) {
-        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::enable_save_ov_model' property to false");
-    }
-}
-
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const bool enable_save_ov_model) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
@@ -189,7 +174,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
         if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(model_path);
             std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";
-            save_openvino_model(model, save_path.string(), true);
+            ov::genai::utils::save_openvino_model(model, save_path.string(), true);
         }
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
