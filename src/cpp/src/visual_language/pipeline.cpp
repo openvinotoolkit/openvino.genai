@@ -361,10 +361,10 @@ VLMPipeline::VLMPipeline(
     const ov::AnyMap& user_properties
 ) {
     auto start_time = std::chrono::steady_clock::now();
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, SDPA_BACKEND);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (utils::explicitly_requires_paged_attention(properties)) {
+    if (utils::explicitly_requires_paged_attention(user_properties)) {
         auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
     } else if (device == "NPU") {
@@ -400,10 +400,10 @@ VLMPipeline::VLMPipeline(
     const GenerationConfig& generation_config
 ) {
     auto start_time = std::chrono::steady_clock::now();
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, SDPA_BACKEND);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (utils::explicitly_requires_paged_attention(properties)) {
+    if (utils::explicitly_requires_paged_attention(user_properties)) {
         auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
     } else if (device == "NPU") {
