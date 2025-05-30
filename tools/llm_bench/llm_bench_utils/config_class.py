@@ -11,7 +11,8 @@ from optimum.intel.openvino import (
     OVModelForSpeechSeq2Seq,
     OVModelForVisualCausalLM,
     OVPipelineForInpainting,
-    OVPipelineForImage2Image
+    OVPipelineForImage2Image,
+    OVModelForFeatureExtraction
 )
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 
@@ -44,6 +45,7 @@ OV_MODEL_CLASSES_MAPPING = {
     'chatglm': OVChatGLMModel,
     'whisper': OVModelForSpeechSeq2Seq,
     "vlm": OVModelForVisualCausalLM,
+    "bert": OVModelForFeatureExtraction
 }
 
 PT_MODEL_CLASSES_MAPPING = {
@@ -55,6 +57,7 @@ PT_MODEL_CLASSES_MAPPING = {
     'stable_diffusion': DiffusionPipeline,
     'ldm_super_resolution': LDMSuperResolutionPipeline,
     'chatglm': AutoModel,
+    "bert": AutoModel,
 }
 
 USE_CASES = {
@@ -117,6 +120,7 @@ USE_CASES = {
         "gptj"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
+    'text_embed': ["bge", "bert", "albert", "roberta", "xlm-roberta"]
 }
 
 DEFAULT_MODEL_CLASSES = {
@@ -126,7 +130,8 @@ DEFAULT_MODEL_CLASSES = {
     'speech2text': 'whisper',
     'code_gen': 'decoder',
     'ldm_super_resolution': 'ldm_super_resolution',
-    "vlm": "vlm"
+    "vlm": "vlm",
+    'text_embed': 'bert'
 }
 
 TASK = {
