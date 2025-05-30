@@ -880,6 +880,7 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     if enable_save_ov_model:
+        gguf_full_path = Path(gguf_full_path)
         ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type)
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
 
