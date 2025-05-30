@@ -195,7 +195,7 @@ class LongBenchTestData:
     LongBenchTestData("samsum", 4, 1.6, 3.3),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
     LongBenchTestData("qasper", 5.8, 1.7, 3.6),
-])
+], ids=["samsum", "trec", "qasper"])
 def test_optimized_generation_longbench(device, test_struct):
     seqs_per_request = 32
     num_kv_blocks = 1000 if device == "CPU" else 500
