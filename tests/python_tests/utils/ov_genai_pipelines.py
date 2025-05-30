@@ -79,15 +79,15 @@ def create_ov_pipeline(models_path: Path,
                        ov_config: dict = get_default_llm_properties(),
                        scheduler_config: SchedulerConfig = SchedulerConfig(),
                        draft_model_path: Path = None,
-                       enable_save_ov_model: bool = False):
+                       enable_save_ov_model: bool = None):
     local_ov_config = ov_config.copy()
     if pipeline_type == PipelineType.AUTO:
         return LLMPipeline(models_path, device, ov_config)
     elif pipeline_type == PipelineType.STATEFUL:
-        local_ov_config["enable_save_ov_model"] = enable_save_ov_model
+        if enable_save_ov_model is not None: local_ov_config["enable_save_ov_model"] = enable_save_ov_model
         return LLMPipeline(models_path, device, local_ov_config, ATTENTION_BACKEND="SDPA")
     elif pipeline_type == PipelineType.PAGED_ATTENTION:
-        local_ov_config["enable_save_ov_model"] = enable_save_ov_model
+        if enable_save_ov_model is not None: local_ov_config["enable_save_ov_model"] = enable_save_ov_model
         return LLMPipeline(models_path, device, local_ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
     elif pipeline_type == PipelineType.CONTINUOUS_BATCHING:
         return ContinuousBatchingPipeline(models_path, scheduler_config, device, ov_config)
