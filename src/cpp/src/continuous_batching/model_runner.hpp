@@ -287,7 +287,7 @@ public:
                         *score_aggregation_window_data = 1;
                     }
                 }
-                std::cout << "VSHAMPOR: seq_id " << sequence->get_id() << ", num_blocks " << num_blocks << ", num_past_blocks_to_ignore " << num_past_blocks_to_ignore << ", num_scheduled_tokens " << num_scheduled_tokens << ", block_indices_begin " << block_indices_begins_data[0] << ", past_lens " << past_lens_data[0] << std::endl;
+                // std::cout << "VSHAMPOR: seq_id " << sequence->get_id() << ", num_blocks " << num_blocks << ", num_past_blocks_to_ignore " << num_past_blocks_to_ignore << ", num_scheduled_tokens " << num_scheduled_tokens << ", block_indices_begin " << block_indices_begins_data[0] << ", past_lens " << past_lens_data[0] << std::endl;
 
                 position_ids_data += num_scheduled_tokens;
                 past_lens_data += 1;
@@ -449,8 +449,8 @@ private:
                     auto seq_id_to_select_logical_idx_map = seq_id_to_select_logical_idx_maps[layer_idx];
                     for (const auto& kv : seq_id_to_select_logical_idx_map) {
                         size_t seq_id = kv.first;
-                        if (layer_idx == 0)
-                            std::cout << "VSHAMPOR: filling for seq_id " << seq_id << " blocks ";
+                        // if (layer_idx == 0)
+                        //     std::cout << "VSHAMPOR: filling for seq_id " << seq_id << " blocks ";
                         auto block_table_it = scheduler_output.m_block_tables.find(seq_id);
                         OPENVINO_ASSERT(block_table_it != scheduler_output.m_block_tables.end());
                         const auto& select_logical_idxs = kv.second;
@@ -462,11 +462,11 @@ private:
                             OPENVINO_ASSERT(logical_block_idx < block_table_size);
 
                             block_indices_data[block_id] = kv_blocks[layer_idx][logical_block_idx]->get_index();
-                            if (layer_idx == 0)
-                                std::cout << logical_block_idx << "->" << block_indices_data[block_id] << " ";
+                            // if (layer_idx == 0)
+                            //     std::cout << logical_block_idx << "->" << block_indices_data[block_id] << " ";
                         }
-                        if (layer_idx == 0)
-                            std::cout << std::endl;
+                        // if (layer_idx == 0)
+                        //     std::cout << std::endl;
                     block_indices_data += select_logical_idxs.size();
                     filled_blocks_per_layer[layer_idx] += select_logical_idxs.size();
                 }
@@ -522,13 +522,13 @@ private:
                         }
                         seq_id_to_select_logical_idx_map[layer_idx][seq_id] = remaining_logical_block_ids;
                         num_blocks_per_layer[layer_idx] += remaining_logical_block_ids.size();
-                        if (layer_idx == 0) {
-                            std::cout << "VSHAMPOR: in set_block_indices seq_id " << seq_id << ", blocks ";
-                            for (auto block : remaining_logical_block_ids) {
-                                std::cout << block << " ";
-                            }
-                            std::cout << std::endl;
-                        }
+                        // if (layer_idx == 0) {
+                        //     std::cout << "VSHAMPOR: in set_block_indices seq_id " << seq_id << ", blocks ";
+                        //     for (auto block : remaining_logical_block_ids) {
+                        //         std::cout << block << " ";
+                        //     }
+                        //     std::cout << std::endl;
+                        // }
                     }
                     else
                     {
@@ -546,15 +546,15 @@ private:
         }
 
         _fill_indices_from_block_tables(tensor_names, sequence_groups, scheduler_output, seq_id_to_select_logical_idx_map);
-        std::cout << "VSHAMPOR: seq_id_to_select_logical_idx_map:" << std::endl;
-        for (const auto& kv : seq_id_to_select_logical_idx_map[0]) {
-            std::cout << kv.first << ":";
-            for (auto select_id : kv.second) {
-                std::cout << select_id << " ";
-            }
-            std::cout << std::endl;
-        }
-        std::cout << std::endl;
+        // std::cout << "VSHAMPOR: seq_id_to_select_logical_idx_map:" << std::endl;
+        // for (const auto& kv : seq_id_to_select_logical_idx_map[0]) {
+        //     std::cout << kv.first << ":";
+        //     for (auto select_id : kv.second) {
+        //         std::cout << select_id << " ";
+        //     }
+        //     std::cout << std::endl;
+        // }
+        // std::cout << std::endl;
     }
 
     void _set_cache_rotation_coefficients(const std::vector<SequenceGroup::Ptr>& sequence_groups,
