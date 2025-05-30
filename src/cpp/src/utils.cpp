@@ -649,6 +649,55 @@ void release_core_plugin(const std::string& device) {
     }
 }
 
+ModelDesc extract_draft_model_from_config(ov::AnyMap& config) {
+    ModelDesc draft_model;
+    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
+        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ModelDesc>();
+        config.erase(utils::DRAFT_MODEL_ARG_NAME);
+    }
+    return draft_model;
+}
+
+bool extract_prompt_lookup_from_config(ov::AnyMap& config) {
+    bool res = false;
+    if (config.find(ov::genai::prompt_lookup.name()) != config.end()) {
+        res = config.at(ov::genai::prompt_lookup.name()).as<bool>();
+        config.erase(ov::genai::prompt_lookup.name());
+    }
+    return res;
+}
+
+std::vector<std::string> npu_key_list = {
+    "NPU_USE_NPUW",
+    "NPUW_LLM",
+    "NPUW_LLM_BATCH_DIM",
+    "NPUW_LLM_SEQ_LEN_DIM",
+    "NPUW_LLM_MAX_PROMPT_LEN",
+    "NPUW_LLM_MIN_RESPONSE_LEN",
+    "++PREFILL_CONFIG",
+    "++GENERATE_CONFIG",
+    "PREFILL_CONFIG",
+    "GENERATE_CONFIG",
+    "GENERATE_HINT",
+    "NPUW_DEVICES",
+    "NPUW_ONLINE_PIPELINE",
+    "NPU_USE_NPUW",
+    "++NPUW_LLM_PREFILL_CONFIG",
+    "++NPUW_LLM_PREFILL_HINT",
+    "NPUW_LLM_GENERATE_CONFIG",
+    "NPUW_LLM_GENERATE_HINT"
+};
+
+ov::AnyMap extract_npu_properties(const ov::AnyMap& external_properties) {
+    ov::AnyMap filtered_properties = external_properties;
+    for (auto& key : utils::npu_key_list) {
+        if (filtered_properties.find(key) != filtered_properties.end()) {
+            filtered_properties.erase(key);
+        }
+    }
+    return filtered_properties;
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

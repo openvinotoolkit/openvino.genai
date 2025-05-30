@@ -25,8 +25,8 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
            lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
-ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, 
-                                                                             const ov::genai::ModelDesc& draft_model_desc) {
+ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const utils::ModelDesc& main_model_desc,
+                                                                             const utils::ModelDesc& draft_model_desc) {
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
 

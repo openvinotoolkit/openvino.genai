@@ -10,30 +10,6 @@
 
 namespace ov::genai {
 
-struct ModelDesc {
-    std::string device;
-    ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap properties;
-    ov::genai::GenerationConfig generation_config;
-    std::shared_ptr<ov::Model> model = nullptr;
-    ov::genai::Tokenizer tokenizer;
-
-    ModelDesc(const std::shared_ptr<ov::Model>& model,
-              const ov::genai::Tokenizer& tokenizer,
-              const std::string& device = {},
-              const ov::AnyMap& properties = {},
-              const ov::genai::SchedulerConfig& scheduler_config = {},
-              const ov::genai::GenerationConfig& generation_config = {}) :
-        model(model),
-        tokenizer(tokenizer),
-        device(device),
-        properties(properties),
-        scheduler_config(scheduler_config),
-        generation_config(generation_config) {}
-    
-    ModelDesc() = default;
-};
-
 class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     std::shared_ptr<ContinuousBatchingForSpeculativeDecodingImpl> m_main_pipeline, m_draft_pipeline;
@@ -50,7 +26,7 @@ protected:
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     
 public:
-    SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
+    SpeculativeDecodingImpl(const utils::ModelDesc& main_model_desc, const utils::ModelDesc& draft_model_desc);
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,

@@ -247,7 +247,12 @@ public:
 
         std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
         std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
-        auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
+
+        auto properties_without_draft_model = properties;
+        auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
+        auto is_prompt_lookup_enabled = utils::extract_prompt_lookup_from_config(properties_without_draft_model);
+        auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+        auto filtered_properties = utils::extract_npu_properties(properties_without_draft_model_without_gguf);
 
         if (is_gguf_model(models_path)) {
             std::map<std::string, GGUFMetaData> tokenizer_config{};
