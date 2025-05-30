@@ -20,12 +20,31 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
                                                  override_stop_tokens,
                                                  terminate_without_stop_token,
                                                  max_rollback_tokens);
-    size_t size = (m_vocab_size + 31) / 32;
-    m_token_bitmask_ov = ov::Tensor(ov::element::i32, {1, size});
-    for (size_t i = 0; i < size; ++i) {
+    size_t bitmask_size = (m_vocab_size + 31) / 32;
+    m_token_bitmask_ov = ov::Tensor(ov::element::i32, {bitmask_size});
+    for (size_t i = 0; i < bitmask_size; ++i) {
         m_token_bitmask_ov.data<int32_t>()[i] = -1;
     }
     m_token_bitmask = std::make_shared<DLTensor>();
+    m_token_bitmask->data = m_token_bitmask_ov.data<int32_t>();
+    m_token_bitmask->device = DLDevice{kDLCPU, 0};
+    m_token_bitmask->ndim = 1;
+    m_token_bitmask->dtype = DLDataType{kDLInt, 32, 1};
+    m_token_bitmask->byte_offset = 0;
+    m_token_bitmask->strides = nullptr; // No strides, tensor is compact
+    
+    m_next_token_logits = std::make_shared<DLTensor>();
+    m_next_token_logits->device = DLDevice{kDLCPU, 0};
+    m_next_token_logits->ndim = 1;
+    m_next_token_logits->dtype = DLDataType{kDLFloat, 32, 1};
+    m_next_token_logits->byte_offset = 0;
+    m_next_token_logits->strides = nullptr; // No strides, tensor is compact
+    // pointer and size will be set in apply method
+
+    // Shapes are stored as a pointer to a buffer. It's not convenient to allocate a buffer here,
+    // because in that case we would need to keep it alive until the apply method is called and 
+    // deallocate at the very end. Moreover, the shape of logits is not known at this point.
+    // Therefore we will set the shape in the apply method.
 }
 
 void XGrammarLogitsTransformer::accept_tokens(const TokenIds& input_ids) {
@@ -35,29 +54,16 @@ void XGrammarLogitsTransformer::accept_tokens(const TokenIds& input_ids) {
 }
 
 void XGrammarLogitsTransformer::apply(Logits& logits) {
-    m_token_bitmask->data = m_token_bitmask_ov.data<int32_t>();
-    m_token_bitmask->device = DLDevice{kDLCPU, 0};
-    m_token_bitmask->ndim = 1;
-    m_token_bitmask->dtype = DLDataType{kDLInt, 32, 1};
-    std::vector<int64_t> shape = {static_cast<int64_t>(m_token_bitmask_ov.get_shape()[1])};
-    m_token_bitmask->shape = &shape[0];
-    std::vector<int64_t> strides = {1};
-    m_token_bitmask->byte_offset = 0;
-
-    DLTensor* next_token_logits = new DLTensor();
-    next_token_logits->data = logits.m_data;
-    next_token_logits->device = DLDevice{kDLCPU, 0};
-    next_token_logits->ndim = 1;
-    next_token_logits->dtype = DLDataType{kDLFloat, 32, 1};
-    std::vector<int64_t> shape_2 = {static_cast<int64_t>(logits.m_size)};
-    next_token_logits->shape = &shape_2[0];
-    strides = {1};
-    next_token_logits->byte_offset = 0;
+    // Shapes of logits cannot be set in CTOR, becaues size is known only during apply.
+    m_next_token_logits->data = logits.m_data;
+    std::vector<int64_t> logits_shape = {static_cast<int64_t>(logits.m_size)};
+    m_next_token_logits->shape = &logits_shape[0];
+    
+    std::vector<int64_t> bitmask_shape = {static_cast<int64_t>(m_token_bitmask_ov.get_size())};
+    m_token_bitmask->shape = &bitmask_shape[0];
 
     m_grammar_matcher.FillNextTokenBitmask(m_token_bitmask.get());
-    xgrammar::ApplyTokenBitmaskInplaceCPU(next_token_logits, *m_token_bitmask, m_vocab_size);
-
-    // delete next_token_logits; // If you own this pointer, uncomment to avoid leaks
+    xgrammar::ApplyTokenBitmaskInplaceCPU(m_next_token_logits.get(), *m_token_bitmask, m_vocab_size);
 }
 
 } // namespace LogitTransformers
@@ -70,7 +76,7 @@ XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, s
 
     auto tokenizer_info = xgrammar::TokenizerInfo(
         std::move(vocab_vector),
-        xgrammar::VocabType::BYTE_FALLBACK,
+        xgrammar::VocabType::RAW,
         vocab_size,
         std::vector<int32_t>{2},
         true
