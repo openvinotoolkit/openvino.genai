@@ -54,9 +54,6 @@ def get_main_pipeline_types():
 def get_gguf_pipeline_types():
     return [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION]
 
-def get_gguf_enable_save_ov_model_property_list():
-    return [True, False]
-
 class StreamerWithResults:
     # Return a streamer which accumulates results in order to compare with results returned from generate.
     results: list[str] = []
