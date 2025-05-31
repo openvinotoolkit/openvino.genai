@@ -40,6 +40,10 @@ public:
         std::map<uint64_t, std::vector<BlocksPerLayer>> m_block_tables;
         // how many previous token scores to aggregate in the paged attention score output, per sequence
         std::map<uint64_t, size_t> m_score_aggregation_windows;
+
+        bool m_apply_sparse_attention_mask = false;
+        std::map<uint64_t, std::set<uint64_t>> m_sparse_attention_skipped_logical_blocks;
+
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
         // dedicated prompt phase
@@ -304,6 +308,10 @@ private:
 
 
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+                        scheduler_output.m_apply_sparse_attention_mask = m_config.use_sparse_attention;
+                        if (scheduler_output.m_apply_sparse_attention_mask) {
+                            scheduler_output.m_sparse_attention_skipped_logical_blocks[seq_id] = _get_sparse_attention_skipped_blocks(sequence_group);
+                        }
                     }
                 }
 
@@ -573,6 +581,27 @@ private:
 
         }
         return num_scored_token_positions_in_this_chunk;
+    }
+    std::set<size_t> _get_sparse_attention_skipped_blocks(SequenceGroup::Ptr sequence_group) {
+        std::set<size_t> skipped_logical_block_ids;
+        size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        size_t num_processed_tokens_after_this_chunk = sequence_group->get_num_processed_tokens() + num_scheduled_tokens;
+        size_t prompt_len = sequence_group->get_prompt_len();
+        OPENVINO_ASSERT(prompt_len >= num_processed_tokens_after_this_chunk);
+
+        size_t num_remaining_prompt_tokens = prompt_len - num_processed_tokens_after_this_chunk;
+        if (num_remaining_prompt_tokens > m_config.sparse_attention_config.num_last_dense_tokens) {
+            size_t num_cached_tokens = sequence_group->get_num_cached_tokens();
+            size_t num_cached_full_logical_blocks = num_cached_tokens / get_block_size();
+            if (num_cached_full_logical_blocks > 2) {
+                // A-shape phase
+                for (size_t i = 0; i < num_cached_full_logical_blocks - 2; i++) {
+                    skipped_logical_block_ids.insert(i + 1);
+                }
+            }
+        }
+        // else skip nothing, dense attention phase
+        return skipped_logical_block_ids;
     }
 };
 
