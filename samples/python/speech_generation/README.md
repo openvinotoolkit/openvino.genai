@@ -44,7 +44,7 @@ via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
 It generates `output_audio.wav` file containing the phrase `Hello OpenVINO GenAI` spoken in the target voice.
 
-See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
+See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#speech-generation-models) for the list of supported models.
 
 # Text-to-speech pipeline usage
 
