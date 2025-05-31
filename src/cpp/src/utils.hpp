@@ -102,6 +102,8 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 
 ov::Core singleton_core();
 
+std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties);
+
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
 
 void release_core_plugin(const std::string& device);
@@ -146,6 +148,8 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
 bool env_setup_for_print_debug_info();
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
+
+void print_gguf_debug_info(const std::string& debug_info);
 
 struct KVDesc {
     uint32_t max_prompt_len;
@@ -245,6 +249,8 @@ SchedulerConfig get_latency_oriented_scheduler_config();
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties);
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties);
+
+void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
 }  // namespace utils
 }  // namespace genai
