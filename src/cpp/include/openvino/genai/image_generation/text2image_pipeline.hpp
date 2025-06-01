@@ -146,6 +146,13 @@ public:
         const AutoencoderKL& vae);
 
     /**
+     * Method to clone the pipeline to be used in parallel by another thread.
+     * Reuses underlying models and recreates scheduler and generation config.
+     * @returns A new pipeline for concurrent usage
+     */
+    Text2ImagePipeline clone();
+
+    /**
      * Returns default image generation config created internally based on model type.
      * @returns Image generation config
      */
