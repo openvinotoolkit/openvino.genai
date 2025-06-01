@@ -30,12 +30,16 @@ class Scheduler {
     const float m_cache_growth_factor = 2; // commmon values 1.5 or 2
 
     std::shared_ptr<CacheManager> m_cache_manager;
+
+    size_t m_snapkv_window_size = 1;
 public:
     struct Output {
         // IDs of scheduled groups
         std::vector<uint64_t> m_scheduled_sequence_groups_ids;
         // block tables for scheduled sequences per each attention layer in the model
         std::map<uint64_t, std::vector<BlocksPerLayer>> m_block_tables;
+        // how many previous token scores to aggregate in the paged attention score output, per sequence
+        std::map<uint64_t, size_t> m_score_aggregation_windows;
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
         // dedicated prompt phase
@@ -44,10 +48,11 @@ public:
         float m_cache_usage = 0.0;
     };
 
-    Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
-        m_cache_manager(cache_manager),
+    Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
         m_can_use_partial_preemption(can_use_partial_preemption),
-        m_config(config) {
+        m_config(config),
+        m_cache_manager(cache_manager),
+        m_snapkv_window_size(snapkv_window_size) {
         m_block_manager = std::make_shared<BlockManager>(m_config.num_kv_blocks, m_config.enable_prefix_caching, block_size, num_layers);
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
     }
@@ -191,7 +196,7 @@ private:
         if (tokens_in_last_block == 0) {
             tokens_in_last_block = block_size;
         }
-        preempted_tokens = tokens_in_last_block + std::max<size_t>((int)logical_blocks_released - 1, 0) * block_size;
+        preempted_tokens = tokens_in_last_block + (logical_blocks_released == 0 ? 0 : logical_blocks_released - 1) * block_size;
 
         // case when preemption requires preempt prompt tokens
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
@@ -296,6 +301,9 @@ private:
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
+
+
+                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                     }
                 }
 
@@ -319,6 +327,7 @@ private:
             if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
+                OPENVINO_ASSERT(num_running_seqs);
                 size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t available_tokens_per_seq_in_megabatch = num_tokens_in_megabatch / num_running_seqs;
 
@@ -356,11 +365,19 @@ private:
                     scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                     scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens_per_seq * num_running_seqs;
 
-                    // block tables for each running sequence within a group
                     std::vector<Sequence::Ptr> running_seqs = sequence_group->get_running_sequences();
                     for (const auto & seq : sequence_group->get_running_sequences()) {
-                        scheduler_output.m_block_tables[seq->get_id()] = m_block_manager->get_block_tables(seq->get_id());
+                        size_t seq_id = seq->get_id();
+                        // block tables for each running sequence within a group
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
+
+                        if (seq->get_generated_len() == 0) {
+                            // full prompt or its remaining tail part fit completely into the next inference
+                            scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+                        }
                     }
+
+
 
                     // merge copy_blocks
                     for (const auto& src_dst : copy_blocks_map) {
@@ -444,6 +461,7 @@ private:
                         uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
+                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                     }
 
                     // update "is_prompt" flag
@@ -536,6 +554,25 @@ private:
             }
         }
         return true;
+    }
+
+    size_t _schedule_scores_to_aggregate(SequenceGroup::Ptr sequence_group) {
+        size_t prompt_len = sequence_group->get_prompt_len();
+        size_t first_scored_token_position = m_snapkv_window_size > prompt_len ? 0 : prompt_len - m_snapkv_window_size;
+        size_t num_scored_token_positions_in_this_chunk = 0;
+        size_t num_processed_tokens_before_this_chunk = sequence_group->get_num_processed_tokens();
+        size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        size_t num_processed_tokens_after_this_chunk = num_processed_tokens_before_this_chunk + num_scheduled_tokens;
+        if (num_processed_tokens_after_this_chunk > first_scored_token_position) {
+            if (num_processed_tokens_before_this_chunk > first_scored_token_position) {
+                num_scored_token_positions_in_this_chunk = num_scheduled_tokens;
+            }
+            else {
+                num_scored_token_positions_in_this_chunk = num_processed_tokens_after_this_chunk - first_scored_token_position;
+            }
+
+        }
+        return num_scored_token_positions_in_this_chunk;
     }
 };
 

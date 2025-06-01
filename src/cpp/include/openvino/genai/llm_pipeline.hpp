@@ -277,6 +277,7 @@ public:
     void finish_chat();
 
 private:
+    std::string m_device;
     std::unique_ptr<LLMPipelineImplBase> m_pimpl;
 };
 

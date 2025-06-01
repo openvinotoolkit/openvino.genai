@@ -110,6 +110,7 @@ namespace genai {
 class FluxPipeline : public DiffusionPipeline {
 public:
     FluxPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) : FluxPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -166,6 +167,7 @@ public:
                  const std::string& device,
                  const ov::AnyMap& properties)
         : FluxPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -267,6 +269,24 @@ public:
         m_t5_text_encoder->compile(text_encode_device, *updated_properties);
         m_vae->compile(vae_device, *updated_properties);
         m_transformer->compile(denoise_device, *updated_properties);
+    }
+
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_ASSERT(!m_root_dir.empty(), "Cannot clone pipeline without root directory");
+        
+        std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
+        std::shared_ptr<CLIPTextModel> clip_text_encoder = std::static_pointer_cast<CLIPTextModel>(m_clip_text_encoder->clone());
+        std::shared_ptr<FluxTransformer2DModel> transformer = std::make_shared<FluxTransformer2DModel>(m_transformer->clone());
+        std::shared_ptr<T5EncoderModel> t5_text_encoder = m_t5_text_encoder->clone();
+        std::shared_ptr<FluxPipeline> pipeline = std::make_shared<FluxPipeline>(m_pipeline_type,
+                                                              *clip_text_encoder,
+                                                              *t5_text_encoder,
+                                                              *transformer,
+                                                              *vae);
+
+        pipeline->m_root_dir = m_root_dir;
+        pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
+        return pipeline;
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -636,7 +656,7 @@ protected:
         }
     }
 
-    // Returns non-empty updated adapters iff they are required to be updated
+    // Returns non-empty updated adapters if they are required to be updated
     static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
         return ov::genai::derived_adapters(adapters, flux_adapter_normalization);
     }

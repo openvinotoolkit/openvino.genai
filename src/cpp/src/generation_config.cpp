@@ -222,7 +222,6 @@ void GenerationConfig::validate() const {
     }
 
     if (is_multinomial()) {
-        OPENVINO_ASSERT(top_k >= 0, "When 'do_sample' is true, top_k must be a non-negative, but got ", top_k);
         OPENVINO_ASSERT(top_p > 0 && top_p <= 1.0f, "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0, but got ", top_p);
         OPENVINO_ASSERT(temperature > 0, "When 'do_sample' is true, temperature must be a strictly positive float, but got ", temperature);
     } else {

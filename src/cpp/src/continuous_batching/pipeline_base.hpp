@@ -33,6 +33,8 @@ protected:
 
     PipelineMetrics m_pipeline_metrics;
 
+    std::string m_device;
+
     struct PerfTime {
         float m_paged_attention_time_ms = 0.0f;
         float m_matmul_time_ms = 0.0f;
@@ -50,6 +52,8 @@ protected:
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
     std::vector<ov::genai::EncodedImage> m_history_images;
+    std::vector<size_t> m_history_image_ids;
+    size_t m_image_id = 0;
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms
@@ -134,5 +138,7 @@ public:
      * Ends chat
      */
     void finish_chat();
+
+    ~IContinuousBatchingPipeline();
 };
 }

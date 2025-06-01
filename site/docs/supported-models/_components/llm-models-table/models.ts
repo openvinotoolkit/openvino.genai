@@ -680,6 +680,8 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/microsoft/Phi-3-medium-128k-instruct',
           'https://huggingface.co/microsoft/Phi-3.5-mini-instruct',
           'https://huggingface.co/microsoft/Phi-4-mini-instruct',
+          'https://huggingface.co/microsoft/phi-4',
+          'https://huggingface.co/microsoft/Phi-4-reasoning'
         ],
       },
     ],
@@ -762,6 +764,39 @@ export const LLM_MODELS: LLMModelType[] = [
         ],
       },
     ],
+  },
+  {
+   architecture: 'Qwen3ForCausalLM',
+   models: [
+    {
+      name: 'Qwen3',
+      links: [
+        'https://huggingface.co/Qwen/Qwen3-0.6B',
+        'https://huggingface.co/Qwen/Qwen3-1.7B',
+        'https://huggingface.co/Qwen/Qwen3-4B',
+        'https://huggingface.co/Qwen/Qwen3-8B',
+        'https://huggingface.co/Qwen/Qwen3-14B',
+        'https://huggingface.co/Qwen/Qwen3-32B',
+        'https://huggingface.co/Qwen/Qwen3-0.6B-Base',
+        'https://huggingface.co/Qwen/Qwen3-1.7B-Base',
+        'https://huggingface.co/Qwen/Qwen3-4B-Base',
+        'https://huggingface.co/Qwen/Qwen3-8B-Base',
+        'https://huggingface.co/Qwen/Qwen3-14B-Base',
+      ]
+    }
+   ]
+  },
+  {
+    architecture: 'Qwen3MoeForCausalLM',
+    models: [
+      {
+      name: 'Qwen3MoE',
+      links: [
+        'https://huggingface.co/Qwen/Qwen3-30B-A3B',
+        'https://huggingface.co/Qwen/Qwen3-30B-A3B-Base',
+      ]
+    }
+  ]
   },
   {
     architecture: 'StableLmForCausalLM',
