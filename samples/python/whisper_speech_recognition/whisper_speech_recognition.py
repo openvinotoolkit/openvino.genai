@@ -22,7 +22,6 @@ def main():
     pipe = openvino_genai.WhisperPipeline(args.model_dir, args.device)
 
     config = pipe.get_generation_config()
-    config.max_new_tokens = 100  # increase this based on your speech length
     # 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>"  # can switch to <|zh|> for Chinese language
     config.task = "transcribe"

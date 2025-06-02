@@ -25,6 +25,8 @@ class VisionEncoderMiniCPM : public VisionEncoder {
     VLMConfig m_vlm_config;
 
     ov::Tensor resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes);
+
+    ResampledImage resample_encoded_image(const EncodedImage& image, const ov::Tensor& slices, const ImageSize& target_sizes);
 public:
     VisionEncoderMiniCPM(
         const std::filesystem::path& model_dir,
@@ -38,11 +40,9 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
-    ResampledImage resample_encoded_image(const EncodedImage& image);
 };
 
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
-    size_t m_prev_image_id = 0;
 
 public:
     InputsEmbedderMiniCPM(
@@ -59,14 +59,13 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) override;
-    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
 
-    void start_chat(const std::string& system_message) override;
-
-    void finish_chat() override;
-
-    bool prompt_has_image_tag(const std::string& prompt) const override;
+    std::pair<std::string, std::vector<size_t>> normalize_prompt(
+        const std::string& prompt,
+        size_t base_id,
+        const std::vector<EncodedImage>& images
+    ) const override;
 
 };
 

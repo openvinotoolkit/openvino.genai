@@ -34,7 +34,40 @@ env:
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
 
 jobs:
+  smart_ci:
+    name: Smart CI
+    runs-on: ubuntu-latest
+    outputs:
+      affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
+      changed_components: "${{ steps.smart_ci.outputs.changed_components }}"
+      skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
+    steps:
+      - name: checkout action
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        timeout-minutes: 15
+        with:
+          sparse-checkout: .github
+
+      - name: Get affected components
+        id: smart_ci
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@master
+        with:
+          repository: ${{ github.repository }}
+          pr: ${{ github.event.number }}
+          commit_sha: ${{ github.sha }}
+          ref_name: ${{ github.ref_name }}
+          component_pattern: "category: ((?!Python API|CPP API).*)"
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          skip_when_only_listed_labels_set: 'GH Pages Docs'
+          skip_when_only_listed_files_changed: '*.md,*.rst,*.png,*.jpg,*.svg,*.gif'
+
+      - name: Show affected components
+        run: echo "${{ toJSON(steps.smart_ci.outputs.affected_components) }}"
+        shell: bash
+
   openvino_download:
+    needs: smart_ci
+    if: "!needs.smart_ci.outputs.skip_workflow"
     name: Download OpenVINO
     outputs:
       status: ${{ steps.openvino_download.outcome }}
@@ -58,7 +91,7 @@ jobs:
       id: openvino_download
       with:
         platform: ubuntu22
-        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_js_package.tar.gz
+        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
         revision: latest_available_commit
 
     - name: Clone docker tag from OpenVINO repo
@@ -111,23 +144,22 @@ jobs:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
-      - name: Generate product manifest
-        id: create_manifest
-        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
-        with:
-          repos: |
-            ${{ env.SRC_DIR }}
-          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
-          target_arch: 'x86_64'
-          build_type: ${{ matrix.build-type }}
-          save_to: ${{ env.MANIFEST_PATH }}
-
       - name: Download OpenVINO package
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
+
+      - name: Generate product manifest
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          target_arch: 'x86_64'
+          build_type: ${{ matrix.build-type }}
+          save_to: ${{ env.MANIFEST_PATH }}
 
       - name: CMake Build
         run: |
@@ -153,7 +185,7 @@ jobs:
           name: genai_archive_${{ matrix.build-type }}
           path: ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
           if-no-files-found: 'error'
-      
+
       - name: Upload Tools
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -161,7 +193,7 @@ jobs:
           name: genai_tools_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TOOLS_DIR }}
           if-no-files-found: 'error'
-        
+
       - name: Upload Tests
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -171,8 +203,8 @@ jobs:
           if-no-files-found: 'error'
 
       - name: Upload manifest
-        if: ${{ always() }}
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: manifest_${{ matrix.build-type }}
           path: ${{ env.MANIFEST_PATH }}
@@ -214,9 +246,20 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
+      - name: Set CI environment
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
+          target_arch: 'x86_64'
+          build_type: Release
+          save_to: ${{ github.workspace }}
+
       - name: Build Tokenizers Wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers

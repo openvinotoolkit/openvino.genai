@@ -6,9 +6,8 @@
 #include <fstream>
 
 #include "json_utils.hpp"
-#include "lora_helper.hpp"
+#include "lora/helper.hpp"
 #include "utils.hpp"
-#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -44,6 +43,20 @@ T5EncoderModel::T5EncoderModel(const std::string& model,
 }
 
 T5EncoderModel::T5EncoderModel(const T5EncoderModel&) = default;
+
+std::shared_ptr<T5EncoderModel> T5EncoderModel::clone() {
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "T5EncoderModel must have exactly one of m_model or m_request initialized");
+
+    std::shared_ptr<T5EncoderModel> cloned = std::make_shared<T5EncoderModel>(*this);
+
+    if (m_model) {
+        cloned->m_model = m_model->clone();
+    } else {
+        cloned->m_request = m_request.get_compiled_model().create_infer_request();
+    }
+
+    return cloned;
+}
 
 T5EncoderModel& T5EncoderModel::reshape(int batch_size, int max_sequence_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");

@@ -17,7 +17,7 @@
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
 
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;
@@ -98,7 +98,40 @@ void init_clip_text_model(py::module_& m) {
 }
 
 void init_clip_text_model_with_projection(py::module_& m) {
-    auto clip_text_model_with_projection = py::class_<ov::genai::CLIPTextModelWithProjection, ov::genai::CLIPTextModel>(m, "CLIPTextModelWithProjection", "CLIPTextModelWithProjection class.");
+    py::class_<ov::genai::CLIPTextModelWithProjection, ov::genai::CLIPTextModel>(m, "CLIPTextModelWithProjection", "CLIPTextModelWithProjection class.")
+        .def(py::init([](const std::filesystem::path& root_dir) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir);
+        }),
+        py::arg("root_dir"), "Model root directory",
+        R"(
+            CLIPTextModelWithProjection class
+            root_dir (os.PathLike): Model root directory.
+        )")
+        .def(py::init([](
+            const std::filesystem::path& root_dir,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("root_dir"), "Model root directory",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            CLIPTextModelWithProjection class
+            root_dir (os.PathLike): Model root directory.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def(py::init([](const ov::genai::CLIPTextModelWithProjection& model) {
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(model);
+        }),
+        py::arg("model"), "CLIPText model"
+        R"(
+            CLIPTextModelWithProjection class
+            model (CLIPTextModelWithProjection): CLIPText model with projection
+        )");
 }
 
 void init_t5_encoder_model(py::module_& m) {

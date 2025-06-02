@@ -5,7 +5,7 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
-#include "continuous_batching_impl.hpp"
+#include "continuous_batching/pipeline_impl.hpp"
 #include "speculative_decoding/update_request_structs.hpp"
 
 namespace ov::genai {
@@ -28,7 +28,6 @@ public:
     GeneratedRequests get_generated_requests();
     UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
     bool is_requests_empty();
-    std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 
     size_t get_processed_tokens_per_iteration();
 
