@@ -468,7 +468,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ openvino_download, genai_build_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
@@ -476,26 +476,36 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 45
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 60
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 60
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
             timeout: 60
           - name: 'API tests'
             cmd: 'tests/python_tests/test_continuous_batching.py tests/python_tests/test_generation_config.py tests/python_tests/test_sampling.py tests/python_tests/test_text_streamer.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
             timeout: 60
+          - name: 'Rag tests'
+            cmd: 'tests/python_tests/test_rag.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
+            timeout: 30
           - name: 'WWB tests'
             cmd: '/tools/who_what_benchmark/tests'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-8-cores-64gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -510,24 +520,28 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
+        if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download Build Artifacts
+        if: ${{ matrix.test.run_condition }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
-      
+
       - name: Install OpenVINO wheel
+        if: ${{ matrix.test.run_condition }}
         run: |
           python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
         working-directory: ${{ env.INSTALL_DIR }}
-        
+
       - name: Install GenAI Wheels
+        if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino_tokenizers[transformers];openvino_genai;whowhatbench"
@@ -535,11 +549,13 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Tests
+        if: ${{ matrix.test.run_condition }}
         run: python -m pytest -v ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     strategy:
       fail-fast: false
       matrix:
@@ -548,21 +564,34 @@ jobs:
           - name: 'LLM'
             marker: 'llm'
             cmd: 'tests/python_tests/samples'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
             runner: 'aks-linux-4-cores-16gb'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Whisper_samples.test }}
             runner: 'aks-linux-4-cores-16gb'
           - name: 'Image generation'
             marker: 'image_generation'
             cmd: 'tests/python_tests/samples'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
             runner: 'aks-linux-16-cores-32gb'
           - name: 'VLM'
             marker: 'vlm'
             cmd: 'tests/python_tests/samples'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).VLM_samples.test }}
             runner: 'aks-linux-8-cores-64gb'
+          - name: 'Rag'
+            marker: 'rag'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-4-cores-16gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
+          - name: 'Speech generation'
+            marker: 'speech_generation'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-4-cores-16gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
-    needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 120
     defaults:
       run:
@@ -581,38 +610,43 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
+        if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download Build Artifacts
+        if: ${{ matrix.test.run_condition }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
-      
+
       - name: Download GenAI JS Bildings Artifacts
+        if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        if: ${{ 'LLM' == matrix.test.name }}
         with:
           name: genai_nodejs_bindings
           path: ${{ env.SRC_DIR }}/src/js/bin
           merge-multiple: true
 
       - name: Extract Artifacts
+        if: ${{ matrix.test.run_condition }}
         run: |
           pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
-          
+
       - name: Install OpenVINO wheel
+        if: ${{ matrix.test.run_condition }}
         run: |
           python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
         working-directory: ${{ env.INSTALL_DIR }}
-        
+
       - name: Install GenAI wheels
+        if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino_tokenizers[transformers];openvino_genai[testing]"
@@ -620,29 +654,28 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Setup Node
+        if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        if: ${{ 'LLM' == matrix.test.name }}
         with:
           node-version: 21
 
       - name: Install GenAI NPM package
+        if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
         working-directory: ${{ env.SRC_DIR }}/src/js
-        if: ${{ 'LLM' == matrix.test.name }}
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
+          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
-          cd ${{ env.SRC_DIR }}/samples/js/text_generation
 
       - name: Install NPM dependencies for samples
+        if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
-        if: ${{ 'LLM' == matrix.test.name }}
         run: |
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Test Samples (Python and C++)
+        if: ${{ matrix.test.run_condition }}
         run: python -m pytest -vvs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
@@ -657,7 +690,8 @@ jobs:
       fail-fast: false
       matrix:
         build-type: [Release]
-    needs: [ openvino_download, genai_build_cmake, genai_build_wheel ] 
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheel ]
+    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench || fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
     timeout-minutes: 90
     defaults:
       run:
@@ -674,7 +708,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-        
+
     steps:
       - name: Clone openvino.genai
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -693,45 +727,49 @@ jobs:
         run: |
           pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
-        
+
       - name: Fix C++ samples permissions
         run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
-        
+
       - name: Install OpenVINO wheel
         run: |
           python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
         working-directory: ${{ env.INSTALL_DIR }}
-        
+
       - name: Install GenAI wheels
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt;${{ env.SRC_DIR }}/tools/llm_bench/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
-        
-      - name: gtests
+
+      - name: gtests unit tests
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
-        
+
       - name: Test Continuous Batching Tools
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
-          
+
       - name: Test LLM Benchmark Tools
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
-  
+
   genai_nodejs_tests:
     name: Node.js bindings tests
-    needs: [ openvino_download, genai_build_nodejs ]
+    needs: [ smart_ci, openvino_download, genai_build_nodejs ]
+    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
     defaults:
       run:
@@ -783,9 +821,9 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
+          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Check lint
         working-directory: ${{ env.SRC_DIR }}/src/js
@@ -798,9 +836,8 @@ jobs:
       - name: Install openvino-genai-node samples dependencies
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Run samples tests
         run: npm test
@@ -810,7 +847,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests]
+    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

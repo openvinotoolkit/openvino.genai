@@ -842,8 +842,6 @@ jobs:
           npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
           Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-          Remove-Item -Recurse -Force node_modules/openvino-node/bin
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Check lint
         working-directory: ${{ env.SRC_DIR }}/src/js
@@ -858,8 +856,6 @@ jobs:
         run: |
           npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          Remove-Item -Recurse -Force node_modules/openvino-node/bin
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Run samples tests
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
