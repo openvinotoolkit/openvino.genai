@@ -67,6 +67,7 @@ class StableDiffusion3Pipeline : public DiffusionPipeline {
 public:
     StableDiffusion3Pipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
         DiffusionPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -129,6 +130,7 @@ public:
                              const std::string& device,
                              const ov::AnyMap& properties) :
         DiffusionPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -261,6 +263,36 @@ public:
         }
         m_transformer->compile(denoise_device, properties);
         m_vae->compile(vae_device, properties);
+    }
+
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_ASSERT(!m_root_dir.empty(), "Cannot clone pipeline without root directory");
+
+        std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
+        std::shared_ptr<CLIPTextModelWithProjection> clip_text_encoder_1 = std::static_pointer_cast<CLIPTextModelWithProjection>(m_clip_text_encoder_1->clone());
+        std::shared_ptr<CLIPTextModelWithProjection> clip_text_encoder_2 = std::static_pointer_cast<CLIPTextModelWithProjection>(m_clip_text_encoder_2->clone());
+        std::shared_ptr<SD3Transformer2DModel> transformer = std::make_shared<SD3Transformer2DModel>(m_transformer->clone());
+
+        std::shared_ptr<StableDiffusion3Pipeline> pipeline;
+        if (m_t5_text_encoder) {
+            std::shared_ptr<T5EncoderModel> t5_text_encoder = m_t5_text_encoder->clone();
+            pipeline = std::make_shared<StableDiffusion3Pipeline>(m_pipeline_type,
+                                                                  *clip_text_encoder_1,
+                                                                  *clip_text_encoder_2,
+                                                                  *t5_text_encoder,
+                                                                  *transformer,
+                                                                  *vae);
+        } else {
+            pipeline = std::make_shared<StableDiffusion3Pipeline>(m_pipeline_type,
+                                                                  *clip_text_encoder_1,
+                                                                  *clip_text_encoder_2,
+                                                                  *m_transformer,
+                                                                  *vae);
+        }
+
+        pipeline->m_root_dir = m_root_dir;
+        pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
+        return pipeline;
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {

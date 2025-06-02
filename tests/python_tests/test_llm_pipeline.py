@@ -842,3 +842,40 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     res_string_input_2 = hf_tokenizer.batch_decode([encoded_result.tokens[0]], skip_special_tokens=True)[0]
 
     assert res_string_input_1 == res_string_input_2
+
+
+@pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
+@pytest.mark.parametrize("model_ids", get_gguf_model_list())
+@pytest.mark.precommit
+def test_full_gguf_pipeline(pipeline_type, model_ids):
+    gguf_model_id = model_ids["gguf_model_id"]
+    gguf_filename = model_ids["gguf_filename"]
+    prompt = 'Why is the Sun yellow?'
+
+    from utils.network import retry_request
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+
+    opt_model = retry_request(lambda: AutoModelForCausalLM.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+
+    # TODO: remove explicit switch-off of bos token
+    hf_tokenizer.add_bos_token = False
+
+    ov_generation_config = ov_genai.GenerationConfig()
+    ov_generation_config.max_new_tokens = 30
+    ov_generation_config.apply_chat_template = False
+    ov_generation_config.set_eos_token_id(hf_tokenizer.eos_token_id)
+
+    inputs = hf_tokenizer(prompt, return_tensors="pt")
+    input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
+    hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
+    generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+    prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
+    all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
+    res_string_input_1 = all_text_batch[0]
+
+    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
+    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
+    res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
+
+    assert res_string_input_1 == res_string_input_2
