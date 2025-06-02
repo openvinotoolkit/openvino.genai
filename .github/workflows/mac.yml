@@ -19,7 +19,7 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '11.0'
   PYTHON_VERSION: '3.10'
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
-  BASE_PRODUCT_TYPE: private_darwin
+  BASE_PRODUCT_TYPE: public_darwin
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: ~/.cache/hf
   OV_CACHE: ~/.cache/ov_cache
