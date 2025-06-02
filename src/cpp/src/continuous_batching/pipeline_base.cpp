@@ -3,6 +3,17 @@
 
 #include "continuous_batching/pipeline_base.hpp"
 
+namespace {
+std::string add_image_tags_to_prompt(const std::string& prompt, const std::vector<ov::Tensor>& rgbs, size_t history_images_size) {
+    std::stringstream prompt_with_image_tags;
+    for (size_t i = 0; i < rgbs.size(); i++) {
+        prompt_with_image_tags << "<ov_genai_image_" << i + history_images_size << ">";
+    }
+    prompt_with_image_tags << prompt;
+    return prompt_with_image_tags.str();
+}
+}
+
 namespace ov::genai {
 
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -28,7 +39,6 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::start_chat(const s
     if (!system_message.empty()) {
         m_history.push_back({{"role", "system"}, {"content", system_message}});
     }
-    m_image_id = 0;
     m_is_chat_conversation = true;
 };
 
@@ -36,11 +46,9 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
     m_history_images.clear();
-    m_history_image_ids.clear();
     if (m_inputs_embedder) {
         m_inputs_embedder->finish_chat();
     }
-    m_image_id = 0;
 };
 
 std::vector<GenerationResult>
@@ -160,24 +168,23 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
-    std::vector<EncodedImage> encoded_images = {};
 
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
         const auto& rgbs = rgbs_vector[0];
-        const auto& prompt = prompts[0];
+        auto prompt_with_tags = prompts[0];
+        if (!m_inputs_embedder->prompt_has_image_tag(prompt_with_tags)) {
+            prompt_with_tags = add_image_tags_to_prompt(prompt_with_tags, rgbs, m_history_images.size());
+        }
+        m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        encoded_images = m_inputs_embedder->encode_images(rgbs);
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
-        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
-        m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
-        m_history_image_ids.insert(m_history_image_ids.end(), image_sequence.begin(), image_sequence.end());
-
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
-
         m_inputs_embedder->set_apply_chat_template_status(false);
-        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids));
+
+        input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0));
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
 
@@ -185,13 +192,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
             const auto& rgbs = rgbs_vector[i];
-            const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
-            auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
-
-            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence));
+            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(prompt, rgbs, vlm_perf_metrics[i]));
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
             vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
         }
@@ -221,17 +225,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         results.emplace_back(gen_result);
     }
     if (m_is_chat_conversation) {
-        m_inputs_embedder->update_chat_history(results[0].texts[0], encoded_results[0].m_status);
-        if (encoded_results[0].m_status != ov::genai::GenerationStatus::CANCEL) {
-            m_image_id += encoded_images.size();
-            m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
+        if (encoded_results[0].m_status == ov::genai::GenerationStatus::CANCEL) {
+            m_history.pop_back();
         }
         else {
-            m_history.pop_back();
-            for (size_t idx = 0; idx < encoded_images.size(); idx++) {
-                m_history_image_ids.pop_back();
-                m_history_images.pop_back();
-            }
+            m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
         }
     }
     return results;
@@ -248,10 +246,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
-
-        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
-        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
+        inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
     }
     return add_request(request_id, inputs, sampling_params);
 }

@@ -30,30 +30,45 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 }
 
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
+    m_image_id = 0;
     m_is_chat_conversation = true;
     if (!m_kv_cache_state.get_state().empty()) {
+        m_history.clear();
         m_kv_cache_state.reset_state();
     }
     if (system_message.empty()) {
         return;
     }
+    m_history = {{{"role", "system"}, {"content", system_message}}};
 }
 
 void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
     m_kv_cache_state.num_tokens_to_trim = 0;
     if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
-        // If chat generation process was cancelled by user, let's rollback to previous state of kv cache
+        // If chat generation process was cancelled by user, let's rollback to previous state of history
+        m_history.pop_back();
+
         std::vector<int64_t>& state = m_kv_cache_state.get_state();
 
         m_kv_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
         state.resize(m_prev_hist_length);
         m_kv_cache_state.reset_mem_state = state.empty();
+    } else {
+        // Tail of chat template is missing in KV cache.
+        // Find the tail to concatenate it with the next input prompt.
+        m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
     }
 }
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
+    m_image_id = 0;
     m_is_chat_conversation = false;
+    m_history.clear();
     m_kv_cache_state.reset_state();
+}
+
+bool InputsEmbedder::IInputsEmbedder::prompt_has_image_tag(const std::string& prompt) const {
+    return std::regex_search(prompt, UNIVERSAL_PATTERN);
 }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
@@ -92,9 +107,12 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     if (m_is_chat_conversation) {
-        std::string prompt_to_encode = prompt;
+        m_history.push_back({{"role", "user"}, {"content", prompt}});
+        constexpr bool add_generation_prompt = true;
+        std::string new_templated_chat_history;
+        new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        ov::Tensor new_chat_tokens = m_tokenizer.encode(prompt_to_encode, ov::genai::add_special_tokens(false)).input_ids;
+        ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         return new_chat_tokens;
@@ -172,8 +190,8 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_ima
     return embeds;
 }
 
-ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds(prompt, encode_images(images), metrics, true, image_sequence);
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+    return get_inputs_embeds(prompt, encode_images(images), metrics);
 }
 
 /// Public InputsEmbedder class
@@ -232,12 +250,12 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
     }
 }
 
-ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence) {
-    return m_impl->get_inputs_embeds(prompt, images, metrics, image_sequence);
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+    return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
-ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
-    return m_impl->get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
+    return m_impl->get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings);
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
@@ -276,12 +294,8 @@ void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(
-    const std::string& prompt,
-    size_t base_id,
-    const std::vector<EncodedImage>& images
-) const {
-     return m_impl->normalize_prompt(prompt, base_id, images);
+bool InputsEmbedder::prompt_has_image_tag(const std::string& prompt) const {
+    return m_impl->prompt_has_image_tag(prompt);
 }
 
 void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images) {
@@ -291,13 +305,13 @@ void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_i
     }
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::normalize(
+std::pair<std::string, std::vector<size_t>> normalize_prompt(
     const std::string& prompt,
     const std::string& native_tag,
     const std::string& automatic_tag,
     size_t base_id,
     size_t n_images
-) const {
+) {
     size_t pos = prompt.find(native_tag);
     auto [image_prompt, image_sequence] = universal_to_native(prompt, [&](std::ostream& os, size_t) {
         os << automatic_tag;
