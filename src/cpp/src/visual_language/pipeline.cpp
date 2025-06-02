@@ -45,6 +45,8 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
+    size_t m_image_id = 0;
+    ChatHistory m_history;
 
 public:
     VLMPipelineImpl(
@@ -180,10 +182,23 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
+
+        if (m_is_chat_conversation) {
+            m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
+            unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
+
+            for (size_t idx = 0; idx < image_sequence.size(); idx++) {
+                image_sequence[idx] -= m_image_id;
+            }
+        }
+        else if (generation_config.apply_chat_template) {
+            m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
+        }
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
+        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
         if (m_is_npu) {
@@ -246,6 +261,16 @@ public:
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
+
+            if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
+                m_image_id += encoded_images.size();
+                // Tail of chat template is missing in KV cache.
+                // Find the tail to concatenate it with the next input prompt.
+                m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
+            }
+            else {
+                m_history.pop_back();
+            }
         }
         else
             kv_cache_state.reset_state();
@@ -274,6 +299,7 @@ public:
     void start_chat(const std::string& system_message) override {
         OPENVINO_ASSERT(!m_is_npu, "start_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = true;
+        m_image_id = 0;
         bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
         if (have_state) {
             // Resetting state may be slow.
@@ -281,12 +307,18 @@ public:
             // Since if is already introduced, move all resetting here.
             m_language.get_tensor("attention_mask").set_shape({0, 0});
         }
+        auto kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        if (!m_inputs_embedder->get_kv_cache_state().get_state().empty()) {
+            m_history.clear();
+        }
         m_inputs_embedder->start_chat(system_message);
+        m_history = {{{"role", "system"}, {"content", system_message}}};
     }
 
     void finish_chat() override {
         OPENVINO_ASSERT(!m_is_npu, "finish_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = false;
+        m_image_id = 0;
         // Resetting state may be slow.
         m_language.reset_state();
         m_language.get_tensor("attention_mask").set_shape({0, 0});

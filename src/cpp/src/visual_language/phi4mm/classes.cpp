@@ -661,11 +661,19 @@ InputsEmbedderPhi4MM::InputsEmbedderPhi4MM(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
+std::pair<std::string, std::vector<size_t>> InputsEmbedderPhi4MM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+    return {phi_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}};
+}
 
 // FIXME Copied from Phi3 (except debug tensors printing and comparing) - reuse
-ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
+ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
+    const std::string& image_prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence
+) {
     size_t base_id = m_tokens_per_images.size();
-    std::string prompt = phi_utils::normalize_prompt(image_prompt, base_id, images.size(), NATIVE_PATTERN, write_native);
     std::vector<ov::Tensor> images_features_proj;
     for (const ov::genai::EncodedImage& encoded_image : images) {
         images_features_proj.push_back(encoded_image.images_features_projection);
