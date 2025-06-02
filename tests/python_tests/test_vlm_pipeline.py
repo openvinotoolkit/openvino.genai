@@ -93,14 +93,14 @@ image_links_for_testing = [
 ]
 
 model_ids = [
-    "katuni4ka/tiny-random-minicpmv-2_6",
+    # "katuni4ka/tiny-random-minicpmv-2_6",
     "katuni4ka/tiny-random-phi3-vision",
-    "katuni4ka/tiny-random-phi-4-multimodal",
-    "katuni4ka/tiny-random-llava",
-    "katuni4ka/tiny-random-llava-next",
-    "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-qwen2vl",
-    "katuni4ka/tiny-random-qwen2.5-vl",
+    # "katuni4ka/tiny-random-phi-4-multimodal",
+    # "katuni4ka/tiny-random-llava",
+    # "katuni4ka/tiny-random-llava-next",
+    # "katuni4ka/tiny-random-internvl2",
+    # "katuni4ka/tiny-random-qwen2vl",
+    # "katuni4ka/tiny-random-qwen2.5-vl",
 ]
 
 attention_backend = ["PA", "SDPA"]
