@@ -12,10 +12,10 @@ Install [../../export-requirements.txt](../../export-requirements.txt) to conver
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
-optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs '{\"vocoder\": \"microsoft/speecht5_hifigan\"}' speecht5_tts
+optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts
 ```
 
-**Note:** Currently, text-to-speech in OpenVINO GenAI supports the `SpeechT5 TTS` model.  
+**Note:** Currently, text-to-speech in OpenVINO GenAI supports the `SpeechT5 TTS` model.
 When exporting the model, you must specify a vocoder using the `--model-kwargs` option in JSON format.
 
 ## Prepare speaker embedding file
