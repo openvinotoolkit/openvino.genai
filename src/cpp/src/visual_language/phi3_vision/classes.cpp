@@ -677,7 +677,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& prompt, con
         constexpr bool add_generation_prompt = true;
         std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = split_tokenize(image_prompt, m_tokenizer);
+        new_chat_tokens = phi_utils::split_tokenize(new_templated_chat_history, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     } else {
