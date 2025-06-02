@@ -34,21 +34,21 @@ Install [../../export-requirements.txt](../../export-requirements.txt) to conver
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 ```
 
-Then run the export with Optimum CLI:
+Then, run the export with Optimum CLI:
 
 ```sh
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 dreamlike_anime_1_0_ov/FP16
 ```
 
-Alternatively, do it in Python code:
+Alternatively, do it in Python code (FP16 is used by default). If NNCF is installed, the model will be compressed to INT8 automatically.
 
 ```python
 from optimum.exporters.openvino.convert import export_tokenizer
-from optimum.intel import OVStableDiffusionPipeline
+from optimum.intel import OVPipelineForText2Image
 
 output_dir = "dreamlike_anime_1_0_ov/FP16"
 
-pipeline = OVStableDiffusionPipeline.from_pretrained("dreamlike-art/dreamlike-anime-1.0", export=True)
+pipeline = OVPipelineForText2Image.from_pretrained("dreamlike-art/dreamlike-anime-1.0", export=True)
 pipeline.save_pretrained(output_dir)
 export_tokenizer(pipeline.tokenizer, output_dir + "/tokenizer")
 ```
