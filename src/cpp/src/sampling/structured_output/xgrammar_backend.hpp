@@ -59,4 +59,4 @@ static bool xgrammar_registered = registerXGrammarBackend();
 } // namespace genai
 } // namespace ov
 
-#endif ENABLE_XGRAMMAR
+#endif // ENABLE_XGRAMMAR

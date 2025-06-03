@@ -22,6 +22,7 @@ public:
     using BackendFactory = std::function<std::unique_ptr<ov::genai::LogitTransformers::ILogitTransformer>(
         const ov::genai::Tokenizer&, std::optional<int>, const GenerationConfig& sampling_parameters)>;
 
+    // TODO: check if vocab_size is needed
     StructuredOutputController(const ov::genai::Tokenizer& tokenizer,
                               std::optional<int> vocab_size=std::nullopt);
 
