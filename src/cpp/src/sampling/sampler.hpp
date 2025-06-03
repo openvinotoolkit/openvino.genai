@@ -21,10 +21,7 @@
 #include "continuous_batching/scheduler.hpp"
 #include "sequence_group.hpp"
 #include "threadpool.hpp"
-
-#ifdef ENABLE_XGRAMMAR
 #include "sampling/structured_output/structured_output_controller.hpp"
-#endif
 
 namespace ov::genai {
 // Handle stop_token_ids
@@ -102,11 +99,7 @@ class Sampler {
     Tokenizer m_tokenizer;
 
     ThreadPool m_thread_pool;
-
-    #ifdef ENABLE_XGRAMMAR
     std::shared_ptr<ov::genai::StructuredOutputController> m_structured_output_controller;
-    #endif
-
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;

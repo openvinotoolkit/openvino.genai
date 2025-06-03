@@ -8,10 +8,7 @@
 
 #include "openvino/genai/generation_config.hpp"
 #include "sampling/logit_transformers.hpp"
-
-#ifdef ENABLE_XGRAMMAR
 #include "sampling/structured_output/structured_output_controller.hpp"
-#endif
 
 namespace ov::genai {
 class LogitProcessor {
@@ -30,11 +27,9 @@ protected:
 
 public:
     LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
-                   const LogitTransformers::TokenIds& input_ids
-                   #ifdef ENABLE_XGRAMMAR
-                   ,std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr
-                   #endif
-                   ) {
+                   const LogitTransformers::TokenIds& input_ids,
+                   std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr
+    ) {
         for (const auto& input_id : input_ids) {
             m_unique_prompt_token_ids->insert(input_id);
         }
@@ -45,13 +40,10 @@ public:
             );
         }
 
-        #ifdef ENABLE_XGRAMMAR
-        OPENVINO_ASSERT(structured_output_controller != nullptr, "Structured output controller is not initialized");
-        if (sampling_params.is_structured_output_generation()) {
-            auto transformer = structured_output_controller->get_logits_transformer(sampling_params);
-            m_logit_transformers.push_back(transformer);
+        OPENVINO_ASSERT(structured_output_controller != nullptr || !sampling_params.is_structured_output_generation(), "Structured output controller is not set for structured output generation");
+        if (sampling_params.is_structured_output_generation() && structured_output_controller != nullptr) {
+            m_logit_transformers.push_back(structured_output_controller->get_logits_transformer(sampling_params));
         }
-        #endif
 
         if (sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) {
             if (sampling_params.repetition_penalty != 1.0f) {
