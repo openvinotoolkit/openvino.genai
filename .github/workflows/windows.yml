@@ -667,6 +667,7 @@ jobs:
           merge-multiple: true
 
       - name: Extract Artifacts
+        if: ${{ matrix.test.run_condition }}
         run: Expand-Archive -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.INSTALL_DIR }}
 
       - name: Download GenAI JS Bildings Artifacts
