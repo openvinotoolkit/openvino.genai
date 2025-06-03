@@ -40,6 +40,7 @@ public:
     std::optional<std::string> regex;
     std::optional<std::vector<std::string>> choices;
     std::optional<std::string> grammar;
+    std::optional<std::string> backend;
     void validate() const;
 };
 

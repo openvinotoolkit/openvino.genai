@@ -35,8 +35,12 @@ StructuredOutputController::StructuredOutputController(const ov::genai::Tokenize
 
 std::shared_ptr<LogitTransformers::ILogitTransformer>
 StructuredOutputController::get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) {
-//    std::string backend_name = sampling_parameters.structured_output_backend.value_or(get_default_backend_name());
-    std::string backend_name = get_default_backend_name();
+
+    auto& guided_gen_config = sampling_parameters.guided_generation_config;
+    if (!guided_gen_config.has_value()) {
+        OPENVINO_THROW("Structured output is not enabled in the provided GenerationConfig.");
+    }
+    std::string backend_name = (*guided_gen_config).backend.value_or(get_default_backend_name());
 
     // Check if backend already instantiated
     auto impl_it = m_impls.find(backend_name);
@@ -49,12 +53,12 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
         }
 
         // Create the backend instance and store it
-        m_impls[backend_name] = factory_it->second(m_tokenizer, m_vocab_size);
+        m_impls[backend_name] = factory_it->second(m_tokenizer, m_vocab_size, sampling_parameters);
         impl_it = m_impls.find(backend_name);
     }
 
     // Use the instantiated backend
-    return impl_it->second->get_logits_transformer(sampling_parameters);
+    return std::move(impl_it->second);
 }
 
 } // namespace genai

@@ -11,11 +11,49 @@ namespace genai {
 namespace LogitTransformers {
 
 XGrammarLogitsTransformer::XGrammarLogitsTransformer(
-    const xgrammar::CompiledGrammar& compiled_grammar,
+    const Tokenizer& tokenizer, 
+    std::optional<int> vocab_size,
+    const GenerationConfig& sampling_parameters,
     std::optional<std::vector<int>> override_stop_tokens,
     bool terminate_without_stop_token,
-    int max_rollback_tokens)
-{
+    int max_rollback_tokens
+) {
+    auto vocab_vector = tokenizer.get_vocab_vector();
+    if (!vocab_size.has_value()) {
+        vocab_size = vocab_vector.size();
+    }
+
+    auto tokenizer_info = xgrammar::TokenizerInfo(
+        std::move(vocab_vector),
+        xgrammar::VocabType::RAW,
+        vocab_size,
+        std::vector<int32_t>{2},
+        true
+    );
+    auto grammar_compiler = std::make_unique<xgrammar::GrammarCompiler>(std::move(tokenizer_info));
+
+
+    OPENVINO_ASSERT(sampling_parameters.is_guided_generation(),
+                  "XGrammarStructuredOutput can only be used for guided generation");
+    
+    auto& guided_gen_config = *sampling_parameters.guided_generation_config;
+    guided_gen_config.validate();
+
+    xgrammar::Grammar grammar;
+    if (guided_gen_config.json_schema.has_value()) {
+        // std::cout << *guided_generation_config.json_schema << std::endl;
+        grammar = xgrammar::Grammar::FromJSONSchema(*guided_gen_config.json_schema);
+    } else if (guided_gen_config.regex.has_value()) {
+        grammar = xgrammar::Grammar::FromRegex(*guided_gen_config.regex);
+    } else if (guided_gen_config.choices.has_value()) {
+        // todo: check this
+        grammar = xgrammar::Grammar::FromStructuralTag(std::vector<xgrammar::StructuralTagItem>{}, *guided_gen_config.choices);
+    } else if (guided_gen_config.grammar.has_value()) {
+        grammar = xgrammar::Grammar::FromEBNF(*guided_gen_config.grammar);
+    }
+    
+    auto compiled_grammar = grammar_compiler->CompileGrammar(grammar);
+
     m_vocab_size = compiled_grammar.GetTokenizerInfo().GetVocabSize();
     m_grammar_matcher = xgrammar::GrammarMatcher(compiled_grammar,
                                                  override_stop_tokens,
@@ -68,48 +106,6 @@ void XGrammarLogitsTransformer::apply(Logits& logits) {
 }
 
 } // namespace LogitTransformers
-
-XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size) {
-    auto vocab_vector = tokenizer.get_vocab_vector();
-    if (!vocab_size.has_value()) {
-        vocab_size = vocab_vector.size();
-    }
-
-    auto tokenizer_info = xgrammar::TokenizerInfo(
-        std::move(vocab_vector),
-        xgrammar::VocabType::RAW,
-        vocab_size,
-        std::vector<int32_t>{2},
-        true
-    );
-    m_grammar_compiler = std::make_unique<xgrammar::GrammarCompiler>(std::move(tokenizer_info));
-}
-
-std::shared_ptr<LogitTransformers::ILogitTransformer>
-XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& sampling_parameters) {
-    OPENVINO_ASSERT(sampling_parameters.is_guided_generation(),
-                  "XGrammarStructuredOutput can only be used for guided generation");
-    
-    auto& guided_gen_config = *sampling_parameters.guided_generation_config;
-    guided_gen_config.validate();
-
-    xgrammar::Grammar grammar;
-    if (guided_gen_config.json_schema.has_value()) {
-        // std::cout << *guided_generation_config.json_schema << std::endl;
-        grammar = xgrammar::Grammar::FromJSONSchema(*guided_gen_config.json_schema);
-    } else if (guided_gen_config.regex.has_value()) {
-        grammar = xgrammar::Grammar::FromRegex(*guided_gen_config.regex);
-    } else if (guided_gen_config.choices.has_value()) {
-        // todo: check this
-        grammar = xgrammar::Grammar::FromStructuralTag(std::vector<xgrammar::StructuralTagItem>{}, *guided_gen_config.choices);
-    } else if (guided_gen_config.grammar.has_value()) {
-        grammar = xgrammar::Grammar::FromEBNF(*guided_gen_config.grammar);
-    }
-    
-    auto compiled_grammar = m_grammar_compiler->CompileGrammar(grammar);
-
-    return std::make_shared<LogitTransformers::XGrammarLogitsTransformer>(std::move(compiled_grammar));
-}
 
 } // namespace genai
 } // namespace ov

@@ -17,18 +17,10 @@
 namespace ov {
 namespace genai {
 
-class IStructuredOutputImpl {
-public:
-    virtual ~IStructuredOutputImpl() = default;
-    virtual std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer>
-        get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) = 0;
-
-};
-
 class StructuredOutputController {
 public:
-    using BackendFactory = std::function<std::unique_ptr<IStructuredOutputImpl>(
-        const ov::genai::Tokenizer&, std::optional<int>)>;
+    using BackendFactory = std::function<std::unique_ptr<ov::genai::LogitTransformers::ILogitTransformer>(
+        const ov::genai::Tokenizer&, std::optional<int>, const GenerationConfig& sampling_parameters)>;
 
     StructuredOutputController(const ov::genai::Tokenizer& tokenizer,
                               std::optional<int> vocab_size=std::nullopt);
@@ -41,7 +33,7 @@ public:
     static void set_default_backend(const std::string& name);
 
 private:
-    std::unordered_map<std::string, std::unique_ptr<IStructuredOutputImpl>> m_impls;
+    std::unordered_map<std::string, std::unique_ptr<ov::genai::LogitTransformers::ILogitTransformer>> m_impls;
     const ov::genai::Tokenizer& m_tokenizer;
     std::optional<int> m_vocab_size;
 

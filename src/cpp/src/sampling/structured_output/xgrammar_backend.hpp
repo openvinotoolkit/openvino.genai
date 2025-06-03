@@ -19,11 +19,15 @@ namespace genai {
 namespace LogitTransformers {
 
 class XGrammarLogitsTransformer : public ILogitTransformer {
-public:
-    XGrammarLogitsTransformer(const xgrammar::CompiledGrammar& compiled_grammar,
-                              std::optional<std::vector<int>> override_stop_tokens = std::nullopt,
-                              bool terminate_without_stop_token = false,
-                              int max_rollback_tokens = 0);
+public:                            
+    XGrammarLogitsTransformer(
+        const Tokenizer& tokenizer, 
+        std::optional<int> vocab_size,
+        const GenerationConfig& sampling_parameters,
+        std::optional<std::vector<int>> override_stop_tokens = std::nullopt,
+        bool terminate_without_stop_token = false,
+        int max_rollback_tokens = 0
+    );
 
     void accept_tokens(const TokenIds& input_ids);
 
@@ -40,22 +44,11 @@ protected:
 
 } // namespace LogitTransformers
 
-class XGrammarStructuredOutput : public IStructuredOutputImpl {
-public:
-    XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size = std::nullopt);
-
-    std::shared_ptr<LogitTransformers::ILogitTransformer> get_logits_transformer(const GenerationConfig& sampling_parameters) override;
-
-private:
-    std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
-};
-
-
 // Static initializer for XGrammar backend registration
 static bool registerXGrammarBackend() {
     StructuredOutputController::register_backend("xgrammar",
-        [](const ov::genai::Tokenizer& tokenizer, std::optional<int> vocab_size) {
-            return std::make_unique<XGrammarStructuredOutput>(tokenizer, vocab_size);
+        [](const ov::genai::Tokenizer& tokenizer, std::optional<int> vocab_size, const GenerationConfig& sample_params) {
+            return std::make_unique<ov::genai::LogitTransformers::XGrammarLogitsTransformer>(tokenizer, vocab_size, sample_params);
         });
     return true;
 }
