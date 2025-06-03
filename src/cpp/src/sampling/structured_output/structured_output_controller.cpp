@@ -35,8 +35,7 @@ StructuredOutputController::StructuredOutputController(const ov::genai::Tokenize
 
 std::shared_ptr<LogitTransformers::ILogitTransformer>
 StructuredOutputController::get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) {
-
-    auto& guided_gen_config = sampling_parameters.guided_generation_config;
+    auto& guided_gen_config = sampling_parameters.structured_output_config;
     if (!guided_gen_config.has_value()) {
         OPENVINO_THROW("Structured output is not enabled in the provided GenerationConfig.");
     }

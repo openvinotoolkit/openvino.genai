@@ -47,7 +47,7 @@ public:
 
         #ifdef ENABLE_XGRAMMAR
         OPENVINO_ASSERT(structured_output_controller != nullptr, "Structured output controller is not initialized");
-        if (sampling_params.is_guided_generation()) {
+        if (sampling_params.is_structured_output_generation()) {
             auto transformer = structured_output_controller->get_logits_transformer(sampling_params);
             m_logit_transformers.push_back(transformer);
         }

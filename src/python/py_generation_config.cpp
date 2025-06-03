@@ -14,7 +14,7 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::StopCriteria;
-using ov::genai::GuidedGenerationConfig;
+using ov::genai::StructuredOutputConfig;
 using ov::genai::GenerationConfig;
 
 namespace {
@@ -28,9 +28,9 @@ auto stop_criteria_docstring =  R"(
         "openvino_genai.StopCriteria.NEVER" stops when there cannot be better candidates.
 )";
 
-auto guided_generation_config_docstring = R"(
-    Structure to keep generation config parameters for guided generation.
-    It is used to store the configuration for guided generation, which includes
+auto structured_output_config_docstring = R"(
+    Structure to keep generation config parameters for structured output generation.
+    It is used to store the configuration for structured generation, which includes
     the JSON schema and other related parameters.
 
     Structured output parameters:
@@ -97,12 +97,12 @@ void init_generation_config(py::module_& m) {
         .value("HEURISTIC", StopCriteria::HEURISTIC)
         .value("NEVER", StopCriteria::NEVER);
 
-    py::class_<GuidedGenerationConfig>(m, "GuidedGenerationConfig", guided_generation_config_docstring)
-        .def(py::init<>(), "Default constructor for GuidedGenerationConfig")
-        .def_readwrite("json_schema", &GuidedGenerationConfig::json_schema, "JSON schema for guided generation")
-        .def_readwrite("choises", &GuidedGenerationConfig::choices, "List of choices for guided generation")
-        .def_readwrite("regex", &GuidedGenerationConfig::regex, "Regular expression for guided generation")
-        .def_readwrite("grammar", &GuidedGenerationConfig::grammar, "Grammar for guided generation");
+    py::class_<StructuredOutputConfig>(m, "StructuredOutputConfig", structured_output_config_docstring)
+        .def(py::init<>(), "Default constructor for StructuredOutputConfig")
+        .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
+        .def_readwrite("choises", &StructuredOutputConfig::choices, "List of choices for structured output generation")
+        .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
+        .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation");
         
 
      // Binding for GenerationConfig
@@ -137,7 +137,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
-        .def_readwrite("guided_generation_config", &GenerationConfig::guided_generation_config)
+        .def_readwrite("structured_output_config", &GenerationConfig::structured_output_config)
         .def_readwrite("adapters", &GenerationConfig::adapters)
         .def_readwrite("apply_chat_template", &GenerationConfig::apply_chat_template)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
