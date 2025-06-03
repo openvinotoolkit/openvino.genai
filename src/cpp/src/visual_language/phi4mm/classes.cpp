@@ -778,19 +778,21 @@ InputsEmbedderPhi4MM::InputsEmbedderPhi4MM(
 
 
 // FIXME Copied from Phi3 (except debug tensors printing and comparing) - reuse
-ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
+ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
     size_t base_id = m_tokens_per_images.size();
-    std::string prompt = phi_utils::normalize_prompt(image_prompt, base_id, images.size(), NATIVE_PATTERN, write_native);
+    std::string image_prompt = phi_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native);
     std::vector<ov::Tensor> images_features_proj;
     for (const ov::genai::EncodedImage& encoded_image : images) {
         images_features_proj.push_back(encoded_image.images_features_projection);
         m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
     }
-
     std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
     if (m_is_chat_conversation) {
+        m_history.push_back({{"role", "user"}, {"content", std::move(image_prompt)}});
+        constexpr bool add_generation_prompt = true;
+        std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = phi_utils::split_tokenize(image_prompt, m_tokenizer, NATIVE_PATTERN);
+        new_chat_tokens = phi_utils::split_tokenize(new_templated_chat_history, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     } else {
@@ -845,7 +847,6 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(const std::string& image_prom
     if (!m_is_chat_conversation) {
         m_tokens_per_images.clear();
     }
-
     return inputs_embeds;
 }
 
