@@ -25,7 +25,7 @@ public:
         std::optional<int> vocab_size,
         const GenerationConfig& sampling_parameters,
         std::optional<std::vector<int>> override_stop_tokens = std::nullopt,
-        bool terminate_without_stop_token = false,
+        bool terminate_without_stop_token = true,
         int max_rollback_tokens = 0
     );
 

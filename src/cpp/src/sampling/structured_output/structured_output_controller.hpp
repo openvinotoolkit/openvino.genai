@@ -34,7 +34,6 @@ public:
     static void set_default_backend(const std::string& name);
 
 private:
-    std::unordered_map<std::string, std::unique_ptr<ov::genai::LogitTransformers::ILogitTransformer>> m_impls;
     const ov::genai::Tokenizer& m_tokenizer;
     std::optional<int> m_vocab_size;
 
