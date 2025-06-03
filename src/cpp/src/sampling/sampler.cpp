@@ -1015,9 +1015,7 @@ LogitProcessor& Sampler::get_logit_processor(uint64_t request_id) {
 
 
 void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_params, const TokenIds& prompt) {
-    std::cerr << "Creating logit processor for request id: " << request_id << std::endl;
     if (!m_structured_output_controller) {
-        std::cerr << "Structured output controller is created" << std::endl;
         m_structured_output_controller = std::make_shared<StructuredOutputController>(m_tokenizer, m_tokenizer.get_vocab_vector().size());
     }
 
