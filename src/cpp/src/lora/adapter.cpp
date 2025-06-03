@@ -176,6 +176,7 @@ using LoRAConstantTensors = std::map<std::string, LoRAConstantNode>;
 
 // Group constant tensors loaded from LoRA adapter file into constants
 LoRAConstantTensors group_lora_constant_tensors(const ConstantMap& tensors, const std::vector<RegexParser>& const_parsers) {
+    std::cout << "group_lora_constant_tensors" << std::endl;
     LoRAConstantTensors  result;
     for(const auto& named_tensor: tensors) {
         for (const auto& const_parser : const_parsers) {
@@ -236,7 +237,7 @@ struct LoRAParameters {
 
 using LoRAParametersGetter = std::function<std::optional<LoRAParameters>(NodePtr node)>;
 
-// Maps a given layer name to corresponding LoRA tensors based on the default name mapping schema.
+// Maps a given layer name to corresponding LoRA tensors based on the default name mapping schema.0
 // Layer name should start with a given prefix that is eliminated from the name before search for matching LoRA tensor.
 // It works for a single LoRA adapter.
 // Returns std::nullopt, if there is no LoRA adapter for a given layer name.
@@ -256,7 +257,7 @@ struct LoRAWeightGetterDefault {
         std::replace(name_with_underscores.begin(), name_with_underscores.end(), '.', '_');
         std::vector<std::string> variants{name, name_with_underscores};
         // auto it = std::find_if(lora_tensors->begin(), lora_tensors->end(), [this, variants](const LoRATensors::value_type& pair){
-        auto it = std::find_if(lora_tensors->begin(), lora_tensors->end(), [this, variants](const std::pair<std::string, TENSOR_TYPE>& pair){
+        auto it = std::find_if(lora_tensors->begin(), lora_tensors->end(), [this, variants](const std::pair<std::string, TENSOR_TYPE>& pair) {
             std::string lora_name = pair.first;
             // TODO: Make this filtering for prefix once in ctor as a more efficient solution
             if(lora_name.find(prefix) == 0) {
@@ -476,6 +477,7 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
         variable_ids(variable_ids) {}
 
     std::optional<LoRAConstantNode> operator() (NodePtr node) const {
+        std::cout << "LoRAStateGetterForConst operator()" << std::endl;
         std::string name = node->get_friendly_name();
         if (auto params = getter(name)) {
             // FIXME: Potential name conflict if LoRA is applied multiple times by using this infrastructure independently each time (not a recommended approach).
@@ -483,6 +485,8 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
             std::string variable_id_name = "lora_constant_" + std::to_string(model->get_sinks().size()) + "_" +name;
             LoRAConstantNode result;
             ov::op::util::VariableInfo variable_info;
+
+            std::cout << "111 " << params->tensor->get_output_element_type(0) << std::endl;
 
             // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             variable_info = ov::op::util::VariableInfo{
@@ -615,12 +619,29 @@ protected:
     bool apply(NodePtr node, const LoRAConstantNode& lora_weight) override {
         auto consumers = node->get_output_target_inputs(0);
 
-        // std::cout << lora_weight.tensor->get_output_shape(0) << std::endl;
+        std::cout << lora_weight.tensor->get_element_type() << std::endl;
+        std::cout << node->get_element_type() << std::endl;
+
+        const auto node_type = node->get_element_type();
+    
+        // Приводим tensor к типу node
+        // TODO: check that it's safe
+        auto lora_output = lora_weight.tensor;
+        if (lora_weight.tensor->get_element_type() != node_type) {
+            lora_output = std::make_shared<ov::op::v0::Convert>(lora_weight.tensor, node_type);
+        }
+       
         // std::cout << node->get_output_shape(0) << std::endl;
 
-        std::shared_ptr<ov::Model> then_body = std::make_shared<ov::Model>(lora_weight.tensor, ov::ParameterVector{}),
-                                   else_body = std::make_shared<ov::Model>(node, ov::ParameterVector{});
+        // std::shared_ptr<ov::Model> then_body = std::make_shared<ov::Model>(lora_weight.tensor, ov::ParameterVector{}),
+        //                            else_body = std::make_shared<ov::Model>(node, ov::ParameterVector{});
+        // если есть константный вес
         std::shared_ptr<ov::op::v8::If> if_node = std::make_shared<ov::op::v8::If>(if_input);
+        // то вставь его 
+        std::shared_ptr<ov::Model> then_body = std::make_shared<ov::Model>(lora_output, ov::ParameterVector{});
+        // иначе оригинальный вес модели
+        std::shared_ptr<ov::Model> else_body = std::make_shared<ov::Model>(node, ov::ParameterVector{});
+
         if_node->set_then_body(then_body);
         if_node->set_else_body(else_body);
         if_node->set_output(then_body->get_results()[0], else_body->get_results()[0]);
@@ -632,6 +653,7 @@ protected:
 
         for (auto& consumer : consumers) {
             consumer.replace_source_output(if_node->output(0));
+            std::cout << consumer.get_node()->get_element_type() << std::endl;
         }
         return true;
     }
@@ -668,10 +690,14 @@ NodePtr tensors_multiplication(NodePtr input,
     const auto target_shape = target.get_partial_shape();
     const auto target_rank = target_shape.rank().get_length();
 
+    std::cout << 'tensors_multiplication' << std::endl;
+
     for (size_t i = 0; i < multipliers.size(); ++i) {
         NodePtr normalized = multipliers[i];
+        std::cout <<"aaa "<<  normalized->get_output_element_type(0).get_type_name() << std::endl;
         if (normalized->get_output_element_type(0) != target_type) {
             normalized = std::make_shared<v0::Convert>(normalized, target_type);
+            std::cout <<"bbb "<<  normalized->get_output_element_type(0).get_type_name() << std::endl;
             if (std::dynamic_pointer_cast<v0::Constant>(normalized)) {
                 input->get_rt_info()["decompression"];
             }
@@ -1320,6 +1346,7 @@ struct AdapterControllerImpl {
     }
 
     void set_new_adapter_tensors (ov::InferRequest& infer_request, bool alpha_only = false) {
+        std::cout << "!!!!!!!!!!!!!!set_new_adapter_tensors"<< std::endl;
         if(current_config.get_mode() != AdapterConfig::MODE_AUTO && current_config.get_mode() != AdapterConfig::MODE_DYNAMIC && current_config.get_mode() != AdapterConfig::MODE_STATIC_RANK ) {
             return;
         }
