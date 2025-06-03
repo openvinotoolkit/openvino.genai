@@ -26,7 +26,7 @@ namespace genai {
 enum class StopCriteria { EARLY, HEURISTIC, NEVER };
 
 
-class OPENVINO_GENAI_EXPORTS GuidedGenerationConfig {
+class OPENVINO_GENAI_EXPORTS StructuredOutputConfig {
 /* 
  * Structured output parameters:
  * @param json if set, the output will be a JSON string constraint by the specified json-schema.
@@ -35,7 +35,7 @@ class OPENVINO_GENAI_EXPORTS GuidedGenerationConfig {
  * @param grammar if set, the output will be constraint by specified EBNF grammar.
  */
 public:
-    GuidedGenerationConfig() = default;
+    StructuredOutputConfig() = default;
     std::optional<std::string> json_schema;
     std::optional<std::string> regex;
     std::optional<std::vector<std::string>> choices;
@@ -149,7 +149,7 @@ public:
     size_t max_ngram_size = 0;
 
     // Structured output parameters
-    std::optional<GuidedGenerationConfig> guided_generation_config;
+    std::optional<StructuredOutputConfig> structured_output_config;
     // todo: add structural tag for function calling
     // todo: add structured_output_backend
 
@@ -169,7 +169,7 @@ public:
     bool is_multinomial() const;
     bool is_assisting_generation() const;
     bool is_prompt_lookup() const;
-    bool is_guided_generation() const;
+    bool is_structured_output_generation() const;
 
     OPENVINO_DEPRECATED("Please, use `is_assisting_generation()` instead of `is_speculative_decoding()`. This method will be removed in 2026.0.0 release")
     bool is_speculative_decoding() const;
@@ -221,7 +221,7 @@ static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_c
 static constexpr ov::Property<size_t> num_assistant_tokens{"num_assistant_tokens"};
 static constexpr ov::Property<size_t> max_ngram_size{"max_ngram_size"};
 
-static constexpr ov::Property<GuidedGenerationConfig> guided_generation_config{"guided_generation_config"};
+static constexpr ov::Property<StructuredOutputConfig> structured_output_config{"structured_output_config"};
 
 static constexpr ov::Property<bool> apply_chat_template{"apply_chat_template"};
 

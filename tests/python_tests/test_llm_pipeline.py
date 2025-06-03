@@ -160,19 +160,19 @@ class RESTAPIResponse(BaseModel):
 @pytest.mark.parametrize("prompt_and_scheme", [("Generate a json about a person.", Person), 
                                                ("Generate a json about a transaction.", Transaction),
                                                ("Generate a json about a REST API response.", RESTAPIResponse)])
-def test_guided_generation(model_id, prompt_and_scheme):
+def test_structured_output_generation(model_id, prompt_and_scheme):
     prompt, SchemeType = prompt_and_scheme
     opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
 
-    guided_generation_config = ov_genai.GuidedGenerationConfig()
-    guided_generation_config.json_schema = json.dumps(SchemeType.model_json_schema())
+    structured_output_config = ov_genai.StructuredOutputConfig()
+    structured_output_config.json_schema = json.dumps(SchemeType.model_json_schema())
 
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 100
     gen_config.apply_chat_template = False
-    gen_config.guided_generation_config = guided_generation_config
+    gen_config.structured_output_config = structured_output_config
 
     res_str = ov_pipe.generate(prompt, generation_config=gen_config)
 
@@ -181,7 +181,7 @@ def test_guided_generation(model_id, prompt_and_scheme):
 
     # If generation is not constrained by json schema, 
     # assert that output is not valid.
-    gen_config.guided_generation_config = None
+    gen_config.structured_output_config = None
     res_str = ov_pipe.generate(prompt, generation_config=gen_config)
     with pytest.raises(ValueError):
         SchemeType.model_validate_json(res_str)

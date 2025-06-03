@@ -32,16 +32,14 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     );
     auto grammar_compiler = std::make_unique<xgrammar::GrammarCompiler>(std::move(tokenizer_info));
 
-
-    OPENVINO_ASSERT(sampling_parameters.is_guided_generation(),
-                  "XGrammarStructuredOutput can only be used for guided generation");
+    OPENVINO_ASSERT(sampling_parameters.is_structured_output_generation(),
+                   "XGrammarStructuredOutput can only be used for structured output generation");
     
-    auto& guided_gen_config = *sampling_parameters.guided_generation_config;
+    auto& guided_gen_config = *sampling_parameters.structured_output_config;
     guided_gen_config.validate();
 
     xgrammar::Grammar grammar;
     if (guided_gen_config.json_schema.has_value()) {
-        // std::cout << *guided_generation_config.json_schema << std::endl;
         grammar = xgrammar::Grammar::FromJSONSchema(*guided_gen_config.json_schema);
     } else if (guided_gen_config.regex.has_value()) {
         grammar = xgrammar::Grammar::FromRegex(*guided_gen_config.regex);
