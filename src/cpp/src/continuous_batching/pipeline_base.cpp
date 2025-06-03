@@ -168,6 +168,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
+    std::vector<EncodedImage> encoded_images;
 
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
@@ -178,7 +179,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
         m_history.push_back({{"role", "user"}, {"content", prompt_with_tags}});
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        encoded_images = m_inputs_embedder->encode_images(rgbs);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
@@ -227,6 +228,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     if (m_is_chat_conversation) {
         if (encoded_results[0].m_status == ov::genai::GenerationStatus::CANCEL) {
             m_history.pop_back();
+            for (size_t i = 0; i < encoded_images.size(); i++) {
+                m_history_images.pop_back();
+            }
         }
         else {
             m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
