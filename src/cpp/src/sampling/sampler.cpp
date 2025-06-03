@@ -941,8 +941,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         if (!m_logit_processors.count(request_id)) {
             m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids()
             #ifdef ENABLE_XGRAMMAR
-                                                                 , m_structured_output_controller
-                                                                  , m_structured_output_controller, std::make_shared<StructuredOutputController>(m_tokenizer, m_tokenizer.get_vocab_vector().size())
+                                                                  , std::make_shared<StructuredOutputController>(m_tokenizer, m_tokenizer.get_vocab_vector().size())
             #endif
                                                                 )});
         }
