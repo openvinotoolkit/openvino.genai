@@ -50,9 +50,6 @@ ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image);
 
 void bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
 void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height);
-void bicubic_resize_reorder_normalize(const uint8_t* input, const int nx, const int ny,
-                                      float* target, int target_width, int target_height,
-                                      const float* img_mean3, const float* img_std3);
 
 /** preprocess img and store the result in res_imgs, pad_to_square may be overridden to false depending on model configuration */
 clip_image_f32 clip_image_preprocess(struct clip_ctx& ctx, const clip_image_u8& img);
