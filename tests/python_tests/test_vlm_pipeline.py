@@ -556,6 +556,8 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_images, backend):
+    if model_id == "katuni4ka/tiny-random-minicpmv-2_6" and backend == "PA" and iteration_images == image_links_for_testing[1]:
+        pytest.xfail(reason="CVS-168791")
     callback_questions = [
         "Why is the Sun yellow?",
         "1+1=",
