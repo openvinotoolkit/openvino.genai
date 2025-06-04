@@ -881,20 +881,21 @@ def test_full_gguf_pipeline(pipeline_type, model_ids):
     assert res_string_input_1 == res_string_input_2
 
 
-
-        
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
-@pytest.mark.parametrize("model_ids", {"gguf_model_id": "Qwen/Qwen3-0.6B-GGUF", "gguf_filename": "Qwen3-0.6B-Q8_0.gguf"})
+@pytest.mark.parametrize("model_ids", [{"gguf_model_id": "Qwen/Qwen3-0.6B-GGUF", "gguf_filename": "Qwen3-0.6B-Q8_0.gguf"}])
 @pytest.mark.precommit
+@pytest.mark.gguf
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
+    # Temporal testing solution until transformers starts to support qwen3 in GGUF format
+    # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
     prompt = 'Why is the Sun yellow?'
 
     ov_generation_config = ov_genai.GenerationConfig()
     ov_generation_config.max_new_tokens = 30
-    ov_generation_config.apply_chat_template = False
-    ov_generation_config.set_eos_token_id('151645')
+    ov_generation_config.apply_chat_template = True
+    ov_generation_config.set_eos_token_id(151645)
 
     res_string_input_1 = "<|im_end|>\nOkay, the user is asking why the Sun is yellow. Let me think about this. First, I need to recall"
 
