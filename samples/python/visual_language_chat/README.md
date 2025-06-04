@@ -14,7 +14,28 @@ Install [../../export-requirements.txt](../../export-requirements.txt) to conver
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code MiniCPM-V-2_6
+```
+
+Alternatively, you can do it in Python code:
+
+```python
+from optimum.exporters.openvino.convert import export_tokenizer
+from optimum.intel import OVModelForVisualCausalLM
+from transformers import AutoTokenizer
+
+output_dir = "MiniCPM-V-2_6"
+
+model = OVModelForVisualCausalLM.from_pretrained("openbmb/MiniCPM-V-2_6", export=True, trust_remote_code=True)
+model.save_pretrained(output_dir)
+
+tokenizer = AutoTokenizer.from_pretrained("openbmb/MiniCPM-V-2_6")
+export_tokenizer(tokenizer, output_dir)
 ```
 
 ## Run:

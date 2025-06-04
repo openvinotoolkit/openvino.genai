@@ -13,10 +13,34 @@ There are also Jupyter notebooks for some samples. You can find links to them in
 ## Download and convert the model and tokenizers
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
+
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model <model> <output_folder>
 ```
+
+Alternatively, do it in Python code (e.g. TinyLlama_v1.1). If NNCF is installed, the model will be compressed to INT8 automatically.
+
+```python
+from optimum.exporters.openvino.convert import export_tokenizer
+from optimum.intel import OVModelForCausalLM
+from transformers import AutoTokenizer
+
+output_dir = "chat_model"
+
+model = OVModelForCausalLM.from_pretrained("TinyLlama/TinyLlama_v1.1", export=True)
+model.save_pretrained(output_dir)
+
+tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama_v1.1")
+tokenizer.save_pretrained(output_dir)
+export_tokenizer(tokenizer, output_dir)
+```
+
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
 ```sh
 pip install huggingface-hub
