@@ -65,6 +65,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
+    // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
+    if (m_model_runner) {
+        m_model_runner->get_infer_request().get_compiled_model().release_memory();
+    }
+
     if (m_scheduler) {
         m_scheduler->release();
     }
@@ -82,6 +87,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& properties) {
+    m_device = device;
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
@@ -109,7 +115,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     m_num_decoder_layers = cache_manager->get_num_decoder_layers();
     m_block_size = cache_manager->get_block_size();
 
-    // Scheduler
+
+    // Scheduler configuration
     SchedulerConfig normalized_config = scheduler_config;
     if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
         size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
@@ -123,52 +130,25 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         can_use_partial_preemption = false;
     }
 
-    m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
-
-    // Model Runner
-    bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
+    // Scheduler and Model Runner instantiation
+    bool is_use_cache_eviction = scheduler_config.use_cache_eviction;
     if (is_use_cache_eviction) {
-        const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
+        const auto& eviction_config = scheduler_config.cache_eviction_config;
+        m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption, eviction_config.snapkv_window_size);
+
         bool is_apply_rotation = eviction_config.apply_rotation;
         m_model_runner = std::make_shared<ModelRunner>(infer_request,
                                                        m_block_size,
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
                                                        /* is_use_per_layer_cache_control = */ true,
-                                                       /* is_use_rotation_inputs = */ is_apply_rotation);
+                                                       /* is_use_rotation_inputs = */ is_apply_rotation,
+                                                       /* is_aggregate_attention_scores = */ true);
         if (eviction_config.apply_rotation) {
-            m_rotation_deltas_stores.reserve(m_num_decoder_layers);
-            ov::Shape rotation_deltas_store_shape{normalized_config.num_kv_blocks, 1}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
-            for (size_t i = 0; i < m_num_decoder_layers; i++) {
-                ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
-                std::memset(store.data(), 0, store.get_byte_size());
-                m_rotation_deltas_stores.push_back(store);
-            }
-
-            size_t max_sequence_cache_occupation_length_in_blocks = normalized_config.max_num_batched_tokens / m_block_size  + 1;
-            size_t embedding_size = cache_manager->get_v_head_size(0);
-            m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
-                m_block_size,
-                max_sequence_cache_occupation_length_in_blocks,
-                embedding_size);
-            auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length_in_blocks, embedding_size});
-            float* rotation_trig_lut_data = rotation_trig_lut.data<float>();
-            std::memset(rotation_trig_lut_data, 0, rotation_trig_lut.get_byte_size());
-
-            const auto& cos_lut = m_cache_rotation_calculator->get_cos_lut();
-            const auto& sin_lut = m_cache_rotation_calculator->get_sin_lut();
-
-
-            for (size_t pos_idx = 0; pos_idx < max_sequence_cache_occupation_length_in_blocks; pos_idx++) {
-                for (size_t embedding_pair_idx = 0; embedding_pair_idx < cos_lut[0].size(); embedding_pair_idx++) {
-                    rotation_trig_lut_data[pos_idx * embedding_size + embedding_pair_idx] = cos_lut[pos_idx][embedding_pair_idx];
-                    rotation_trig_lut_data[pos_idx * embedding_size + embedding_size / 2 + embedding_pair_idx] = sin_lut[pos_idx][embedding_pair_idx];
-                }
-            }
-
-            m_model_runner->set_cache_rotation_trig_lut(std::move(rotation_trig_lut));
+            _prepare_rotation_data_storage(normalized_config, cache_manager->get_v_head_size(0));
         }
     } else {
+        m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
     }
@@ -181,6 +161,38 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
 };
 
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_prepare_rotation_data_storage(const SchedulerConfig& normalized_config, size_t embedding_size) {
+    m_rotation_deltas_stores.reserve(m_num_decoder_layers);
+    ov::Shape rotation_deltas_store_shape{normalized_config.num_kv_blocks, 1}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
+    for (size_t i = 0; i < m_num_decoder_layers; i++) {
+        ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
+        std::memset(store.data(), 0, store.get_byte_size());
+        m_rotation_deltas_stores.push_back(store);
+    }
+
+    size_t max_sequence_cache_occupation_length_in_blocks = normalized_config.max_num_batched_tokens / m_block_size  + 1;
+    m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
+        m_block_size,
+        max_sequence_cache_occupation_length_in_blocks,
+        embedding_size);
+    auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length_in_blocks, embedding_size});
+    float* rotation_trig_lut_data = rotation_trig_lut.data<float>();
+    std::memset(rotation_trig_lut_data, 0, rotation_trig_lut.get_byte_size());
+
+    const auto& cos_lut = m_cache_rotation_calculator->get_cos_lut();
+    const auto& sin_lut = m_cache_rotation_calculator->get_sin_lut();
+
+
+    for (size_t pos_idx = 0; pos_idx < max_sequence_cache_occupation_length_in_blocks; pos_idx++) {
+        for (size_t embedding_pair_idx = 0; embedding_pair_idx < cos_lut[0].size(); embedding_pair_idx++) {
+            rotation_trig_lut_data[pos_idx * embedding_size + embedding_pair_idx] = cos_lut[pos_idx][embedding_pair_idx];
+            rotation_trig_lut_data[pos_idx * embedding_size + embedding_size / 2 + embedding_pair_idx] = sin_lut[pos_idx][embedding_pair_idx];
+        }
+    }
+
+    m_model_runner->set_cache_rotation_trig_lut(std::move(rotation_trig_lut));
+}
 
 GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
@@ -618,7 +630,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         auto seq_id = seq_id_and_attention_scores.first;
         const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
         if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
-            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_block_size, num_decoder_layers);
+            constexpr size_t MAX_POOL_WINDOW_SIZE = 7;
+            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_block_size, num_decoder_layers, MAX_POOL_WINDOW_SIZE);
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
         cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);

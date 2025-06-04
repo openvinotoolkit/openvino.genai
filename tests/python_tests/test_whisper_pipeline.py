@@ -808,4 +808,3 @@ def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
-        
