@@ -846,7 +846,7 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
-@pytest.mark.parametrize("enable_save_ov_model", [False])
+@pytest.mark.parametrize("enable_save_ov_model", [False, True])
 @pytest.mark.precommit
 def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     gguf_model_id = model_ids["gguf_model_id"]
