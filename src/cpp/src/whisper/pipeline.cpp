@@ -77,7 +77,7 @@ public:
             auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties);
             // NB: only batch_size == 1 is supported now for NPU
             reshape_to_static_encoder(encoder_model, m_feature_extractor.feature_size);
-            compiled_model = core.compile_model(encoder_model, "NPU", properties);
+            compiled_model = core.compile_model(encoder_model, "NPU");
         } else {
             compiled_model = core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
         }
@@ -85,7 +85,7 @@ public:
         ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper encoder model");
         m_encoder = init_model(compiled_model);
 
-        m_decoder = WhisperDecoder::from_path(models_path, device, properties);
+        m_decoder = WhisperDecoder::from_path(models_path, device, properties, m_encoder.get_compiled_model().output("last_hidden_state").get_partial_shape());
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
