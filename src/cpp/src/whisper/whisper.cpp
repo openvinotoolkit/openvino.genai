@@ -202,7 +202,6 @@ ov::Tensor encode(ov::InferRequest& request,
                     ". Actual size: ",
                     mel_data.size(),
                     ".");
-
     ov::Tensor input_tensor(ov::element::f32, {1, feature_size, nb_max_frames}, mel_data.data());
 
     request.set_tensor("input_features", input_tensor);
@@ -213,7 +212,9 @@ ov::Tensor encode(ov::InferRequest& request,
     raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
 
     // reset input tensor
-    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, feature_size, nb_max_frames}));
+    auto m_is_npu = true;
+    uint8_t batch_size = m_is_npu ? 1 : 0;
+    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {batch_size, feature_size, nb_max_frames}));
 
     return request.get_tensor("last_hidden_state");
 }
