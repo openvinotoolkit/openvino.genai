@@ -12,7 +12,8 @@ class WhisperStatefullDecoder : public WhisperDecoder {
 public:
     WhisperStatefullDecoder(const std::filesystem::path& models_path,
                             const std::string& device,
-                            const ov::AnyMap& properties);
+                            const ov::AnyMap& properties,
+                            const ov::PartialShape& lhs_shape);
 
     void start_async(const Tensor& encoder_hidden_state, const Tensor& input_ids, const Tensor& beam_idx) override;
 
@@ -27,6 +28,5 @@ private:
 
 private:
     ov::InferRequest m_request;
-    bool m_is_npu = false;
 };
 }  // namespace ov::genai
