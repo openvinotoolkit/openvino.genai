@@ -451,6 +451,8 @@ def test_perf_metrics(cache, backend):
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_exception(model_id, backend):
+    if backend == "PA":
+        pytest.xfail(reason="CVS-168785")
     models_path = get_ov_model(model_ids[0])
     properties = {
         "DEVICE_PROPERTIES": {
