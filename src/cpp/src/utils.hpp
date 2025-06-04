@@ -244,7 +244,7 @@ SchedulerConfig get_latency_oriented_scheduler_config();
 
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties);
 
-std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties);
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, const std::string& default_attention_backend = ov::genai::PA_BACKEND);
 
 }  // namespace utils
 }  // namespace genai

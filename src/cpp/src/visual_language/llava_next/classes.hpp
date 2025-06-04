@@ -22,15 +22,11 @@ class InputsEmbedderLLaVANext : public InputsEmbedderLLaVA {
 public:
     using InputsEmbedderLLaVA::InputsEmbedderLLaVA;
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) override;
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
-    std::pair<std::string, std::vector<size_t>> normalize_prompt(
-        const std::string& prompt,
-        size_t base_id,
-        const std::vector<EncodedImage>& images
-    ) const override;
+    bool prompt_has_image_tag(const std::string& prompt) const override;
 };
 
 } // namespace ov::genai
