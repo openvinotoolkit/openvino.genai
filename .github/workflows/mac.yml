@@ -449,7 +449,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-13-large
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
