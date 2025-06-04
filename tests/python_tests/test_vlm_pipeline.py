@@ -68,7 +68,7 @@ def get_ov_model(model_id):
             ov_config=get_default_llm_properties(),
         )
     )
-    if tokenizer.chat_template is not None and processor.chat_template != tokenizer.chat_template:
+    if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
         processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
@@ -179,6 +179,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config):
         models_path,
         "CPU",
         scheduler_config=scheduler_config,
+        ATTENTION_BACKEND="PA",
         **get_default_llm_properties(),
     )
     generation_config = config
@@ -450,6 +451,8 @@ def test_perf_metrics(cache, backend):
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_exception(model_id, backend):
+    if backend == "PA":
+        pytest.xfail(reason="CVS-168785")
     models_path = get_ov_model(model_ids[0])
     properties = {
         "DEVICE_PROPERTIES": {
@@ -553,6 +556,8 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_images, backend):
+    if model_id == "katuni4ka/tiny-random-minicpmv-2_6" and backend == "PA" and iteration_images == image_links_for_testing[1]:
+        pytest.xfail(reason="CVS-168791")
     callback_questions = [
         "Why is the Sun yellow?",
         "1+1=",

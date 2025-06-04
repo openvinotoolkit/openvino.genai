@@ -217,62 +217,134 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_image_p
     );
 }
 
-std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_patch_position_ids_model() {
-    using namespace ov;
-    using namespace element;
-    using namespace opset13;
-    using namespace std;
-
-    auto t0 = make_shared<Parameter>(f32, PartialShape{-1, -1, -1, -1, -1});  //  -> f32[?,?,?,?,?]
-    t0->output(0).get_tensor().set_names({"input_image_embeds"});
-    auto t1 = make_shared<Parameter>(f32, PartialShape{-1, -1, -1, -1});  //  -> f32[?,?,?,?]
-    t1->output(0).get_tensor().set_names({"image_attention_mask"});
-    auto t2 = make_shared<Constant>(i64, Shape{1}, -1);         //  -> i32[1]([-1])
-    auto t3 = make_shared<ShapeOf>(t1);                         // f32[?,?,?,?] -> i32[4]
-    auto t4 = make_shared<Constant>(i32, Shape{1}, 2);          //  -> i32[1]([2])
-    auto t5 = make_shared<Constant>(i32, Shape{1}, 2147483647);  //  -> i32[1]([2147483647])
-    auto t6 = make_shared<Constant>(i32, Shape{1}, 1);          //  -> i32[1]([1])
-    auto t7 = make_shared<Constant>(i32, Shape{1}, 0);          //  -> i64[1]([0])
-    auto t8 = make_shared<Slice>(t3, t4, t5, t6, t7);           // i32[4], i32[1], i32[1], i32[1], i64[1] -> i32[2]
-    auto t9 = make_shared<Concat>(NodeVector{t2, t8}, 0);       // i32[1], i32[2] -> i32[3]
-    auto t10 = make_shared<Reshape>(t1, t9, true);              // f32[?,?,?,?], i32[3] -> f32[?,?,?]
-    auto t11 = make_shared<Constant>(i64, Shape{2}, vector<int64_t>{0, -1});  //  -> i64[2]([0, -1])
-    auto t12 = make_shared<Reshape>(t10, t11, true);            // f32[?,?,?], i64[2] -> f32[?,?]
-    auto t13 = make_shared<Constant>(f32, Shape{32}, vector<float>{0.0, 0.03125, 0.0625, 0.09375, 0.125, 0.15625, 0.1875, 0.21875, 0.25, 0.28125, 0.3125, 0.34375, 0.375, 0.40625, 0.4375, 0.46875, 0.5, 0.53125, 0.5625, 0.59375, 0.625, 0.65625, 0.6875, 0.71875, 0.75, 0.78125, 0.8125, 0.84375, 0.875, 0.90625, 0.9375, 0.96875});  //  -> f32[32]
-    auto t14 = make_shared<Constant>(f32, Shape{31}, vector<float>{0.03125, 0.0625, 0.09375, 0.125, 0.15625, 0.1875, 0.21875, 0.25, 0.28125, 0.3125, 0.34375, 0.375, 0.40625, 0.4375, 0.46875, 0.5, 0.53125, 0.5625, 0.59375, 0.625, 0.65625, 0.6875, 0.71875, 0.75, 0.78125, 0.8125, 0.84375, 0.875, 0.90625, 0.9375, 0.96875});  //  -> f32[31]
-    auto t15 = make_shared<Bucketize>(t13, t14, i64, false);    // f32[32], f32[31] -> i64[32]
-    auto t16 = make_shared<Constant>(i64, Shape{}, 1);          //  -> i64[](1)
-    auto t17 = make_shared<Unsqueeze>(t15, t16);                // i64[32], i64[] -> i64[32,1]
-    auto t18 = make_shared<Constant>(i64, Shape{1, 1}, 32);     //  -> i64[1,1]([[32]])
-    auto t19 = make_shared<Multiply>(t17, t18, "numpy");        // i64[32,1], i64[1,1] -> i64[32,1]
-    auto t20 = make_shared<Add>(t19, t15);                      // i64[32,1], i64[32] -> i64[32,32]
-    auto t21 = make_shared<Constant>(i32, Shape{1}, -1);        //  -> i32[1]([-1])
-    auto t22 = make_shared<Reshape>(t20, t21, true);            // i64[32,32], i32[1] -> i64[1024]
-    auto t23 = make_shared<ShapeOf>(t10);                       // f32[?,?,?] -> i64[3]
-    auto t24 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t25 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
-    auto t26 = make_shared<Gather>(t23, t24, t25);              // i64[3], i64[1], i64[] -> i64[1]
-    auto t27 = make_shared<Tile>(t22, t26);                     // i64[1024], i64[1] -> i64[?]
-    auto t28 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
-    auto t29 = make_shared<Concat>(NodeVector{t26, t28}, 0);    // i64[1], i64[1] -> i64[2]
-    auto t30 = make_shared<Reshape>(t27, t29, false);           // i64[?], i64[2] -> i64[?,?]
-    auto t31 = make_shared<Convert>(t30, f32);                  // i64[?,?] -> f32[?,?]
-    auto t32 = make_shared<Multiply>(t12, t31, "numpy");        // f32[?,?], f32[?,?] -> f32[?,?]
-    auto t33 = make_shared<Result>(t32);                        // f32[?,?] -> f32[?,?]
-    t33->output(0).get_tensor().set_names({"patch_position_ids"});
-
-    ResultVector results{t33};
-    SinkVector sinks{};
-    ParameterVector parameters{t0, t1};
-    auto model = make_shared<Model>(results, sinks, parameters);
-    using namespace ov::genai;
-    CompiledModel compiled = utils::singleton_core().compile_model(model, "CPU");
-    return make_unique<CircularBufferQueue<InferRequest>>(
-        compiled.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled]() -> ov::InferRequest {
-            return compiled.create_infer_request();
+ov::Tensor calculate_patch_position_ids(
+    const ov::Tensor& input_image_embeds,
+    const ov::Tensor& image_attention_mask,
+    const size_t patch_size = 14,
+    const size_t num_patches_per_side = 32
+) {
+    // input_image_embeds: [batch, num_images, channels, height, width]
+    ov::Shape image_embeds_shape = input_image_embeds.get_shape();
+    // image_attention_mask: [batch, num_images, mask_height, mask_width]
+    ov::Shape image_attention_mask_shape = image_attention_mask.get_shape();
+    
+    size_t batch_size = image_embeds_shape[0];
+    size_t num_images = image_embeds_shape[1];
+    size_t mask_height = image_attention_mask_shape[2];
+    size_t mask_width = image_attention_mask_shape[3];
+    
+    size_t flattened_batch_size = batch_size * num_images;
+    size_t total_mask_elements = mask_height * mask_width;
+    
+    std::vector<float> boundaries;
+    boundaries.reserve(num_patches_per_side - 1);
+    for (size_t i = 1; i < num_patches_per_side; ++i) {
+        boundaries.push_back(static_cast<float>(i) / num_patches_per_side);
+    }
+    
+    ov::Tensor position_ids{ov::element::i64, {flattened_batch_size, total_mask_elements}};
+    int64_t* position_ids_data = position_ids.data<int64_t>();
+    
+    std::fill_n(position_ids_data, flattened_batch_size * total_mask_elements, 0);
+    
+    const float* image_attention_mask_data = image_attention_mask.data<float>();
+    
+    for (size_t flat_batch_idx = 0; flat_batch_idx < flattened_batch_size; ++flat_batch_idx) {
+        size_t mask_offset = flat_batch_idx * mask_height * mask_width;
+        const float* current_mask = image_attention_mask_data + mask_offset;
+        
+        size_t num_patches_h = 0;
+        size_t num_patches_w = 0;
+        
+        for (size_t h = 0; h < mask_height; ++h) {
+            if (current_mask[h * mask_width] > 0.0f) {
+                num_patches_h++;
+            }
         }
-    );
+        
+        for (size_t w = 0; w < mask_width; ++w) {
+            if (current_mask[w] > 0.0f) {
+                num_patches_w++;
+            }
+        }
+        
+        if (num_patches_h == 0 || num_patches_w == 0) {
+            continue;
+        }
+        
+        std::vector<float> fractional_coords_h;
+        std::vector<float> fractional_coords_w;
+        fractional_coords_h.reserve(num_patches_h);
+        fractional_coords_w.reserve(num_patches_w);
+        
+        const float eps = 1e-6f;
+        
+        for (size_t i = 0; i < num_patches_h; ++i) {
+            float coord = static_cast<float>(i) / num_patches_h;
+            if (coord >= 1.0f - eps) {
+                coord = 1.0f - eps;
+            }
+            fractional_coords_h.push_back(coord);
+        }
+        
+        for (size_t i = 0; i < num_patches_w; ++i) {
+            float coord = static_cast<float>(i) / num_patches_w;
+            if (coord >= 1.0f - eps) {
+                coord = 1.0f - eps;
+            }
+            fractional_coords_w.push_back(coord);
+        }
+        
+        // Bucket coordinates (equivalent to torch.bucketize with right=True)
+        std::vector<size_t> bucket_coords_h;
+        std::vector<size_t> bucket_coords_w;
+        bucket_coords_h.reserve(fractional_coords_h.size());
+        bucket_coords_w.reserve(fractional_coords_w.size());
+        
+        for (float coord : fractional_coords_h) {
+            size_t bucket = 0;
+            for (size_t i = 0; i < boundaries.size(); ++i) {
+                if (coord < boundaries[i]) {
+                    bucket = i;
+                    break;
+                }
+                bucket = i + 1;
+            }
+            bucket_coords_h.push_back(bucket);
+        }
+        
+        for (float coord : fractional_coords_w) {
+            size_t bucket = 0;
+            for (size_t i = 0; i < boundaries.size(); ++i) {
+                if (coord < boundaries[i]) {
+                    bucket = i;
+                    break;
+                }
+                bucket = i + 1;
+            }
+            bucket_coords_w.push_back(bucket);
+        }
+        
+        std::vector<int64_t> pos_ids;
+        pos_ids.reserve(bucket_coords_h.size() * bucket_coords_w.size());
+        
+        for (size_t h_coord : bucket_coords_h) {
+            for (size_t w_coord : bucket_coords_w) {
+                pos_ids.push_back(static_cast<int64_t>(h_coord * num_patches_per_side + w_coord));
+            }
+        }
+        
+        int64_t* batch_position_ids = position_ids_data + flat_batch_idx * total_mask_elements;
+        size_t pos_idx = 0;
+        
+        for (size_t i = 0; i < total_mask_elements && pos_idx < pos_ids.size(); ++i) {
+            if (current_mask[i] > 0.0f) {
+                batch_position_ids[i] = pos_ids[pos_idx++];
+            }
+        }
+    }
+    
+    return position_ids;
 }
 
 std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_separator_inserters() {
@@ -281,100 +353,150 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_separat
     using namespace opset13;
     using namespace std;
 
-    auto t0 = make_shared<Parameter>(f32, PartialShape{1, -1, -1, -1});  //  -> f32[1,?,?,?]
+    auto t0 = make_shared<Parameter>(f32, PartialShape{-1, -1, -1, -1});  //  -> f32[?,?,?,?]
     t0->output(0).get_tensor().set_names({"img_features"});
-    auto t1 = make_shared<Parameter>(i32, PartialShape{});      //  -> i32[]
-    t1->output(0).get_tensor().set_names({"height"});
+    auto t1 = make_shared<Parameter>(f32, PartialShape{-1, -1, -1, -1});  //  -> f32[?,?,?,?]
+    t1->output(0).get_tensor().set_names({"image_attention_mask"});
     auto t2 = make_shared<Parameter>(i32, PartialShape{});      //  -> i32[]
-    t2->output(0).get_tensor().set_names({"width"});
-    auto t3 = make_shared<Parameter>(f32, PartialShape{1, 1, 1, -1});  //  -> f32[1,1,1,?]
-    t3->output(0).get_tensor().set_names({"sub_GN"});
-    auto t4 = make_shared<Parameter>(f32, PartialShape{1, 1, -1});  //  -> f32[1,1,?]
-    t4->output(0).get_tensor().set_names({"glb_GN"});
-    auto t5 = make_shared<Constant>(i64, Shape{}, 0);           //  -> i64[](0)
+    t2->output(0).get_tensor().set_names({"height"});
+    auto t3 = make_shared<Parameter>(i32, PartialShape{});      //  -> i32[]
+    t3->output(0).get_tensor().set_names({"width"});
+    auto t4 = make_shared<Parameter>(f32, PartialShape{-1, -1, -1, -1});  //  -> f32[?,?,?,?]
+    t4->output(0).get_tensor().set_names({"sub_GN"});
+    auto t5 = make_shared<Parameter>(f32, PartialShape{1, -1, -1});  //  -> f32[1,?,?]
+    t5->output(0).get_tensor().set_names({"glb_GN"});
     auto t6 = make_shared<Constant>(i64, Shape{}, 0);           //  -> i64[](0)
-    auto t7 = make_shared<Gather>(t0, t5, t6);                  // f32[1,?,?,?], i64[], i64[] -> f32[?,?,?]
-    auto t8 = make_shared<Constant>(i64, Shape{1}, 1);          //  -> i64[1]([1])
-    auto t9 = make_shared<Constant>(i64, Shape{1}, -1);         //  -> i64[1]([-1])
-    auto t10 = make_shared<Constant>(i64, Shape{1}, 256);       //  -> i64[1]([256])
-    auto t11 = make_shared<ShapeOf>(t0);                        // f32[1,?,?,?] -> i64[4]
-    auto t12 = make_shared<Constant>(i64, Shape{1}, 3);         //  -> i64[1]([3])
-    auto t13 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
-    auto t14 = make_shared<Gather>(t11, t12, t13);              // i64[4], i64[1], i64[] -> i64[1]
-    auto t15 = make_shared<Concat>(NodeVector{t8, t9, t10, t14}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
-    auto t16 = make_shared<Reshape>(t7, t15, false);            // f32[?,?,?], i64[4] -> f32[1,?,256,?]
-    auto t17 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
-    auto t18 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
-    auto t19 = make_shared<Gather>(t16, t17, t18);              // f32[1,?,256,?], i64[], i64[] -> f32[?,256,?]
-    auto t20 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t21 = make_shared<Constant>(i64, Shape{1}, 9223372036854775807);  //  -> i64[1]([9223372036854775807])
-    auto t22 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t23 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t24 = make_shared<Slice>(t19, t20, t21, t22, t23);     // f32[?,256,?], i64[1], i64[1], i64[1], i64[1] -> f32[?,256,?]
-    auto t25 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t26 = make_shared<Convert>(t1, i64);                   // i32[] -> i64[]
-    auto t27 = make_shared<Constant>(i64, Shape{}, 448);        //  -> i64[](448)
-    auto t28 = make_shared<Divide>(t26, t27, "numpy");          // i64[], i64[] -> i64[]
-    auto t29 = make_shared<Floor>(t28);                         // i64[] -> i64[]
-    auto t30 = make_shared<Convert>(t2, i64);                   // i32[] -> i64[]
-    auto t31 = make_shared<Constant>(i64, Shape{}, 448);        //  -> i64[](448)
-    auto t32 = make_shared<Divide>(t30, t31, "numpy");          // i64[], i64[] -> i64[]
-    auto t33 = make_shared<Floor>(t32);                         // i64[] -> i64[]
-    auto t34 = make_shared<Multiply>(t29, t33, "numpy");        // i64[], i64[] -> i64[]
-    auto t35 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
-    auto t36 = make_shared<Reshape>(t34, t35, false);           // i64[], i64[1] -> i64[1]
-    auto t37 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t38 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t39 = make_shared<Slice>(t24, t25, t36, t37, t38);     // f32[?,256,?], i64[1], i64[1], i64[1], i64[1] -> f32[?,256,?]
-    auto t40 = make_shared<Constant>(i32, Shape{}, 0);          //  -> i32[](0)
-    auto t41 = make_shared<Unsqueeze>(t29, t40);                // i64[], i32[] -> i64[1]
-    auto t42 = make_shared<Unsqueeze>(t33, t40);                // i64[], i32[] -> i64[1]
-    auto t43 = make_shared<Constant>(i64, Shape{1}, 16);        //  -> i64[1]([16])
-    auto t44 = make_shared<Constant>(i64, Shape{1}, 16);        //  -> i64[1]([16])
-    auto t45 = make_shared<Concat>(NodeVector{t41, t42, t43, t44, t14}, 0);  // i64[1], i64[1], i64[1], i64[1], i64[1] -> i64[5]
-    auto t46 = make_shared<Reshape>(t39, t45, false);           // f32[?,256,?], i64[5] -> f32[?,?,?,?,?]
-    auto t47 = make_shared<Constant>(i32, Shape{5}, vector<int32_t>{0, 2, 1, 3, 4});  //  -> i32[5]([0, 2, 1, 3, 4])
-    auto t48 = make_shared<Transpose>(t46, t47);                // f32[?,?,?,?,?], i32[5] -> f32[?,?,?,?,?]
-    auto t49 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t50 = make_shared<Constant>(i64, Shape{}, 16);         //  -> i64[](16)
-    auto t51 = make_shared<Multiply>(t29, t50, "numpy");        // i64[], i64[] -> i64[]
-    auto t52 = make_shared<Constant>(i32, Shape{}, 0);          //  -> i32[](0)
-    auto t53 = make_shared<Unsqueeze>(t51, t52);                // i64[], i32[] -> i64[1]
-    auto t54 = make_shared<Constant>(i64, Shape{}, 16);         //  -> i64[](16)
-    auto t55 = make_shared<Multiply>(t33, t54, "numpy");        // i64[], i64[] -> i64[]
-    auto t56 = make_shared<Unsqueeze>(t55, t52);                // i64[], i32[] -> i64[1]
-    auto t57 = make_shared<Concat>(NodeVector{t49, t53, t56, t14}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
-    auto t58 = make_shared<Reshape>(t48, t57, false);           // f32[?,?,?,?,?], i64[4] -> f32[?,?,?,?]
-    auto t59 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t60 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
-    auto t61 = make_shared<Reshape>(t51, t60, false);           // i64[], i64[1] -> i64[1]
-    auto t62 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t63 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t64 = make_shared<Concat>(NodeVector{t59, t61, t62, t63}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
-    auto t65 = make_shared<Tile>(t3, t64);                      // f32[1,1,1,?], i64[4] -> f32[?,?,?,?]
-    auto t66 = make_shared<Concat>(NodeVector{t58, t65}, 2);    // f32[?,?,?,?], f32[?,?,?,?] -> f32[?,?,?,?]
-    auto t67 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t68 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
-    auto t69 = make_shared<Concat>(NodeVector{t67, t68, t14}, 0);  // i64[1], i64[1], i64[1] -> i64[3]
-    auto t70 = make_shared<Reshape>(t66, t69, false);           // f32[?,?,?,?], i64[3] -> f32[1,?,?]
-    auto t71 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t72 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t73 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
-    auto t74 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
-    auto t75 = make_shared<Slice>(t19, t71, t72, t73, t74);     // f32[?,256,?], i64[1], i64[1], i64[1], i64[1] -> f32[..1,256,?]
-    auto t76 = make_shared<Constant>(i64, Shape{4}, vector<int64_t>{1, 16, 16, -1});  //  -> i64[4]([1, 16, 16, -1])
-    auto t77 = make_shared<Reshape>(t75, t76, true);            // f32[..1,256,?], i64[4] -> f32[1,16,16,?]
-    auto t78 = make_shared<Constant>(i64, Shape{4}, vector<int64_t>{1, 16, 1, 1});  //  -> i64[4]([1, 16, 1, 1])
-    auto t79 = make_shared<Tile>(t3, t78);                      // f32[1,1,1,?], i64[4] -> f32[1,16,1,?]
-    auto t80 = make_shared<Concat>(NodeVector{t77, t79}, 2);    // f32[1,16,16,?], f32[1,16,1,?] -> f32[1,16,17,?]
-    auto t81 = make_shared<Reshape>(t80, t69, false);           // f32[1,16,17,?], i64[3] -> f32[1,?,?]
-    auto t82 = make_shared<Concat>(NodeVector{t70, t4, t81}, 1);  // f32[1,?,?], f32[1,1,?], f32[1,?,?] -> f32[1,1..,?]
-    auto t83 = make_shared<Result>(t82);                        // f32[1,1..,?] -> f32[1,1..,?]
-    t83->output(0).get_tensor().set_names({});
+    auto t7 = make_shared<Constant>(i64, Shape{}, 0);           //  -> i64[](0)
+    auto t8 = make_shared<Gather>(t0, t6, t7);                  // f32[?,?,?,?], i64[], i64[] -> f32[?,?,?]
+    auto t9 = make_shared<Constant>(i64, Shape{1}, 1);          //  -> i64[1]([1])
+    auto t10 = make_shared<Constant>(i64, Shape{1}, 9223372036854775807);  //  -> i64[1]([9223372036854775807])
+    auto t11 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t12 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
+    auto t13 = make_shared<Slice>(t8, t9, t10, t11, t12);       // f32[?,?,?], i64[1], i64[1], i64[1], i64[1] -> f32[?,?,?]
+    auto t14 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
+    auto t15 = make_shared<Convert>(t2, i64);                   // i32[] -> i64[]
+    auto t16 = make_shared<Constant>(i64, Shape{}, 448);        //  -> i64[](448)
+    auto t17 = make_shared<Divide>(t15, t16, "numpy");          // i64[], i64[] -> i64[]
+    auto t18 = make_shared<Floor>(t17);                         // i64[] -> i64[]
+    auto t19 = make_shared<Convert>(t3, i64);                   // i32[] -> i64[]
+    auto t20 = make_shared<Constant>(i64, Shape{}, 448);        //  -> i64[](448)
+    auto t21 = make_shared<Divide>(t19, t20, "numpy");          // i64[], i64[] -> i64[]
+    auto t22 = make_shared<Floor>(t21);                         // i64[] -> i64[]
+    auto t23 = make_shared<Multiply>(t18, t22, "numpy");        // i64[], i64[] -> i64[]
+    auto t24 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
+    auto t25 = make_shared<Reshape>(t23, t24, false);           // i64[], i64[1] -> i64[1]
+    auto t26 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t27 = make_shared<Constant>(i64, Shape{1}, 0);         //  -> i64[1]([0])
+    auto t28 = make_shared<Slice>(t13, t14, t25, t26, t27);     // f32[?,?,?], i64[1], i64[1], i64[1], i64[1] -> f32[?,?,?]
+    auto t29 = make_shared<Constant>(i32, Shape{}, 0);          //  -> i32[](0)
+    auto t30 = make_shared<Unsqueeze>(t18, t29);                // i64[], i32[] -> i64[1]
+    auto t31 = make_shared<Unsqueeze>(t22, t29);                // i64[], i32[] -> i64[1]
+    auto t32 = make_shared<ShapeOf>(t0);                        // f32[?,?,?,?] -> i64[4]
+    auto t33 = make_shared<Constant>(i64, Shape{}, 2);          //  -> i64[](2)
+    auto t34 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t35 = make_shared<Gather>(t32, t33, t34);              // i64[4], i64[], i64[] -> i64[]
+    auto t36 = make_shared<Convert>(t35, f32);                  // i64[] -> f32[]
+    auto t37 = make_shared<Sqrt>(t36);                   // f32[] -> f32[]
+    auto t38 = make_shared<Convert>(t37, i32);                  // f32[] -> i32[]
+    auto t39 = make_shared<Convert>(t38, i64);                  // i32[] -> i64[]
+    auto t40 = make_shared<Unsqueeze>(t39, t29);                // i64[], i32[] -> i64[1]
+    auto t41 = make_shared<Constant>(i64, Shape{1}, 3);         //  -> i64[1]([3])
+    auto t42 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t43 = make_shared<Gather>(t32, t41, t42);              // i64[4], i64[1], i64[] -> i64[1]
+    auto t44 = make_shared<Concat>(NodeVector{t30, t31, t40, t40, t43}, 0);  // i64[1], i64[1], i64[1], i64[1], i64[1] -> i64[5]
+    auto t45 = make_shared<Reshape>(t28, t44, false);           // f32[?,?,?], i64[5] -> f32[?,?,?,?,?]
+    auto t46 = make_shared<Constant>(i32, Shape{5}, vector<int32_t>{0, 2, 1, 3, 4});  //  -> i32[5]([0, 2, 1, 3, 4])
+    auto t47 = make_shared<Transpose>(t45, t46);                // f32[?,?,?,?,?], i32[5] -> f32[?,?,?,?,?]
+    auto t48 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t49 = make_shared<Multiply>(t18, t39, "numpy");        // i64[], i64[] -> i64[]
+    auto t50 = make_shared<Constant>(i32, Shape{}, 0);          //  -> i32[](0)
+    auto t51 = make_shared<Unsqueeze>(t49, t50);                // i64[], i32[] -> i64[1]
+    auto t52 = make_shared<Multiply>(t22, t39, "numpy");        // i64[], i64[] -> i64[]
+    auto t53 = make_shared<Unsqueeze>(t52, t50);                // i64[], i32[] -> i64[1]
+    auto t54 = make_shared<Concat>(NodeVector{t48, t51, t53, t43}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
+    auto t55 = make_shared<Reshape>(t47, t54, false);           // f32[?,?,?,?,?], i64[4] -> f32[?,?,?,?]
+    auto t56 = make_shared<Constant>(i64, Shape{2}, 0);         //  -> i64[2]([0, 0])
+    auto t57 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t58 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t59 = make_shared<Gather>(t1, t57, t58);               // f32[?,?,?,?], i64[], i64[] -> f32[?,?,?]
+    auto t60 = make_shared<Constant>(i64, Shape{3}, vector<int64_t>{1, 0, 0});  //  -> i64[3]([1, 0, 0])
+    auto t61 = make_shared<Constant>(i64, Shape{}, 1);          //  -> i64[](1)
+    auto t62 = make_shared<Add>(t23, t61);                      // i64[], i64[] -> i64[]
+    auto t63 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
+    auto t64 = make_shared<Reshape>(t62, t63, false);           // i64[], i64[1] -> i64[1]
+    auto t65 = make_shared<Constant>(i64, Shape{1}, 9223372036854775807);  //  -> i64[1]([9223372036854775807])
+    auto t66 = make_shared<Concat>(NodeVector{t64, t65}, 0);    // i64[1], i64[1] -> i64[2]
+    auto t67 = make_shared<Constant>(i64, Shape{1}, 9223372036854775807);  //  -> i64[1]([9223372036854775807])
+    auto t68 = make_shared<Concat>(NodeVector{t66, t67}, 0);    // i64[2], i64[1] -> i64[3]
+    auto t69 = make_shared<Constant>(i64, Shape{3}, vector<int64_t>{1, 2, 2});  //  -> i64[3]([1, 2, 2])
+    auto t70 = make_shared<Constant>(i64, Shape{3}, vector<int64_t>{0, 1, 2});  //  -> i64[3]([0, 1, 2])
+    auto t71 = make_shared<Slice>(t59, t60, t68, t69, t70);     // f32[?,?,?], i64[3], i64[3], i64[3], i64[3] -> f32[?,?,?]
+    auto t72 = make_shared<Concat>(NodeVector{t30, t31, t40, t40}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
+    auto t73 = make_shared<Reshape>(t71, t72, false);           // f32[?,?,?], i64[4] -> f32[?,?,?,?]
+    auto t74 = make_shared<Constant>(i32, Shape{4}, vector<int32_t>{0, 2, 1, 3});  //  -> i32[4]([0, 2, 1, 3])
+    auto t75 = make_shared<Transpose>(t73, t74);                // f32[?,?,?,?], i32[4] -> f32[?,?,?,?]
+    auto t76 = make_shared<Constant>(i64, Shape{1}, 1);         //  -> i64[1]([1])
+    auto t77 = make_shared<Concat>(NodeVector{t76, t51, t53}, 0);  // i64[1], i64[1], i64[1] -> i64[3]
+    auto t78 = make_shared<Reshape>(t75, t77, false);           // f32[?,?,?,?], i64[3] -> f32[?,?,?]
+    auto t79 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t80 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t81 = make_shared<Gather>(t78, t79, t80);              // f32[?,?,?], i64[], i64[] -> f32[?,?]
+    auto t82 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t83 = make_shared<Constant>(i64, Shape{}, 1);          //  -> i64[](1)
+    auto t84 = make_shared<Gather>(t81, t82, t83);              // f32[?,?], i64[], i64[] -> f32[?]
+    auto t85 = make_shared<Constant>(i32, Shape{1}, 0);         //  -> i32[1]([0])
+    auto t86 = make_shared<ReduceSum>(t84, t85);                // f32[?], i32[1] -> f32[]
+    auto t87 = make_shared<Convert>(t86, i32);                  // f32[] -> i32[]
+    auto t88 = make_shared<Convert>(t87, i64);                  // i32[] -> i64[]
+    auto t89 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
+    auto t90 = make_shared<Reshape>(t88, t89, false);           // i64[], i64[1] -> i64[1]
+    auto t91 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t92 = make_shared<Constant>(i64, Shape{}, 0);          //  -> i64[](0)
+    auto t93 = make_shared<Gather>(t81, t91, t92);              // f32[?,?], i64[], i64[] -> f32[?]
+    auto t94 = make_shared<Constant>(i32, Shape{1}, 0);         //  -> i32[1]([0])
+    auto t95 = make_shared<ReduceSum>(t93, t94);                // f32[?], i32[1] -> f32[]
+    auto t96 = make_shared<Convert>(t95, i32);                  // f32[] -> i32[]
+    auto t97 = make_shared<Convert>(t96, i64);                  // i32[] -> i64[]
+    auto t98 = make_shared<Constant>(i64, Shape{1}, -1);        //  -> i64[1]([-1])
+    auto t99 = make_shared<Reshape>(t97, t98, false);           // i64[], i64[1] -> i64[1]
+    auto t100 = make_shared<Concat>(NodeVector{t90, t99}, 0);   // i64[1], i64[1] -> i64[2]
+    auto t101 = make_shared<Constant>(i64, Shape{2}, 1);        //  -> i64[2]([1, 1])
+    auto t102 = make_shared<Constant>(i64, Shape{2}, vector<int64_t>{1, 2});  //  -> i64[2]([1, 2])
+    auto t103 = make_shared<Slice>(t55, t56, t100, t101, t102);  // f32[?,?,?,?], i64[2], i64[2], i64[2], i64[2] -> f32[?,?,?,?]
+    auto t104 = make_shared<Constant>(i64, Shape{1}, 1);        //  -> i64[1]([1])
+    auto t105 = make_shared<Constant>(i64, Shape{1}, 1);        //  -> i64[1]([1])
+    auto t106 = make_shared<Constant>(i64, Shape{1}, 1);        //  -> i64[1]([1])
+    auto t107 = make_shared<Concat>(NodeVector{t104, t90, t105, t106}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
+    auto t108 = make_shared<Tile>(t4, t107);                    // f32[?,?,?,?], i64[4] -> f32[?,?,?,?]
+    auto t109 = make_shared<Concat>(NodeVector{t103, t108}, 2);  // f32[?,?,?,?], f32[?,?,?,?] -> f32[?,?,?,?]
+    auto t110 = make_shared<Constant>(i64, Shape{1}, 1);        //  -> i64[1]([1])
+    auto t111 = make_shared<Constant>(i64, Shape{1}, -1);       //  -> i64[1]([-1])
+    auto t112 = make_shared<Concat>(NodeVector{t110, t111, t43}, 0);  // i64[1], i64[1], i64[1] -> i64[3]
+    auto t113 = make_shared<Reshape>(t109, t112, false);        // f32[?,?,?,?], i64[3] -> f32[1,?,?]
+    auto t114 = make_shared<Constant>(i64, Shape{1}, 0);        //  -> i64[1]([0])
+    auto t115 = make_shared<Constant>(i64, Shape{1}, 1);        //  -> i64[1]([1])
+    auto t116 = make_shared<Constant>(i64, Shape{1}, 1);        //  -> i64[1]([1])
+    auto t117 = make_shared<Constant>(i64, Shape{1}, 0);        //  -> i64[1]([0])
+    auto t118 = make_shared<Slice>(t8, t114, t115, t116, t117);  // f32[?,?,?], i64[1], i64[1], i64[1], i64[1] -> f32[..1,?,?]
+    auto t119 = make_shared<Constant>(i64, Shape{1}, 1);        //  -> i64[1]([1])
+    auto t120 = make_shared<Concat>(NodeVector{t119, t40, t40, t43}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
+    auto t121 = make_shared<Reshape>(t118, t120, false);        // f32[..1,?,?], i64[4] -> f32[?,?,?,?]
+    auto t122 = make_shared<Constant>(i64, Shape{1}, 1);        //  -> i64[1]([1])
+    auto t123 = make_shared<Constant>(i64, Shape{1}, -1);       //  -> i64[1]([-1])
+    auto t124 = make_shared<Reshape>(t39, t123, false);         // i64[], i64[1] -> i64[1]
+    auto t125 = make_shared<Constant>(i64, Shape{1}, 1);        //  -> i64[1]([1])
+    auto t126 = make_shared<Constant>(i64, Shape{1}, 1);        //  -> i64[1]([1])
+    auto t127 = make_shared<Concat>(NodeVector{t122, t124, t125, t126}, 0);  // i64[1], i64[1], i64[1], i64[1] -> i64[4]
+    auto t128 = make_shared<Tile>(t4, t127);                    // f32[?,?,?,?], i64[4] -> f32[?,?,?,?]
+    auto t129 = make_shared<Concat>(NodeVector{t121, t128}, 2);  // f32[?,?,?,?], f32[?,?,?,?] -> f32[?,?,?,?]
+    auto t130 = make_shared<Reshape>(t129, t112, false);        // f32[?,?,?,?], i64[3] -> f32[1,?,?]
+    auto t131 = make_shared<Concat>(NodeVector{t113, t5, t130}, 1);  // f32[1,?,?], f32[1,?,?], f32[1,?,?] -> f32[1,?,?]
+    auto t132 = make_shared<Result>(t131);                      // f32[1,?,?] -> f32[1,?,?]
+    t132->output(0).get_tensor().set_names({"img_features_with_separators"});
 
-    ResultVector results{t83};
+    ResultVector results{t132};
     SinkVector sinks{};
-    ParameterVector parameters{t0, t1, t2, t3, t4};
+    ParameterVector parameters{t0, t1, t2, t3, t4, t5};
     auto model = make_shared<Model>(results, sinks, parameters);
     using namespace ov::genai;
     CompiledModel compiled = utils::singleton_core().compile_model(model, "CPU");
@@ -513,7 +635,6 @@ VisionEncoderPhi4MM::VisionEncoderPhi4MM(
 ) :
 VisionEncoder(model_dir, device, properties),
 m_image_preprocessors{create_image_preprocessors()},
-m_patch_position_ids_model{create_patch_position_ids_model()},
 m_separator_inserters{create_separator_inserters()} {
     auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -532,7 +653,6 @@ VisionEncoderPhi4MM::VisionEncoderPhi4MM(
 ) : 
 VisionEncoder(models_map, config_dir_path, device, properties),
 m_image_preprocessors{create_image_preprocessors()},
-m_patch_position_ids_model{create_patch_position_ids_model()},
 m_separator_inserters{create_separator_inserters()} {
     const auto& vision_projection_model = utils::get_model_weights_pair(models_map, "vision_projection").first;
     const auto& vision_projection_weights = utils::get_model_weights_pair(models_map, "vision_projection").second;
@@ -547,7 +667,7 @@ m_separator_inserters{create_separator_inserters()} {
 
 EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
-    ov::Tensor input_image_embeds{ov::element::f32, {}}, image_attention_mask{ov::element::f32, {}}, patch_position_ids{ov::element::f32, {}};
+    ov::Tensor input_image_embeds{ov::element::f32, {}}, image_attention_mask{ov::element::f32, {}};
     int32_t image_height = 0, image_width = 0, num_img_tokens = 0;
 
     auto target_sizes = get_target_sizes(image);
@@ -579,19 +699,10 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         num_img_tokens = image_preprocessor.get_tensor("num_img_tokens").data<int64_t>()[0];
     }
 
-    {
-        CircularBufferQueueElementGuard<ov::InferRequest> lock{m_patch_position_ids_model.get()};
-        ov::InferRequest& image_preprocessor = lock.get();
-        image_preprocessor.set_tensor("input_image_embeds", input_image_embeds);
-        image_preprocessor.set_tensor("image_attention_mask", image_attention_mask);
-        image_preprocessor.infer();
-        image_preprocessor.get_tensor("patch_position_ids").copy_to(patch_position_ids);
-    }
+    ov::Tensor patch_position_ids = calculate_patch_position_ids(input_image_embeds, image_attention_mask);
 
     ov::Tensor img_features{ov::element::f32, {}};
     {
-        ov::Tensor int64{ov::element::i64, patch_position_ids.get_shape()};
-        std::transform(patch_position_ids.data<float>(), patch_position_ids.data<float>() + patch_position_ids.get_size(), int64.data<int64_t>(), [](float v) {return static_cast<int64_t>(v);});
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_ireq_queue_vision_encoder.get()};
         ov::InferRequest& encoder = lock.get();
         ov::Shape shape = input_image_embeds.get_shape();
@@ -603,16 +714,17 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         ov::Tensor bools{ov::element::boolean, shape};
         std::transform(image_attention_mask.data<float>(), image_attention_mask.data<float>() + image_attention_mask.get_size(), bools.data<bool>(), [](float v) {return v > 0.5f;});
         encoder.set_tensor("patch_attention_mask", bools);
-        encoder.set_tensor("patch_position_ids", int64);
+        encoder.set_tensor("patch_position_ids", patch_position_ids);
         encoder.infer();
         encoder.get_output_tensor().copy_to(img_features);
     }
+
     // Reshape img_features to add batch dimension: [?, ?, ?] -> [1, ?, ?, ?]
     ov::Shape shape = img_features.get_shape();
     shape.insert(shape.begin(), 1);
     img_features.set_shape(shape);
 
-    ov::Tensor _1le{ov::element::f32, {}}; // l - length, e - single embedding size
+    ov::Tensor img_features_with_separators{ov::element::f32, {}};
     {
         ov::Tensor height{ov::element::i32, {}};
         ov::Tensor width{ov::element::i32, {}};
@@ -621,25 +733,28 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         height.data<int32_t>()[0] = image_height;
         width.data<int32_t>()[0] = image_width;
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_separator_inserters.get()};
-        ov::InferRequest& encoder = lock.get();
-        encoder.set_tensor("img_features", img_features);
-        encoder.set_tensor("height", height);
-        encoder.set_tensor("width", width);
-        encoder.set_tensor("sub_GN", sub_GN);
-        encoder.set_tensor("glb_GN", glb_GN);
-        encoder.infer();
-        encoder.get_output_tensor().copy_to(_1le);
+        ov::InferRequest& separator_inserter = lock.get();
+        separator_inserter.set_tensor("img_features", img_features);
+        separator_inserter.set_tensor("image_attention_mask", image_attention_mask);
+        separator_inserter.set_tensor("height", height);
+        separator_inserter.set_tensor("width", width);
+        separator_inserter.set_tensor("sub_GN", sub_GN);
+        separator_inserter.set_tensor("glb_GN", glb_GN);
+        separator_inserter.infer();
+        separator_inserter.get_output_tensor().copy_to(img_features_with_separators);
     }
+
     EncodedImage encoded_image;
-    encoded_image.resized_source = _1le;
+    encoded_image.resized_source = img_features_with_separators;
     encoded_image.images_features_projection = ov::Tensor{ov::element::f32, {}};
     {
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_ireq_queue_vision_projection.get()};
         ov::InferRequest& projector = lock.get();
-        projector.set_input_tensor(_1le);
+        projector.set_input_tensor(img_features_with_separators);
         projector.infer();
         projector.get_output_tensor().copy_to(encoded_image.images_features_projection);
     }
+
     return encoded_image;
 }
 
@@ -663,19 +778,21 @@ InputsEmbedderPhi4MM::InputsEmbedderPhi4MM(
 
 
 // FIXME Copied from Phi3 (except debug tensors printing and comparing) - reuse
-ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
+ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings) {
     size_t base_id = m_tokens_per_images.size();
-    std::string prompt = phi_utils::normalize_prompt(image_prompt, base_id, images.size(), NATIVE_PATTERN, write_native);
+    std::string image_prompt = phi_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native);
     std::vector<ov::Tensor> images_features_proj;
     for (const ov::genai::EncodedImage& encoded_image : images) {
         images_features_proj.push_back(encoded_image.images_features_projection);
         m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
     }
-
     std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
     if (m_is_chat_conversation) {
+        m_history.push_back({{"role", "user"}, {"content", std::move(image_prompt)}});
+        constexpr bool add_generation_prompt = true;
+        std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = phi_utils::split_tokenize(image_prompt, m_tokenizer, NATIVE_PATTERN);
+        new_chat_tokens = phi_utils::split_tokenize(new_templated_chat_history, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     } else {
@@ -733,7 +850,6 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(const std::string& image_prom
     return inputs_embeds;
 }
 
-// FIXME Copied from Phi3 - reuse
 void InputsEmbedderPhi4MM::update_chat_history(
     const std::string& decoded_results, 
     const ov::genai::GenerationStatus generation_finish_status
@@ -746,13 +862,11 @@ void InputsEmbedderPhi4MM::update_chat_history(
     }
 }
 
-// FIXME Copied from Phi3 - reuse
 void InputsEmbedderPhi4MM::start_chat(const std::string& system_message) {
     IInputsEmbedder::start_chat(system_message);
     m_tokens_per_images.clear();
 }
 
-// FIXME Copied from Phi3 - reuse
 void InputsEmbedderPhi4MM::finish_chat() {
     IInputsEmbedder::finish_chat();
     m_tokens_per_images.clear();
