@@ -147,4 +147,14 @@ describe('generation parameters validation', () => {
       assert.strictEqual(typeof chunk, 'string');
     });
   });
+
+  it('should convert Set', async () => {
+    const generationConfig = {
+      'max_new_tokens': 100,
+      'stop_strings': new Set(['1', '2', '3', '4', '5']),
+      'include_stop_str_in_output': true,
+    };
+    const result = await pipeline.generate('continue: 1 2 3', generationConfig);
+    assert.strictEqual(typeof result, 'string');
+  });
 });
