@@ -477,7 +477,7 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
         variable_ids(variable_ids) {}
 
     std::optional<LoRAConstantNode> operator() (NodePtr node) const {
-        std::cout << "LoRAStateGetterForConst operator()" << std::endl;
+        // std::cout << "LoRAStateGetterForConst operator()" << std::endl;
         std::string name = node->get_friendly_name();
         if (auto params = getter(name)) {
             // FIXME: Potential name conflict if LoRA is applied multiple times by using this infrastructure independently each time (not a recommended approach).
@@ -485,8 +485,6 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
             std::string variable_id_name = "lora_constant_" + std::to_string(model->get_sinks().size()) + "_" +name;
             LoRAConstantNode result;
             ov::op::util::VariableInfo variable_info;
-
-            std::cout << "111 " << params->tensor->get_output_element_type(0) << std::endl;
 
             // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             variable_info = ov::op::util::VariableInfo{
@@ -619,9 +617,6 @@ protected:
     bool apply(NodePtr node, const LoRAConstantNode& lora_weight) override {
         auto consumers = node->get_output_target_inputs(0);
 
-        std::cout << lora_weight.tensor->get_element_type() << std::endl;
-        std::cout << node->get_element_type() << std::endl;
-
         const auto node_type = node->get_element_type();
     
         // Приводим tensor к типу node
@@ -653,7 +648,6 @@ protected:
 
         for (auto& consumer : consumers) {
             consumer.replace_source_output(if_node->output(0));
-            std::cout << consumer.get_node()->get_element_type() << std::endl;
         }
         return true;
     }
@@ -690,14 +684,12 @@ NodePtr tensors_multiplication(NodePtr input,
     const auto target_shape = target.get_partial_shape();
     const auto target_rank = target_shape.rank().get_length();
 
-    std::cout << 'tensors_multiplication' << std::endl;
+    std::cout << '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!tensors_multiplication' << std::endl;
 
     for (size_t i = 0; i < multipliers.size(); ++i) {
         NodePtr normalized = multipliers[i];
-        std::cout <<"aaa "<<  normalized->get_output_element_type(0).get_type_name() << std::endl;
         if (normalized->get_output_element_type(0) != target_type) {
             normalized = std::make_shared<v0::Convert>(normalized, target_type);
-            std::cout <<"bbb "<<  normalized->get_output_element_type(0).get_type_name() << std::endl;
             if (std::dynamic_pointer_cast<v0::Constant>(normalized)) {
                 input->get_rt_info()["decompression"];
             }
