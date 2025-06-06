@@ -24,10 +24,15 @@ class RESTAPIResponse(BaseModel):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("model_id", ["TinyLlama/TinyLlama-1.1B-Chat-v1.0"])
-@pytest.mark.parametrize("prompt_and_scheme", [("Generate a json about a person.", Person), 
-                                               ("Generate a json about a transaction.", Transaction),
-                                               ("Generate a json about a REST API response.", RESTAPIResponse)])
+@pytest.mark.parametrize("model_id", [
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0", 
+    "meta-llama/Llama-3.1-8B-Instruct", # TODO: check why ends with ##########
+])
+@pytest.mark.parametrize("prompt_and_scheme", [
+    ("Generate a json about a person.", Person), 
+    ("Generate a json about a transaction.", Transaction),
+    ("Generate a json about a REST API response.", RESTAPIResponse)
+])
 def test_structured_output_generation(model_id, prompt_and_scheme):
     prompt, SchemeType = prompt_and_scheme
     opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)

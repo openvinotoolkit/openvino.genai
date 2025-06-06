@@ -18,7 +18,7 @@ namespace genai {
 
 namespace LogitTransformers {
 
-class XGrammarLogitsTransformer : public ILogitTransformer {
+class XGrammarLogitsTransformer : public IStatefulLogitTransformer {
 public:                            
     XGrammarLogitsTransformer(
         const Tokenizer& tokenizer, 
@@ -29,7 +29,7 @@ public:
         int max_rollback_tokens = 0
     );
 
-    void accept_tokens(const TokenIds& input_ids);
+    void accept_tokens(const TokenIds& input_ids) override;
 
     void apply(Logits& logits) override;
 
