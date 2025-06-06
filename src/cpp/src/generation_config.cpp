@@ -179,6 +179,10 @@ bool GenerationConfig::is_assisting_generation() const {
     return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
 }
 
+bool GenerationConfig::is_structured_output_generation() const {
+    return structured_output_config.has_value();
+}
+
 bool GenerationConfig::is_prompt_lookup() const {
     return max_ngram_size > 0 && num_assistant_tokens > 0;
 }
@@ -264,6 +268,25 @@ void GenerationConfig::validate() const {
     if (num_assistant_tokens == 0) {
         OPENVINO_ASSERT(max_ngram_size == 0, "'max_ngram_size' should be set to default value 0 when prompt lookup is disabled");
     }
+
+    if(is_structured_output_generation()) {
+        #ifndef ENABLE_XGRAMMAR
+            OPENVINO_THROW("Structured output is not supported in this build. Please, recompile with -DENABLE_XGRAMMAR=ON");
+        #else
+           (*structured_output_config).validate();
+        #endif
+    }
+}
+
+void StructuredOutputConfig::validate() const {
+    OPENVINO_ASSERT(
+        (json_schema.has_value() + regex.has_value() + choices.has_value() + grammar.has_value()) == 1,
+        "Only one of json, regex, choices or grammar shoud be set in StructuredOutputConfig, but got: ",
+        (json_schema.has_value() ? "json=" + *json_schema +", " : ""),
+        (regex.has_value() ? "regex=" + *regex + ", " : ""),
+        (choices.has_value() ? "choices, " : ""),
+        (grammar.has_value() ? "grammar=" + *grammar : "")
+    );
 }
 
 GenerationConfig beam_search() {
