@@ -47,7 +47,7 @@ class CacheOptTestStruct:
 
 
 SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
-LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.NORM_SUM)
+LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=2048, aggregation_mode=AggregationMode.NORM_SUM)
 
 
 @pytest.mark.precommit
@@ -195,7 +195,7 @@ class LongBenchTestData:
     LongBenchTestData("samsum", 4, 1.6, 3.3),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
     LongBenchTestData("qasper", 5.8, 1.7, 3.6),
-])
+], ids=["samsum", "trec", "qasper"])
 def test_optimized_generation_longbench(device, test_struct):
     seqs_per_request = 32
     num_kv_blocks = 1000 if device == "CPU" else 500
@@ -207,6 +207,7 @@ def test_optimized_generation_longbench(device, test_struct):
     scheduler_config_opt.use_cache_eviction = True
     if scheduler_config_opt.use_cache_eviction:
         scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+        scheduler_config_opt.use_sparse_attention = True
 
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
@@ -219,7 +220,7 @@ def test_optimized_generation_longbench(device, test_struct):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]')
+    data = datasets.load_dataset('THUDM/LongBench', subset, split='test')
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []

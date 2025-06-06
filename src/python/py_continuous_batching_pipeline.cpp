@@ -9,6 +9,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "openvino/genai/sparse_attention.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 
 #include "py_utils.hpp"
@@ -18,6 +19,7 @@ namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::AggregationMode;
 using ov::genai::CacheEvictionConfig;
+using ov::genai::SparseAttentionConfig;
 using ov::genai::ContinuousBatchingPipeline;
 using ov::genai::GenerationResult;
 using ov::genai::EncodedGenerationResult;
@@ -244,6 +246,12 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
             .def("get_evictable_size", &CacheEvictionConfig::get_evictable_size);
 
+    py::class_<SparseAttentionConfig>(m, "SparseAttentionConfig", "FIXME")
+            .def(py::init<>([](size_t num_last_dense_tokens) {
+                return SparseAttentionConfig{num_last_dense_tokens}; }),
+                 py::arg("num_last_dense_tokens") = 100)
+            .def_readwrite("num_last_dense_tokens", &SparseAttentionConfig::num_last_dense_tokens);
+
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
         .def(py::init<>())
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
@@ -253,7 +261,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
         .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)
         .def_readwrite("use_cache_eviction", &SchedulerConfig::use_cache_eviction)
-        .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config);
+        .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config)
+        .def_readwrite("use_sparse_attention", &SchedulerConfig::use_sparse_attention)
+        .def_readwrite("sparse_attention_config", &SchedulerConfig::sparse_attention_config);
 
     py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)
             .def(py::init<>())
