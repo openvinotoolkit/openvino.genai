@@ -8,16 +8,7 @@
 namespace ov {
 namespace genai {
 
-namespace LogitTransformers {
-
-XGrammarLogitsTransformer::XGrammarLogitsTransformer(
-    const Tokenizer& tokenizer, 
-    std::optional<int> vocab_size,
-    const GenerationConfig& sampling_parameters,
-    std::optional<std::vector<int>> override_stop_tokens,
-    bool terminate_without_stop_token,
-    int max_rollback_tokens
-) {
+XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size) {
     auto vocab_vector = tokenizer.get_vocab_vector();
     if (!vocab_size.has_value()) {
         vocab_size = vocab_vector.size();
@@ -30,8 +21,11 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
         std::vector<int32_t>{2},
         true
     );
-    auto grammar_compiler = std::make_unique<xgrammar::GrammarCompiler>(std::move(tokenizer_info));
+    m_grammar_compiler = std::make_unique<xgrammar::GrammarCompiler>(std::move(tokenizer_info));
+}
 
+std::shared_ptr<LogitTransformers::ILogitTransformer>
+XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& sampling_parameters) {
     OPENVINO_ASSERT(sampling_parameters.is_structured_output_generation(),
                    "XGrammarStructuredOutput can only be used for structured output generation");
     
@@ -40,6 +34,7 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
 
     xgrammar::Grammar grammar;
     if (guided_gen_config.json_schema.has_value()) {
+        // std::cout << *guided_generation_config.json_schema << std::endl;
         grammar = xgrammar::Grammar::FromJSONSchema(*guided_gen_config.json_schema);
     } else if (guided_gen_config.regex.has_value()) {
         grammar = xgrammar::Grammar::FromRegex(*guided_gen_config.regex);
@@ -49,15 +44,27 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     } else if (guided_gen_config.grammar.has_value()) {
         grammar = xgrammar::Grammar::FromEBNF(*guided_gen_config.grammar);
     }
-    
-    auto compiled_grammar = grammar_compiler->CompileGrammar(grammar);
 
+    auto compiled_grammar = m_grammar_compiler->CompileGrammar(grammar);
+
+    return std::make_shared<LogitTransformers::XGrammarLogitsTransformer>(std::move(compiled_grammar));
+}
+
+namespace LogitTransformers {
+
+XGrammarLogitsTransformer::XGrammarLogitsTransformer(
+    const xgrammar::CompiledGrammar& compiled_grammar,
+    std::optional<std::vector<int>> override_stop_tokens,
+    bool terminate_without_stop_token,
+    int max_rollback_tokens
+) {
     m_vocab_size = compiled_grammar.GetTokenizerInfo().GetVocabSize();
     m_grammar_matcher = xgrammar::GrammarMatcher(compiled_grammar,
                                                  override_stop_tokens,
                                                  terminate_without_stop_token,
                                                  max_rollback_tokens);
-    size_t bitmask_size = (m_vocab_size + 31) / 32;
+    
+    const size_t bitmask_size = (m_vocab_size + 31) / 32; // TODO: explain this hardcoding
     m_token_bitmask_ov = ov::Tensor(ov::element::i32, {bitmask_size});
     for (size_t i = 0; i < bitmask_size; ++i) {
         m_token_bitmask_ov.data<int32_t>()[i] = -1;
@@ -77,6 +84,10 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     m_next_token_logits->byte_offset = 0;
     m_next_token_logits->strides = nullptr; // No strides, tensor is compact
     // pointer and size will be set in apply method
+    
+    auto bitmask_shape = new int64_t;
+    *bitmask_shape = bitmask_size;
+    m_token_bitmask->shape = bitmask_shape;
 
     // Shapes are stored as a pointer to a buffer. It's not convenient to allocate a buffer here,
     // because in that case we would need to keep it alive until the apply method is called and 

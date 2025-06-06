@@ -41,12 +41,23 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
     }
     std::string backend_name = (*guided_gen_config).backend.value_or(get_default_backend_name());
     
-    auto& registry = get_backend_registry();
-    auto factory_it = registry.find(backend_name);
-    if (factory_it == registry.end()) {
-        OPENVINO_THROW("Structured output backend not found: " + backend_name);
+    // Check if backend already instantiated
+    auto impl_it = m_impls.find(backend_name);
+    if (impl_it == m_impls.end()) {
+        // Backend not instantiated yet, create it
+        auto& registry = get_backend_registry();
+        auto factory_it = registry.find(backend_name);
+        if (factory_it == registry.end()) {
+            OPENVINO_THROW("Structured output backend not found: " + backend_name);
+        }
+
+        // Create the backend instance and store it
+        m_impls[backend_name] = factory_it->second(m_tokenizer, m_vocab_size);
+        impl_it = m_impls.find(backend_name);
     }
-    return std::move(factory_it->second(m_tokenizer, m_vocab_size, sampling_parameters));
+
+    // Use the instantiated backend
+    return impl_it->second->get_logits_transformer(sampling_parameters);
 }
 
 } // namespace genai
