@@ -36,13 +36,15 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 *
 * @param tokens sequence of resulting tokens
 * @param scores sum of logarithmic probabilities of all tokens in the sequence
-* @param metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
+* @param perf_metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
+* @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics
 */
 class EncodedResults {
 public:
     std::vector<std::vector<int64_t>> tokens;
     std::vector<float> scores;
     PerfMetrics perf_metrics;
+    std::shared_ptr<PerfMetrics> extended_perf_metrics;
 };
 
 /**
@@ -51,13 +53,15 @@ public:
 *
 * @param texts vector of resulting sequences
 * @param scores scores for each sequence
-* @param metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
+* @param perf_metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
+* @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics
 */
 class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
     PerfMetrics perf_metrics;
+    std::shared_ptr<PerfMetrics> extended_perf_metrics;
 
     // @brief Convert DecodedResults to a string.
     operator std::string() const {
