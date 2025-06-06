@@ -216,22 +216,32 @@ def load_text2image_model(
     return model
 
 
-def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
+def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     try:
         import openvino_genai
     except ImportError as e:
         logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
         exit(-1)
 
+    is_continuous_batching = kwargs.get("cb_config", None) is not None
+
+    if is_continuous_batching:
+        logger.info("Using OpenVINO GenAI Continuous Batching API")
+        scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
+        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA", **ov_config)
+    else:
+        logger.info("Using OpenVINO GenAI VLMPipeline API")
+        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, **ov_config)
+
     return GenAIModelWrapper(
-        openvino_genai.VLMPipeline(model_dir, device, **ov_config),
+        pipeline,
         model_dir,
         "visual-text"
     )
 
 
 def load_visual_text_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
@@ -293,7 +303,7 @@ def load_visual_text_model(
             model.img_context_token_id = img_context_token_id
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
-        model = load_visual_text_genai_pipeline(model_id, device, ov_config)
+        model = load_visual_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForVisualCausalLM
@@ -424,7 +434,7 @@ def load_model(
             model_id, device, ov_options, use_hf, use_genai
         )
     elif model_type == "visual-text":
-        return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai)
+        return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-to-image":
         return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai)
     elif model_type == "image-inpainting":
