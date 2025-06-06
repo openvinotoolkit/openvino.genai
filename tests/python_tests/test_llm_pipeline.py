@@ -4,6 +4,7 @@
 
 import pytest
 import torch
+import gc
 import os
 import json
 import numpy as np
@@ -832,6 +833,8 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
     generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+    del opt_model
+    gc.collect()
     prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
     all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
     res_string_input_1 = all_text_batch[0]
@@ -839,6 +842,8 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
     encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
+    del ov_pipe_gguf
+    gc.collect()
     res_string_input_2 = hf_tokenizer.batch_decode([encoded_result.tokens[0]], skip_special_tokens=True)[0]
 
     assert res_string_input_1 == res_string_input_2
@@ -871,6 +876,8 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
     generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+    del opt_model
+    gc.collect()
     prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
     all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
     res_string_input_1 = all_text_batch[0]
@@ -878,11 +885,15 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
+    del ov_pipe_gguf
+    gc.collect()
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
         ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type)
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
+        del ov_pipe_native
+        gc.collect()
 
         assert res_string_input_1 == res_string_input_2
         assert res_string_input_1 == res_string_input_3
