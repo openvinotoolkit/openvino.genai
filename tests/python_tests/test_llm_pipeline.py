@@ -818,11 +818,9 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     gguf_filename = model_ids["gguf_filename"]
     prompt = 'Why is the Sun yellow?'
 
-    from utils.network import retry_request
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-
-    opt_model = retry_request(lambda: AutoModelForCausalLM.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+    opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
+    hf_tokenizer = load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename)
+    gc.collect()
 
     ov_generation_config = ov_genai.GenerationConfig()
     ov_generation_config.max_new_tokens = 30
@@ -832,7 +830,9 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     inputs = hf_tokenizer(prompt, return_tensors="pt")
     input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
-    generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+    generate_outputs = None
+    with torch.no_grad():
+        generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
     del opt_model
     gc.collect()
     prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
@@ -847,6 +847,7 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     res_string_input_2 = hf_tokenizer.batch_decode([encoded_result.tokens[0]], skip_special_tokens=True)[0]
 
     assert res_string_input_1 == res_string_input_2
+
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
