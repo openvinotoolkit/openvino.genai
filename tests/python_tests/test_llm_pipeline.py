@@ -14,7 +14,7 @@ import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.constants import get_default_llm_properties, extra_generate_kwargs
-from utils.hugging_face import generation_config_to_hf, download_and_convert_model, download_gguf_model
+from utils.hugging_face import generation_config_to_hf, download_and_convert_model, download_gguf_model, load_hf_model_from_gguf, load_hf_tokenizer_from_gguf
 # model_tmp_path fixture import required
 from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType, get_gguf_pipeline_types
@@ -848,7 +848,6 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
 
     assert res_string_input_1 == res_string_input_2
 
-
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
 @pytest.mark.parametrize("enable_save_ov_model", [False, True])
@@ -858,11 +857,9 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     gguf_filename = model_ids["gguf_filename"]
     prompt = 'Why is the Sun yellow?'
 
-    from utils.network import retry_request
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-
-    opt_model = retry_request(lambda: AutoModelForCausalLM.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+    opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
+    hf_tokenizer = load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename)
+    gc.collect()
 
     # TODO: remove explicit switch-off of bos token
     hf_tokenizer.add_bos_token = False
@@ -875,7 +872,9 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     inputs = hf_tokenizer(prompt, return_tensors="pt")
     input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
-    generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+    generate_outputs = None
+    with torch.no_grad():
+        generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
     del opt_model
     gc.collect()
     prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
