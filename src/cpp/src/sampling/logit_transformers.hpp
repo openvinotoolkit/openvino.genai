@@ -57,6 +57,12 @@ public:
     }
 };
 
+class IStatefulLogitTransformer: public ILogitTransformer {
+public:
+    virtual void accept_tokens(const TokenIds& input_ids) = 0;
+};
+
+
 class TopPFilter : public ILogitTransformer {
 public:
     TopPFilter(double top_p) : m_top_p(top_p) {}

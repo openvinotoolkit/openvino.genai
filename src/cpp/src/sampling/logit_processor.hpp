@@ -14,8 +14,7 @@ namespace ov::genai {
 class LogitProcessor {
 protected:
     std::vector<std::shared_ptr<LogitTransformers::ILogitTransformer>> m_logit_transformers;
-    friend class Sampler;
-
+    std::vector<std::shared_ptr<LogitTransformers::IStatefulLogitTransformer>> m_stateful_logit_transformers;
     
     std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids = std::shared_ptr<std::map<int64_t, size_t>>(new std::map<int64_t, size_t>);
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
@@ -42,7 +41,9 @@ public:
 
         OPENVINO_ASSERT(structured_output_controller != nullptr || !sampling_params.is_structured_output_generation(), "Structured output controller is not set for structured output generation");
         if (sampling_params.is_structured_output_generation() && structured_output_controller != nullptr) {
-            m_logit_transformers.push_back(structured_output_controller->get_logits_transformer(sampling_params));
+            auto transformer = structured_output_controller->get_logits_transformer(sampling_params);
+            m_logit_transformers.push_back(transformer);
+            m_stateful_logit_transformers.emplace_back(std::dynamic_pointer_cast<LogitTransformers::IStatefulLogitTransformer>(transformer));
         }
 
         if (sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) {
@@ -108,6 +109,11 @@ public:
             m_unique_generated_token_ids->insert({new_token_id, 1});
         } else {
             it->second++;
+        }
+        for (const auto& transformer : m_stateful_logit_transformers) {
+            if (transformer->is_applicable(m_generated_tokens)) {
+                transformer->accept_tokens({new_token_id});
+            }
         }
     }
 

@@ -852,18 +852,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     }
                 }
                 register_new_token(sampled_token, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_validation_mode_enabled);
-                
-                #ifdef ENABLE_XGRAMMAR
-                // add tokens
-                for (auto& transformer: logit_processor.m_logit_transformers) {
-                    // if its a structured output transformer, we need to add the token to the transformer
-                    auto gram_transformer = std::dynamic_pointer_cast<LogitTransformers::XGrammarLogitsTransformer>(transformer);
-                    if (gram_transformer) {
-                        gram_transformer->accept_tokens({sampled_token.m_index});
-                    }
-                }
-                #endif
-                
+                               
                 // to exit from sampling in case of failed token validation
                 if (!is_validation_passed) {
                     break;
@@ -933,11 +922,6 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
         const auto request_id = sequence_group->get_request_id();
-        #ifdef ENABLE_XGRAMMAR
-        if (!xgrammar_registered) {
-            xgrammar_registered = registerXGrammarBackend();
-        }
-        #endif
         if (!m_logit_processors.count(request_id)) {
             if (!m_structured_output_controller) {
                 m_structured_output_controller = std::make_shared<StructuredOutputController>(m_tokenizer, m_tokenizer.get_vocab_vector().size());
