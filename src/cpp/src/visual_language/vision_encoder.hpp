@@ -36,15 +36,12 @@ struct EncodedImage {
     /// @brief A size of an image used to compute embeddings for
     /// divided by ProcessorConfig's patch_size.
     ImageSize resized_source_size;
-    /// @brief Embeddings of images obtained from a source image by
-    /// slicing at no more than max_slice_nums pieces and resizing.
-    /// The tensor's shape is
-    /// [slice_y, slice_x, number_of_embeddings, embedding_size].
-    /// slices_sizes.size() == slice_y * slice_x.
-    ov::Tensor slices;
-    /// @brief A size of images used to compute embeddings
-    /// stored in slices member divided by ProcessorConfig's patch_size.
-    ImageSize slices_size;
+
+    /// @brief Shape of embeddings of images obtained from a source image by slicing 
+    /// at no more than max_slice_nums pieces and resizing,
+    /// This shape is [slice_y, slice_x, number_of_embeddings, embedding_size].
+    /// Used only by MiniCPM
+    ov::Shape slices_shape;
 
     /// @brief Patches grid after llava_next preprocessing.
     /// Format: [num_patches_height, num_patches_width]
