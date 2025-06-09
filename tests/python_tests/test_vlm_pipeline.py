@@ -141,6 +141,9 @@ def test_vlm_pipeline(model_id, backend):
         result_from_streamer.append(word)
         return False
 
+
+
+
     models_path = get_ov_model(model_id)
     ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
