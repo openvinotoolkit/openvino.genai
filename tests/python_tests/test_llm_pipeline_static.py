@@ -275,6 +275,8 @@ def test_chat_generation(config, model_id):
         'What was my first question?'
     ]
 
+
+
     _, _, model_path = download_and_convert_model(model_id)
 
     chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)

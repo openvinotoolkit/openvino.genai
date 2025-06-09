@@ -817,6 +817,13 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     gguf_filename = model_ids["gguf_filename"]
     prompt = 'Why is the Sun yellow?'
 
+
+
+
+
+
+
+
     from utils.network import retry_request
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
@@ -851,6 +858,11 @@ def test_full_gguf_pipeline(pipeline_type, model_ids):
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
     prompt = 'Why is the Sun yellow?'
+
+
+
+
+
 
     from utils.network import retry_request
     from transformers import AutoTokenizer, AutoModelForCausalLM
