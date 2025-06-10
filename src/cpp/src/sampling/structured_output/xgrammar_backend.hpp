@@ -23,7 +23,7 @@ public:
     XGrammarLogitsTransformer(
         const xgrammar::CompiledGrammar& compiled_grammar,
         std::optional<std::vector<int>> override_stop_tokens = std::nullopt,
-        bool terminate_without_stop_token = true,
+        bool terminate_without_stop_token = false,
         int max_rollback_tokens = 0
     );
 
@@ -36,6 +36,8 @@ protected:
     ov::Tensor m_token_bitmask_ov;
     std::shared_ptr<DLTensor> m_token_bitmask;
     std::shared_ptr<DLTensor> m_next_token_logits;
+    std::vector<int64_t> m_logits_shape;
+    std::vector<int64_t> m_bitmask_shape;
     int m_vocab_size;
 };
 
@@ -44,12 +46,10 @@ protected:
 
 
 class XGrammarStructuredOutput : public IStructuredOutputImpl {
-    public:
-    XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size = std::nullopt);
-    
+public:
+    XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size = std::nullopt);    
     std::shared_ptr<LogitTransformers::ILogitTransformer> get_logits_transformer(const GenerationConfig& sampling_parameters) override;
-    
-    private:
+private:
     std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
 };
 
