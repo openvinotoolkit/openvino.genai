@@ -854,8 +854,9 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
+@pytest.mark.parametrize("enable_save_ov_model", [False, True])
 @pytest.mark.precommit
-def test_full_gguf_pipeline(pipeline_type, model_ids):
+def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
     gguf_model_id = model_ids["gguf_model_id"]
@@ -887,38 +888,18 @@ def test_full_gguf_pipeline(pipeline_type, model_ids):
     res_string_input_1 = all_text_batch[0]
 
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
+    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
     del ov_pipe_gguf
     gc.collect()
 
-    assert res_string_input_1 == res_string_input_2
-
-
-@pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
-@pytest.mark.parametrize("model_ids", get_gguf_model_list())
-@pytest.mark.parametrize("enable_save_ov_model", [True])
-@pytest.mark.precommit
-def test_full_gguf_pipeline_enable_save_ov_model(pipeline_type, model_ids, enable_save_ov_model):
-    gguf_model_id = model_ids["gguf_model_id"]
-    gguf_filename = model_ids["gguf_filename"]
-    prompt = 'Why is the Sun yellow?'
-
-    ov_generation_config = ov_genai.GenerationConfig()
-    ov_generation_config.max_new_tokens = 30
-    ov_generation_config.apply_chat_template = False
-    #ov_generation_config.set_eos_token_id(hf_tokenizer.eos_token_id)
-
-    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model)
-    res_string_input_1 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
-    del ov_pipe_gguf
-    gc.collect()
-
-    gguf_full_path = Path(gguf_full_path)
-    ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type)
-    res_string_input_2  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
-    del ov_pipe_native
-    gc.collect()
-
-    assert res_string_input_1 == res_string_input_2
+    if enable_save_ov_model:
+        gguf_full_path = Path(gguf_full_path)
+        ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type)
+        res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
+        del ov_pipe_native
+        gc.collect()
+        assert res_string_input_1 == res_string_input_2
+        assert res_string_input_2 == res_string_input_3
+    else:
+        assert res_string_input_1 == res_string_input_2
