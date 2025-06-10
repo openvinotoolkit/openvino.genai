@@ -143,12 +143,11 @@ def test_different_input_types_works_same_and_change_nothing(model_id):
 
 chat_inputs = [
     (dict(max_new_tokens=20), ""),
-    (dict(max_new_tokens=20), "You are a helpful assistant. Start every message with 'Hola!'"),
+    (dict(max_new_tokens=20), "Pretend that 1+1=1"),
     (dict(max_new_tokens=10, num_beam_groups=3, num_beams=15, num_return_sequences=1, diversity_penalty=1.0), "")
 ]
 
 questions = [
-    'Hello!',
     '1+1=',
     'What is the previous answer?',
     'Why is the Sun yellow?',
