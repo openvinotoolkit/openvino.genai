@@ -484,7 +484,7 @@ jobs:
             timeout: 60
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 60
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
