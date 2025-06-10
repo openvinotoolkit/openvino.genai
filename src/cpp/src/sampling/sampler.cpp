@@ -4,7 +4,6 @@
 #include <future>
 
 #include "sampling/sampler.hpp"
-#include "sampling/structured_output/xgrammar_backend.hpp"
 
 namespace ov::genai {
 // Modified Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurrence in haystack
@@ -1000,6 +999,7 @@ LogitProcessor& Sampler::get_logit_processor(uint64_t request_id) {
 
 void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_params, const TokenIds& prompt) {
     if (!m_structured_output_controller) {
+        // TODO: set valid vocab size
         m_structured_output_controller = std::make_shared<StructuredOutputController>(m_tokenizer, m_tokenizer.get_vocab_vector().size());
     }
 

@@ -16,7 +16,8 @@ class Person(BaseModel):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
+    parser.add_argument('model_dir', help="Path to the model directory. It should contain the OpenVINO model files.")
+    parser.add_argument('prompt', nargs='?', help="Prompt to generate structured output. If not provided, a default prompt will be used.")
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
@@ -25,13 +26,12 @@ def main():
     config = openvino_genai.GenerationConfig()
     structured_output_config = openvino_genai.StructuredOutputConfig()
     structured_output_config.json_schema = json.dumps(Person.model_json_schema())
-
+    
+    prompt = args.prompt if args.prompt else "Generate a json about a person."
     config.max_new_tokens = 100
     config.repetition_penalty = 2
     config.do_sample = True
     config.structured_output_config = structured_output_config
-
-    prompt = "Generate a json about a person."
     print(pipe.generate(prompt, config))
 
 if '__main__' == __name__:

@@ -281,7 +281,7 @@ void GenerationConfig::validate() const {
 void StructuredOutputConfig::validate() const {
     OPENVINO_ASSERT(
         (json_schema.has_value() + regex.has_value() + choices.has_value() + grammar.has_value()) == 1,
-        "Only one of json, regex, choices or grammar shoud be set in StructuredOutputConfig, but got: ",
+        "Only one of json, regex, choices or grammar should be set in StructuredOutputConfig, but got: ",
         (json_schema.has_value() ? "json=" + *json_schema +", " : ""),
         (regex.has_value() ? "regex=" + *regex + ", " : ""),
         (choices.has_value() ? "choices, " : ""),

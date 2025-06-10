@@ -1798,7 +1798,7 @@ class StructuredOutputConfig:
         the JSON schema and other related parameters.
     
         Structured output parameters:
-        json:           if set, the output will be a JSON string constraint by the specified json-schema.
+        json_schema:           if set, the output will be a JSON string constraint by the specified json_schema.
         regex:          if set, the output will be constraint by specified regex.
         choices:        if set, the output will be one of specified strings.
         grammar:        if set, the output will be constraint by specified grammar.
@@ -1809,12 +1809,12 @@ class StructuredOutputConfig:
         Default constructor for StructuredOutputConfig
         """
     @property
-    def choises(self) -> list[str] | None:
+    def choices(self) -> list[str] | None:
         """
         List of choices for structured output generation
         """
-    @choises.setter
-    def choises(self, arg0: list[str] | None) -> None:
+    @choices.setter
+    def choices(self, arg0: list[str] | None) -> None:
         ...
     @property
     def grammar(self) -> str | None:
