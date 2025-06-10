@@ -46,7 +46,7 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
     }
 
     auto compiled_grammar = m_grammar_compiler->CompileGrammar(grammar);
-    std::vector<int> override_stop_tokens = {sampling_parameters.stop_token_ids.begin(), sampling_parameters.stop_token_ids.end()};
+    std::vector<int> override_stop_tokens(sampling_parameters.stop_token_ids.begin(), sampling_parameters.stop_token_ids.end());
     
     return std::make_shared<LogitTransformers::XGrammarLogitsTransformer>(std::move(compiled_grammar), override_stop_tokens);
 }
