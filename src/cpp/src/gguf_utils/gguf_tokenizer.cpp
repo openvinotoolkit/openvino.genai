@@ -576,11 +576,29 @@ std::string patch_gguf_chat_template(const std::string& chat_template) {
     const std::string qwen2_5_replacement_substring =
         R"({\"name\": <function-name>, \"arguments\": <args-json-object>})";
     // Find the position of the substring to be replaced
-    size_t pos = patched_chat_template.find(qwen2_5_substring_to_find);
-    if (pos != std::string::npos) {
+    size_t pos_qwen2_5 = patched_chat_template.find(qwen2_5_substring_to_find);
+    if (pos_qwen2_5 != std::string::npos) {
         // Substring found, perform the replacement
-        patched_chat_template.replace(pos, qwen2_5_substring_to_find.length(), qwen2_5_replacement_substring);
+        patched_chat_template.replace(pos_qwen2_5, qwen2_5_substring_to_find.length(), qwen2_5_replacement_substring);
     }
+
+    const std::string qwen3_substring_to_find_0 = R"({%- for index in range(ns.last_query_index, -1, -1) %})";
+    const std::string qwen3_substring_to_find_1 = R"({%- set message = messages[index] %})";
+    const std::string qwen3_substring_to_find_2 = R"({%- if ns.multi_step_tool and message.role == "user" and not('<tool_response>' in message.content and '</tool_response>' in message.content) %})";
+
+    const std::string qwen3_replacement_substring_0 = R"({%- for message in messages[::-1] %})";
+    const std::string qwen3_replacement_substring_1 = R"({%- set index = (messages|length - 1) - loop.index0 %})";
+    const std::string qwen3_replacement_substring_2 = R"({%- if ns.multi_step_tool and message.role == "user" and not(message.content.startswith('<tool_response>') and message.content.endswith('</tool_response>')) %})";
+
+    const std::string qwen3_substring_to_find = qwen3_substring_to_find_0 + "\n" + "    " + qwen3_substring_to_find_1 + "\n" + "    "  + qwen3_substring_to_find_2;
+    const std::string qwen3_replacement_substring = qwen3_replacement_substring_0 + "\n" + "    " + qwen3_replacement_substring_1 + "\n" + "    "  + qwen3_replacement_substring_2;
+    size_t pos_qwen3 = patched_chat_template.find(qwen3_substring_to_find);
+    
+    if (pos_qwen3 != std::string::npos) {
+        // Substring found, perform the replacement
+        patched_chat_template.replace(pos_qwen3, qwen3_substring_to_find.length(), qwen3_replacement_substring);
+    }
+
     return patched_chat_template;
 }
 

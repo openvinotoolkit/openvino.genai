@@ -169,7 +169,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
     ss.str("");
     ss << "Start generating OpenVINO model...";
     ov::genai::utils::print_gguf_debug_info(ss.str());
-    if (!model_arch.compare("llama") || !model_arch.compare("qwen2")) {
+    if (!model_arch.compare("llama") || !model_arch.compare("qwen2") || !model_arch.compare("qwen3")) {
         model = create_language_model(config, consts, qtypes);
         if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(model_path);

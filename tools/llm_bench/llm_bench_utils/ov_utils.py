@@ -6,6 +6,7 @@ from transformers import AutoConfig, AutoProcessor, AutoTokenizer
 from openvino import Core
 import openvino as ov
 import logging as log
+import sys
 import time
 import json
 import types
@@ -168,7 +169,7 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
 def get_scheduler_config_genai(user_config, config_name="CB config"):
     import openvino_genai
 
-    default_cb_config = {"cache_size": 1, "max_num_batched_tokens": 65535}
+    default_cb_config = {"cache_size": 1, "max_num_batched_tokens": sys.maxsize}
     scheduler_config = openvino_genai.SchedulerConfig()
     scheduler_params = user_config or default_cb_config
     if scheduler_params:
