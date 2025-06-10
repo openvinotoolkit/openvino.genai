@@ -80,4 +80,8 @@ def get_gguf_model_list():
             "gguf_model_id": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
             "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf"
         },
+        {
+            "gguf_model_id": "unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF",
+            "gguf_filename": "DeepSeek-R1-Distill-Qwen-1.5B-Q8_0.gguf"
+        }
     ]
