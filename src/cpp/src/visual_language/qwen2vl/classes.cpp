@@ -542,13 +542,13 @@ ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(
 
     ov::Tensor concatenated_embeds = qwen2_vl_utils::concatenate_image_embeds(reordered_image_embeds);
     ov::Tensor attention_mask = qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw);
-    ov::Tensor attention_cu_seqlens = qwen2_vl_utils::get_cu_seqlens(reordered_images_grid_thw);
+    ov::Tensor cu_seq_lens = qwen2_vl_utils::get_cu_seqlens(reordered_images_grid_thw);
     ov::Tensor rotary_pos_emb = get_rotary_pos_emb(reordered_images_grid_thw);
 
     // {
-    //     int32_t* ptr = static_cast<int32_t*>(attention_cu_seqlens.data());
-    //     for (auto i = 0; i < attention_cu_seqlens.get_size(); i++)
-    //         std::cout << "=========== attention_cu_seqlens i: " << i << " : " << ptr[i] << std::endl; 
+    //     int32_t* ptr = static_cast<int32_t*>(cu_seq_lens.data());
+    //     for (auto i = 0; i < cu_seq_lens.get_size(); i++)
+    //         std::cout << "=========== cu_seq_lens i: " << i << " : " << ptr[i] << std::endl; 
     // }
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
@@ -557,7 +557,7 @@ ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(
     if (m_with_attention_mask_input)
         vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
     else
-        vision_embeddings_merger.set_tensor("cu_seq_lens", attention_cu_seqlens);
+        vision_embeddings_merger.set_tensor("cu_seq_lens", cu_seq_lens);
     vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
     vision_embeddings_merger.infer();
     ov::Tensor processed_vision_embeds = vision_embeddings_merger.get_output_tensor();
