@@ -36,17 +36,17 @@ std::string get_absolute_file_path(const std::string& path) {
 
 std::string get_ov_genai_library_path() {
 #ifdef _WIN32
-    CHAR genai_library_path[MAX_PATH];
+    WCHAR genai_library_path_w[MAX_PATH];
     HMODULE hm = NULL;
-    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPSTR>(get_ov_genai_library_path),
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(get_ov_genai_library_path),
                             &hm)) {
         std::stringstream ss;
         ss << "GetModuleHandle returned " << GetLastError();
         throw std::runtime_error(ss.str());
     }
-    GetModuleFileNameA(hm, (LPSTR)genai_library_path, sizeof(genai_library_path));
-    return std::string(genai_library_path);
+    GetModuleFileNameW(hm, genai_library_path_w, MAX_PATH);
+    return std::filesystem::path(genai_library_path_w).string();
 #elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
     Dl_info info;
     dladdr(reinterpret_cast<void*>(get_ov_genai_library_path), &info);
