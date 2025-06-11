@@ -102,6 +102,35 @@ def test_pipeline_from_blob(config, model_id):
 @pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
+def test_pipeline_from_blob(config, model_id):
+    prompt = 'What is OpenVINO?'
+    _, _, model_path = download_and_convert_model(model_id)
+    blob_path = "compiled_model.blob"
+
+    cpu_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
+    ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
+
+    # NB: Generate the blob
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "EXPORT_BLOB": "YES", "BLOB_PATH": blob_path }))
+    del npu_pipe
+
+    # Import blob and check accuracy
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | {"BLOB_PATH": blob_path, \
+                                                           "WEIGHTS_PATH": os.path.join(model_path, "openvino_model.bin") }))
+    actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
+
+    os.remove(blob_path)
+
+    if ref_out != actual_out:
+        print(f'ref_out: {ref_out}\n')
+        print(f'actual_out: {actual_out}')
+    assert ref_out == actual_out
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+@pytest.mark.parametrize("model_id", get_models_list())
 def test_pipeline_from_blob_with_weights(config, model_id):
     prompt = 'What is OpenVINO?'
     _, _, model_path = download_and_convert_model(model_id)
