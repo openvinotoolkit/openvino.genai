@@ -123,9 +123,7 @@ endif()
 
 if(NOT ENABLE_XGRAMMAR)
     set(XGRAMMAR_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/structured_output/xgrammar_backend.hpp
-                         ${CMAKE_CURRENT_SOURCE_DIR}/src/structured_output/xgrammar_backend.cpp
-                         ${CMAKE_CURRENT_SOURCE_DIR}/src/structured_output/structured_output_controller.hpp
-                         ${CMAKE_CURRENT_SOURCE_DIR}/src/structured_output/structured_output_controller.cpp)
+                         ${CMAKE_CURRENT_SOURCE_DIR}/src/structured_output/xgrammar_backend.cpp)
     list(REMOVE_ITEM SOURCE_FILES ${XGRAMMAR_SOURCES})
 endif()
 

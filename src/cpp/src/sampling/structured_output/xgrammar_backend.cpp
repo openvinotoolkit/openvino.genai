@@ -1,7 +1,6 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#ifdef ENABLE_XGRAMMAR
 #include "xgrammar_backend.hpp"
 #include <iostream>
 
@@ -115,5 +114,3 @@ void XGrammarLogitsTransformer::apply(Logits& logits) {
 
 } // namespace genai
 } // namespace ov
-
-#endif // ENABLE_XGRAMMAR

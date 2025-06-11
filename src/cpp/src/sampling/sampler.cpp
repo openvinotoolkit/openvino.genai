@@ -999,8 +999,9 @@ LogitProcessor& Sampler::get_logit_processor(uint64_t request_id) {
 
 void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_params, const TokenIds& prompt) {
     if (!m_structured_output_controller) {
-        // TODO: set valid vocab size
-        m_structured_output_controller = std::make_shared<StructuredOutputController>(m_tokenizer, m_tokenizer.get_vocab_vector().size());
+        // We don't have vocab size (actually logits size) and also we don't have access to the logits.
+        // vocab size will be taken from the tokenizer during LogitProcessor initialization.
+        m_structured_output_controller = std::make_shared<StructuredOutputController>(m_tokenizer);
     }
 
     m_logit_processors.insert({request_id, LogitProcessor(sampling_params, prompt, m_structured_output_controller)});
