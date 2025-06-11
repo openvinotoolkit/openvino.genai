@@ -5,20 +5,20 @@ import logging as log
 
 
 def print_metrics(
-        iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1,
-        max_uss_mem=-1, stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None
+        iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
+        stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None, text_emb=None, latency_unit=None
 ):
     iter_str = str(iter_num)
     if warm_up:
         iter_str = 'warm-up'
     output_str = ''
-    latency_unit = 'token'
+    latency_unit = 'token' if latency_unit is None else latency_unit
     prefix = f'[{iter_str}][P{prompt_idx}]'
     if batch_size > 1:
-        latency_unit = '{}tokens'.format(batch_size)
+        latency_unit = '{}{}s'.format(batch_size, latency_unit)
     if iter_data['input_size'] != '':
         output_str += 'Input token size: {}, '.format(iter_data['input_size'])
-    if iter_data['output_size'] != '':
+    if iter_data.get('output_size', '') != '':
         output_str += 'Output size: {}, '.format(iter_data['output_size'])
     if iter_data['infer_count'] != '':
         output_str += 'Infer count: {}, '.format(iter_data['infer_count'])
@@ -26,12 +26,14 @@ def print_metrics(
         output_str += 'Tokenization Time: {:.2f}ms, '.format(tokenization_time[0])
         if len(tokenization_time) > 1:
             output_str += 'Detokenization Time: {:.2f}ms, '.format(tokenization_time[1])
-    if iter_data['mm_embeddings_preparation_time'] != '':
+    if iter_data.get('mm_embeddings_preparation_time', '') != '':
         output_str += ' Multimodal Embeddings Preparation Time: {:.2f}ms, '.format(iter_data['mm_embeddings_preparation_time'])
-    if iter_data['generation_time'] != '':
+    if iter_data.get('generation_time', '') != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
+    if iter_data.get('total_time', '') != '':
+        output_str += 'Total Time: {:.4f}s, '.format(iter_data["total_time"])
     if iter_data['latency'] != '':
-        output_str += 'Latency: {:.2f} ms/{}'.format(iter_data['latency'], latency_unit)
+        output_str += 'Latency: {:.4f} ms/{}'.format(iter_data['latency'], latency_unit)
     if output_str != '':
         output_str = ' '.join([prefix, output_str])
         log.info(output_str)
@@ -40,10 +42,16 @@ def print_metrics(
         iter_data['other_tokens_avg_latency'] = sum(tms[1:]) / (len(tms) - 1) * 1000 if len(tms) > 1 else -1
         first_token_latency = 'NA' if iter_data['first_token_latency'] == -1 else f"{iter_data['first_token_latency']:.2f} ms/{latency_unit}"
         other_token_latency = 'NA' if iter_data['other_tokens_avg_latency'] == -1 else f"{iter_data['other_tokens_avg_latency']:.2f} ms/{latency_unit}"
-        log.info(
-            f'{prefix} First token latency: {first_token_latency}, '
-            f'other tokens latency: {other_token_latency}, len of tokens: {len(tms)} * {batch_size}',
-        )
+        if text_emb is None:
+            log.info(
+                f'{prefix} First token latency: {first_token_latency}, '
+                f'other tokens latency: {other_token_latency}, len of input tokens: {iter_data["input_size"]} * {batch_size}',
+            )
+        else:
+            log.info(
+                f'{prefix} First iteration latency: {first_token_latency}, '
+                f'other iterations latency: {other_token_latency}, len of input tokens: {iter_data["input_size"]} * {batch_size}',
+            )
         if len(tms) == 0:
             log.warning(f'{prefix} No hook data output for first token latency and other tokens latency')
     if tms_infer is not None:
@@ -62,16 +70,18 @@ def print_metrics(
     if whisper is not None:
         print_whisper_infer_latency(iter_str, whisper, prompt_idx)
     output_str = ''
-    if max_rss_mem != '' and max_rss_mem > -1:
-        output_str += 'Max rss memory cost: {:.2f}MBytes, '.format(max_rss_mem)
-    if max_uss_mem != '' and max_uss_mem > -1:
-        output_str += 'max uss memory cost: {:.2f}MBytes, '.format(max_uss_mem)
-    if max_shared_mem != '' and max_shared_mem > -1:
-        output_str += 'max shared memory cost: {:.2f}MBytes'.format(max_shared_mem)
+    if iter_data['max_rss_mem_consumption'] != '' and iter_data['max_rss_mem_consumption'] > -1:
+        output_str += f"Max rss memory cost: {iter_data['max_rss_mem_consumption']:.2f}MBytes, "
+    if iter_data['max_rss_mem_increase'] != '' and iter_data['max_rss_mem_increase'] > -1:
+        output_str += f"rss memory increase: {iter_data['max_rss_mem_increase']:.2f}MBytes, "
+    if iter_data['max_sys_mem_consumption'] != '' and iter_data['max_sys_mem_consumption'] > -1:
+        output_str += f"max system memory memory cost: {iter_data['max_sys_mem_consumption']:.2f}MBytes, "
+    if iter_data['max_sys_mem_increase'] != '' and iter_data['max_sys_mem_increase'] > -1:
+        output_str += f"system memory increase: {iter_data['max_sys_mem_increase']:.2f}MBytes "
     if output_str != '':
         output_str = ' '.join([prefix, output_str])
         log.info(output_str)
-    if iter_data['result_md5'] != '':
+    if iter_data.get('result_md5', '') != '':
         log.info(f"{prefix} Result MD5:{iter_data['result_md5']}")
 
 
@@ -159,13 +169,16 @@ def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=Fa
                  f"vqvae decoder step count: 1",)
 
 
-def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch_size, is_text_gen, loop_idx):
+def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch_size, is_text_gen, is_embed, loop_idx, latency_unit=None):
     for p_idx in prompt_idx_list:
         avg_1st_token_latency = 0
         avg_2nd_tokens_latency = 0
         avg_2nd_token_tput = 0
         avg_input_size = 0
         index_num = 0
+
+        if latency_unit is None:
+            latency_unit = 'token' if is_text_gen else 'step'
         for iter_data in iter_data_list:
             # Exclude the warm-up iteration
             if iter_data['iteration'] == 0:
@@ -181,30 +194,35 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             avg_input_size = int(avg_input_size / index_num)
             if avg_2nd_tokens_latency > 0:
                 avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
-            tput_unit = latency_unit = 'token' if is_text_gen is True else 'step'
+            tput_unit = latency_unit
             if batch_size > 1:
-                if is_text_gen is True:
-                    latency_unit = '{}tokens'.format(batch_size)
-                else:
-                    latency_unit = '{}steps'.format(batch_size)
+                latency_unit = '{}{}s'.format(batch_size, latency_unit)
             avg_1st_token_latency = 'NA' if avg_1st_token_latency < 0 else f'{avg_1st_token_latency:.2f} ms/{latency_unit}'
             avg_2nd_tokens_latency = 'NA' if avg_2nd_tokens_latency < 0 else f'{avg_2nd_tokens_latency:.2f} ms/{latency_unit}'
             avg_2nd_token_tput = 'NA' if avg_2nd_tokens_latency == 'NA' else f'{avg_2nd_token_tput:.2f} {tput_unit}s/s'
             prefix = f'[ INFO ] [Average] P[{p_idx}]L[{loop_idx}]' if loop_idx != -1 else f'[ INFO ] [Average] P[{p_idx}]'
-            if is_text_gen is True:
+            if is_text_gen:
                 output_info = ''
                 if avg_input_size > 0:
                     output_info += f' Input token size: {avg_input_size},'
                 prompt_dict[p_idx] = '\n{}{} 1st token latency: {}, ' \
                     '2nd token latency: {}, 2nd tokens throughput: {}' \
                     .format(prefix, output_info, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
+            elif is_embed:
+                output_info = ''
+                if avg_input_size > 0:
+                    output_info += f' Input token size: {avg_input_size},'
+                prompt_dict[p_idx] = '\n{}{} 1st iteration latency: {}, ' \
+                    '2nd iteration latency: {}, 2nd iteration throughput: {}' \
+                    .format(prefix, output_info, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
+
             else:
                 prompt_dict[p_idx] = '\n{} 1st step of unet latency: {}, ' \
                     '2nd steps of unet latency: {}, 2nd steps throughput: {}' \
                     .format(prefix, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
 
 
-def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False, loop_idx=-1):
+def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False, is_embed=False, loop_idx=-1, latency_unit=None):
     if len(iter_data_list) <= 1:
         # 1st iteration is the warm-up iteration
         return
@@ -218,7 +236,7 @@ def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False
 
     if total_iters > 0:
         prompt_dict = {}
-        output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch_size, is_text_gen, loop_idx)
+        output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch_size, is_text_gen, is_embed, loop_idx, latency_unit)
         log.info('<<< Warm-up iteration is excluded. >>>')
         out_str = '[Total] Iterations: {}'.format(total_iters)
         for prompt_key in prompt_dict:

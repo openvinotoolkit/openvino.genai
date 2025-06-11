@@ -9,7 +9,7 @@ import llm_bench_utils.model_utils
 from openvino import get_version
 import torch
 import traceback
-from llm_bench_utils.memory_profile import MemConsumption
+from llm_bench_utils.memory_monitor import MemMonitorWrapper
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
@@ -17,9 +17,10 @@ import task.text_generation as bench_text
 import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
+import task.text_embeddings as bench_text_embed
 
 DEFAULT_TORCH_THREAD_NUMS = 16
-mem_consumption = MemConsumption()
+memory_monitor = MemMonitorWrapper()
 
 
 def num_iters_type(x):
@@ -85,6 +86,22 @@ def get_argprser():
         help='if the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2,'
         ' output the maximum memory consumption in all iterations.',
     )
+    parser.add_argument(
+        "--memory_consumption_delay",
+        default=None,
+        required=False,
+        type=float,
+        help="delay for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance."
+        "It is not recommended to run memory consumption and performance benchmarking in the same time",
+    )
+    parser.add_argument(
+        '-mc_dir',
+        '--memory_consumption_dir',
+        default=None,
+        required=False,
+        type=str,
+        help='Path to store memory consamption logs and chart.',
+    )
     parser.add_argument('-bs', '--batch_size', type=int, default=1, required=False, help='Batch size value')
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
     parser.add_argument(
@@ -122,6 +139,7 @@ def get_argprser():
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     parser.add_argument("--genai", action="store_true", help="[DEPRECATED] Use OpenVINO GenAI optimized pipelines for benchmarking. Enabled by default")
     parser.add_argument("--optimum", action="store_true", help="Use Optimum Intel pipelines for benchmarking")
+    parser.add_argument("--from_onnx", action="store_true", help="Allow initialize Optimum OpenVINO model using ONNX")
     parser.add_argument(
         "--lora",
         nargs='*',
@@ -130,7 +148,13 @@ def get_argprser():
         help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
     parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--lora_mode", choices=["auto", "fuse", "static", "static_rank", "dynamic"], help="LoRA adapters loading mode")
-    parser.add_argument("--use_cb", action="store_true", help="Use Continuous Batching inference mode")
+    parser.add_argument("--empty_lora", action="store_true", help="Inference without lora")
+    parser.add_argument(
+        "--use_cb",
+        action="store_true",
+        help='Deprecated, will be removed soon! Continues batching mode is used by default. '
+        'To switch to SPDA mode, please, set up {"ATTENTION_BACKEND": "SDPA"} in --load_config.'
+    )
     parser.add_argument("--cb_config", required=False, default=None, help="Path to file with Continuous Batching Scheduler settings or dict")
     parser.add_argument("--draft_model", required=False, default=None,
                         help="Path to draft model folder including IR files for Speculative decoding generation")
@@ -154,6 +178,10 @@ def get_argprser():
     parser.add_argument("--num_steps", type=int, required=False, help="Number of inference steps for image generation")
     parser.add_argument("--height", type=int, required=False, help="Generated image height. Applicable only for Image Generation.")
     parser.add_argument("--width", type=int, required=False, help="Generated image width. Applicable only for Image Generation.")
+    parser.add_argument(
+        "--static_reshape",
+        action="store_true",
+        help="Reshape image generation pipeline to specific width & height at pipline creation time. Applicable for Image Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,
@@ -162,6 +190,10 @@ def get_argprser():
         '--strength', type=float, default=None,
         help='Applicable for Image to imaage/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
     parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
+    parser.add_argument("--embedding_pooling", choices=["cls", "mean"], default=None, help="Pooling type CLS or MEAN. Applicable only for text embeddings")
+    parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
+    parser.add_argument("--embedding_max_length", type=int, default=None,
+                        help="Max length for text embeddings. Input text will be padded or truncated to specified value")
     return parser.parse_args()
 
 
@@ -171,7 +203,8 @@ CASE_TO_BENCH = {
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
     'speech2text': bench_speech.run_speech_2_txt_benchmark,
-    "vlm": bench_vlm.run_visual_language_generation_benchmark
+    "vlm": bench_vlm.run_visual_language_generation_benchmark,
+    "text_embed": bench_text_embed.run_text_embddings_benchmark
 }
 
 
@@ -221,21 +254,25 @@ def main():
                     if half_nums_of_torch_threads > DEFAULT_TORCH_THREAD_NUMS:
                         torch.set_num_threads(DEFAULT_TORCH_THREAD_NUMS)
                     else:
+                        half_nums_of_torch_threads = int(half_nums_of_torch_threads) if int(half_nums_of_torch_threads) else 1
                         torch.set_num_threads(int(half_nums_of_torch_threads))
             log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
     if args.memory_consumption:
-        mem_consumption.start_collect_mem_consumption_thread()
+        if args.memory_consumption_delay:
+            memory_monitor.interval = args.memory_consumption_delay
+        memory_monitor.create_monitors()
+        if args.memory_consumption_dir:
+            memory_monitor.set_dir(args.memory_consumption_dir)
     try:
         if model_args['use_case'] in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
                 model_path, framework, args.device, args.tokens_len, args.streaming, model_args,
-                args.num_iters, mem_consumption)
+                args.num_iters, memory_monitor)
         else:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
-                model_path, framework, args.device, model_args, args.num_iters,
-                mem_consumption)
+                model_path, framework, args.device, model_args, args.num_iters, memory_monitor)
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
@@ -276,7 +313,7 @@ def main():
         exit(1)
     finally:
         if args.memory_consumption:
-            mem_consumption.end_collect_mem_consumption_thread()
+            memory_monitor.stop()
 
 
 if __name__ == '__main__':

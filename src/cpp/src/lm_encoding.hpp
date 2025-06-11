@@ -3,7 +3,7 @@
 #include <optional>
 #include "openvino/genai/llm_pipeline.hpp"
 #include "visual_language/embedding_model.hpp"
-#include "sampler.hpp"
+#include "sampling/sampler.hpp"
 
 namespace ov {
 namespace genai {

@@ -10,43 +10,32 @@
 namespace ov::genai {
 
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config) {
-    bool do_resize = true;
-    bool do_center_crop = true;
-
     // Resize
     clip_image_u8 resized_image;
-    if (do_resize) {
-        int target_size = config.size_shortest_edge;
-        float scale = static_cast<float>(target_size) / std::min(image.nx, image.ny);
-        int new_width = static_cast<int>(image.nx * scale);
-        int new_height = static_cast<int>(image.ny * scale);
-        bicubic_resize(image, resized_image, new_width, new_height);
-    } else {
-        resized_image = image;
-    }
+    int target_size = config.size_shortest_edge;
+    float scale = static_cast<float>(target_size) / std::min(image.nx, image.ny);
+    int new_width = static_cast<int>(image.nx * scale);
+    int new_height = static_cast<int>(image.ny * scale);
+    bicubic_resize(image, resized_image, new_width, new_height);
 
     // Center crop
     clip_image_u8 cropped_image;
-    if (do_center_crop) {
-        int crop_height = config.crop_size_height;
-        int crop_width = config.crop_size_width;
-        int start_x = (resized_image.nx - crop_width) / 2;
-        int start_y = (resized_image.ny - crop_height) / 2;
+    int crop_height = config.crop_size_height;
+    int crop_width = config.crop_size_width;
+    int start_x = (resized_image.nx - crop_width) / 2;
+    int start_y = (resized_image.ny - crop_height) / 2;
 
-        cropped_image.nx = crop_width;
-        cropped_image.ny = crop_height;
-        cropped_image.buf.resize(3 * crop_width * crop_height);
+    cropped_image.nx = crop_width;
+    cropped_image.ny = crop_height;
+    cropped_image.buf.resize(3 * crop_width * crop_height);
 
-        for (int y = 0; y < crop_height; ++y) {
-            for (int x = 0; x < crop_width; ++x) {
-                for (int c = 0; c < 3; ++c) {
-                    cropped_image.buf[(y * crop_width + x) * 3 + c] = 
-                        resized_image.buf[((start_y + y) * resized_image.nx + (start_x + x)) * 3 + c];
-                }
+    for (int y = 0; y < crop_height; ++y) {
+        for (int x = 0; x < crop_width; ++x) {
+            for (int c = 0; c < 3; ++c) {
+                cropped_image.buf[(y * crop_width + x) * 3 + c] =
+                    resized_image.buf[((start_y + y) * resized_image.nx + (start_x + x)) * 3 + c];
             }
         }
-    } else {
-        cropped_image = resized_image;
     }
 
     // Normalize
@@ -114,27 +103,45 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
     return embeds;
 }
 
-ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
+    auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
 
-    std::string formatted_prompt;
     std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(images.size());
-
-    for (const auto& encoded_image : images) {
-        for (size_t idx = 0; idx < encoded_image.resized_source.get_shape().at(1); ++idx) {
-            formatted_prompt += image_token;
+    image_embeds.reserve(images_sequence.size());
+    size_t searched_pos = 0;
+    for (size_t new_image_id : images_sequence) {
+        image_embeds.push_back(images.at(new_image_id - base_id).resized_source);
+        std::string expanded_tag;
+        for (size_t idx = 0; idx < image_embeds.back().get_shape().at(1); ++idx) {
+            expanded_tag += image_token;
         }
-        formatted_prompt += "\n";
-        image_embeds.push_back(std::move(encoded_image.resized_source));
+        expanded_tag += '\n';
+        OPENVINO_ASSERT(searched_pos < unified_prompt.length());
+        searched_pos = unified_prompt.find(image_token, searched_pos);
+        OPENVINO_ASSERT(searched_pos != std::string::npos);
+        unified_prompt.replace(searched_pos, image_token.length(), expanded_tag);
+        searched_pos += expanded_tag.length();
     }
-    formatted_prompt += prompt;
+    return {std::move(unified_prompt), std::move(images_sequence)};
+}
 
-    ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
-    ov::Tensor text_embeds = m_embedding->infer(input_ids);
+ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    std::vector<ov::Tensor> image_embeds;
+    image_embeds.reserve(images_sequence.size());
+    for (size_t new_image_id : images_sequence) {
+        image_embeds.push_back(images.at(new_image_id).resized_source);
+    }
+
+    ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     if (images.empty()) {
-        return text_embeds;
+        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+        return inputs_embeds;
     }
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
@@ -145,18 +152,17 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& prompt, con
     return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 }
 
-ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(
-    const ov::Tensor& input_ids,
-    const ov::Tensor& text_embeds,
-    const std::vector<ov::Tensor>& image_embeds,
-    int64_t image_token_id) {
+ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids,
+                                                                      ov::Tensor& text_embeds,
+                                                                      const std::vector<ov::Tensor>& image_embeds,
+                                                                      int64_t image_token_id) {
     auto text_embeds_shape = text_embeds.get_shape();
     size_t text_embeds_seq_length = text_embeds_shape[1];
     size_t hidden_size = text_embeds_shape[2];
 
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
     int token_offset = text_embeds_seq_length - 1;
-    float* text_embeds_data = text_embeds.data<float>();
+    auto text_embeds_data = text_embeds.data<float>();
     const float* text_embeds_end = text_embeds_data + text_embeds_seq_length * hidden_size;
 
     // Copy in reversed order because a tokenizer may truncate the input removing the preffix.
@@ -177,7 +183,7 @@ ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(
         }
         size_t n_tokens = std::min(image_embed_it->get_shape().at(1), size_t(token_offset - changed_token_offset));
         size_t n_floats = n_tokens * hidden_size;
-        float* text_embeds_idx = text_embeds_data + (changed_token_offset + 1) * hidden_size;
+        auto text_embeds_idx = text_embeds_data + (changed_token_offset + 1) * hidden_size;
         OPENVINO_ASSERT(text_embeds_idx + n_floats <= text_embeds_end);
         std::copy_n(
             image_embed_it->data<const float>() + image_embed_it->get_size() - n_floats,
@@ -186,7 +192,11 @@ ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(
         );
         token_offset -= n_tokens + 1;
     }
-    return text_embeds;
+    // text_embeds is bound to infer request that can be used by another thread after leaving embeddings calculation scope
+    // so we need to return a copy to make sure data does not get corrupted 
+    ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+    std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+    return inputs_embeds;
 }
 
 } // namespace ov::genai

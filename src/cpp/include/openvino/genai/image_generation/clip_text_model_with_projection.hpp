@@ -3,100 +3,29 @@
 
 #pragma once
 
-#include <filesystem>
-#include <string>
-
-#include "openvino/genai/visibility.hpp"
-#include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/lora_adapter.hpp"
-
-#include "openvino/core/any.hpp"
-#include "openvino/runtime/tensor.hpp"
-#include "openvino/runtime/infer_request.hpp"
-#include "openvino/runtime/properties.hpp"
+#include "openvino/genai/image_generation/clip_text_model.hpp"
 
 namespace ov {
 namespace genai {
 
-class OPENVINO_GENAI_EXPORTS CLIPTextModelWithProjection {
+class CLIPTextModelWithProjection : public CLIPTextModel {
 public:
-    struct OPENVINO_GENAI_EXPORTS Config {
-        size_t max_position_embeddings = 77;
-        size_t num_hidden_layers = 32;
+    using CLIPTextModel::CLIPTextModel;
 
-        explicit Config(const std::filesystem::path& config_path);
-    };
+    std::shared_ptr<CLIPTextModel> clone() {
+        OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "CLIPTextModelWithProjection must have exactly one of m_model or m_request initialized");
 
-    explicit CLIPTextModelWithProjection(const std::filesystem::path& root_dir);
+        std::shared_ptr<CLIPTextModelWithProjection> cloned = std::make_shared<CLIPTextModelWithProjection>(*this);
 
-    CLIPTextModelWithProjection(const std::filesystem::path& root_dir,
-                                const std::string& device,
-                                const ov::AnyMap& properties = {});
+        if (m_model) {
+            cloned->m_model = m_model->clone();
+        } else {
+            cloned->m_request = m_request.get_compiled_model().create_infer_request();
+        }
 
-    CLIPTextModelWithProjection(const std::string& model,
-                                const Tensor& weights,
-                                const Config& config,
-                                const Tokenizer& clip_tokenizer);
-
-    CLIPTextModelWithProjection(const std::string& model,
-                                const Tensor& weights,
-                                const Config& config,
-                                const Tokenizer& clip_tokenizer,
-                                const std::string& device,
-                                const ov::AnyMap& properties = {});
-
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    CLIPTextModelWithProjection(const std::filesystem::path& root_dir,
-                                const std::string& device,
-                                Properties&&... properties)
-        : CLIPTextModelWithProjection(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
-
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    CLIPTextModelWithProjection(const std::string& model,
-                                const Tensor& weights,
-                                const Config& config,
-                                const Tokenizer& clip_tokenizer,
-                                const std::string& device,
-                                Properties&&... properties)
-        : CLIPTextModelWithProjection(model,
-                                      weights,
-                                      config,
-                                      clip_tokenizer,
-                                      device,
-                                      ov::AnyMap{std::forward<Properties>(properties)...}) { }
-
-    CLIPTextModelWithProjection(const CLIPTextModelWithProjection&);
-
-    const Config& get_config() const;
-
-    CLIPTextModelWithProjection& reshape(int batch_size);
-
-    CLIPTextModelWithProjection& compile(const std::string& device, const ov::AnyMap& properties = {});
-
-    template <typename... Properties>
-    ov::util::EnableIfAllStringAny<CLIPTextModelWithProjection&, Properties...> compile(
-            const std::string& device,
-            Properties&&... properties) {
-        return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
+        return cloned;
     }
 
-    void set_adapters(const std::optional<AdapterConfig>& adapters);
-
-    ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance);
-
-    ov::Tensor get_output_tensor(const size_t idx);
-
-private:
-    Config m_config;
-    AdapterController m_adapter_controller;
-    ov::InferRequest m_request;
-    std::shared_ptr<ov::Model> m_model;
-
-    Tokenizer m_clip_tokenizer;
-
-    bool m_slice_batch1_output = false;
 };
 
 } // namespace genai

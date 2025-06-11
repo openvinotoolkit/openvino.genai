@@ -11,6 +11,8 @@ namespace ov::genai {
 
 namespace {
 
+std::string NATIVE_TAG = "<image>";
+
 std::vector<clip_image_u8> split_image_internvl(
     const clip_image_u8& image,
     int image_size,
@@ -226,36 +228,55 @@ InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
 
-ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
+
+std::pair<std::string, std::vector<size_t>> InputsEmbedderInternVLChat::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+    auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG + '\n', base_id, images.size());
+    
     std::string image_start_token = m_vlm_config.image_start_token;
     std::string image_context_token = m_vlm_config.image_context_token;
     std::string image_end_token = m_vlm_config.image_end_token;
-
-    std::string formatted_prompt;
     std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(images.size());
-    
-    for (const auto& encoded_image : images) {
-        ov::Tensor single_image_embeds = encoded_image.resized_source;
+    image_embeds.reserve(images_sequence.size());
+    size_t searched_pos = 0;
+    for (size_t new_image_id : images_sequence) {
+        image_embeds.push_back(images.at(new_image_id - base_id).resized_source);
 
-        const size_t num_patches = single_image_embeds.get_shape().at(0);
-        const size_t num_image_tokens = single_image_embeds.get_shape().at(1);
+        const size_t num_patches = image_embeds.back().get_shape().at(0);
+        const size_t num_image_tokens = image_embeds.back().get_shape().at(1);
         
-        formatted_prompt += image_start_token;
-        for (int i = 0; i < num_patches * num_image_tokens; ++i) {
-            formatted_prompt += image_context_token;
+        std::string expanded_tag{image_start_token};
+        for (size_t idx = 0; idx < num_patches * num_image_tokens; ++idx) {
+            expanded_tag += image_context_token;
         }
-        formatted_prompt += image_end_token + "\n";
-
-        image_embeds.push_back(std::move(single_image_embeds));
+        expanded_tag += image_end_token;
+        OPENVINO_ASSERT(searched_pos < unified_prompt.length());
+        searched_pos = unified_prompt.find(NATIVE_TAG, searched_pos);
+        OPENVINO_ASSERT(searched_pos != std::string::npos);
+        unified_prompt.replace(searched_pos, NATIVE_TAG.length(), expanded_tag);
+        searched_pos += expanded_tag.length();
     }
-    formatted_prompt += prompt;
 
-    ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
-    ov::Tensor text_embeds = m_embedding->infer(input_ids);
+    return {std::move(unified_prompt), std::move(images_sequence)};
+}
+
+ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    std::vector<ov::Tensor> image_embeds;
+    image_embeds.reserve(images_sequence.size());
+    size_t searched_pos = 0;
+    for (size_t new_image_id : images_sequence) {
+        image_embeds.push_back(images.at(new_image_id).resized_source);
+    }
+    std::string image_context_token = m_vlm_config.image_context_token;
+
+    ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     if (images.empty()) {
-        return text_embeds;
+        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+        return inputs_embeds;
     }
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_image_context_token = m_tokenizer.encode(image_context_token, ov::genai::add_special_tokens(false)).input_ids;

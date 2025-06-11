@@ -15,7 +15,11 @@ namespace {
 // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
 std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
 
-ImageSize smart_resize_qwen2vl(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
+} // namespace
+
+namespace qwen2_vl_utils {
+
+ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
     if (height < factor || width < factor) {
         OPENVINO_THROW("Height (" + std::to_string(height) + ") and width (" + std::to_string(width) + ") must be greater than factor (" + std::to_string(factor) + ")");
     }
@@ -39,7 +43,7 @@ ImageSize smart_resize_qwen2vl(size_t height, size_t width, size_t factor, size_
     return ImageSize{h_bar, w_bar};
 }
 
-ov::Tensor reshape_image_patches_qwen2vl(
+ov::Tensor reshape_image_patches(
     const ov::Tensor& patches,
     const size_t grid_t,
     const size_t grid_h,
@@ -102,7 +106,7 @@ ov::Tensor reshape_image_patches_qwen2vl(
     return reshaped_patches;
 }
     
-ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
+ov::Tensor transpose_image_patches(const ov::Tensor& reshaped_patches) {
     // Input dimensions order:  [0,1,2,3,4,5,6,7,8]
     // Output dimensions order: [0,3,6,4,7,2,1,5,8]
     auto input_shape = reshaped_patches.get_shape();
@@ -165,9 +169,128 @@ ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
     }
     
     return transposed_patches;
-}    
+}
 
-} // namespace
+std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_embeds_and_grid_thw(
+    const std::vector<EncodedImage>& encoded_images,
+    const std::vector<size_t>& images_sequence
+) {
+    std::vector<ov::Tensor> image_embeds;
+    std::vector<std::array<size_t, 3>> images_grid_thw;
+    image_embeds.reserve(encoded_images.size());
+    images_grid_thw.reserve(encoded_images.size());
+    
+    for (const auto& encoded_image : encoded_images) {
+        ov::Tensor single_image_embeds = encoded_image.resized_source;
+        image_embeds.push_back(std::move(single_image_embeds));
+
+        size_t grid_t = 1;
+        size_t grid_h = encoded_image.resized_source_size.height;
+        size_t grid_w = encoded_image.resized_source_size.width;
+        images_grid_thw.push_back({grid_t, grid_h, grid_w});
+    }
+
+    std::vector<ov::Tensor> reordered_image_embeds;
+    std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
+    for (size_t new_image_id : images_sequence) {
+        reordered_image_embeds.push_back(image_embeds.at(new_image_id));
+        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id));
+    }
+
+    return {reordered_image_embeds, reordered_images_grid_thw};
+}
+    
+ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw) {
+    // Calculate cumulative sequence lengths for attention mask
+    std::vector<int32_t> cu_seqlens;
+    cu_seqlens.push_back(0);
+    int32_t cumsum = 0;
+    for (const auto& grid_thw : reordered_images_grid_thw) {
+        size_t slice_len = grid_thw.at(1) * grid_thw.at(2);
+        for (size_t t = 0; t < grid_thw.at(0); ++t) {
+            cumsum += slice_len;
+            cu_seqlens.push_back(cumsum);
+        }
+    }
+
+    // Create attention mask for vision embeddings merger model
+    size_t hidden_states_size = cumsum;
+    ov::Tensor attention_mask{ov::element::f32, {1, hidden_states_size, hidden_states_size}};
+    float* attention_mask_data = attention_mask.data<float>();
+    std::fill_n(attention_mask_data, attention_mask.get_size(), -std::numeric_limits<float>::infinity());
+
+    for (size_t i = 1; i < cu_seqlens.size(); ++i) {
+        size_t start = cu_seqlens[i-1];
+        size_t end = cu_seqlens[i];
+        for (size_t row = start; row < end; ++row) {
+            for (size_t col = start; col < end; ++col) {
+                attention_mask_data[row * hidden_states_size + col] = 0.0f;
+            }
+        }
+    }
+    return attention_mask;
+}
+
+ov::Tensor concatenate_image_embeds(const std::vector<ov::Tensor>& reordered_image_embeds) {
+    ov::Tensor concatenated_embeds;
+    if (reordered_image_embeds.size() == 1) {
+        concatenated_embeds = reordered_image_embeds.at(0);
+    } else {
+        size_t total_length = 0;
+        for (const auto& embed : reordered_image_embeds) {
+            total_length += embed.get_shape().at(0);
+        }
+        size_t hidden_dim = reordered_image_embeds.at(0).get_shape().at(1);
+        
+        concatenated_embeds = ov::Tensor(reordered_image_embeds.at(0).get_element_type(), {total_length, hidden_dim});
+        float* concat_data = concatenated_embeds.data<float>();
+        
+        size_t offset = 0;
+        for (const auto& embed : reordered_image_embeds) {
+            size_t embed_size = embed.get_shape().at(0) * embed.get_shape().at(1);
+            std::memcpy(concat_data + offset, embed.data(), embed.get_byte_size());
+            offset += embed_size;
+        }
+    }
+    return concatenated_embeds;
+}
+
+ov::Tensor merge_text_and_image_embeddings(
+    const ov::Tensor& input_ids,
+    const ov::Tensor& text_embeds, 
+    const ov::Tensor& processed_vision_embeds,
+    const int64_t image_pad_token_id
+) {
+    ov::Tensor merged_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+    std::memcpy(merged_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+
+    auto text_embeds_shape = text_embeds.get_shape();
+    size_t batch_size = text_embeds_shape.at(0);
+    size_t seq_length = text_embeds_shape.at(1);
+    size_t hidden_size = text_embeds_shape.at(2);
+
+    const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    float* merged_embeds_data = merged_embeds.data<float>();
+    const float* vision_embeds_data = processed_vision_embeds.data<const float>();
+
+    size_t vision_embed_idx = 0;
+    for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+        for (size_t seq_idx = 0; seq_idx < seq_length; ++seq_idx) {
+            size_t flat_idx = batch_idx * seq_length + seq_idx;
+            if (input_ids_data[flat_idx] == image_pad_token_id) {
+                std::copy_n(
+                    vision_embeds_data + vision_embed_idx * hidden_size,
+                    hidden_size,
+                    merged_embeds_data + flat_idx * hidden_size
+                );
+                ++vision_embed_idx;
+            }
+        }
+    }
+    return merged_embeds;
+}
+    
+} // namespace qwen2vl_utils
 
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
@@ -178,7 +301,7 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     auto original_height = image_shape.at(1);
     auto original_width = image_shape.at(2);
 
-    ImageSize target_image_size = smart_resize_qwen2vl(
+    ImageSize target_image_size = qwen2_vl_utils::smart_resize(
         original_height, 
         original_width, 
         config.patch_size * config.merge_size,
@@ -220,10 +343,10 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     size_t grid_h = target_image_size.height / config.patch_size;
     size_t grid_w = target_image_size.width / config.patch_size;
 
-    ov::Tensor reshaped_patches = reshape_image_patches_qwen2vl(
+    ov::Tensor reshaped_patches = qwen2_vl_utils::reshape_image_patches(
         patches, grid_t, grid_h, grid_w, channel, config.temporal_patch_size, config.patch_size, config.merge_size
     );
-    ov::Tensor transposed_patches = transpose_image_patches_qwen2vl(reshaped_patches);
+    ov::Tensor transposed_patches = qwen2_vl_utils::transpose_image_patches(reshaped_patches);
 
     ov::Shape flattened_patches_shape{
         grid_t * grid_h * grid_w,
@@ -281,27 +404,20 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         });
 }
 
-ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics) {
-    auto [unified_prompt, images_sequence] = normalize_prompt(prompt, NATIVE_TAG, NATIVE_TAG, m_image_id, images.size());
-    std::vector<ov::Tensor> image_embeds;
-    std::vector<std::array<size_t, 3>> images_grid_thw;
-    image_embeds.reserve(images.size());
+std::pair<std::string, std::vector<size_t>> InputsEmbedderQwen2VL::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+    auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
+        std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
     
     for (const auto& encoded_image : images) {
-        ov::Tensor single_image_embeds = encoded_image.resized_source;
-        image_embeds.push_back(std::move(single_image_embeds));
-
         size_t grid_t = 1;
         size_t grid_h = encoded_image.resized_source_size.height;
         size_t grid_w = encoded_image.resized_source_size.width;
         images_grid_thw.push_back({grid_t, grid_h, grid_w});
     }
 
-    std::vector<ov::Tensor> reordered_image_embeds;
-    std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
     for (size_t new_image_id : images_sequence) {
-        auto [grid_t, grid_h, grid_w] = images_grid_thw.at(new_image_id - m_image_id);
+        auto [grid_t, grid_h, grid_w] = images_grid_thw.at(new_image_id - base_id);
         size_t merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
         size_t num_image_pad_tokens = grid_t * grid_h * grid_w / merge_length;
 
@@ -311,13 +427,24 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
         }
         expanded_tag += m_vlm_config.vision_end_token;
         unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
-        reordered_image_embeds.push_back(image_embeds.at(new_image_id - m_image_id));
-        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id - m_image_id));
     }
-    m_image_id = images_sequence.empty() ? m_image_id : *std::max_element(images_sequence.begin(), images_sequence.end()) + 1;
+    return {std::move(unified_prompt), std::move(images_sequence)};
+}
+
+ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    std::vector<std::array<size_t, 3>> images_grid_thw;
+    images_grid_thw.reserve(images.size());
+    for (const auto& encoded_image : images) {
+        size_t grid_t = 1;
+        size_t grid_h = encoded_image.resized_source_size.height;
+        size_t grid_w = encoded_image.resized_source_size.width;
+        images_grid_thw.push_back({grid_t, grid_h, grid_w});
+    }
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
-    ov::Tensor text_embeds = m_embedding->infer(input_ids);
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_vision_start_token = m_tokenizer.encode(m_vlm_config.vision_start_token, ov::genai::add_special_tokens(false)).input_ids;
@@ -328,19 +455,23 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, c
     int64_t vision_start_token_id = encoded_vision_start_token.data<int64_t>()[encoded_vision_start_token.get_size() - 1];
     int64_t image_pad_token_id = encoded_image_pad_token.data<int64_t>()[encoded_image_pad_token.get_size() - 1];
 
-    m_position_ids = create_position_ids(input_ids, images_grid_thw, vision_start_token_id);
+    m_position_ids = create_position_ids(input_ids, images_grid_thw, images_sequence, 0, vision_start_token_id);
 
     int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
     m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
 
-    if (!m_is_chat_conversation) {
-        m_image_id = 0;
-    }
     if (images.empty()) {
-        return text_embeds;
+        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+        return inputs_embeds;
     }
+    ov::Tensor merged_image_embeddings_tensor;
+    if (recalculate_merged_embeddings) {
+        m_merged_image_embeddings = run_image_embeddings_merger(images, images_sequence);
+    }
+    merged_image_embeddings_tensor = m_merged_image_embeddings;
 
-    return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, reordered_image_embeds, reordered_images_grid_thw, image_pad_token_id);
+    return qwen2_vl_utils::merge_text_and_image_embeddings(input_ids, text_embeds, merged_image_embeddings_tensor, image_pad_token_id);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
@@ -366,108 +497,33 @@ void InputsEmbedderQwen2VL::finish_chat() {
     IInputsEmbedder::finish_chat();
     m_position_ids = ov::Tensor();
     m_rope_delta = 0;
+    m_merged_image_embeddings = ov::Tensor();
 }
 
-bool InputsEmbedderQwen2VL::prompt_has_image_tag(const std::string& prompt) const {
-    return IInputsEmbedder::prompt_has_image_tag(prompt) || prompt.find(NATIVE_TAG) != std::string::npos;
-}
+ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(
+    const std::vector<EncodedImage>& images,
+    const std::vector<size_t>& images_sequence
+) {
+    auto [reordered_image_embeds, reordered_images_grid_thw] = qwen2_vl_utils::reorder_image_embeds_and_grid_thw(images, images_sequence);
 
-ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
-    const ov::Tensor& input_ids,
-    const ov::Tensor& text_embeds,
-    const std::vector<ov::Tensor>& image_embeds,
-    const std::vector<std::array<size_t, 3>> images_grid_thw,
-    const int64_t image_pad_token_id) {
-    // Calculate cumulative sequence lengths for attention mask
-    std::vector<int32_t> cu_seqlens;
-    cu_seqlens.push_back(0);
-    int32_t cumsum = 0;
-    for (const auto& grid_thw : images_grid_thw) {
-        size_t slice_len = grid_thw.at(1) * grid_thw.at(2);
-        for (size_t t = 0; t < grid_thw.at(0); ++t) {
-            cumsum += slice_len;
-            cu_seqlens.push_back(cumsum);
-        }
-    }
-
-    // Create attention mask for vision embeddings merger model
-    size_t hidden_states_size = cumsum;
-    ov::Tensor attention_mask{ov::element::f32, {1, hidden_states_size, hidden_states_size}};
-    float* attention_mask_data = attention_mask.data<float>();
-    std::fill_n(attention_mask_data, attention_mask.get_size(), -std::numeric_limits<float>::infinity());
-
-    for (size_t i = 1; i < cu_seqlens.size(); ++i) {
-        size_t start = cu_seqlens[i-1];
-        size_t end = cu_seqlens[i];
-        for (size_t row = start; row < end; ++row) {
-            for (size_t col = start; col < end; ++col) {
-                attention_mask_data[row * hidden_states_size + col] = 0.0f;
-            }
-        }
-    }
-
-    // Concatenate image embeddings 
-    ov::Tensor concatenated_images;
-    if (image_embeds.size() == 1) {
-        concatenated_images = image_embeds.at(0);
-    } else {
-        size_t total_length = 0;
-        for (const auto& embed : image_embeds) {
-            total_length += embed.get_shape().at(0);
-        }
-        size_t hidden_dim = image_embeds.at(0).get_shape().at(1);
-        
-        concatenated_images = ov::Tensor(image_embeds.at(0).get_element_type(), {total_length, hidden_dim});
-        float* concat_data = concatenated_images.data<float>();
-        
-        size_t offset = 0;
-        for (const auto& embed : image_embeds) {
-            size_t embed_size = embed.get_shape().at(0) * embed.get_shape().at(1);
-            std::memcpy(concat_data + offset, embed.data(), embed.get_byte_size());
-            offset += embed_size;
-        }
-    }
-
-    ov::Tensor rotary_pos_emb = get_rotary_pos_emb(images_grid_thw);
+    ov::Tensor concatenated_embeds = qwen2_vl_utils::concatenate_image_embeds(reordered_image_embeds);
+    ov::Tensor attention_mask = qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw);
+    ov::Tensor rotary_pos_emb = get_rotary_pos_emb(reordered_images_grid_thw);
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
-    vision_embeddings_merger.set_tensor("hidden_states", concatenated_images);
+    vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
     vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
     vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
     vision_embeddings_merger.infer();
     ov::Tensor processed_vision_embeds = vision_embeddings_merger.get_output_tensor();
 
-    ov::Tensor merged_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
-    std::memcpy(merged_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
-
-    auto text_embeds_shape = text_embeds.get_shape();
-    size_t batch_size = text_embeds_shape.at(0);
-    size_t seq_length = text_embeds_shape.at(1);
-    size_t hidden_size = text_embeds_shape.at(2);
-
-    const int64_t* input_ids_data = input_ids.data<const int64_t>();
-    float* merged_embeds_data = merged_embeds.data<float>();
-    const float* vision_embeds_data = processed_vision_embeds.data<const float>();
-
-    size_t vision_embed_idx = 0;
-    for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-        for (size_t seq_idx = 0; seq_idx < seq_length; ++seq_idx) {
-            size_t flat_idx = batch_idx * seq_length + seq_idx;
-            if (input_ids_data[flat_idx] == image_pad_token_id) {
-                std::copy_n(
-                    vision_embeds_data + vision_embed_idx * hidden_size,
-                    hidden_size,
-                    merged_embeds_data + flat_idx * hidden_size
-                );
-                ++vision_embed_idx;
-            }
-        }
-    }
-    return merged_embeds;
+    ov::Tensor res = ov::Tensor(processed_vision_embeds.get_element_type(), processed_vision_embeds.get_shape());
+    std::memcpy(res.data(), processed_vision_embeds.data(), processed_vision_embeds.get_byte_size());
+    return res;
 }
 
-ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {  
+ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {
     const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
 
     std::vector<std::vector<size_t>> all_pos_ids;
@@ -574,8 +630,15 @@ ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::arra
 ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
     const ov::Tensor& input_ids_tensor,
     const std::vector<std::array<size_t, 3>>& images_grid_thw,
+    const std::vector<size_t>& images_sequence,
+    const size_t image_id,
     const int64_t vision_start_token_id) {
     const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
+
+    std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
+    for (size_t new_image_id : images_sequence) {
+        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id - image_id));
+    }
     
     const int64_t* input_ids = input_ids_tensor.data<int64_t>();
     size_t batch_size = input_ids_tensor.get_shape().at(0);
@@ -616,8 +679,8 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
         ed++;
 
         // Process image token with grid
-        if (grid_idx < images_grid_thw.size()) {
-            const auto& grid = images_grid_thw.at(grid_idx);
+        if (grid_idx < reordered_images_grid_thw.size()) {
+            const auto& grid = reordered_images_grid_thw.at(grid_idx);
             size_t llm_grid_h = grid.at(1) / spatial_merge_size;
             size_t llm_grid_w = grid.at(2) / spatial_merge_size;
             size_t ed_image = ed + llm_grid_h * llm_grid_w;

@@ -90,7 +90,7 @@ describe('generation parameters validation', () => {
       async () => await pipeline.generate(),
       {
         name: 'Error',
-        message: 'Prompt must be a string',
+        message: 'Prompt must be a string or string[]',
       },
     );
   });
@@ -106,7 +106,7 @@ describe('generation parameters validation', () => {
         async () => await pipeline.generate('prompt', {}, false),
         {
           name: 'Error',
-          message: 'Generation callback must be a function',
+          message: 'Callback must be a function',
         },
       );
     });
@@ -146,5 +146,15 @@ describe('generation parameters validation', () => {
     await pipeline.generate('prompt', { max_new_tokens: 1 }, (chunk) => {
       assert.strictEqual(typeof chunk, 'string');
     });
+  });
+
+  it('should convert Set', async () => {
+    const generationConfig = {
+      'max_new_tokens': 100,
+      'stop_strings': new Set(['1', '2', '3', '4', '5']),
+      'include_stop_str_in_output': true,
+    };
+    const result = await pipeline.generate('continue: 1 2 3', generationConfig);
+    assert.strictEqual(typeof result, 'string');
   });
 });

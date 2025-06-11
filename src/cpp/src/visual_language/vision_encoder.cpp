@@ -6,6 +6,7 @@
 
 
 #include "visual_language/qwen2vl/classes.hpp"
+#include "visual_language/qwen2_5_vl/classes.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
 #include "visual_language/llava/classes.hpp"
@@ -26,12 +27,13 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
 }
 
 VisionEncoder::VisionEncoder(
-    const std::string& model,
-    const ov::Tensor& weights,
+    const ModelsMap& models_map,
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) {
-    auto compiled_model = utils::singleton_core().compile_model(model, weights, device, device_config);
+    const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_embeddings").first;
+    const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_embeddings").second;
+    auto compiled_model = utils::singleton_core().compile_model(vision_encoder_model, vision_encoder_weights, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -58,30 +60,33 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderPhi3V>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN2_VL) {
         return std::make_shared<VisionEncoderQwen2VL>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::QWEN2_5_VL) {
+        return std::make_shared<VisionEncoderQwen2_5_VL>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
 }
 
 VisionEncoder::Ptr VisionEncoder::create(
-    const std::string& model,
-    const ov::Tensor& weights,
+    const ModelsMap& models_map,
     const std::filesystem::path& config_dir_path,
     const VLMModelType model_type,
     const std::string& device,
     const ov::AnyMap device_config) {
     if (model_type == VLMModelType::MINICPM) {
-        return std::make_shared<VisionEncoderMiniCPM>(model, weights, config_dir_path, device, device_config);
+        return std::make_shared<VisionEncoderMiniCPM>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::LLAVA) {
-        return std::make_shared<VisionEncoderLLaVA>(model, weights, config_dir_path, device, device_config);
+        return std::make_shared<VisionEncoderLLaVA>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::LLAVA_NEXT) {
-        return std::make_shared<VisionEncoderLLaVANext>(model, weights, config_dir_path, device, device_config);
+        return std::make_shared<VisionEncoderLLaVANext>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::INTERNVL_CHAT) {
-        return std::make_shared<VisionEncoderInternVLChat>(model, weights, config_dir_path, device, device_config);
+        return std::make_shared<VisionEncoderInternVLChat>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::PHI3_V) {
-        return std::make_shared<VisionEncoderPhi3V>(model, weights, config_dir_path, device, device_config);
+        return std::make_shared<VisionEncoderPhi3V>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN2_VL) {
-        return std::make_shared<VisionEncoderQwen2VL>(model, weights, config_dir_path, device, device_config);
+        return std::make_shared<VisionEncoderQwen2VL>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::QWEN2_5_VL) {
+        return std::make_shared<VisionEncoderQwen2_5_VL>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }

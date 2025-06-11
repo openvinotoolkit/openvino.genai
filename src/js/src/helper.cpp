@@ -42,9 +42,63 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
             return ov::Any(num.DoubleValue());
         }
     } else if (value.IsBoolean()) {
-        return ov::Any(value.ToBoolean());
+        return ov::Any(static_cast<bool>(value.ToBoolean()));
+    } else if (value.IsArray()) {
+        return ov::Any(js_to_cpp<std::vector<std::string>>(env, value));
+    } else if (value.IsObject()) {
+        if (value.ToString().Utf8Value() == "[object Set]") {
+            try {
+                // try to cast to set of strings
+                auto object_value = value.As<Napi::Object>();
+                auto values = object_value.Get("values").As<Napi::Function>();
+                auto iterator = values.Call(object_value, {}).As<Napi::Object>();
+                auto next = iterator.Get("next").As<Napi::Function>();
+                auto size = object_value.Get("size").As<Napi::Number>().Int32Value();
+
+                std::set<std::string> set;
+                for (uint32_t i = 0; i < size; ++i) {
+                    auto item = next.Call(iterator, {}).As<Napi::Object>();
+                    set.insert(item.Get("value").As<Napi::String>().Utf8Value());
+                }
+
+                return ov::Any(set);
+            } catch (std::exception& e) {
+                std::cerr << "Cannot convert to set: " << e.what() << std::endl;
+            }
+        }
+    }
+    OPENVINO_THROW("Cannot convert to ov::Any");
+}
+
+template <>
+std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsArray()) {
+        auto array = value.As<Napi::Array>();
+        size_t arrayLength = array.Length();
+
+        std::vector<std::string> nativeArray;
+        for (uint32_t i = 0; i < arrayLength; ++i) {
+            Napi::Value arrayItem = array[i];
+            if (!arrayItem.IsString()) {
+                OPENVINO_THROW(std::string("Passed array must contain only strings."));
+            }
+            nativeArray.push_back(arrayItem.As<Napi::String>().Utf8Value());
+        }
+        return nativeArray;
+
     } else {
-        OPENVINO_THROW("Cannot convert to ov::Any");
+        OPENVINO_THROW("Passed argument must be of type Array or TypedArray.");
+    }
+}
+
+template <>
+ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsString()) {
+        return value.As<Napi::String>().Utf8Value();
+    } else if (value.IsArray()) {
+        return js_to_cpp<std::vector<std::string>>(env, value);
+    } else {
+        OPENVINO_THROW("Passed argument must be a string or an array of strings");
     }
 }
 

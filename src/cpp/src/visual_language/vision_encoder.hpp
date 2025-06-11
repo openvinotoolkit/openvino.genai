@@ -5,6 +5,7 @@
 #include <memory>
 #include "openvino/runtime/infer_request.hpp"
 
+#include "openvino/genai/common_types.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
 #include "circular_buffer_queue.hpp"
@@ -18,6 +19,12 @@ struct ImageSize {
     size_t width;
 };
 
+
+struct ResampledImage {
+    ov::Tensor resampled_source;
+    std::vector<std::vector<ov::Tensor>> vision_embed_tensors;
+};
+
 /// @brief Embeddings of a given image. The number of slices is no
 /// greater than ProcessorConfig's max_slice_nums.
 struct EncodedImage {
@@ -29,15 +36,12 @@ struct EncodedImage {
     /// @brief A size of an image used to compute embeddings for
     /// divided by ProcessorConfig's patch_size.
     ImageSize resized_source_size;
-    /// @brief Embeddings of images obtained from a source image by
-    /// slicing at no more than max_slice_nums pieces and resizing.
-    /// The tensor's shape is
-    /// [slice_y, slice_x, number_of_embeddings, embedding_size].
-    /// slices_sizes.size() == slice_y * slice_x.
-    ov::Tensor slices;
-    /// @brief A size of images used to compute embeddings
-    /// stored in slices member divided by ProcessorConfig's patch_size.
-    ImageSize slices_size;
+
+    /// @brief Shape of embeddings of images obtained from a source image by slicing 
+    /// at no more than max_slice_nums pieces and resizing,
+    /// This shape is [slice_y, slice_x, number_of_embeddings, embedding_size].
+    /// Used only by MiniCPM
+    ov::Shape slices_shape;
 
     /// @brief Patches grid after llava_next preprocessing.
     /// Format: [num_patches_height, num_patches_width]
@@ -45,6 +49,12 @@ struct EncodedImage {
     
     /// @brief Original size of the image
     ImageSize original_image_size;
+
+    /// @brief Images features projection, used only by Phi3.
+    ov::Tensor images_features_projection;
+  
+    /// @brief Resampled image, used only by MiniCPM.
+    ResampledImage resampled_image;
 };
 
 /// @brief A class used to infer embeddings of an image using
@@ -67,16 +77,14 @@ public:
         const ov::AnyMap properties = {});
 
     /// @brief Constructs the encoder from models map.
-    /// @param model Model IR as string (openvino_vision_embeddings_model.xml)
-    /// @param weights Model weights as tensor (openvino_vision_embeddings_model.bin)
+    /// @param models_map Models map
     /// @param config_dir_path A path to directory containing preprocessor_config.json.
     /// @param model_type A type of VLM model.
     /// @param device A device to compile the encoder for.
     /// @param properties A config to be passed to
     /// ov::Core::compile_model().
     static VisionEncoder::Ptr create(
-        const std::string& model,
-        const ov::Tensor& weights,
+        const ModelsMap& models_map,
         const std::filesystem::path& config_dir_path,
         const VLMModelType model_type,
         const std::string& device,
@@ -110,8 +118,7 @@ public:
         const ov::AnyMap properties);
 
     VisionEncoder(
-        const std::string& model,
-        const ov::Tensor& weights,
+        const ModelsMap& models_map,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap properties);

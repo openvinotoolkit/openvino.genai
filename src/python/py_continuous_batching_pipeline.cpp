@@ -9,7 +9,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 
 #include "py_utils.hpp"
 
@@ -48,6 +48,11 @@ auto cache_eviction_config_docstring = R"(
       Set this to false if your model has different RoPE scheme from the one used in the
       original llama model and you experience accuracy issues with cache eviction enabled.
     :type apply_rotation: bool
+
+    :param snapkv_window_size The size of the importance score aggregation window (in token positions from the end of the prompt) for
+      computing initial importance scores at the beginning of the generation phase for purposes of eviction,
+      following the SnapKV article approach (https://arxiv.org/abs/2404.14469).
+    :type snapkv_window_size int
 )";
 
 auto scheduler_config_docstring = R"(
@@ -65,10 +70,10 @@ auto scheduler_config_docstring = R"(
     max_num_seqs:               max number of scheduled sequences (you can think of it as "max batch size").
     enable_prefix_caching:      Enable caching of KV-blocks.
         When turned on all previously calculated KV-caches are kept in memory for future usages.
-        KV-caches can be rewritten if KV-cache limit is reached, but blocks are not released.
+        KV-caches can be overridden if KV-cache limit is reached, but blocks are not released.
         This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
-        When turend off only KV-cache required for batch calculation is kept in memory and
-        when a sequence has finished genegartion its cache is released.
+        When turned off only KV-cache required for batch calculation is kept in memory and
+        when a sequence has finished generation its cache is released.
 )";
 
 auto generation_result_docstring = R"(
@@ -226,11 +231,14 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .value("NORM_SUM", AggregationMode::NORM_SUM);
 
     py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
-            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode, bool apply_rotation) {
-                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode, apply_rotation}; }),
-                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"), py::arg("apply_rotation") = false)
+            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode, bool apply_rotation,
+                            size_t snapkv_window_size) {
+                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode, apply_rotation, snapkv_window_size}; }),
+                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"), py::arg("apply_rotation") = false,
+                 py::arg("snapkv_window_size") = 8)
             .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode)
             .def_readwrite("apply_rotation", &CacheEvictionConfig::apply_rotation)
+            .def_readwrite("snapkv_window_size", &CacheEvictionConfig::snapkv_window_size)
             .def("get_start_size", &CacheEvictionConfig::get_start_size)
             .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
             .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)

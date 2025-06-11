@@ -6,8 +6,8 @@ import { LanguageTabs, TabItemCpp, TabItemPython } from '@site/src/components/La
 
 import ImagePlaceholder from '@site/static/img/image-generation-placeholder.webp';
 
-import CodeExampleCpp from '@site/docs/use-cases/1-LLM-pipeline/_sections/_run_model/_code_example_cpp.mdx';
-import CodeExamplePython from '@site/docs/use-cases/1-LLM-pipeline/_sections/_run_model/_code_example_python.mdx';
+import CodeExampleCpp from '@site/docs/use-cases/text-generation/_sections/_run_model/_code_example_cpp.mdx';
+import CodeExamplePython from '@site/docs/use-cases/text-generation/_sections/_run_model/_code_example_python.mdx';
 
 // TODO Consider moving to mdx
 const FEATURES = [
@@ -21,7 +21,7 @@ export const TextGeneration = () => {
   return (
     <Section.Container>
       <Section.Column>
-        <Section.Title>Text generation API</Section.Title>
+        <Section.Title>Text Generation API</Section.Title>
         <Section.Description>
           An easy-to-use API for text generation can work with an LLM model to create chatbots, AI
           assistants like financial helpers, and AI tools like legal contract creators.
@@ -40,8 +40,8 @@ export const TextGeneration = () => {
           </TabItemCpp>
         </LanguageTabs>
         <hr />
-        <ExploreCodeSamples link={'docs/category/samples'} />
-        <GoToDocumentation link={'docs/use-cases/LLM-pipeline/'} />
+        <ExploreCodeSamples link="docs/samples" />
+        <GoToDocumentation link="docs/use-cases/text-generation/" />
       </Section.Column>
     </Section.Container>
   );

@@ -170,18 +170,24 @@ void Image2ImagePipeline::set_scheduler(std::shared_ptr<Scheduler> scheduler) {
 }
 
 void Image2ImagePipeline::reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) {
+    auto start_time = std::chrono::steady_clock::now();
     m_impl->reshape(num_images_per_prompt, height, width, guidance_scale);
+    m_impl->save_load_time(start_time);
 }
 
 void Image2ImagePipeline::compile(const std::string& device, const ov::AnyMap& properties) {
+    auto start_time = std::chrono::steady_clock::now();
     m_impl->compile(device, properties);
+    m_impl->save_load_time(start_time);
 }
 
 void Image2ImagePipeline::compile(const std::string& text_encode_device,
                                   const std::string& denoise_device,
                                   const std::string& vae_device,
                                   const ov::AnyMap& properties) {
+    auto start_time = std::chrono::steady_clock::now();
     m_impl->compile(text_encode_device, denoise_device, vae_device, properties);
+    m_impl->save_load_time(start_time);
 }
 
 ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties) {
@@ -195,6 +201,11 @@ ov::Tensor Image2ImagePipeline::decode(const ov::Tensor latent) {
 
 ImageGenerationPerfMetrics Image2ImagePipeline::get_performance_metrics() {
     return m_impl->get_performance_metrics();
+}
+
+Image2ImagePipeline Image2ImagePipeline::clone() {
+    Image2ImagePipeline pipe(m_impl->clone());
+    return pipe;
 }
 
 }  // namespace genai

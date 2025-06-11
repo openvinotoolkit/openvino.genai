@@ -8,7 +8,6 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     const std::shared_ptr<ov::Model>& model,
     const Tokenizer& tokenizer,
     const GenerationConfig& generation_config,
-    const std::vector<KVHeadConfig>& kv_cache_configs,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& plugin_config,
@@ -16,7 +15,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
-    initialize_pipeline(model, scheduler_config, device, plugin_config, kv_cache_configs);
+    initialize_pipeline(model, scheduler_config, device, plugin_config);
 }
 
 void
@@ -287,10 +286,6 @@ bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::i
     return m_requests.empty();
 }
 
-std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_awaiting_requests() {
-    return m_awaiting_requests;
-}
-
 size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_processed_tokens_per_iteration() {
     return m_batch_size;
 }
@@ -332,6 +327,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             } else if (request->get_max_new_tokens() == 0) {
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == request->get_prompt_len()) {
+                request->pause_generation(true);
+            } else if (is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();

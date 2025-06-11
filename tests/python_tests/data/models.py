@@ -67,3 +67,17 @@ def get_chat_models_list():
         model_ids = nightly_models
 
     return model_ids
+
+
+def get_gguf_model_list():
+    return [
+        {
+            "hf_model_id": "HuggingFaceTB/SmolLM2-135M",
+            "gguf_model_id": "prithivMLmods/SmolLM2-135M-GGUF",
+            "gguf_filename": "SmolLM2-135M.F16.gguf"
+        },
+        {
+            "gguf_model_id": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+            "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf"
+        },
+    ]

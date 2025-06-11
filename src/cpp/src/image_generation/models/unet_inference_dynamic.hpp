@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include <iostream>
+#include <memory>
+
 #include "image_generation/models/unet_inference.hpp"
-#include "lora_helper.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -12,6 +14,13 @@ namespace genai {
 
 class UNet2DConditionModel::UNetInferenceDynamic : public UNet2DConditionModel::UNetInference {
 public:
+    virtual std::shared_ptr<UNetInference> clone() override {
+        OPENVINO_ASSERT(static_cast<bool>(m_request), "UNet2DConditionModel must have m_request initialized");
+        UNetInferenceDynamic cloned(*this);
+        cloned.m_request = m_request.get_compiled_model().create_infer_request();
+        return std::make_shared<UNetInferenceDynamic>(cloned);
+    }
+
     virtual void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) override {
         ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition dynamic model");

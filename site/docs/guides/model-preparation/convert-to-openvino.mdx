@@ -8,7 +8,8 @@ import UseCasesNote from './_use_cases_note.mdx';
 
 # Convert Models to OpenVINO Format
 
-This page explains how to convert various generative AI models from Hugging Face and ModelScope to OpenVINO IR format. Refer to the [Supported Models](../../supported-models/index.mdx) for a list of available models.
+This page explains how to convert various generative AI models from [Hugging Face](https://huggingface.co/) and [ModelScope](https://modelscope.cn/) to OpenVINO IR format.
+Refer to the [Supported Models](../../supported-models/index.mdx) for a list of available models.
 
 For downloading pre-converted models, see [Download Pre-Converted OpenVINO Models](./download-openvino-models.mdx).
 
@@ -18,6 +19,15 @@ For downloading pre-converted models, see [Download Pre-Converted OpenVINO Model
     ```bash
     pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git
     ```
+
+    :::info Note
+    Some models may require additional dependencies.
+    To convert models with `optimum-cli` and to run the examples, install the dependencies from [`./samples/requirements.txt`](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/requirements.txt):
+    ```bash
+    pip install --upgrade-strategy eager -r ./samples/requirements.txt
+    ```
+    :::
+
 2. Download and convert a model to the OpenVINO IR format using `optimum-cli` tool from Hugging Face:
     <OptimumCLI />
 

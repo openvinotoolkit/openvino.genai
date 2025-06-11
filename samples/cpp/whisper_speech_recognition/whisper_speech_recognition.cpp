@@ -5,18 +5,17 @@
 #include "openvino/genai/whisper_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (3 > argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> \"<WAV_FILE_PATH>\"");
+    if (argc < 3 || argc > 4) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> \"<WAV_FILE_PATH>\" <DEVICE>");
     }
 
     std::filesystem::path models_path = argv[1];
     std::string wav_file_path = argv[2];
-    std::string device = "CPU";  // GPU, NPU can be used as well
+    std::string device = (argc == 4) ? argv[3] : "CPU";  // Default to CPU if no device is provided
 
     ov::genai::WhisperPipeline pipeline(models_path, device);
 
     ov::genai::WhisperGenerationConfig config = pipeline.get_generation_config();
-    config.max_new_tokens = 100;  // increase this based on your speech length
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
     config.task = "transcribe";

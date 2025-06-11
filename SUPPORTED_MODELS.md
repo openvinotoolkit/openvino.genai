@@ -263,7 +263,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <td>Supported</td>
       <td>Supported</td>
       <td>Supported</td>
-      <td>Not supported</td>
+      <td>Partially supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-3-medium-diffusers"><code>stabilityai/stable-diffusion-3-medium-diffusers</code></a></li>
@@ -370,7 +370,6 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
         </ul>
       </td>
       <td>
-          <li>GPU isn't supported</li>
           <li>These models' configs aren't consistent. It's required to override the default <code>eos_token_id</code> with the one from a tokenizer: <code>generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())</code>.</li>
       </td>
     </tr>
@@ -430,6 +429,86 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
     </tr>
   </tbody>
 </table>
+
+## Text embeddings models
+
+<table>
+  <tbody style="vertical-align: top;">
+    <tr>
+      <th>Architecture</th>
+      <th>LoRA support</th>
+      <th>Example HuggingFace Models</th>
+    </tr>
+    <tr>
+      <td><code>BertModel</code></td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/BAAI/bge-small-en-v1.5"><code>BAAI/bge-small-en-v1.5</code></a></li>
+          <li><a href="https://huggingface.co/BAAI/bge-base-en-v1.5"><code>BAAI/bge-base-en-v1.5</code></a></li>
+          <li><a href="https://huggingface.co/BAAI/bge-large-en-v1.5"><code>BAAI/bge-large-en-v1.5</code></a></li>
+          <li><a href="https://huggingface.co/sentence-transformers/all-MiniLM-L12-v2"><code>sentence-transformers/all-MiniLM-L12-v2</code></a></li>
+          <li><a href="https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1"><code>mixedbread-ai/mxbai-embed-large-v1</code></a></li>
+          <li><a href="https://huggingface.co/mixedbread-ai/mxbai-embed-xsmall-v1"><code>mixedbread-ai/mxbai-embed-xsmall-v1</code></a></li>
+          <li><a href="https://huggingface.co/WhereIsAI/UAE-Large-V1"><code>WhereIsAI/UAE-Large-V1</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>MPNetForMaskedLM</code></td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/sentence-transformers/all-mpnet-base-v2"><code>sentence-transformers/all-mpnet-base-v2</code></a></li>
+          <li><a href="https://huggingface.co/sentence-transformers/multi-qa-mpnet-base-dot-v1"><code>sentence-transformers/multi-qa-mpnet-base-dot-v1</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>RobertaForMaskedLM</code></td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/sentence-transformers/all-distilroberta-v1"><code>sentence-transformers/all-distilroberta-v1</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>XLMRobertaModel</code></td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/mixedbread-ai/deepset-mxbai-embed-de-large-v1"><code>mixedbread-ai/deepset-mxbai-embed-de-large-v1</code></a></li>
+          <li><a href="https://huggingface.co/intfloat/multilingual-e5-large-instruct"><code>intfloat/multilingual-e5-large-instruct</code></a></li>
+          <li><a href="https://huggingface.co/intfloat/multilingual-e5-large"><code>intfloat/multilingual-e5-large</code></a></li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
 Some models may require access request submission on the Hugging Face page to be downloaded.
+
+## Speech generation models
+
+<table>
+  <tbody style="vertical-align: top;">
+    <tr>
+      <th>Architecture</th>
+      <th>Models</th>
+      <th>LoRA support</th>
+      <th>Example HuggingFace Models</th>
+    </tr>
+    <tr>
+      <td rowspan=2><code>SpeechT5ForTextToSpeech</code></td>
+      <td>SpeechT5 TTS</td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/microsoft/speecht5_tts"><code>microsoft/speecht5_tts</code></a></li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 If https://huggingface.co/ is down, the conversion step won't be able to download the models.

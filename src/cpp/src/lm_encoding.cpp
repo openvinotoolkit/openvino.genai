@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "utils.hpp"
-#include "debug_utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
@@ -27,7 +26,7 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
     position_ids.set_shape({batch_size, 1});
 
     for (size_t batch = 0; batch < batch_size; batch++) {
-        int64_t* mask_start = attention_mask.data<int64_t>() + batch * sequence_length;
+        auto mask_start = attention_mask.data<int64_t>() + batch * sequence_length;
         position_ids.data<int64_t>()[batch] = std::accumulate(mask_start, mask_start + sequence_length - 1, 0);
     }
 }
@@ -225,7 +224,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
         if (m_embedding) {
             constexpr bool return_remote_tensor = true;
-            const ov::Tensor& embed_prompt_tensor = m_embedding->infer(new_input_ids, return_remote_tensor);
+            CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+            EmbeddingsRequest& req = embeddings_request_guard.get();
+            const ov::Tensor& embed_prompt_tensor = m_embedding->infer(req, new_input_ids, return_remote_tensor);
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
         } else {
             m_llm.set_tensor("input_ids", new_input_ids);

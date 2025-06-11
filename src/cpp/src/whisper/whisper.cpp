@@ -7,20 +7,20 @@
 #include <openvino/openvino.hpp>
 #include <thread>
 
-#include "context_tokens.hpp"
-#include "logit_processor.hpp"
-#include "models/decoder.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
-#include "sampler.hpp"
-#include "timestamps.hpp"
+#include "sampling/sampler.hpp"
 #include "utils.hpp"
-#include "whisper_config.hpp"
-#include "whisper_feature_extractor.hpp"
-#include "whisper_models.hpp"
-#include "whisper_utils.hpp"
+#include "whisper/config.hpp"
+#include "whisper/context_tokens.hpp"
+#include "whisper/feature_extractor.hpp"
+#include "whisper/logit_processor.hpp"
+#include "whisper/models.hpp"
+#include "whisper/models/decoder.hpp"
+#include "whisper/timestamps.hpp"
+#include "whisper/whisper_utils.hpp"
 
 using ov::genai::MicroSeconds;
 
@@ -143,9 +143,13 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
         const auto infer_start = std::chrono::steady_clock::now();
 
-        decoder->start_async(encoder_hidden_state,
-                             new_input_ids,
-                             ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
+        // align beam_idx shape with next_beams size
+        if (beam_idx.get_shape()[0] != next_beams.size()) {
+            beam_idx.set_shape({next_beams.size()});
+        }
+        std::copy_n(next_beams.data(), next_beams.size(), beam_idx.data<int32_t>());
+
+        decoder->start_async(encoder_hidden_state, new_input_ids, beam_idx);
 
         stream_generated_tokens();
 
@@ -156,7 +160,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
         raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
         raw_metrics.m_new_token_times.emplace_back(infer_end);
-        raw_metrics.m_batch_sizes.emplace_back(batch_size);
+        raw_metrics.m_batch_sizes.emplace_back(total_num_tokens);
 
         process_whisper_logits(logits, config, return_timestamps, batch_to_generated_ids);
 
@@ -295,7 +299,13 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     const float time_precision = static_cast<float>(feature_extractor.chunk_length) / model_config.max_source_positions;
     size_t segment_offset = 0;
 
+    OPENVINO_ASSERT(feature_extractor.sampling_rate != 0, "Sampling Rate for Feature Extractor is 0");
+    const float frame_length_in_seconds =
+        static_cast<float>(feature_extractor.hop_length) / feature_extractor.sampling_rate;
+
     for (size_t chunk_offset = 0; chunk_offset < input_features.n_frames; chunk_offset += segment_offset) {
+        const float chunk_time_offset = chunk_offset * frame_length_in_seconds;
+
         auto input_features_chunk = input_features.get_data_with_offset(chunk_offset, feature_extractor.nb_max_frames);
 
         ov::Tensor hidden_state_tensor = encode(encoder,
@@ -330,7 +340,8 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
             auto extracted_segments = ov::genai::extract_segments(chunk_output_tokens,
                                                                   config,
                                                                   feature_extractor.nb_max_frames,
-                                                                  time_precision);
+                                                                  time_precision,
+                                                                  chunk_time_offset);
 
             utils::filter_non_segment_metrics(raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
 

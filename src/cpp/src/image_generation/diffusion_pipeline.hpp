@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <memory>
+#include <filesystem>
 #include <fstream>
 #include <tuple>
 
@@ -13,8 +15,8 @@
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 
-#include "lora_helper.hpp"
-#include "lora_names_mapping.hpp"
+#include "lora/helper.hpp"
+#include "lora/names_mapping.hpp"
 
 #include "json_utils.hpp"
 namespace {
@@ -100,6 +102,8 @@ public:
 
     virtual void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) = 0;
 
+    virtual std::shared_ptr<DiffusionPipeline> clone() = 0;
+
     virtual void compile(const std::string& device, const ov::AnyMap& properties)
     {
         compile(device, device, device, properties);
@@ -124,7 +128,7 @@ public:
 
     void save_load_time(std::chrono::steady_clock::time_point start_time) {
         auto stop_time = std::chrono::steady_clock::now();
-        m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+        m_load_time_ms += std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
     }
 
     virtual ~DiffusionPipeline() = default;
@@ -228,6 +232,7 @@ protected:
     ImageGenerationConfig m_generation_config;
     float m_load_time_ms = 0.0f;
     ImageGenerationPerfMetrics m_perf_metrics;
+    std::filesystem::path m_root_dir;
 
     std::shared_ptr<AutoencoderKL> m_vae = nullptr;
     std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor_rgb = nullptr, m_mask_processor_gray = nullptr;

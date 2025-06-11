@@ -1,4 +1,5 @@
 einops
 transformers_stream_generator
+backoff
 bitsandbytes
 -r ../requirements.txt

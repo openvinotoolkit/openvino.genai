@@ -3,19 +3,23 @@
 
 from os.path import sep
 from pathlib import Path
-from typing import List, Tuple
+from typing import Type
 
 from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
 
-from optimum.intel import OVModelForCausalLM
-from optimum.intel.openvino.utils import TemporaryDirectory
+from optimum.intel import OVModelForCausalLM, OVModelForFeatureExtraction
+from optimum.intel.openvino.modeling import OVModel
+
+from huggingface_hub import hf_hub_download
+
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
-from utils.constants import get_default_llm_properties
+from utils.constants import get_default_llm_properties, extra_generate_kwargs, get_ov_cache_models_dir
 from utils.network import retry_request
+import pytest
 
 def generation_config_to_hf(
     default_generation_config : HFGenerationConfig,
@@ -90,9 +94,9 @@ def generation_config_to_hf(
 def run_hugging_face(
     opt_model,
     hf_tokenizer,
-    prompts: List[str],
-    generation_configs: List[GenerationConfig] | GenerationConfig,
-) -> List[GenerationResult]:
+    prompts: list[str],
+    generation_configs: list[GenerationConfig] | GenerationConfig,
+) -> list[GenerationResult]:
     generation_results = []
 
     if type(generation_configs) is list:
@@ -108,7 +112,7 @@ def run_hugging_face(
             input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
             prompt_len = 0 if generation_config.echo else input_ids.numel()
 
-            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer, **extra_generate_kwargs())
             all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
             generation_result = GenerationResult()
@@ -129,7 +133,7 @@ def run_hugging_face(
             inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, padding_side='left')
         input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
         hf_generation_config = generation_config_to_hf(opt_model.generation_config, generation_configs)
-        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
+        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer, **extra_generate_kwargs())
 
         generation_ids = []
         scores = []
@@ -158,9 +162,9 @@ def run_hugging_face(
 
 
 # download HF model or read converted model
-def get_hugging_face_models(model_id: str | Path):
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
-    opt_model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=isinstance(model_id, str), ov_config=get_default_llm_properties()))
+def get_huggingface_models(model_id: str | Path, model_class: Type[OVModel], local_files_only=False):
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, local_files_only=local_files_only))
+    opt_model = retry_request(lambda: model_class.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=isinstance(model_id, str), ov_config=get_default_llm_properties(), local_files_only=local_files_only))
     return opt_model, hf_tokenizer
 
 
@@ -180,7 +184,8 @@ def convert_models(opt_model : OVModelForCausalLM,
                    **tokenizer_kwargs):
     opt_model.save_pretrained(models_path)
     # save generation config
-    opt_model.generation_config.save_pretrained(models_path)
+    if opt_model.generation_config:
+        opt_model.generation_config.save_pretrained(models_path)
     opt_model.config.save_pretrained(models_path)
 
     # to store tokenizer config jsons with special tokens
@@ -189,20 +194,43 @@ def convert_models(opt_model : OVModelForCausalLM,
     convert_and_save_tokenizer(hf_tokenizer, models_path)
 
 
-def download_and_convert_model(model_id: str,
-                               tmp_path: Path | TemporaryDirectory = TemporaryDirectory(),
-                               **tokenizer_kwargs):
+def download_and_convert_model(model_id: str, **tokenizer_kwargs):
+    return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
+
+@pytest.fixture()
+def download_and_convert_embeddings_models(request):
+    model_id = request.param
+    return _download_and_convert_model(model_id, OVModelForFeatureExtraction)
+
+
+def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):
     dir_name = str(model_id).replace(sep, "_")
-    models_path = (TemporaryDirectory() if tmp_path == None else Path(tmp_path.name)) / dir_name
+    ov_cache_models_dir = get_ov_cache_models_dir()
+    models_path = ov_cache_models_dir / dir_name
 
     from utils.constants import OV_MODEL_FILENAME
     if (models_path / OV_MODEL_FILENAME).exists():
-        opt_model, hf_tokenizer = get_hugging_face_models(models_path)
+        opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True)
     else:
-        opt_model, hf_tokenizer = get_hugging_face_models(model_id)
+        opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
         convert_models(opt_model, hf_tokenizer, models_path)
 
     if "padding_side" in tokenizer_kwargs:
         hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
     return opt_model, hf_tokenizer, models_path
+
+
+def download_gguf_model(gguf_model_id: str,
+                        gguf_filename: str):
+    gguf_dir_name = str(gguf_model_id).replace(sep, "_")
+    ov_cache_models_dir = get_ov_cache_models_dir()
+    models_path_gguf = ov_cache_models_dir / gguf_dir_name
+
+    gguf_path = hf_hub_download(
+        repo_id=gguf_model_id,
+        filename=gguf_filename,
+        local_dir=models_path_gguf # Optional: Specify download directory
+    )
+
+    return gguf_path

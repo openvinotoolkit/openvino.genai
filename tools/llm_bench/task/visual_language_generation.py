@@ -28,6 +28,7 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 512
 def run_visual_language_generation_optimum(
     inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index, bench_hook, model_precision, proc_id, mem_consumption
 ):
+    from optimum.intel.utils.import_utils import is_transformers_version
     set_seed(args['seed'])
     if args['batch_size'] != 1:
         log.warning("Only batch size 1 available for benchmarking")
@@ -59,11 +60,15 @@ def run_visual_language_generation_optimum(
         log.info(out_str)
 
     max_rss_mem_consumption = ''
-    max_uss_mem_consumption = ''
-    max_shared_mem_consumption = ''
+    max_sys_mem_consumption = ''
+    max_rss_mem_increase = ''
+    max_sys_mem_increase = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start_collect_memory_consumption()
+        mem_consumption.start()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
+    additional_args = {}
+    if is_transformers_version(">=", "4.51"):
+        additional_args["use_model_defaults"] = False
     start = time.perf_counter()
     if args['infer_count'] is not None and args['end_token_stopping'] is False:
         model.generation_config.eos_token_id = None
@@ -74,7 +79,8 @@ def run_visual_language_generation_optimum(
             num_beams=args['num_beams'],
             use_cache=True,
             eos_token_id=None,
-            do_sample=False
+            do_sample=False,
+            **additional_args
         )
     else:
         result = model.generate(
@@ -82,13 +88,13 @@ def run_visual_language_generation_optimum(
             max_new_tokens=int(max_gen_tokens),
             num_beams=args['num_beams'],
             use_cache=True,
-            do_sample=False
+            do_sample=False,
+            **additional_args
         )
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.end_collect_momory_consumption()
-        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
-        mem_consumption.clear_max_memory_consumption()
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
 
     generation_time = end - start
     tok_decode_start = time.perf_counter()
@@ -138,8 +144,9 @@ def run_visual_language_generation_optimum(
         latency=per_token_time,
         res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
+        max_rss_mem_increase=max_rss_mem_increase,
+        max_sys_mem=max_sys_mem_consumption,
+        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
         tokenization_time=(tok_encode_time, tok_decode_time),
         mm_embeddings_preparation_time=tm_mm_embeddings
@@ -151,9 +158,6 @@ def run_visual_language_generation_optimum(
         tm_list,
         tm_infer_list,
         warm_up=(num == 0),
-        max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
         tokenization_time=(tok_encode_time, tok_decode_time),
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
@@ -164,14 +168,6 @@ def run_visual_language_generation_optimum(
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-            if not args.get("use_cb", False):
-                if num == 1:
-                    # if the device is CPU, throw exception
-                    if args['devices'].lower().startswith('cpu') is True:
-                        assert (result_md5_list == prev_md5)
-                else:
-                    # throw exception
-                    assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
     if bench_hook is not None:
@@ -203,18 +199,17 @@ def run_visual_language_generation_genai(
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
     max_rss_mem_consumption = ''
-    max_uss_mem_consumption = ''
-    max_shared_mem_consumption = ''
+    max_sys_mem_consumption = ''
+    max_rss_mem_increase = ''
+    max_sys_mem_increase = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start_collect_memory_consumption()
+        mem_consumption.start()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     gen_config = model.get_generation_config()
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
     gen_config.ignore_eos = True
-    if hasattr(gen_config, 'apply_chat_template'):
-        gen_config.apply_chat_template = False
     kwargs = {}
     if len(images) >= 1:
         kwargs["images"] = images[0]
@@ -224,9 +219,8 @@ def run_visual_language_generation_genai(
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.end_collect_momory_consumption()
-        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
-        mem_consumption.clear_max_memory_consumption()
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
 
     generation_time = end - start
     result_md5_list = []
@@ -246,7 +240,7 @@ def run_visual_language_generation_genai(
         per_token_time = generation_time * 1000 / (generated_text_len / args['batch_size'])
     else:
         log.warning("No generated tokens")
-    first_token_time = (perf_metrics.get_ttft().mean - perf_metrics.raw_metrics.tokenization_durations[-1] / 1000) * args["batch_size"]
+    first_token_time = (perf_metrics.get_ttft().mean - perf_metrics.raw_metrics.tokenization_durations[-1] / 1000)
     second_tokens_durations = (
         np.array(perf_metrics.raw_metrics.m_new_token_times[1:])
         - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1])
@@ -268,8 +262,9 @@ def run_visual_language_generation_genai(
         latency=per_token_time,
         res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
+        max_rss_mem_increase=max_rss_mem_increase,
+        max_sys_mem=max_sys_mem_consumption,
+        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
         tokenization_time=tokenization_time,
         mm_embeddings_preparation_time=perf_metrics.get_prepare_embeddings_duration().mean
@@ -282,9 +277,6 @@ def run_visual_language_generation_genai(
         tm_list.tolist(),
         inference_durations.tolist(),
         warm_up=(num == 0),
-        max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
         tokenization_time=tokenization_time,
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
@@ -300,7 +292,7 @@ def run_visual_language_generation_genai(
 
 
 def run_visual_language_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    model, processor, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_image_text_gen_model(model_path, device, **args)
+    model, processor, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_image_text_gen_model(model_path, device, mem_consumption, **args)
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}

@@ -7,7 +7,7 @@
 
 #include "json_utils.hpp"
 #include "utils.hpp"
-#include "lora_helper.hpp"
+#include "lora/helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -57,6 +57,20 @@ FluxTransformer2DModel::FluxTransformer2DModel(const std::string& model,
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const FluxTransformer2DModel&) = default;
+
+FluxTransformer2DModel FluxTransformer2DModel::clone() {
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "FluxTransformer2DModel must have exactly one of m_model or m_request initialized");
+
+    FluxTransformer2DModel cloned = *this;
+
+    if (m_model) {
+        cloned.m_model = m_model->clone();
+    } else {
+        cloned.m_request = m_request.get_compiled_model().create_infer_request();
+    }
+
+    return cloned;
+}
 
 const FluxTransformer2DModel::Config& FluxTransformer2DModel::get_config() const {
     return m_config;

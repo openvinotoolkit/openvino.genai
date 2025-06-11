@@ -1,6 +1,6 @@
 # Whisper automatic speech recognition sample
 
-This example showcases inference of speech recognition Whisper Models. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::WhisperPipeline` and uses audio file in wav format as an input source.
+This example showcases inference of speech recognition Whisper Models. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.WhisperPipeline` and uses audio file in wav format as an input source.
 
 ## Download and convert the model and tokenizers
 
@@ -12,8 +12,6 @@ Install [../../export-requirements.txt](../../export-requirements.txt) to conver
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
-
-If NPU is the inference device, an additional option `--disable-stateful` is required. See [NPU with OpenVINO GenAI](https://docs.openvino.ai/nightly/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) for the detail.
 
 ## Prepare audio file
 

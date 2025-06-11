@@ -4,7 +4,7 @@
 #pragma once
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
-#include "continuous_batching_impl.hpp"
+#include "continuous_batching/pipeline_impl.hpp"
 #include "continuous_batching_for_prompt_lookup.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "utils.hpp"
@@ -27,6 +27,7 @@ public:
                      const ov::AnyMap& properties,
                      const ov::genai::GenerationConfig& generation_config) {
         m_tokenizer = tokenizer;
+        m_perf_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
         m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
     };
 

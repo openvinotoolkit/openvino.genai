@@ -1,52 +1,73 @@
 #include "include/helper.hpp"
 
+#include <future>
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 #include "include/llm_pipeline/start_chat_worker.hpp"
 #include "include/llm_pipeline/finish_chat_worker.hpp"
 #include "include/llm_pipeline/init_worker.hpp"
 
 struct TsfnContext {
-    TsfnContext(std::string prompt) : prompt(prompt) {};
+    TsfnContext(ov::genai::StringInputs prompt) : prompt(prompt) {};
     ~TsfnContext() {};
 
     std::thread native_thread;
     Napi::ThreadSafeFunction tsfn;
 
-    std::string prompt;
+    ov::genai::StringInputs prompt;
     std::shared_ptr<ov::genai::LLMPipeline> pipe = nullptr;
+    std::shared_ptr<ov::AnyMap> generation_config = nullptr;
     std::shared_ptr<ov::AnyMap> options = nullptr;
 };
 
 void performInferenceThread(TsfnContext* context) {
     try {
         ov::genai::GenerationConfig config;
-        config.update_generation_config(*context->options);
+        config.update_generation_config(*context->generation_config);
 
-        std::function<bool(std::string)> streamer = [context](std::string word) {
-            napi_status status = context->tsfn.BlockingCall([word](Napi::Env env, Napi::Function jsCallback) {
-                try {
-                    jsCallback.Call({
-                        Napi::Boolean::New(env, false),
-                        Napi::String::New(env, word)
-                    });
-                } catch(std::exception& err) {
-                    Napi::Error::Fatal("performInferenceThread callback error. Details:" , err.what());
-                }
-            });
-            if (status != napi_ok) {
-                // Handle error
-                Napi::Error::Fatal("performInferenceThread error", "napi_status != napi_ok");
+        auto disableStreamer = false;
+        if (context->options->find("disableStreamer") != context->options->end()) {
+            auto value = (*context->options)["disableStreamer"];
+            if (value.is<bool>()) {
+                disableStreamer = value.as<bool>();
+            } else {
+                OPENVINO_THROW("disableStreamer option should be boolean");
             }
+        }
 
-            // Return flag corresponds whether generation should be stopped.
-            // false means continue generation.
-            return false;
-        };
+        ov::genai::StreamerVariant streamer = std::monostate();
+        if (!disableStreamer) {
+            streamer = [context](std::string word) {
+                std::promise<ov::genai::StreamingStatus> resultPromise;
+                napi_status status = context->tsfn.BlockingCall([word, &resultPromise](Napi::Env env, Napi::Function jsCallback) {
+                    try {
+                        auto callback_result = jsCallback.Call({
+                            Napi::Boolean::New(env, false),
+                            Napi::String::New(env, word)
+                        });
+                        if (callback_result.IsNumber()) {
+                            resultPromise.set_value(static_cast<ov::genai::StreamingStatus>(callback_result.As<Napi::Number>().Int32Value()));
+                        } else {
+                            resultPromise.set_value(ov::genai::StreamingStatus::RUNNING);
+                        }
+                    } catch(std::exception& err) {
+                        Napi::Error::Fatal("performInferenceThread callback error. Details:" , err.what());
+                    }
+                });
+                if (status != napi_ok) {
+                    // Handle error
+                    Napi::Error::Fatal("performInferenceThread error", "napi_status != napi_ok");
+                }
 
-        context->pipe->generate(context->prompt, config, streamer);
-        napi_status status = context->tsfn.BlockingCall([](Napi::Env env, Napi::Function jsCallback) {
+                // Return flag corresponds whether generation should be stopped.
+                return resultPromise.get_future().get();
+            };
+        }
+
+        auto result = context->pipe->generate(context->prompt, config, streamer);
+        napi_status status = context->tsfn.BlockingCall([result](Napi::Env env, Napi::Function jsCallback) {
             jsCallback.Call({
                 Napi::Boolean::New(env, true),
+                Napi::String::New(env, result)
             });
         });
 
@@ -92,14 +113,16 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
     TsfnContext* context = nullptr;
 
     try {
-        std::string prompt = info[0].ToString();
+        ov::genai::StringInputs prompt = js_to_cpp<ov::genai::StringInputs>(env, info[0]);
+        auto generation_config = to_anyMap(info.Env(), info[2]);
         ov::AnyMap options;
-        if (info.Length() == 3) {
-            options = to_anyMap(info.Env(), info[2]);
+        if (info.Length() == 4) {
+            options = to_anyMap(info.Env(), info[3]);
         }
 
         context = new TsfnContext(prompt);
         context->pipe = this->pipe;
+        context->generation_config = std::make_shared<ov::AnyMap>(generation_config);
         context->options = std::make_shared<ov::AnyMap>(options);
         // Create a ThreadSafeFunction
         context->tsfn = Napi::ThreadSafeFunction::New(

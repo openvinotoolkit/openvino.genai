@@ -15,7 +15,7 @@
 #include "visual_language/pipeline_base.hpp"
 #include "visual_language/continuous_batching_adapter.hpp"
 
-#include "sampler.hpp"
+#include "sampling/sampler.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
 
@@ -42,8 +42,12 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
+    size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
+    size_t m_image_id = 0;
+    ChatHistory m_history;
+
 public:
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -80,9 +84,8 @@ public:
         if (m_is_npu) {
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
-            std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
-                language_model, lm_properties, kv_pos, language_model_path
-            );
+            std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
+            m_max_prompt_len = kv_desc.max_prompt_len;
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
         } else {
             compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
@@ -122,7 +125,7 @@ public:
     ) :
         m_generation_config{generation_config} {
         m_is_npu = device.find("NPU") != std::string::npos;
-        OPENVINO_ASSERT(m_is_npu,
+        OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
@@ -179,11 +182,32 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
+
+        if (m_is_chat_conversation) {
+            m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
+            unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
+
+            for (size_t idx = 0; idx < image_sequence.size(); idx++) {
+                image_sequence[idx] -= m_image_id;
+            }
+        }
+        else if (generation_config.apply_chat_template) {
+            m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
+        }
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
+        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+
+        if (m_is_npu) {
+            // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
+            OPENVINO_ASSERT(inputs_embeds.get_shape().at(1) <= m_max_prompt_len,
+                "VLM pipeline on NPU may only process input embeddings up to ", m_max_prompt_len,
+                " tokens. ", inputs_embeds.get_shape().at(1), " is passed.\nSet the \"MAX_PROMPT_LEN\""
+                " config option to increase the limit.");
+        }
 
         utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         if (m_is_chat_conversation)
@@ -235,8 +259,19 @@ public:
         auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_results = decoded.texts.at(0);
-        if (m_is_chat_conversation)
+        if (m_is_chat_conversation) {
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
+
+            if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
+                m_image_id += encoded_images.size();
+                // Tail of chat template is missing in KV cache.
+                // Find the tail to concatenate it with the next input prompt.
+                m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
+            }
+            else {
+                m_history.pop_back();
+            }
+        }
         else
             kv_cache_state.reset_state();
 
@@ -264,6 +299,7 @@ public:
     void start_chat(const std::string& system_message) override {
         OPENVINO_ASSERT(!m_is_npu, "start_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = true;
+        m_image_id = 0;
         bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
         if (have_state) {
             // Resetting state may be slow.
@@ -271,12 +307,18 @@ public:
             // Since if is already introduced, move all resetting here.
             m_language.get_tensor("attention_mask").set_shape({0, 0});
         }
+        auto kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        if (!m_inputs_embedder->get_kv_cache_state().get_state().empty()) {
+            m_history.clear();
+        }
         m_inputs_embedder->start_chat(system_message);
+        m_history = {{{"role", "system"}, {"content", system_message}}};
     }
 
     void finish_chat() override {
         OPENVINO_ASSERT(!m_is_npu, "finish_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = false;
+        m_image_id = 0;
         // Resetting state may be slow.
         m_language.reset_state();
         m_language.get_tensor("attention_mask").set_shape({0, 0});
@@ -316,19 +358,35 @@ public:
 VLMPipeline::VLMPipeline(
     const std::filesystem::path& models_dir,
     const std::string& device,
-    const ov::AnyMap& properties
+    const ov::AnyMap& user_properties
 ) {
     auto start_time = std::chrono::steady_clock::now();
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
-    if (properties.find(scheduler_config.name()) != properties.end() ||
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
-        properties.find(prompt_lookup.name()) != properties.end()) {
-        auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
-        m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_config);
+    // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
+    if (utils::explicitly_requires_paged_attention(properties)) {
+        auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
+    } else if (device == "NPU") {
+        m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
+    } else if (attention_backend == PA_BACKEND) {
+        // try to call CB adapter one more time, but with safe guard to silent exception
+        try {
+            auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+            // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
+            // but cannot perform its inference later
+#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+            m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
+#endif
+        } catch (ov::Exception&) {
+            // ignore exceptions from PA
+        }
     }
-    else {
+
+    if (m_pimpl == nullptr) {
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     }
+
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
 }
@@ -338,17 +396,33 @@ VLMPipeline::VLMPipeline(
     const Tokenizer& tokenizer,
     const std::filesystem::path& config_dir_path,
     const std::string& device,
-    const ov::AnyMap& properties,
+    const ov::AnyMap& user_properties,
     const GenerationConfig& generation_config
 ) {
     auto start_time = std::chrono::steady_clock::now();
-    if (properties.find(scheduler_config.name()) != properties.end() ||
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
-        properties.find(prompt_lookup.name()) != properties.end()) {
-        auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
-        m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_config, generation_config);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+
+    // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
+    if (utils::explicitly_requires_paged_attention(properties)) {
+        auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
+    } else if (device == "NPU") {
+        m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
+    } else if (attention_backend == PA_BACKEND) {
+        // try to call CB adapter one more time, but with safe guard to silent exception
+        try {
+            auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+            // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
+            // but cannot perform its inference later
+#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+            m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
+#endif
+        } catch (ov::Exception&) {
+            // ignore exceptions from PA
+        }
     }
-    else {
+
+    if (m_pimpl == nullptr) {
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     }
     auto stop_time = std::chrono::steady_clock::now();

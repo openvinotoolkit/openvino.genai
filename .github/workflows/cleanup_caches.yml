@@ -1,0 +1,35 @@
+name: Cleanup caches
+on:
+  workflow_dispatch:
+  schedule:
+    # at 00:00 on workdays
+    - cron: '0 0 * * 1,2,3,4,5'
+
+permissions: read-all
+
+jobs:
+  Cleanup_OV_CACHE:
+    name: Cleanup OV_CACHE
+    runs-on: aks-linux-4-cores-16gb
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
+    container:
+      image: openvinogithubactions.azurecr.io/dockerhub/ubuntu:20.04
+      volumes:
+        - /mount:/mount
+    env:
+      OV_CACHE: /mount/caches/huggingface/.ov_cache
+
+    steps:
+      - name: Pre-Collecting Cache Info
+        run: |
+          echo "Cache info: "
+          du -h -d2 ${{ env.OV_CACHE }}
+      - name: Cleanup cache
+        run: |
+          echo "Delete cache files if they have not been used in over 3 days"
+          [ ! -z "${{ env.OV_CACHE }}" ] && find ${{ env.OV_CACHE }} ! -type d -atime +3 -delete
+
+      - name: Post-Collecting Cache Info
+        run: |
+          echo "Cache info: "
+          du -h -d2 ${{ env.OV_CACHE }}
