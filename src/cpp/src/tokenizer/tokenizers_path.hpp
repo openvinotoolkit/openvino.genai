@@ -28,11 +28,13 @@ public:
 
     explicit ScopedVar(const std::filesystem::path& environment_variable_value) {
 #ifdef _WIN32
-        char* value = nullptr;
+        std::wstring env_var_name(std::string(ENVIRONMENT_VARIABLE_NAME).begin(), std::string(ENVIRONMENT_VARIABLE_NAME).end());
+
+        wchar_t* value = nullptr;
         size_t len = 0;
-        _dupenv_s(&value, &len, ENVIRONMENT_VARIABLE_NAME);
+        _wdupenv_s(&value, &len, env_var_name.c_str());
         if (value == nullptr)
-            _putenv_s(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.string().c_str());
+            _wputenv_s(env_var_name.c_str(), environment_variable_value.wstring().c_str());
 #else
         if (!getenv(ENVIRONMENT_VARIABLE_NAME))
             setenv(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.string().c_str(), 1);
@@ -43,7 +45,8 @@ public:
     ~ScopedVar() {
         if (!was_already_set) {
 #ifdef _WIN32
-            _putenv_s(ENVIRONMENT_VARIABLE_NAME, "");
+            std::wstring env_var_name(std::string(ENVIRONMENT_VARIABLE_NAME).begin(), std::string(ENVIRONMENT_VARIABLE_NAME).end());
+            _wputenv_s(env_var_name.c_str(), L"");
 #else
             unsetenv(ENVIRONMENT_VARIABLE_NAME);
 #endif
