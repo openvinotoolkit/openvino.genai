@@ -1068,6 +1068,7 @@ public:
         : tensors(group_lora_tensors(safetensor_to_constant_map(safetensor), default_lora_patterns())) {}
 
     const LoRATensors& get_tensors() const override {
+        int i = 0;
         return tensors;
     }
 
@@ -1337,7 +1338,7 @@ struct AdapterControllerImpl {
         set_new_adapter_tensors(infer_request, /*alpha_only=*/true);
     }
 
-    void set_new_adapter_tensors (ov::InferRequest& infer_request, bool alpha_only = false) {
+    void set_new_adapter_tensors(ov::InferRequest& infer_request, bool alpha_only = false) {
         std::cout << "!!!!!!!!!!!!!!set_new_adapter_tensors"<< std::endl;
         if(current_config.get_mode() != AdapterConfig::MODE_AUTO && current_config.get_mode() != AdapterConfig::MODE_DYNAMIC && current_config.get_mode() != AdapterConfig::MODE_STATIC_RANK ) {
             return;
@@ -1409,7 +1410,7 @@ struct AdapterControllerImpl {
 
                         // Copy data
                         const_tensor = ov::Tensor(constant_node->get_element_type(), constant_node->get_shape());
-                        std::memcpy(const_tensor.data(), constant_node->get_data_ptr(), сonst_tensor.get_byte_size());
+                        std::memcpy(const_tensor.data(), constant_node->get_data_ptr(), const_tensor.get_byte_size());
                     } else {
                         OPENVINO_THROW("LoRA constant tensor not found for name: ", const_name);
                     }
@@ -1754,6 +1755,7 @@ AdapterConfig& AdapterConfig::add(const Adapter& adapter, float alpha) {
 
 
 AdapterConfig& AdapterConfig::add(const Adapter& adapter) {
+    int i = 0;
     return add(adapter, 1);
 }
 
