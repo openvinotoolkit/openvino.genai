@@ -165,7 +165,7 @@ namespace ov::genai {
                     dst_idx = m_block_size * (curr_logical_block_idx + 1) - 1;
                     continue;
                 }
-                dst[dst_idx] = src[src_idx];
+                dst[dst_idx] += src[src_idx];
                 src_idx++;
             }
             OPENVINO_ASSERT(src_idx == src.size());

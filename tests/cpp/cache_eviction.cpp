@@ -9,11 +9,86 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "openvino/genai/cache_eviction.hpp"
+
 
 const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG = {32, 32, 192, ov::genai::AggregationMode::NORM_SUM};
 const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG = {32, 32, 72, ov::genai::AggregationMode::NORM_SUM};
 constexpr size_t DEFAULT_BLOCK_SIZE = 4;
 constexpr size_t DEFAULT_NUM_DECODER_LAYERS = 2;
+constexpr size_t DEFAULT_MAX_POOL_WINDOW_SIZE = 8;
+constexpr ov::genai::AggregationMode DEFAULT_AGGREGATION_MODE = ov::genai::AggregationMode::NORM_SUM;
+
+AttentionScoresForEachDecoderLayer get_layer_scores_from_2d_vector(const std::vector<std::vector<double>>& src) {
+    AttentionScoresForEachDecoderLayer retval;
+    retval.reserve(src.size());
+    for (const auto& val_vec : src) {
+        retval.push_back(ov::Tensor(ov::element::f32, {val_vec.size()}));
+        ov::Tensor& created_tensor = retval.back();
+        std::copy(val_vec.begin(), val_vec.end(), created_tensor.data<float>());
+    }
+    return retval;
+}
+
+
+
+TEST(EvictionScoreManager, CanRegisterNewScores) {
+    ov::genai::EvictionScoreManager mgr(DEFAULT_BLOCK_SIZE, DEFAULT_NUM_DECODER_LAYERS, DEFAULT_MAX_POOL_WINDOW_SIZE, DEFAULT_AGGREGATION_MODE, 0);
+    auto mock_scores = get_layer_scores_from_2d_vector( { {0.0, 1.0}, {-2.0, -42.0} } );
+    EXPECT_NO_THROW(mgr.register_new_token_scores(mock_scores, {}));
+}
+
+
+struct EvictionScoreManagerAddWithSkipsTestStruct {
+    size_t block_size;
+    std::vector<double> src;
+    std::set<size_t> skipped_logical_block_ids;
+    std::vector<double> dst_before;
+    std::vector<double> ref_dst_after;
+};
+
+using EvictionScoreManagerAddWithSkipsParameterizedTest = ::testing::TestWithParam<EvictionScoreManagerAddWithSkipsTestStruct>;
+
+const std::vector<EvictionScoreManagerAddWithSkipsTestStruct> ADD_WITH_SKIPS_TEST_CASES = {
+    // basic case
+    {
+      2,
+      {0.0, 1.0,
+       2.0, 3.0}, {1},
+      {0.0, 0.0,
+       0.0, 0.0,
+       0.0, 0.0},
+      {0.0, 1.0,
+       0.0, 0.0,
+       2.0, 3.0}
+    },
+
+    // another block size
+    {
+      3,
+      {-1.0, 1.5, 12.8,
+        3.0, -9.4, 0.1}, {1},
+      {1.0, 1.0, 1.0,
+       2.0, 2.0, 2.0,
+       -3.0, -3.0, -3.0},
+      {0.0, 2.5, 13.8,
+       2.0, 2.0, 2.0,
+       0.0, -12.4, -2.9}
+    },
+
+
+};
+
+TEST_P(EvictionScoreManagerAddWithSkipsParameterizedTest, CanAddWithSkips) {
+    const auto& test_struct = GetParam();
+    ov::genai::EvictionScoreManager mgr(test_struct.block_size, DEFAULT_NUM_DECODER_LAYERS, DEFAULT_MAX_POOL_WINDOW_SIZE, DEFAULT_AGGREGATION_MODE, 0);
+    auto dst = test_struct.dst_before;
+    mgr.add_with_skips(dst, test_struct.src, test_struct.skipped_logical_block_ids);
+    EXPECT_EQ(dst.size(), test_struct.dst_before.size());
+    EXPECT_EQ(dst, test_struct.ref_dst_after);
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerAddWithSkipsParameterizedTest, ::testing::ValuesIn(ADD_WITH_SKIPS_TEST_CASES));
 
 class DefaultCacheEvictionAlgoTest : public testing::Test {
 protected:
