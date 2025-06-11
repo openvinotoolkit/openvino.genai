@@ -80,4 +80,8 @@ def get_gguf_model_list():
             "gguf_model_id": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
             "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf"
         },
+        {
+            "gguf_model_id": "unsloth/Llama-3.2-1B-Instruct-GGUF",
+            "gguf_filename": "Llama-3.2-1B-Instruct-Q8_0.gguf"
+        },
     ]
