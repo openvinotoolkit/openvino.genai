@@ -132,7 +132,9 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, **kwargs)
+
         log.info("Selected Optimum Intel for benchmarking")
+        ov_config.pop("ATTENTION_BACKEND", None)
         remote_code = False
         try:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
@@ -541,7 +543,7 @@ def create_speech_2_txt_model(model_path, device, memory_monitor, **kwargs):
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type]]:
-                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
+                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default benchmarking")
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_speech_2_txt_model(model_path, device, memory_monitor, **kwargs)
