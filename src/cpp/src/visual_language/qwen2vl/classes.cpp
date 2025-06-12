@@ -359,10 +359,9 @@ std::shared_ptr<ov::Model> VisionEncoderQwen2VL::patch_preprocess_into_model(std
     auto raw_images_planar = std::make_shared<ov::op::v1::Transpose>(raw_images, 
         std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 3, 1, 2})
     );
-    ov::op::v0::Interpolate::Attributes attrs = {
-        .axes = {2,3},
-        .mode = "cubic"
-    };
+    ov::op::v0::Interpolate::Attributes attrs = { };
+    attrs.axes = {2,3};
+    attrs.mode = "cubic";
 
     auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(raw_images_planar, ov::element::f32);
     auto resized_images_f32 = std::make_shared<ov::op::v0::Interpolate>(raw_images_f32, target_shape, attrs);
