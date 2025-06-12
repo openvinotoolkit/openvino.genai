@@ -312,6 +312,9 @@ public:
             m_history.clear();
         }
         m_inputs_embedder->start_chat(system_message);
+        if (system_message.empty()) {
+            return;
+        }
         m_history = {{{"role", "system"}, {"content", system_message}}};
     }
 
