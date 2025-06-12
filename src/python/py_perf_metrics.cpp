@@ -8,6 +8,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;
@@ -15,6 +16,9 @@ namespace py = pybind11;
 using ov::genai::MeanStdPair;
 using ov::genai::PerfMetrics;
 using ov::genai::RawPerfMetrics;
+using ov::genai::ExtendedPerfMetrics;
+using ov::genai::SDPerfMetrics;
+using ov::genai::SDPerModelsPerfMetrics;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -172,4 +176,32 @@ void init_perf_metrics(py::module_& m) {
         .def("__add__", &PerfMetrics::operator+, py::arg("metrics"))
         .def("__iadd__", &PerfMetrics::operator+=, py::arg("right"))
         .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
+
+    py::class_<ExtendedPerfMetrics, std::shared_ptr<ExtendedPerfMetrics>>(m, "ExtendedPerfMetrics", perf_metrics_docstring)
+        .def(py::init<>())
+        .def("get_load_time", &ExtendedPerfMetrics::get_load_time)
+        .def("get_num_generated_tokens", &ExtendedPerfMetrics::get_num_generated_tokens)
+        .def("get_num_input_tokens", &ExtendedPerfMetrics::get_num_input_tokens)
+        .def("get_ttft", &ExtendedPerfMetrics::get_ttft)
+        .def("get_tpot", &ExtendedPerfMetrics::get_tpot)
+        .def("get_ipot", &ExtendedPerfMetrics::get_ipot)
+        .def("get_throughput", &ExtendedPerfMetrics::get_throughput)
+        .def("get_generate_duration", &ExtendedPerfMetrics::get_generate_duration)
+        .def("get_inference_duration", &ExtendedPerfMetrics::get_inference_duration)
+        .def("get_tokenization_duration", &ExtendedPerfMetrics::get_tokenization_duration)
+        .def("get_detokenization_duration", &ExtendedPerfMetrics::get_detokenization_duration)
+        .def("__add__", &ExtendedPerfMetrics::operator+, py::arg("metrics"))
+        .def("__iadd__", &ExtendedPerfMetrics::operator+=, py::arg("right"))
+        .def_readonly("raw_metrics", &ExtendedPerfMetrics::raw_metrics);
+
+    py::class_<SDPerfMetrics, ExtendedPerfMetrics, std::shared_ptr<SDPerfMetrics>>(m, "SDPerfMetrics", perf_metrics_docstring)
+        .def("get_ttst", &SDPerfMetrics::get_ttst)
+        .def("get_latency", &SDPerfMetrics::get_latency);
+
+
+    py::class_<SDPerModelsPerfMetrics, SDPerfMetrics, std::shared_ptr<SDPerModelsPerfMetrics>>(m, "SDPerModelsPerfMetrics", perf_metrics_docstring)
+        .def("get_num_accepted_tokens", &SDPerModelsPerfMetrics::get_num_accepted_tokens)
+        .def_readonly("main_model_metrics", &SDPerModelsPerfMetrics::main_model_metrics)
+        .def_readonly("draft_model_metrics", &SDPerModelsPerfMetrics::draft_model_metrics);
 }
+

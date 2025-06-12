@@ -181,6 +181,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("m_scores", &GenerationResult::m_scores)
         .def_readwrite("m_status", &GenerationResult::m_status)
         .def_readonly("perf_metrics", &GenerationResult::perf_metrics)
+        .def_readonly("extended_perf_metrics", &GenerationResult::extended_perf_metrics)
         .def("__repr__",
             [](const GenerationResult &r) -> py::str {
                 std::stringstream stream;
@@ -198,7 +199,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readonly("m_request_id", &EncodedGenerationResult::m_request_id)
         .def_readwrite("m_generation_ids", &EncodedGenerationResult::m_generation_ids)
         .def_readwrite("m_scores", &EncodedGenerationResult::m_scores)
-        .def_readonly("perf_metrics", &EncodedGenerationResult::perf_metrics);
+        .def_readonly("perf_metrics", &EncodedGenerationResult::perf_metrics)
+        .def_readonly("extended_perf_metrics", &EncodedGenerationResult::extended_perf_metrics);
 
     py::enum_<ov::genai::GenerationFinishReason>(m, "GenerationFinishReason")
         .value("NONE", ov::genai::GenerationFinishReason::NONE)
