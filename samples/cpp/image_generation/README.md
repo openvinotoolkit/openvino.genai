@@ -4,9 +4,11 @@ Examples in this folder showcase inference of text to image models like Stable D
 
 There are several sample files:
  - [`text2image.cpp`](./text2image.cpp) demonstrates basic usage of the text to image pipeline
+ - [`text2image_concurrency.cpp`](./text2image_concurrency.cpp) demonstrates concurrent usage of the text to image pipeline to create multiple images with different prompts
  - [`lora_text2image.cpp`](./lora_text2image.cpp) shows how to apply LoRA adapters to the pipeline
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
+ - [`image2image_concurrency.cpp.cpp`](./image2image_concurrency.cpp) demonstrates concurrent usage of the image to image pipeline to create multiple images with different prompts
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.cpp`](./benchmark_image_gen.cpp) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
 
@@ -209,4 +211,43 @@ Performance output:
 Test finish, load time: 9356.00 ms
 Warmup number:1, first generate warmup time:85008.00 ms, infer warmup time:84999.88 ms
 Generate iteration number:3, for one iteration, generate avg time: 84372.34 ms, infer avg time:84363.95 ms, all text encoders infer avg time:76.67 ms, vae encoder infer avg time:0.00 ms, vae decoder infer avg time:4470.33 ms
+```
+
+### Run multiple generations with different prompt in parallel
+
+It is highly recommended to use `ov::genai::num_images_per_prompt(X)` parameter to generate multiple images in parallel. However, when the generation options differ (prompt, height, width), it is recommended to clone the pipeline.
+It is possible to re-use models compiled into device for concurrent generation with different prompts in separate threads.
+
+Here in this example we load and compile the entire pipeline once, and then use `clone()` to create separate generation requests to be reused in separate threads:
+
+
+```cpp
+std::vector<ov::genai::Text2ImagePipeline> pipelines;
+
+// Prepare initial pipeline and compiled models into device
+pipelines.emplace_back(models_path, device);
+// Clone pipeline for concurrent usage
+for (size_t i = 1; i < 4; i++)
+   pipelines.emplace_back(pipelines.begin()->clone());
+
+std::vector<std::thread> threads;
+
+for (size_t i = 0; i < 4; i++) {
+  auto& pipe = pipelines.at(i);
+  threads.emplace_back([&pipe, i] {
+    std::string prompt = "A card with number " + std::to_string(i);
+
+    ov::Tensor image = pipe.generate(prompt,
+      ov::AnyMap{
+        ov::genai::width(512),
+        ov::genai::height(512),
+        ov::genai::num_inference_steps(25)});
+
+    // save image
+  });
+}
+
+for (auto& thread : threads) {
+   thread.join();
+}
 ```
