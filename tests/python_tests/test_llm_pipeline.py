@@ -145,7 +145,7 @@ def test_different_input_types_works_same_and_change_nothing(model_id):
 
 chat_inputs = [
     (dict(max_new_tokens=20), ""),
-    (dict(max_new_tokens=20), "You are a helpful assistant."),
+    (dict(max_new_tokens=20), "Pretend that 1+1=1"),
     (dict(max_new_tokens=10, num_beam_groups=3, num_beams=15, num_return_sequences=1, diversity_penalty=1.0), "")
 ]
 
@@ -166,7 +166,6 @@ def test_chat_scenario(model_id, inputs, string_inputs):
     chat_history_ov = []
 
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
-    ov_pipe = None
     if string_inputs:
         ov_pipe = create_ov_pipeline(models_path)
     else:
