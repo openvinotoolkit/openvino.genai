@@ -33,15 +33,22 @@ public:
         wchar_t* value = nullptr;
         size_t len = 0;
         _wdupenv_s(&value, &len, env_var_name.c_str());
-        if (value == nullptr)
-            _wputenv_s(env_var_name.c_str(), environment_variable_value.wstring().c_str());
-#else
-        if (!getenv(ENVIRONMENT_VARIABLE_NAME))
-            setenv(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.string().c_str(), 1);
-#endif
-        else
+        if (value == nullptr) {
+            std::wstring wide_path = environment_variable_value.wstring();
+            _wputenv_s(env_var_name.c_str(), wide_path.c_str());
+        } else {
             was_already_set = true;
+            free(value);
+        }
+#else
+        if (!getenv(ENVIRONMENT_VARIABLE_NAME)) {
+            setenv(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.string().c_str(), 1);
+        } else {
+            was_already_set = true;
+        }
+#endif
     }
+    
     ~ScopedVar() {
         if (!was_already_set) {
 #ifdef _WIN32
