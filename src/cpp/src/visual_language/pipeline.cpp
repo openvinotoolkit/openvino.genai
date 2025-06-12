@@ -327,6 +327,7 @@ public:
         m_language.get_tensor("attention_mask").set_shape({0, 0});
         // clear all chat history
         m_inputs_embedder->finish_chat();
+        m_history.clear();
     }
 
     Tokenizer get_tokenizer() const override {
