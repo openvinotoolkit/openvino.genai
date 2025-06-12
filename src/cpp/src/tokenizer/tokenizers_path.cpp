@@ -19,6 +19,20 @@
 #endif
 
 namespace {
+
+// From https://github.com/openvinotoolkit/openvino/blob/41aea968b926ca915905d0d436b53152bfcd33c4/src/common/util/src/wstring_convert_util.cpp#L21-L31
+std::string wstring_to_string(const std::wstring& wstr) {
+#ifdef _WIN32
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
+    std::string strTo(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
+    return strTo;
+#else
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> wstring_decoder;
+    return wstring_decoder.to_bytes(wstr);
+#endif
+}
+
 #ifndef _WIN32
 std::string get_absolute_file_path(const std::string& path) {
     std::string absolutePath;
@@ -51,15 +65,15 @@ std::string get_ov_genai_library_path() {
     }
     std::cout << "[DEBUG] GetModuleHandleExW succeeded" << std::endl;
     
-    DWORD result = GetModuleFileNameW(hm, genai_library_path_w, MAX_PATH);
+    DWORD result = GetModuleFileNameW(hm, (LPWSTR)genai_library_path_w, sizeof(genai_library_path_w) / sizeof(genai_library_path_w[0]));
     if (result == 0) {
         std::stringstream ss;
         ss << "GetModuleFileNameW failed with error " << GetLastError();
         throw std::runtime_error(ss.str());
     }
     std::cout << "[DEBUG] GetModuleFileNameW succeeded, result length: " << result << std::endl;
-    
-    auto path_string = std::filesystem::path(genai_library_path_w).string();
+
+    auto path_string = wstring_to_string(std::wstring(genai_library_path_w));
     std::cout << "[DEBUG] GenAI library path: " << path_string << std::endl;
     return path_string;
 #elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
