@@ -201,6 +201,9 @@ ProcessorConfig from_any_map(
     read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
     read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
     read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
+    read_anymap_param(config_map, "crop_size_height", extracted_config.crop_size_height);
+    read_anymap_param(config_map, "crop_size_width", extracted_config.crop_size_width);
+    read_anymap_param(config_map, "size_shortest_edge", extracted_config.size_shortest_edge);
     return extracted_config;
 }
 

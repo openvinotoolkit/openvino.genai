@@ -371,7 +371,7 @@ EncodedResults StatefulLLMPipeline::generate(
     }
 
     ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,
-                                                                                requests, position_ids, m_kv_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
+                                                                                requests, position_ids, std::nullopt, m_kv_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
     ov::genai::EncodedResults& result = finish_info.results;
     m_chat_generation_finish_status = finish_info.streaming_finish_status;
 
