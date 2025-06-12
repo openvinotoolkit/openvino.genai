@@ -28,7 +28,7 @@ public:
     static constexpr char ENVIRONMENT_VARIABLE_NAME[] = "OPENVINO_TOKENIZERS_PATH_GENAI";
 
     explicit ScopedVar(const std::filesystem::path& environment_variable_value) {
-        std::cout << "[DEBUG] ScopedVar constructor called with path: " << environment_variable_value.string() << std::endl;
+        std::cout << "[DEBUG] ScopedVar constructor called" << std::endl;
 
 #ifdef _WIN32
         std::cout << "[DEBUG] ScopedVar: Using Windows Unicode APIs" << std::endl;
