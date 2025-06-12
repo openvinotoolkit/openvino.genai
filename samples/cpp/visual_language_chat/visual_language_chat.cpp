@@ -19,18 +19,13 @@ int main(int argc, char* argv[]) try {
     // GPU and NPU can be used as well.
     // Note: If NPU is selected, only language model will be run on NPU
     std::string device = (argc == 4) ? argv[3] : "CPU";
-    // ov::AnyMap enable_compile_cache;
-    ov::AnyMap pipe_config = {};
-
+    ov::AnyMap enable_compile_cache;
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
-        pipe_config.insert({ov::cache_dir("")});
+        enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
     }
-    pipe_config["ATTENTION_BACKEND"] = "SDPA";
-    pipe_config["KV_CACHE_PRECISION"] = "f16";
-
-    ov::genai::VLMPipeline pipe(argv[1], device, pipe_config);
+    ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
 
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
