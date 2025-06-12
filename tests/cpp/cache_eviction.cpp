@@ -19,7 +19,7 @@ constexpr size_t DEFAULT_NUM_DECODER_LAYERS = 2;
 constexpr size_t DEFAULT_MAX_POOL_WINDOW_SIZE = 8;
 constexpr ov::genai::AggregationMode DEFAULT_AGGREGATION_MODE = ov::genai::AggregationMode::NORM_SUM;
 
-AttentionScoresForEachDecoderLayer get_layer_scores_from_2d_vector(const std::vector<std::vector<double>>& src) {
+AttentionScoresForEachDecoderLayer get_layer_scores_from_2d_vector(const std::vector<std::vector<float>>& src) {
     AttentionScoresForEachDecoderLayer retval;
     retval.reserve(src.size());
     for (const auto& val_vec : src) {
@@ -76,7 +76,87 @@ const std::vector<EvictionScoreManagerAddWithSkipsTestStruct> ADD_WITH_SKIPS_TES
        0.0, -12.4, -2.9}
     },
 
+    // corner case skipped blocks
+    {
+      3,
+      {-1.0, 1.5, 12.8,
+        3.0, -9.4, 0.1}, {0, 3},
+      {1.0, 1.0, 1.0,
+       2.0, 2.0, 2.0,
+       -3.0, -3.0, -3.0,
+       12.5, -7.2, 9.6},
+      {1.0, 1.0, 1.0,
+       1.0, 3.5, 14.8,
+       0.0, -12.4, -2.9,
+       12.5, -7.2, 9.6}
+    },
 
+    // non-contiguous skipped blocks
+    {
+      2,
+      {-1.0, 1.5,
+        12.8, 3.0,
+        -13.0, -87.0 }, {1, 2, 4},
+      {1.0, 1.0,
+       1.0, 2.0,
+       2.0, 2.0,
+       -3.0, -3.0,
+       -3.0, 12.5,
+       42.0, -1337.0},
+      {0.0, 2.5,
+       1.0, 2.0,
+       2.0, 2.0,
+       9.8, 0.0,
+       -3.0, 12.5,
+       29.0, -1424.0}
+    },
+
+    // no blocks skipped
+    {
+      2,
+      { 5.9, 0.3,
+        -1.0, 1.5,
+        12.8, 3.0,
+        -13.0, -87.0 }, {},
+      {1.0, 1.0,
+       1.0, 2.0,
+       2.0, 2.0,
+       -3.0, -3.0},
+      {6.9, 1.3,
+       0.0, 3.5,
+       14.8, 5.0,
+       -16.0, -90.0}
+    },
+
+    // all blocks skipped
+    {
+      2,
+      {}, {0, 1, 2, 3},
+      {1.0, 1.0,
+       1.0, 2.0,
+       2.0, 2.0,
+       -3.0, -3.0},
+      {1.0, 1.0,
+       1.0, 2.0,
+       2.0, 2.0,
+       -3.0, -3.0},
+    },
+
+    // non-block aligned values
+    {
+      2,
+      { 5.9, 0.3,
+        12.8, 3.0,
+        -13.0 }, {1},
+      {1.0, 1.0,
+       1.0, 2.0,
+       2.0, 2.0,
+       -3.0},
+      {6.9, 1.3,
+       1.0, 2.0,
+       14.8, 5.0,
+       -16.0}
+    },
 };
 
 TEST_P(EvictionScoreManagerAddWithSkipsParameterizedTest, CanAddWithSkips) {
@@ -89,6 +169,211 @@ TEST_P(EvictionScoreManagerAddWithSkipsParameterizedTest, CanAddWithSkips) {
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerAddWithSkipsParameterizedTest, ::testing::ValuesIn(ADD_WITH_SKIPS_TEST_CASES));
+
+
+struct EvictionScoreManagerRegisterScoresTestStruct {
+    std::string test_id;
+    size_t block_size;
+    ov::genai::AggregationMode aggregation_mode;
+    size_t max_pool_window_size;
+    size_t ignore_first_n_blocks;
+
+    std::vector<std::pair<std::vector<std::vector<float>>, std::set<size_t>>> scores_and_skips;
+    std::vector<std::vector<float>> ref_scores;
+    std::vector<std::vector<size_t>> ref_counters;
+};
+
+using EvictionScoreManagerRegisterScoresParameterizedTest = ::testing::TestWithParam<EvictionScoreManagerRegisterScoresTestStruct>;
+
+const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_TEST_CASES = {
+    { "basic_case_sum",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} }
+      },
+
+      { {1.5, -0.8, 4.1, 7.7},
+        {-0.9, 1.4, 6.4, -9.0} },
+      { {},
+        {} }
+    },
+    { "basic_case_norm_sum",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} }
+      },
+
+      { {1.5, -0.8, 4.1, 7.7},
+        {-0.9, 1.4, 6.4, -9.0} },
+      { {4, 3, 2, 1},
+        {4, 3, 2, 1} }
+    },
+    { "two_scores_sum",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} },
+          { {{-7.4, 2.6, 8.9, -0.1},
+             {-3.1, -8.2, 5.9, 7.6}}, {} }
+      },
+
+      { {-5.9, 1.8, 13.0, 7.6},
+        {-4.0, -6.8, 12.3, -1.4} },
+      { {},
+        {} }
+    },
+    { "two_scores_norm_sum",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} },
+          { {{-7.4, 2.6, 8.9, -0.1},
+             {-3.1, -8.2, 5.9, 7.6}}, {} }
+      },
+
+      { {-5.9, 1.8, 13.0, 7.6},
+        {-4.0, -6.8, 12.3, -1.4} },
+      { {4, 3, 2, 1},
+        {4, 3, 2, 1} }
+    },
+
+    { "more_scores_second_time",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} },
+          { {{-7.4, 2.6, 8.9, -0.1, 3.5},
+             {-3.1, -8.2, 5.9, 7.6, -1.0}}, {} }
+      },
+
+      { {-5.9, 1.8, 13.0, 7.6, 3.5},
+        {-4.0, -6.8, 12.3, -1.4, -1.0} },
+      { {5, 4, 3, 2, 1},
+        {5, 4, 3, 2, 1} }
+    },
+    { "less_scores_second_time_with_skips",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9},
+             {-3.1, -8.2, 5.9}}, {1, 2} }
+      },
+
+      { {-5.9, 1.8, 4.1, 7.7, 3.6, -7.4, 8.9},
+        {-4.0, -6.8, 6.4, -9.0, 8.1, 2.6, 5.9} },
+      { {7, 6, 5, 4, 3, 2, 1},
+        {7, 6, 5, 4, 3, 2, 1} }
+    },
+    { "with_ignore_first_n_blocks_base",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9, 3.5, 7.4, -3.8},
+             {-3.1, -8.2, 5.9, -7.9, -5.8, 1.7}}, {} }
+      },
+
+      { {13.0, 11.2, 11.0, -11.2},
+        {12.3, -16.9, 2.3, 4.3} },
+      { {4, 3, 2, 1},
+        {4, 3, 2, 1} }
+    },
+    { "with_ignore_first_n_blocks_more_scores_second_time",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9, 3.5, 7.4, -3.8, 0.1},
+             {-3.1, -8.2, 5.9, -7.9, -5.8, 1.7, -0.2}}, {} }
+      },
+
+      { {13.0, 11.2, 11.0, -11.2, 0.1},
+        {12.3, -16.9, 2.3, 4.3, -0.2} },
+      { {5, 4, 3, 2, 1},
+        {5, 4, 3, 2, 1} }
+    },
+    { "with_ignore_first_n_blocks_less_second_time_with_skips",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9},
+             {-3.1, -8.2, 5.9}}, {1, 2} }
+      },
+
+      { {4.1, 7.7, 3.6, -7.4, 8.9},
+        {6.4, -9.0, 8.1, 2.6, 5.9} },
+      { {5, 4, 3, 2, 1},
+        {5, 4, 3, 2, 1} }
+    },
+    { "with_max_pool_base",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+      },
+
+      { {4.1, 7.7, 7.7, 7.7, 3.6, -7.4},
+        {6.4, 6.4, 8.1, 8.1, 8.1, 2.6} },
+      { {6, 5, 4, 3, 2, 1},
+        {6, 5, 4, 3, 2, 1} }
+    },
+    { "with_max_pool_two_score",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9, 3.5, 7.4, -3.8, 0.1},
+             {-3.1, -8.2, 5.9, -7.9, -5.8, 1.7, -0.2}}, {} }
+      },
+
+      { {13.0, 16.6, 16.6, 15.1, 11.0, -7.3, 0.1},
+        {12.3, 12.3, 14.0, 9.8, 9.8, 4.3, -0.2} },
+      { {7, 6, 5, 4, 3, 2, 1},
+        {7, 6, 5, 4, 3, 2, 1} }
+    },
+    { "with_max_pool_ignore_and_skips",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 1,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9},
+             {-3.1, -8.2, 5.9}}, {1, 2} }
+      },
+
+      { {7.7, 7.7, 3.6, -7.4, 8.9},
+        {8.1, 8.1, 8.1, 2.6, 5.9} },
+      { {5, 4, 3, 2, 1},
+        {5, 4, 3, 2, 1} }
+    },
+};
+
+TEST_P(EvictionScoreManagerRegisterScoresParameterizedTest, ScoresAndCountersAfterRegistrationAreCorrect) {
+    const auto& test_struct = GetParam();
+    ov::genai::EvictionScoreManager mgr(test_struct.block_size, DEFAULT_NUM_DECODER_LAYERS, test_struct.max_pool_window_size, test_struct.aggregation_mode, test_struct.ignore_first_n_blocks);
+    for (const auto& score_and_skip : test_struct.scores_and_skips) {
+        mgr.register_new_token_scores(get_layer_scores_from_2d_vector(score_and_skip.first), score_and_skip.second);
+    }
+    const auto& test_scores = mgr.get_scores();
+    const auto& test_counters = mgr.get_counters();
+    ASSERT_EQ(test_scores.size(), DEFAULT_NUM_DECODER_LAYERS);
+    ASSERT_EQ(test_counters.size(), DEFAULT_NUM_DECODER_LAYERS);
+
+    float abs_tol = 1e-6;
+    for (size_t layer_idx = 0; layer_idx < DEFAULT_NUM_DECODER_LAYERS; layer_idx++) {
+        EXPECT_THAT(test_scores[layer_idx], ::testing::Pointwise(::testing::DoubleNear(abs_tol), test_struct.ref_scores[layer_idx]));
+        EXPECT_EQ(mgr.get_counters(), test_struct.ref_counters);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerRegisterScoresParameterizedTest, ::testing::ValuesIn(REGISTER_SCORES_TEST_CASES),
+                         [](const testing::TestParamInfo<EvictionScoreManagerRegisterScoresParameterizedTest::ParamType>& info) {
+                             return info.param.test_id;
+                         });
+
 
 class DefaultCacheEvictionAlgoTest : public testing::Test {
 protected:

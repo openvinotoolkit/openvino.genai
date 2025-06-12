@@ -60,13 +60,30 @@ namespace ov::genai {
             // Taking the [1, start_size:seq_len] span of the attention scores:
             auto attn_shape = attention_scores.get_shape();
             size_t scores_size_in_tokens = attn_shape[0];
-            if (scores_size_in_tokens <= m_ignore_first_n_scores + 1) {
+            if (scores_size_in_tokens <= m_ignore_first_n_blocks * m_block_size) {
                 return;
+            }
+
+            std::set<size_t> skip_set_adjusted;
+            size_t num_skipped_blocks_in_ignore_area = 0;
+            for (size_t i = 0; i < m_ignore_first_n_blocks; i++) {
+                if (skipped_logical_block_ids.find(i) != skipped_logical_block_ids.end()) {
+                    num_skipped_blocks_in_ignore_area++;
+                }
+            }
+
+            OPENVINO_ASSERT(num_skipped_blocks_in_ignore_area <= m_ignore_first_n_blocks);
+            size_t start_token_offset_in_scores = (m_ignore_first_n_blocks - num_skipped_blocks_in_ignore_area) * m_block_size;
+
+            for (size_t skipped_block_id : skipped_logical_block_ids) {
+                if (skipped_block_id >= m_ignore_first_n_blocks) {
+                    skip_set_adjusted.insert(skipped_block_id - m_ignore_first_n_blocks);
+                } // else do not include this block in the adjusted skip set since it is in the start area already
             }
 
             auto hh_score = ov::Tensor(
                     attention_scores,
-                    ov::Coordinate{m_ignore_first_n_scores},
+                    ov::Coordinate{start_token_offset_in_scores},
                     ov::Coordinate{scores_size_in_tokens}
             );
 
@@ -139,7 +156,7 @@ namespace ov::genai {
                     }
                 }
                 accumulated_scores_for_current_decoder_layer.resize(new_size_in_tokens);
-                add_with_skips(accumulated_scores_for_current_decoder_layer, max_pooled_hh_scores, skipped_logical_block_ids);
+                add_with_skips(accumulated_scores_for_current_decoder_layer, max_pooled_hh_scores, skip_set_adjusted);
             }
         }
     }

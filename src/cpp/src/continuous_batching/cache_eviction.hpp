@@ -17,7 +17,7 @@ namespace ov::genai {
 class EvictionScoreManager {
 public:
     EvictionScoreManager() = default;
-    explicit EvictionScoreManager(size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size, AggregationMode aggregation_mode, size_t ignore_first_n_scores = 0) : m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), m_scores(num_decoder_layers), m_cache_counter(num_decoder_layers), m_max_pool_window_size(max_pool_window_size), m_aggregation_mode(aggregation_mode), m_ignore_first_n_scores(ignore_first_n_scores) {}
+    explicit EvictionScoreManager(size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size, AggregationMode aggregation_mode, size_t ignore_first_n_blocks = 0) : m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), m_scores(num_decoder_layers), m_cache_counter(num_decoder_layers), m_max_pool_window_size(max_pool_window_size), m_aggregation_mode(aggregation_mode), m_ignore_first_n_blocks(ignore_first_n_blocks) {}
     void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers, const std::set<size_t>& skipped_logical_block_ids);
 
     void remove_scores(const std::vector<std::size_t>& evicted_block_indices, size_t decoder_layer_idx);
@@ -36,7 +36,7 @@ private:
     std::vector<std::vector<size_t>> m_cache_counter;
     std::size_t m_max_pool_window_size;
     AggregationMode m_aggregation_mode;
-    std::size_t m_ignore_first_n_scores;
+    std::size_t m_ignore_first_n_blocks;
 };
 
 /**
