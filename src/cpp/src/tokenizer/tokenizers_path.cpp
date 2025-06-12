@@ -4,6 +4,8 @@
 #include "tokenizer/tokenizers_path.hpp"
 
 #include <sstream>
+#include <iostream>
+
 #ifdef _WIN32
 #    include <windows.h>
 #    define MAX_ABS_PATH _MAX_PATH
@@ -36,6 +38,8 @@ std::string get_absolute_file_path(const std::string& path) {
 
 std::string get_ov_genai_library_path() {
 #ifdef _WIN32
+    std::cout << "[DEBUG] get_ov_genai_library_path: Using Windows Unicode APIs" << std::endl;
+
     WCHAR genai_library_path_w[MAX_PATH];
     HMODULE hm = NULL;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -45,6 +49,7 @@ std::string get_ov_genai_library_path() {
         ss << "GetModuleHandleExW returned " << GetLastError();
         throw std::runtime_error(ss.str());
     }
+    std::cout << "[DEBUG] GetModuleHandleExW succeeded" << std::endl;
     
     DWORD result = GetModuleFileNameW(hm, genai_library_path_w, MAX_PATH);
     if (result == 0) {
@@ -52,8 +57,11 @@ std::string get_ov_genai_library_path() {
         ss << "GetModuleFileNameW failed with error " << GetLastError();
         throw std::runtime_error(ss.str());
     }
+    std::cout << "[DEBUG] GetModuleFileNameW succeeded, result length: " << result << std::endl;
     
-    return std::filesystem::path(genai_library_path_w).string();
+    auto path_string = std::filesystem::path(genai_library_path_w).string();
+    std::cout << "[DEBUG] GenAI library path: " << path_string << std::endl;
+    return path_string;
 #elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
     Dl_info info;
     dladdr(reinterpret_cast<void*>(get_ov_genai_library_path), &info);
@@ -83,5 +91,8 @@ std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path
 }
 
 std::filesystem::path tokenizers_relative_to_genai() {
-    return with_openvino_tokenizers(get_ov_genai_library_path());
+    std::cout << "[DEBUG] tokenizers_relative_to_genai() called" << std::endl;
+    auto result = with_openvino_tokenizers(get_ov_genai_library_path());
+    std::cout << "[DEBUG] tokenizers_relative_to_genai() result: " << result.string() << std::endl;
+    return result;
 }
