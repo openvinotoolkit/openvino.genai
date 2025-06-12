@@ -42,10 +42,17 @@ std::string get_ov_genai_library_path() {
                             reinterpret_cast<LPCWSTR>(get_ov_genai_library_path),
                             &hm)) {
         std::stringstream ss;
-        ss << "GetModuleHandle returned " << GetLastError();
+        ss << "GetModuleHandleExW returned " << GetLastError();
         throw std::runtime_error(ss.str());
     }
-    GetModuleFileNameW(hm, genai_library_path_w, MAX_PATH);
+    
+    DWORD result = GetModuleFileNameW(hm, genai_library_path_w, MAX_PATH);
+    if (result == 0) {
+        std::stringstream ss;
+        ss << "GetModuleFileNameW failed with error " << GetLastError();
+        throw std::runtime_error(ss.str());
+    }
+    
     return std::filesystem::path(genai_library_path_w).string();
 #elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
     Dl_info info;
