@@ -79,8 +79,6 @@ EncodedImage VisionEncoderGemma3::encode( const ov::Tensor& image, const ov::Any
     auto pixel_values_ptr = pixel_values.data<float>();
     ov::Shape pixel_values_shape = pixel_values.get_shape();
 
-    std::cout << "pixel_values_shape: " << pixel_values_shape << std::endl; //[1,3,896,896
-
     size_t pixel_values_base_index = 0 * (pixel_values_shape[1] * pixel_values_shape[2]) + 0 * (pixel_values_shape[2]); 
 
     encoder.set_tensor("pixel_values", pixel_values);

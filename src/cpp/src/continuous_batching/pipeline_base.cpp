@@ -159,6 +159,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(prompts.size() == rgbs_vector.size(), "Number of prompts should be equal to the number of images vectors.");
 
     std::vector<ov::Tensor> input_embeds_list;
+    // std::optional<std::vector<ov::Tensor>> token_type_ids_list;
+    std::vector<ov::Tensor> token_type_ids_list;
+    
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
     std::vector<EncodedImage> encoded_images = {};
 
@@ -180,12 +183,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids));
         if (m_inputs_embedder->has_token_type_ids()) {
             std::cout << "get_inputs_embeds_with_token_type_ids\n";
-            auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, rgbs, perf_metrics, image_sequence);
-            inputs_embeds = embeds;
-            token_type_ids = tt_ids;
+            auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
+            input_embeds_list.push_back(embeds);
+            token_type_ids_list.push_back(tt_ids);
         } else {
             std::cout << "get_inputs_embeds\n";
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, rgbs, perf_metrics, image_sequence);
+            auto inputs_embeds = m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
+            input_embeds_list.push_back(inputs_embeds);
         }
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
