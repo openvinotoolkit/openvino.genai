@@ -21,17 +21,14 @@
 namespace {
 
 // From https://github.com/openvinotoolkit/openvino/blob/41aea968b926ca915905d0d436b53152bfcd33c4/src/common/util/src/wstring_convert_util.cpp#L21-L31
-std::string wstring_to_string(const std::wstring& wstr) {
 #ifdef _WIN32
+std::string wstring_to_string(const std::wstring& wstr) {
     int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
     std::string strTo(size_needed, 0);
     WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
     return strTo;
-#else
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> wstring_decoder;
-    return wstring_decoder.to_bytes(wstr);
-#endif
 }
+#endif
 
 #ifndef _WIN32
 std::string get_absolute_file_path(const std::string& path) {
