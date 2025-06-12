@@ -27,16 +27,6 @@ MeanStdPair ov::genai::SDPerfMetrics::get_latency() {
     return ttl;
 };
 
-size_t ov::genai::SDPerfMetrics::get_num_accepted_tokens() {
-    evaluate_statistics();
-    return num_accepted_tokens;
-};
-
-size_t ov::genai::SDPerfMetrics::get_num_iterations() {
-    evaluate_statistics();
-    return num_iterations;
-};
-
 void ov::genai::SDPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     if (m_evaluated)
         return;
@@ -53,17 +43,12 @@ void ov::genai::SDPerfMetrics::evaluate_statistics(std::optional<TimePoint> star
         raw_metrics.m_times_to_first_token.emplace_back(durations[0]);
 
         num_generated_tokens = batch_sizes[0];
-        num_accepted_tokens = 0;
 
         raw_metrics.generate_durations.clear();
         raw_metrics.generate_durations.emplace_back(durations[0]);
 
-        num_iterations = durations.size();
-
         for (size_t i = 1; i < durations.size(); ++i) {
             if (i == 1) {
-                // TODO: ttst should be based on time per token or latency?
-                // Why ttst is needed ?
                 second_token_duration.emplace_back(durations[i]);
             } else {
                 latency_durations.emplace_back(durations[i]);
@@ -72,7 +57,6 @@ void ov::genai::SDPerfMetrics::evaluate_statistics(std::optional<TimePoint> star
 
             raw_metrics.generate_durations[0] += durations[i];
             num_generated_tokens += batch_sizes[i];
-            num_accepted_tokens += batch_sizes[i] - 1;
         }
     }
 
@@ -92,17 +76,37 @@ void ov::genai::SDPerfMetrics::evaluate_statistics(std::optional<TimePoint> star
 }
 
 ov::genai::SDPerModelsPerfMetrics::SDPerModelsPerfMetrics() {
-    std::cout << "a;lskjf;sajf" << std::endl;
     raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
     main_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
     draft_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 }
+
+size_t ov::genai::SDPerModelsPerfMetrics::get_num_accepted_tokens() {
+    evaluate_statistics();
+    return num_accepted_tokens;
+};
     
 void ov::genai::SDPerModelsPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     if (m_evaluated)
         return;
 
     ov::genai::PerfMetrics::evaluate_statistics(start_time);
+    // recalculate tpot to take into account all generated tokens and calculate num_accepted_tokens
+    if (raw_metrics.m_new_token_times.size() > 0 && raw_metrics.m_batch_sizes.size() > 0) {
+        auto& tok_times = raw_metrics.m_new_token_times;
+        auto& batch_sizes = raw_metrics.m_batch_sizes;
+        raw_metrics.m_durations.clear();
+        num_accepted_tokens = 0;
+
+        for (size_t i = 1; i < tok_times.size(); ++i) {
+            for (size_t y = 0; y < raw_metrics.m_batch_sizes[i]; y++)
+                raw_metrics.m_durations.emplace_back((tok_times[i] - tok_times[i - 1]) / batch_sizes[i]);
+
+            num_accepted_tokens += batch_sizes[i] - 1;
+        }
+    }
+    tpot = calc_mean_and_std(raw_metrics.m_durations);
+
     main_model_metrics.evaluate_statistics(start_time);
     draft_model_metrics.evaluate_statistics(start_time);
 

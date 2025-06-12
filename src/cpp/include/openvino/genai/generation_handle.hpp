@@ -39,7 +39,7 @@ struct EncodedGenerationResult {
     PerfMetrics perf_metrics;
 
     // PerfMetrics with pipeline specifics metrics and empty tokenization/detokenization durations.
-    std::shared_ptr<PerfMetrics> extended_perf_metrics;
+    std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 };
 
 enum class GenerationFinishReason {
@@ -65,7 +65,7 @@ struct GenerationResult {
     PerfMetrics perf_metrics;
 
     // PerfMetrics with pipeline specifics
-    std::shared_ptr<PerfMetrics> extended_perf_metrics;
+    std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 };
 
 struct GenerationOutput {
