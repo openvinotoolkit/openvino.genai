@@ -26,22 +26,22 @@ class ScopedVar {
     bool was_already_set{false};
 public:
     static constexpr char ENVIRONMENT_VARIABLE_NAME[] = "OPENVINO_TOKENIZERS_PATH_GENAI";
+    static constexpr wchar_t ENVIRONMENT_VARIABLE_NAME_W[] = L"OPENVINO_TOKENIZERS_PATH_GENAI";
 
     explicit ScopedVar(const std::filesystem::path& environment_variable_value) {
         std::cout << "[DEBUG] ScopedVar constructor called" << std::endl;
 
 #ifdef _WIN32
         std::cout << "[DEBUG] ScopedVar: Using Windows Unicode APIs" << std::endl;
-        std::wstring env_var_name(std::string(ENVIRONMENT_VARIABLE_NAME).begin(), std::string(ENVIRONMENT_VARIABLE_NAME).end());
 
         wchar_t* value = nullptr;
         size_t len = 0;
         std::cout << "[DEBUG] ScopedVar: Checking if environment variable exists" << std::endl;
-        _wdupenv_s(&value, &len, env_var_name.c_str());
+        _wdupenv_s(&value, &len, ENVIRONMENT_VARIABLE_NAME_W);
         if (value == nullptr) {
             std::cout << "[DEBUG] ScopedVar: Environment variable not set, setting it now" << std::endl;
             std::wstring wide_path = environment_variable_value.wstring();
-            int result = _wputenv_s(env_var_name.c_str(), wide_path.c_str());
+            int result = _wputenv_s(ENVIRONMENT_VARIABLE_NAME_W, wide_path.c_str());
             if (result == 0) {
                 std::cout << "[DEBUG] ScopedVar: Environment variable set successfully" << std::endl;
             } else {
@@ -70,8 +70,7 @@ public:
         if (!was_already_set) {
 #ifdef _WIN32
             std::cout << "[DEBUG] ScopedVar destructor: Unsetting environment variable on Windows" << std::endl;
-            std::wstring env_var_name(std::string(ENVIRONMENT_VARIABLE_NAME).begin(), std::string(ENVIRONMENT_VARIABLE_NAME).end());
-            _wputenv_s(env_var_name.c_str(), L"");
+            _wputenv_s(ENVIRONMENT_VARIABLE_NAME_W, L"");
 #else
             std::cout << "[DEBUG] ScopedVar destructor: Unsetting environment variable on POSIX" << std::endl;
             unsetenv(ENVIRONMENT_VARIABLE_NAME);
