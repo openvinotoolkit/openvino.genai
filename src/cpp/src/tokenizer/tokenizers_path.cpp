@@ -109,6 +109,6 @@ std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path
 std::filesystem::path tokenizers_relative_to_genai() {
     std::cout << "[DEBUG] tokenizers_relative_to_genai() called" << std::endl;
     auto result = with_openvino_tokenizers(get_ov_genai_library_path());
-    std::cout << "[DEBUG] tokenizers_relative_to_genai() result: " << result.string() << std::endl;
+    std::cout << "[DEBUG] tokenizers_relative_to_genai() result" << std::endl;
     return result;
 }
