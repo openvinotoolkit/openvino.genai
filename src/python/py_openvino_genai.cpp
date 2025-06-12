@@ -85,6 +85,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
         .def_readonly("scores", &DecodedResults::scores)
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
+        .def_readonly("extended_perf_metrics", &DecodedResults::extended_perf_metrics)
         .def("__str__", [](const DecodedResults &dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
             py::str res;
@@ -101,7 +102,8 @@ PYBIND11_MODULE(py_openvino_genai, m) {
     py::class_<EncodedResults>(m, "EncodedResults", encoded_results_docstring)
         .def_readonly("tokens", &EncodedResults::tokens)
         .def_readonly("scores", &EncodedResults::scores)
-        .def_readonly("perf_metrics", &EncodedResults::perf_metrics);
+        .def_readonly("perf_metrics", &EncodedResults::perf_metrics)
+        .def_readonly("extended_perf_metrics", &EncodedResults::extended_perf_metrics);
 
     init_lora_adapter(m);
     init_generation_config(m);

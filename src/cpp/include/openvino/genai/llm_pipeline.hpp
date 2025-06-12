@@ -44,7 +44,7 @@ public:
     std::vector<std::vector<int64_t>> tokens;
     std::vector<float> scores;
     PerfMetrics perf_metrics;
-    std::shared_ptr<PerfMetrics> extended_perf_metrics;
+    std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 };
 
 /**
@@ -61,7 +61,7 @@ public:
     std::vector<std::string> texts;
     std::vector<float> scores;
     PerfMetrics perf_metrics;
-    std::shared_ptr<PerfMetrics> extended_perf_metrics;
+    std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 
     // @brief Convert DecodedResults to a string.
     operator std::string() const {

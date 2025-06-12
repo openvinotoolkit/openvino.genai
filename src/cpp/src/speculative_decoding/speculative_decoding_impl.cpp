@@ -100,9 +100,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
         draft_scheduler_config, draft_device, draft_properties, false);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-    m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
-    m_perf_metrics.main_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
-    m_perf_metrics.draft_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+    // m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+    // m_perf_metrics.main_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+    // m_perf_metrics.draft_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
     m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 }
 
@@ -223,9 +223,9 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
         auto main_model_gen_duration = main_timer.get_duration_microsec();
         auto m_main_pipeline_metrics = m_main_pipeline->get_metrics();
-        main_raw_perf_counters.m_durations.emplace_back( MicroSeconds(main_model_gen_duration));
+        main_raw_perf_counters.m_durations.push_back(MicroSeconds(main_model_gen_duration));
         main_raw_perf_counters.m_inference_durations[0] = MicroSeconds(m_main_pipeline_metrics.inference_duration);
-        main_raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens); // or should be processed + generated
+        main_raw_perf_counters.m_batch_sizes.push_back(num_generated_tokens); // or should be processed + generated
     }
 
     if (main_generated_requests.empty() && utils::env_setup_for_print_debug_info()) {
@@ -241,9 +241,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer) {
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-    m_perf_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
-    m_perf_metrics.main_model_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
-    m_perf_metrics.draft_model_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+    // m_perf_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+    // m_perf_metrics.main_model_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+    // m_perf_metrics.draft_model_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
     m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
