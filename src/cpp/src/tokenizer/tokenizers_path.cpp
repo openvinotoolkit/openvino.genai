@@ -47,7 +47,7 @@ std::string get_absolute_file_path(const std::string& path) {
 }
 #endif
 
-std::string get_ov_genai_library_path() {
+std::filesystem::path get_ov_genai_library_path() {
 #ifdef _WIN32
     std::cout << "[DEBUG] get_ov_genai_library_path: Using Windows Unicode APIs" << std::endl;
 
@@ -70,13 +70,18 @@ std::string get_ov_genai_library_path() {
     }
     std::cout << "[DEBUG] GetModuleFileNameW succeeded, result length: " << result << std::endl;
 
-    auto path_string = wstring_to_string(std::wstring(genai_library_path_w));
-    std::cout << "[DEBUG] GenAI library path: " << path_string << std::endl;
-    return path_string;
+    // std::filesystem::path library_path(std::wstring(genai_library_path_w));
+    std::filesystem::path library_path(genai_library_path_w);
+    // std::string path_string = library_path.u8string();
+
+    // auto path_string = wstring_to_string(std::wstring(genai_library_path_w));
+    std::cout << "[DEBUG] GenAI library path: " << library_path.u8string() << std::endl;
+    return library_path;
 #elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
     Dl_info info;
     dladdr(reinterpret_cast<void*>(get_ov_genai_library_path), &info);
-    return get_absolute_file_path(info.dli_fname).c_str();
+    // return get_absolute_file_path(info.dli_fname).c_str();
+    return std::filesystem::path(get_absolute_file_path(info.dli_fname));
 #else
 #    error "Unsupported OS"
 #endif  // _WIN32
