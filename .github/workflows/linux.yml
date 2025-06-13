@@ -845,6 +845,58 @@ jobs:
           MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
 
+  genai_xgrammar_tests:
+    name: Build & Test XGrammar
+    needs: [ openvino_download ]
+    timeout-minutes: 45
+    runs-on: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+    env:
+      CMAKE_GENERATOR: Unix Makefiles
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
+      SRC_DIR: ${{ github.workspace }}/src
+      BUILD_DIR: ${{ github.workspace }}/build_xgrammar
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: CMake Build with XGrammar
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
+                -DENABLE_PYTHON=ON \
+                -DENABLE_XGRAMMAR=ON \
+                -DCMAKE_BUILD_TYPE=Release \
+                -S ${{ env.SRC_DIR}} \
+                -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR}} --config Release --parallel $(nproc) --verbose
+          cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
+
+      - name: Install Python dependencies for tests
+        run: |
+          python3 -m pip install -r ${{ env.SRC_DIR }}/tests/python_tests/requirements.txt
+
+      - name: Run test_structured_output.py
+        run: |
+          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_structured_output.py
+
   Overall_Status:
     name: ci/gha_overall_status_linux
     needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests]

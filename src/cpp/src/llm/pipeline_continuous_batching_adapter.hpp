@@ -205,7 +205,7 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
-        m_impl->start_chat();
+        m_impl->start_chat(system_message);
     };
 
     void finish_chat() override {

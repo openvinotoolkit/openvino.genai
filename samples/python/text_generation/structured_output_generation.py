@@ -6,18 +6,55 @@ import argparse
 import json
 from typing import Literal
 import openvino_genai
-from pydantic import BaseModel
+from typing import Literal, Set, List, Union
+from pydantic import BaseModel, RootModel, Field
+
 
 class Person(BaseModel):
-    given_name: str
-    surname: str
+    name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+    surname: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
     age: int
     city: Literal["Dublin", "Dubai", "Munich"]
+    
+
+class Car(BaseModel):
+    model: str = Field(pattern=r"^[A-Z][a-z]{1,20} ?[A-Z][a-z]{0,20} ?.?$")
+    year: int
+    engine_type: Literal["diesel", "petrol", "electric", "hybrid"]
+
+
+class Transaction(BaseModel):
+    id: int = Field(ge=1000, le=10_000_000)
+    amount: float
+    currency: Literal["EUR", "PLN", "RUB", "AED", "CHF", "GBP", "USD"]
+
+
+class ItemQuantities(BaseModel):
+    person: int = Field(ge=0, le=100)
+    car: int = Field(ge=0, le=100)
+    transaction: int = Field(ge=0, le=100)
+
+
+items_map = {"person": Person, "car": Car, "transaction": Transaction}
+
+prompt_map = {
+    "person": "Please give a json for a person with name, surname, age and center of living city.",
+    "car": "Please give a json for a car with model, year and engine type.",
+    "transaction": "Please give a json for a transaction with id, amount and currency."
+}
+
+sys_message = (
+    "You generate jsons based on the user's request. You can generate jsons with different types of objects: person, car, transaction. "
+    "If user requested different type json fields should remain zero. "
+    "E.g. if user wants 5 houses, then json must be {\"person\": 0, \"car\": 0, \"transactions\": 0}, "
+    "if user wand 3 person and 1 house then json must be {\"person\": 3, \"car\": 0, \"transaction\": 0}. "
+    "Make sure that json contans numbers that user requested. "
+)
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir', help="Path to the model directory. It should contain the OpenVINO model files.")
-    parser.add_argument('prompt', nargs='?', help="Prompt to generate structured output. If not provided, a default prompt will be used.")
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
@@ -25,14 +62,39 @@ def main():
 
     config = openvino_genai.GenerationConfig()
     structured_output_config = openvino_genai.StructuredOutputConfig()
-    structured_output_config.json_schema = json.dumps(Person.model_json_schema())
-    
-    prompt = args.prompt if args.prompt else "Generate a json about a person."
-    config.max_new_tokens = 100
-    config.repetition_penalty = 2
-    config.do_sample = True
-    config.structured_output_config = structured_output_config
-    print(pipe.generate(prompt, config))
+    config.max_new_tokens = 300
+    config.do_sample = False
+
+    #  Persons surnames should be Karter
+    print("I'm a smart assistant that generates structured output in JSON format.")
+    print("You can ask me to generate information about a person, car, or transaction.")
+    print("For example, you can ask me: \"Please give a jsons of 3 persons and 1 transaction\".")
+
+    while True:
+        prompt = input('> ')
+        pipe.start_chat(sys_message)
+        structured_output_config.json_schema = json.dumps(ItemQuantities.model_json_schema())
+        config.structured_output_config = structured_output_config
+        print(prompt)
+        res = pipe.generate(prompt, config)
+        pipe.finish_chat()
+
+        config.do_sample = True
+        config.temperature = 0.8
+
+        pipe.start_chat()
+        generate_has_run = False
+        print(res)
+        for item, quantity in json.loads(res).items():
+            for _ in range(quantity):
+                generate_has_run = True
+                config.structured_output_config.json_schema = json.dumps(items_map[item].model_json_schema())
+                json_strs = pipe.generate(prompt_map[item] + prompt, config)
+                print(json.loads(json_strs))
+        pipe.finish_chat()
+        if not generate_has_run:
+            print("No items generated. Please try again with a different request.")
+
 
 if '__main__' == __name__:
     main()
