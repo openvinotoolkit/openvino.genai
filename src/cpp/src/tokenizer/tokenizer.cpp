@@ -38,9 +38,17 @@ constexpr char pad_token_key_name[] = "pad_token";
 
 ov::Core core_with_extension() {
     ov::Core core;
+    
+#ifdef _WIN32
+    const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+    OPENVINO_ASSERT(ov_tokenizer_path_w, "openvino_tokenizers path is not set");
+    core.add_extension(std::filesystem::path(ov_tokenizer_path_w));
+#else
     const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
     OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
     core.add_extension(ov_tokenizer_path);
+#endif
+    
     return core;
 }
 
