@@ -38,14 +38,13 @@ public:
 
     static void register_backend(const std::string& name, BackendFactory factory);
     static void set_default_backend(const std::string& name);
+    static std::string& get_default_backend_name();
+    static std::unordered_map<std::string, BackendFactory>& get_backend_registry();
 
 private:
     std::unordered_map<std::string, std::unique_ptr<IStructuredOutputImpl>> m_impls;
     const ov::genai::Tokenizer& m_tokenizer;
     std::optional<int> m_vocab_size;
-
-    static std::unordered_map<std::string, BackendFactory>& get_backend_registry();
-    static std::string& get_default_backend_name();
 };
 
 } // namespace genai

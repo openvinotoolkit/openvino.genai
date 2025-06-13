@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
 #include "openvino/genai/generation_config.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"
 
@@ -270,15 +271,20 @@ void GenerationConfig::validate() const {
     }
 
     if(is_structured_output_generation()) {
-        #ifndef ENABLE_XGRAMMAR
-            OPENVINO_THROW("Structured output is not supported in this build. Please, recompile with -DENABLE_XGRAMMAR=ON");
-        #else
-           (*structured_output_config).validate();
-        #endif
+        (*structured_output_config).validate();
     }
 }
 
 void StructuredOutputConfig::validate() const {
+    auto& registry = StructuredOutputController::get_backend_registry();
+    std::string backend_name = backend.has_value() ? *backend : StructuredOutputController::get_default_backend_name();
+    std::string upper_name = backend_name;
+    std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), [](unsigned char c){ return std::toupper(c); });
+
+    OPENVINO_ASSERT(registry.find(backend_name) != registry.end(),
+                    "Structured output backend '", backend_name, "' is not registered. "
+                    "Please, Please, recompile with -DENABLE_" + upper_name + "=ON option to enable it.");
+
     OPENVINO_ASSERT(
         (json_schema.has_value() + regex.has_value() + choices.has_value() + grammar.has_value()) == 1,
         "Only one of json, regex, choices or grammar should be set in StructuredOutputConfig, but got: ",
