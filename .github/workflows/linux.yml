@@ -862,7 +862,6 @@ jobs:
     env:
       CMAKE_GENERATOR: Unix Makefiles
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
-      INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build_xgrammar
 
@@ -890,14 +889,17 @@ jobs:
                 -S ${{ env.SRC_DIR}} \
                 -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR}} --config Release --parallel $(nproc) --verbose
-          cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
 
       - name: Install Python dependencies for tests
         run: |
           python3 -m pip install -r ${{ env.SRC_DIR }}/tests/python_tests/requirements.txt
           python3 -m pip install -r ${{ env.SRC_DIR }}/samples/export-requirements.txt
+          python3 -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 
       - name: Run test_structured_output.py
+        env:
+          PYTHONPATH: ${{ github.workspace }}/build_xgrammar:${{ env.OV_INSTALL_DIR }}/python:
+          LD_LIBRARY_PATH: ${{ env.OV_INSTALL_DIR }}/runtime/lib/intel64:${{ env.OV_INSTALL_DIR }}/runtime/3rdparty/tbb/lib:
         run: |
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_structured_output.py
 
