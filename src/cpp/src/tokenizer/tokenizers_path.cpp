@@ -52,7 +52,7 @@ std::filesystem::path get_ov_genai_library_path() {
         ss << "GetModuleFileNameW failed with error " << GetLastError();
         throw std::runtime_error(ss.str());
     }
-    return std::filesystem::path(genai_library_path_w);
+    return std::filesystem::path(std::wstring(genai_library_path_w));
 #elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
     Dl_info info;
     dladdr(reinterpret_cast<void*>(get_ov_genai_library_path), &info);
