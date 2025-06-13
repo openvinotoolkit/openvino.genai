@@ -11,42 +11,13 @@ namespace ov::genai {
 
 clip_image_f32 preprocess_clip_image_gemma3(const clip_image_u8& image, const ProcessorConfig& config) {
     bool do_resize = true;
-    bool do_center_crop = true;
 
     // Resize
     clip_image_u8 resized_image;
     if (do_resize) {
-        int target_size = config.size_shortest_edge;
-        float scale = static_cast<float>(target_size) / std::min(image.nx, image.ny);
-        int new_width = static_cast<int>(image.nx * scale);
-        int new_height = static_cast<int>(image.ny * scale);
-        bilinear_resize(image, resized_image, new_width, new_height);
+        bilinear_resize(image, resized_image, config.size_width, config.size_height); 
     } else {
         resized_image = image;
-    }
-
-    // Center crop
-    clip_image_u8 cropped_image;
-    if (do_center_crop) {
-        int crop_height = config.crop_size_height;
-        int crop_width = config.crop_size_width;
-        int start_x = (resized_image.nx - crop_width) / 2;
-        int start_y = (resized_image.ny - crop_height) / 2;
-
-        cropped_image.nx = crop_width;
-        cropped_image.ny = crop_height;
-        cropped_image.buf.resize(3 * crop_width * crop_height);
-
-        for (int y = 0; y < crop_height; ++y) {
-            for (int x = 0; x < crop_width; ++x) {
-                for (int c = 0; c < 3; ++c) {
-                    cropped_image.buf[(y * crop_width + x) * 3 + c] =
-                        resized_image.buf[((start_y + y) * resized_image.nx + (start_x + x)) * 3 + c];
-                }
-            }
-        }
-    } else {
-        cropped_image = resized_image;
     }
 
     // Normalize
@@ -54,13 +25,13 @@ clip_image_f32 preprocess_clip_image_gemma3(const clip_image_u8& image, const Pr
     std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
     std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
 
-    clip_image_f32 normalized_image = clip_image_preprocess(ctx, cropped_image);
+    clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
     return normalized_image;
 }
 
 namespace {
 
-ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig& config) {
+ov::Tensor get_pixel_values_gemma3(const ov::Tensor& image, const ProcessorConfig& config) {
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
     clip_image_f32 preprocessed_image = preprocess_clip_image_gemma3(input_image, config);
     return clip_image_f32_to_tensor(preprocessed_image);
@@ -74,7 +45,7 @@ EncodedImage VisionEncoderGemma3::encode( const ov::Tensor& image, const ov::Any
 
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
-    ov::Tensor pixel_values = get_pixel_values_llava(image, config);
+    ov::Tensor pixel_values = get_pixel_values_gemma3(image, config);
     
     auto pixel_values_ptr = pixel_values.data<float>();
     ov::Shape pixel_values_shape = pixel_values.get_shape();
@@ -92,7 +63,7 @@ EncodedImage VisionEncoderGemma3::encode( const ov::Tensor& image, const ov::Any
     ov::Shape image_features_shape = image_features.get_shape();
     size_t base_index = 0 * (image_features_shape[1] * image_features_shape[2]) + 0 * (image_features_shape[2]);
 
-    ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+    ImageSize resized_source_size{config.size_height / config.patch_size, config.size_width / config.patch_size};
     return {std::move(image_features), resized_source_size};
 }
 
@@ -119,10 +90,7 @@ bool InputsEmbedderGemma3::has_token_type_ids() const {
 std::vector<ov::genai::EncodedImage> InputsEmbedderGemma3::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> embeds;
 
-    ov::AnyMap vision_config;
-    vision_config["crop_size_height"] = 896;
-    vision_config["crop_size_width"] = 896;
-    vision_config["size_shortest_edge"] = 896;
+    ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
 
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
     embeds.reserve(single_images.size());
@@ -161,27 +129,6 @@ ov::Tensor InputsEmbedderGemma3::get_inputs_embeds(const std::string& prompt, co
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma3::get_inputs_embeds_with_token_type_ids(const std::string& unified_prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
-
-    // std::string start_of_image = m_vlm_config.start_of_image;
-    // std::string image_token = m_vlm_config.image_soft_token; // <image_soft_token> instead of <image>
-    // std::string end_of_image = m_vlm_config.end_of_image;
-
-    // std::string formatted_prompt = "You are a helpful assistant.\n\n\n\n";
-
-    // std::vector<ov::Tensor> image_embeds;
-    // image_embeds.reserve(images.size());
-
-    // for (const auto& encoded_image : images) {
-    //     formatted_prompt += start_of_image;
-    //     for (size_t idx = 0; idx < encoded_image.resized_source.get_shape().at(1); ++idx) {
-    //         formatted_prompt += image_token;
-    //     }
-    //     formatted_prompt += end_of_image;
-
-    //     formatted_prompt += "\n\n";
-    //     image_embeds.push_back(std::move(encoded_image.resized_source));
-    // }
-    // formatted_prompt += prompt;
 
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
@@ -239,7 +186,7 @@ ov::Tensor InputsEmbedderGemma3::merge_text_and_image_embeddings_llava(const ov:
     auto text_embeds_data = text_embeds.data<float>();
     const float* text_embeds_end = text_embeds_data + text_embeds_seq_length * hidden_size;
 
-    // Copy in reversed order because a tokenizer may truncate the input removing the preffix.
+    // Copy in reversed order because a tokenizer may truncate the input removing the prefix.
     for (auto image_embed_it = image_embeds.rbegin(); image_embed_it != image_embeds.rend(); ++image_embed_it) {
         for (; token_offset != -1; --token_offset) {
             if (input_ids_data[token_offset] == image_token_id) {

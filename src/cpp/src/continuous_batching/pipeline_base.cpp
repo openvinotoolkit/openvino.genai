@@ -180,14 +180,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
         m_inputs_embedder->set_apply_chat_template_status(false);
-        // input_embeds_list.push_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids));
         if (m_inputs_embedder->has_token_type_ids()) {
-            std::cout << "get_inputs_embeds_with_token_type_ids\n";
             auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
             input_embeds_list.push_back(embeds);
             token_type_ids_list.push_back(tt_ids);
         } else {
-            std::cout << "get_inputs_embeds\n";
             auto inputs_embeds = m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
             input_embeds_list.push_back(inputs_embeds);
         }

@@ -150,7 +150,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     m_llm.set_tensor("beam_idx", beam_idx);
 
     // "Prompt" phase
-    std::cout << "Prompt phase\n";
 
     const auto infer_start = std::chrono::steady_clock::now();
     m_llm.infer();
@@ -177,7 +176,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     free_non_running_requests(); // handle sampler output
 
     // "Generation" phase
-    std::cout << "Generation phase\n";
 
     while (!active_sequence_groups.empty()) {
         size_t total_num_tokens = 0;

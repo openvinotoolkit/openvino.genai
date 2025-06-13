@@ -201,7 +201,6 @@ public:
         std::optional<ov::Tensor> token_type_ids;
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        // ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
         if (m_inputs_embedder->has_token_type_ids()) {
             auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, rgbs, perf_metrics, image_sequence);
             inputs_embeds = embeds;
