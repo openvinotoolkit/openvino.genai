@@ -14,6 +14,31 @@
 
 namespace ov::genai {
 
+class EvictionScoreManager {
+public:
+    EvictionScoreManager() = default;
+    explicit EvictionScoreManager(size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size, AggregationMode aggregation_mode, size_t ignore_first_n_blocks = 0) : m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), m_scores(num_decoder_layers), m_cache_counter(num_decoder_layers), m_max_pool_window_size(max_pool_window_size), m_aggregation_mode(aggregation_mode), m_ignore_first_n_blocks(ignore_first_n_blocks) {}
+    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers, const std::set<size_t>& skipped_logical_block_ids);
+
+    void remove_scores(const std::vector<std::size_t>& evicted_block_indices, size_t decoder_layer_idx);
+
+    void add_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids) const;
+
+    size_t get_current_scores_length_in_tokens(size_t layer_idx) const;
+
+    const std::vector<std::vector<double>>& get_scores() const;
+    const std::vector<std::vector<size_t>>& get_counters() const;
+
+private:
+    std::size_t m_block_size;
+    std::size_t m_num_decoder_layers;
+    std::vector<std::vector<double>> m_scores;
+    std::vector<std::vector<size_t>> m_cache_counter;
+    std::size_t m_max_pool_window_size;
+    AggregationMode m_aggregation_mode;
+    std::size_t m_ignore_first_n_blocks;
+};
+
 /**
  * @brief Determines blocks to be evicted from the KV cache of a sequence based on the importance score calculated from the
  * attention scores of each token at each attention layer in the LLM.
@@ -83,9 +108,11 @@ public:
      * the tokens' lifetime in the KV cache and of the accumulated importance score of each token.
      * @param attention_scores_for_all_decoder_layers A vector with a size equal to the configured num_decoder_layers, where each entry is a
      * vector of per-token attention scores calculated within this layer.
+     * @param skipped_logical_block_ids The set of logical indices that have been skipped from the scores as part of the sparse attention prefill process
      */
-    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers);
+    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers, const std::set<size_t>& skipped_logical_block_ids);
 
+    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_across_decoder_layers_for_current_sequence);
     /**
      * Returns the per-layer sets of logical block indices that should be evicted according to the internally computed importance scores
      * and removes the corresponding blocks from the internal algorithm tracking.
@@ -113,10 +140,10 @@ private:
     std::size_t m_block_size;
     std::size_t m_num_evicted_tokens = 0;
     std::size_t m_num_decoder_layers;
-    std::size_t m_max_pool_window_size;
-    std::vector<std::vector<double>> m_scores;
-    std::vector<std::vector<size_t>> m_cache_counter;
+    EvictionScoreManager m_score_manager;
 };
+
+
 
 /**
  * @brief Computes, based on the logical indices of the blocks to be evicted, the rotation coefficients for the
