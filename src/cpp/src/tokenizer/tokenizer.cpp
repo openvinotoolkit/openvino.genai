@@ -247,7 +247,9 @@ public:
 
         std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
         std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
-
+        auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
+        // Pass no addtional properties to tokenizer/detokenizer models since it was not used by default
+        filtered_properties = {};
         if (is_gguf_model(models_path)) {
             std::map<std::string, GGUFMetaData> tokenizer_config{};
             const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
@@ -272,15 +274,33 @@ public:
                 m_chat_template = patch_gguf_chat_template(m_chat_template);
             }
 
-            setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
+            if (enable_save_ov_model){
+                std::filesystem::path gguf_model_path(models_path);
+                std::filesystem::path save_ov_tokenizer_path = gguf_model_path.parent_path() / "openvino_tokenizer.xml";
+                std::filesystem::path save_ov_detokenizer_path = gguf_model_path.parent_path() / "openvino_detokenizer.xml";
+                ov_tokenizer->set_rt_info(m_pad_token_id, "pad_token_id");
+                ov_tokenizer->set_rt_info(m_bos_token_id, "bos_token_id");
+                ov_tokenizer->set_rt_info(m_eos_token_id, "eos_token_id");
+                ov_tokenizer->set_rt_info(m_chat_template, "chat_template");
+
+                ov_detokenizer->set_rt_info(m_pad_token_id, "pad_token_id");
+                ov_detokenizer->set_rt_info(m_bos_token_id, "bos_token_id");
+                ov_detokenizer->set_rt_info(m_eos_token_id, "eos_token_id");
+                ov_detokenizer->set_rt_info(m_chat_template, "chat_template");
+
+                ov::genai::utils::save_openvino_model(ov_tokenizer, save_ov_tokenizer_path.string(), false);
+                ov::genai::utils::save_openvino_model(ov_detokenizer, save_ov_detokenizer_path.string(), false);
+            }
+
+            setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
             return;
         }
         if (std::filesystem::exists(models_path / "openvino_tokenizer.xml")) {
-            ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml", {}, properties);
+            ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml", {}, filtered_properties);
         }
 
         if (std::filesystem::exists(models_path / "openvino_detokenizer.xml")) {
-            ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml", {}, properties);
+            ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml", {}, filtered_properties);
         }
 
         read_config(models_path);
@@ -290,7 +310,7 @@ public:
         parse_if_exists(models_path / "tokenizer_config.json", m_chat_template);
         parse_if_exists(models_path / "processor_config.json", m_chat_template);
         parse_if_exists(models_path / "chat_template.json", m_chat_template);
-        setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
+        setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
     }
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
