@@ -16,10 +16,12 @@
 
 #include "openvino/runtime/tensor.hpp"
 
+#include "sampling/logit_transformers.hpp"
 #include "sampling/logit_processor.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "sequence_group.hpp"
 #include "threadpool.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov::genai {
 // Handle stop_token_ids
@@ -97,7 +99,7 @@ class Sampler {
     Tokenizer m_tokenizer;
 
     ThreadPool m_thread_pool;
-
+    std::shared_ptr<ov::genai::StructuredOutputController> m_structured_output_controller;
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
