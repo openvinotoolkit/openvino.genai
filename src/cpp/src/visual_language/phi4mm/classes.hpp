@@ -6,34 +6,33 @@
 #include <filesystem>
 
 #include "visual_language/vlm_config.hpp"
-
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
 
-namespace phi_utils {
-
-std::string normalize_prompt(
-    const std::string& prompt, size_t base_id, size_t n_images, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
-);
-std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text, ov::genai::Tokenizer& tokenizer, const std::regex& native_pattern);
-ov::Tensor insert_image_placeholders(const std::vector<std::variant<ov::Tensor, size_t>>& chunks, const std::vector<size_t>& tokens_per_images);
-std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::Tensor& tokens);
-
-}
-
-class VisionEncoderPhi3V : public VisionEncoder {
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_hd_feature_transformer;
+/**
+ * @class VisionEncoderPhi4MM
+ * @brief A specialized vision encoder for the Phi4MM model.
+ *
+ * This class is responsible for encoding images into a format suitable for
+ * multimodal processing in the Phi4MM model. It supports initialization
+ * with model directories or preloaded models and provides an interface
+ * for encoding images.
+ */
+class VisionEncoderPhi4MM : public VisionEncoder {
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_image_preprocessors;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_separator_inserters;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_projection;
     VLMConfig m_vlm_config;
+
 public:
-    VisionEncoderPhi3V(
+    VisionEncoderPhi4MM(
         const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap properties);
 
-    VisionEncoderPhi3V(
+    VisionEncoderPhi4MM(
         const ModelsMap& models_map,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
@@ -42,16 +41,16 @@ public:
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 };
 
-class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
+class InputsEmbedderPhi4MM : public InputsEmbedder::IInputsEmbedder {
 public:
-    InputsEmbedderPhi3V(
+    InputsEmbedderPhi4MM(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap device_config
     );
 
-    InputsEmbedderPhi3V(
+    InputsEmbedderPhi4MM(
         const VLMConfig& vlm_config,
         const ModelsMap& models_map,
         const Tokenizer& tokenizer,
@@ -59,7 +58,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
+    ov::Tensor get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
 
     void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) override;
 
