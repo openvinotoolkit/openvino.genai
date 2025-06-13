@@ -849,6 +849,9 @@ jobs:
     name: Build & Test XGrammar
     needs: [ openvino_download ]
     timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash    
     runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
@@ -892,6 +895,7 @@ jobs:
       - name: Install Python dependencies for tests
         run: |
           python3 -m pip install -r ${{ env.SRC_DIR }}/tests/python_tests/requirements.txt
+          python3 -m pip install -r ${{ env.SRC_DIR }}/samples/export-requirements.txt
 
       - name: Run test_structured_output.py
         run: |
