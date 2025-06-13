@@ -898,8 +898,8 @@ jobs:
 
       - name: Run test_structured_output.py
         env:
-          PYTHONPATH: ${{ github.workspace }}/build_xgrammar:${{ env.OV_INSTALL_DIR }}/python:
-          LD_LIBRARY_PATH: ${{ env.OV_INSTALL_DIR }}/runtime/lib/intel64:${{ env.OV_INSTALL_DIR }}/runtime/3rdparty/tbb/lib:
+          PYTHONPATH: "${{ github.workspace }}/build_xgrammar:${{ env.OV_INSTALL_DIR }}/python:"
+          LD_LIBRARY_PATH: "${{ env.OV_INSTALL_DIR }}/runtime/lib/intel64:${{ env.OV_INSTALL_DIR }}/runtime/3rdparty/tbb/lib:"
         run: |
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_structured_output.py
 
