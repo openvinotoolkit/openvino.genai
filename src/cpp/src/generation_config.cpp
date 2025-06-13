@@ -283,7 +283,7 @@ void StructuredOutputConfig::validate() const {
 
     OPENVINO_ASSERT(registry.find(backend_name) != registry.end(),
                     "Structured output backend '", backend_name, "' is not registered. "
-                    "Please, Please, recompile with -DENABLE_" + upper_name + "=ON option to enable it.");
+                    "Please recompile with -DENABLE_" + upper_name + "=ON option to enable it.");
 
     OPENVINO_ASSERT(
         (json_schema.has_value() + regex.has_value() + choices.has_value() + grammar.has_value()) == 1,

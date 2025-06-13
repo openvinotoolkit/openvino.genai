@@ -1798,10 +1798,10 @@ class StructuredOutputConfig:
         the JSON schema and other related parameters.
     
         Structured output parameters:
-        json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
-        regex:          if set, the output will be constraint by specified regex.
+        json_schema:           if set, the output will be a JSON string constrained by the specified json-schema.
+        regex:          if set, the output will be constrained by specified regex.
         choices:        if set, the output will be one of specified strings.
-        grammar:        if set, the output will be constraint by specified grammar.
+        grammar:        if set, the output will be constrained by specified grammar.
     
     """
     def __init__(self) -> None:

@@ -63,7 +63,6 @@ def main():
     config = openvino_genai.GenerationConfig()
     structured_output_config = openvino_genai.StructuredOutputConfig()
     config.max_new_tokens = 300
-    config.do_sample = False
 
     #  Persons surnames should be Karter
     print("I'm a smart assistant that generates structured output in JSON format.")
@@ -75,7 +74,7 @@ def main():
         pipe.start_chat(sys_message)
         structured_output_config.json_schema = json.dumps(ItemQuantities.model_json_schema())
         config.structured_output_config = structured_output_config
-        print(prompt)
+        config.do_sample = False
         res = pipe.generate(prompt, config)
         pipe.finish_chat()
 
@@ -84,7 +83,6 @@ def main():
 
         pipe.start_chat()
         generate_has_run = False
-        print(res)
         for item, quantity in json.loads(res).items():
             for _ in range(quantity):
                 generate_has_run = True
