@@ -248,6 +248,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     gen_config.rng_seed = args["seed"]
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    if gen_config.num_beams > 1:
+        gen_config.frequency_penalty = 0
+        gen_config.presence_penalty = 0
+        gen_config.repetition_penalty = 1
     if hasattr(gen_config, 'apply_chat_template'):
         gen_config.apply_chat_template = False
     if args.get('draft_model', ''):
@@ -413,6 +417,10 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    if gen_config.num_beams > 1:
+        gen_config.frequency_penalty = 0
+        gen_config.presence_penalty = 0
+        gen_config.repetition_penalty = 1
     gen_config.ignore_eos = True
     if hasattr(gen_config, 'apply_chat_template'):
         gen_config.apply_chat_template = False

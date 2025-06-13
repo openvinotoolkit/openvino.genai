@@ -79,7 +79,7 @@ class Sampler {
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
-                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample);
+                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probolities);
 
     SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits,
                                                         LogitProcessor& logit_processor, const std::pair<size_t, std::set<std::string>>& stop_strings,
