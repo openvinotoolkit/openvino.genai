@@ -243,7 +243,6 @@ namespace ov::genai {
 
             // Adjust indices to account for start area
             for (auto &idx: evicted_block_indices) idx += get_num_blocks(m_eviction_config.get_start_size());
-            // auto remaining_block_indices = get_remaining_block_indices(evicted_block_indices);
             for (auto &idx: evicted_block_indices) retval[decoder_layer_idx].insert(idx);
         }
         return retval;
