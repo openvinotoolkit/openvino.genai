@@ -41,6 +41,7 @@ benchmark_vlm [OPTIONS]
 
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `What is on the image?`): The prompt to generate text.
+- `--pf, --prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
