@@ -96,7 +96,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir')
     parser.add_argument('image_dir', help="Image file or dir with images")
-    parser.add_argument('prompt', help="Image file or dir with images")
+    parser.add_argument('prompt', help="Prompt")
     args = parser.parse_args()
 
     model_name_to_file_map = {

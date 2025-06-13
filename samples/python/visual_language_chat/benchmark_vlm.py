@@ -33,7 +33,7 @@ def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
     parser.add_argument("-p", "--prompt", type=str, default="The Sky is blue because", help="Prompt")
-    parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
+    parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image file or dir with images")
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
