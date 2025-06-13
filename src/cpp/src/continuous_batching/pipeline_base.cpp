@@ -159,7 +159,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(prompts.size() == rgbs_vector.size(), "Number of prompts should be equal to the number of images vectors.");
 
     std::vector<ov::Tensor> input_embeds_list;
-    // std::optional<std::vector<ov::Tensor>> token_type_ids_list;
     std::vector<ov::Tensor> token_type_ids_list;
     
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
