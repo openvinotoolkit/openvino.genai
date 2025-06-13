@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) try {
     options.add_options()
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("What is on the image?"))
-    ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
+    ("i,image", "Image file or dir with images", cxxopts::value<std::string>()->default_value("image.jpg"))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) try {
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
-    ov::Tensor image = utils::load_image(image_path);
+    std::vector<ov::Tensor> image = utils::load_images(image_path);
   
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
@@ -49,12 +49,12 @@ int main(int argc, char* argv[]) try {
     ov::genai::VLMPipeline pipe(models_path, device);
     
     for (size_t i = 0; i < num_warmup; i++)
-        pipe.generate(prompt, ov::genai::image(image), ov::genai::generation_config(config));
+        pipe.generate(prompt, ov::genai::images(image), ov::genai::generation_config(config));
     
-    auto res = pipe.generate(prompt, ov::genai::image(image), ov::genai::generation_config(config));
+    auto res = pipe.generate(prompt, ov::genai::images(image), ov::genai::generation_config(config));
     auto metrics = res.perf_metrics;
     for (size_t i = 0; i < num_iter - 1; i++) {
-        res = pipe.generate(prompt, ov::genai::image(image), ov::genai::generation_config(config));
+        res = pipe.generate(prompt, ov::genai::images(image), ov::genai::generation_config(config));
         metrics = metrics + res.perf_metrics;
     }
 
