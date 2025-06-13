@@ -4,7 +4,6 @@
 #include "tokenizer/tokenizers_path.hpp"
 
 #include <sstream>
-#include <iostream>
 
 #ifdef _WIN32
 #    include <windows.h>
@@ -19,17 +18,6 @@
 #endif
 
 namespace {
-
-// From https://github.com/openvinotoolkit/openvino/blob/41aea968b926ca915905d0d436b53152bfcd33c4/src/common/util/src/wstring_convert_util.cpp#L21-L31
-#ifdef _WIN32
-std::string wstring_to_string(const std::wstring& wstr) {
-    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
-    std::string strTo(size_needed, 0);
-    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
-    return strTo;
-}
-#endif
-
 #ifndef _WIN32
 std::string get_absolute_file_path(const std::string& path) {
     std::string absolutePath;
@@ -49,8 +37,6 @@ std::string get_absolute_file_path(const std::string& path) {
 
 std::filesystem::path get_ov_genai_library_path() {
 #ifdef _WIN32
-    std::cout << "[DEBUG] get_ov_genai_library_path: Using Windows Unicode APIs" << std::endl;
-
     WCHAR genai_library_path_w[MAX_PATH];
     HMODULE hm = NULL;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -60,27 +46,16 @@ std::filesystem::path get_ov_genai_library_path() {
         ss << "GetModuleHandleExW returned " << GetLastError();
         throw std::runtime_error(ss.str());
     }
-    std::cout << "[DEBUG] GetModuleHandleExW succeeded" << std::endl;
-    
     DWORD result = GetModuleFileNameW(hm, (LPWSTR)genai_library_path_w, sizeof(genai_library_path_w) / sizeof(genai_library_path_w[0]));
     if (result == 0) {
         std::stringstream ss;
         ss << "GetModuleFileNameW failed with error " << GetLastError();
         throw std::runtime_error(ss.str());
     }
-    std::cout << "[DEBUG] GetModuleFileNameW succeeded, result length: " << result << std::endl;
-
-    // std::filesystem::path library_path(std::wstring(genai_library_path_w));
-    std::filesystem::path library_path(genai_library_path_w);
-    // std::string path_string = library_path.u8string();
-
-    // auto path_string = wstring_to_string(std::wstring(genai_library_path_w));
-    std::cout << "[DEBUG] GenAI library path: " << library_path.u8string() << std::endl;
-    return library_path;
+    return std::filesystem::path(genai_library_path_w);
 #elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
     Dl_info info;
     dladdr(reinterpret_cast<void*>(get_ov_genai_library_path), &info);
-    // return get_absolute_file_path(info.dli_fname).c_str();
     return std::filesystem::path(get_absolute_file_path(info.dli_fname));
 #else
 #    error "Unsupported OS"
@@ -107,8 +82,5 @@ std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path
 }
 
 std::filesystem::path tokenizers_relative_to_genai() {
-    std::cout << "[DEBUG] tokenizers_relative_to_genai() called" << std::endl;
-    auto result = with_openvino_tokenizers(get_ov_genai_library_path());
-    std::cout << "[DEBUG] tokenizers_relative_to_genai() result" << std::endl;
-    return result;
+    return with_openvino_tokenizers(get_ov_genai_library_path());
 }

@@ -42,17 +42,7 @@ ov::Core core_with_extension() {
 #ifdef _WIN32
     const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
     OPENVINO_ASSERT(ov_tokenizer_path_w, "openvino_tokenizers path is not set");
-    
-    std::wcout << L"[DEBUG] Tokenizer path from env: " << ov_tokenizer_path_w << std::endl;
-    
-    try {
-        std::cout << "[DEBUG] Calling core.add_extension with wide string" << std::endl;
-        core.add_extension(std::wstring(ov_tokenizer_path_w));
-        std::cout << "[DEBUG] core.add_extension succeeded" << std::endl;
-    } catch (const std::exception& e) {
-        std::cout << "[DEBUG] core.add_extension failed: " << e.what() << std::endl;
-        throw;
-    }
+    core.add_extension(std::wstring(ov_tokenizer_path_w));
 #else
     const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
     OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
