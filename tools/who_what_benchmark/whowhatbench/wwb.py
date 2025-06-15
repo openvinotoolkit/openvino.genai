@@ -417,8 +417,8 @@ def create_evaluator(base_model, args):
                 seed=args.seed,
             )
         elif task == "visual-text":
-            tokenizer = load_tokenizer(args)
             processor, config = load_processor(args)
+            tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
                 crop_question = False
             else:
@@ -461,8 +461,8 @@ def create_evaluator(base_model, args):
 
     except KeyError as e:
         raise ValueError(
-            f"Attempted to load evaluator for '{task}', but no evaluator for this model type found!"
-            "Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}. Details:\n",
+            f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! "
+            f"Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}. Details:\n",
             e
         )
 
