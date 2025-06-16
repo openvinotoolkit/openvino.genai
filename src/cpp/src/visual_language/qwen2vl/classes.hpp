@@ -14,9 +14,13 @@ namespace ov::genai {
 
 class VisionEncoderQwen2VL : public VisionEncoder {
 public:
-    using VisionEncoder::VisionEncoder;
+    //using VisionEncoder::VisionEncoder;
+    VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
+    VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir_path, const std::string& device, const ov::AnyMap device_config);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+
+    std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model);
 };
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
