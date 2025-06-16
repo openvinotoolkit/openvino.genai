@@ -100,6 +100,7 @@ model_ids = [
     "katuni4ka/tiny-random-internvl2",
     "katuni4ka/tiny-random-qwen2vl",
     "katuni4ka/tiny-random-qwen2.5-vl",
+    "katuni4ka/tiny-random-gemma3",
 ]
 
 attention_backend = ["PA", "SDPA"]

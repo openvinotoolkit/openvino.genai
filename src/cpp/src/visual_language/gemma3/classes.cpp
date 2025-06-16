@@ -102,7 +102,10 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderGemma3::encode_images(const s
 }
 
 std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+    std::string start_of_image = m_vlm_config.start_of_image;
     std::string image_token = m_vlm_config.image_soft_token;
+    std::string end_of_image = m_vlm_config.end_of_image;
+
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
 
     std::vector<ov::Tensor> image_embeds;
@@ -111,9 +114,11 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prom
     for (size_t new_image_id : images_sequence) {
         image_embeds.push_back(images.at(new_image_id - base_id).resized_source);
         std::string expanded_tag;
+        expanded_tag += start_of_image;
         for (size_t idx = 0; idx < image_embeds.back().get_shape().at(1); ++idx) {
             expanded_tag += image_token;
         }
+        expanded_tag += end_of_image;
         expanded_tag += '\n';
         OPENVINO_ASSERT(searched_pos < unified_prompt.length());
         searched_pos = unified_prompt.find(image_token, searched_pos);
