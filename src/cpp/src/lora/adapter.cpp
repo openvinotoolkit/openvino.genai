@@ -479,6 +479,7 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
     std::optional<LoRAConstantNode> operator() (NodePtr node) const {
         // std::cout << "LoRAStateGetterForConst operator()" << std::endl;
         std::string name = node->get_friendly_name();
+        std::cout << "LoRAStateGetterForConst operator() " << name << std::endl;
         if (auto params = getter(name)) {
             // FIXME: Potential name conflict if LoRA is applied multiple times by using this infrastructure independently each time (not a recommended approach).
             // TODO: Check for name collisions searching for existing variables with the same names.
@@ -508,7 +509,8 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
             if_variable_id
         };
         variable_ids.emplace(if_variable_id, variable_info);
-        return add_variable(variable_info);
+        auto result_tensor = add_variable(variable_info);
+        return result_tensor;
     }
 };
 
@@ -616,7 +618,6 @@ protected:
 
     bool apply(NodePtr node, const LoRAConstantNode& lora_weight) override {
         auto consumers = node->get_output_target_inputs(0);
-
         const auto node_type = node->get_element_type();
     
         // Приводим tensor к типу node
@@ -625,8 +626,6 @@ protected:
         if (lora_weight.tensor->get_element_type() != node_type) {
             lora_output = std::make_shared<ov::op::v0::Convert>(lora_weight.tensor, node_type);
         }
-       
-        // std::cout << node->get_output_shape(0) << std::endl;
 
         // std::shared_ptr<ov::Model> then_body = std::make_shared<ov::Model>(lora_weight.tensor, ov::ParameterVector{}),
         //                            else_body = std::make_shared<ov::Model>(node, ov::ParameterVector{});
@@ -650,6 +649,8 @@ protected:
             consumer.replace_source_output(if_node->output(0));
         }
         return true;
+
+        
     }
 };
 
@@ -1402,7 +1403,6 @@ struct AdapterControllerImpl {
                 // ov::Tensor const_tensor(var_info.data_type, dynamic_to_static(var_info.data_shape));
 
                 if (!const_getter.empty()) {
-                    // auto const_name = constant_variable_id.first;
                     auto opt_lora_const = const_getter[0](const_name);
                     if (opt_lora_const && opt_lora_const->tensor) {
                         auto constant_node = std::dynamic_pointer_cast<v0::Constant>(opt_lora_const->tensor);
@@ -1415,10 +1415,8 @@ struct AdapterControllerImpl {
                         OPENVINO_THROW("LoRA constant tensor not found for name: ", const_name);
                     }
                 }
-
-                state[const_lora_index].set_state(const_tensor);
-
             }
+            state[const_lora_index].set_state(const_tensor);
         }
 
         // for (const auto& constant_variable_id : constant_variable_ids) {
