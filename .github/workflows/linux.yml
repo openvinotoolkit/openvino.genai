@@ -894,13 +894,14 @@ jobs:
         run: |
           python3 -m pip install -r ${{ env.SRC_DIR }}/tests/python_tests/requirements.txt
           python3 -m pip install -r ${{ env.SRC_DIR }}/samples/export-requirements.txt
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           python3 -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 
       - name: Run test_structured_output.py
         env:
-          PYTHONPATH: "${{ github.workspace }}/build_xgrammar:${{ env.OV_INSTALL_DIR }}/python:"
-          LD_LIBRARY_PATH: "${{ env.OV_INSTALL_DIR }}/runtime/lib/intel64:${{ env.OV_INSTALL_DIR }}/runtime/3rdparty/tbb/lib:"
+          PYTHONPATH: "${{ env.BUILD_DIR }}:"
         run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_structured_output.py
 
   Overall_Status:
