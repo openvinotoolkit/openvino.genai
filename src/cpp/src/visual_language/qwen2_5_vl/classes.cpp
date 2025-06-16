@@ -168,13 +168,13 @@ ov::Tensor InputsEmbedderQwen2_5_VL::run_image_embeddings_merger(
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
-    if (m_with_attention_mask_input) {
-        vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
-        vision_embeddings_merger.set_tensor("window_attention_mask", window_attention_mask);
-    }
-    else {
+    if (m_with_cu_seqlens_input) {
         vision_embeddings_merger.set_tensor("cu_seq_lens", cu_seq_lens);
         vision_embeddings_merger.set_tensor("cu_window_seqlens", t_cu_window_seqlens);
+    }
+    else {
+        vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
+        vision_embeddings_merger.set_tensor("window_attention_mask", window_attention_mask);
     }
     vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
     vision_embeddings_merger.set_tensor("window_index", window_index);
