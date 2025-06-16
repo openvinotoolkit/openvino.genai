@@ -399,9 +399,10 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, model_dir, device, device_config) {
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_merger_model.xml");
-    if (std::getenv("OV_VLSDPA") != nullptr) {
+    if (std::getenv("DISABLE_VLSDPA") != nullptr) {
+        m_with_cu_seqlens_input = false;
+    } else {
         utils::apply_vl_sdpa_transformations(model);
-        m_with_attention_mask_input = false;
     }
     auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
@@ -423,9 +424,10 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     auto model = utils::singleton_core().read_model(
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
-    if (std::getenv("OV_VLSDPA") != nullptr) {
+    if (std::getenv("DISABLE_VLSDPA") != nullptr) {
+        m_with_cu_seqlens_input = false;
+    } else {
         utils::apply_vl_sdpa_transformations(model);
-        m_with_attention_mask_input = false;
     }
     auto compiled_model = utils::singleton_core().compile_model(model,
         device,
@@ -554,10 +556,10 @@ ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
-    if (m_with_attention_mask_input)
-        vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
-    else
+    if (m_with_cu_seqlens_input)
         vision_embeddings_merger.set_tensor("cu_seq_lens", cu_seq_lens);
+    else
+        vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
     vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
     vision_embeddings_merger.infer();
     ov::Tensor processed_vision_embeds = vision_embeddings_merger.get_output_tensor();
