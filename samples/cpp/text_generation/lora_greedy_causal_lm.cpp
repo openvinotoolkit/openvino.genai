@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) try {
     std::cout << "\nGenerate without LoRA adapter:" << std::endl;
     // // LLMPipeline pipe1(models_path, device);    // register all required adapters here
     
-    // std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
+    std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
 
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
