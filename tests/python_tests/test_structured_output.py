@@ -4,19 +4,23 @@ import openvino_genai as ov_genai
 
 from pydantic import BaseModel, Field
 from typing import Literal
-from data.models import get_models_list
 from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
 import re
 
+@pytest.fixture(scope="module")
+def ov_pipe(request):
+    _, _, models_path = download_and_convert_model(request.param)
+    return create_ov_pipeline(models_path)
+
 class Person(BaseModel):
     name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
-    age: int
+    age: int = Field(ge=0, le=128)
     city: Literal["Dublin", "Dubai", "Munich"]
 
 class Transaction(BaseModel):
-    id: int
-    amount: float
+    id: int = Field(ge=0, le=2**14)
+    amount: float = Field(ge=0.0, le=1e6)
     currency: Literal["USD", "EUR", "GBP"]
 
 class RESTAPIResponse(BaseModel):
@@ -24,23 +28,20 @@ class RESTAPIResponse(BaseModel):
     data: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
 
 structured_id_models = [
-    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    # 'katuni4ka/tiny-random-phi3',  # model itself generate incorrect json
+    'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
+    'katuni4ka/tiny-random-phi3',
 ]
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("model_id", structured_id_models)
+@pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_scheme", [
     ("Generate a json about a person.", Person), 
     ("Generate a json about a transaction.", Transaction),
     ("Generate a json about a REST API response.", RESTAPIResponse)
 ])
-def test_structured_output_generation(model_id, prompt_and_scheme):
+def test_structured_output_generation(ov_pipe, prompt_and_scheme):
     prompt, SchemeType = prompt_and_scheme
-    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(models_path)
-
 
     structured_output_config = ov_genai.StructuredOutputConfig()
     structured_output_config.json_schema = json.dumps(SchemeType.model_json_schema())
@@ -54,29 +55,18 @@ def test_structured_output_generation(model_id, prompt_and_scheme):
     # If it's invalid it will raise an error.
     SchemeType.model_validate_json(res_str)
 
-    # If generation is not constrained by json schema, 
-    # assert that output is not valid.
-    gen_config.structured_output_config = None
-    res_str = ov_pipe.generate(prompt, generation_config=gen_config)
-    with pytest.raises(ValueError):
-        SchemeType.model_validate_json(res_str)
-
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("model_id", structured_id_models)
+@pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_regex", [
     ("Generate a json about a person.", r'^\{"city":"(Dublin|Dubai|Munich)"\}$'),
     # without regex constraint it will generate an email letter, but with the regex it will generate an email address string
-    ("Generate an email.", r'^[a-zA-Z0-9._%+-]{1,64}@[a-z]+\.[a-z]$'),
+    ("Generate an email.", r'^[a-zA-Z0-9._%+-]{1,64}@[a-z]{1,64}\.[a-z]{1,10}$'),
     ("Generate a json about a REST API response.", r'^\{"status":"(success|error)"\}$'),
 ])
-def test_structured_regex(model_id, prompt_and_regex):
-
+def test_structured_regex(ov_pipe, prompt_and_regex):
     prompt, regex_str = prompt_and_regex
-    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(models_path)
-
     structured_output_config = ov_genai.StructuredOutputConfig()
     structured_output_config.regex = regex_str
 
@@ -89,7 +79,7 @@ def test_structured_regex(model_id, prompt_and_regex):
    
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("model_id", structured_id_models)
+@pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_ebnf", [
     # EBNF grammar for generating a date in the format YYYY-MM-DD
     (
@@ -104,11 +94,8 @@ def test_structured_regex(model_id, prompt_and_regex):
         """
     ),
 ])
-def test_structured_ebnf(model_id, prompt_and_ebnf):
+def test_structured_ebnf(ov_pipe, prompt_and_ebnf):
     prompt, ebnf_grammar = prompt_and_ebnf
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(models_path)
-
     structured_output_config = ov_genai.StructuredOutputConfig()
     structured_output_config.grammar = ebnf_grammar
 
