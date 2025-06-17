@@ -247,18 +247,19 @@ def load_processor(args):
     if model_id is None:
         return None, None
 
-    trust_remote_code = False
     try:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
     except Exception:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        trust_remote_code = True
     if "llava-qwen" in config.model_type:
         preprocessor_id = config.mm_vision_tower
     else:
         preprocessor_id = model_id
 
-    preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=trust_remote_code)
+    try:
+        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
+    except Exception:
+        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
 
 
