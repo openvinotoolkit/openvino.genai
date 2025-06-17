@@ -7,10 +7,9 @@ import openvino_genai as ov_genai
 from openvino import get_version
 
 def main():
-    default_prompt = "The Sky is blue because"
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, required=True, help="Path to model and tokenizers base directory")
-    parser.add_argument("-p", "--prompt", type=str, default=default_prompt, help="Prompt")
+    parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
@@ -19,15 +18,15 @@ def main():
     
     args = parser.parse_args()
 
-    if args.prompt != default_prompt and args.prompt_file is not None:
+    if args.prompt is not None and args.prompt_file is not None:
         raise RuntimeError(f'Prompt and prompt file should not exist together!')
     else:
         if args.prompt_file is not None:
             with open(args.prompt_file, 'r', encoding='utf-8') as f:
                 prompt = [f.read()]
         else:
-            prompt = [args.prompt]
-    if prompt == "":
+            prompt = ['The Sky is blue because'] if args.prompt is None else [args.prompt]
+    if len(prompt) == 0:
         raise RuntimeError(f'Prompt is empty!')
 
     print(f'openvino runtime version: {get_version()}')

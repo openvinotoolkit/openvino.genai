@@ -10,7 +10,7 @@ int main(int argc, char* argv[]) try {
 
     options.add_options()
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())
-    ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("The Sky is blue because"))
+    ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
     ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
@@ -40,10 +40,10 @@ int main(int argc, char* argv[]) try {
         if (result.count("prompt_file")) {
             prompt = utils::read_prompt(result["prompt_file"].as<std::string>());
         } else {
-            prompt = result["prompt"].as<std::string>();
+            prompt = result["prompt"].as<std::string>().empty() ? "The Sky is blue because" : result["prompt"].as<std::string>();
         }
     }
-    if (prompt == "") {
+    if (prompt.empty()) {
         std::cout << "Prompt is empty!" << std::endl;
         return EXIT_FAILURE;
     }

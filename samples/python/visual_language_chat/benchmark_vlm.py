@@ -33,10 +33,9 @@ def read_images(path: str) -> list[Tensor]:
 
 
 def main():
-    default_prompt = "What is on the image?"
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
-    parser.add_argument("-p", "--prompt", type=str, default=default_prompt, help="Prompt")
+    parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
@@ -46,15 +45,15 @@ def main():
 
     args = parser.parse_args()
 
-    if args.prompt != default_prompt and args.prompt_file is not None:
+    if args.prompt is not None and args.prompt_file is not None:
         raise RuntimeError(f'Prompt and prompt file should not exist together!')
     else:
         if args.prompt_file is not None:
             with open(args.prompt_file, 'r', encoding='utf-8') as f:
                 prompt = f.read()
         else:
-            prompt = args.prompt
-    if prompt == "":
+            prompt = 'What is on the image?' if args.prompt is None else args.prompt
+    if len(prompt) == 0:
         raise RuntimeError(f'Prompt is empty!')
 
     print(f'openvino runtime version: {get_version()}')
