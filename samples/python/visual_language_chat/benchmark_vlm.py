@@ -70,8 +70,8 @@ def main():
     config.max_new_tokens = args.max_new_tokens
 
     scheduler_config = ov_genai.SchedulerConfig()
-    setattr(scheduler_config, 'enable_prefix_caching', False)
-    setattr(scheduler_config, 'max_num_batched_tokens', sys.maxsize)
+    scheduler_config.enable_prefix_caching = False
+    scheduler_config.max_num_batched_tokens = sys.maxsize
 
     pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
 
