@@ -523,6 +523,7 @@ def read_cb_config(path):
 
 
 def main():
+    print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
     args = parse_args()
     check_args(args)
 
