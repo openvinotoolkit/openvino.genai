@@ -2,14 +2,15 @@ import pytest
 import json
 import openvino_genai as ov_genai
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal
 from data.models import get_models_list
 from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
+import re
 
 class Person(BaseModel):
-    name: str
+    name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
     age: int
     city: Literal["Dublin", "Dubai", "Munich"]
 
@@ -20,15 +21,16 @@ class Transaction(BaseModel):
 
 class RESTAPIResponse(BaseModel):
     status: Literal["success", "error"]
-    data: str
+    data: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+
+structured_id_models = [
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    # 'katuni4ka/tiny-random-phi3',  # model itself generate incorrect json
+]
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("model_id", [
-    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    # 'katuni4ka/tiny-random-phi3',  # model itself generate incorrect json
-    # "meta-llama/Llama-3.1-8B-Instruct",  # too heavy for CI
-])
+@pytest.mark.parametrize("model_id", structured_id_models)
 @pytest.mark.parametrize("prompt_and_scheme", [
     ("Generate a json about a person.", Person), 
     ("Generate a json about a transaction.", Transaction),
@@ -45,7 +47,6 @@ def test_structured_output_generation(model_id, prompt_and_scheme):
 
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 100
-    gen_config.apply_chat_template = False
     gen_config.structured_output_config = structured_output_config
 
     res_str = ov_pipe.generate(prompt, generation_config=gen_config)
@@ -59,3 +60,66 @@ def test_structured_output_generation(model_id, prompt_and_scheme):
     res_str = ov_pipe.generate(prompt, generation_config=gen_config)
     with pytest.raises(ValueError):
         SchemeType.model_validate_json(res_str)
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", structured_id_models)
+@pytest.mark.parametrize("prompt_and_regex", [
+    ("Generate a json about a person.", r'^\{"city":"(Dublin|Dubai|Munich)"\}$'),
+    # without regex constraint it will generate an email letter, but with the regex it will generate an email address string
+    ("Generate an email.", r'^[a-zA-Z0-9._%+-]{1,64}@[a-z]+\.[a-z]$'),
+    ("Generate a json about a REST API response.", r'^\{"status":"(success|error)"\}$'),
+])
+def test_structured_regex(model_id, prompt_and_regex):
+
+    prompt, regex_str = prompt_and_regex
+    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(models_path)
+
+    structured_output_config = ov_genai.StructuredOutputConfig()
+    structured_output_config.regex = regex_str
+
+    gen_config = ov_genai.GenerationConfig()
+    gen_config.max_new_tokens = 100
+    gen_config.structured_output_config = structured_output_config
+    res_str = ov_pipe.generate(prompt, generation_config=gen_config)
+    
+    assert re.match(regex_str, res_str), f"Output {res_str} does not match regex {regex_str}"
+   
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", structured_id_models)
+@pytest.mark.parametrize("prompt_and_ebnf", [
+    # EBNF grammar for generating a date in the format YYYY-MM-DD
+    (
+        "Generate a date",
+        """
+        root ::= date
+        date ::= year "-" month "-" day
+        year ::= digit digit digit digit
+        month ::= digit digit
+        day ::= digit digit
+        digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+        """
+    ),
+])
+def test_structured_ebnf(model_id, prompt_and_ebnf):
+    prompt, ebnf_grammar = prompt_and_ebnf
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(models_path)
+
+    structured_output_config = ov_genai.StructuredOutputConfig()
+    structured_output_config.grammar = ebnf_grammar
+
+    gen_config = ov_genai.GenerationConfig()
+    gen_config.max_new_tokens = 100
+    gen_config.structured_output_config = structured_output_config
+
+    res_str = ov_pipe.generate(prompt, generation_config=gen_config)
+
+    # Basic checks for the generated format
+    # Currently there is not general way to validate EBNF output,
+    # so we will just check if it matches the expected date format.
+    if "date" in prompt:
+        assert re.match(r"^\d{4}-\d{2}-\d{2}$", res_str), f"Output {res_str} does not match date format"

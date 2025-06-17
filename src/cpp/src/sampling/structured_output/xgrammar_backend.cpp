@@ -37,9 +37,6 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
         grammar = xgrammar::Grammar::FromJSONSchema(*guided_gen_config.json_schema);
     } else if (guided_gen_config.regex.has_value()) {
         grammar = xgrammar::Grammar::FromRegex(*guided_gen_config.regex);
-    } else if (guided_gen_config.choices.has_value()) {
-        // todo: check this
-        grammar = xgrammar::Grammar::FromStructuralTag(std::vector<xgrammar::StructuralTagItem>{}, *guided_gen_config.choices);
     } else if (guided_gen_config.grammar.has_value()) {
         grammar = xgrammar::Grammar::FromEBNF(*guided_gen_config.grammar);
     }

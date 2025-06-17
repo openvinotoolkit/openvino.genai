@@ -851,12 +851,12 @@ void Tokenizer::set_chat_template(const std::string& chat_template) {
 }
 
 Vocab Tokenizer::get_vocab() const {
-    OPENVINO_ASSERT(!m_pimpl->m_vocab.empty(), "Tokenizer vocab is empty. Please check if the detokenizer model was provided and loaded correctly.");
+    const auto& vocab_vector = get_vocab_vector();
 
     Vocab vocab;
-    vocab.reserve(m_pimpl->m_vocab.size());
-    for (size_t i = 0; i < m_pimpl->m_vocab.size(); ++i) {
-        vocab[m_pimpl->m_vocab[i]] = i;
+    vocab.reserve(vocab_vector.size());
+    for (size_t i = 0; i < vocab_vector.size(); ++i) {
+        vocab[vocab_vector[i]] = i;
     }
     return vocab;
 }

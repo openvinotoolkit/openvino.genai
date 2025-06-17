@@ -286,11 +286,10 @@ void StructuredOutputConfig::validate() const {
                     "Please recompile with -DENABLE_" + upper_name + "=ON option to enable it.");
 
     OPENVINO_ASSERT(
-        (json_schema.has_value() + regex.has_value() + choices.has_value() + grammar.has_value()) == 1,
-        "Only one of json, regex, choices or grammar should be set in StructuredOutputConfig, but got: ",
+        (json_schema.has_value() + regex.has_value() +  grammar.has_value()) == 1,
+        "Only one of json, regex or grammar should be set in StructuredOutputConfig, but got: ",
         (json_schema.has_value() ? "json=" + *json_schema +", " : ""),
         (regex.has_value() ? "regex=" + *regex + ", " : ""),
-        (choices.has_value() ? "choices, " : ""),
         (grammar.has_value() ? "grammar=" + *grammar : "")
     );
 }

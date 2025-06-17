@@ -36,7 +36,6 @@ auto structured_output_config_docstring = R"(
     Structured output parameters:
     json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
     regex:          if set, the output will be constraint by specified regex.
-    choices:        if set, the output will be one of specified strings.
     grammar:        if set, the output will be constraint by specified grammar.
 
 )";
@@ -100,7 +99,6 @@ void init_generation_config(py::module_& m) {
     py::class_<StructuredOutputConfig>(m, "StructuredOutputConfig", structured_output_config_docstring)
         .def(py::init<>(), "Default constructor for StructuredOutputConfig")
         .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
-        .def_readwrite("choices", &StructuredOutputConfig::choices, "List of choices for structured output generation")
         .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
         .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation");
         

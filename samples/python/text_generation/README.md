@@ -171,6 +171,34 @@ Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
   ```
 
 
+### 11. Structured Output Sample (`structured_output_sample`)
+- **Description:**
+This sample demonstrates how to use OpenVINO GenAI to generate structured outputs, such as JSON or other formats, from text prompts.
+
+- **Run Command:**
+  ```bash
+  python structured_output_generation.py model_dir
+  ```
+After that a dialog will be started, where you can enter a prompt and get a structured output in response. Generation is separated into stages.
+At the first stage, the model generates a JSON for number of each items user want. And at the second stage, `generate` is called for each item to generate a JSON for each object car, person, or transaction. This is doen because not all models are able to generate a combplex JSON, with variadic number of elements, in one shot, expecially if model is small, and 
+not fine tuned for this task. But separation of tasks allows to use smaller models, and still get a good quality of generated JSON.
+
+On the first stage models is prompted to generate a JSON schema for the number of items the user wants. For example, if the user wants to generate a `JSON for 2 cars, and 1 one person with Irish surname` the output JSON 
+will be `{'person': 1, 'car': 2, 'transaction': 0}`. This means generate will be called 2 times with json schemes for cars, and 1 time for a person with josn shema for a person. This is an internal json, it's not shown to the user, but it is used to determine how many items of each type the model should generate in the next stage.
+
+On the second stage, model still receives the first prompt, but json schema is applied for the exact item type, so the model knows what to generate. With the prompt above it might look like this:
+```
+> Generate a JSON for 2 cars, and 1 one person with Irish surname
+output:
+{"name": "John Doe", "surname: "O'Reilly", "age": 30, "city: "Dublin"}
+{"model": "Toyota", "year": 2020, "engine": "hybrid"}
+{"model": "Ford", "year": 2019, "color": "red"}
+```
+
+Please not that strctured output enforced guaranties the correct json format, but does not guarantee the correctness of the content. The model may generate incorrect or nonsensical data, e.g. `{"name": "John",... , 'age' 200000}`, or a car with `{"model": "AbrakaKadabra9999######4242",...}` these are nonsencical values but they are still valid JSON.
+
+Please use the latest or fine tunes models for this taks in order to get the sensible output.
+
 ## Troubleshooting
 
 ### Unicode characters encoding error on Windows

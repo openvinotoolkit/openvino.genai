@@ -1800,7 +1800,6 @@ class StructuredOutputConfig:
         Structured output parameters:
         json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
         regex:          if set, the output will be constraint by specified regex.
-        choices:        if set, the output will be one of specified strings.
         grammar:        if set, the output will be constraint by specified grammar.
     
     """
@@ -1808,14 +1807,6 @@ class StructuredOutputConfig:
         """
         Default constructor for StructuredOutputConfig
         """
-    @property
-    def choices(self) -> list[str] | None:
-        """
-        List of choices for structured output generation
-        """
-    @choices.setter
-    def choices(self, arg0: list[str] | None) -> None:
-        ...
     @property
     def grammar(self) -> str | None:
         """
@@ -2277,9 +2268,12 @@ class Tokenizer:
         ...
     def get_vocab(self) -> dict:
         """
-        Returns the vocabulary as a Python dictionary with bytes keys and integer values.
-        
-        Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        Returns the vocabulary as a Python dictionary with bytes keys and integer values. 
+                     Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        """
+    def get_vocab_vector(self) -> list[str]:
+        """
+        Returns the vocabulary as list of strings, where position of a string represents token ID.
         """
     def set_chat_template(self, chat_template: str) -> None:
         """

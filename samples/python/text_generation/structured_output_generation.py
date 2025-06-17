@@ -6,8 +6,8 @@ import argparse
 import json
 from typing import Literal
 import openvino_genai
-from typing import Literal, Set, List, Union
-from pydantic import BaseModel, RootModel, Field
+from typing import Literal
+from pydantic import BaseModel, Field
 
 
 class Person(BaseModel):
@@ -37,20 +37,17 @@ class ItemQuantities(BaseModel):
 
 items_map = {"person": Person, "car": Car, "transaction": Transaction}
 
-prompt_map = {
-    "person": "Please give a json for a person with name, surname, age and center of living city.",
-    "car": "Please give a json for a car with model, year and engine type.",
-    "transaction": "Please give a json for a transaction with id, amount and currency."
-}
-
 sys_message = (
     "You generate jsons based on the user's request. You can generate jsons with different types of objects: person, car, transaction. "
     "If user requested different type json fields should remain zero. "
+    "Please not that words 'individual', 'person', 'man', 'human', 'woman', 'people', 'inhabitant', 'citizen' are synonyms and can be used interchangeably. "
     "E.g. if user wants 5 houses, then json must be {\"person\": 0, \"car\": 0, \"transactions\": 0}, "
     "if user wand 3 person and 1 house then json must be {\"person\": 3, \"car\": 0, \"transaction\": 0}. "
-    "Make sure that json contans numbers that user requested. "
+    "Make sure that json contans numbers that user requested. If user asks specifi attributes, like 'surname', 'model', etc. "
+    "ignore this information and generate jsons with the same fields as in the schema. "
 )
 
+sys_message_for_items = "Please try to avoid generating the same jsons multiple times."
 
 def main():
     parser = argparse.ArgumentParser()
@@ -64,10 +61,9 @@ def main():
     structured_output_config = openvino_genai.StructuredOutputConfig()
     config.max_new_tokens = 300
 
-    #  Persons surnames should be Karter
     print("I'm a smart assistant that generates structured output in JSON format.")
-    print("You can ask me to generate information about a person, car, or transaction.")
-    print("For example, you can ask me: \"Please give a jsons of 3 persons and 1 transaction\".")
+    print("You can ask me to generate information about a person, car, or bank transaction.")
+    print('For example, you can ask: "Please generate jsons for 3 persons and 1 transaction."')
 
     while True:
         prompt = input('> ')
@@ -81,13 +77,13 @@ def main():
         config.do_sample = True
         config.temperature = 0.8
 
-        pipe.start_chat()
+        pipe.start_chat(sys_message_for_items)
         generate_has_run = False
         for item, quantity in json.loads(res).items():
             for _ in range(quantity):
                 generate_has_run = True
                 config.structured_output_config.json_schema = json.dumps(items_map[item].model_json_schema())
-                json_strs = pipe.generate(prompt_map[item] + prompt, config)
+                json_strs = pipe.generate(prompt, config)
                 print(json.loads(json_strs))
         pipe.finish_chat()
         if not generate_has_run:
