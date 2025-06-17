@@ -201,7 +201,14 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
-            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence));
+            if (m_inputs_embedder->has_token_type_ids()) {
+                auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence);
+                input_embeds_list.push_back(std::move(embeds));
+                token_type_ids_list.push_back(std::move(tt_ids));
+            } else {
+                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence));
+            }
+        
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
             vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
         }
