@@ -247,18 +247,19 @@ def load_processor(args):
     if model_id is None:
         return None, None
 
-    trust_remote_code = False
     try:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
     except Exception:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        trust_remote_code = True
     if "llava-qwen" in config.model_type:
         preprocessor_id = config.mm_vision_tower
     else:
         preprocessor_id = model_id
 
-    preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=trust_remote_code)
+    try:
+        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
+    except Exception:
+        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
 
 
@@ -366,6 +367,10 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
     return out.texts[0]
 
 
+def is_model_with_automatic_crop(config):
+    return "internvl" in config.model_type or "minicpmv" in config.model_type
+
+
 def create_evaluator(base_model, args):
     # config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
     # task = TasksManager.infer_task_from_model(config._name_or_path)
@@ -415,7 +420,7 @@ def create_evaluator(base_model, args):
         elif task == "visual-text":
             tokenizer = load_tokenizer(args)
             processor, config = load_processor(args)
-            if config and "internvl" in config.model_type and args.hf:
+            if config and is_model_with_automatic_crop(config) and args.hf:
                 crop_question = False
             else:
                 crop_question = True
