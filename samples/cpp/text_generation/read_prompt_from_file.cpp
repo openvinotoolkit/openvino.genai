@@ -6,7 +6,6 @@
 #include "read_prompt_from_file.h"
 
 std::string utils::read_prompt(const std::string& file_path) {
-    std::string prompt = "";
     std::ifstream file(file_path);
     if (file.is_open()) {
         std::stringstream buffer;
