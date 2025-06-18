@@ -46,7 +46,8 @@ def run_visual_language_generation_optimum(
                 else:
                     images.append(load_image(input_data["media"]))
         prompts.append(input_data["prompt"])
-
+    prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+    log.info(f'{prefix}[P{prompt_index}] Input image nums:{len(images)}')
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
@@ -225,6 +226,8 @@ def run_visual_language_generation_genai(
     kwargs = {}
     if len(images) >= 1:
         kwargs["images"] = images
+    prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+    log.info(f'{prefix}[P{prompt_index}] Input image nums:{len(images)}')
     start = time.perf_counter()
     generation_result = model.generate(prompts[0], generation_config=gen_config, **kwargs)
     end = time.perf_counter()
