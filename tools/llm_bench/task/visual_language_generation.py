@@ -198,7 +198,7 @@ def run_visual_language_generation_genai(
     prompts = []
     inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
-        if "media" in input_data:
+        if input_data.get("media", None):
             if input_data["media"] is not None:
                 entry = Path(input_data["media"])
                 if entry.is_dir():
