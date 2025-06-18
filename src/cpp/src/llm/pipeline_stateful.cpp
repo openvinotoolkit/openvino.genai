@@ -199,6 +199,18 @@ DecodedResults StatefulLLMPipeline::generate(
     return decoded_results;
 }
 
+namespace {
+    void assert_npu_input_not_exceed_limit(const size_t prompt_len, const size_t max_prompt_len) {
+        // Prefill model in NPU is reshaped to MAX_PROMPT_LEN x MAX_PROMPT_LEN
+        OPENVINO_ASSERT(prompt_len <= max_prompt_len,
+            "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
+            max_prompt_len,
+            " tokens. ",
+            prompt_len,
+            " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+    }
+} // namespace anonymous
+
 EncodedResults StatefulLLMPipeline::generate(
     const EncodedInputs& inputs,
     OptionalGenerationConfig generation_config,
@@ -222,26 +234,14 @@ EncodedResults StatefulLLMPipeline::generate(
     ov::Tensor attention_mask;
     if (auto data = std::get_if<ov::Tensor>(&inputs)) {
         if (m_is_npu) {
-            // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
-            OPENVINO_ASSERT(data->get_size() <= m_max_prompt_len,
-                "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
-                m_max_prompt_len,
-                " tokens. ",
-                data->get_size(),
-                " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+            assert_npu_input_not_exceed_limit(data->get_size(), m_max_prompt_len);
         }
         input_ids = ov::Tensor(data->get_element_type(), data->get_shape());
         data->copy_to(input_ids);
         attention_mask = ov::genai::utils::init_attention_mask(input_ids);
     } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
         if (m_is_npu) {
-            // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
-            OPENVINO_ASSERT(data->input_ids.get_size() <= m_max_prompt_len,
-                "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
-                m_max_prompt_len,
-                " tokens. ",
-                data->input_ids.get_size(),
-                " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+            assert_npu_input_not_exceed_limit(data->input_ids.get_size(), m_max_prompt_len);
         }
         input_ids = ov::Tensor(data->input_ids.get_element_type(), data->input_ids.get_shape());
         data->input_ids.copy_to(input_ids);

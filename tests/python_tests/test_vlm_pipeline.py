@@ -450,7 +450,7 @@ def test_perf_metrics(cache, backend):
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_exception(model_id, backend):
-    models_path = get_ov_model(model_ids[0])
+    models_path = get_ov_model(model_id)
     properties = {
         "DEVICE_PROPERTIES": {
             "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
@@ -468,6 +468,37 @@ def test_vlm_npu_no_exception(model_id, backend):
         ov_pipe.generate(
             prompts[0], images=[image], generation_config=generation_config
         )
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("backend", attention_backend)
+@pytest.mark.skipif(
+    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
+    reason="NPU plugin is available only on Linux and Windows x86_64",
+)
+def test_vlm_npu_terminate_by_long_input_embeds(backend):
+    models_path = get_ov_model(model_ids[0])
+    properties = {
+        "DEVICE_PROPERTIES": {
+            "NPU": {"MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64,
+                    "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
+        }
+    }
+
+    ov_pipe = VLMPipeline(models_path, "NPU", ATTENTION_BACKEND=backend, config=properties)
+
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 2
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    image = get_image_by_link(image_links[0])
+    long_prompt = "How much are images like this one popular? Would you advise this image to your friend?"
+
+    exception_pattern = r'VLM pipeline on NPU may only process input embeddings up to 64 ' +\
+                        r'tokens\. 73 is passed\.\nSet the "MAX_PROMPT_LEN" config option to ' +\
+                        r'increase the limit\.\n'
+    with pytest.raises(RuntimeError, match=exception_pattern):
+        ov_pipe.generate(long_prompt, images=[image], generation_config=generation_config)
 
 
 @pytest.mark.precommit

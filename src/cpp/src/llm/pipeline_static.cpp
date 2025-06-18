@@ -233,7 +233,7 @@ EncodedResults StatefulLLMPipeline::generate(
     // NB: Check if there is enough space in KV-cache to process input prompt
     auto prompt_len = input_ids.get_size();
     if (prompt_len > m_max_prompt_len) {
-        OPENVINO_THROW("Static Stateful LLM pipeline may only process prompts up to "
+        OPENVINO_THROW("Static Stateful LLM pipeline on NPU may only process prompts up to "
                        + std::to_string(m_max_prompt_len) + " tokens. "
                        + "Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
     }
