@@ -15,7 +15,6 @@ import numpy as np
 from PIL import Image
 from rouge import Rouge
 
-
 class MileBenchDataset:
     def __init__(self, data_dir, subset, subset_size=200):
         self.data_dir = data_dir
