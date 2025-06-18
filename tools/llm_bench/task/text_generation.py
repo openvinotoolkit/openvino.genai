@@ -18,7 +18,7 @@ from llm_bench_utils.ov_utils import get_genai_chunk_streamer, OptimumChunkStrea
 import llm_bench_utils.output_json
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
-import llm_bench_utils.parse_json_data as parse_json_data
+from llm_bench_utils.prompt_utils import get_text_prompt
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
@@ -225,7 +225,13 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         import openvino as ov
 
         input_ids = input_data.input_ids.data
-        input_ids[:, 0] = num + 1
+        if tokenizer.get_bos_token_id() == -1:
+            input_ids[:, 0] = num + 1
+        else:
+            if tokenizer.get_eos_token_id() != num + 1:
+                input_ids[:, 1] = num + 1
+            else:
+                input_ids[:, 1] = num + 3
         attention_mask = input_data.attention_mask
         input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
     num_input_tokens = input_data.input_ids.shape[1]
@@ -242,6 +248,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     gen_config.rng_seed = args["seed"]
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    if gen_config.num_beams > 1:
+        gen_config.frequency_penalty = 0
+        gen_config.presence_penalty = 0
+        gen_config.repetition_penalty = 1
     if hasattr(gen_config, 'apply_chat_template'):
         gen_config.apply_chat_template = False
     if args.get('draft_model', ''):
@@ -269,14 +279,27 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
                 print(word, end='', flush=True)
         printer_thread = threading.Thread(target=token_printer, daemon=True)
         printer_thread.start()
-        generation_result = model.generate(
-            input_data,
-            gen_config,
-            streamer=text_print_streamer
-        )
+        if (args['empty_lora'] and (gen_config.adapters is not None)):
+            import openvino_genai
+            generation_result = model.generate(
+                input_data,
+                gen_config,
+                streamer=text_print_streamer,
+                adapters=openvino_genai.AdapterConfig()
+            )
+        else:
+            generation_result = model.generate(
+                input_data,
+                gen_config,
+                streamer=text_print_streamer
+            )
         printer_thread.join()
     else:
-        generation_result = model.generate(input_data, gen_config)
+        if (args['empty_lora'] and (gen_config.adapters is not None)):
+            import openvino_genai
+            generation_result = model.generate(input_data, gen_config, adapters=openvino_genai.AdapterConfig())
+        else:
+            generation_result = model.generate(input_data, gen_config)
     end = time.perf_counter()
     generated_tokens = np.array(generation_result.tokens)
 
@@ -316,7 +339,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
     else:
         log.warning("No generated tokens")
-    first_token_time = (perf_metrics.get_ttft().mean) * args["batch_size"]
+    first_token_time = (perf_metrics.get_ttft().mean)
     second_tokens_durations = (
         np.array(perf_metrics.raw_metrics.m_new_token_times[1:])
         - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1])
@@ -394,6 +417,10 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    if gen_config.num_beams > 1:
+        gen_config.frequency_penalty = 0
+        gen_config.presence_penalty = 0
+        gen_config.repetition_penalty = 1
     gen_config.ignore_eos = True
     if hasattr(gen_config, 'apply_chat_template'):
         gen_config.apply_chat_template = False
@@ -555,16 +582,3 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time, iter_timestamp
-
-
-def get_text_prompt(args):
-    text_list = []
-    output_data_list, is_json_data = model_utils.get_param_from_file(args, 'prompt')
-    if is_json_data is True:
-        text_param_list = parse_json_data.parse_text_json_data(output_data_list)
-        if len(text_param_list) > 0:
-            for text in text_param_list:
-                text_list.append(text)
-    else:
-        text_list.append(output_data_list[0])
-    return text_list

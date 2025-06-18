@@ -49,18 +49,24 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
-    utils::apply_slice_before_matmul_transformation(model);
-    auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
-
     if (device.find("NPU") != std::string::npos) {
         m_is_npu = true;
         m_use_full_chat_history = true;
     }
 
+    // FIXME: slicing produces incorrect results for some models on NPU.
+    // On NPU, applying slice the safe way is done by the underlying plugin
+    if (!m_is_npu) {
+        utils::apply_slice_before_matmul_transformation(model);
+    }
+
+    auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
+
     if (!m_use_full_chat_history)
         m_kv_cache_state.seq_length_axis = kv_pos.seq_len;
 
-    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    auto [filtered_properties_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties);
+    auto filtered_properties = extract_adapters_from_properties(filtered_properties_without_gguf, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
@@ -88,7 +94,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& plugin_config)
-    : StatefulLLMPipeline{models_path, Tokenizer(models_path), device, plugin_config} {}
+    : StatefulLLMPipeline{models_path, Tokenizer(models_path, plugin_config), device, plugin_config} {}
 
 DecodedResults StatefulLLMPipeline::generate(
     StringInputs inputs,
@@ -158,14 +164,6 @@ DecodedResults StatefulLLMPipeline::generate(
         }
     }
 
-    if (m_is_npu) {
-        // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
-        OPENVINO_ASSERT(encoded_input.input_ids.get_size() <= m_max_prompt_len,
-            "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
-            m_max_prompt_len, " tokens. ", encoded_input.input_ids.get_size(), " is passed.\n"
-            "Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
-    }
-
     auto encode_stop_time =  std::chrono::steady_clock::now();
     auto encoded_results = generate(encoded_input, config, streamer);
 
@@ -223,10 +221,28 @@ EncodedResults StatefulLLMPipeline::generate(
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
     if (auto data = std::get_if<ov::Tensor>(&inputs)) {
+        if (m_is_npu) {
+            // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
+            OPENVINO_ASSERT(data->get_size() <= m_max_prompt_len,
+                "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
+                m_max_prompt_len,
+                " tokens. ",
+                data->get_size(),
+                " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+        }
         input_ids = ov::Tensor(data->get_element_type(), data->get_shape());
         data->copy_to(input_ids);
         attention_mask = ov::genai::utils::init_attention_mask(input_ids);
     } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
+        if (m_is_npu) {
+            // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
+            OPENVINO_ASSERT(data->input_ids.get_size() <= m_max_prompt_len,
+                "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
+                m_max_prompt_len,
+                " tokens. ",
+                data->input_ids.get_size(),
+                " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+        }
         input_ids = ov::Tensor(data->input_ids.get_element_type(), data->input_ids.get_shape());
         data->input_ids.copy_to(input_ids);
 
@@ -419,6 +435,10 @@ void StatefulLLMPipeline::finish_chat() {
         m_tokenized_chat_history.clear();
         m_kv_cache_state.reset_state();
     }
+}
+
+StatefulLLMPipeline::~StatefulLLMPipeline() {
+    m_model_runner.get_compiled_model().release_memory();
 }
 
 } // namespace ov::genai

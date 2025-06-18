@@ -144,6 +144,8 @@ inline ov::Tensor from_npy(const std::filesystem::path& npy) {
         tensor_type = ov::element::f32;
     } else if ("|u1" == type) {
         tensor_type = ov::element::u8;
+    } else if ("<i8" == type) {
+        tensor_type = ov::element::i64;
     } else {
         OPENVINO_THROW("Not implemented dtype");
     }

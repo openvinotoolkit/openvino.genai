@@ -28,6 +28,10 @@ env:
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
+  ARTIFACTS_SHARE: '/mount/build-artifacts'
+  BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
+  GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
+  GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
 
 jobs:
   smart_ci:
@@ -87,7 +91,7 @@ jobs:
       id: openvino_download
       with:
         platform: ubuntu22
-        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_js_package.tar.gz
+        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
         revision: latest_available_commit
 
     - name: Clone docker tag from OpenVINO repo
@@ -131,6 +135,7 @@ jobs:
       INSTALL_TESTS_DIR: ${{ github.workspace }}/tests
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
+      MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
 
     steps:
       - name: Clone openvino.genai
@@ -145,6 +150,16 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
+
+      - name: Generate product manifest
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          target_arch: 'x86_64'
+          build_type: ${{ matrix.build-type }}
+          save_to: ${{ env.MANIFEST_PATH }}
 
       - name: CMake Build
         run: |
@@ -187,6 +202,14 @@ jobs:
           path: ${{ env.INSTALL_TESTS_DIR }}
           if-no-files-found: 'error'
 
+      - name: Upload manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: manifest_${{ matrix.build-type }}
+          path: ${{ env.MANIFEST_PATH }}
+          if-no-files-found: 'error'
+
   genai_build_wheel:
     name: Build Wheel
     needs: [ openvino_download ]
@@ -223,9 +246,20 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
+      - name: Set CI environment
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
+          target_arch: 'x86_64'
+          build_type: Release
+          save_to: ${{ github.workspace }}
+
       - name: Build Tokenizers Wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
@@ -247,9 +281,62 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: genai_wheels
+          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
+
+  store_artifacts:
+    name: Store build artifacts
+    strategy:
+      matrix:
+        build-type: [Release]
+    needs: [openvino_download, genai_build_wheel, genai_build_cmake]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-medium
+    container:
+      image: openvinogithubactions.azurecr.io/library/python:3.12-slim
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+    env:
+      CPACK_PATH: ${{ github.workspace }}/ov_genai
+      CPACK_PACKAGE: ${{ github.workspace }}/ov_genai.tar.gz
+      WHEEL_PACKAGE: ${{ github.workspace }}/wheels
+      MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
+
+    steps:
+      - name: Download genai package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
+          path: ${{ env.CPACK_PATH }}
+
+      - name: Pack Artifacts
+        run: tar -czvf ${{ env.CPACK_PACKAGE }} *
+        working-directory: ${{ env.CPACK_PATH }}
+
+      - name: Download manifest and wheels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: '{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},manifest_${{ matrix.build-type }}}'
+          path: ${{ github.workspace }}
+          merge-multiple: true
+
+      - name: Store ${{ matrix.build_type }} artifacts to a shared drive
+        id: store_artifacts
+        if: ${{ always() }}
+        uses: openvinotoolkit/openvino/.github/actions/store_artifacts@master
+        with:
+          artifacts: |
+            ${{ env.CPACK_PACKAGE }}
+            ${{ env.WHEEL_PACKAGE }}
+            ${{ env.MANIFEST_PATH }}
+          storage_dir: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          storage_root: ${{ env.ARTIFACTS_SHARE }}
+          product_name: ${{ github.event.repository.name }}
 
   genai_build_samples:
     name: Build Samples - ${{ matrix.build-type }}
@@ -397,7 +484,7 @@ jobs:
             timeout: 60
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 60
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
@@ -418,7 +505,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-8-cores-64gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -499,6 +586,11 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-linux-4-cores-16gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
+          - name: 'Speech generation'
+            marker: 'speech_generation'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-4-cores-16gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
     timeout-minutes: 120
     defaults:
@@ -571,18 +663,16 @@ jobs:
         if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
+          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
-          cd ${{ env.SRC_DIR }}/samples/js/text_generation
 
       - name: Install NPM dependencies for samples
         if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Test Samples (Python and C++)
         if: ${{ matrix.test.run_condition }}
@@ -731,9 +821,9 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
+          npm install ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
+          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Check lint
         working-directory: ${{ env.SRC_DIR }}/src/js
@@ -746,9 +836,8 @@ jobs:
       - name: Install openvino-genai-node samples dependencies
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
-          rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Run samples tests
         run: npm test

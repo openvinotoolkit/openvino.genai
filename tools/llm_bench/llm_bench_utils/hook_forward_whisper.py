@@ -129,8 +129,8 @@ class WhisperHook:
     def set_decoder_time_data(self):
         if self.enc_infer_count > 0:
             prev_loop_data = self.time_data[self.enc_infer_count - 1]
-            prev_loop_data['dec_token_time'] = copy.deepcopy(self.greedy_hook.get_time_list())
-            prev_loop_data['dec_infer_time'] = copy.deepcopy(self.greedy_hook.get_time_infer_list())
             if self.greedy_hook is not None:
+                prev_loop_data['dec_token_time'] = copy.deepcopy(self.greedy_hook.get_time_list())
+                prev_loop_data['dec_infer_time'] = copy.deepcopy(self.greedy_hook.get_time_infer_list())
                 self.greedy_hook.clear_time_list()
                 self.greedy_hook.clear_time_infer_list()

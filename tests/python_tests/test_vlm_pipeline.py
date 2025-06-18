@@ -68,7 +68,7 @@ def get_ov_model(model_id):
             ov_config=get_default_llm_properties(),
         )
     )
-    if tokenizer.chat_template is not None:
+    if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
         processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
@@ -95,12 +95,15 @@ image_links_for_testing = [
 model_ids = [
     "katuni4ka/tiny-random-minicpmv-2_6",
     "katuni4ka/tiny-random-phi3-vision",
+    "katuni4ka/tiny-random-phi-4-multimodal",
     "katuni4ka/tiny-random-llava",
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-internvl2",
     "katuni4ka/tiny-random-qwen2vl",
     "katuni4ka/tiny-random-qwen2.5-vl",
 ]
+
+attention_backend = ["PA", "SDPA"]
 
 
 def get_pil_image_by_link(link, target_size=None):
@@ -132,14 +135,15 @@ def get_image_by_link(link):
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
-def test_vlm_pipeline(model_id):
+@pytest.mark.parametrize("backend", attention_backend)
+def test_vlm_pipeline(model_id, backend):
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
         return False
 
     models_path = get_ov_model(model_id)
-    ov_pipe = VLMPipeline(models_path, "CPU")
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
@@ -251,7 +255,7 @@ def test_vlm_continuous_batching_vs_stateful(config):
 
     models_path = get_ov_model(model_ids[0])
     for idx, links in enumerate(image_links_list):
-        stateful_pipe = VLMPipeline(models_path, "CPU", **get_default_llm_properties())
+        stateful_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="SDPA", **get_default_llm_properties())
 
         images = []
         for link in links:
@@ -267,49 +271,6 @@ def test_vlm_continuous_batching_vs_stateful(config):
             )
 
 
-@pytest.mark.precommit
-@pytest.mark.nightly
-@pytest.mark.parametrize("config", configs)
-def test_vlm_with_scheduler_vs_default(config):
-    scheduler_config = SchedulerConfig()
-    models_path = get_ov_model(model_ids[0])
-    cb_pipe = VLMPipeline(
-        models_path,
-        "CPU",
-        scheduler_config=scheduler_config,
-        **get_default_llm_properties(),
-    )
-    generation_config = config
-    generation_config.max_new_tokens = 25
-    eps = 0.001
-    image_links_list = [[], [image_links[0]]]
-
-    res_cb = []
-    for links in image_links_list:
-        images = []
-        for link in links:
-            images.append(get_image_by_link(link))
-
-        res_cb.append(
-            cb_pipe.generate(
-                prompts[0], images=images, generation_config=generation_config
-            )
-        )
-
-    models_path = get_ov_model(model_ids[0])
-    for idx, links in enumerate(image_links_list):
-        stateful_pipe = VLMPipeline(models_path, "CPU", **get_default_llm_properties())
-
-        images = []
-        for link in links:
-            images.append(get_image_by_link(link))
-
-        res_stateful = stateful_pipe.generate(
-            prompts[0], images=images, generation_config=generation_config
-        )
-        for out_idx, text in enumerate(res_stateful.texts):
-            assert text == res_cb[idx].texts[out_idx]
-            assert abs(res_stateful.scores[out_idx] - res_cb[idx].scores[out_idx]) < eps
 
 
 @pytest.mark.precommit
@@ -339,14 +300,15 @@ def test_vlm_with_scheduler_vs_default(config):
         ],
     ],  # combination of generations with text input and text + image input, image input first
 )
-def test_vlm_pipeline_chat(model_id, system_message, iteration_images):
+@pytest.mark.parametrize("backend", attention_backend)
+def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
         return False
 
     models_path = get_ov_model(model_id)
-    ov_pipe = VLMPipeline(models_path, "CPU")
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
@@ -385,9 +347,10 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_vlm_get_tokenizer(cache):
+@pytest.mark.parametrize("backend", attention_backend)
+def test_vlm_get_tokenizer(cache, backend):
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
-    pipe = VLMPipeline(models_path, "CPU")
+    pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     tokenizer = pipe.get_tokenizer()
     tokenizer.encode("")
 
@@ -401,17 +364,18 @@ def test_vlm_get_tokenizer(cache):
         get_multinomial_all_parameters(),
     ],
 )
-def test_sampling(config):
+@pytest.mark.parametrize("backend", attention_backend)
+def test_sampling(config, backend):
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
     image = get_image_by_link(image_links[0])
-    pipe = VLMPipeline(models_path, "CPU")
+    pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     pipe.generate(prompts[0], image=image, generation_config=config)
 
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("scheduler_config", [SchedulerConfig(), None])
-def test_perf_metrics(cache, scheduler_config):
+@pytest.mark.parametrize("backend", attention_backend)
+def test_perf_metrics(cache, backend):
     import numpy as np
     from time import perf_counter_ns
 
@@ -422,11 +386,8 @@ def test_perf_metrics(cache, scheduler_config):
     max_new_tokens = 30
 
     start_time = perf_counter_ns()
-    if scheduler_config:
-        pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config)
-    else:
-        pipe = VLMPipeline(models_path, "CPU")
-
+    pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
+    
     start_generate = perf_counter_ns()
     result = pipe.generate(
         prompts[0],
@@ -483,11 +444,12 @@ def test_perf_metrics(cache, scheduler_config):
 @pytest.mark.nightly
 # FIXME: katuni4ka/tiny-random-qwen2vl and katuni4ka/tiny-random-qwen2.5-vl - fails on NPU
 @pytest.mark.parametrize("model_id", model_ids[:-2])
+@pytest.mark.parametrize("backend", attention_backend)
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
-def test_vlm_npu_no_exception(model_id):
+def test_vlm_npu_no_exception(model_id, backend):
     models_path = get_ov_model(model_ids[0])
     properties = {
         "DEVICE_PROPERTIES": {
@@ -495,7 +457,7 @@ def test_vlm_npu_no_exception(model_id):
         }
     }
 
-    ov_pipe = VLMPipeline(models_path, "NPU", config=properties)
+    ov_pipe = VLMPipeline(models_path, "NPU", ATTENTION_BACKEND=backend, config=properties)
 
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
@@ -512,15 +474,16 @@ def test_vlm_npu_no_exception(model_id):
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
-def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_images):
+@pytest.mark.parametrize("backend", attention_backend)
+def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_images, backend):
     callback_questions = [
-        "1+1=",
+        "Explain in details 1+1=",
         "Why is the Sun yellow?",
         "What is the previous answer?",
     ]
 
     current_iter = 0
-    num_iters = 3
+    num_iters = 1
 
     def streamer(subword):
         nonlocal current_iter
@@ -532,7 +495,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
         )
 
     models_path = get_ov_model(model_id)
-    ov_pipe = VLMPipeline(models_path, "CPU")
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
@@ -588,7 +551,8 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
-def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_images):
+@pytest.mark.parametrize("backend", attention_backend)
+def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_images, backend):
     callback_questions = [
         "Why is the Sun yellow?",
         "1+1=",
@@ -596,10 +560,13 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_im
 
     current_iter = 0
     num_iters = 3
+    streamer_generation_result = ""
 
     def streamer(subword):
         nonlocal current_iter
         current_iter += 1
+        nonlocal streamer_generation_result
+        streamer_generation_result += subword
         return (
             StreamingStatus.CANCEL
             if current_iter == num_iters
@@ -607,7 +574,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_im
         )
 
     models_path = get_ov_model(model_id)
-    ov_pipe = VLMPipeline(models_path, "CPU")
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
     generation_config.ignore_eos = True
@@ -618,20 +585,23 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_im
         images.append(get_image_by_link(link))
 
     ov_pipe.start_chat()
-    res_first = ov_pipe.generate(
+    _ = ov_pipe.generate(
         callback_questions[0],
         images=images,
         generation_config=generation_config,
         streamer=streamer,
-    ).texts[0]
+    )
+    res_first = streamer_generation_result
     current_iter = 0
-    res_second = ov_pipe.generate(
+    streamer_generation_result = ""
+    _ = ov_pipe.generate(
         callback_questions[0],
         images=images,
         generation_config=generation_config,
         streamer=streamer,
-    ).texts[0]
+    )
     ov_pipe.finish_chat()
+    res_second = streamer_generation_result
 
     assert res_first == res_second
 
@@ -712,7 +682,6 @@ class TestImageTags:
     )
     def test_representation(self, model_and_tag, model_id):
         vlm, tag = model_and_tag
-
         generation_config = vlm.get_generation_config()
         generation_config.max_new_tokens = 30
         vlm.set_generation_config(generation_config)
@@ -875,13 +844,15 @@ class TestImageTags:
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize(
-    "model_id, image_link, target_size",
+    "model_id, image_link, target_size, backend",
     [
-        pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336)),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336)),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316"))
     ],
 )
-def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size):
+def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size, backend):
     import numpy as np
 
     resized_image = get_pil_image_by_link(image_link, target_size=target_size)
@@ -912,7 +883,7 @@ def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size
     optimum_text = optimum_output[0]
 
     # Run the model with GenAI
-    vlm = VLMPipeline(model_path, "CPU")
+    vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
     genai_output = vlm.generate(prompt, images=[resized_image_tensor], max_new_tokens=max_new_tokens)
     genai_text = genai_output.texts[0]
 
