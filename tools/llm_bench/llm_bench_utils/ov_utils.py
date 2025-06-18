@@ -761,6 +761,7 @@ def create_image_text_gen_model(model_path, device, memory_monitor, **kwargs):
                 )
 
         log.info("Selected Optimum Intel for benchmarking")
+        ov_config.pop("ATTENTION_BACKEND", None)
         model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
         if kwargs.get("mem_consumption"):
             memory_monitor.start()
