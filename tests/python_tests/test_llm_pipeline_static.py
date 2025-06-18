@@ -7,7 +7,6 @@ import os
 import pytest
 import platform
 import sys
-import shutil
 
 from utils.constants import get_default_llm_properties
 from utils.tokenizers import model_tmp_path
