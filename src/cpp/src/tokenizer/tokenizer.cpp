@@ -38,9 +38,17 @@ constexpr char pad_token_key_name[] = "pad_token";
 
 ov::Core core_with_extension() {
     ov::Core core;
+
+#ifdef _WIN32
+    const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+    OPENVINO_ASSERT(ov_tokenizer_path_w, "openvino_tokenizers path is not set");
+    core.add_extension(std::wstring(ov_tokenizer_path_w));
+#else
     const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
     OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
     core.add_extension(ov_tokenizer_path);
+#endif
+    
     return core;
 }
 
@@ -252,8 +260,14 @@ public:
         filtered_properties = {};
         if (is_gguf_model(models_path)) {
             std::map<std::string, GGUFMetaData> tokenizer_config{};
+            std::filesystem::path ov_tokenizer_filesystem_path;
+#ifdef _WIN32
+            const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+            ov_tokenizer_filesystem_path = std::filesystem::path(std::wstring(ov_tokenizer_path_w));
+#else
             const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
-            auto ov_tokenizer_filesystem_path = std::filesystem::path(ov_tokenizer_path);
+            ov_tokenizer_filesystem_path = std::filesystem::path(ov_tokenizer_path);
+#endif
             m_shared_object_ov_tokenizers = load_shared_object(ov_tokenizer_filesystem_path);
             std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
                 create_tokenizer_from_config(m_shared_object_ov_tokenizers, models_path);
