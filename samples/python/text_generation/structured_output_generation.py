@@ -61,18 +61,22 @@ def main():
     structured_output_config = openvino_genai.StructuredOutputConfig()
     config.max_new_tokens = 300
 
-    print("I'm a smart assistant that generates structured output in JSON format.")
-    print("You can ask me to generate information about a person, car, or bank transaction.")
-    print('For example, you can ask: "Please generate jsons for 3 persons and 1 transaction."')
+    print("I'm a smart assistant that generates structured output in JSON format."
+          "You can ask me to generate information about a person, car, or bank transaction."
+          'For example, you can ask: "Please generate jsons for 3 persons and 1 transaction."')
 
     while True:
-        prompt = input('> ')
+        try:
+            prompt = input('> ')
+        except EOFError:
+            break
         pipe.start_chat(sys_message)
         structured_output_config.json_schema = json.dumps(ItemQuantities.model_json_schema())
         config.structured_output_config = structured_output_config
         config.do_sample = False
         res = pipe.generate(prompt, config)
         pipe.finish_chat()
+        print(f"Generated JSON with item quantities: {res}")
 
         config.do_sample = True
         config.temperature = 0.8
@@ -80,9 +84,9 @@ def main():
         pipe.start_chat(sys_message_for_items)
         generate_has_run = False
         for item, quantity in json.loads(res).items():
+            config.structured_output_config.json_schema = json.dumps(items_map[item].model_json_schema())
             for _ in range(quantity):
                 generate_has_run = True
-                config.structured_output_config.json_schema = json.dumps(items_map[item].model_json_schema())
                 json_strs = pipe.generate(prompt, config)
                 print(json.loads(json_strs))
         pipe.finish_chat()
