@@ -37,14 +37,13 @@ def run_visual_language_generation_optimum(
     prompts = []
     inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
-        if "media" in input_data:
-            if input_data["media"] is not None:
-                entry = Path(input_data["media"])
-                if entry.is_dir():
-                    for file in sorted(entry.iterdir()):
-                        images.append(load_image(str(file)))
-                else:
-                    images.append(load_image(input_data["media"]))
+        if input_data.get("media", None):
+            entry = Path(input_data["media"])
+            if entry.is_dir():
+                for file in sorted(entry.iterdir()):
+                    images.append(load_image(str(file)))
+            else:
+                images.append(load_image(input_data["media"]))
         prompts.append(input_data["prompt"])
     prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
     log.info(f'{prefix}[P{prompt_index}] Input image nums:{len(images)}')
@@ -200,13 +199,12 @@ def run_visual_language_generation_genai(
     inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
         if input_data.get("media", None):
-            if input_data["media"] is not None:
-                entry = Path(input_data["media"])
-                if entry.is_dir():
-                    for file in sorted(entry.iterdir()):
-                        images.append(load_image_genai(str(file)))
-                else:
-                    images.append(load_image_genai(input_data["media"]))
+            entry = Path(input_data["media"])
+            if entry.is_dir():
+                for file in sorted(entry.iterdir()):
+                    images.append(load_image_genai(str(file)))
+            else:
+                images.append(load_image_genai(input_data["media"]))
         prompts.append(input_data["prompt"])
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
