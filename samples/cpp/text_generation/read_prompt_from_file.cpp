@@ -16,5 +16,4 @@ std::string utils::read_prompt(const std::string& file_path) {
         error_message << "Error opening prompt file: '" << file_path << "'";
         throw std::runtime_error{error_message.str()};
     }
-    return prompt;
 }
