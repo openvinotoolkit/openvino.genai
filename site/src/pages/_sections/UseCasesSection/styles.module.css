@@ -1,17 +1,15 @@
 .useCasesSection {
+  composes: section from '../section-styles.module.css';
+
+  background-color: var(--genai-color-section-bg);
+}
+
+.sectionTitle {
+  composes: sectionTitle from '../section-styles.module.css';
+}
+
+.sectionContent {
   display: flex;
   flex-direction: column;
-  align-items: center;
-
-  padding: 5rem 10rem;
-
-  .title {
-    margin-bottom: 2rem;
-  }
-
-  .content {
-    display: flex;
-    flex-direction: column;
-    gap: 3rem;
-  }
+  gap: 2rem;
 }

@@ -9,10 +9,10 @@ import { TextGeneration } from './components/text-generation';
 
 export const UseCasesSection = () => (
   <section className={styles.useCasesSection}>
-    <Heading as="h2" className={styles.title}>
+    <Heading as="h2" className={styles.sectionTitle}>
       Use Cases
     </Heading>
-    <div className={styles.content}>
+    <div className={styles.sectionContent}>
       <TextGeneration />
       <ImageGeneration />
       <SpeechRecognition />
