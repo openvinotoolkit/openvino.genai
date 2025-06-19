@@ -38,12 +38,13 @@ public:
         // extract information about inference device
         ov::CompiledModel compiled_model = request.get_compiled_model();
         std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
-        const bool all_gpu_device =
-            std::all_of(execution_devices.begin(), execution_devices.end(), [&](const std::string& s) {
-                return s.find("GPU") != std::string::npos;
+        bool all_gpu_device =
+            !execution_devices.empty() &&
+            std::all_of(execution_devices.begin(), execution_devices.end(), [&](const std::string& device) {
+                return device.find("GPU") != std::string::npos;
             });
         OPENVINO_ASSERT(all_gpu_device || execution_devices.size() == 1,
-                        "Contituous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
+                        "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
         m_device = execution_devices[0];
         // set block_size depending on device
         const size_t cpu_block_size = 32, gpu_block_size = 16;
