@@ -1,0 +1,10 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2.5rem 10rem;
+}
+
+.sectionTitle {
+  margin-bottom: 2rem;
+}
