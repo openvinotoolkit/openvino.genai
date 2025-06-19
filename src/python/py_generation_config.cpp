@@ -98,6 +98,9 @@ void init_generation_config(py::module_& m) {
 
     py::class_<StructuredOutputConfig>(m, "StructuredOutputConfig", structured_output_config_docstring)
         .def(py::init<>(), "Default constructor for StructuredOutputConfig")
+        .def(py::init([](py::kwargs kwargs) {
+            return StructuredOutputConfig(pyutils::kwargs_to_any_map(kwargs)); 
+        }), "Constructor that initializes the structured output configuration with kwargs.")
         .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
         .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
         .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation");

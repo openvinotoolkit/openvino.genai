@@ -144,8 +144,6 @@ endif()
 
 if(ENABLE_XGRAMMAR)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE xgrammar)
-    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_XGRAMMAR)
-    target_include_directories(${TARGET_NAME_OBJ} PRIVATE "${XGRAMMAR_DIR}/include")
 endif()
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")

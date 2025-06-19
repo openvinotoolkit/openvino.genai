@@ -26,20 +26,28 @@ namespace genai {
 enum class StopCriteria { EARLY, HEURISTIC, NEVER };
 
 
-class OPENVINO_GENAI_EXPORTS StructuredOutputConfig {
 /* 
- * Structured output parameters:
- * @param json_schema if set, the output will be a JSON string constraint by the specified json_schema.
- * @param regex if set, the output will be constraint by specified regex.
- * @param grammar if set, the output will be constraint by specified EBNF grammar.
- */
+* Structured output parameters:
+* @param json_schema if set, the output will be a JSON string constrained by the specified json_schema.
+* @param regex if set, the output will be constrained by specified regex.
+* @param grammar if set, the output will be constrained by specified EBNF grammar.
+*/
+class OPENVINO_GENAI_EXPORTS StructuredOutputConfig {
 public:
+    /* 
+    * @brief Constructor that initializes the structured output configuration with properties.
+    * @param properties A map of properties to initialize the structured output configuration.
+    * 
+    * Example: StructuredOutputConfig config({{ov::genai::json_schema(json_schema_str)}});
+    */
+    StructuredOutputConfig(const ov::AnyMap& properties);
     StructuredOutputConfig() = default;
     std::optional<std::string> json_schema;
     std::optional<std::string> regex;
     std::optional<std::string> grammar;
     std::optional<std::string> backend;
     void validate() const;
+    void update_config(const ov::AnyMap& properties);
 };
 
 /**
@@ -218,6 +226,10 @@ static constexpr ov::Property<size_t> num_assistant_tokens{"num_assistant_tokens
 static constexpr ov::Property<size_t> max_ngram_size{"max_ngram_size"};
 
 static constexpr ov::Property<StructuredOutputConfig> structured_output_config{"structured_output_config"};
+static constexpr ov::Property<std::string> regex{"regex"};
+static constexpr ov::Property<std::string> json_schema{"json_schema"};
+static constexpr ov::Property<std::string> grammar{"grammar"};
+static constexpr ov::Property<std::string> backend{"backend"};
 
 static constexpr ov::Property<bool> apply_chat_template{"apply_chat_template"};
 

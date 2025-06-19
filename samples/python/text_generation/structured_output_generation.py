@@ -4,7 +4,7 @@
 
 import argparse
 import json
-import openvino_genai
+from openvino_genai import LLMPipeline, GenerationConfig, StructuredOutputConfig
 from typing import Literal
 from pydantic import BaseModel, Field
 
@@ -54,10 +54,9 @@ def main():
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
-    pipe = openvino_genai.LLMPipeline(args.model_dir, device)
+    pipe = LLMPipeline(args.model_dir, device)
 
-    config = openvino_genai.GenerationConfig()
-    structured_output_config = openvino_genai.StructuredOutputConfig()
+    config = GenerationConfig()
     config.max_new_tokens = 300
 
     print("I'm a smart assistant that generates structured output in JSON format."
@@ -70,8 +69,7 @@ def main():
         except EOFError:
             break
         pipe.start_chat(sys_message)
-        structured_output_config.json_schema = json.dumps(ItemQuantities.model_json_schema())
-        config.structured_output_config = structured_output_config
+        config.structured_output_config = StructuredOutputConfig(json_schema = json.dumps(ItemQuantities.model_json_schema()))
         config.do_sample = False
         res = pipe.generate(prompt, config)
         pipe.finish_chat()
@@ -83,7 +81,7 @@ def main():
         pipe.start_chat(sys_message_for_items)
         generate_has_run = False
         for item, quantity in json.loads(res).items():
-            config.structured_output_config.json_schema = json.dumps(items_map[item].model_json_schema())
+            config.structured_output_config = StructuredOutputConfig(json_schema = json.dumps(items_map[item].model_json_schema()))
             for _ in range(quantity):
                 generate_has_run = True
                 json_strs = pipe.generate(prompt, config)

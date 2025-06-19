@@ -151,6 +151,21 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "max_ngram_size", max_ngram_size);
 }
 
+StructuredOutputConfig::StructuredOutputConfig(const ov::AnyMap& properties) {
+    update_config(properties);
+    validate();
+}
+
+void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
+    using utils::read_anymap_param;
+
+    read_anymap_param(properties, "json_schema", json_schema);
+    read_anymap_param(properties, "regex", regex);
+    read_anymap_param(properties, "grammar", grammar);
+    read_anymap_param(properties, "backend", backend);
+
+}
+
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     // max_new_tokens has priority over max_length, only if max_new_tokens was not specified use max_length
     if (max_new_tokens != SIZE_MAX) {
