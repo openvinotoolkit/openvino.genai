@@ -109,7 +109,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
             return s.find("GPU") != std::string::npos;
         });
     OPENVINO_ASSERT(all_gpu_device || execution_devices.size() == 1,
-                    "Contituous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
+                    "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
     const std::string execution_device = execution_devices[0];
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
