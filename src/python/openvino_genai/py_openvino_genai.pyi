@@ -1803,9 +1803,15 @@ class StructuredOutputConfig:
         grammar:        if set, the output will be constraint by specified grammar.
     
     """
+    @typing.overload
     def __init__(self) -> None:
         """
         Default constructor for StructuredOutputConfig
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        """
+        Constructor that initializes the structured output configuration with kwargs.
         """
     @property
     def grammar(self) -> str | None:

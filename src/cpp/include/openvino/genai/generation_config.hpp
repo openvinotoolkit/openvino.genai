@@ -31,6 +31,9 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
 * @param json_schema if set, the output will be a JSON string constrained by the specified json_schema.
 * @param regex if set, the output will be constrained by specified regex.
 * @param grammar if set, the output will be constrained by specified EBNF grammar.
+* @param backend if set, the structured output generation will use specified backend, currently only "xgrammar" is supported.
+* 
+* If several several parameters are set, e.g. json_schema and regex, then an error will be thrown when validating the configuration.
 */
 class OPENVINO_GENAI_EXPORTS StructuredOutputConfig {
 public:

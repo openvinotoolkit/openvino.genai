@@ -29,7 +29,6 @@ add_executable(${TEST_TARGET_NAME} ${tests_src} $<TARGET_OBJECTS:openvino_genai_
 if(ENABLE_XGRAMMAR)
     target_link_libraries(${TEST_TARGET_NAME} PRIVATE xgrammar)
     target_compile_definitions(${TEST_TARGET_NAME} PRIVATE ENABLE_XGRAMMAR)
-    target_include_directories(${TEST_TARGET_NAME} PRIVATE "${XGRAMMAR_DIR}/include")
 endif()
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> gtest_main gmock_main)
