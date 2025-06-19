@@ -4,7 +4,6 @@
 
 import argparse
 import json
-from typing import Literal
 import openvino_genai
 from typing import Literal
 from pydantic import BaseModel, Field

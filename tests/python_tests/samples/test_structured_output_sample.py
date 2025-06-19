@@ -8,45 +8,84 @@ import json
 
 from conftest import logger, SAMPLES_PY_DIR, MODELS
 from test_utils import run_sample
+from pydantic import BaseModel, Field
+from typing import Literal
+
+
+class Person(BaseModel):
+    name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+    surname: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+    age: int
+    city: Literal["Dublin", "Dubai", "Munich"]
+    
+
+class Car(BaseModel):
+    model: str = Field(pattern=r"^[A-Z][a-z]{1,20} ?[A-Z][a-z]{0,20} ?.?$")
+    year: int
+    engine_type: Literal["diesel", "petrol", "electric", "hybrid"]
+
+
+class Transaction(BaseModel):
+    id: int = Field(ge=1000, le=10_000_000)
+    amount: float
+    currency: Literal["EUR", "PLN", "RUB", "AED", "CHF", "GBP", "USD"]
 
 @pytest.mark.llm
 @pytest.mark.samples
 @pytest.mark.parametrize("convert_model", ["TinyLlama-1.1B-Chat-v1.0"], indirect=True)
-@pytest.mark.parametrize("prompt,expected_keys", [
-    ("2 persons and 1 car.", {"person": 2, "car": 1, "transaction": 0}),
-    ("Give me a json for 3 persons and 7 cars.", {"person": 3, "car": 7, "transaction": 0}),
-    ("Generate 1 transaction.", {"person": 0, "car": 0, "transaction": 1}),
-    ("Generate 1000 horses.", "No items generated. Please try again with a different request."),
+@pytest.mark.parametrize("prompt,expected_quantities", [
+    ("Give me a json of 2 persons and 1 car.", {"person": 2, "car": 1, "transaction": 0}),
+    ("Give me a json for 3 persons and 4 cars.", {"person": 3, "car": 4, "transaction": 0}),
+    ("Generate json of one car and 1 transaction.", {"person": 0, "car": 1, "transaction": 1}),
+    ("Generate 1000 horses.",  {"person": 0, "car": 0, "transaction": 0}),
 ])
-def test_structured_output_sample(convert_model, prompt, expected_keys):
+def test_structured_output_sample(convert_model, prompt, expected_quantities):
     py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/structured_output_generation.py")
     py_command = [sys.executable, py_script, convert_model]
 
     user_input = prompt + "\n"
     result = run_sample(py_command, user_input)
     output = result.stdout
-    
+
+    items_generated = False
+    items = []
     # Find the line with "Generated JSON with item quantities:"
     for line in output.splitlines():
-        if line.startswith("Generated JSON with item quantities:"):
-            json_str = line.split(":", 1)[1].strip()
-            break
-        # In case if the prompt is incorrect and no JSON is generated only a message is printed
-        elif line.startswith(expected_keys):
-            break
-    else:
-        pytest.fail("No generated JSON found in output.")
+        if not items_generated and line.startswith("> Generated JSON with item quantities:"):
+            item_quantities = line.split(":", 1)[1].strip()
+            items_generated = True
+        elif items_generated and line.startswith('{'):
+            items.append(line.strip())
 
     # Parse and check the JSON
     try:
-        data = json.loads(json_str)
+        data = json.loads(item_quantities)
     except Exception as e:
         pytest.fail(f"Output is not valid JSON: {e}")
+    
+    # Validate the first stage of the sample where it extracts item quantities from the input prompt
+    assert data == expected_quantities, (
+        f"Expected item quantities {expected_quantities}, but got {data}"
+    )
 
-    # Check that all expected keys are present and are integers >= 0
-    for key in expected_keys:
-        assert key in data, f"Missing key '{key}' in output"
-        assert isinstance(data[key], int), f"Value for '{key}' is not int"
-        assert data[key] >= 0, f"Value for '{key}' is negative"
-
-    logger.info(f"Structured output sample test passed for prompt: {prompt}")
+    # Validate the second stage of the sample where items itself are generated
+    items_new_count = {"person": 0, "car": 0, "transaction": 0}
+    for item in items:
+        try:
+            item_data = json.loads(item.replace("'", '"'))
+        except Exception as e:
+            pytest.fail(f"Item output is not valid JSON: {e}")
+        if "name" in item_data:
+            Person.model_validate(item_data)
+            items_new_count["person"] += 1
+        if "model" in item_data:
+            Car.model_validate(item_data)
+            items_new_count["car"] += 1
+        if "currency" in item_data:
+            Transaction.model_validate(item_data)
+            items_new_count["transaction"] += 1
+    
+    # In case if the generated correct items, but quantities differ from the expected
+    assert items_new_count == expected_quantities, (
+        f"Expected item counts {expected_quantities}, but got {items_new_count}"
+    )

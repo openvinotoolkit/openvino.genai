@@ -676,7 +676,7 @@ jobs:
 
       - name: Test Samples (Python and C++)
         if: ${{ matrix.test.run_condition }}
-        run: python -m pytest -vvs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        run: python -m pytest -vvs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}" -k "not test_structured_output_sample"  # strctured output will be run separately
         env:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
@@ -903,6 +903,7 @@ jobs:
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_structured_output.py
+          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/samples/test_structured_output_sample.py -m llm
 
   Overall_Status:
     name: ci/gha_overall_status_linux
