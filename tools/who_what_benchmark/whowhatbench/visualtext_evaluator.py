@@ -19,13 +19,18 @@ def preprocess_fn(example):
     }
 
 
-def prepare_default_data(num_samples=None):
+def prepare_default_data(num_samples=None, shuffle=False):
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
+    if shuffle:
+        default_dataset = datasets.load_dataset(
+            DATASET_NAME, split="test", streaming=True
+        ).shuffle(42).take(NUM_SAMPLES)
+    else:
+        default_dataset = datasets.load_dataset(
+            DATASET_NAME, split="test", streaming=True
+        ).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )
@@ -60,8 +65,10 @@ class VisualTextEvaluator(TextEvaluator):
         gen_answer_fn=None,
         generation_config=None,
         seqs_per_request=None,
+        shuffle=False,
     ) -> None:
         self.processor = processor
+        self.shuffle = shuffle
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -159,7 +166,7 @@ class VisualTextEvaluator(TextEvaluator):
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
+            data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples, self.shuffle))
 
         prompt_data = data["prompts"]
         image_data = data["images"]

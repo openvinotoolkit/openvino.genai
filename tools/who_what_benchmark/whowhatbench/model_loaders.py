@@ -223,6 +223,8 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
         logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
         exit(-1)
 
+    ov_config['ATTENTION_BACKEND'] = "SDPA"
+    logger.info(f"ov_config {ov_config}")
     return GenAIModelWrapper(
         openvino_genai.VLMPipeline(model_dir, device, **ov_config),
         model_dir,

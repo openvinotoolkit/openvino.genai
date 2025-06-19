@@ -173,6 +173,11 @@ def parse_args():
         default=42,
         help="Text-to-image specific parameter that defines the seed value.",
     )
+    parser.add_argument(
+        "--shuffle",
+        action="store_true",
+        help="VLM specific parameter that defines shuffle or not value.",
+    )
 
     return parser.parse_args()
 
@@ -434,6 +439,7 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
                 crop_question=crop_question,
+                shuffle=args.shuffle,
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
