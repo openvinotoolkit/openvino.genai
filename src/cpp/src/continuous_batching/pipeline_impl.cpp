@@ -104,8 +104,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
     std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
-    bool all_gpu_device =
-        !execution_devices.empty() &&
+    const bool all_gpu_device =
         std::all_of(execution_devices.begin(), execution_devices.end(), [&](const std::string& device) {
             return device.find("GPU") != std::string::npos;
         });

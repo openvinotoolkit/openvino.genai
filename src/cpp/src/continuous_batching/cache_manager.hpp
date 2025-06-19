@@ -38,8 +38,7 @@ public:
         // extract information about inference device
         ov::CompiledModel compiled_model = request.get_compiled_model();
         std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
-        bool all_gpu_device =
-            !execution_devices.empty() &&
+        const bool all_gpu_device =
             std::all_of(execution_devices.begin(), execution_devices.end(), [&](const std::string& device) {
                 return device.find("GPU") != std::string::npos;
             });
