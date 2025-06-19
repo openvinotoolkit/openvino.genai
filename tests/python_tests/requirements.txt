@@ -39,3 +39,5 @@ librosa
 soundfile
 datasets
 rouge
+# - microsoft/Phi-4-multimodal-instruct
+peft
