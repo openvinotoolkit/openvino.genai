@@ -5,40 +5,26 @@ import styles from './styles.module.css';
 
 type WithChildren = { children: React.ReactNode };
 
-const Title: React.FC<WithChildren> = ({ children }) => {
-  return (
-    <Heading as="h3" className={styles.title}>
-      {children}
-    </Heading>
-  );
-};
+const Title: React.FC<WithChildren> = ({ children }) => (
+  <Heading as="h3" className={styles.title}>
+    {children}
+  </Heading>
+);
 
-const Description: React.FC<WithChildren> = ({ children }) => {
-  return <p className={styles.description}>{children}</p>;
-};
+const Description: React.FC<WithChildren> = ({ children }) => (
+  <p className={styles.description}>{children}</p>
+);
 
-const Features: React.FC<{ features: string[] }> = ({ features }) => {
-  return (
-    <div className={styles.features}>
-      <strong className={styles.featuresTitle}>Capabilities:</strong>
-      <ul className={styles.featuresList}>
-        {features.map((feature, index) => (
-          <li key={`feature-${index}`} className={styles.featureItem}>
-            {feature}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-};
+const Features: React.FC<WithChildren> = ({ children }) => (
+  <div className={styles.features}>
+    <strong className={styles.featuresTitle}>Capabilities:</strong>
+    <ul className={styles.featuresList}>{children}</ul>
+  </div>
+);
 
-const Code: React.FC<WithChildren> = ({ children }) => {
-  return <>{children}</>;
-};
+const Code: React.FC<WithChildren> = ({ children }) => <>{children}</>;
 
-const Actions: React.FC<WithChildren> = ({ children }) => {
-  return <>{children}</>;
-};
+const Actions: React.FC<WithChildren> = ({ children }) => <>{children}</>;
 
 const getChildByType = (
   childrenArray: React.ReactNode[],
