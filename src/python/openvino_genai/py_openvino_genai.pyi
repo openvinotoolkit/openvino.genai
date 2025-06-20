@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -436,7 +436,7 @@ class EncodedGenerationResult:
     
         GenerationResult stores resulting batched tokens and scores.
     
-        Parameters: 
+        Parameters:
         request_id:         obsolete when handle API is approved as handle will connect results with prompts.
         generation_ids:     in a generic case we have multiple generation results per initial prompt
             depending on sampling parameters (e.g. beam search or parallel sampling).
@@ -699,7 +699,7 @@ class GenerationResult:
     
         GenerationResult stores resulting batched tokens and scores.
     
-        Parameters: 
+        Parameters:
         request_id:         obsolete when handle API is approved as handle will connect results with prompts.
         generation_ids:     in a generic case we have multiple generation results per initial prompt
             depending on sampling parameters (e.g. beam search or parallel sampling).
@@ -1604,7 +1604,7 @@ class SchedulerConfig:
     
         SchedulerConfig to construct ContinuousBatchingPipeline
     
-        Parameters: 
+        Parameters:
         max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
             independent sequences, we consider total amount of tokens in a batch).
         num_kv_blocks:              total number of KV blocks available to scheduler logic.
@@ -1620,6 +1620,10 @@ class SchedulerConfig:
             This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
             When turned off only KV-cache required for batch calculation is kept in memory and
             when a sequence has finished generation its cache is released.
+        use_cache_eviction:         Whether to use cache eviction during generation.
+        cache_eviction_config       Cache eviction configuration struct.
+        use_sparse_attention        Whether to use sparse attention during prefill.
+        sparse_attention_config     Sparse attention configuration struct.
     """
     cache_eviction_config: CacheEvictionConfig
     cache_size: int
@@ -1628,8 +1632,24 @@ class SchedulerConfig:
     max_num_batched_tokens: int
     max_num_seqs: int
     num_kv_blocks: int
+    sparse_attention_config: SparseAttentionConfig
     use_cache_eviction: bool
+    use_sparse_attention: bool
     def __init__(self) -> None:
+        ...
+class SparseAttentionConfig:
+    """
+    
+        Configuration struct for the sparse attention functionality.
+        :param num_last_dense_tokens: Number of tokens from the end of the prompt for which full attention across previous KV cache contents
+          will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention (encompassing first
+          and currently latest blocks) will be computed. Due to the block-wise nature of continuous batching cache management,
+          the actual number of prompt tokens for which the dense attention will be computed may be up to block-size larger than
+          this value (depending on the prompt length and block size).*/
+        :type num_last_dense_tokens: int
+    """
+    num_last_dense_tokens: int
+    def __init__(self, num_last_dense_tokens: int = 100) -> None:
         ...
 class SpeechGenerationConfig(GenerationConfig):
     """
