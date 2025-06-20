@@ -1,0 +1,14 @@
+.featuresSection {
+  composes: section from '../section-styles.module.css';
+}
+
+.sectionTitle {
+  composes: sectionTitle from '../section-styles.module.css';
+}
+
+.sectionContent {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(300px, 1fr));
+  justify-content: center;
+  gap: 1rem;
+}
