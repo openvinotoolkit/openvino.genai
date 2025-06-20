@@ -3,6 +3,7 @@ import difflib
 import numpy as np
 import logging
 import os
+import json
 
 from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
@@ -439,7 +440,7 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
                 crop_question=crop_question,
-                shuffle=args.ov_config.pop('shuffle', False) if args.ov_config else False,
+                shuffle=args.shuffle,
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
@@ -529,6 +530,16 @@ def read_cb_config(path):
         return {}
 
 
+def read_ov_config(ov_config=None):
+    if ov_config:
+        with open(ov_config) as f:
+            ov_options = json.load(f)
+    else:
+        ov_options = {}
+
+    return ov_options
+
+
 def main():
     args = parse_args()
     check_args(args)
@@ -540,11 +551,15 @@ def main():
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
     else:
+        ov_config = read_ov_config(args.ov_config)
+        logger.info(f"OV CONFIG : {ov_config}")
+        args.shuffle = ov_config.pop('shuffle', False)
+        logger.info(f"AAAAAAAAAAAAAAA SHUFFLE : {args.shuffle}")
         base_model = load_model(
             args.model_type,
             args.base_model,
             args.device,
-            args.ov_config,
+            ov_config,
             args.hf,
             args.genai,
             **kwargs,
@@ -563,11 +578,15 @@ def main():
                 output_dir=args.output
             )
         else:
+            ov_config = read_ov_config(args.ov_config)
+            logger.info(f"OV CONFIG 2 : {ov_config}")
+            args.shuffle = ov_config.pop('shuffle', False)
+            logger.info(f"AAAAAAAAAAAAAAA 2 : {args.shuffle}")
             target_model = load_model(
                 args.model_type,
                 args.target_model,
                 args.device,
-                args.ov_config,
+                ov_config,
                 args.hf,
                 args.genai,
                 args.llamacpp,

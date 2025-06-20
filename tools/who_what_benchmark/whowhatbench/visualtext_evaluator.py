@@ -69,6 +69,7 @@ class VisualTextEvaluator(TextEvaluator):
     ) -> None:
         self.processor = processor
         self.shuffle = shuffle
+        print(f"AAAAAAAAAAAA shuffle was passed {shuffle}")
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
