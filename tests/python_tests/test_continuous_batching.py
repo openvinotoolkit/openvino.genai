@@ -4,6 +4,7 @@
 import os
 import pytest
 import math
+import sys
 
 from pathlib import Path
 from shutil import rmtree
@@ -412,6 +413,32 @@ def test_preemption_with_multinomial_n_seq(dynamic_split_fuse):
                          ref=multinomial_params_n_seq.ref_texts,
                          generation_config=multinomial_params_n_seq.generation_config,
                          scheduler_config=scheduler_config)
+
+
+# @pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING] )
+@pytest.mark.parametrize("pipeline_type", [PipelineType.PROMPT_LOOKUP_DECODING] )
+@pytest.mark.precommit
+def test_dynamic_split_fuse_works(pipeline_type):
+    model_id : str = "facebook/opt-125m"
+    _, _, models_path = download_and_convert_model(model_id)
+
+    scheduler_config = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
+    cb_pipe_ref = create_ov_pipeline(models_path, scheduler_config=scheduler_config, pipeline_type=pipeline_type)
+
+    scheduler_config = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 5})
+    cb_pipe_target = create_ov_pipeline(models_path, scheduler_config=scheduler_config, pipeline_type=pipeline_type)
+
+    generation_config = cb_pipe_ref.get_generation_config()
+    generation_config.do_sample = False
+    generation_config.max_new_tokens = 20
+    generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
+    cb_pipe_ref.set_generation_config(generation_config)
+    cb_pipe_target.set_generation_config(generation_config)
+
+    question = "Why is the Sun yellow?"
+    reference = cb_pipe_ref.generate(question, generation_config=generation_config)
+    generated = cb_pipe_target.generate(question, generation_config=generation_config)
+    assert generated == reference
 
 
 def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_config: GenerationConfig):
