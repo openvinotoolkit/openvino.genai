@@ -32,6 +32,18 @@ image = ov_pipe.generate("Create beautiful Sun")`,
     code: `ov_pipe = ov_genai.WhisperPipeline("whisper-base")
 print(ov_pipe.generate(read_wav("sample.wav")))`,
   },
+  //   {
+  //     title: 'Image Processing API',
+  //     Icon: ImageIcon,
+  //     code: `ov_pipe = ov_genai.VLMPipeline("LLaVA")
+  // print(ov_pipe.generate("Describe images", images))`,
+  //   },
+  //   {
+  //     title: 'Speech Generation API',
+  //     Icon: SoundIcon,
+  //     code: `ov_pipe = ov_genai.Text2SpeechPipeline("speecht5_tts")
+  // result = ov_pipe.generate("Hello OpenVINO GenAI")`,
+  //   },
 ];
 
 function Feature({ title, Icon, code }: FeatureItem) {
