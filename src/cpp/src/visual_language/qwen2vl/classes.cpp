@@ -10,6 +10,7 @@
 
 #include "openvino/op/interpolate.hpp"
 #include "openvino/op/add.hpp"
+#include "openvino/op/clamp.hpp"
 #include "openvino/op/subtract.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/convert.hpp"
@@ -298,33 +299,10 @@ ov::Tensor merge_text_and_image_embeddings(
     }
     return merged_embeds;
 }
-    
-} // namespace qwen2vl_utils
 
-std::shared_ptr<ov::Model> VisionEncoderQwen2VL::patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org) {
-    // [grid_t, temporal_patch_size * channel,
-    //    grid_h / spatial_merge_size, spatial_merge_size, patch_size,
-    //    grid_w / spatial_merge_size, spatial_merge_size, patch_size]
-    //
-    //  transpose 
-    //
-    // [grid_t, grid_h / spatial_merge_size, grid_w / spatial_merge_size, spatial_merge_size, spatial_merge_size,
-    //  temporal_patch_size * channel, patch_size, patch_size ]
-    //
-    //  reshape
-    //
-    // [grid_t * (grid_h / spatial_merge_size) * (grid_w / spatial_merge_size) * (spatial_merge_size * spatial_merge_size),
-    //
-    //  temporal_patch_size, channel,
-    //
-    //  (patch_size * patch_size)]
-    //
-    //
-    //
-    // [grid_t * grid_h * grid_w,        channel * config.temporal_patch_size * config.patch_size * config.patch_size]
-
+std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org) {
     auto raw_images = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
-    auto target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
+    auto resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
     auto image_mean = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, 1, 1});
     auto image_scale = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, 1, 1});
 
@@ -336,8 +314,8 @@ std::shared_ptr<ov::Model> VisionEncoderQwen2VL::patch_preprocess_into_model(std
     raw_images->set_friendly_name("raw_images");
     raw_images->output(0).get_tensor().set_names({"raw_images"});
     
-    target_shape->set_friendly_name("target_shape");
-    target_shape->output(0).get_tensor().set_names({"target_shape"});
+    resize_target_shape->set_friendly_name("resize_target_shape");
+    resize_target_shape->output(0).get_tensor().set_names({"resize_target_shape"});
 
     image_mean->set_friendly_name("image_mean");
     image_mean->output(0).get_tensor().set_names({"image_mean"});
@@ -355,27 +333,28 @@ std::shared_ptr<ov::Model> VisionEncoderQwen2VL::patch_preprocess_into_model(std
     last_shape->set_friendly_name("last_shape");
     last_shape->output(0).get_tensor().set_names({"last_shape"});
 
-    // res.buf[i] = ((float(v2) / 255.0f) - m3[c]) / s3[c];
-    auto raw_images_planar = std::make_shared<ov::op::v1::Transpose>(raw_images, 
-        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 3, 1, 2})
-    );
+    auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(raw_images, ov::element::f32);
+    auto img_trans = std::make_shared<ov::op::v1::Transpose>(raw_images_f32, 
+            std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 3, 1, 2})
+        );
+
     ov::op::v0::Interpolate::Attributes attrs = { };
     attrs.axes = {2,3};
     attrs.mode = "cubic";
-
-    auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(raw_images_planar, ov::element::f32);
-    auto resized_images_f32 = std::make_shared<ov::op::v0::Interpolate>(raw_images_f32, target_shape, attrs);
-    auto resized_images_m = std::make_shared<ov::op::v1::Subtract>(resized_images_f32, image_mean);
+    attrs.antialias = true;
+    attrs.align_corners = true;
+    auto img_resized = std::make_shared<ov::op::v0::Interpolate>(img_trans, resize_target_shape, attrs);
+    auto resized_images_f32_planar = std::make_shared<ov::op::v0::Clamp>(img_resized, 0, 255);
+    auto resized_images_m = std::make_shared<ov::op::v1::Subtract>(resized_images_f32_planar, image_mean);
     auto resized_images_s = std::make_shared<ov::op::v1::Multiply>(resized_images_m, image_scale);
-
     auto temporal_images = std::make_shared<ov::op::v3::Broadcast>(resized_images_s, broadcast_shape);
     auto reshaped_8d = std::make_shared<ov::op::v1::Reshape>(temporal_images, temp_shape8d, true);
     auto transposed_8d = std::make_shared<ov::op::v1::Transpose>(reshaped_8d, 
-        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{8}, std::vector<int32_t>{0,3-1,6-1,4-1,7-1,1,5-1,8-1})
+        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{8}, std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7})
     );
     auto reshaped_4d = std::make_shared<ov::op::v1::Reshape>(transposed_8d, temp_shape4d, true);
     auto transposed_4d = std::make_shared<ov::op::v1::Transpose>(reshaped_4d, 
-        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0,2,1,3})
+        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3})
     );
     auto reshaped_to_2d = std::make_shared<ov::op::v1::Reshape>(transposed_4d, last_shape, true);
 
@@ -384,12 +363,26 @@ std::shared_ptr<ov::Model> VisionEncoderQwen2VL::patch_preprocess_into_model(std
 
     ov::replace_node(params_org[0], reshaped_to_2d);
 
-    return std::make_shared<ov::Model>(model_org->get_results(), ov::ParameterVector{raw_images, target_shape, image_mean, image_scale, broadcast_shape, temp_shape8d, temp_shape4d, last_shape});
+    auto results = model_org->get_results();
+
+    //results.push_back(std::make_shared<ov::op::v0::Result>(resized_images_f32_planar));
+    return std::make_shared<ov::Model>(results,
+                                       ov::ParameterVector{raw_images,
+                                                           resize_target_shape,
+                                                           image_mean,
+                                                           image_scale,
+                                                           broadcast_shape,
+                                                           temp_shape8d,
+                                                           temp_shape4d,
+                                                           last_shape});
 }
+
+} // namespace qwen2vl_utils
+
 
 VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
     auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
-    auto model = patch_preprocess_into_model(model_org);
+    auto model = qwen2_vl_utils::patch_preprocess_into_model(model_org);
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -397,7 +390,6 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_di
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
-    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
 }
 
 VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
@@ -408,7 +400,7 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
     const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_embeddings").second;
     
     auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
-    auto model = patch_preprocess_into_model(model_org);
+    auto model = qwen2_vl_utils::patch_preprocess_into_model(model_org);
 
     auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
@@ -417,7 +409,6 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
-    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "preprocessor_config.json");
 }
 
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
@@ -439,10 +430,8 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
 
     ov::Tensor raw_images(ov::element::u8, image_shape, image.data<uint8_t>());
 
-    int64_t a_target_shape[2] = {target_image_size.height, target_image_size.width};
+    uint64_t a_target_shape[2] = {target_image_size.height, target_image_size.width};
     ov::Tensor target_shape(ov::element::i64, ov::Shape{2}, a_target_shape);
-
-    // std::cout << "image = " << image.get_shape() << image.get_element_type() << std::endl;
 
     auto patches_shape = image.get_shape();
     size_t temporal_patch_size = std::max(static_cast<size_t>(patches_shape.at(0)), static_cast<size_t>(config.temporal_patch_size));
@@ -452,20 +441,19 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     size_t grid_h = target_image_size.height / config.patch_size;
     size_t grid_w = target_image_size.width / config.patch_size;
 
-    // Tensor(const element::Type& type, const Shape& shape, void* host_ptr
-    int64_t a_broadcast_shape[4] = {
+    uint64_t a_broadcast_shape[4] = {
         temporal_patch_size, channel, target_image_size.height, target_image_size.width
     };
-    int64_t a_temp_shape8d[8] = {
+    uint64_t a_temp_shape8d[8] = {
         grid_t, temporal_patch_size * channel, grid_h / config.merge_size, config.merge_size, config.patch_size, grid_w / config.merge_size, config.merge_size, config.patch_size
     };
-    int64_t a_temp_shape4d[4] = {
+    uint64_t a_temp_shape4d[4] = {
         grid_t * (grid_h / config.merge_size) * (grid_w / config.merge_size) * (config.merge_size * config.merge_size),
         temporal_patch_size,
         channel,
         config.patch_size * config.patch_size
     };
-    int64_t last_output_shape[2] = {grid_t * grid_h * grid_w, channel * temporal_patch_size * config.patch_size * config.patch_size};
+    uint64_t last_output_shape[2] = {grid_t * grid_h * grid_w, channel * temporal_patch_size * config.patch_size * config.patch_size};
     ov::Tensor broadcast_shape(ov::element::i64, ov::Shape{4}, a_broadcast_shape);
     ov::Tensor temp_shape8d(ov::element::i64, ov::Shape{8}, a_temp_shape8d);
     ov::Tensor temp_shape4d(ov::element::i64, ov::Shape{4}, a_temp_shape4d);
@@ -480,7 +468,7 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     ov::Tensor image_scale(ov::element::f32, ov::Shape{1,a_image_scale.size(),1,1}, a_image_scale.data());
 
     encoder.set_tensor("raw_images", raw_images);
-    encoder.set_tensor("target_shape", target_shape);
+    encoder.set_tensor("resize_target_shape", target_shape);
     encoder.set_tensor("image_mean", image_mean);
     encoder.set_tensor("image_scale", image_scale);
     encoder.set_tensor("broadcast_shape", broadcast_shape);
@@ -498,6 +486,8 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
 
     return {std::move(image_features), resized_source_size};
 }
+
+
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const VLMConfig& vlm_config,
