@@ -9,6 +9,8 @@
 }
 
 .sectionContent {
+  composes: sectionContent from '../section-styles.module.css';
+
   display: flex;
   flex-direction: column;
   gap: 2rem;
