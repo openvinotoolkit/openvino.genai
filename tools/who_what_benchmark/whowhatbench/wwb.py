@@ -439,7 +439,7 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
                 crop_question=crop_question,
-                shuffle=args.shuffle,
+                shuffle=args.ov_config.pop('shuffle', False) if args.ov_config else False,
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
