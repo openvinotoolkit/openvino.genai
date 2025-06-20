@@ -328,5 +328,13 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 */
 static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 
+/**
+* @brief enable enable_save_ov_model property serves to serialize ov model (xml/bin) generated from gguf model on disk for re-use.
+* Set `true` to activate this mode.
+* And create LLMPipeline instance with this config.
+*/
+static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
+
+
 }  // namespace genai
 }  // namespace ov
