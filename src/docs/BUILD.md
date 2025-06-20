@@ -226,7 +226,7 @@ Build OpenVINO GenAI JavaScript Bindings from sources following the [instruction
 
 ### Building OpenVINO GenAI with Additional Features
 
-OpenVINO GenAI can be built with optional features such as JavaScript bindings and the XGrammar backend for structured generation. Some features, like GGUF support and Python bindings, are enabled by default due to their popularity. You can enable or disable these features using CMake `-D` options during the build process to customize your build and reduce binary size if needed.
+OpenVINO GenAI can be built with optional features such as JavaScript bindings. Some features, like GGUF support, XGrammar structured output and Python bindings, are enabled by default due to their popularity. You can enable or disable these features using CMake `-D` options during the build process to customize your build and reduce binary size if needed.
 
 After setting up your environment, use the following commands to configure additional features:
 
@@ -234,9 +234,9 @@ After setting up your environment, use the following commands to configure addit
     ```sh
     cmake -DENABLE_JS=ON -S ./ -B ./build/
     ```
-- **Enable XGrammar backend for structured generation:**
+- **Disable XGrammar backend for structured generation:**
     ```sh
-    cmake -DENABLE_XGRAMMAR_BACKEND=ON -S ./ -B ./build/
+    cmake -DENABLE_XGRAMMAR=OFF -S ./ -B ./build/
     ```
 - **Disable GGUF support:**
     ```sh

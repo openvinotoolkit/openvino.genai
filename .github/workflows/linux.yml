@@ -483,7 +483,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 60
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
+            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 60
           - name: 'Tokenizer tests'
@@ -676,7 +676,7 @@ jobs:
 
       - name: Test Samples (Python and C++)
         if: ${{ matrix.test.run_condition }}
-        run: python -m pytest -vvs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}" -k "not test_structured_output_sample"  # strctured output will be run separately
+        run: python -m pytest -vvs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"  # strctured output will be run separately
         env:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
@@ -879,12 +879,12 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
-      - name: CMake Build with XGrammar
+      - name: CMake Build without XGrammar
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=ON \
-                -DENABLE_XGRAMMAR=ON \
+                -DENABLE_XGRAMMAR=OFF \
                 -DCMAKE_BUILD_TYPE=Release \
                 -S ${{ env.SRC_DIR}} \
                 -B ${{ env.BUILD_DIR }}
@@ -897,13 +897,13 @@ jobs:
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           python3 -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 
-      - name: Run test_structured_output.py
+      - name: Run test_llm_pipeline.py when -DENABLE_XGRAMMAR=OFF
         env:
           PYTHONPATH: "${{ env.BUILD_DIR }}:"
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_structured_output.py
-          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/samples/test_structured_output_sample.py -m llm
+          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py
+          # python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_structured_output.py
 
   Overall_Status:
     name: ci/gha_overall_status_linux

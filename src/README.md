@@ -399,7 +399,7 @@ For more examples of how metrics are used, please refer to the Python [benchmark
 
 
 ### Structured Output generation
-OpenVINO™ GenAI supports structured output generation, which allows you to generate outputs in a structured format such as JSON, regex, or accoring to EBNF grammar. By default this feature is disabled, in order to enable it, you need to compile OpenVINO™ GenAI with the `-DENABLE_XGRAMMAR=ON` flag.
+OpenVINO™ GenAI supports structured output generation, which allows you to generate outputs in a structured format such as JSON, regex, or accoring to EBNF grammar.
 
 Below is a minimal example that demonstrates how to use OpenVINO™ GenAI to generate structured JSON output for a single item type (e.g., `person`). This example uses a Pydantic schema to define the structure and constraints of the generated output.
 
