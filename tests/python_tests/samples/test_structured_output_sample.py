@@ -6,7 +6,7 @@ import pytest
 import sys
 import json
 
-from conftest import logger, SAMPLES_PY_DIR, MODELS
+from conftest import SAMPLES_PY_DIR
 from test_utils import run_sample
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -37,7 +37,7 @@ class Transaction(BaseModel):
     ("Give me a json of 2 persons and 1 car.", {"person": 2, "car": 1, "transaction": 0}),
     ("Give me a json for 3 persons and 4 cars.", {"person": 3, "car": 4, "transaction": 0}),
     ("Generate json of one car and 1 transaction.", {"person": 0, "car": 1, "transaction": 1}),
-    ("Generate 1000 horses.",  {"person": 0, "car": 0, "transaction": 0}),
+    ("Generate 10000 horses.",  {"person": 0, "car": 0, "transaction": 0}),
 ])
 def test_structured_output_sample(convert_model, prompt, expected_quantities):
     py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/structured_output_generation.py")
@@ -57,7 +57,6 @@ def test_structured_output_sample(convert_model, prompt, expected_quantities):
         elif items_generated and line.startswith('{'):
             items.append(line.strip())
 
-    # Parse and check the JSON
     try:
         data = json.loads(item_quantities)
     except Exception as e:

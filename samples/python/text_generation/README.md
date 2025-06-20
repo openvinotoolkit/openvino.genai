@@ -173,12 +173,14 @@ Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
 
 ### 11. Structured Output Sample (`structured_output_sample`)
 - **Description:**
-This sample demonstrates how to use OpenVINO GenAI to generate structured outputs—such as JSON or other formats—from text prompts. JSON generation process is split into multiple steps to mitigate generating complex, variadic JSON structures in a single pass. This is done because not all models are able to generate a complex JSON, with a variadic number of elements, in one shot, especially if the model is small and not fine-tuned for this task. By separating the tasks, it becomes possible to use smaller models and still achieve good quality generated JSON. 
+This sample demonstrates how to use OpenVINO GenAI to generate structured outputs such as JSON from text prompts. In the sample process is split into "generate" calls to mitigate generating complex, variadic JSON structures in a single pass. This is done because not all models are able to generate a complex JSON, with a variadic number of elements in one shot, especially if the model is small and not fine-tuned for this task. By separating the task into two stage, it becomes possible to use smaller models and still achieve good quality generated JSON.
+
+Recommended models: meta-llama/Llama-3.2-1B-Instruct, meta-llama/Llama-3.2-8B-Instruct
 - **Run Command:**
   ```bash
   python structured_output_generation.py model_dir
   ```
-  After running the command, an interactive dialog will start. You can enter a prompt and receive a structured output in response. The generation process is divided into two stages:
+  After running the command, an interactive dialog starts. You can enter a prompt and receive a structured output in response. The process is divided into two stages:
 
 1. **Stage One:** The model generates a JSON schema indicating the number of items of each type the user requests. For example, if you prompt:  
    `Generate a JSON for 2 cars and 1 person with an Irish surname`  
