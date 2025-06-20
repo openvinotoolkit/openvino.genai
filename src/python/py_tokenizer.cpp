@@ -228,8 +228,10 @@ void init_tokenizer(py::module_& m) {
                 }
                 return result;
             },
-             R"(Returns the vocabulary as a Python dictionary with bytes keys and integer values.
-
-Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.)"
+             R"(Returns the vocabulary as a Python dictionary with bytes keys and integer values. 
+             Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.)"
+        )
+        .def("get_vocab_vector", &Tokenizer::get_vocab_vector, 
+             R"(Returns the vocabulary as list of strings, where position of a string represents token ID.)"
         );
 }

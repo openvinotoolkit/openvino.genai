@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
 #include "openvino/genai/generation_config.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"
 
@@ -150,6 +151,21 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "max_ngram_size", max_ngram_size);
 }
 
+StructuredOutputConfig::StructuredOutputConfig(const ov::AnyMap& properties) {
+    update_config(properties);
+    validate();
+}
+
+void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
+    using utils::read_anymap_param;
+
+    read_anymap_param(properties, "json_schema", json_schema);
+    read_anymap_param(properties, "regex", regex);
+    read_anymap_param(properties, "grammar", grammar);
+    read_anymap_param(properties, "backend", backend);
+
+}
+
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     // max_new_tokens has priority over max_length, only if max_new_tokens was not specified use max_length
     if (max_new_tokens != SIZE_MAX) {
@@ -177,6 +193,10 @@ bool GenerationConfig::is_speculative_decoding() const {
 
 bool GenerationConfig::is_assisting_generation() const {
     return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
+}
+
+bool GenerationConfig::is_structured_output_generation() const {
+    return structured_output_config.has_value();
 }
 
 bool GenerationConfig::is_prompt_lookup() const {
@@ -264,6 +284,29 @@ void GenerationConfig::validate() const {
     if (num_assistant_tokens == 0) {
         OPENVINO_ASSERT(max_ngram_size == 0, "'max_ngram_size' should be set to default value 0 when prompt lookup is disabled");
     }
+
+    if(is_structured_output_generation()) {
+        (*structured_output_config).validate();
+    }
+}
+
+void StructuredOutputConfig::validate() const {
+    auto& registry = StructuredOutputController::get_backend_registry();
+    std::string backend_name = backend.has_value() ? *backend : StructuredOutputController::get_default_backend_name();
+    std::string upper_name = backend_name;
+    std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), [](unsigned char c){ return std::toupper(c); });
+
+    OPENVINO_ASSERT(registry.find(backend_name) != registry.end(),
+                    "Structured output backend '", backend_name, "' is not registered. "
+                    "Please recompile with -DENABLE_" + upper_name + "=ON option to enable it.");
+
+    OPENVINO_ASSERT(
+        (json_schema.has_value() + regex.has_value() +  grammar.has_value()) == 1,
+        "Only one of json, regex or grammar should be set in StructuredOutputConfig, but got: ",
+        (json_schema.has_value() ? "json=" + *json_schema +", " : ""),
+        (regex.has_value() ? "regex=" + *regex + ", " : ""),
+        (grammar.has_value() ? "grammar=" + *grammar : "")
+    );
 }
 
 GenerationConfig beam_search() {
