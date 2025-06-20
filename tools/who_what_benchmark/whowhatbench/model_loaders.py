@@ -223,6 +223,8 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
         logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
         exit(-1)
 
+    ov_config['ATTENTION_BACKEND'] = "SDPA"
+    logger.info(f"ov_config {ov_config}")
     return GenAIModelWrapper(
         openvino_genai.VLMPipeline(model_dir, device, **ov_config),
         model_dir,
@@ -407,16 +409,10 @@ def load_inpainting_model(
 
 
 def load_model(
-    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
+    model_type, model_id, device="CPU", ov_options={}, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
     if model_id is None:
         return None
-
-    if ov_config:
-        with open(ov_config) as f:
-            ov_options = json.load(f)
-    else:
-        ov_options = {}
 
     if model_type == "text":
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
