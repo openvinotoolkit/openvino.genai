@@ -13,3 +13,12 @@
   flex-direction: column;
   gap: 2rem;
 }
+
+.useCasesFooter {
+  margin-top: 1.5rem;
+  font-size: 1rem;
+
+  strong {
+    font-weight: 600;
+  }
+}
