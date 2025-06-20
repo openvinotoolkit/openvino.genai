@@ -814,6 +814,8 @@ def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
 @pytest.mark.precommit
 def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
+    if sys.platform == 'darwin':
+        pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
     prompt = 'Why is the Sun yellow?'
