@@ -153,7 +153,8 @@ For more information how performance metrics are calculated please follow [perfo
   ```
   #### Options
 - `-m, --model`: Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
+- `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p` and `-pf`, the default prompt is `"The Sky is blue because"`
+- `-pf, --prompt_file` Read prompt from file.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
