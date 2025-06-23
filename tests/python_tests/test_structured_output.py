@@ -61,7 +61,7 @@ def test_structured_output_generation(ov_pipe, prompt_and_scheme):
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_regex", [
     ("Generate a json about a person.", r'^\{"city":"(Dublin|Dubai|Munich)"\}$'),
-    # without regex constraint it will generate an email letter, but with the regex it will generate an email address string
+    # without regex constraint it generates email letter content, but with the regex it generates an email address string
     ("Generate an email.", r'^[a-zA-Z0-9._%+-]{1,64}@[a-z]{1,64}\.[a-z]{1,10}$'),
     ("Generate a json about a REST API response.", r'^\{"status":"(success|error)"\}$'),
 ])
@@ -108,5 +108,4 @@ def test_structured_ebnf(ov_pipe, prompt_and_ebnf):
     # Basic checks for the generated format
     # Currently there is not general way to validate EBNF output,
     # so we will just check if it matches the expected date format.
-    if "date" in prompt:
-        assert re.match(r"^\d{4}-\d{2}-\d{2}$", res_str), f"Output {res_str} does not match date format"
+    assert re.match(r"^\d{4}-\d{2}-\d{2}$", res_str), f"Output {res_str} does not match date format"

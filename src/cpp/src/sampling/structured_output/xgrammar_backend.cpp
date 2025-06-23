@@ -33,7 +33,6 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
 
     xgrammar::Grammar grammar;
     if (guided_gen_config.json_schema.has_value()) {
-        // std::cout << *guided_generation_config.json_schema << std::endl;
         grammar = xgrammar::Grammar::FromJSONSchema(*guided_gen_config.json_schema);
     } else if (guided_gen_config.regex.has_value()) {
         grammar = xgrammar::Grammar::FromRegex(*guided_gen_config.regex);
