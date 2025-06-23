@@ -22,9 +22,9 @@ export const FeaturesSection = () => (
         needed.
       </FeatureItem>
       <FeatureItem icon="📦" title="Production-Ready Pipelines">
-        Pre-built pipelines for text generation, image creation, speech recognition, and visual
-        language processing. No need to build inference loops or handle tokenization - everything
-        works out of the box.
+        Pre-built pipelines for text generation, image creation, speech recognition, speech
+        generation, and visual language processing. No need to build inference loops or handle
+        tokenization - everything works out of the box.
       </FeatureItem>
       <FeatureItem icon="🎨" title="Extensive Model Support">
         Compatible with <Link to="/docs/supported-models">popular models</Link> including Llama,
@@ -32,8 +32,8 @@ export const FeaturesSection = () => (
         Face and ModelScope.
       </FeatureItem>
       <FeatureItem icon="⚡" title="Lightweight & Efficient">
-        Minimal dependencies and smaller footprint compared to heavyweight frameworks. Perfect for
-        edge deployment, containers, and resource-constrained environments.
+        Minimal dependencies and smaller disk footprint compared to heavyweight frameworks. Perfect
+        for edge deployment, containers, and resource-constrained environments.
       </FeatureItem>
       <FeatureItem icon="🖥️" title="Cross-Platform Compatibility">
         Run the same code on Linux, Windows, and macOS. Deploy across different hardware
