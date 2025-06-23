@@ -3,8 +3,7 @@ import Heading from '@theme/Heading';
 import Button from '@site/src/components/Button';
 import OpenVINOLogo from '@site/static/img/openvino.svg';
 
-import HomepageFeatures from '@site/src/components/HomepageFeatures';
-
+import PipelinesCarousel from './PipelinesCarousel';
 import styles from './styles.module.css';
 
 export const HeroSection = () => (
@@ -26,7 +25,7 @@ export const HeroSection = () => (
         variant="secondary"
         className={styles.getStartedButton}
       />
-      <HomepageFeatures />
+      <PipelinesCarousel className={styles.pipelinesCarousel} />
     </div>
   </section>
 );

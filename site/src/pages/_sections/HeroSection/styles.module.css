@@ -52,4 +52,8 @@
   .getStartedButton {
     margin: 2rem 0;
   }
+
+  .pipelinesCarousel {
+    margin-top: 1rem;
+  }
 }
