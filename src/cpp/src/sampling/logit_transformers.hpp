@@ -57,6 +57,12 @@ public:
     }
 };
 
+/**
+ * @brief Interface for logit transformers that maintain state across token generations.
+ * 
+ * ILogitTransformer interface is used for logit transformers that do not maintain state across token generations.
+ * accept_tokens method is used to accept a sequence of token ids, which can be used to update the internal state of the transformer.
+ */
 class IStatefulLogitTransformer: public ILogitTransformer {
 public:
     virtual void accept_tokens(const TokenIds& input_ids) = 0;

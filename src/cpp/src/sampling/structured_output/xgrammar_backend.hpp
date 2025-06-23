@@ -17,6 +17,13 @@ namespace genai {
 
 namespace LogitTransformers {
 
+/**
+ * @brief Logit transformer that applies XGrammar grammar matching to logits.
+ * 
+ * It encapsulates the XGrammar backend implementation and exposes a public apply method, 
+ * which applies grammar constraints to the logits each time a new token is generated, and 
+ * accepts tokens to update the internal state of the grammar matcher.
+ */
 class XGrammarLogitsTransformer : public IStatefulLogitTransformer {
 public:                            
     XGrammarLogitsTransformer(
@@ -43,7 +50,14 @@ protected:
 } // namespace LogitTransformers
 
 
-
+/**
+ * @brief XGrammarStructuredOutput is a structured output implementation that uses the XGrammar backend.
+ * 
+ * Is inherited from IStructuredOutputImpl and acts as the logit transformer builder for the XGrammar backend.
+ * It m_grammar_compiler initializes the XGrammar compiler with the tokenizer's vocabulary. 
+ * Creating m_grammar_compiler can be expensive, so it is done once for each instance of XGrammarStructuredOutput
+ * is instantiated for the given LogitProcessor.
+ */
 class XGrammarStructuredOutput : public IStructuredOutputImpl {
 public:
     XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size = std::nullopt);    

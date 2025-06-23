@@ -17,6 +17,32 @@
 namespace ov {
 namespace genai {
 
+/**
+ * Below is the structure of the structured output generation system:
+ * 
+ * Example below is for XGrammar backend. XGrammarLogitsTransformer, XGrammarStructuredOutput can replace with any other 
+ * structured output backend implementation.
+ * 
+ * +---------------------------+    uses   +--------------------------+   implements  +-----------------------+
+ * | XGrammarLogitsTransformer |---------->| XGrammarStructuredOutput |-------------->| IStructuredOutputImpl |
+ * +---------------------------+           +--------------------------+               +-----------------------+
+ *                                                                                             ↑
+ *                                                                                             | holds/used by
+ *                                                                                             |
+ *                                                                                 +----------------------------+
+ *                                                                                 | StructuredOutputController |
+ *                                                                                 +----------------------------+
+ */
+
+/**
+ * @brief Helper interface for structured output implementations.
+ *
+ * IStructuredOutputImpl is an interface for creating instances of logit transformers,
+ * such as XGrammarLogitsTransformer. This abstraction allows StructuredOutputController
+ * to avoid direct dependencies on specific logit transformer implementations, keeping
+ * the logic encapsulated within each IStructuredOutputImpl implementation. This design
+ * also simplifies the process of extending support for new structured output backends.
+ */
 class IStructuredOutputImpl {
 public:
     virtual ~IStructuredOutputImpl() = default;
@@ -24,6 +50,15 @@ public:
         get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) = 0;
 };
 
+/**
+ * @brief Orchestrates structured output generation.
+ *
+ * StructuredOutputController manages the selection and instantiation of structured output
+ * backends via the IStructuredOutputImpl interface. Instance of this class are created for every LogitProcessor.
+ * It registers backend factories, manages backend selection, and provides access to logit transformers
+ * for structured output generation. This design enables easy extension to new backends and
+ * keeps backend-specific logic encapsulated.
+ */
 class StructuredOutputController {
 public:
     using BackendFactory = std::function<std::unique_ptr<ov::genai::IStructuredOutputImpl>(
