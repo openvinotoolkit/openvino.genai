@@ -11,12 +11,12 @@ In this version, only the LLM pipeline is implemented for NodeJS.
 
 Install the **genai-node** package:
 ```bash
-npm install genai-node
+npm install openvino-genai-node
 ```
 
 Use the **genai-node** package:
 ```js
-import { LLMPipeline } from 'genai-node';
+import { LLMPipeline } from 'openvino-genai-node';
 
 const pipe = await LLMPipeline(MODEL_PATH, device);
 
