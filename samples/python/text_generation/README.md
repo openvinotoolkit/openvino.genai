@@ -40,7 +40,7 @@ tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama_v1.1")
 tokenizer.save_pretrained(output_dir)
 export_tokenizer(tokenizer, output_dir)
 ```
-[comment]: <> (tokenizer.save_pretrained(output_dir) is required here to mitigate runtime errors)
+[//]: # "tokenizer.save_pretrained(output_dir) is required here to mitigate runtime errors"
 
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
 ```sh
