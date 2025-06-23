@@ -37,16 +37,16 @@ class ItemQuantities(BaseModel):
 items_map = {"person": Person, "car": Car, "transaction": Transaction}
 
 sys_message = (
-    "You generate jsons based on the user's request. You can generate jsons with different types of objects: person, car, transaction. "
-    "If the user requests a different type, json fields should remain zero. "
-    "Please note that words 'individual', 'person', 'people', 'man', 'human', 'woman', 'people', 'inhabitant', 'citizen' are synonyms and can be used interchangeably. "
-    "E.g. if user wants 5 houses, then json must be {\"person\": 0, \"car\": 0, \"transactions\": 0}, "
-    "if user wants 3 people and 1 house then json must be {\"person\": 3, \"car\": 0, \"transaction\": 0}. "
-    "Make sure that json contans numbers that user requested. If user asks to specify attributes, like 'surname', 'model', etc. "
-    "ignore this information and generate jsons with the same fields as in the schema. "
+    "You generate JSON objects based on the user's request. You can generate JSON objects with different types of objects: person, car, transaction. "
+    "If the user requested a different type, the JSON fields should remain zero. "
+    "Please note that the words 'individual', 'person', 'people', 'man', 'human', 'woman', 'inhabitant', 'citizen' are synonyms and can be used interchangeably. "
+    "E.g. if the user wants 5 houses, then the JSON must be {\"person\": 0, \"car\": 0, \"transaction\": 0}. "
+    "If the user wants 3 people and 1 house, then the JSON must be {\"person\": 3, \"car\": 0, \"transaction\": 0}. "
+    "Make sure that the JSON contains the numbers that the user requested. If the user asks for specific attributes, like 'surname', 'model', etc., "
+    "ignore this information and generate JSON objects with the same fields as in the schema. "
 )
 
-sys_message_for_items = "Please try to avoid generating the same jsons multiple times."
+sys_message_for_items = "Please try to avoid generating the same JSON objects multiple times."
 
 def main():
     parser = argparse.ArgumentParser()

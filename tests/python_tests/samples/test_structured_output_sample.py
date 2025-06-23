@@ -57,10 +57,7 @@ def test_structured_output_sample(convert_model, prompt, expected_quantities):
         elif items_generated and line.startswith('{'):
             items.append(line.strip())
 
-    try:
-        data = json.loads(item_quantities)
-    except Exception as e:
-        pytest.fail(f"Output is not valid JSON: {e}")
+    data = json.loads(item_quantities)
     
     # Validate the first stage of the sample where it extracts item quantities from the input prompt
     assert data == expected_quantities, (
@@ -70,10 +67,8 @@ def test_structured_output_sample(convert_model, prompt, expected_quantities):
     # Validate the second stage of the sample where items itself are generated
     items_new_count = {"person": 0, "car": 0, "transaction": 0}
     for item in items:
-        try:
-            item_data = json.loads(item.replace("'", '"'))
-        except Exception as e:
-            pytest.fail(f"Item output is not valid JSON: {e}")
+        item_data = json.loads(item.replace("'", '"'))
+
         if "name" in item_data:
             Person.model_validate(item_data)
             items_new_count["person"] += 1

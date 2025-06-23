@@ -4,3 +4,4 @@ openvino_genai~=2025.3.0.0.dev
 librosa==0.11.0  # For Whisper
 pillow==11.2.1  # Image processing for VLMs
 json5==0.12.0  # For ReAct
+pydantic  # For Structured output json schema
