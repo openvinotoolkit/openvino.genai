@@ -54,7 +54,7 @@ public:
  * @brief Orchestrates structured output generation.
  *
  * StructuredOutputController manages the selection and instantiation of structured output
- * backends via the IStructuredOutputImpl interface. Instance of this class are created for every LogitProcessor.
+ * backends via the IStructuredOutputImpl interface. Instances of this class are created for every LogitProcessor.
  * It registers backend factories, manages backend selection, and provides access to logit transformers
  * for structured output generation. This design enables easy extension to new backends and
  * keeps backend-specific logic encapsulated.

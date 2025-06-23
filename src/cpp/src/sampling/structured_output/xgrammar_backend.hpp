@@ -52,15 +52,31 @@ protected:
 
 /**
  * @brief XGrammarStructuredOutput is a structured output implementation that uses the XGrammar backend.
- * 
- * Is inherited from IStructuredOutputImpl and acts as the logit transformer builder for the XGrammar backend.
- * It m_grammar_compiler initializes the XGrammar compiler with the tokenizer's vocabulary. 
- * Creating m_grammar_compiler can be expensive, so it is done once for each instance of XGrammarStructuredOutput
- * is instantiated for the given LogitProcessor.
+ *
+ * Inherits from IStructuredOutputImpl and acts as the logit transformer builder for the XGrammar backend.
  */
 class XGrammarStructuredOutput : public IStructuredOutputImpl {
 public:
-    XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size = std::nullopt);    
+    /**
+     * @brief Constructs an XGrammarStructuredOutput instance with the given tokenizer and optional vocabulary size.
+     *
+     * This constructor initializes m_grammar_compiler with the provided tokenizer, which is used to compile the grammar.
+     * Instantiating m_grammar_compiler can be expensive, so it is done only once per instance of XGrammarStructuredOutput.
+     * @param tokenizer The tokenizer to be used for grammar compilation.
+     * @param vocab_size Optional vocabulary size; if not provided, it will be determined from the tokenizer.
+     */
+    XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size = std::nullopt);
+
+    /**
+     * @brief Returns a logit transformer that applies XGrammar grammar matching to logits.
+     *
+     * The get_logits_transformer method retrieves the appropriate logit transformer based on
+     * the JSON schema, regex, or EBNF grammar provided in the GenerationConfig. Note that although
+     * m_grammar_compiler is created only once in the constructor, a new logit transformer is created each time
+     * get_logits_transformer is called.
+     * @param sampling_parameters The generation configuration parameters that may include JSON schema, regex, or EBNF grammar.
+     * @return A shared pointer to the logit transformer that applies XGrammar grammar matching.
+     */
     std::shared_ptr<LogitTransformers::ILogitTransformer> get_logits_transformer(const GenerationConfig& sampling_parameters) override;
 private:
     std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
