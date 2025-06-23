@@ -1,6 +1,14 @@
+import ExecutionEnvironment from '@docusaurus/ExecutionEnvironment';
 import { useEffect, useState } from 'react';
 
 const useScreenSize = () => {
+  if (!ExecutionEnvironment.canUseViewport) {
+    return {
+      width: 0,
+      height: 0,
+    };
+  }
+
   const [screenSize, setScreenSize] = useState({
     width: window.innerWidth,
     height: window.innerHeight,
