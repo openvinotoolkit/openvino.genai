@@ -6,49 +6,6 @@
 #
 # Licensed under the Apache License
 
-# To download the required subsets from the MileBench dataset, please run the following script:
-#
-#!/bin/bash
-# OUT_DIR="milebench_data"
-# KEEP_DIRS=("ALFRED" "MMCoQA" "WikiVQA")
-# BASE_URL="https://huggingface.co/datasets/FreedomIntelligence/MileBench/resolve/main"
-# # List of tar.gz parts to download
-# PARTS=(part0 part2 part5)
-# # Create output directory
-# mkdir -p "$OUT_DIR"
-# cd "$OUT_DIR" || exit 1
-# # Download and extract
-# for part in "${PARTS[@]}"; do
-#     FILENAME="MileBench_${part}.tar.gz"
-#     URL="${BASE_URL}/${FILENAME}"
-#     echo "Downloading $FILENAME..."
-#     curl -L -o "$FILENAME" "$URL"
-#     echo "Extracting $FILENAME..."
-#     tar -xzf "$FILENAME" || { echo "Failed to extract $FILENAME"; exit 1; }
-#     rm "$FILENAME"
-# done
-# # Remove unwanted folders
-# echo "Cleaning up..."
-# for dir in */ ; do
-#     dir=${dir%/}
-#     if [[ ! " ${KEEP_DIRS[@]} " =~ " ${dir} " ]]; then
-#         echo "Removing $dir"
-#         rm -rf "$dir"
-#     fi
-# done
-# echo "Removing combined_1_images folders and *-adv.json inside kept directories..."
-# for dir in "${KEEP_DIRS[@]}"; do
-#     TARGET="$dir/combined_1_images"
-#     if [ -d "$TARGET" ]; then
-#         rm -rf "$TARGET"
-#     fi
-#     ADV_FILE="$dir/${dir}-adv.json"
-#     if [ -f "$ADV_FILE" ]; then
-#         rm "$ADV_FILE"
-#     fi
-# done
-
-
 import os
 import json
 import re
@@ -57,6 +14,7 @@ import openvino
 import numpy as np
 from PIL import Image
 from rouge import Rouge
+
 
 class MileBenchDataset:
     def __init__(self, data_dir, subset, subset_size=200):
