@@ -24,8 +24,14 @@ int32_t main(int32_t argc, char* argv[]) try {
     // Prepare initial pipeline and compiled models into device
     ov::AnyMap properties;
     if (device == "NPU") {
+        // Define static shape and guidance scale for NPU
+        const int num_images_per_prompt = 1;
+        const int height = 512;
+        const int width = 512;
+        const float guidance_scale = 7.5f;
+
         pipelines.emplace_back(models_path);
-        pipelines.back().reshape(/*N=*/1, /*H=*/512, /*W=*/512, /*guidance_scale=*/7.5f);
+        pipelines.back().reshape(num_images_per_prompt, height, width, guidance_scale);
         pipelines.back().compile(device);  // All models are compiled for NPU
         // pipelines.back().compile("NPU", "NPU", "GPU");  // Compile for NPU and GPU, if needed
 
