@@ -152,31 +152,6 @@ SAMPLES_CPP_DIR = Path(os.environ.get("SAMPLES_CPP_DIR", os.getcwd()))
 SAMPLES_C_DIR = os.environ.get("SAMPLES_C_DIR", os.getcwd())
 SAMPLES_JS_DIR = os.environ.get("SAMPLES_JS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/js")))
 
-@pytest.fixture(scope="session", autouse=True)
-def setup_and_teardown(request, tmp_path_factory):
-    """Fixture to set up and tear down the temporary directories."""
-    
-    ov_cache = get_ov_cache_dir(tmp_path_factory.mktemp("ov_cache"))  
-    models_dir = os.path.join(ov_cache, "test_models")
-    test_data = os.path.join(ov_cache, "test_data")
-    
-    logger.info(f"Creating directories: {models_dir} and {test_data}")
-    os.makedirs(models_dir, exist_ok=True)
-    os.makedirs(test_data, exist_ok=True)
-    
-    request.config.cache.set("OV_CACHE", str(ov_cache))
-    request.config.cache.set("MODELS_DIR", str(models_dir))
-    request.config.cache.set("TEST_DATA", str(test_data))
-    
-    yield
-    
-    if os.environ.get("CLEANUP_CACHE", "false").lower() != "false":
-        if os.path.exists(ov_cache):
-            logger.info(f"Removing temporary directory: {ov_cache}")
-            shutil.rmtree(ov_cache)
-        else:
-            logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
-
 
 @pytest.fixture(scope="session")
 def convert_model(request):
@@ -239,51 +214,9 @@ def download_model(request):
             logger.info(f"Removing converted model: {model_cache}")
             shutil.rmtree(model_cache)
 
-@pytest.fixture(scope="session")
-def download_test_content(request):
-    """Download the test content from the given URL and return the file path or extracted folder."""
-    
-    test_data = request.config.cache.get("TEST_DATA", None)
-    
-    file_name = request.param
-    file_url = TEST_FILES[file_name]
-    file_path = os.path.join(test_data, file_name)
-    
-    if not os.path.exists(file_path):
-        logger.info(f"Downloading test content from {file_url} to {file_path}...")
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        response = requests.get(file_url, stream=True)
-        response.raise_for_status()
-        with open(file_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        logger.info(f"Downloaded test content to {file_path}")
-    else:
-        logger.info(f"Test content already exists at {file_path}")
-
-    # If the file is a tarball, extract it
-    extracted_dir = None
-    if file_name.endswith(".tar.gz"):
-        extracted_dir = os.path.join(test_data, os.path.splitext(file_name)[0])
-        if not os.path.exists(extracted_dir):
-            os.makedirs(extracted_dir, exist_ok=True)
-            shutil.unpack_archive(file_path, extracted_dir)
-            logger.info(f"Extracted tarball to {extracted_dir}")
-        else:
-            logger.info(f"Extracted folder already exists at {extracted_dir}")
-        yield extracted_dir
-    else:
-        yield file_path
-
-    # Cleanup the test content after tests
-    if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
-        if extracted_dir and os.path.exists(extracted_dir):
-            logger.info(f"Removing extracted folder: {extracted_dir}")
-            shutil.rmtree(extracted_dir)
-        if os.path.exists(file_path):
-            logger.info(f"Removing test content: {file_path}")
-            os.remove(file_path)
-
+@pytest.fixture
+def download_mask_image(request):
+    return request.getfixturevalue("download_test_content")
 
 @pytest.fixture(scope="session")
 def generate_test_content(request):
