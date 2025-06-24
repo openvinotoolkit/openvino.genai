@@ -14,19 +14,20 @@ namespace ov::genai {
  * It is extended version of PerfMetrics.
  * 
  * @param get_ttst Returns the mean and standard deviation of TTST(Time to the second token).
- * @param get_latency Returns the mean and standard deviation of the latency(ttl).
+ * @param get_latency Returns the mean and standard deviation of the latency(avg_latency).
  *
  * Cached mean and standard deviations.
  * @param ttst Mean and standard deviation of Time to the Second Token (TTST) in milliseconds.
- * @param ttl Mean and standard deviation of the latency from the third token in milliseconds per inference, which includs also prev and post processing.
+ * @param avg_latency Mean and standard deviation of the latency from the third token in milliseconds per inference, which includs also prev and post processing.
  * First and second token time is presented separately as ttft and ttst.
  * 
- * Additional features.
+ * Additional potins.
+ * TPOT is calculated from the third token.
  * To get number of iterations, you can use value from raw performance metrics raw_metrics.m_durations.size().
  */
 struct OPENVINO_GENAI_EXPORTS SDPerfMetrics : public ov::genai::ExtendedPerfMetrics {
     ov::genai::MeanStdPair ttst;  // Time of the generation of the second token (in ms).
-    ov::genai::MeanStdPair ttl;  // Latency from the third token (in ms), first and second token time is presented separately as ttft and ttst.
+    ov::genai::MeanStdPair avg_latency;  // Latency from the third token (in ms), first and second token time is presented separately as ttft and ttst.
 
     ov::genai::MeanStdPair get_ttst();
     ov::genai::MeanStdPair get_latency();

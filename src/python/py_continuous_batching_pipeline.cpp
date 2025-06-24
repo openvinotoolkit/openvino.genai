@@ -91,9 +91,9 @@ auto generation_result_docstring = R"(
         CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
         STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
         DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
-    perf_metrics:
-                        Performance metrics for each generation result.
-
+    perf_metrics: Performance metrics for each generation result.
+    extended_perf_metrics: performance pipeline specifics metrics,
+                           applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
 )";
 
 auto pipeline_metrics_docstring = R"(

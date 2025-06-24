@@ -417,10 +417,15 @@ class DecodedResults:
         texts:      vector of resulting sequences.
         scores:     scores for each sequence.
         metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+        extended_perf_metrics: performance pipeline specifics metrics,
+                               applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
     """
     def __init__(self) -> None:
         ...
     def __str__(self) -> str:
+        ...
+    @property
+    def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
     def perf_metrics(self) -> PerfMetrics:
@@ -448,13 +453,16 @@ class EncodedGenerationResult:
             CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
             STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
             DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
-        perf_metrics:
-                            Performance metrics for each generation result.
-    
+        perf_metrics: Performance metrics for each generation result.
+        extended_perf_metrics: performance pipeline specifics metrics,
+                               applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
     """
     m_generation_ids: list[list[int]]
     m_scores: list[float]
     def __init__(self) -> None:
+        ...
+    @property
+    def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
     def m_request_id(self) -> int:
@@ -475,7 +483,12 @@ class EncodedResults:
         tokens: sequence of resulting tokens.
         scores: sum of logarithmic probabilities of all tokens in the sequence.
         metrics: performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+        extended_perf_metrics: performance pipeline specifics metrics,
+                               applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
     """
+    @property
+    def extended_perf_metrics(self) -> ExtendedPerfMetrics:
+        ...
     @property
     def perf_metrics(self) -> PerfMetrics:
         ...
@@ -484,6 +497,88 @@ class EncodedResults:
         ...
     @property
     def tokens(self) -> list[list[int]]:
+        ...
+class ExtendedPerfMetrics:
+    """
+    
+        Holds performance metrics for each generate call.
+    
+        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        - Time To the First Token (TTFT), ms
+        - Time per Output Token (TPOT), ms/token
+        - Generate total duration, ms
+        - Tokenization duration, ms
+        - Detokenization duration, ms
+        - Throughput, tokens/s
+    
+        Additional fields include:
+        - Load time, ms
+        - Number of generated tokens
+        - Number of tokens in the input prompt
+    
+        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        If mean and std were already calculated, getters return cached values.
+    
+        :param get_load_time: Returns the load time in milliseconds.
+        :type get_load_time: float
+    
+        :param get_num_generated_tokens: Returns the number of generated tokens.
+        :type get_num_generated_tokens: int
+    
+        :param get_num_input_tokens: Returns the number of tokens in the input prompt.
+        :type get_num_input_tokens: int
+    
+        :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
+        :type get_ttft: MeanStdPair
+    
+        :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
+        :type get_tpot: MeanStdPair
+    
+        :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
+        :type get_throughput: MeanStdPair
+    
+        :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
+        :type get_generate_duration: MeanStdPair
+    
+        :param get_tokenization_duration: Returns the mean and standard deviation of tokenization durations in milliseconds.
+        :type get_tokenization_duration: MeanStdPair
+    
+        :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
+        :type get_detokenization_duration: MeanStdPair
+    
+        :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
+        :type raw_metrics: RawPerfMetrics
+    """
+    def __add__(self, metrics: PerfMetrics) -> PerfMetrics:
+        ...
+    def __iadd__(self, right: PerfMetrics) -> PerfMetrics:
+        ...
+    def __init__(self) -> None:
+        ...
+    def get_detokenization_duration(self) -> MeanStdPair:
+        ...
+    def get_generate_duration(self) -> MeanStdPair:
+        ...
+    def get_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_ipot(self) -> MeanStdPair:
+        ...
+    def get_load_time(self) -> float:
+        ...
+    def get_num_generated_tokens(self) -> int:
+        ...
+    def get_num_input_tokens(self) -> int:
+        ...
+    def get_throughput(self) -> MeanStdPair:
+        ...
+    def get_tokenization_duration(self) -> MeanStdPair:
+        ...
+    def get_tpot(self) -> MeanStdPair:
+        ...
+    def get_ttft(self) -> MeanStdPair:
+        ...
+    @property
+    def raw_metrics(self) -> RawPerfMetrics:
         ...
 class FluxTransformer2DModel:
     """
@@ -712,9 +807,9 @@ class GenerationResult:
             CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
             STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
             DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
-        perf_metrics:
-                            Performance metrics for each generation result.
-    
+        perf_metrics: Performance metrics for each generation result.
+        extended_perf_metrics: performance pipeline specifics metrics,
+                               applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
     """
     m_generation_ids: list[str]
     m_scores: list[float]
@@ -724,6 +819,9 @@ class GenerationResult:
     def __repr__(self) -> str:
         ...
     def get_generation_ids(self) -> list[str]:
+        ...
+    @property
+    def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
     def m_request_id(self) -> int:
@@ -1537,6 +1635,55 @@ class SD3Transformer2DModel:
     def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> SD3Transformer2DModel:
         ...
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
+        ...
+class SDPerModelsPerfMetrics(SDPerfMetrics):
+    """
+    
+        Holds performance metrics for each generate call.
+    
+        :param main_model_metrics: performance metrics for main model
+        :type main_model_metrics: SDPerfMetrics
+    
+        :param draft_model_metrics: performance metrics for draft model
+        :type draft_model_metrics: SDPerfMetrics
+    
+        :param get_num_accepted_tokens: total number of tokens, which was generated by draft model and accepted by main model
+        :type get_num_accepted_tokens: int
+    """
+    def get_num_accepted_tokens(self) -> int:
+        ...
+    @property
+    def draft_model_metrics(self) -> SDPerfMetrics:
+        ...
+    @property
+    def main_model_metrics(self) -> SDPerfMetrics:
+        ...
+class SDPerfMetrics(ExtendedPerfMetrics):
+    """
+    
+        Holds performance metrics for draft and main models of SpeculativeDecoding Pipeline.
+    
+        SDPerfMetrics holds fields with mean and standard deviations for the all PerfMetrics fields and following metrics:
+        - Time to the Second Token (TTFT), ms
+        - avg_latency, ms/inference
+    
+        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        If mean and std were already calculated, getters return cached values.
+    
+        :param get_ttst: Returns the mean and standard deviation of TTFT in milliseconds.
+        :type get_ttst: MeanStdPair
+    
+        :param get_latency: Returns the mean and standard deviation of the latency from the third token in milliseconds per inference,
+                            which includs also prev and post processing. First and second token time is presented separately as ttft and ttst.
+        :type get_latency: MeanStdPair
+    
+        Additional points:
+          - TPOT is calculated from the third token.
+          - `total number of iterations` of the model can be taken from raw performance metrics raw_metrics.m_durations.size().
+    """
+    def get_latency(self) -> MeanStdPair:
+        ...
+    def get_ttst(self) -> MeanStdPair:
         ...
 class Scheduler:
     """

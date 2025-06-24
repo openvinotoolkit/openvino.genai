@@ -241,9 +241,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer) {
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-    // m_perf_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
-    // m_perf_metrics.main_model_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
-    // m_perf_metrics.draft_model_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
     m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
