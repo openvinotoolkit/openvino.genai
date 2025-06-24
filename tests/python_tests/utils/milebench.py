@@ -6,49 +6,6 @@
 #
 # Licensed under the Apache License
 
-# To download the required subsets from the MileBench dataset, please run the following script:
-#
-#!/bin/bash
-# OUT_DIR="milebench_data"
-# KEEP_DIRS=("ALFRED" "MMCoQA" "WikiVQA")
-# BASE_URL="https://huggingface.co/datasets/FreedomIntelligence/MileBench/resolve/main"
-# # List of tar.gz parts to download
-# PARTS=(part0 part2 part5)
-# # Create output directory
-# mkdir -p "$OUT_DIR"
-# cd "$OUT_DIR" || exit 1
-# # Download and extract
-# for part in "${PARTS[@]}"; do
-#     FILENAME="MileBench_${part}.tar.gz"
-#     URL="${BASE_URL}/${FILENAME}"
-#     echo "Downloading $FILENAME..."
-#     curl -L -o "$FILENAME" "$URL"
-#     echo "Extracting $FILENAME..."
-#     tar -xzf "$FILENAME" || { echo "Failed to extract $FILENAME"; exit 1; }
-#     rm "$FILENAME"
-# done
-# # Remove unwanted folders
-# echo "Cleaning up..."
-# for dir in */ ; do
-#     dir=${dir%/}
-#     if [[ ! " ${KEEP_DIRS[@]} " =~ " ${dir} " ]]; then
-#         echo "Removing $dir"
-#         rm -rf "$dir"
-#     fi
-# done
-# echo "Removing combined_1_images folders and *-adv.json inside kept directories..."
-# for dir in "${KEEP_DIRS[@]}"; do
-#     TARGET="$dir/combined_1_images"
-#     if [ -d "$TARGET" ]; then
-#         rm -rf "$TARGET"
-#     fi
-#     ADV_FILE="$dir/${dir}-adv.json"
-#     if [ -f "$ADV_FILE" ]; then
-#         rm "$ADV_FILE"
-#     fi
-# done
-
-
 import os
 import json
 import re
@@ -58,13 +15,16 @@ import numpy as np
 from PIL import Image
 from rouge import Rouge
 
+
 class MileBenchDataset:
     def __init__(self, data_dir, subset, subset_size=200):
         self.data_dir = data_dir
         self.subset = subset
         self.subset_size = subset_size
 
-        annotation_path = os.path.join(self.data_dir, self.subset, f"{self.subset}.json")
+        annotation_path = os.path.join(
+            self.data_dir, self.subset, f"{self.subset}.json"
+        )
         with open(annotation_path, "r") as f:
             self.annotation = json.load(f)
 
@@ -76,6 +36,7 @@ class MileBenchDataset:
     @staticmethod
     def _transform_string(s: str) -> str:
         import re
+
         counter = iter(range(1, s.count("{i}") + 1))
         return re.sub(r"\{i\}", lambda _: str(next(counter)), s)
 
@@ -104,16 +65,20 @@ class MileBenchDataset:
         context = ann["task_instance"]["context"]
         if "choice_list" in ann["task_instance"].keys():
             choice_str = "\nChoice list: \n"
-            choice_str += "\n".join([(f"{chr(65+idx)}. ") + f"{item}"
-                for idx, item in enumerate(ann["task_instance"]["choice_list"])])
+            choice_str += "\n".join(
+                [
+                    (f"{chr(65+idx)}. ") + f"{item}"
+                    for idx, item in enumerate(ann["task_instance"]["choice_list"])
+                ]
+            )
             choice_str += "\nYour answer is: "
             context += choice_str
 
         img_num = len(ann["task_instance"]["images_path"])
         qwen2_vl_image_placeholder = "<|vision_start|><|image_pad|><|vision_end|>"
         for i in range(img_num):
-            rmv_txt = "{image#%d}"% (i+1)
-            rmv_tbl = "{table#%d}"% (i+1)
+            rmv_txt = "{image#%d}" % (i + 1)
+            rmv_tbl = "{table#%d}" % (i + 1)
             context = context.replace(rmv_txt, qwen2_vl_image_placeholder)
             context = context.replace(rmv_tbl, qwen2_vl_image_placeholder)
 
@@ -167,11 +132,11 @@ class Eval:
 
     def char(self, index):
         if index < 26:
-            return chr(index+65)
+            return chr(index + 65)
         elif index < 52:
-            return "A"+chr(index+65-26)
+            return "A" + chr(index + 65 - 26)
         else:
-            return "B"+chr(index+65-26-26)
+            return "B" + chr(index + 65 - 26 - 26)
 
     def processPunctuation(self, inText):
         outText = inText
@@ -190,8 +155,8 @@ class Eval:
         answer = answer.replace("\t", " ")
         answer = answer.strip()
         answer = self.processPunctuation(answer)
-        answer = answer.strip("\"")
-        answer = answer.strip("\"")
+        answer = answer.strip('"')
+        answer = answer.strip('"')
         answer = answer.strip().lower()
         return answer
 
@@ -218,7 +183,22 @@ class Eval:
 
             # Then, escape any special regex characters in the processed option text
             # List of regex special characters that need to be escaped
-            special_chars = ["\\", ".", "^", "$", "*", "+", "?", "{", "}", "[", "]", "|", "(", ")"]
+            special_chars = [
+                "\\",
+                ".",
+                "^",
+                "$",
+                "*",
+                "+",
+                "?",
+                "{",
+                "}",
+                "[",
+                "]",
+                "|",
+                "(",
+                ")",
+            ]
             # Escape the special characters by prefixing them with a backslash
             for char in special_chars:
                 if char in processed_option:
@@ -231,23 +211,36 @@ class Eval:
         try:
             # Maybe start from the head
             # 1. Char+Choice: `A. Blastomycosis`
-            option_str = "|".join([preprocess_option_string(f"{k} {v}")for k,v in option.items()])
+            option_str = "|".join(
+                [preprocess_option_string(f"{k} {v}") for k, v in option.items()]
+            )
             option_pattern = rf"({option_str})"
-            option_res = re.search(option_pattern, text, re.S)   # NOTE we dont use match_all
+            option_res = re.search(
+                option_pattern, text, re.S
+            )  # NOTE we dont use match_all
             if option_res:
                 return (option_res.group(0)[0]).upper()
 
             # 2. Choice: `Blastomycosis`
-            option_str = "|".join([preprocess_option_string(v).replace(" ", "") for k,v in option.items()])
+            option_str = "|".join(
+                [
+                    preprocess_option_string(v).replace(" ", "")
+                    for k, v in option.items()
+                ]
+            )
             option_pattern = rf"({option_str})"
-            option_res = re.search(option_pattern, text.replace(" ", ""), re.S)   # NOTE we dont use match_all
+            option_res = re.search(
+                option_pattern, text.replace(" ", ""), re.S
+            )  # NOTE we dont use match_all
             if option_res:
                 for k, v in option.items():
-                    if option_res[0].strip() == preprocess_option_string(v).replace(" ", ""):
+                    if option_res[0].strip() == preprocess_option_string(v).replace(
+                        " ", ""
+                    ):
                         return k.upper()
 
             # 3. Char: `A` `AB`
-            if len(text) in [1,2] and text.upper() in option.keys():
+            if len(text) in [1, 2] and text.upper() in option.keys():
                 return text.upper()
 
             # use gpt extract
@@ -308,7 +301,9 @@ class Eval:
 
     def evaluate(self, predictions, dataset_name, question_type):
         if "NeedleInAHaystack" in dataset_name or "MMCoQA" in dataset_name:
-            return self.evaluate_needle(predictions, needle="NeedleInAHaystack" in dataset_name)
+            return self.evaluate_needle(
+                predictions, needle="NeedleInAHaystack" in dataset_name
+            )
         elif question_type == "open-ended":
             return self.evaluate_rouge(predictions)
         elif question_type == "multi-choice":
