@@ -444,11 +444,13 @@ def test_optimized_generation_milebench(test_struct, download_test_content):
 
     question_type = data.annotation['meta_data']['question_type']
     scorer = Eval()
+
     score = scorer.evaluate(answers, subset, question_type)
     print(f"Score: {score}")
 
     ref_score = scorer.evaluate(ref_answers, subset, question_type)
     print(f"Reference score: {ref_score}")
+
     pipeline_opt_metrics = model_cb_opt.get_metrics()
     pipeline_noopt_metrics = model_cb_noopt.get_metrics()
 
