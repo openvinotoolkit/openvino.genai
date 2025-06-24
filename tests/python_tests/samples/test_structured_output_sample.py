@@ -57,7 +57,7 @@ def test_structured_output_sample(convert_model, prompt, expected_quantities):
         elif items_generated and line.startswith('{'):
             items.append(line.strip())
 
-    data = json.loads(item_quantities)
+    data = json.loads(item_quantities.replace("'", '"'))
     
     # Validate the first stage of the sample where it extracts item quantities from the input prompt
     assert data == expected_quantities, (

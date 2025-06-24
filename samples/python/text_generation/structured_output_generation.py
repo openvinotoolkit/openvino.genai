@@ -73,7 +73,7 @@ def main():
         config.do_sample = False
         res = pipe.generate(prompt, config)
         pipe.finish_chat()
-        print(f"Generated JSON with item quantities: {json.loads(res)}")
+        print(f"Generated JSON with item quantities:", json.loads(res.replace("'", '"')))
 
         config.do_sample = True
         config.temperature = 0.8

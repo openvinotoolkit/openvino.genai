@@ -67,6 +67,11 @@ if(ENABLE_GGUF)
     target_include_directories(gguflib PUBLIC "${gguflib_SOURCE_DIR}")
 endif()
 
+# Check if it's Debug and Windows set ENABLE_XGRAMMAR=OFF forcefully
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND WIN32)
+    set(ENABLE_XGRAMMAR OFF CACHE BOOL "Enable XGrammar" FORCE)
+endif()
+
 if(ENABLE_XGRAMMAR)
     set(XGRAMMAR_VERSION v0.1.18)
     set(XGRAMMAR_DIR ${CMAKE_BINARY_DIR}/xgrammar)

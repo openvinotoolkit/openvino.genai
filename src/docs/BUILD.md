@@ -122,6 +122,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
     cmake --build ./build/ --config Release -j
     ```
+> **NOTE**: On Windows, if you are building Debug version, then -DENABLE_XGRAMMAR=OFF is set forcefully, because XGrammar is not supported in Debug configuration on Windows.
 
 5. Install OpenVINO GenAI:
 
