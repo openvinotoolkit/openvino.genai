@@ -1,10 +1,10 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import sys
 import datasets
 import pytest
-import transformers
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -18,7 +18,6 @@ from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_pr
 from utils.milebench import MileBenchDataset, Eval
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model, _download_and_convert_model
-from utils.network import retry_request
 from data.test_dataset import get_test_dataset
 
 
@@ -371,12 +370,15 @@ MILEBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("device", ["CPU", "GPU"])
-@pytest.mark.parametrize("test_struct", [
-    BenchmarkTestData("ALFRED", 0.011, 1.440, 1.574),
-    BenchmarkTestData("MMCoQA", 0.032, 1.843, 1.620),
-    BenchmarkTestData("WikiVQA", 0.032, 1.412, 1.527),
-])
-def test_optimized_generation_milebench(device, test_struct):
+@pytest.mark.parametrize(
+    ("test_struct", "download_test_content"), [
+    (BenchmarkTestData("ALFRED", 0.011, 1.440, 1.574), "MileBench_part0.tar.gz"),
+    (BenchmarkTestData("MMCoQA", 0.032, 1.843, 1.620), "MileBench_part2.tar.gz"),
+    (BenchmarkTestData("WikiVQA", 0.032, 1.412, 1.527), "MileBench_part5.tar.gz"),
+    ],
+    indirect=["download_test_content"]
+)
+def test_optimized_generation_milebench(device, test_struct, download_test_content):
     seqs_per_request = 32
     num_kv_blocks = 1000 if device == "CPU" else 500
     model_id = "Qwen/Qwen2-VL-2B-Instruct"
@@ -396,10 +398,9 @@ def test_optimized_generation_milebench(device, test_struct):
     generation_config.max_new_tokens = 512
     generation_config.do_sample = False
 
-    data_dir = "milebench_data" # HF_HOME / "milebench_data"
     subset = test_struct.subset
     data = MileBenchDataset(
-        data_dir=data_dir,
+        data_dir=download_test_content,
         subset=subset,
         subset_size=seqs_per_request,
     )
