@@ -5,7 +5,6 @@ import os
 import sys
 import datasets
 import pytest
-import transformers
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
