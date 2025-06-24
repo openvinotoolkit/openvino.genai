@@ -6,6 +6,49 @@
 #
 # Licensed under the Apache License
 
+# To download the required subsets from the MileBench dataset, please run the following script:
+#
+#!/bin/bash
+# OUT_DIR="milebench_data"
+# KEEP_DIRS=("ALFRED" "MMCoQA" "WikiVQA")
+# BASE_URL="https://huggingface.co/datasets/FreedomIntelligence/MileBench/resolve/main"
+# # List of tar.gz parts to download
+# PARTS=(part0 part2 part5)
+# # Create output directory
+# mkdir -p "$OUT_DIR"
+# cd "$OUT_DIR" || exit 1
+# # Download and extract
+# for part in "${PARTS[@]}"; do
+#     FILENAME="MileBench_${part}.tar.gz"
+#     URL="${BASE_URL}/${FILENAME}"
+#     echo "Downloading $FILENAME..."
+#     curl -L -o "$FILENAME" "$URL"
+#     echo "Extracting $FILENAME..."
+#     tar -xzf "$FILENAME" || { echo "Failed to extract $FILENAME"; exit 1; }
+#     rm "$FILENAME"
+# done
+# # Remove unwanted folders
+# echo "Cleaning up..."
+# for dir in */ ; do
+#     dir=${dir%/}
+#     if [[ ! " ${KEEP_DIRS[@]} " =~ " ${dir} " ]]; then
+#         echo "Removing $dir"
+#         rm -rf "$dir"
+#     fi
+# done
+# echo "Removing combined_1_images folders and *-adv.json inside kept directories..."
+# for dir in "${KEEP_DIRS[@]}"; do
+#     TARGET="$dir/combined_1_images"
+#     if [ -d "$TARGET" ]; then
+#         rm -rf "$TARGET"
+#     fi
+#     ADV_FILE="$dir/${dir}-adv.json"
+#     if [ -f "$ADV_FILE" ]; then
+#         rm "$ADV_FILE"
+#     fi
+# done
+
+
 import os
 import json
 import re
@@ -67,24 +110,16 @@ class MileBenchDataset:
             context += choice_str
 
         img_num = len(ann["task_instance"]["images_path"])
+        qwen2_vl_image_placeholder = "<|vision_start|><|image_pad|><|vision_end|>"
         for i in range(img_num):
             rmv_txt = "{image#%d}"% (i+1)
             rmv_tbl = "{table#%d}"% (i+1)
-            context = context.replace(rmv_txt, "")
-            context = context.replace(rmv_tbl, "")
+            context = context.replace(rmv_txt, qwen2_vl_image_placeholder)
+            context = context.replace(rmv_tbl, qwen2_vl_image_placeholder)
 
         task_instruction_id = ann["task_instruction_id"]
         context_str = task_instructions[task_instruction_id] + "\n" + context
         prompt = MileBenchDataset._transform_string(context_str)
-
-        conversation = [
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": prompt}],
-            },
-        ]
-        for i in range(img_num):
-            conversation[0]["content"].append({"type": "image"})
 
         images = []
         for p in ann["task_instance"]["images_path"]:
@@ -95,7 +130,7 @@ class MileBenchDataset:
             images.append(image_tensor)
 
         return {
-            "conversation": conversation,
+            "prompt": prompt,
             "images": images,
             "gt_answer": ann["response"],
             "choice_list": ann["task_instance"].get("choice_list", None),
