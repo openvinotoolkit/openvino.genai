@@ -366,16 +366,15 @@ def test_kvcrush_vs_snapkv_baseline(subset):
     gc.collect()
 
 
-MILEBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.SUM)
+MILEBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=64, max_cache_size=352, aggregation_mode=AggregationMode.SUM)
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("device", ["CPU", "GPU"])
 @pytest.mark.parametrize("test_struct", [
-    BenchmarkTestData("ALFRED", 3.2, 2.0, 3.3),
-    BenchmarkTestData("MMCoQA", 4, 1.6, 3.3),
-    BenchmarkTestData("TextNeedleInAHaystack", 3.2, 2.0, 3.3),
-    BenchmarkTestData("WikiVQA", 5.8, 1.29, 2.621),
+    BenchmarkTestData("ALFRED", 0.011, 1.440, 1.574),
+    BenchmarkTestData("MMCoQA", 0.032, 1.843, 1.620),
+    BenchmarkTestData("WikiVQA", 0.032, 1.412, 1.527),
 ])
 def test_optimized_generation_milebench(device, test_struct):
     seqs_per_request = 32
@@ -389,19 +388,13 @@ def test_optimized_generation_milebench(device, test_struct):
     if scheduler_config_opt.use_cache_eviction:
         scheduler_config_opt.cache_eviction_config = MILEBENCH_CACHE_EVICTION_CONFIG
 
-    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, properties=get_default_llm_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, properties=get_default_llm_properties())
 
     generation_config = GenerationConfig()  # expecting default greedy sampling
     generation_config.num_return_sequences = 1
-    generation_config.max_new_tokens = 64
-
-    processor = retry_request(
-        lambda: transformers.AutoProcessor.from_pretrained(
-            model_id,
-            trust_remote_code=True,
-        )
-    )
+    generation_config.max_new_tokens = 512
+    generation_config.do_sample = False
 
     data_dir = "milebench_data" # HF_HOME / "milebench_data"
     subset = test_struct.subset
@@ -410,15 +403,13 @@ def test_optimized_generation_milebench(device, test_struct):
         subset=subset,
         subset_size=seqs_per_request,
     )
+
     with tqdm(total=len(data)) as progress_bar:
         prompts, images = [], []
         answers = []
         ref_answers = []
         for p_idx, data_sample in enumerate(data):
-            conversation = data_sample["conversation"]
-            prompt = processor.apply_chat_template(
-                conversation, tokenize=False, add_generation_prompt=True
-            )
+            prompt = data_sample["prompt"]
             image = data_sample["images"]
 
             progress_bar.update(1)
@@ -429,24 +420,27 @@ def test_optimized_generation_milebench(device, test_struct):
 
             if len(prompts) == seqs_per_request or p_idx == len(data) - 1:
                 ans_batch = model_cb_opt.generate(
-                    prompts, images=images, generation_config=[generation_config] * len(prompts)
+                    prompts, images=images, generation_config=[generation_config] * len(prompts),
                 )
                 ref_ans_batch = model_cb_noopt.generate(
-                    prompts, images=images, generation_config=[generation_config] * len(prompts)
+                    prompts, images=images, generation_config=[generation_config] * len(prompts),
                 )
+
                 for i, (opt_output, ref_output) in enumerate(zip(ans_batch, ref_ans_batch), start=p_idx-len(prompts)+1):
-                    answers[i]["pred"] = opt_output.m_generation_ids[0]
-                    ref_answers[i]["pred"] = ref_output.m_generation_ids[0]
+                    answers[i]["pred"] = opt_output.texts[0]
+                    ref_answers[i]["pred"] = ref_output.texts[0]
                 prompts.clear()
                 images.clear()
 
     question_type = data.annotation['meta_data']['question_type']
     scorer = Eval()
+
     score = scorer.evaluate(answers, subset, question_type)
     print(f"Score: {score}")
 
     ref_score = scorer.evaluate(ref_answers, subset, question_type)
     print(f"Reference score: {ref_score}")
+
     pipeline_opt_metrics = model_cb_opt.get_metrics()
     pipeline_noopt_metrics = model_cb_noopt.get_metrics()
 
