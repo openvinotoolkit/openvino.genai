@@ -444,8 +444,10 @@ private:
                         filled_blocks_per_layer[layer_idx] += num_blocks;
                     } else {
                         auto seq_id_to_select_logical_idx_map = seq_id_to_select_logical_idx_maps[layer_idx];
-                        OPENVINO_ASSERT(seq_id_to_select_logical_idx_map.find(seq_id) != seq_id_to_select_logical_idx_map.end(),
-                                "seq_id ", seq_id, " must be present in non-empty seq_id_to_select_logical_idx_maps, but was not found");
+                        if (seq_id_to_select_logical_idx_map.find(seq_id) == seq_id_to_select_logical_idx_map.end()) {
+                            continue;  // sequence not being present in layer-specific map means it should be skipped entirely
+                        }
+
                         const auto& select_logical_idxs = seq_id_to_select_logical_idx_maps[layer_idx].at(seq_id);
                         const auto& block_table = kv_blocks[layer_idx];
                         size_t block_table_size = block_table.size();
