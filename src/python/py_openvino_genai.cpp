@@ -53,6 +53,8 @@ auto decoded_results_docstring = R"(
     texts:      vector of resulting sequences.
     scores:     scores for each sequence.
     metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+    extended_perf_metrics: performance pipeline specifics metrics,
+                           applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
 )";
 
 auto encoded_results_docstring = R"(
@@ -66,6 +68,8 @@ auto encoded_results_docstring = R"(
     tokens: sequence of resulting tokens.
     scores: sum of logarithmic probabilities of all tokens in the sequence.
     metrics: performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+    extended_perf_metrics: performance pipeline specifics metrics,
+                           applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
 )";
 
 } // namespace

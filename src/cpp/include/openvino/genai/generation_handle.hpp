@@ -39,6 +39,8 @@ struct EncodedGenerationResult {
     PerfMetrics perf_metrics;
 
     // PerfMetrics with pipeline specifics metrics and empty tokenization/detokenization durations.
+    // Applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline
+    // To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 };
 
@@ -65,6 +67,8 @@ struct GenerationResult {
     PerfMetrics perf_metrics;
 
     // PerfMetrics with pipeline specifics
+    // Applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline
+    // To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 };
 

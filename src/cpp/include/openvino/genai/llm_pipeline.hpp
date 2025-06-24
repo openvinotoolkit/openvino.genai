@@ -37,7 +37,9 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 * @param tokens sequence of resulting tokens
 * @param scores sum of logarithmic probabilities of all tokens in the sequence
 * @param perf_metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
-* @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics
+* @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics.
+*        Applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
+*        To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline.
 */
 class EncodedResults {
 public:
@@ -55,6 +57,8 @@ public:
 * @param scores scores for each sequence
 * @param perf_metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
 * @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics
+*        Applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
+*        To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline.
 */
 class DecodedResults {
 public:

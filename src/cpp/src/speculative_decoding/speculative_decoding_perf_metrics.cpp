@@ -24,7 +24,7 @@ MeanStdPair ov::genai::SDPerfMetrics::get_ttst() {
 
 MeanStdPair ov::genai::SDPerfMetrics::get_latency() {
     evaluate_statistics();
-    return ttl;
+    return avg_latency;
 };
 
 void ov::genai::SDPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
@@ -66,7 +66,7 @@ void ov::genai::SDPerfMetrics::evaluate_statistics(std::optional<TimePoint> star
     ttst = ov::genai::calc_mean_and_std(second_token_duration);
     tpot = ov::genai::calc_mean_and_std(topt_durations);
 
-    ttl = ov::genai::calc_mean_and_std(latency_durations);
+    avg_latency = ov::genai::calc_mean_and_std(latency_durations);
 
     inference_duration = ov::genai::calc_mean_and_std(raw_metrics.m_inference_durations);
 
@@ -95,18 +95,12 @@ void ov::genai::SDPerModelsPerfMetrics::evaluate_statistics(std::optional<TimePo
     if (raw_metrics.m_new_token_times.size() > 0 && raw_metrics.m_batch_sizes.size() > 0) {
         auto& tok_times = raw_metrics.m_new_token_times;
         auto& batch_sizes = raw_metrics.m_batch_sizes;
-        raw_metrics.m_durations.clear();
         num_accepted_tokens = 0;
 
         for (size_t i = 1; i < tok_times.size(); ++i) {
-            for (size_t y = 0; y < raw_metrics.m_batch_sizes[i]; y++)
-                raw_metrics.m_durations.emplace_back((tok_times[i] - tok_times[i - 1]) / batch_sizes[i]);
-
             num_accepted_tokens += batch_sizes[i] - 1;
         }
     }
-    tpot = calc_mean_and_std(raw_metrics.m_durations);
-
     main_model_metrics.evaluate_statistics(start_time);
     draft_model_metrics.evaluate_statistics(start_time);
 
