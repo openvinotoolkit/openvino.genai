@@ -29,7 +29,7 @@ int32_t main(int32_t argc, char* argv[]) try {
         pipelines.back().compile(device);  // All models are compiled for NPU
         // pipelines.back().compile("NPU", "NPU", "GPU");  // Compile for NPU and GPU, if needed
 
-        // We cannot specify N, H, W, and guidance_scale in the properties map
+        // Don't specify N, H, W, and guidance_scale in the properties map because they were made static
         properties = ov::AnyMap{ov::genai::num_inference_steps(20)};
     } else {
         pipelines.emplace_back(models_path, device);
