@@ -101,22 +101,23 @@ def new_beam_search_v52(
         """
 
         # 1. init beam_search values
-        pad_token_id = generation_config._pad_token_tensor
-        eos_token_id = generation_config._eos_token_tensor
-        output_attentions = generation_config.output_attentions
-        output_hidden_states = generation_config.output_hidden_states
-        output_scores = generation_config.output_scores
-        output_logits = generation_config.output_logits
-        return_dict_in_generate = generation_config.return_dict_in_generate
-        do_sample = generation_config.do_sample
-        early_stopping = generation_config.early_stopping
-        length_penalty = generation_config.length_penalty
-        max_length = generation_config.max_length
-        num_beams = generation_config.num_beams
-        num_return_sequences = generation_config.num_return_sequences
-
-        batch_size_unflattened, cur_len = input_ids.shape[:2]
-        batch_size = batch_size_unflattened // num_beams
+        (
+            pad_token_id,
+            eos_token_id,
+            output_attentions,
+            output_hidden_states,
+            output_scores,
+            output_logits,
+            return_dict_in_generate,
+            do_sample,
+            early_stopping,
+            length_penalty,
+            max_length,
+            num_beams,
+            num_return_sequences,
+            batch_size,
+            cur_len,
+        ) = initialize_beam_search(generation_config, input_ids)
         # TODO (joao): standardize special cases
         if self.__class__.__name__ == "MoshiDepthDecoder":
             vocab_size = self.config.audio_vocab_size
