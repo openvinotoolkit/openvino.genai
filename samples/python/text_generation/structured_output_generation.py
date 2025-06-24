@@ -59,8 +59,8 @@ def main():
     config = GenerationConfig()
     config.max_new_tokens = 300
 
-    print("This is a smart assistant that generates structured output in JSON format."
-          "You can ask to generate information about a person, car, or bank transaction."
+    print("This is a smart assistant that generates structured output in JSON format. "
+          "You can ask to generate information about a person, car, or bank transaction. "
           'For example, you can ask: "Please generate jsons for 3 persons and 1 transaction."')
 
     while True:
@@ -73,7 +73,7 @@ def main():
         config.do_sample = False
         res = pipe.generate(prompt, config)
         pipe.finish_chat()
-        print(f"Generated JSON with item quantities: {res}")
+        print(f"Generated JSON with item quantities: {json.loads(res)}")
 
         config.do_sample = True
         config.temperature = 0.8
