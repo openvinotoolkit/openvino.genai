@@ -5,11 +5,10 @@ import os
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
+from conftest import SAMPLES_PY_DIR, convert_model
 from test_utils import run_sample
 
 convert_draft_model = convert_model
-download_mask_image = download_test_content
 
 image_generation_prompt = "side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, 8K HD Resolution, beautifully background"
 image_generation_json = [
