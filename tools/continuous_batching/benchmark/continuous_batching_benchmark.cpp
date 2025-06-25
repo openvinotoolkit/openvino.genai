@@ -282,7 +282,8 @@ public:
     }
 
     void print_statistics() {
-        std::chrono::seconds total_duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time);
+        std::chrono::milliseconds total_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time);
         std::chrono::milliseconds mean_ttft = std::chrono::milliseconds::zero();
         std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
         size_t total_input_len = 0;
@@ -298,11 +299,13 @@ public:
         }
         mean_ttft /= generations_info.size();
         mean_tpot /= generations_info.size();
-        std::cout << "Benchmark duration: " << total_duration.count() << " s" << std::endl;
+
+        auto total_duration_second = total_duration.count() / 1000.0;
+        std::cout << "Benchmark duration: " << total_duration_second << " s" << std::endl;
         std::cout << "Total number of input tokens: " << total_input_len << std::endl;
         std::cout << "Total number of output tokens: " << total_output_len << std::endl;
-        std::cout << "Input throughput: " << total_input_len / total_duration.count() << " tokens / s" << std::endl;
-        std::cout << "Output throughput: " << total_output_len / total_duration.count() << " tokens / s" << std::endl;
+        std::cout << "Input throughput: " << total_input_len / total_duration_second << " tokens / s" << std::endl;
+        std::cout << "Output throughput: " << total_output_len / total_duration_second << " tokens / s" << std::endl;
         std::cout << "Mean TTFT: " << mean_ttft.count() << " ms" << std::endl;
         std::cout << "Mean TPOT: " << mean_tpot.count() << " ms" << std::endl; 
     }
@@ -342,11 +345,11 @@ void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* data
     std::cout << "All requests sent, traffic simulation finished. Exiting thread." << std::endl;
 }
 
-void llmEngineLoop(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::atomic<bool>* finishThread) {
+void llmEngineLoop(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::atomic<bool>& finishThread) {
     std::cout << "Launching LLM engine thread" << std::endl;
     size_t num_finished = 0;
 
-    while (!(*finishThread)) {
+    while (!(finishThread.load())) {
         while (pipe->has_non_finished_requests()) {
             pipe->step();
         }
@@ -354,12 +357,15 @@ void llmEngineLoop(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset
     std::cout << "All requests processed, LLM Engine loop escaped. Exiting thread." << std::endl;
 }
 
-void statisticsReporter(GenerationInfoCollector* generations_info_collector, int num_prompts) {
+void statisticsReporter(GenerationInfoCollector* generations_info_collector,
+                        int num_prompts,
+                        std::atomic<bool>& finishThread) {
     int num_finished = 0;
     while (num_finished < num_prompts) {
         num_finished = generations_info_collector->run();
     }
     std::cout << "Benchmark finished, summarizing statistics..." << std::endl;
+    finishThread.store(true);
     generations_info_collector->print_statistics();
 
     std::cout << "Exiting statistics reporter thread." << std::endl;
@@ -521,21 +527,20 @@ int main(int argc, char* argv[]) try {
 
     GenerationInfoCollector generation_info_collector;
 
-    std::atomic<bool> finishGenerationThread{false};
+    std::atomic<bool> finishGenerationThread(false);
     if (request_rate == "inf") {
         std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
         trafficSimulatorThread.join();
     }
     
-    std::thread lmmEngineThread(llmEngineLoop, &pipe, &dataset, &finishGenerationThread);
-    std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, num_prompts);
+    std::thread lmmEngineThread(llmEngineLoop, &pipe, &dataset, std::ref(finishGenerationThread));
+    std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, num_prompts,  std::ref(finishGenerationThread));
     if (request_rate != "inf") {
         std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
         trafficSimulatorThread.join();
     }
-    statisticsReporterThread.join();
-    finishGenerationThread = true;
     lmmEngineThread.join();
+    statisticsReporterThread.join();
 
     std::cout << "Benchmark finished" << std::endl;
 } catch (const std::exception& error) {
