@@ -405,6 +405,7 @@ public:
     }
 
 private:
+    // Fills indices for sequences in the order defined by scheduler_output
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
         const std::vector<SequenceGroup::Ptr>& sequence_groups,
@@ -460,6 +461,44 @@ private:
                         filled_blocks_per_layer[layer_idx] += select_logical_idxs.size();
                     }
                 }
+            }
+        }
+        for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
+            const auto& target_tensor_name = dst_tensor_names[layer_idx];
+            size_t tensor_size = m_request.get_tensor(target_tensor_name).get_size();
+            size_t last_filled_element_idx = filled_blocks_per_layer[layer_idx];
+            OPENVINO_ASSERT(tensor_size == last_filled_element_idx, "did not fill tensor ", target_tensor_name, " completely, tensor size in elements ", tensor_size, ", last filled idx ", last_filled_element_idx);
+        }
+    }
+
+    // Fills indices for sequences in the order defined by seq_id_to_select_logical_idx_maps
+    // (i.e. ascending for an ordered map)
+    void _fill_select_indices_from_block_tables(
+        const std::vector<std::string>& dst_tensor_names,
+        const Scheduler::Output& scheduler_output,
+        const std::vector<std::map<size_t, std::vector<size_t>>>& seq_id_to_select_logical_idx_maps) {
+        OPENVINO_ASSERT(seq_id_to_select_logical_idx_maps.size() == dst_tensor_names.size() ||
+                        (dst_tensor_names.size() == 1 && !m_is_use_per_layer_cache_control) ||
+                        seq_id_to_select_logical_idx_maps.empty());
+        std::vector<size_t> filled_blocks_per_layer(dst_tensor_names.size(), 0);
+
+        for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
+            auto input_tensor = m_request.get_tensor(dst_tensor_names[layer_idx]);
+            auto block_indices_data = input_tensor.data<int32_t>();
+            for (const auto& kv : seq_id_to_select_logical_idx_maps[layer_idx]) {
+                size_t seq_id = kv.first;
+                const auto& select_logical_idxs = kv.second;
+
+                const auto& kv_blocks = scheduler_output.m_block_tables.at(seq_id);
+                const auto& block_table = kv_blocks[layer_idx];
+                size_t block_table_size = block_table.size();
+                for (size_t block_id = 0; block_id < select_logical_idxs.size(); ++block_id) {
+                    size_t logical_block_idx = select_logical_idxs[block_id];
+                    OPENVINO_ASSERT(logical_block_idx < block_table_size);
+                    block_indices_data[block_id] = block_table[logical_block_idx]->get_index();
+                }
+                block_indices_data += select_logical_idxs.size();
+                filled_blocks_per_layer[layer_idx] += select_logical_idxs.size();
             }
         }
         for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
@@ -554,10 +593,10 @@ private:
 
         // NB: the order of per-sequence index filling in the function below must be the same
         // as the order of `seq_id`s in which the "rotation_coefficients.N" inputs are filled
-        _fill_indices_from_block_tables(rotation_indices_tensor_names,
-                                        sequence_groups,
-                                        scheduler_output,
-                                        m_rotated_block_logical_indices_per_sequence_for_each_layer);
+        // (i.e. ascending by seq_id values)
+        _fill_select_indices_from_block_tables(rotation_indices_tensor_names,
+                                               scheduler_output,
+                                               m_rotated_block_logical_indices_per_sequence_for_each_layer);
     }
 
     void _reset_cache_rotation_coefficients() {
