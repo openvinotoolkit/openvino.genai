@@ -40,6 +40,7 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 * @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics.
 *        Applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
 *        To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline.
+*        Cast to SDPerModelsPerfMetrics for SpeculativeDecoding.
 */
 class EncodedResults {
 public:
@@ -59,6 +60,7 @@ public:
 * @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics
 *        Applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
 *        To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline.
+*        Cast to SDPerModelsPerfMetrics for SpeculativeDecoding.
 */
 class DecodedResults {
 public:
