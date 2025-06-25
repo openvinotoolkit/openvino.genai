@@ -139,3 +139,5 @@ def download_test_content(request):
         if os.path.exists(file_path):
             logger.info(f"Removing test content: {file_path}")
             os.remove(file_path)
+
+download_mask_image = download_test_content
