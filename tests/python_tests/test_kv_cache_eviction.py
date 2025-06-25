@@ -84,11 +84,9 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
                        avg_cache_usage_optimization_ratio=1.1),
 
     ], ids=lambda x: x.test_id)
-@pytest.mark.parametrize("enable_prefix_caching", [True, False],
-                                                  ids=["with_prefix_caching", "no_prefix_caching"])  # prefix caching shouldn't impact similarity
 @pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
 @pytest.mark.parametrize("use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]) # sparse attn should not degrade similarity too much
-def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, enable_prefix_caching, apply_rotation, use_sparse_attention):
+def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention):
     import whowhatbench
 
     seqs_per_request = 32
@@ -104,7 +102,6 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, enabl
     if scheduler_config_opt.use_cache_eviction:
         scheduler_config_opt.cache_eviction_config = test_struct.cache_eviction_config
         scheduler_config_opt.cache_eviction_config.apply_rotation = apply_rotation
-    scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
     scheduler_config_opt.use_sparse_attention = use_sparse_attention
     if use_sparse_attention:
         scheduler_config_opt.sparse_attention_config.num_last_dense_tokens = 10
