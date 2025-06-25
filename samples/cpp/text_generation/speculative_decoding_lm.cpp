@@ -40,9 +40,9 @@ int main(int argc, char* argv[]) try {
     // Since the streamer is set, the results will
     // be printed each time a new token is generated.
     auto result = pipe.generate(prompt, config, streamer);
+    auto sd_perf_metrics = std::dynamic_pointer_cast<ov::genai::SDPerModelsPerfMetrics>(result.extended_perf_metrics);
 
-    if (result.extended_perf_metrics) {
-        auto sd_perf_metrics = std::dynamic_pointer_cast<ov::genai::SDPerModelsPerfMetrics>(result.extended_perf_metrics);
+    if (sd_perf_metrics) {
         auto main_model_metrics = sd_perf_metrics->main_model_metrics;
         std::cout << "\nMAIN MODEL " << std::endl;
         std::cout << "  Generate time: " << main_model_metrics.get_generate_duration().mean << " ms" << std::endl;
