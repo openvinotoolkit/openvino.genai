@@ -420,7 +420,7 @@ pipe = LLMPipeline(models_path, "CPU")
 config = GenerationConfig()
 config.max_new_tokens = 100
 # If backend is not specified, it will use the default backend which is "xgrammar" for the moment.
-config.structured_output_config = StructuredOutputConfig(json_schema=json.dumps(Person.model_json_schema()), backed="xgrammar")
+config.structured_output_config = StructuredOutputConfig(json_schema=json.dumps(Person.model_json_schema()), backend="xgrammar")
 
 # Generate structured output
 result = pipe.generate("Generate a JSON for a person.", config)
