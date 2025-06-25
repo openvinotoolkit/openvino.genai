@@ -44,6 +44,7 @@ sys_message = (
     "If the user wants 3 people and 1 house, then the JSON must be {\"person\": 3, \"car\": 0, \"transaction\": 0}. "
     "Make sure that the JSON contains the numbers that the user requested. If the user asks for specific attributes, like 'surname', 'model', etc., "
     "ignore this information and generate JSON objects with the same fields as in the schema. "
+    "Please use double quotes for JSON keys and values. "
 )
 
 sys_message_for_items = "Please try to avoid generating the same JSON objects multiple times."
@@ -71,16 +72,16 @@ def main():
         pipe.start_chat(sys_message)
         config.structured_output_config = StructuredOutputConfig(json_schema = json.dumps(ItemQuantities.model_json_schema()))
         config.do_sample = False
-        res = pipe.generate(prompt, config)
+        res = json.loads(pipe.generate(prompt, config))
         pipe.finish_chat()
-        print(f"Generated JSON with item quantities:", json.loads(res.replace("'", '"')))
+        print(f"Generated JSON with item quantities: {res}")
 
         config.do_sample = True
         config.temperature = 0.8
 
         pipe.start_chat(sys_message_for_items)
         generate_has_run = False
-        for item, quantity in json.loads(res).items():
+        for item, quantity in res.items():
             config.structured_output_config = StructuredOutputConfig(json_schema = json.dumps(items_map[item].model_json_schema()))
             for _ in range(quantity):
                 generate_has_run = True
