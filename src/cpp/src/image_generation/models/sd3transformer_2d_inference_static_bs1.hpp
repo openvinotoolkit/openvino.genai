@@ -13,23 +13,23 @@ namespace genai {
 
 // Static Batch-Size 1 variant of SD3Transformer2DModel::Inference
 class SD3Transformer2DModel::InferenceStaticBS1 : public SD3Transformer2DModel::Inference {
-public:
-    InferenceStaticBS1() : Inference(), m_native_batch_size(0) {}
-    
+
     InferenceStaticBS1(const InferenceStaticBS1&) = delete;
     InferenceStaticBS1(InferenceStaticBS1&&) = delete;
+    InferenceStaticBS1(InferenceStaticBS1& other) = delete;
 
-    InferenceStaticBS1(InferenceStaticBS1& other)
-        : Inference(other), m_native_batch_size(other.m_native_batch_size) {
-        m_requests.reserve(other.m_requests.size());
-        for (auto& request : other.m_requests) {
-            m_requests.push_back(request.get_compiled_model().create_infer_request());
-        }
-    }
+public:
+    InferenceStaticBS1() : Inference(), m_native_batch_size(0) {}
 
     virtual std::shared_ptr<Inference> clone() override {
         OPENVINO_ASSERT(m_requests.size(), "SD3Transformer2DModel must have m_requests initialized");
-        return std::make_shared<InferenceStaticBS1>(*this);
+        auto clone = std::make_shared<InferenceStaticBS1>();
+        clone->m_native_batch_size = m_native_batch_size;
+        clone->m_requests.reserve(m_requests.size());
+        for (auto& request : m_requests) {
+            clone->m_requests.push_back(request.get_compiled_model().create_infer_request());
+        }
+        return clone;
     }
 
     virtual void compile(std::shared_ptr<ov::Model> model,
