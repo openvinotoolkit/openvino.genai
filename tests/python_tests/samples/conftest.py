@@ -214,10 +214,6 @@ def download_model(request):
             logger.info(f"Removing converted model: {model_cache}")
             shutil.rmtree(model_cache)
 
-@pytest.fixture
-def download_mask_image(request):
-    return request.getfixturevalue("download_test_content")
-
 @pytest.fixture(scope="session")
 def generate_test_content(request):
     """Generate an image of lines and return the file path."""
