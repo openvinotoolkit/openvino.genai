@@ -648,6 +648,7 @@ tag_inserted_by_template = [
     ("katuni4ka/tiny-random-llava-next", lambda idx: "<image>"),
     ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
     ("katuni4ka/tiny-random-qwen2.5-vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
+    ("katuni4ka/tiny-random-gemma3", lambda idx: "<start_of_image>"),
 ]
 
 image_id_ignorant =  tag_inserted_by_template + [
@@ -851,6 +852,8 @@ class TestImageTags:
         pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316"))
+        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (896, 896), "SDPA"),
+        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (896, 896), "PA"),
     ],
 )
 def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size, backend):
