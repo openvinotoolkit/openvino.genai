@@ -21,7 +21,7 @@ env:
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   BASE_PRODUCT_TYPE: public_darwin
   CCACHE_MAXSIZE: 500Mi
-  HF_HOME: ~/.cache/hf
+  HF_HOME: ~/.cache/hf/1c0d715f76c59260cff931b5780e9191cecc0c14
   OV_CACHE: ~/.cache/ov_cache/1c0d715f76c59260cff931b5780e9191cecc0c14
 
 jobs:
