@@ -3,39 +3,55 @@
 
 #pragma once
 
-#include <vector>
-#include <cstdlib>
 #include <cmath>
+#include <cstdlib>
+#include <vector>
 
-#include "sequence_group.hpp"
 #include "continuous_batching/attention_output.hpp"
 #include "openvino/genai/cache_eviction.hpp"
+#include "sequence_group.hpp"
 
 namespace ov::genai {
 
 /**
-* @brief Calculates the set of KV cache logical block IDs that should be skipped from the KV cache block set during the
-* next inference for a given sequence group.
-*/
-class SparseAttentionTokenSkipper {
+ * @brief Calculates the set of KV cache logical block IDs that should be skipped from the KV cache block set during the
+ * next inference for a given sequence group.
+ */
+class TriShapeSparseAttentionTokenSkipper {
 public:
-    SparseAttentionTokenSkipper() = delete;
+    TriShapeSparseAttentionTokenSkipper() = delete;
 
     /**
-    * Constructs the SparseAttentionTokenSkipper.
-    * @param num_last_dense_tokens The number of tokens in the end of the prompt phase for which sparse attention should
-    * not be applied.
-    */
-    explicit SparseAttentionTokenSkipper(size_t num_last_dense_tokens) : m_num_last_dense_tokens(num_last_dense_tokens) {}
+     * Constructs the SparseAttentionTokenSkipper.
+     * @param num_last_dense_tokens The number of tokens in the end of the prompt phase for which sparse attention
+     * should not be applied.
+     */
+    explicit TriShapeSparseAttentionTokenSkipper(
+                                         size_t block_size,
+                                         size_t num_last_dense_tokens_in_prefill,
+                                         size_t num_retained_start_tokens_in_cache,
+                                         size_t num_retained_recent_tokens_in_cache)
+        : m_block_size(block_size),
+          m_num_last_dense_tokens_in_prefill(num_last_dense_tokens_in_prefill),
+          m_num_retained_start_tokens_in_cache(num_retained_start_tokens_in_cache),
+          m_num_retained_recent_tokens_in_cache(num_retained_recent_tokens_in_cache) {
+            OPENVINO_ASSERT(!(num_retained_start_tokens_in_cache % block_size),
+                            "num_last_dense_tokens_in_prefill in tokens must be a multiple of block size ", block_size);
+            OPENVINO_ASSERT(!(num_retained_recent_tokens_in_cache % block_size),
+                            "num_retained_dense_tokens_in_prefill in tokens must be a multiple of block size ", block_size);
+          }
 
     /**
-    * @param sequence_group A pointer to the sequence group.
-    * @return The set of logical block IDs that should be skipped during the next inference for this sequence group.
-    */
+     * @param sequence_group A pointer to the sequence group.
+     * @return The set of logical block IDs that should be skipped during the next inference for this sequence group.
+     */
     std::set<size_t> get_skipped_blocks(const SequenceGroup::CPtr& sequence_group) const;
 
 private:
-    size_t m_num_last_dense_tokens;
+    size_t m_block_size;
+    size_t m_num_last_dense_tokens_in_prefill;
+    size_t m_num_retained_start_tokens_in_cache;
+    size_t m_num_retained_recent_tokens_in_cache;
 };
 
-}
+}  // namespace ov::genai

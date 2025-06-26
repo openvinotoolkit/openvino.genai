@@ -1814,15 +1814,58 @@ class SparseAttentionConfig:
     """
     
         Configuration struct for the sparse attention functionality.
-        :param num_last_dense_tokens: Number of tokens from the end of the prompt for which full attention across previous KV cache contents
+        :param mode: Sparse attention mode to be applied.
+        :type mode: openvino_genai.SparseAttentionMode
+    
+        :param num_last_dense_tokens_in_prefill: Number of tokens from the end of the prompt for which full attention across previous KV cache contents
           will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention (encompassing first
           and currently latest blocks) will be computed. Due to the block-wise nature of continuous batching cache management,
           the actual number of prompt tokens for which the dense attention will be computed may be up to block-size larger than
           this value (depending on the prompt length and block size).*/
-        :type num_last_dense_tokens: int
+        :type num_last_dense_tokens_in_prefill: int
     """
-    num_last_dense_tokens: int
-    def __init__(self, num_last_dense_tokens: int = 100) -> None:
+    mode: SparseAttentionMode
+    num_last_dense_tokens_in_prefill: int
+    num_retained_recent_tokens_in_cache: int
+    num_retained_start_tokens_in_cache: int
+    def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: int = 100, num_retained_start_tokens_in_cache: int = 128, num_retained_recent_tokens_in_cache: int = 1920) -> None:
+        ...
+class SparseAttentionMode:
+    """
+    Represents the mode of sparse attention applied during generation.
+                                   :param TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.
+    
+    Members:
+    
+      TRISHAPE
+    """
+    TRISHAPE: typing.ClassVar[SparseAttentionMode]  # value = <SparseAttentionMode.TRISHAPE: 0>
+    __members__: typing.ClassVar[dict[str, SparseAttentionMode]]  # value = {'TRISHAPE': <SparseAttentionMode.TRISHAPE: 0>}
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: int) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: int) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
         ...
 class SpeechGenerationConfig(GenerationConfig):
     """
