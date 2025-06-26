@@ -99,25 +99,24 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prom
     std::string start_of_image = m_vlm_config.start_of_image;
     std::string image_token = m_vlm_config.image_soft_token;
     std::string end_of_image = m_vlm_config.end_of_image;
+    std::string NATIVE_TAG = start_of_image + image_token + end_of_image;
 
-    auto [unified_prompt, images_sequence] = normalize(prompt, start_of_image, start_of_image, base_id, images.size());
+    auto [unified_prompt, images_sequence] = normalize(prompt, start_of_image, "\n\n" + NATIVE_TAG + "\n\n", base_id, images.size());
 
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     size_t searched_pos = 0;
     for (size_t new_image_id : images_sequence) {
         image_embeds.push_back(images.at(new_image_id - base_id).resized_source);
-        std::string expanded_tag;
-        expanded_tag += "\n\n" + start_of_image;
-        for (size_t idx = 0; idx < image_embeds.back().get_shape().at(1); ++idx) {
+
+        size_t num_image_tokens = image_embeds.back().get_shape().at(1);
+
+        std::string expanded_tag = start_of_image;
+        for (size_t i = 0; i < num_image_tokens; i++) {
             expanded_tag += image_token;
         }
-        expanded_tag += end_of_image + "\n\n";
-        OPENVINO_ASSERT(searched_pos < unified_prompt.length());
-        searched_pos = unified_prompt.find(start_of_image, searched_pos);
-        OPENVINO_ASSERT(searched_pos != std::string::npos);
-        unified_prompt.replace(searched_pos, start_of_image.length(), expanded_tag);
-        searched_pos += expanded_tag.length();
+        expanded_tag += end_of_image;
+        unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
     }
     return {std::move(unified_prompt), std::move(images_sequence)};
 }
