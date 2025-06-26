@@ -448,7 +448,7 @@ def test_perf_metrics(cache, backend):
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_exception(model_id, backend):
-    unsupported_models = model_ids = {
+    unsupported_models = {
         "katuni4ka/tiny-random-internvl2",
     }
 
@@ -458,12 +458,9 @@ def test_vlm_npu_no_exception(model_id, backend):
     models_path = get_ov_model(model_id)
     properties = {
         "DEVICE_PROPERTIES": {
-            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
         }
     }
-
-    if "phi-4" in model_id:
-        properties["DEVICE_PROPERTIES"]["NPU"]["MAX_PROMPT_LEN"] = 2048
 
     ov_pipe = VLMPipeline(models_path, "NPU", ATTENTION_BACKEND=backend, config=properties)
 
