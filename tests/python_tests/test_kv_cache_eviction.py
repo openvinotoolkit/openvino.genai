@@ -104,7 +104,7 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
         scheduler_config_opt.cache_eviction_config.apply_rotation = apply_rotation
     scheduler_config_opt.use_sparse_attention = use_sparse_attention
     if use_sparse_attention:
-        scheduler_config_opt.sparse_attention_config.num_last_dense_tokens = 10
+        scheduler_config_opt.sparse_attention_config.num_last_dense_tokens_in_prefill = 10
 
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     _, tokenizer, models_path = download_and_convert_model(model_id)

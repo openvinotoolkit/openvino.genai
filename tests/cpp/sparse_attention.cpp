@@ -66,7 +66,13 @@ const std::vector<SparseAttentionBlockSkipperTestStruct> SKIPPER_TEST_CASES = {
     { 158, 45, 40, 113, 32, 32, {}, "five_block_prompt_dense_prefill_phase_start_crossing_block_borders"},
     { 158, 55, 8, 120, 32, 32, {}, "five_block_prompt_dense_prefill_phase_in_same_block"},
     { 158, 55, 80, 120, 32, 32, {}, "five_block_prompt_dense_prefill_phase_crossing_block_borders"},
-    { 158, 55, 103, 120, 32, 32, {}, "five_block_prompt_dense_prefill_phase_end"}
+    { 158, 55, 103, 120, 32, 32, {}, "five_block_prompt_dense_prefill_phase_end"},
+
+    // select cases for more than one block in start/recent retained areas
+    { 300, 250, 11, 10, 64, 96, {2, 3}, "ten_block_prompt_sparse_prefill_phase_with_skips_larger_start_recent_areas"},
+    { 300, 250, 11, 10, 96, 64, {3, 4}, "ten_block_prompt_sparse_prefill_phase_with_skips_larger_start_recent_areas_inverted"},
+    { 158, 100, 5, 50, 64, 96, {}, "five_block_prompt_sparse_prefill_phase_with_multi_block_dense_starting_in_same_block_larget_start_recent_areas"},
+    { 158, 45, 40, 113, 64, 96, {}, "five_block_prompt_dense_prefill_phase_start_crossing_block_borders_larget_start_recent_areas"},
 };
 
 class SparseAttentionBlockSkipperReferenceTest : public ::testing::Test, public ::testing::WithParamInterface<SparseAttentionBlockSkipperTestStruct> {
@@ -93,6 +99,5 @@ TEST_P(SparseAttentionBlockSkipperReferenceTest, CorrectBlocksAreSkipped) {
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousSequenceGroupStates, SparseAttentionBlockSkipperReferenceTest, ::testing::ValuesIn(SKIPPER_TEST_CASES), [](const testing::TestParamInfo<SparseAttentionBlockSkipperReferenceTest::ParamType>& info) {
-      // Can use info.param here to generate the test suffix
       return info.param.test_id;
     });
