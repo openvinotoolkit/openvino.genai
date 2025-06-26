@@ -311,8 +311,16 @@ private:
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                         scheduler_output.m_apply_sparse_attention_mask = m_config.use_sparse_attention;
                         if (scheduler_output.m_apply_sparse_attention_mask) {
-                            SparseAttentionTokenSkipper skipper(m_config.sparse_attention_config.num_last_dense_tokens);
-                            scheduler_output.m_sparse_attention_skipped_logical_blocks[seq_id] = skipper.get_skipped_blocks(sequence_group);
+                            if (m_config.sparse_attention_config.mode == SparseAttentionMode::TRISHAPE) {
+                                TriShapeSparseAttentionTokenSkipper skipper(block_size,
+                                        m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
+                                        m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
+                                        m_config.sparse_attention_config.num_retained_recent_tokens_in_cache);
+                                scheduler_output.m_sparse_attention_skipped_logical_blocks[seq_id] = skipper.get_skipped_blocks(sequence_group);
+                            }
+                            else {
+                                OPENVINO_THROW("Unsupported sparse attention mode");
+                            }
                         }
                     }
                 }
