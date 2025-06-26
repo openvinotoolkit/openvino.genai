@@ -1179,6 +1179,10 @@ struct AdapterControllerImpl {
     bool need_full_apply = true;
     InferRequestSignatureCache lora_state_evaluators;
 
+    // Stores the actual LoRA weight getter used for Constant tensor replacement
+    // Needed to track which LoRA tensors were actually applied to suppress unused tensor warnings
+    std::shared_ptr<LoRAWeightGetterDefault<LoRAConstantNode, LoRAConstantNode>> const_getter_impl;
+
     AdapterControllerImpl(std::shared_ptr<ov::Model> model, const AdapterConfig& config) :
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
         lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
@@ -1191,9 +1195,15 @@ struct AdapterControllerImpl {
             auto adapter_impl = get_adapter_impl(adapter);
             if (!adapter_impl->get_constant_tensors().empty()) {
                 OPENVINO_ASSERT(const_getter.empty(), "OpenVINO.GenAI does not support several LoRA adapters with constants!");
-                const_getter.push_back(LoRAWeightGetterDefault<LoRAConstantNode, LoRAConstantNode>(&adapter_impl->get_constant_tensors(), config.get_tensor_name_prefix().value_or("")));
+                // const_getter.push_back(LoRAWeightGetterDefault<LoRAConstantNode, LoRAConstantNode>(&adapter_impl->get_constant_tensors(), config.get_tensor_name_prefix().value_or("")));
+                const_getter_impl = std::make_shared<LoRAWeightGetterDefault<LoRAConstantNode, LoRAConstantNode>>(
+                    &adapter_impl->get_constant_tensors(),
+                    config.get_tensor_name_prefix().value_or(""));
+
+                const_getter.push_back([this](const std::string& name) {
+                    return (*const_getter_impl)(name);
+                });
             }
-            std::cout << "prefix " << config.get_tensor_name_prefix().value_or("") << std::endl;
             params_getter.weight_getter.push_back(LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(), config.get_tensor_name_prefix().value_or("")));
             if(params_getter.type != ov::element::f32) {
                 for(auto const& tensor : adapter_impl->get_tensors()) {
@@ -1412,6 +1422,11 @@ struct AdapterControllerImpl {
 
             } else if (!const_getter.empty()) {
                 auto opt_lora_const = const_getter[0](const_name);
+
+                if (opt_lora_const && const_getter_impl) {
+                    const_getter_impl->used_tensors.insert(const_name);
+                }
+
                 OPENVINO_ASSERT(!const_getter.empty(), "LoRA constant tensor not found for name: ", const_name);
 
                 auto constant_node = std::dynamic_pointer_cast<v0::Constant>(opt_lora_const->tensor);
@@ -1421,32 +1436,6 @@ struct AdapterControllerImpl {
                 std::memcpy(const_tensor.data(), constant_node->get_data_ptr(), const_tensor.get_byte_size());
                 state[const_lora_index].set_state(const_tensor);
             }
-
-            // ov::Tensor const_tensor(var_info.data_type, dynamic_to_static(var_info.data_shape));
-
-            // if (!const_getter.empty()) {
-            //     if (const_name.find("const") != std::string::npos) {
-            //         const_tensor.data<bool>()[0] = true;
-            //     } else {
-            //             auto opt_lora_const = const_getter[0](const_name);
-            //             if (opt_lora_const && opt_lora_const->tensor) {
-            //                 auto constant_node = std::dynamic_pointer_cast<v0::Constant>(opt_lora_const->tensor);
-            //                 OPENVINO_ASSERT(constant_node, "Expected ov::op::v0::Constant for ", const_name);
-
-            //                 // Copy data
-            //                 const_tensor = ov::Tensor(constant_node->get_element_type(), constant_node->get_shape());
-            //                 std::memcpy(const_tensor.data(), constant_node->get_data_ptr(), const_tensor.get_byte_size());
-            //             } else {
-            //                 OPENVINO_THROW("LoRA constant tensor not found for name: ", const_name);
-            //             }
-            //     }
-            // } else {
-            //     if (const_name.find("const") != std::string::npos) {
-            //         const_tensor.data<bool>()[0] = false;
-            //     }
-            // }
-
-            // state[const_lora_index].set_state(const_tensor);
         }
 
     }
