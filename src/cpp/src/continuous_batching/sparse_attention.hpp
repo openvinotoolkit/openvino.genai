@@ -15,16 +15,21 @@ namespace ov::genai {
 
 /**
  * @brief Calculates the set of KV cache logical block IDs that should be skipped from the KV cache block set during the
- * next inference for a given sequence group.
+ * next inference for a given sequence group, in a tri-shape (https://arxiv.org/pdf/2412.10319) fashion
  */
 class TriShapeSparseAttentionTokenSkipper {
 public:
     TriShapeSparseAttentionTokenSkipper() = delete;
 
     /**
-     * Constructs the SparseAttentionTokenSkipper.
-     * @param num_last_dense_tokens The number of tokens in the end of the prompt phase for which sparse attention
+     * Constructs the TriShapeSparseAttentionTokenSkipper.
+     * @param block_size Block size in tokens.
+     * @param num_last_dense_tokens_in_prefill The number of tokens in the end of the prompt phase for which sparse attention
      * should not be applied.
+     * @param num_retained_start_tokens_in_cache The number of tokens in the beginning of the cache (least recent)
+     * to be retained when applying sparse attention. Must be a multiple of block size.
+     * @param num_retained_recent_tokens_in_cache The number of most recent tokens in cache to be retained when applying
+     * sparse attention. Must be a multiple of block size.
      */
     explicit TriShapeSparseAttentionTokenSkipper(
                                          size_t block_size,
