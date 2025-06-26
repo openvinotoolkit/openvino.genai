@@ -387,7 +387,6 @@ def test_perf_metrics(cache, backend):
 
     start_time = perf_counter_ns()
     pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
-    
     start_generate = perf_counter_ns()
     result = pipe.generate(
         prompts[0],
@@ -442,20 +441,29 @@ def test_perf_metrics(cache, backend):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-# FIXME: katuni4ka/tiny-random-qwen2vl and katuni4ka/tiny-random-qwen2.5-vl - fails on NPU
-@pytest.mark.parametrize("model_id", model_ids[:-2])
+@pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_exception(model_id, backend):
-    models_path = get_ov_model(model_ids[0])
+    unsupported_models = model_ids = {
+        "katuni4ka/tiny-random-internvl2",
+    }
+
+    if model_id in unsupported_models:
+        pytest.skip(f"{model_id} is not supported")
+
+    models_path = get_ov_model(model_id)
     properties = {
         "DEVICE_PROPERTIES": {
             "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
         }
     }
+
+    if "phi-4" in model_id:
+        properties["DEVICE_PROPERTIES"]["NPU"]["MAX_PROMPT_LEN"] = 2048
 
     ov_pipe = VLMPipeline(models_path, "NPU", ATTENTION_BACKEND=backend, config=properties)
 
