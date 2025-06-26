@@ -115,7 +115,10 @@ auto sd_perf_metrics_docstring = R"(
     Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
     If mean and std were already calculated, getters return cached values.
 
-    :param get_ttst: Returns the mean and standard deviation of TTFT in milliseconds.
+    :param get_ttst: Returns the mean and standard deviation of TTST in milliseconds.
+                     The second token is presented separately as for some plugins this can be expected to take longer than next tokens.
+                     In case of GPU plugin: Async compilation of some opt kernels can be completed after second token.
+                     Also, additional memory manipulation can happen at second token time.
     :type get_ttst: MeanStdPair
 
     :param get_latency: Returns the mean and standard deviation of the latency from the third token in milliseconds per inference,
@@ -123,7 +126,7 @@ auto sd_perf_metrics_docstring = R"(
     :type get_latency: MeanStdPair
 
     Additional points:
-      - TPOT is calculated from the third token.
+      - TPOT is calculated from the third token. The reasons for this, please, see in the description for avg_latency.
       - `total number of iterations` of the model can be taken from raw performance metrics raw_metrics.m_durations.size().
 )";
 
