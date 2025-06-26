@@ -1,3 +1,5 @@
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
 #include <gtest/gtest.h>
 #include "continuous_batching/sparse_attention.hpp"
 
