@@ -72,6 +72,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND WIN32)
     set(ENABLE_XGRAMMAR OFF CACHE BOOL "Enable XGrammar" FORCE)
 endif()
 
+# Disable XGrammar for Android platform, causes issues in CI
+if(ANDROID)
+    set(ENABLE_XGRAMMAR OFF CACHE BOOL "Enable XGrammar" FORCE)
+endif()
+
 if(ENABLE_XGRAMMAR)
     set(XGRAMMAR_VERSION v0.1.18)
     set(XGRAMMAR_DIR ${CMAKE_BINARY_DIR}/xgrammar)
