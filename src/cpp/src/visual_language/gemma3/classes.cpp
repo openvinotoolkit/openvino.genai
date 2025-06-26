@@ -95,66 +95,12 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderGemma3::encode_images(const s
     return embeds;
 }
 
-std::pair<std::string, std::vector<size_t>> normalize_gemma3(
-    const std::string& prompt,
-    const std::string& native_tag,
-    const std::string& automatic_tag,
-    size_t base_id,
-    size_t n_images
-) {
-    size_t pos = prompt.find(native_tag);
-    auto [image_prompt, image_sequence] = universal_to_native(prompt, [&](std::ostream& os, size_t) {
-        os << automatic_tag;
-    });
-    if (!image_sequence.empty()) {
-        OPENVINO_ASSERT(pos == std::string::npos, "Prompt can contain only one type of image tags.");
-        verify_ids(image_sequence, base_id, n_images);
-        return {std::move(image_prompt), std::move(image_sequence)};
-    }
-
-    std::string new_prompt;
-    new_prompt.reserve(prompt.size());
-    std::string::size_type last_pos = 0;
-    std::vector<size_t> image_sequence_native;
-
-    while (pos != std::string::npos) {
-        new_prompt.append(prompt, last_pos, pos - last_pos);
-        new_prompt += automatic_tag;
-        image_sequence_native.push_back(base_id + image_sequence_native.size());
-
-        last_pos = pos + native_tag.length();
-        pos = prompt.find(native_tag, last_pos);
-    }
-
-    new_prompt.append(prompt, last_pos, std::string::npos);
-
-    if (!image_sequence_native.empty()) {
-        OPENVINO_ASSERT(image_sequence_native.size() == n_images,
-                        "The number of native image tags and provided images must match because it's ambiguous which image should be ignored.");
-        return {std::move(new_prompt), std::move(image_sequence_native)};
-    }
-
-    // Prepend automatic tags
-    std::stringstream stream;
-    for (size_t relative_id = 0; relative_id < n_images; ++relative_id) {
-        stream << automatic_tag;
-    }
-    stream << prompt;
-    std::vector<size_t> fallback_sequence;
-    for (size_t i = 0; i < n_images; ++i) {
-        fallback_sequence.push_back(base_id + i);
-    }
-    return {stream.str(), std::move(fallback_sequence)};
-}
-
 std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string start_of_image = m_vlm_config.start_of_image;
     std::string image_token = m_vlm_config.image_soft_token;
     std::string end_of_image = m_vlm_config.end_of_image;
-    std::string NATIVE_TAG = m_vlm_config.start_of_image + m_vlm_config.image_soft_token + m_vlm_config.end_of_image;
 
-    // replace start_of_image with NATIVE_TAG for test_representation
-    auto [unified_prompt, images_sequence] = normalize_gemma3(prompt, start_of_image, NATIVE_TAG, base_id, images.size());
+    auto [unified_prompt, images_sequence] = normalize(prompt, start_of_image, start_of_image, base_id, images.size());
 
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
@@ -162,16 +108,15 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prom
     for (size_t new_image_id : images_sequence) {
         image_embeds.push_back(images.at(new_image_id - base_id).resized_source);
         std::string expanded_tag;
-        expanded_tag += start_of_image;
+        expanded_tag += "\n\n" + start_of_image;
         for (size_t idx = 0; idx < image_embeds.back().get_shape().at(1); ++idx) {
             expanded_tag += image_token;
         }
-        expanded_tag += end_of_image;
-        expanded_tag += '\n';
+        expanded_tag += end_of_image + "\n\n";
         OPENVINO_ASSERT(searched_pos < unified_prompt.length());
-        searched_pos = unified_prompt.find(image_token, searched_pos);
+        searched_pos = unified_prompt.find(start_of_image, searched_pos);
         OPENVINO_ASSERT(searched_pos != std::string::npos);
-        unified_prompt.replace(searched_pos, image_token.length(), expanded_tag);
+        unified_prompt.replace(searched_pos, start_of_image.length(), expanded_tag);
         searched_pos += expanded_tag.length();
     }
     return {std::move(unified_prompt), std::move(images_sequence)};
