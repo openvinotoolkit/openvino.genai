@@ -100,9 +100,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
         draft_scheduler_config, draft_device, draft_properties, false);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-    // m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
-    // m_perf_metrics.main_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
-    // m_perf_metrics.draft_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
     m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 }
 
