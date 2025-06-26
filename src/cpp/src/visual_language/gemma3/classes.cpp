@@ -8,17 +8,13 @@
 #include "utils.hpp"
 
 namespace ov::genai {
+namespace {
 
 clip_image_f32 preprocess_clip_image_gemma3(const clip_image_u8& image, const ProcessorConfig& config) {
-    bool do_resize = true;
 
     // Resize
     clip_image_u8 resized_image;
-    if (do_resize) {
-        bilinear_resize(image, resized_image, config.size_width, config.size_height); 
-    } else {
-        resized_image = image;
-    }
+    bilinear_resize(image, resized_image, config.size_width, config.size_height);
 
     // Normalize
     clip_ctx ctx;
@@ -28,8 +24,6 @@ clip_image_f32 preprocess_clip_image_gemma3(const clip_image_u8& image, const Pr
     clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
     return normalized_image;
 }
-
-namespace {
 
 ov::Tensor get_pixel_values_gemma3(const ov::Tensor& image, const ProcessorConfig& config) {
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
