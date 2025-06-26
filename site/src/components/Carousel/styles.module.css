@@ -1,0 +1,69 @@
+.carousel {
+  position: relative;
+  padding: 0 2rem;
+
+  .slidesWrapper {
+    overflow: hidden;
+  }
+
+  .slidesContainer {
+    display: flex;
+    transition: transform 0.5s ease-in-out;
+
+    .slide {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 1rem;
+    }
+  }
+}
+
+.chevron {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background-color: transparent;
+  border: none;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 2;
+  color: white;
+  padding: 0;
+}
+
+.chevronLeft {
+  left: 0px;
+}
+
+.chevronRight {
+  right: 0px;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding-bottom: 5px;
+
+  .dot {
+    padding: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    opacity: 0.5;
+  }
+
+  .dotActive {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+}

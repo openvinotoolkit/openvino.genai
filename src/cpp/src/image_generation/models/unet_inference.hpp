@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include "openvino/genai/image_generation/unet2d_condition_model.hpp"
 
 namespace ov {
@@ -11,6 +13,7 @@ namespace genai {
 class UNet2DConditionModel::UNetInference {
 
 public:
+    virtual std::shared_ptr<UNetInference> clone() = 0;
     virtual void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) = 0;
     virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) = 0;
     virtual void set_adapters(AdapterController& adapter_controller, const AdapterConfig& adapters) = 0;

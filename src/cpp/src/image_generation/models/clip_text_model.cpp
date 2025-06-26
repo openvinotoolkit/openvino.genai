@@ -3,6 +3,8 @@
 
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 
+#include <iostream>
+#include <memory>
 #include <fstream>
 
 #include "json_utils.hpp"
@@ -66,6 +68,20 @@ CLIPTextModel::CLIPTextModel(const std::string& model,
 }
 
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
+
+std::shared_ptr<CLIPTextModel> CLIPTextModel::clone() {
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "CLIPTextModel must have exactly one of m_model or m_request initialized");
+
+    std::shared_ptr<CLIPTextModel> cloned = std::make_shared<CLIPTextModel>(*this);
+
+    if (m_model) {
+        cloned->m_model = m_model->clone();
+    } else {
+        cloned->m_request = m_request.get_compiled_model().create_infer_request();
+    }
+
+    return cloned;
+}
 
 const CLIPTextModel::Config& CLIPTextModel::get_config() const {
     return m_config;

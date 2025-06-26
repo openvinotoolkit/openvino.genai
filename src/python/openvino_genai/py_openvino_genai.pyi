@@ -316,10 +316,16 @@ class CacheEvictionConfig:
           Set this to false if your model has different RoPE scheme from the one used in the
           original llama model and you experience accuracy issues with cache eviction enabled.
         :type apply_rotation: bool
+    
+        :param snapkv_window_size The size of the importance score aggregation window (in token positions from the end of the prompt) for
+          computing initial importance scores at the beginning of the generation phase for purposes of eviction,
+          following the SnapKV article approach (https://arxiv.org/abs/2404.14469).
+        :type snapkv_window_size int
     """
     aggregation_mode: AggregationMode
     apply_rotation: bool
-    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode, apply_rotation: bool = False) -> None:
+    snapkv_window_size: int
+    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode, apply_rotation: bool = False, snapkv_window_size: int = 8) -> None:
         ...
     def get_evictable_size(self) -> int:
         ...
@@ -2376,6 +2382,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
@@ -2413,6 +2420,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
@@ -2449,6 +2457,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are

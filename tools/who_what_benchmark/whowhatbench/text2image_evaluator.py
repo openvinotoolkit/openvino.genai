@@ -121,7 +121,7 @@ class Text2ImageEvaluator(BaseEvaluator):
                     prompt,
                     num_inference_steps=num_inference_steps,
                     output_type="pil",
-                    width=self.resolution[0],
+                    width=self.resolution[1],
                     height=self.resolution[0],
                     generator=generator,
                 )

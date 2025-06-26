@@ -4,6 +4,7 @@
 #include "tokenizer/tokenizers_path.hpp"
 
 #include <sstream>
+
 #ifdef _WIN32
 #    include <windows.h>
 #    define MAX_ABS_PATH _MAX_PATH
@@ -34,23 +35,28 @@ std::string get_absolute_file_path(const std::string& path) {
 }
 #endif
 
-std::string get_ov_genai_library_path() {
+std::filesystem::path get_ov_genai_library_path() {
 #ifdef _WIN32
-    CHAR genai_library_path[MAX_PATH];
+    WCHAR genai_library_path_w[MAX_PATH];
     HMODULE hm = NULL;
-    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPSTR>(get_ov_genai_library_path),
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(get_ov_genai_library_path),
                             &hm)) {
         std::stringstream ss;
-        ss << "GetModuleHandle returned " << GetLastError();
+        ss << "GetModuleHandleExW returned " << GetLastError();
         throw std::runtime_error(ss.str());
     }
-    GetModuleFileNameA(hm, (LPSTR)genai_library_path, sizeof(genai_library_path));
-    return std::string(genai_library_path);
+    DWORD result = GetModuleFileNameW(hm, (LPWSTR)genai_library_path_w, sizeof(genai_library_path_w) / sizeof(genai_library_path_w[0]));
+    if (result == 0) {
+        std::stringstream ss;
+        ss << "GetModuleFileNameW failed with error " << GetLastError();
+        throw std::runtime_error(ss.str());
+    }
+    return std::filesystem::path(std::wstring(genai_library_path_w));
 #elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
     Dl_info info;
     dladdr(reinterpret_cast<void*>(get_ov_genai_library_path), &info);
-    return get_absolute_file_path(info.dli_fname).c_str();
+    return std::filesystem::path(get_absolute_file_path(info.dli_fname));
 #else
 #    error "Unsupported OS"
 #endif  // _WIN32

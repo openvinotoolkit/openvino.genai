@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include "openvino/genai/visibility.hpp"
@@ -69,6 +70,8 @@ public:
 
     CLIPTextModel(const CLIPTextModel&);
 
+    std::shared_ptr<CLIPTextModel> clone();
+
     const Config& get_config() const;
 
     CLIPTextModel& reshape(int batch_size);
@@ -91,12 +94,12 @@ public:
 private:
     Config m_config;
     AdapterController m_adapter_controller;
+    Tokenizer m_clip_tokenizer;
+    bool m_slice_batch1_output = false;
+
+protected:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
-
-    Tokenizer m_clip_tokenizer;
-
-    bool m_slice_batch1_output = false;
 };
 
 } // namespace genai

@@ -4,8 +4,9 @@
 from os.path import sep
 from pathlib import Path
 from typing import Type
+from functools import lru_cache
 
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 
 from optimum.intel import OVModelForCausalLM, OVModelForFeatureExtraction
@@ -234,3 +235,11 @@ def download_gguf_model(gguf_model_id: str,
     )
 
     return gguf_path
+
+@lru_cache(maxsize=None)
+def load_hf_model_from_gguf(gguf_model_id, gguf_filename):
+    return retry_request(lambda: AutoModelForCausalLM.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+
+@lru_cache(maxsize=None)
+def load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename):
+    return retry_request(lambda: AutoTokenizer.from_pretrained(gguf_model_id, gguf_file=gguf_filename))

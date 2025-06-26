@@ -5,9 +5,9 @@
 
 namespace ov::genai {
     CacheEvictionAlgorithm::CacheEvictionAlgorithm(const CacheEvictionConfig &eviction_config, size_t block_size,
-                                                   size_t num_decoder_layers) :
-            m_eviction_config(eviction_config), m_block_size(block_size), m_num_decoder_layers(num_decoder_layers),
-            m_cache_counter(num_decoder_layers), m_scores(num_decoder_layers) {
+                                                   size_t num_decoder_layers, size_t max_pool_window_size) :
+            m_eviction_config(eviction_config), m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), 
+            m_max_pool_window_size(max_pool_window_size), m_cache_counter(num_decoder_layers), m_scores(num_decoder_layers) {
             OPENVINO_ASSERT(!(m_eviction_config.get_start_size() % m_block_size),
                             "CacheEvictionConfig.start_size in tokens must be a multiple of block size ", m_block_size);
             OPENVINO_ASSERT(!(m_eviction_config.get_recent_size() % m_block_size),
@@ -99,17 +99,32 @@ namespace ov::genai {
                     ov::Coordinate{kv_cache_size_in_tokens}
             );
 
+            std::vector<double> max_pooled_hh_scores(hh_score.get_size());
+            auto hh_score_data = hh_score.data<float>();
+            size_t num_hh_scores = hh_score.get_size();
+
+            for (size_t idx = 0; idx < num_hh_scores; idx++) {
+                size_t effective_window_size = m_max_pool_window_size;
+                size_t elements_left = num_hh_scores - idx;
+                if (elements_left < effective_window_size) {
+                    effective_window_size = elements_left;
+                }
+                auto max_val = hh_score_data[idx];
+                for (size_t window_idx = 1; window_idx < effective_window_size; window_idx++) {
+                    auto val = hh_score_data[idx + window_idx];
+                    max_val = std::max(val, max_val);
+                }
+                max_pooled_hh_scores[idx] = max_val;
+            }
+
             auto &accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
 
             if (accumulated_scores_for_current_decoder_layer.empty()) {
-                accumulated_scores_for_current_decoder_layer = std::vector<double>(hh_score.get_size());
-                for (size_t idx = 0; idx < accumulated_scores_for_current_decoder_layer.size(); idx++) {
-                    accumulated_scores_for_current_decoder_layer[idx] = hh_score.data<float>()[idx];
-                }
+                accumulated_scores_for_current_decoder_layer = max_pooled_hh_scores;
                 if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
                     // New sequence to track - will simulate that the tokens comprising the sequence were added one-by-one
                     // from the standpoint of the occurrence tracker
-                    std::size_t new_scores_size = hh_score.get_size();
+                    std::size_t new_scores_size = num_hh_scores;
                     std::vector<std::size_t> counter(new_scores_size);
                     std::generate(counter.begin(), counter.begin() + new_scores_size,
                                   [&new_scores_size] { return new_scores_size--; });
@@ -117,7 +132,8 @@ namespace ov::genai {
                 }
             } else {
                 size_t old_size_in_tokens = accumulated_scores_for_current_decoder_layer.size();
-                size_t num_new_tokens = hh_score.get_size() - accumulated_scores_for_current_decoder_layer.size();
+                OPENVINO_ASSERT(num_hh_scores >= old_size_in_tokens);
+                size_t num_new_tokens = num_hh_scores - old_size_in_tokens;
                 if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
                     // Increment occurrence counts of all currently tracked cache blocks
                     auto &counter_for_current_decoder_layer = m_cache_counter[decoder_layer_idx];
@@ -126,16 +142,15 @@ namespace ov::genai {
                         *it += num_new_tokens;
                     }
                     // Add occurrence counts for new tokens like above
-                    counter_for_current_decoder_layer.resize(hh_score.get_size());
+                    counter_for_current_decoder_layer.resize(num_hh_scores);
                     for (size_t i = 0; i < num_new_tokens; i++) {
                         auto idx = old_size_in_tokens + i;
                         counter_for_current_decoder_layer[idx] = num_new_tokens - i;
                     }
                 }
-                accumulated_scores_for_current_decoder_layer.resize(hh_score.get_size());
-                auto hh_score_data = hh_score.data<float>();
-                for (size_t i = 0; i < hh_score.get_size(); ++i) {
-                    accumulated_scores_for_current_decoder_layer[i] += hh_score_data[i];
+                accumulated_scores_for_current_decoder_layer.resize(num_hh_scores);
+                for (size_t i = 0; i < num_hh_scores; ++i) {
+                    accumulated_scores_for_current_decoder_layer[i] += max_pooled_hh_scores[i];
                 }
             }
         }
