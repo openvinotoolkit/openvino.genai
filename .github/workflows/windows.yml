@@ -296,10 +296,34 @@ jobs:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
+      - name: Setup Python 3.9
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: '3.9'
+          cache: 'pip'
+      
+      - name: Setup Python 3.10
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Setup Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Setup Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Setup Python 3.13
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
           cache: 'pip'
 
       - name: Download OpenVINO package
@@ -364,12 +388,21 @@ jobs:
 
       - name: Build genai wheel
         run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
-            --config-settings=override=cmake.generator='Ninja' `
-            --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
-            --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
-            ${{ needs.openvino_download.outputs.ov_wheel_source }} `
-            ${{ env.SRC_DIR }}
+          $pyVersions = '3.9', '3.10', '3.11', '3.12', '3.13'
+          foreach ($pyVersion in $pyVersions) {
+            $pyBuildDir = "${{ github.workspace }}/py$pyVersion"
+            New-Item -ItemType Directory -Path "$pyBuildDir" -Force
+
+            $pythonCommand = "py -$pyVersion -c `"import sys; print(f'{sys.executable}')`""
+            $pythonExecutablePath = & cmd /c $pythonCommand
+          
+            & $pythonExecutablePath -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
+              --config-settings=override=cmake.generator='Ninja' `
+              --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
+              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} `
+              ${{ env.SRC_DIR }}
+          }
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Build WWB Wheel
