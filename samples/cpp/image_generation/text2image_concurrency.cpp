@@ -36,13 +36,13 @@ int32_t main(int32_t argc, char* argv[]) try {
         // pipelines.back().compile("NPU", "NPU", "GPU");  // Compile for NPU and GPU, if needed
 
         // Don't specify N, H, W, and guidance_scale in the properties map because they were made static
-        properties = ov::AnyMap{ov::genai::num_inference_steps(20)};
+        properties = ov::AnyMap{ov::genai::num_inference_steps(2)};
     } else {
         pipelines.emplace_back(models_path, device);
 
         properties = ov::AnyMap{ov::genai::width(512),
                                 ov::genai::height(512),
-                                ov::genai::num_inference_steps(20),
+                                ov::genai::num_inference_steps(2),
                                 ov::genai::num_images_per_prompt(1)};
     }
 

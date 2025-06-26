@@ -40,12 +40,12 @@ int32_t main(int32_t argc, char* argv[]) try {
 
         // Don't specify N, H, W, and guidance_scale in the properties map because they were made static
         properties = ov::AnyMap{ov::genai::strength(0.8f),
-                                ov::genai::num_inference_steps(50)};
+                                ov::genai::num_inference_steps(2)};
     } else {
         pipelines.emplace_back(models_path, device);
 
         properties = ov::AnyMap{ov::genai::strength(0.8f),  // controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
-                                ov::genai::num_inference_steps(50)};
+                                ov::genai::num_inference_steps(2)};
     }
 
     // Clone pipeline for concurrent usage
