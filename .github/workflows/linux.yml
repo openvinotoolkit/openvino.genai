@@ -164,6 +164,13 @@ jobs:
       - name: CMake Build
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
+                -DENABLE_PYTHON=OFF \
+                -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+                -S ${{ env.SRC_DIR }} \
+                -B ${{ env.BUILD_DIR }}
+          
           for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
           do
             python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
