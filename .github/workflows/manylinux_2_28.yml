@@ -1,0 +1,334 @@
+name: Manylinux 2.28
+on:
+  workflow_dispatch:
+#   pull_request:
+#   merge_group:
+#   push:
+#     branches:
+#       - master
+#       - 'releases/**'
+
+permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
+
+concurrency:
+  # github.ref is not unique in post-commit
+  group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-manylinux
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.11'
+  OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+  CMAKE_CXX_COMPILER_LAUNCHER: sccache
+  CMAKE_C_COMPILER_LAUNCHER: sccache
+  SCCACHE_IGNORE_SERVER_IO_ERROR: 1
+  SCCACHE_SERVER_PORT: 35555
+  SCCACHE_CACHE_SIZE: 30G
+  SCCACHE_AZURE_KEY_PREFIX: genai/manylinux_2_28
+  HF_HOME: /mount/caches/huggingface/lin
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin
+  GENAI_ARCHIVE_NAME: genai.tar.gz
+  GENAI_SAMPLES_NAME: genai_samples.tar.gz
+  ARTIFACTS_SHARE: '/mount/build-artifacts'
+  BASE_PRODUCT_TYPE: public_manylinux_x86_64
+  GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
+  GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
+
+jobs:
+  smart_ci:
+    name: Smart CI
+    runs-on: ubuntu-latest
+    outputs:
+      affected_components: "${{ steps.smart_ci.outputs.affected_components }}"
+      changed_components: "${{ steps.smart_ci.outputs.changed_components }}"
+      skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
+    steps:
+      - name: checkout action
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        timeout-minutes: 15
+        with:
+          sparse-checkout: .github
+
+      - name: Get affected components
+        id: smart_ci
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@master
+        with:
+          repository: ${{ github.repository }}
+          pr: ${{ github.event.number }}
+          commit_sha: ${{ github.sha }}
+          ref_name: ${{ github.ref_name }}
+          component_pattern: "category: ((?!Python API|CPP API).*)|Structured Output"
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          skip_when_only_listed_labels_set: 'GH Pages Docs'
+          skip_when_only_listed_files_changed: '*.md,*.rst,*.png,*.jpg,*.svg,*.gif'
+
+      - name: Show affected components
+        run: echo "${{ toJSON(steps.smart_ci.outputs.affected_components) }}"
+        shell: bash
+
+  openvino_download:
+    needs: smart_ci
+    if: "!needs.smart_ci.outputs.skip_workflow"
+    name: Download OpenVINO
+    outputs:
+      status: ${{ steps.openvino_download.outcome }}
+      ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
+      ov_wheel_source: ${{ steps.openvino_download.outputs.ov_wheel_source }}
+      ov_version: ${{ steps.openvino_download.outputs.ov_version }}
+      docker_tag: ${{ steps.get_docker_tag.outputs.docker_tag }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-medium
+    container:
+      image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+
+    steps:
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
+      id: openvino_download
+      with:
+        platform: manylinux_2_28
+        commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
+        revision: latest_available_commit
+
+    - name: Clone docker tag from OpenVINO repo
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        repository: 'openvinotoolkit/openvino'
+        path: 'openvino'
+        ref: ${{ env.OV_BRANCH }}
+        sparse-checkout: |
+          .github/dockerfiles/docker_tag
+
+    - name: Save docker tag to output
+      id: get_docker_tag
+      run: |
+        docker_tag=$(cat openvino/.github/dockerfiles/docker_tag)
+        echo "docker_tag=$docker_tag" >> $GITHUB_OUTPUT
+
+  genai_build_cmake:
+    name: Build Archive - ${{ matrix.build-type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        build-type: [Release]
+    needs: [ openvino_download ]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/manylinux_2_28:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+    env:
+      CMAKE_GENERATOR: Unix Makefiles
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
+      INSTALL_TOOLS_DIR: ${{ github.workspace }}/tools
+      INSTALL_TESTS_DIR: ${{ github.workspace }}/tests
+      BUILD_DIR: ${{ github.workspace }}/build
+      SRC_DIR: ${{ github.workspace }}/src
+      MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Generate product manifest
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          target_arch: 'x86_64'
+          build_type: ${{ matrix.build-type }}
+          save_to: ${{ env.MANIFEST_PATH }}
+
+      - name: CMake Build
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
+                -DENABLE_PYTHON=ON \
+                -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+                -S ${{ env.SRC_DIR }} \
+                -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+
+      - name: Pack Artifacts
+        run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
+        working-directory: ${{ env.INSTALL_DIR }}
+
+      - name: Upload Archive Distribution Package
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: genai_archive_${{ matrix.build-type }}
+          path: ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
+          if-no-files-found: 'error'
+
+      - name: Upload manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: manifest_${{ matrix.build-type }}
+          path: ${{ env.MANIFEST_PATH }}
+          if-no-files-found: 'error'
+
+  genai_build_wheel:
+    name: Build Wheel
+    needs: [ openvino_download ]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+    env:
+      CMAKE_GENERATOR: Unix Makefiles
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
+      WHEELS_DIR: ${{ github.workspace }}/install/wheels
+      SRC_DIR: ${{ github.workspace }}/src
+      OpenVINODeveloperPackage_DIR: ${{ github.workspace }}/ov/developer_package/cmake
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Set CI environment
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
+          target_arch: 'x86_64'
+          build_type: Release
+          save_to: ${{ github.workspace }}
+
+      - name: Build Tokenizers Wheel
+        run: |
+          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
+              --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+              ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Build GenAI Wheel
+        run: |
+          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+              ${{ env.SRC_DIR }}
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Build WWB Wheel
+        run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Upload Wheels
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
+          path: ${{ env.INSTALL_DIR }}
+          if-no-files-found: 'error'
+
+  store_artifacts:
+    name: Store build artifacts
+    strategy:
+      matrix:
+        build-type: [Release]
+    needs: [openvino_download, genai_build_wheel, genai_build_cmake]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-medium
+    container:
+      image: openvinogithubactions.azurecr.io/library/python:3.12-slim
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+    env:
+      CPACK_PATH: ${{ github.workspace }}/ov_genai
+      CPACK_PACKAGE: ${{ github.workspace }}/ov_genai.tar.gz
+      WHEEL_PACKAGE: ${{ github.workspace }}/wheels
+      MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
+
+    steps:
+      - name: Download genai package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
+          path: ${{ env.CPACK_PATH }}
+
+      - name: Pack Artifacts
+        run: tar -czvf ${{ env.CPACK_PACKAGE }} *
+        working-directory: ${{ env.CPACK_PATH }}
+
+      - name: Download manifest and wheels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: '{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},manifest_${{ matrix.build-type }}}'
+          path: ${{ github.workspace }}
+          merge-multiple: true
+
+      - name: Store ${{ matrix.build_type }} artifacts to a shared drive
+        id: store_artifacts
+        if: ${{ always() }}
+        uses: openvinotoolkit/openvino/.github/actions/store_artifacts@master
+        with:
+          artifacts: |
+            ${{ env.CPACK_PACKAGE }}
+            ${{ env.WHEEL_PACKAGE }}
+            ${{ env.MANIFEST_PATH }}
+          storage_dir: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          storage_root: ${{ env.ARTIFACTS_SHARE }}
+          product_name: ${{ github.event.repository.name }}
+
+  Overall_Status:
+    name: ci/gha_overall_status_linux
+    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheel]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status of all jobs
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure') ||
+            contains(needs.*.result, 'cancelled')
+          }}
+        run: exit 1
