@@ -1833,7 +1833,7 @@ class SparseAttentionConfig:
 class SparseAttentionMode:
     """
     Represents the mode of sparse attention applied during generation.
-                                   :param TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.
+                                   :param SparseAttentionMode.TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.
     
     Members:
     

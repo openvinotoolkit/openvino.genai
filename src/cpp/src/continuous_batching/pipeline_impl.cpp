@@ -654,7 +654,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
                 skip_set = it->second;
             }
         }
-        cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set);
+
+        if (skip_set.empty()) {
+            // For now, will only register token scores from the dense attention stages
+            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set);
+        }
 
         auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
         OPENVINO_ASSERT(seq_group_ptr_it != m_requests.end(), "could not find sequence group with sequence ", seq_id);
