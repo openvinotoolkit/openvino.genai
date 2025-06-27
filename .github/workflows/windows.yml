@@ -295,35 +295,11 @@ jobs:
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
-
-      - name: Setup Python 3.9
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: '3.9'
-          cache: 'pip'
-      
-      - name: Setup Python 3.10
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: '3.10'
-          cache: 'pip'
       
       - name: Setup Python 3.11
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.11'
-          cache: 'pip'
-      
-      - name: Setup Python 3.12
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-      
-      - name: Setup Python 3.13
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: '3.13'
           cache: 'pip'
 
       - name: Download OpenVINO package
@@ -386,6 +362,34 @@ jobs:
             ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
+      - name: Build WWB Wheel
+        run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+      
+      - name: Setup Python 3.9
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+      
+      - name: Setup Python 3.10
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Setup Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Setup Python 3.13
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      
       - name: Build genai wheel
         run: |
           $pyVersions = '3.9', '3.10', '3.11', '3.12', '3.13'
@@ -403,10 +407,6 @@ jobs:
               ${{ needs.openvino_download.outputs.ov_wheel_source }} `
               ${{ env.SRC_DIR }}
           }
-        working-directory: ${{ env.OV_INSTALL_DIR }}
-
-      - name: Build WWB Wheel
-        run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Show ccache stats
