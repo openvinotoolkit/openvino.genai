@@ -167,13 +167,18 @@ jobs:
           for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
           do
             python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
+            python_include_dir=$(python$py_version -c "import sysconfig; print(sysconfig.get_path('include'))")
+            python_library=$(python$py_version -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
+
             cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                   -DENABLE_PYTHON=ON \
                   -DPython3_EXECUTABLE=$python_exec_path \
+                  -DPYTHON_INCLUDE_DIR=$python_include_dir \
+                  -DPYTHON_LIBRARY=$python_library \
                   -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-                  -S ${{ env.SRC_DIR}} \
+                  -S ${{ env.SRC_DIR }} \
                   -B ${{ env.BUILD_DIR }}
-            cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+            cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
             cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
           done
           

@@ -203,7 +203,7 @@ jobs:
         shell: pwsh
         run: |
           ${{ env.OV_INSTALL_DIR }}/setupvars.ps1
-          if ( "${{ matrix.build-type }}" -ne "Debug" }} ) {
+          if ( "${{ matrix.build-type }}" -ne "Debug" ) {
             $pyVersions = '3.9', '3.10', '3.11', '3.12', '3.13'
           } else {
             $pyVersions = '3.11'
