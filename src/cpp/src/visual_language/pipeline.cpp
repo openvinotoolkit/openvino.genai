@@ -312,6 +312,9 @@ public:
             m_history.clear();
         }
         m_inputs_embedder->start_chat(system_message);
+        if (system_message.empty()) {
+            return;
+        }
         m_history = {{{"role", "system"}, {"content", system_message}}};
     }
 
@@ -324,6 +327,7 @@ public:
         m_language.get_tensor("attention_mask").set_shape({0, 0});
         // clear all chat history
         m_inputs_embedder->finish_chat();
+        m_history.clear();
     }
 
     Tokenizer get_tokenizer() const override {

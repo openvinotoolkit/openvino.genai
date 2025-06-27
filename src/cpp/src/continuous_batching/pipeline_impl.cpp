@@ -104,7 +104,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
     std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
-    OPENVINO_ASSERT(execution_devices.size() == 1, "Contituous batching: execution device is expected to be CPU or GPU, but got ", execution_devices.size(), " devices");
+    const bool all_gpu_device =
+        std::all_of(execution_devices.begin(), execution_devices.end(), [&](const std::string& device) {
+            return device.find("GPU") != std::string::npos;
+        });
+    OPENVINO_ASSERT(all_gpu_device || execution_devices.size() == 1,
+                    "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
     const std::string execution_device = execution_devices[0];
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");

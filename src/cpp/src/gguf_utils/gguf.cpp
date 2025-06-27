@@ -378,8 +378,10 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     config["architecture"] = arch;
     config["layer_num"] = metadata_to_int(metadata, arch + ".block_count");
     config["head_num"] = metadata_to_int(metadata, arch + ".attention.head_count");
-    config["head_size"] = metadata_to_int(metadata, arch + ".embedding_length") / 
-                     metadata_to_int(metadata, arch + ".attention.head_count");
+    config["head_size"] = metadata.count(arch + ".attention.key_length") ?
+                     metadata_to_int(metadata, arch + ".attention.key_length") :
+                     (metadata_to_int(metadata, arch + ".embedding_length") / 
+                     metadata_to_int(metadata, arch + ".attention.head_count"));
     config["head_num_kv"] = metadata.count(arch + ".attention.head_count_kv") ?
             metadata_to_int(metadata, arch + ".attention.head_count_kv") :
             metadata_to_int(metadata, arch + ".attention.head_count");
@@ -438,6 +440,14 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
         consts[format("model.layers[%d].self_attn.o_proj.weight", i)] = weights.at(format("blk.%d.attn_output.weight", i));
         if (weights.count(format("blk.%d.attn_output.bias", i))) {
             consts[format("model.layers[%d].self_attn.o_proj.bias", i)] = weights.at(format("blk.%d.attn_output.bias", i));
+        }
+
+        //Qwen3
+        if (weights.count(format("blk.%d.attn_k_norm.weight", i))) {
+            consts[format("model.layers[%d].self_attn.k_norm.weight", i)] = weights.at(format("blk.%d.attn_k_norm.weight", i));
+        }
+        if (weights.count(format("blk.%d.attn_q_norm.weight", i))) {
+            consts[format("model.layers[%d].self_attn.q_norm.weight", i)] = weights.at(format("blk.%d.attn_q_norm.weight", i));
         }
 
         // MLP weights

@@ -4,6 +4,7 @@
 import os
 import pytest
 import math
+import sys
 
 from pathlib import Path
 from shutil import rmtree
@@ -412,6 +413,30 @@ def test_preemption_with_multinomial_n_seq(dynamic_split_fuse):
                          ref=multinomial_params_n_seq.ref_texts,
                          generation_config=multinomial_params_n_seq.generation_config,
                          scheduler_config=scheduler_config)
+
+
+@pytest.mark.parametrize("pipeline_type", [PipelineType.PROMPT_LOOKUP_DECODING])
+@pytest.mark.precommit
+def test_dynamic_split_fuse_doesnt_affect_generated_text(pipeline_type):
+    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    _, _, models_path = download_and_convert_model(model_id)
+
+    scheduler_config_ref = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
+    cb_pipe_ref = create_ov_pipeline(models_path, scheduler_config=scheduler_config_ref, pipeline_type=pipeline_type)
+
+    scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 5})
+    cb_pipe_target = create_ov_pipeline(models_path, scheduler_config=scheduler_config_target, pipeline_type=pipeline_type)
+
+    generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, eos_token_id=cb_pipe_ref.get_tokenizer().get_eos_token_id())
+
+    generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
+    cb_pipe_ref.set_generation_config(generation_config)
+    cb_pipe_target.set_generation_config(generation_config)
+
+    question = "Why is the Sun yellow?"
+    reference = cb_pipe_ref.generate(question, generation_config=generation_config)
+    generated = cb_pipe_target.generate(question, generation_config=generation_config)
+    assert generated == reference
 
 
 def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_config: GenerationConfig):
