@@ -143,9 +143,6 @@ std::shared_ptr<ov::Model> create_language_model(
         model->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     }
     model->set_rt_info(8.0f, {"runtime_options", ov::hint::activations_scale_factor.name()});
-    // CVS-166554: Dynamic quatnization enabled by default with gourp size 32 on MTL platfrom cause the runtime issue
-    // Apply WA to disable dynamic quantization with rt_info to fix GPU plugin issue on MTL
-    model->set_rt_info(0, {"runtime_options", ov::hint::dynamic_quantization_group_size.name()});
 
     return model;
 }
