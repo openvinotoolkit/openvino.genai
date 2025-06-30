@@ -178,10 +178,13 @@ jobs:
             python$py_version -m venv venv$py_version
             venv$py_version/bin/python3 -m pip install setuptools wheel
 
+            python_exec_path=$(venv$py_version/bin/python3 -c "import sys; print(sys.executable)")
+            echo "Python executable path: $python_exec_path"
+
             echo "Configuring cmake for python$py_version"
             cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                   -DENABLE_PYTHON=ON \
-                  -DPython3_EXECUTABLE=venv$py_version/bin/python3 \
+                  -DPython3_EXECUTABLE=$python_exec_path \
                   -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                   -S ${{ env.SRC_DIR }} \
                   -B ${{ env.BUILD_DIR }}
