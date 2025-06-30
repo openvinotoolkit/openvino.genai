@@ -69,7 +69,7 @@ using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
 // Holds usual LoRA parameters alpha, A and B of a given type.
 using LoRANode = LoRAParts<std::shared_ptr<ov::Node>>;
-using LoRAConstantNode = LoRAConstant<std::shared_ptr<ov::Node>>;
+using LoRAConstantNode = std::shared_ptr<ov::Node>;
 using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string& name)>>;
 
 // Converts Safetensors element type to OV element type. Only part of the types are supported.
@@ -179,7 +179,7 @@ LoRAConstantTensors group_lora_constant_tensors(const ConstantMap& tensors, cons
     for(const auto& named_tensor: tensors) {
         for (const auto& const_parser : const_parsers) {
             if(auto parsed = const_parser(named_tensor.first)) {
-                result[*parsed].tensor = named_tensor.second;
+                result[*parsed] = named_tensor.second;
                 break;
             }
         }
@@ -187,7 +187,7 @@ LoRAConstantTensors group_lora_constant_tensors(const ConstantMap& tensors, cons
 
     // Check that all LoRA constant exists
     for (const auto& lora_tensor : result) {
-        OPENVINO_ASSERT(lora_tensor.second.tensor, "Weight matrix is missing in LoRA tensors for layer: ", lora_tensor.first);
+        OPENVINO_ASSERT(lora_tensor.second, "Weight matrix is missing in LoRA tensors for layer: ", lora_tensor.first);
     }
     return result;
 }
@@ -484,11 +484,11 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
 
             // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             variable_info = ov::op::util::VariableInfo{
-                params->tensor->get_output_shape(0),
-                params->tensor->get_output_element_type(0),
+                ov::Output<ov::Node>(*params, 0).get_shape(),
+                ov::Output<ov::Node>(*params, 0).get_element_type(),
                 variable_id_name
             };
-            result.tensor = add_variable(variable_info);
+            result = add_variable(variable_info);
             variable_ids.emplace(name, variable_info);
 
             return result;
@@ -597,7 +597,7 @@ public:
 
 protected:
     bool apply(NodePtr node, const LoRAConstantNode& lora_weight) override {
-        ov::replace_node(node, lora_weight.tensor);
+        ov::replace_node(node, lora_weight);
         return true;
     }
 };
@@ -616,9 +616,9 @@ protected:
         const auto node_type = node->get_element_type();
     
         // cast to node type
-        auto lora_output = lora_weight.tensor;
-        if (lora_weight.tensor->get_element_type() != node_type) {
-            lora_output = std::make_shared<ov::op::v0::Convert>(lora_weight.tensor, node_type);
+        auto lora_output = lora_weight;
+        if (lora_weight->get_element_type() != node_type) {
+            lora_output = std::make_shared<ov::op::v0::Convert>(lora_weight, node_type);
         }
 
         auto if_node = std::make_shared<ov::op::v8::If>(if_input);
@@ -1404,7 +1404,7 @@ struct AdapterControllerImpl {
 
                 OPENVINO_ASSERT(!const_getter.empty(), "LoRA constant tensor not found for name: ", const_name);
 
-                auto constant_node = std::dynamic_pointer_cast<v0::Constant>(opt_lora_const->tensor);
+                auto constant_node = std::dynamic_pointer_cast<v0::Constant>(*opt_lora_const);
                 OPENVINO_ASSERT(constant_node, "Expected ov::op::v0::Constant for ", const_name);
 
                 ov::Tensor const_tensor = ov::Tensor(constant_node->get_element_type(), constant_node->get_shape());
