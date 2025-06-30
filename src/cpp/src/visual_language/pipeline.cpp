@@ -122,7 +122,6 @@ public:
         const GenerationConfig& generation_config
     ) :
         m_generation_config{generation_config} {
-        std::cout << "init stateful" << std::endl;
         m_is_npu = device.find("NPU") != std::string::npos;
         OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
