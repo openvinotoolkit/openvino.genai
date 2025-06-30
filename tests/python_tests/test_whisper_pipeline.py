@@ -184,14 +184,18 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             "mozilla-foundation/common_voice_11_0",
             language,
             split="test",
-            streaming=True,
+            # TODO: temporary download the whole dataset until is fixed https://github.com/huggingface/datasets/issues/7647
+            # return streaming back once the issue is resolved.
+            # streaming=True,
             trust_remote_code=True,
         )
     else:
         ds = datasets.load_dataset(
             "distil-whisper/meanwhile",
             split="test",
-            streaming=True,
+            # TODO: temporary download the whole dataset until is fixed https://github.com/huggingface/datasets/issues/7647
+            # return streaming back once the issue is resolved.
+            # streaming=True,
             trust_remote_code=True,
         )
 
