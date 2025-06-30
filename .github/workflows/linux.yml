@@ -176,22 +176,24 @@ jobs:
           do
             echo "Creating venv for python$py_version"
             python$py_version -m venv venv$py_version
-            venv$py_version/bin/python3 -m pip install setuptools wheel
+            . venv$py_version/bin/activate
+            echo "PATH: $PATH"
+            python3 -m pip install setuptools wheel
 
-            python_exec_path=$(venv$py_version/bin/python3 -c "import sys; print(sys.executable)")
-            echo "Python executable path: $python_exec_path"
+            # python_exec_path=$(venv$py_version/bin/python3 -c "import sys; print(sys.executable)")
+            # echo "Python executable path: $python_exec_path"
 
             echo "Configuring cmake for python$py_version"
             cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                   -DENABLE_PYTHON=ON \
-                  -DPython3_EXECUTABLE=$python_exec_path \
                   -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                   -S ${{ env.SRC_DIR }} \
                   -B ${{ env.BUILD_DIR }}
             echo "Configuring cmake done for python$py_version"
             
             cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-            cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}            
+            cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+            deactivate            
           done
           
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
