@@ -174,16 +174,19 @@ jobs:
           
           for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
           do
-            rm -rf venv
-            python$py_version -m venv venv
-            venv/bin/python3 -m pip install setuptools wheel
+            echo "Creating venv for python$py_version"
+            python$py_version -m venv venv$py_version
+            venv$py_version/bin/python3 -m pip install setuptools wheel
 
+            echo "Configuring cmake for python$py_version"
             cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                   -DENABLE_PYTHON=ON \
-                  -DPython3_EXECUTABLE=venv/bin/python3 \
+                  -DPython3_EXECUTABLE=venv$py_version/bin/python3 \
                   -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                   -S ${{ env.SRC_DIR }} \
                   -B ${{ env.BUILD_DIR }}
+            echo "Configuring cmake done for python$py_version"
+            
             cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
             cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}            
           done
