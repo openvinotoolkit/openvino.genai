@@ -122,6 +122,7 @@ public:
         const GenerationConfig& generation_config
     ) :
         m_generation_config{generation_config} {
+        std::cout << "init stateful" << std::endl;
         m_is_npu = device.find("NPU") != std::string::npos;
         OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
@@ -332,7 +333,7 @@ VLMPipeline::VLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, SDPA_BACKEND);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (utils::explicitly_requires_paged_attention(user_properties)) {
+    if (utils::explicitly_requires_paged_attention(properties)) {
         auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
     } else if (device == "NPU") {
@@ -371,7 +372,7 @@ VLMPipeline::VLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, SDPA_BACKEND);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (utils::explicitly_requires_paged_attention(user_properties)) {
+    if (utils::explicitly_requires_paged_attention(properties)) {
         auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
     } else if (device == "NPU") {
