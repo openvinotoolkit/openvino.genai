@@ -27,20 +27,10 @@ auto set_name = [](auto node, const std::string& name) {
     node->set_friendly_name(name);
 };
 
-// Also valid for other models, e.g. SmolLMs
-// CVS-166108: Adding shared_embedding as true by default based on following two reason:
-// 1. For optimum-cli converted LLM OpenVINO IR, original input embedding weight will be reused for last make_lm_head layer
-//    Which can reduce both model size on disk and runtime memory usage via storing only single embeddding consts
-//    (e.g. Qwen2.5-7B-Instruct-Q4_0 token_embd.weight & output.weight shape [3584, 152064]
-// 2. For some GGUF model that contains both token_embd.weight & output.weight, e.g. Qwen2.5-3B-Instruct Q4_0
-//    meet accuracy issue on MTL/LNL GPU due to use both token_embd.weight & output.weight in OpenVINO IR.
-// WA Known issue: Qwen2.5-3B-Instruct-Q4_K_M meet accuracy issue on MTL/LNL CPU if only re-used token_embd.weight
-
 std::shared_ptr<ov::Model> create_language_model(
     const std::map<std::string, GGUFMetaData>& configs,
     std::unordered_map<std::string, ov::Tensor>& consts,
-    std::unordered_map<std::string, gguf_tensor_type>& qtypes,
-    bool shared_embedding = false) {
+    std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
     // Create input parameters
     auto input_ids = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
@@ -127,8 +117,7 @@ std::shared_ptr<ov::Model> create_language_model(
         final_norm,
         consts,
         embeddings,
-        qtypes.at("lm_head.qtype"),
-        shared_embedding);
+        qtypes.at("lm_head.qtype"));
 
     // Create results
     auto logits = std::make_shared<ov::op::v0::Result>(embed_out);

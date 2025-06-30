@@ -743,23 +743,17 @@ ov::Output<ov::Node> make_lm_head(
     const ov::Output<ov::Node>& input,
     const std::unordered_map<std::string, ov::Tensor>& consts,
     const ov::Output<ov::Node>& embeddings_node,
-    gguf_tensor_type qtype,
-    bool shared_embedding) {
+    gguf_tensor_type qtype) {
 
     ov::Output<ov::Node> w_f32;
-    if (shared_embedding){
-        w_f32 = embeddings_node;
-    }
-    else {
-        if (consts.count(key + ".weight")) {
-            gguf_tensor_type lm_qtype = qtype;
-            if (!consts.count(key + ".scales")) {
-                lm_qtype = gguf_tensor_type::GGUF_TYPE_F16;
-            }
-            w_f32 = make_weights_subgraph(key, consts, lm_qtype, false, -1);
-        } else {
-            w_f32 = embeddings_node;
+    if (consts.count(key + ".weight")) {
+        gguf_tensor_type lm_qtype = qtype;
+        if (!consts.count(key + ".scales")) {
+            lm_qtype = gguf_tensor_type::GGUF_TYPE_F16;
         }
+        w_f32 = make_weights_subgraph(key, consts, lm_qtype, false, -1);
+    } else {
+        w_f32 = embeddings_node;
     }
     return std::make_shared<ov::op::v0::MatMul>(
         input, w_f32, false, true);
