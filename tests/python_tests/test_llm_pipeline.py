@@ -902,7 +902,6 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
 
     assert res_string_input_1 == res_string_input_2
 
-
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", [{"gguf_model_id": "Qwen/Qwen3-0.6B-GGUF", "gguf_filename": "Qwen3-0.6B-Q8_0.gguf"}])
 @pytest.mark.precommit

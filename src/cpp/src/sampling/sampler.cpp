@@ -807,7 +807,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
 
                 auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
                 logit_processor.apply(logit_vector);
-
+                
                 Token sampled_token;
                 bool is_generate_n_tokens = false;
                 if (sampling_params.is_greedy_decoding()) {
@@ -855,6 +855,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     }
                 }
                 register_new_token(sampled_token, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_validation_mode_enabled);
+                               
                 // to exit from sampling in case of failed token validation
                 if (!is_validation_passed) {
                     break;
@@ -925,7 +926,10 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
 
         const auto request_id = sequence_group->get_request_id();
         if (!m_logit_processors.count(request_id)) {
-            m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids())});
+            if (!m_structured_output_controller) {
+                m_structured_output_controller = std::make_shared<StructuredOutputController>(m_tokenizer, vocab_size);
+            }
+            m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids(), m_structured_output_controller)});
         }
         if (!m_stop_strings.count(request_id)) {
             auto processed_stop_string = process_stop_strings(sampling_params.stop_strings, m_tokenizer);
@@ -998,10 +1002,16 @@ LogitProcessor& Sampler::get_logit_processor(uint64_t request_id) {
 
 
 void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_params, const TokenIds& prompt) {
-    m_logit_processors.insert({request_id, LogitProcessor(sampling_params, prompt)});
+    if (!m_structured_output_controller) {
+        // We don't have vocab size (actually logits size) and also we don't have access to the logits.
+        // vocab size will be taken from the tokenizer during LogitProcessor initialization.
+        m_structured_output_controller = std::make_shared<StructuredOutputController>(m_tokenizer);
+    }
+
+    m_logit_processors.insert({request_id, LogitProcessor(sampling_params, prompt, m_structured_output_controller)});
 }
 
-void Sampler::clear_request_info(uint64_t request_id) { 
+void Sampler::clear_request_info(uint64_t request_id) {
     m_beam_search_info.erase(request_id);
     m_logit_processors.erase(request_id);
     m_stop_strings.erase(request_id);
