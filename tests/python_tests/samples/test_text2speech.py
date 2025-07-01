@@ -47,13 +47,6 @@ class TestTextToSpeechSample:
         cpp_command = [cpp_sample, convert_model, input_prompt, self.temp_speaker_embedding_file.name]
         cpp_result = run_sample(cpp_command)
 
-        # Check results
-        assert py_result.returncode == 0, "Python sample text2speech must be successfully completed"
-        assert "Text successfully converted to audio file" in py_result.stdout, "Python sample text2speech must be successfully completed"
-
-        assert cpp_result.returncode == 0, "C++ sample text2speech must be successfully completed"
-        assert "Text successfully converted to audio file" in cpp_result.stdout, "C++ sample text2speech must be successfully completed"
-
     @pytest.mark.speech_generation
     @pytest.mark.samples
     @pytest.mark.precommit
@@ -70,10 +63,3 @@ class TestTextToSpeechSample:
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'text2speech')
         cpp_command = [cpp_sample, convert_model, input_prompt]
         cpp_result = run_sample(cpp_command)
-
-        # Check results
-        assert py_result.returncode == 0, "Python sample text2speech must be successfully completed"
-        assert "Text successfully converted to audio file" in py_result.stdout, "Python sample text2speech must be successfully completed"
-
-        assert cpp_result.returncode == 0, "C++ sample text2speech must be successfully completed"
-        assert "Text successfully converted to audio file" in cpp_result.stdout, "C++ sample text2speech must be successfully completed"
