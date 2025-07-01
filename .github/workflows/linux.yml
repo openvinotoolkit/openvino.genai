@@ -174,11 +174,11 @@ jobs:
           
           for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
           do
+            export PATH=/opt/doxygen/doxygen-1.9.6/bin:/.nvm/versions/node/v21.7.3/bin:/opt/sccache:/opt/sccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
             echo "Creating venv for python$py_version"
             python$py_version -m venv venv$py_version
-            . venv$py_version/bin/activate
+            source venv$py_version/bin/activate
             echo "PATH: $PATH"
-            python3 -m pip install setuptools wheel
 
             # python_exec_path=$(venv$py_version/bin/python3 -c "import sys; print(sys.executable)")
             # echo "Python executable path: $python_exec_path"
@@ -193,7 +193,8 @@ jobs:
             
             cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
             cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
-            deactivate            
+            deactivate
+            rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt            
           done
           
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
