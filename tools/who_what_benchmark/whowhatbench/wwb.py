@@ -173,6 +173,12 @@ def parse_args():
         default=42,
         help="Text-to-image specific parameter that defines the seed value.",
     )
+    parser.add_argument(
+        "--adapter",
+        type=str,
+        default=None,
+        help="LoRA adapter.",
+    )
 
     return parser.parse_args()
 
@@ -530,6 +536,7 @@ def main():
     kwargs = {}
     if args.cb_config:
         kwargs["cb_config"] = read_cb_config(args.cb_config)
+    kwargs["adapter"] = args.adapter
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)

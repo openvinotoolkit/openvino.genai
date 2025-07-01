@@ -166,7 +166,7 @@ def load_text_model(
     return model
 
 
-def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
+def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     try:
         import openvino_genai
     except ImportError:
@@ -174,26 +174,34 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
+    adapter_config = openvino_genai.AdapterConfig()
+    if "adapter" in kwargs and kwargs["adapter"] is not None:
+        adapter = openvino_genai.Adapter(kwargs["adapter"])
+        alpha = 1.0
+        adapter_config.add(adapter, alpha)
+
     return GenAIModelWrapper(
-        openvino_genai.Text2ImagePipeline(model_dir, device=device, **ov_config),
+        openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
         model_dir,
         "text-to-image"
     )
 
 
 def load_text2image_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_genai:
         logger.info("Using OpenvINO GenAI API")
-        model = load_text2image_genai_pipeline(model_id, device, ov_config)
+        model = load_text2image_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_hf:
-        from diffusers import DiffusionPipeline
+        from diffusers import AutoPipelineForText2Image
         logger.info("Using HF Transformers API")
         try:
-            model = DiffusionPipeline.from_pretrained(model_id)
+            model = AutoPipelineForText2Image.from_pretrained(model_id)
         except Exception:
-            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
+            model = AutoPipelineForText2Image.from_pretrained(model_id, trust_remote_code=True)
+        if 'adapter' in kwargs and kwargs['adapter'] is not None:
+            model.load_lora_weights(kwargs['adapter'])
     else:
         logger.info("Using Optimum API")
         from optimum.intel import OVPipelineForText2Image
@@ -212,6 +220,8 @@ def load_text2image_model(
                 ov_config=ov_config,
                 safety_checker=None,
             )
+        if 'adapter' in kwargs and kwargs['adapter'] is not None:
+            raise ValueError(f"Adapters is not supported for  OVPipelineForText2Image")
 
     return model
 
@@ -432,7 +442,7 @@ def load_model(
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(
-            model_id, device, ov_options, use_hf, use_genai
+            model_id, device, ov_options, use_hf, use_genai, **kwargs
         )
     elif model_type == "visual-text":
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
