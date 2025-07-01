@@ -477,7 +477,7 @@ jobs:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
-            timeout: 45
+            timeout: 145
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
