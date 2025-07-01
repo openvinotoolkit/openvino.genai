@@ -18,8 +18,7 @@ from llm_bench_utils.config_class import (
     DEFAULT_MODEL_CLASSES,
     IMAGE_GEN_CLS,
     INPAINTING_IMAGE_GEN_CLS,
-    IMAGE_TO_IMAGE_GEN_CLS,
-    PA_ATTENTION_BACKEND
+    IMAGE_TO_IMAGE_GEN_CLS
 )
 from transformers import pipeline
 import queue
@@ -131,7 +130,9 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, **kwargs)
+
         log.info("Selected Optimum Intel for benchmarking")
+        ov_config.pop("ATTENTION_BACKEND", None)
         remote_code = False
         try:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
@@ -168,13 +169,11 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
 def get_scheduler_config_genai(user_config, config_name="CB config"):
     import openvino_genai
 
-    default_cb_config = {"cache_size": 1}
     scheduler_config = openvino_genai.SchedulerConfig()
-    scheduler_params = user_config or default_cb_config
-    if scheduler_params:
-        log.info(f"Scheduler parameters for {config_name}:\n{scheduler_params}")
+    if user_config:
+        log.info(f"Scheduler parameters for {config_name}:\n{user_config}")
 
-        for param, value in scheduler_params.items():
+        for param, value in user_config.items():
             setattr(scheduler_config, param, value)
 
     return scheduler_config
@@ -192,11 +191,9 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, *
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     draft_model_path = kwargs.get("draft_model", '')
-    cb = ov_config.get('ATTENTION_BACKEND', '') == PA_ATTENTION_BACKEND
     cb_config = kwargs.get("cb_config")
     use_streamer_metrics = False
-    if cb or cb_config is not None or draft_model_path:
-        log.info("Continuous Batching mode activated")
+    if cb_config is not None:
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
         version = get_version_in_format_to_pars(openvino_genai.get_version())
@@ -540,7 +537,7 @@ def create_speech_2_txt_model(model_path, device, memory_monitor, **kwargs):
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type]]:
-                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
+                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default benchmarking")
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_speech_2_txt_model(model_path, device, memory_monitor, **kwargs)
@@ -600,10 +597,8 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
 
     processor_config = get_vlm_processor(model_path)
 
-    cb = ov_config.get('ATTENTION_BACKEND', '') == PA_ATTENTION_BACKEND
     cb_config = kwargs.get("cb_config")
-    if cb or cb_config is not None:
-        log.info("Continuous Batching mode activated")
+    if cb_config is not None:
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
     if kwargs.get("mem_consumption"):
@@ -766,6 +761,7 @@ def create_image_text_gen_model(model_path, device, memory_monitor, **kwargs):
                 )
 
         log.info("Selected Optimum Intel for benchmarking")
+        ov_config.pop("ATTENTION_BACKEND", None)
         model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
         if kwargs.get("mem_consumption"):
             memory_monitor.start()

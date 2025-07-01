@@ -22,13 +22,15 @@ class GenAIModelWrapper:
 
         if model_type == "text" or model_type == "visual-text":
             try:
-                self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
-            except Exception:
                 self.config = AutoConfig.from_pretrained(model_dir)
+            except Exception:
+                self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
         elif model_type == "text-to-image":
             from diffusers import DiffusionPipeline
-            self.config = DiffusionPipeline.load_config(
-                model_dir, trust_remote_code=True)
+            try:
+                self.config = DiffusionPipeline.load_config(model_dir)
+            except Exception:
+                self.config = DiffusionPipeline.load_config(model_dir, trust_remote_code=True)
 
     def __getattr__(self, attr):
         if attr in self.__dict__:
@@ -89,7 +91,12 @@ def load_text_hf_pipeline(model_id, device):
     model_kwargs = {}
 
     if not torch.cuda.is_available or device.lower() == "cpu":
-        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        trust_remote_code = False
+        try:
+            config = AutoConfig.from_pretrained(model_id)
+        except Exception:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            trust_remote_code = True
         is_gptq = False
         is_awq = False
         if getattr(config, "quantization_config", None):
@@ -99,13 +106,19 @@ def load_text_hf_pipeline(model_id, device):
             # infer in FP32
             model_kwargs["torch_dtype"] = torch.float32
         with mock_torch_cuda_is_available(is_gptq or is_awq):
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map="cpu", **model_kwargs)
+            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
             model.is_awq = is_awq
     else:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
-        )
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id, trust_remote_code=False, device_map=device.lower(), **model_kwargs
+            )
+        except Exception:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
+            )
+
     model.eval()
     return model
 
@@ -126,7 +139,7 @@ def load_text_model(
         from optimum.intel.openvino import OVModelForCausalLM
         try:
             model = OVModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
+                model_id, device=device, ov_config=ov_config
             )
         except Exception:
             try:
@@ -177,8 +190,10 @@ def load_text2image_model(
     elif use_hf:
         from diffusers import DiffusionPipeline
         logger.info("Using HF Transformers API")
-        model = DiffusionPipeline.from_pretrained(
-            model_id, trust_remote_code=True)
+        try:
+            model = DiffusionPipeline.from_pretrained(model_id)
+        except Exception:
+            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
     else:
         logger.info("Using Optimum API")
         from optimum.intel import OVPipelineForText2Image
@@ -186,14 +201,11 @@ def load_text2image_model(
 
         try:
             model = TEXT2IMAGEPipeline.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config, safety_checker=None,
+                model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
         except ValueError:
-            config = AutoConfig.from_pretrained(
-                model_id, trust_remote_code=True)
             model = TEXT2IMAGEPipeline.from_pretrained(
                 model_id,
-                config=config,
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
@@ -204,46 +216,63 @@ def load_text2image_model(
     return model
 
 
-def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
+def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     try:
         import openvino_genai
     except ImportError as e:
         logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
         exit(-1)
 
+    is_continuous_batching = kwargs.get("cb_config", None) is not None
+
+    if is_continuous_batching:
+        logger.info("Using OpenVINO GenAI Continuous Batching API")
+        scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
+        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA", **ov_config)
+    else:
+        logger.info("Using OpenVINO GenAI VLMPipeline API")
+        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, **ov_config)
+
     return GenAIModelWrapper(
-        openvino_genai.VLMPipeline(model_dir, device, **ov_config),
+        pipeline,
         model_dir,
         "visual-text"
     )
 
 
 def load_visual_text_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
-        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        trust_remote_code = False
+        try:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+        except Exception:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            trust_remote_code = True
+
         try:
             model = AutoModelForVision2Seq.from_pretrained(
-                model_id, trust_remote_code=True, device_map=device.lower()
+                model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
             )
         except ValueError:
             try:
                 model = AutoModel.from_pretrained(
-                    model_id, trust_remote_code=True, device_map=device.lower()
+                    model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
                 )
             except ValueError:
-                from_pretrained_kwargs = {}
+                from_pretrained_kwargs = {"_attn_implementation": "eager"}
                 if config.model_type == "phi4mm":
                     if "activation_checkpointing" in config.audio_processor["config"]:
                         config.audio_processor["config"]["activation_checkpointing"] = ""
+                    del from_pretrained_kwargs["_attn_implementation"]
                     config._attn_implementation = "sdpa"
                     from_pretrained_kwargs["config"] = config
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
-                    trust_remote_code=True,
+                    trust_remote_code=trust_remote_code,
                     device_map=device.lower(),
                     use_flash_attention_2=False,
                     **from_pretrained_kwargs,
@@ -275,13 +304,13 @@ def load_visual_text_model(
             model.img_context_token_id = img_context_token_id
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
-        model = load_visual_text_genai_pipeline(model_id, device, ov_config)
+        model = load_visual_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForVisualCausalLM
         try:
             model = OVModelForVisualCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
+                model_id, device=device, ov_config=ov_config
             )
         except ValueError:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
@@ -327,13 +356,11 @@ def load_imagetext2image_model(
         from optimum.intel.openvino import OVPipelineForImage2Image
         try:
             model = OVPipelineForImage2Image.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config, safety_checker=None,
+                model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
         except ValueError:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             model = OVPipelineForImage2Image.from_pretrained(
                 model_id,
-                config=config,
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
@@ -374,14 +401,12 @@ def load_inpainting_model(
         from optimum.intel.openvino import OVPipelineForInpainting
         try:
             model = OVPipelineForInpainting.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config, safety_checker=None,
+                model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
         except ValueError as e:
             logger.error("Failed to load inpaiting pipeline. Details:\n", e)
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             model = OVPipelineForInpainting.from_pretrained(
                 model_id,
-                config=config,
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
@@ -410,7 +435,7 @@ def load_model(
             model_id, device, ov_options, use_hf, use_genai
         )
     elif model_type == "visual-text":
-        return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai)
+        return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-to-image":
         return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai)
     elif model_type == "image-inpainting":

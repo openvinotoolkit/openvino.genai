@@ -14,6 +14,7 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::StopCriteria;
+using ov::genai::StructuredOutputConfig;
 using ov::genai::GenerationConfig;
 
 namespace {
@@ -25,6 +26,18 @@ auto stop_criteria_docstring =  R"(
         "openvino_genai.StopCriteria.EARLY" stops as soon as there are `num_beams` complete candidates.
         "openvino_genai.StopCriteria.HEURISTIC" stops when is it unlikely to find better candidates.
         "openvino_genai.StopCriteria.NEVER" stops when there cannot be better candidates.
+)";
+
+auto structured_output_config_docstring = R"(
+    Structure to keep generation config parameters for structured output generation.
+    It is used to store the configuration for structured generation, which includes
+    the JSON schema and other related parameters.
+
+    Structured output parameters:
+    json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
+    regex:          if set, the output will be constraint by specified regex.
+    grammar:        if set, the output will be constraint by specified grammar.
+
 )";
 
 } // namespace
@@ -83,6 +96,16 @@ void init_generation_config(py::module_& m) {
         .value("HEURISTIC", StopCriteria::HEURISTIC)
         .value("NEVER", StopCriteria::NEVER);
 
+    py::class_<StructuredOutputConfig>(m, "StructuredOutputConfig", structured_output_config_docstring)
+        .def(py::init<>(), "Default constructor for StructuredOutputConfig")
+        .def(py::init([](py::kwargs kwargs) {
+            return StructuredOutputConfig(pyutils::kwargs_to_any_map(kwargs)); 
+        }), "Constructor that initializes the structured output configuration with kwargs.")
+        .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
+        .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
+        .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation");
+        
+
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
@@ -115,6 +138,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
+        .def_readwrite("structured_output_config", &GenerationConfig::structured_output_config)
         .def_readwrite("adapters", &GenerationConfig::adapters)
         .def_readwrite("apply_chat_template", &GenerationConfig::apply_chat_template)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))

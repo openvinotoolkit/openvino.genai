@@ -10,7 +10,8 @@ from llm_bench_utils.config_class import (
     USE_CASES,
     OV_MODEL_CLASSES_MAPPING,
     PT_MODEL_CLASSES_MAPPING,
-    PA_ATTENTION_BACKEND
+    PA_ATTENTION_BACKEND,
+    SDPA_ATTENTION_BACKEND
 )
 import librosa
 
@@ -183,8 +184,11 @@ def analyze_args(args):
             model_args['config'] = config
     if model_framework == 'ov':
         set_default_param_for_ov_config(model_args['config'])
-        if 'ATTENTION_BACKEND' not in model_args['config'] and use_case in ['text_gen', 'vlm'] and args.device != "NPU" and not optimum:
-            model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
+        if 'ATTENTION_BACKEND' not in model_args['config'] and not optimum and args.device != "NPU":
+            if use_case in ['text_gen']:
+                model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
+            elif use_case in ['vlm']:
+                model_args['config']['ATTENTION_BACKEND'] = SDPA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
