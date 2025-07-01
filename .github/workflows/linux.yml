@@ -174,14 +174,15 @@ jobs:
           
           for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
           do
+            rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
+            
+            # Need to remove the default Python 3.11 in /venv from the Path so that CMake uses the correct one from newly created venv$py_version
             export PATH=/opt/doxygen/doxygen-1.9.6/bin:/.nvm/versions/node/v21.7.3/bin:/opt/sccache:/opt/sccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            
             echo "Creating venv for python$py_version"
             python$py_version -m venv venv$py_version
             source venv$py_version/bin/activate
             echo "PATH: $PATH"
-
-            # python_exec_path=$(venv$py_version/bin/python3 -c "import sys; print(sys.executable)")
-            # echo "Python executable path: $python_exec_path"
 
             echo "Configuring cmake for python$py_version"
             cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
@@ -194,7 +195,6 @@ jobs:
             cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
             cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
             deactivate
-            rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt            
           done
           
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
