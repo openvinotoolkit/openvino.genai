@@ -16,6 +16,7 @@
 #include "openvino/op/convert.hpp"
 #include "openvino/op/broadcast.hpp"
 #include "openvino/op/reshape.hpp"
+#include "openvino/op/round.hpp"
 #include "openvino/op/transpose.hpp"
 
 namespace ov::genai {
@@ -24,6 +25,83 @@ namespace {
 
 // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
 std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
+
+std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org) {
+    auto raw_images = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+    auto resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
+    auto image_mean = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, 1, 1});
+    auto image_scale = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, 1, 1});
+
+    auto broadcast_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
+    auto temp_shape8d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{8});
+    auto temp_shape4d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
+    auto last_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
+
+    raw_images->set_friendly_name("raw_images");
+    raw_images->output(0).get_tensor().set_names({"raw_images"});
+    
+    resize_target_shape->set_friendly_name("resize_target_shape");
+    resize_target_shape->output(0).get_tensor().set_names({"resize_target_shape"});
+
+    image_mean->set_friendly_name("image_mean");
+    image_mean->output(0).get_tensor().set_names({"image_mean"});
+
+    image_scale->set_friendly_name("image_scale");
+    image_scale->output(0).get_tensor().set_names({"image_scale"});
+
+    broadcast_shape->set_friendly_name("broadcast_shape");
+    broadcast_shape->output(0).get_tensor().set_names({"broadcast_shape"});
+
+    temp_shape8d->set_friendly_name("temp_shape8d");
+    temp_shape8d->output(0).get_tensor().set_names({"temp_shape8d"});
+    temp_shape4d->set_friendly_name("temp_shape4d");
+    temp_shape4d->output(0).get_tensor().set_names({"temp_shape4d"});
+    last_shape->set_friendly_name("last_shape");
+    last_shape->output(0).get_tensor().set_names({"last_shape"});
+
+    auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(raw_images, ov::element::f32);
+    auto img_trans = std::make_shared<ov::op::v1::Transpose>(raw_images_f32, 
+            std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 3, 1, 2})
+        );
+
+    ov::op::v0::Interpolate::Attributes attrs = { };
+    attrs.axes = {2,3};
+    attrs.mode = "cubic";
+    attrs.antialias = true;
+    attrs.align_corners = true;
+    auto img_resized = std::make_shared<ov::op::v0::Interpolate>(img_trans, resize_target_shape, attrs);
+    auto img_resized_rnd = std::make_shared<ov::op::v5::Round>(img_resized, ov::op::v5::Round::RoundMode::HALF_TO_EVEN);
+    auto resized_images_f32_planar = std::make_shared<ov::op::v0::Clamp>(img_resized_rnd, 0, 255);
+    auto resized_images_m = std::make_shared<ov::op::v1::Subtract>(resized_images_f32_planar, image_mean);
+    auto resized_images_s = std::make_shared<ov::op::v1::Multiply>(resized_images_m, image_scale);
+    auto temporal_images = std::make_shared<ov::op::v3::Broadcast>(resized_images_s, broadcast_shape);
+    auto reshaped_8d = std::make_shared<ov::op::v1::Reshape>(temporal_images, temp_shape8d, true);
+    auto transposed_8d = std::make_shared<ov::op::v1::Transpose>(reshaped_8d, 
+        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{8}, std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7})
+    );
+    auto reshaped_4d = std::make_shared<ov::op::v1::Reshape>(transposed_8d, temp_shape4d, true);
+    auto transposed_4d = std::make_shared<ov::op::v1::Transpose>(reshaped_4d, 
+        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3})
+    );
+    auto reshaped_to_2d = std::make_shared<ov::op::v1::Reshape>(transposed_4d, last_shape, true);
+
+    auto params_org = model_org->get_parameters();
+    OPENVINO_ASSERT(params_org.size() == 1);
+
+    ov::replace_node(params_org[0], reshaped_to_2d);
+
+    auto results = model_org->get_results();
+
+    return std::make_shared<ov::Model>(results,
+                                       ov::ParameterVector{raw_images,
+                                                           resize_target_shape,
+                                                           image_mean,
+                                                           image_scale,
+                                                           broadcast_shape,
+                                                           temp_shape8d,
+                                                           temp_shape4d,
+                                                           last_shape});
+}
 
 } // namespace
 
@@ -300,89 +378,11 @@ ov::Tensor merge_text_and_image_embeddings(
     return merged_embeds;
 }
 
-std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org) {
-    auto raw_images = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
-    auto resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
-    auto image_mean = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, 1, 1});
-    auto image_scale = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, 1, 1});
-
-    auto broadcast_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
-    auto temp_shape8d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{8});
-    auto temp_shape4d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
-    auto last_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
-
-    raw_images->set_friendly_name("raw_images");
-    raw_images->output(0).get_tensor().set_names({"raw_images"});
-    
-    resize_target_shape->set_friendly_name("resize_target_shape");
-    resize_target_shape->output(0).get_tensor().set_names({"resize_target_shape"});
-
-    image_mean->set_friendly_name("image_mean");
-    image_mean->output(0).get_tensor().set_names({"image_mean"});
-
-    image_scale->set_friendly_name("image_scale");
-    image_scale->output(0).get_tensor().set_names({"image_scale"});
-
-    broadcast_shape->set_friendly_name("broadcast_shape");
-    broadcast_shape->output(0).get_tensor().set_names({"broadcast_shape"});
-
-    temp_shape8d->set_friendly_name("temp_shape8d");
-    temp_shape8d->output(0).get_tensor().set_names({"temp_shape8d"});
-    temp_shape4d->set_friendly_name("temp_shape4d");
-    temp_shape4d->output(0).get_tensor().set_names({"temp_shape4d"});
-    last_shape->set_friendly_name("last_shape");
-    last_shape->output(0).get_tensor().set_names({"last_shape"});
-
-    auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(raw_images, ov::element::f32);
-    auto img_trans = std::make_shared<ov::op::v1::Transpose>(raw_images_f32, 
-            std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 3, 1, 2})
-        );
-
-    ov::op::v0::Interpolate::Attributes attrs = { };
-    attrs.axes = {2,3};
-    attrs.mode = "cubic";
-    attrs.antialias = true;
-    attrs.align_corners = true;
-    auto img_resized = std::make_shared<ov::op::v0::Interpolate>(img_trans, resize_target_shape, attrs);
-    auto resized_images_f32_planar = std::make_shared<ov::op::v0::Clamp>(img_resized, 0, 255);
-    auto resized_images_m = std::make_shared<ov::op::v1::Subtract>(resized_images_f32_planar, image_mean);
-    auto resized_images_s = std::make_shared<ov::op::v1::Multiply>(resized_images_m, image_scale);
-    auto temporal_images = std::make_shared<ov::op::v3::Broadcast>(resized_images_s, broadcast_shape);
-    auto reshaped_8d = std::make_shared<ov::op::v1::Reshape>(temporal_images, temp_shape8d, true);
-    auto transposed_8d = std::make_shared<ov::op::v1::Transpose>(reshaped_8d, 
-        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{8}, std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7})
-    );
-    auto reshaped_4d = std::make_shared<ov::op::v1::Reshape>(transposed_8d, temp_shape4d, true);
-    auto transposed_4d = std::make_shared<ov::op::v1::Transpose>(reshaped_4d, 
-        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3})
-    );
-    auto reshaped_to_2d = std::make_shared<ov::op::v1::Reshape>(transposed_4d, last_shape, true);
-
-    auto params_org = model_org->get_parameters();
-    OPENVINO_ASSERT(params_org.size() == 1);
-
-    ov::replace_node(params_org[0], reshaped_to_2d);
-
-    auto results = model_org->get_results();
-
-    //results.push_back(std::make_shared<ov::op::v0::Result>(resized_images_f32_planar));
-    return std::make_shared<ov::Model>(results,
-                                       ov::ParameterVector{raw_images,
-                                                           resize_target_shape,
-                                                           image_mean,
-                                                           image_scale,
-                                                           broadcast_shape,
-                                                           temp_shape8d,
-                                                           temp_shape4d,
-                                                           last_shape});
-}
-
 } // namespace qwen2vl_utils
-
 
 VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
     auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
-    auto model = qwen2_vl_utils::patch_preprocess_into_model(model_org);
+    auto model = patch_preprocess_into_model(model_org);
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -400,7 +400,7 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
     const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_embeddings").second;
     
     auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
-    auto model = qwen2_vl_utils::patch_preprocess_into_model(model_org);
+    auto model = patch_preprocess_into_model(model_org);
 
     auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
