@@ -291,18 +291,22 @@ jobs:
               ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
-      - name: Build GenAI Wheel
-        run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-              --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
-              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
-              ${{ env.SRC_DIR }}
-        working-directory: ${{ env.OV_INSTALL_DIR }}
-
       - name: Build WWB Wheel
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
-
+      
+      - name: Build GenAI Wheel
+        run: |
+          for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
+          do
+            python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
+            $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+                --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+                ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+                ${{ env.SRC_DIR }}
+          done
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+      
       - name: Upload Wheels
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -402,9 +402,6 @@ jobs:
         run: |
           $pyVersions = '3.9', '3.10', '3.11', '3.12', '3.13'
           foreach ($pyVersion in $pyVersions) {
-            $pyBuildDir = "${{ github.workspace }}/py$pyVersion"
-            New-Item -ItemType Directory -Path "$pyBuildDir" -Force
-
             $pythonCommand = "py -$pyVersion -c `"import sys; print(f'{sys.executable}')`""
             $pythonExecutablePath = & cmd /c $pythonCommand
           
