@@ -1,0 +1,17 @@
+.featuresSection {
+  composes: section from '../section-styles.module.css';
+}
+
+.sectionTitle {
+  composes: sectionTitle from '../section-styles.module.css';
+}
+
+.sectionContent {
+  composes: sectionContent from '../section-styles.module.css';
+
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  width: 100%;
+  justify-content: center;
+  gap: 1rem;
+}

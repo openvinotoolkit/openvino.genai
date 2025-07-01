@@ -184,8 +184,8 @@ def analyze_args(args):
             model_args['config'] = config
     if model_framework == 'ov':
         set_default_param_for_ov_config(model_args['config'])
-        if 'ATTENTION_BACKEND' not in model_args['config'] and not optimum:
-            if use_case in ['text_gen'] and args.device != "NPU":
+        if 'ATTENTION_BACKEND' not in model_args['config'] and not optimum and args.device != "NPU":
+            if use_case in ['text_gen']:
                 model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
             elif use_case in ['vlm']:
                 model_args['config']['ATTENTION_BACKEND'] = SDPA_ATTENTION_BACKEND

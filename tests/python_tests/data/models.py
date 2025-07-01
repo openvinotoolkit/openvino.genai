@@ -81,6 +81,10 @@ def get_gguf_model_list():
             "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf"
         },
         {
+            "gguf_model_id": "sammysun0711/tiny-random-deepseek-distill-qwen-gguf",
+            "gguf_filename": "tiny-random-deepseek-distill-qwen_q8_0.gguf"
+        },
+        {
             "gguf_model_id": "unsloth/Llama-3.2-1B-Instruct-GGUF",
             "gguf_filename": "Llama-3.2-1B-Instruct-Q8_0.gguf"
         },

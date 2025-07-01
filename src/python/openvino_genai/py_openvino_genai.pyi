@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuredOutputConfig', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -607,6 +607,7 @@ class GenerationConfig:
     stop_criteria: StopCriteria
     stop_strings: set[str]
     stop_token_ids: set[int]
+    structured_output_config: StructuredOutputConfig | None
     temperature: float
     top_k: int
     top_p: float
@@ -1789,6 +1790,53 @@ class StreamingStatus:
     @property
     def value(self) -> int:
         ...
+class StructuredOutputConfig:
+    """
+    
+        Structure to keep generation config parameters for structured output generation.
+        It is used to store the configuration for structured generation, which includes
+        the JSON schema and other related parameters.
+    
+        Structured output parameters:
+        json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
+        regex:          if set, the output will be constraint by specified regex.
+        grammar:        if set, the output will be constraint by specified grammar.
+    
+    """
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Default constructor for StructuredOutputConfig
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        """
+        Constructor that initializes the structured output configuration with kwargs.
+        """
+    @property
+    def grammar(self) -> str | None:
+        """
+        Grammar for structured output generation
+        """
+    @grammar.setter
+    def grammar(self, arg0: str | None) -> None:
+        ...
+    @property
+    def json_schema(self) -> str | None:
+        """
+        JSON schema for structured output generation
+        """
+    @json_schema.setter
+    def json_schema(self, arg0: str | None) -> None:
+        ...
+    @property
+    def regex(self) -> str | None:
+        """
+        Regular expression for structured output generation
+        """
+    @regex.setter
+    def regex(self, arg0: str | None) -> None:
+        ...
 class T5EncoderModel:
     """
     T5EncoderModel class.
@@ -2226,9 +2274,12 @@ class Tokenizer:
         ...
     def get_vocab(self) -> dict:
         """
-        Returns the vocabulary as a Python dictionary with bytes keys and integer values.
-        
-        Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        Returns the vocabulary as a Python dictionary with bytes keys and integer values. 
+                     Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        """
+    def get_vocab_vector(self) -> list[str]:
+        """
+        Returns the vocabulary as list of strings, where position of a string represents token ID.
         """
     def set_chat_template(self, chat_template: str) -> None:
         """
@@ -2382,6 +2433,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
@@ -2419,6 +2471,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
@@ -2455,6 +2508,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are

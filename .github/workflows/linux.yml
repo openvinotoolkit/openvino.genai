@@ -56,7 +56,7 @@ jobs:
           pr: ${{ github.event.number }}
           commit_sha: ${{ github.sha }}
           ref_name: ${{ github.ref_name }}
-          component_pattern: "category: ((?!Python API|CPP API).*)"
+          component_pattern: "category: ((?!Python API|CPP API).*)|Structured Output"
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           skip_when_only_listed_labels_set: 'GH Pages Docs'
           skip_when_only_listed_files_changed: '*.md,*.rst,*.png,*.jpg,*.svg,*.gif'
@@ -483,9 +483,9 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 60
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
+            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            timeout: 60
+            timeout: 120
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -844,6 +844,66 @@ jobs:
         env:
           MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+
+  genai_xgrammar_tests:
+    name: Build & Test XGrammar
+    needs: [ openvino_download ]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash    
+    runs-on: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+    env:
+      CMAKE_GENERATOR: Unix Makefiles
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      SRC_DIR: ${{ github.workspace }}/src
+      BUILD_DIR: ${{ github.workspace }}/build_xgrammar
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: CMake Build without XGrammar
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
+                -DENABLE_PYTHON=ON \
+                -DENABLE_XGRAMMAR=OFF \
+                -DCMAKE_BUILD_TYPE=Release \
+                -S ${{ env.SRC_DIR}} \
+                -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR}} --config Release --parallel $(nproc) --verbose
+
+      - name: Install Python dependencies for tests
+        run: |
+          python3 -m pip install -r ${{ env.SRC_DIR }}/tests/python_tests/requirements.txt
+          python3 -m pip install -r ${{ env.SRC_DIR }}/samples/export-requirements.txt
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          python3 -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+
+      - name: Run test_llm_pipeline.py when -DENABLE_XGRAMMAR=OFF
+        env:
+          PYTHONPATH: "${{ env.BUILD_DIR }}:"
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py
+          # python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_structured_output.py
 
   Overall_Status:
     name: ci/gha_overall_status_linux
