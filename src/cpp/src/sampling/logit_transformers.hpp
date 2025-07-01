@@ -68,6 +68,11 @@ public:
     virtual void accept_tokens(const TokenIds& input_ids) = 0;
 };
 
+class LogitTransformersMetrics {
+public:
+    virtual std::pair<float, float> get_structured_output_times() const = 0;
+};
+
 
 class TopPFilter : public ILogitTransformer {
 public:

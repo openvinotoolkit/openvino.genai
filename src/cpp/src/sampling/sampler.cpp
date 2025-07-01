@@ -241,6 +241,19 @@ std::map<size_t, int32_t> Sampler::GroupBeamSearcher::get_beam_idxs() {
     return next_beams;
 }
 
+std::map<int64_t, std::pair<float, float>> Sampler::get_structured_output_times() {
+    // {init_grammar_time, grammar_compilation_time}
+    std::pair<float, float> times{0.0f, 0.0f};
+
+    // { request_id, times }
+    std::map<int64_t, std::pair<float, float>> structured_output_times;
+
+    for (const auto& [id, logit_processor] : m_logit_processors) {
+        structured_output_times[id] = logit_processor.get_structured_output_times();
+    }
+    return structured_output_times;
+}
+
 void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
     SamplerOutput& sampler_output,
     const std::pair<size_t, std::set<std::string>>& stop_strings) {

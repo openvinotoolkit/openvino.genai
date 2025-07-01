@@ -146,6 +146,12 @@ void init_perf_metrics(py::module_& m) {
         })
         .def_property_readonly("inference_durations", [](const RawPerfMetrics &rw) {
             return pyutils::get_ms(rw, &RawPerfMetrics::m_inference_durations);
+        })
+        .def_property_readonly("m_grammar_init_time", [](const RawPerfMetrics &rw) {
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_grammar_init_time);
+        })
+        .def_property_readonly("m_grammar_compile_time", [](const RawPerfMetrics &rw) {
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_grammar_compile_time);
         });
 
     py::class_<MeanStdPair>(m, "MeanStdPair")
@@ -159,6 +165,8 @@ void init_perf_metrics(py::module_& m) {
     py::class_<PerfMetrics>(m, "PerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_load_time", &PerfMetrics::get_load_time)
+        .def("get_grammar_compiler_init_time", &PerfMetrics::get_grammar_compiler_init_time)
+        .def("get_grammar_compile_time", &PerfMetrics::get_grammar_compile_time)
         .def("get_num_generated_tokens", &PerfMetrics::get_num_generated_tokens)
         .def("get_num_input_tokens", &PerfMetrics::get_num_input_tokens)
         .def("get_ttft", &PerfMetrics::get_ttft)

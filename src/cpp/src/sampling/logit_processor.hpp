@@ -122,6 +122,17 @@ public:
         m_unique_generated_token_ids->at(token_id)--;
     }
 
+    std::pair<float, float> get_structured_output_times() const {
+        for (const auto& transformer: m_logit_transformers) {
+            auto transformer_with_perf = std::dynamic_pointer_cast<LogitTransformers::LogitTransformersMetrics>(transformer);
+            if (transformer_with_perf) {
+                return transformer_with_perf->get_structured_output_times();
+            }
+            // TODO: handle multiple transformers
+        }
+        return {0.f, 0.f};
+    }
+
 };
 
 } // namespace ov::genai

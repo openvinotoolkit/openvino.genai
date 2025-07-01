@@ -39,6 +39,9 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<size_t> m_batch_sizes;
     std::vector<MicroSeconds> m_durations;
     std::vector<MicroSeconds> m_inference_durations;
+
+    std::vector<MicroSeconds> m_grammar_init_time;
+    std::vector<MicroSeconds> m_grammar_compile_time;
 };
 
 /**
@@ -103,6 +106,9 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair ipot;  // Inference time (in ms) per output token.
     MeanStdPair throughput;  // Tokens per second.
 
+    MeanStdPair grammar_compiler_init_time;  // Time to initialize grammar compiler in ms.
+    MeanStdPair grammar_compile_time;        // Time to compile grammar in ms.
+
     MeanStdPair generate_duration;
     MeanStdPair inference_duration;
     MeanStdPair tokenization_duration = {-1.0f, -1.0f};
@@ -118,6 +124,9 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair get_tpot();         // Time (in ms) per output token (TPOT).
     MeanStdPair get_ipot();         // Inference time (in ms) per output token.
     MeanStdPair get_throughput();   // Tokens per second.
+    
+    MeanStdPair get_grammar_compiler_init_time();
+    MeanStdPair get_grammar_compile_time();
 
     MeanStdPair get_inference_duration();       // in ms
     MeanStdPair get_generate_duration();        // in ms

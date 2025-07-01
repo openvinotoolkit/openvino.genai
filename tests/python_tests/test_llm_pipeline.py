@@ -778,6 +778,101 @@ def test_perf_metrics(generation_config, prompt):
     assert len(raw_metrics.m_batch_sizes) > 0
     assert len(raw_metrics.m_durations) > 0
 
+import json
+from typing import Literal
+from pydantic import BaseModel, Field
+
+
+class Person(BaseModel):
+    name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+    surname: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+    age: int
+    city: Literal["Dublin", "Dubai", "Munich"]
+
+test_cases = [
+    (dict(max_new_tokens=20, structured_output_config=ov_genai.StructuredOutputConfig(json_schema=json.dumps(Person.model_json_schema()))), 
+     'Generate json of a person'),
+]
+@pytest.mark.parametrize("generation_config,prompt", test_cases)
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_perf_metrics_with_structured_output(generation_config, prompt):
+    import time
+    start_time = time.perf_counter()
+    model_id = 'katuni4ka/tiny-random-gemma2'
+    perf_metrics = run_perf_metrics_collection(model_id, generation_config, prompt)
+    total_time = (time.perf_counter() - start_time) * 1000
+
+    # Check that load time is adequate.
+    load_time = perf_metrics.get_load_time()
+    assert load_time > 0 and load_time < total_time
+
+    # Check that num input and generated tokens are adequate.
+    num_generated_tokens = perf_metrics.get_num_generated_tokens()
+    assert num_generated_tokens > 0 and num_generated_tokens <= generation_config['max_new_tokens']
+
+    num_input_tokens = perf_metrics.get_num_input_tokens()
+    assert num_input_tokens > 0 and num_input_tokens <= len(prompt)
+
+    mean_ttft, std_ttft = perf_metrics.get_ttft()
+    assert (mean_ttft, std_ttft) == (perf_metrics.get_ttft().mean, perf_metrics.get_ttft().std)
+    assert mean_ttft > 0 and mean_ttft < 1000.0
+
+    raw_metrics = perf_metrics.raw_metrics
+    durations = np.array(raw_metrics.m_durations) / 1000
+    # Check that prefill is not included in durations for TPOT calculation.
+    # For the very long prompt prefill is slow and TTFT is much larger than any other token generation duration.
+    assert np.all(mean_ttft > durations * 2)
+
+    mean_tpot, std_tpot = perf_metrics.get_tpot()
+    assert (mean_tpot, std_tpot) == (perf_metrics.get_tpot().mean, perf_metrics.get_tpot().std)
+    assert mean_tpot > 0 and mean_ttft < 1000.0
+
+    mean_throughput, std_throughput = perf_metrics.get_throughput()
+    assert (mean_throughput, std_throughput) == (perf_metrics.get_throughput().mean, perf_metrics.get_throughput().std)
+    assert mean_throughput > 0 and mean_throughput < 20000.0
+
+    mean_gen_duration, std_gen_duration = perf_metrics.get_generate_duration()
+    assert (mean_gen_duration, std_gen_duration) == (perf_metrics.get_generate_duration().mean, perf_metrics.get_generate_duration().std)
+    assert mean_gen_duration > 0 and load_time + mean_gen_duration < total_time
+    assert std_gen_duration == 0
+
+    mean_tok_duration, std_tok_duration = perf_metrics.get_tokenization_duration()
+    assert (mean_tok_duration, std_tok_duration) == (perf_metrics.get_tokenization_duration().mean, perf_metrics.get_tokenization_duration().std)
+    assert mean_tok_duration > 0 and mean_tok_duration < mean_gen_duration
+    assert std_tok_duration == 0
+
+    mean_detok_duration, std_detok_duration = perf_metrics.get_detokenization_duration()
+    assert (mean_detok_duration, std_detok_duration) == (perf_metrics.get_detokenization_duration().mean, perf_metrics.get_detokenization_duration().std)
+    assert mean_detok_duration > 0 and mean_detok_duration < mean_gen_duration
+    assert std_detok_duration == 0
+
+    # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
+    assert np.allclose(mean_tpot, np.mean(durations))
+    assert np.allclose(std_tpot, np.std(durations))
+
+    raw_dur = np.array(raw_metrics.generate_durations) / 1000
+    assert np.allclose(mean_gen_duration, np.mean(raw_dur))
+    assert np.allclose(std_gen_duration, np.std(raw_dur))
+
+    raw_dur = np.array(raw_metrics.tokenization_durations) / 1000
+    assert np.allclose(mean_tok_duration, np.mean(raw_dur))
+    assert np.allclose(std_tok_duration, np.std(raw_dur))
+
+    raw_dur = np.array(raw_metrics.detokenization_durations) / 1000
+    assert np.allclose(mean_detok_duration, np.mean(raw_dur))
+    assert np.allclose(std_detok_duration, np.std(raw_dur))
+
+    assert len(raw_metrics.m_times_to_first_token) > 0
+    assert len(raw_metrics.m_batch_sizes) > 0
+    assert len(raw_metrics.m_durations) > 0
+
+    assert len(raw_metrics.m_grammar_init_time) == 1
+    assert len(raw_metrics.m_grammar_compile_time) > 0
+
+    assert np.allclose(raw_metrics.m_grammar_init_time * 1000, perf_metrics.get_grammar_init_time().mean)
+    assert np.allclose(raw_metrics.m_grammar_compile_time * 1000, perf_metrics.get_grammar_compile_time().mean)
+
 
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
 @pytest.mark.parametrize("stop_str", {True, False})

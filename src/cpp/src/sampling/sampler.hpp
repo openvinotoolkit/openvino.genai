@@ -123,6 +123,7 @@ public:
     void create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_parameters, const TokenIds& prompt);
 
     std::map<size_t, int32_t> get_beam_idxs(SequenceGroup::CPtr sequence_group);
+    std::map<int64_t, std::pair<float, float>> get_structured_output_times();
 };
 
 class Sampler::GroupBeamSearcher {

@@ -84,6 +84,17 @@ MeanStdPair PerfMetrics::get_inference_duration() {
     return inference_duration;
 }
 
+MeanStdPair PerfMetrics::get_grammar_compiler_init_time() {
+    evaluate_statistics();
+    return grammar_compiler_init_time;
+}
+
+MeanStdPair PerfMetrics::get_grammar_compile_time() {
+    evaluate_statistics();
+    return grammar_compile_time;
+}
+
+
 float PerfMetrics::get_microsec(std::chrono::steady_clock::duration duration) {
     return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
 }
@@ -119,6 +130,9 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     tpot = calc_mean_and_std(raw_metrics.m_durations);
     ipot = calc_mean_and_std(raw_metrics.m_token_infer_durations);
     ttft = calc_mean_and_std(raw_metrics.m_times_to_first_token);
+
+    grammar_compiler_init_time = calc_mean_and_std(raw_metrics.m_grammar_init_time);
+    grammar_compile_time = calc_mean_and_std(raw_metrics.m_grammar_compile_time);
 
     generate_duration = calc_mean_and_std(raw_metrics.generate_durations);
     tokenization_duration = calc_mean_and_std(raw_metrics.tokenization_durations);
