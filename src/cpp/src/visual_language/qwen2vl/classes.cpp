@@ -24,7 +24,7 @@ namespace ov::genai {
 namespace {
 
 // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
-std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
+const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
 
 std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org) {
     auto raw_images = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
@@ -61,7 +61,7 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
 
     auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(raw_images, ov::element::f32);
     auto img_trans = std::make_shared<ov::op::v1::Transpose>(raw_images_f32, 
-            std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 3, 1, 2})
+            std::make_shared<ov::op::v0::Constant>(ov::element::i32, Shape{4}, std::vector<int32_t>{0, 3, 1, 2})
         );
 
     ov::op::v0::Interpolate::Attributes attrs = { };
@@ -435,8 +435,8 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
 
     auto patches_shape = image.get_shape();
     size_t temporal_patch_size = std::max(static_cast<size_t>(patches_shape.at(0)), static_cast<size_t>(config.temporal_patch_size));
-    size_t channel = 3;
-    
+    size_t channel = image_shape.at(3);
+
     size_t grid_t = temporal_patch_size / config.temporal_patch_size;
     size_t grid_h = target_image_size.height / config.patch_size;
     size_t grid_w = target_image_size.width / config.patch_size;
