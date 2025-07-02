@@ -180,15 +180,22 @@ MAX_DATASET_LENGTH = 30
 @functools.lru_cache(16)
 def get_whisper_dataset(language: str, long_form: bool) -> list:
     if not long_form:
-        ds = datasets.load_dataset(
-            "mozilla-foundation/common_voice_11_0",
-            language,
-            split="test",
-            # TODO: temporary download the whole dataset until is fixed https://github.com/huggingface/datasets/issues/7647
-            # return streaming back once the issue is resolved.
-            # streaming=True,
-            trust_remote_code=True,
-        )
+        # TODO: temporary download librispeech dataset until https://github.com/huggingface/datasets/issues/7647 is fixed
+        if language == "en":
+            ds = datasets.load_dataset(
+                "openslr/librispeech_asr",
+                split="test.other",
+                streaming=True,
+                trust_remote_code=True,
+            )
+        else:
+            ds = datasets.load_dataset(
+                "mozilla-foundation/common_voice_11_0",
+                language,
+                split="test",
+                streaming=False,
+                trust_remote_code=True,
+            )
     else:
         ds = datasets.load_dataset(
             "distil-whisper/meanwhile",
