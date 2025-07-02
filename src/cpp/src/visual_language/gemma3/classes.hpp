@@ -45,6 +45,8 @@ public:
 
     std::pair<std::string, std::vector<size_t>> normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const override;
 
+    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
+
 protected:
     ov::Tensor merge_text_and_image_embeddings_llava(
         const ov::Tensor& input_ids,
