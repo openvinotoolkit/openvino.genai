@@ -1,7 +1,6 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-
 #include <algorithm>
 #include <set>
 #include <map>
@@ -131,7 +130,8 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
     return safetensor_to_constant_map(safetensor);
 }
 
-// Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond to a layer name in the base model
+// Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond
+// to a layer name in the base model
 LoRAPartsParser default_lora_patterns () {
     return LoRAPartsParser(
         RegexParser("(.*)\\.alpha", 1),
@@ -140,7 +140,8 @@ LoRAPartsParser default_lora_patterns () {
     );
 }
 
-// Default LoRA tensor name patterns observed in the existing LoRA weights, captures the prefix that should correspond to a layer name in the base model
+// Default LoRA tensor name patterns observed in the existing LoRA weights, captures the prefix that should correspond
+// to a layer name in the base model. Example: https://hf-mirror.com/hfl/llama-3-chinese-8b-lora
 std::vector<RegexParser> default_lora_constant_patterns () {
     return {
         RegexParser("(.*).lm_head.weight", 0),
@@ -413,8 +414,8 @@ struct LoRAWeightStateGetter : public BaseStateGetter {
     LoRAWeightStateGetter (const LoRAParametersGetter& params_getter,
                            std::shared_ptr<ov::Model> model,
                            LoRAVarMap& variable_ids) :
-        params_getter(params_getter),
         BaseStateGetter(model),
+        params_getter(params_getter),
         variable_ids(variable_ids) {}
 
     std::optional<LoRANode> operator() (NodePtr node) const {
@@ -469,8 +470,8 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
     LoRAStateGetterForConst(const LoRAConstantGetter& getter,
                             std::shared_ptr<ov::Model> model,
                             std::map<std::string, ov::op::util::VariableInfo>& variable_ids) :
-        getter(getter), 
         BaseStateGetter(model),
+        getter(getter),
         variable_ids(variable_ids) {}
 
     std::optional<LoRAConstantNode> operator() (NodePtr node) const {
@@ -478,12 +479,11 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
         if (auto params = getter(name)) {
             // FIXME: Potential name conflict if LoRA is applied multiple times by using this infrastructure independently each time (not a recommended approach).
             // TODO: Check for name collisions searching for existing variables with the same names.
-            std::string variable_id_name = "lora_constant_" + std::to_string(model->get_sinks().size()) + "_" +name;
+            std::string variable_id_name = "lora_constant_" + std::to_string(model->get_sinks().size()) + "_" + name;
             LoRAConstantNode result;
-            ov::op::util::VariableInfo variable_info;
 
-            // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
-            variable_info = ov::op::util::VariableInfo{
+            // No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
+            ov::op::util::VariableInfo variable_info = ov::op::util::VariableInfo {
                 ov::Output<ov::Node>(*params, 0).get_shape(),
                 ov::Output<ov::Node>(*params, 0).get_element_type(),
                 variable_id_name
@@ -1185,7 +1185,7 @@ struct AdapterControllerImpl {
                     &adapter_impl->get_constant_tensors(),
                     config.get_tensor_name_prefix().value_or(""));
 
-                const_getter.push_back([this](const std::string& name) {
+                const_getter.push_back([const_getter_impl = this->const_getter_impl](const std::string& name) {
                     return (*const_getter_impl)(name);
                 });
             }
@@ -1401,8 +1401,6 @@ struct AdapterControllerImpl {
                 if (opt_lora_const && const_getter_impl) {
                     const_getter_impl->used_tensors.insert(const_name);
                 }
-
-                OPENVINO_ASSERT(!const_getter.empty(), "LoRA constant tensor not found for name: ", const_name);
 
                 auto constant_node = std::dynamic_pointer_cast<v0::Constant>(*opt_lora_const);
                 OPENVINO_ASSERT(constant_node, "Expected ov::op::v0::Constant for ", const_name);
@@ -1729,7 +1727,6 @@ AdapterConfig& AdapterConfig::add(const Adapter& adapter, float alpha) {
 
 
 AdapterConfig& AdapterConfig::add(const Adapter& adapter) {
-    int i = 0;
     return add(adapter, 1);
 }
 

@@ -15,7 +15,6 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-
 template <typename T>
 struct LoRAParts {
     T alpha, A, B;
