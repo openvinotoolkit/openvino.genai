@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <thread>
+#include <optional> 
 
 #include "openvino/genai/text_streamer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
@@ -200,9 +201,19 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_prepare_rotation_data_
 }
 
 GenerationHandle
-ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
+ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    ov::genai::GenerationConfig sampling_params) {
+    return add_request_with_token_type_ids(request_id, input_ids, sampling_params, std::nullopt);
+}
+
+GenerationHandle
+ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request_with_token_type_ids(uint64_t request_id,
                                                                const ov::Tensor& input_ids,
-                                                               ov::genai::GenerationConfig sampling_params) {
+                                                               ov::genai::GenerationConfig sampling_params,
+                                                               const std::optional<ov::Tensor>& token_type_ids) {
+    std::cout << "src/cpp/src/continuous_batching/pipeline_impl.cpp add_request\n";
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params.stop_token_ids.empty())
         sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
@@ -380,11 +391,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std:
         m_adapter_controller->apply(m_model_runner->get_infer_request(), adapters);
     }
 }
+std::vector<EncodedGenerationResult>
+ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    return generate(input_ids, sampling_params, streamer, std::nullopt);
+}
 
 std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
-                                                             const StreamerVariant& streamer) {
+                                                             const StreamerVariant& streamer,
+                                                             const std::optional<std::vector<ov::Tensor>>& token_type_ids) {
+    std::cout << "src/cpp/src/continuous_batching/pipeline_impl.cpp generate\n";
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
     generate_timer.start();
