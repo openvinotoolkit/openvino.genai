@@ -68,7 +68,7 @@ using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
 // Holds usual LoRA parameters alpha, A and B of a given type.
 using LoRANode = LoRAParts<std::shared_ptr<ov::Node>>;
-using LoRAConstantNode = std::shared_ptr<ov::Node>;
+using NodePtr = std::shared_ptr<ov::Node>;
 using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string& name)>>;
 
 // Converts Safetensors element type to OV element type. Only part of the types are supported.
@@ -172,7 +172,7 @@ LoRATensors group_lora_tensors(const ConstantMap& tensors, const LoRAPartsParser
     return result;
 }
 
-using LoRAConstantTensors = std::map<std::string, LoRAConstantNode>;
+using LoRAConstantTensors = std::map<std::string, NodePtr>;
 
 // Group constant tensors loaded from LoRA adapter file into constants
 LoRAConstantTensors group_lora_constant_tensors(const ConstantMap& tensors, const std::vector<RegexParser>& const_parsers) {
@@ -219,9 +219,9 @@ NodePtr unsqueeze (const ov::Output<ov::Node>& input, unsigned int rank) {
 
 
 using LoRAWeightGetter = std::function<std::optional<LoRANode>(const std::string&)>;
-using LoRAConstantGetter = std::function<std::optional<LoRAConstantNode>(const std::string&)>;
+using LoRAConstantGetter = std::function<std::optional<NodePtr>(const std::string&)>;
 using LoRAWeightByNodeGetter = std::function<std::optional<LoRANode>(NodePtr)>;
-using LoRAConstantByNodeGetter = std::function<std::optional<LoRAConstantNode>(NodePtr)>;
+using LoRAConstantByNodeGetter = std::function<std::optional<NodePtr>(NodePtr)>;
 
 
 // LoRA adapter parameters applied to a specific place in the model.
@@ -471,13 +471,13 @@ struct LoRAStateGetterForConst {
           getter(getter),
           variable_ids(variable_ids) {}
 
-    std::optional<LoRAConstantNode> operator() (NodePtr node) const {
+    std::optional<NodePtr> operator() (NodePtr node) const {
         std::string name = node->get_friendly_name();
         if (auto params = getter(name)) {
             // FIXME: Potential name conflict if LoRA is applied multiple times by using this infrastructure independently each time (not a recommended approach).
             // TODO: Check for name collisions searching for existing variables with the same names.
             std::string variable_id_name = "lora_constant_" + std::to_string(model->get_sinks().size()) + "_" + name;
-            LoRAConstantNode result;
+            NodePtr result;
 
             // No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             ov::op::util::VariableInfo variable_info = ov::op::util::VariableInfo {
@@ -584,7 +584,7 @@ public:
 
 protected:
     size_t applied = 0; // For debug statistics only
-    virtual bool apply(NodePtr node, const LoRAConstantNode& lora_weight) = 0;
+    virtual bool apply(NodePtr node, const NodePtr& lora_weight) = 0;
 };
 
 class LoRAReplaceConstantTransformStatic : public LoRAReplaceConstantTransform {
@@ -593,7 +593,7 @@ public:
         LoRAReplaceConstantTransform(getter) {}
 
 protected:
-    bool apply(NodePtr node, const LoRAConstantNode& lora_weight) override {
+    bool apply(NodePtr node, const NodePtr& lora_weight) override {
         ov::replace_node(node, lora_weight);
         return true;
     }
@@ -608,7 +608,7 @@ public:
 protected:
     NodePtr if_input;
 
-    bool apply(NodePtr node, const LoRAConstantNode& lora_weight) override {
+    bool apply(NodePtr node, const NodePtr& lora_weight) override {
         auto consumers = node->get_output_target_inputs(0);
         const auto node_type = node->get_element_type();
     
@@ -1164,7 +1164,7 @@ struct AdapterControllerImpl {
 
     // Stores the actual LoRA weight getter used for Constant tensor replacement
     // Needed to track which LoRA tensors were actually applied to suppress unused tensor warnings
-    std::shared_ptr<LoRAWeightGetterDefault<LoRAConstantNode, LoRAConstantNode>> const_getter_impl;
+    std::shared_ptr<LoRAWeightGetterDefault<NodePtr, NodePtr>> const_getter_impl;
 
     AdapterControllerImpl(std::shared_ptr<ov::Model> model, const AdapterConfig& config) :
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
@@ -1178,7 +1178,7 @@ struct AdapterControllerImpl {
             auto adapter_impl = get_adapter_impl(adapter);
             if (!adapter_impl->get_constant_tensors().empty()) {
                 OPENVINO_ASSERT(!const_getter, "OpenVINO.GenAI does not support several LoRA adapters with constants!");
-                const_getter_impl = std::make_shared<LoRAWeightGetterDefault<LoRAConstantNode, LoRAConstantNode>>(
+                const_getter_impl = std::make_shared<LoRAWeightGetterDefault<NodePtr, NodePtr>>(
                     &adapter_impl->get_constant_tensors(),
                     config.get_tensor_name_prefix().value_or(""));
 
@@ -1225,7 +1225,7 @@ struct AdapterControllerImpl {
             }
         };
 
-        auto const_replacement_getter = [const_getter](NodePtr node) -> std::optional<LoRAConstantNode> {
+        auto const_replacement_getter = [const_getter](NodePtr node) -> std::optional<NodePtr> {
             if (const_getter) {
                 return const_getter(node->get_friendly_name());
             } else {
@@ -1352,7 +1352,7 @@ struct AdapterControllerImpl {
             if (!adapter_impl->get_constant_tensors().empty()) {
                 OPENVINO_ASSERT(!const_getter,
                                 "OpenVINO.GenAI does not support several LoRA adapters with constants!");
-                const_getter = LoRAWeightGetterDefault<LoRAConstantNode, LoRAConstantNode>(
+                const_getter = LoRAWeightGetterDefault<NodePtr, NodePtr>(
                     &adapter_impl->get_constant_tensors(),
                     current_config.get_tensor_name_prefix().value_or(""));
             }
