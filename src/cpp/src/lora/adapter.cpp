@@ -1173,21 +1173,21 @@ struct AdapterControllerImpl {
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
         lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
     {
-        std::vector<LoRAConstantGetter> const_getter;
+        LoRAConstantGetter const_getter;
         LoRAParametersByWeightGetter params_getter;
         params_getter.type = ov::element::dynamic;
 
         for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
             if (!adapter_impl->get_constant_tensors().empty()) {
-                OPENVINO_ASSERT(const_getter.empty(), "OpenVINO.GenAI does not support several LoRA adapters with constants!");
+                OPENVINO_ASSERT(!const_getter, "OpenVINO.GenAI does not support several LoRA adapters with constants!");
                 const_getter_impl = std::make_shared<LoRAWeightGetterDefault<LoRAConstantNode, LoRAConstantNode>>(
                     &adapter_impl->get_constant_tensors(),
                     config.get_tensor_name_prefix().value_or(""));
 
-                const_getter.push_back([const_getter_impl = this->const_getter_impl](const std::string& name) {
+                const_getter = [const_getter_impl = this->const_getter_impl](const std::string& name) {
                     return (*const_getter_impl)(name);
-                });
+                };
             }
             params_getter.weight_getter.push_back(LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(), config.get_tensor_name_prefix().value_or("")));
             if(params_getter.type != ov::element::f32) {
@@ -1229,14 +1229,12 @@ struct AdapterControllerImpl {
         };
 
         auto const_replacement_getter = [&, this](NodePtr node) -> std::optional<LoRAConstantNode> {
-            if (!const_getter.empty()) {
-                auto functor = const_getter.front();
-                return functor(node->get_friendly_name());
+            if (const_getter) {
+                return const_getter(node->get_friendly_name());
             } else {
                 return std::nullopt;
             }
         };
-
 
         ov::pass::Manager pm;
         auto mode = current_config.get_mode();
@@ -1244,8 +1242,8 @@ struct AdapterControllerImpl {
             // State mode
             params_getter.dynamic_lora_rank = (mode != AdapterConfig::MODE_STATIC_RANK);
             pm.register_pass<LoRASeparateTransform>(LoRAWeightStateGetter(params_getter, model, variable_ids));
-            if (!const_getter.empty()) {
-                LoRAStateGetterForConst getter = LoRAStateGetterForConst(const_getter.front(), model, constant_variable_ids);
+            if (const_getter) {
+                LoRAStateGetterForConst getter = LoRAStateGetterForConst(const_getter, model, constant_variable_ids);
                 pm.register_pass<LoRAReplaceConstantTransformDynamic>(getter, getter.create_if_input());
             }
         } else if(mode == AdapterConfig::MODE_STATIC) {
@@ -1349,17 +1347,17 @@ struct AdapterControllerImpl {
         }
 
         std::vector<LoRAWeightGetter> weight_getters;
-        std::vector<LoRAConstantGetter> const_getter;
+        LoRAConstantGetter const_getter;
         const auto& adapters = current_config.get_adapters();
         weight_getters.reserve(adapters.size());
         for (const auto& adapter : adapters) {
             auto adapter_impl = get_adapter_impl(adapter);
             if (!adapter_impl->get_constant_tensors().empty()) {
-                OPENVINO_ASSERT(const_getter.empty(),
+                OPENVINO_ASSERT(!const_getter,
                                 "OpenVINO.GenAI does not support several LoRA adapters with constants!");
-                const_getter.push_back(LoRAWeightGetterDefault<LoRAConstantNode, LoRAConstantNode>(
+                const_getter = LoRAWeightGetterDefault<LoRAConstantNode, LoRAConstantNode>(
                     &adapter_impl->get_constant_tensors(),
-                    current_config.get_tensor_name_prefix().value_or("")));
+                    current_config.get_tensor_name_prefix().value_or(""));
             }
             weight_getters.emplace_back(
                 LoRAWeightGetterDefault<LoRAWeight, LoRANode>(&adapter_impl->get_tensors(),
@@ -1392,11 +1390,11 @@ struct AdapterControllerImpl {
 
             if (const_name.find("const") != std::string::npos) {  // if constant flag
                 ov::Tensor const_tensor(var_info.data_type, dynamic_to_static(var_info.data_shape));
-                const_tensor.data<bool>()[0] = !const_getter.empty();
+                const_tensor.data<bool>()[0] = static_cast<bool>(const_getter);
                 state[const_lora_index].set_state(const_tensor);
 
-            } else if (!const_getter.empty()) {
-                auto opt_lora_const = const_getter[0](const_name);
+            } else if (const_getter) {
+                auto opt_lora_const = const_getter(const_name);
 
                 if (opt_lora_const && const_getter_impl) {
                     const_getter_impl->used_tensors.insert(const_name);
