@@ -90,7 +90,7 @@ jobs:
     - uses: akashchi/openvino/.github/actions/openvino_provider@75bdb6309f4acbc6d133db45242a2cc3057b2d9e # TODO: switch back to OV master
       id: openvino_download
       with:
-        platform: manylinux_2_28
+        platform: almalinux8_x86_64
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
         revision: latest_available_commit
 
