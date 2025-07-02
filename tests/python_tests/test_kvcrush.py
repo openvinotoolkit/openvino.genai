@@ -4,6 +4,9 @@
 import sys
 import datasets
 import pytest
+import os
+import csv
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -34,39 +37,76 @@ def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
     return scheduler_config
 
 
-LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(
-    start_size=32, 
-    recent_size=128, 
-    max_cache_size=384, 
-    aggregation_mode=AggregationMode.NORM_SUM,
-    apply_rotation=False,
-    kvcrush_config=KVCrushConfig(budget=4, anchor_point_mode=KVCrushAnchorPointMode.MEAN)
-)
+# Define multiple cache eviction configurations for testing
+LONGBENCH_CACHE_EVICTION_CONFIGS = [
+    # Config 1: Default RANDOM mode
+    CacheEvictionConfig(
+        start_size=32, 
+        recent_size=128, 
+        max_cache_size=512, 
+        aggregation_mode=AggregationMode.NORM_SUM,
+        apply_rotation=False,
+        snapkv_window_size=1,
+        kvcrush_config=KVCrushConfig(budget=0)
+    ),
+    # Config 2: KVCrush(max_cache_size=480, budget=1, anchor_point_mode=MEAN)
+    CacheEvictionConfig(
+        start_size=32, 
+        recent_size=128, 
+        max_cache_size=448, 
+        aggregation_mode=AggregationMode.NORM_SUM,
+        apply_rotation=False,
+        snapkv_window_size=1,
+        kvcrush_config=KVCrushConfig(budget=2, anchor_point_mode=KVCrushAnchorPointMode.MEAN)
+    ),
+    # Config 3: KVCrush(max_cache_size=480, budget=1, anchor_point_mode=ALTERNATE)
+    CacheEvictionConfig(
+        start_size=32, 
+        recent_size=128, 
+        max_cache_size=448, 
+        aggregation_mode=AggregationMode.NORM_SUM,
+        apply_rotation=False,
+        snapkv_window_size=1,
+        kvcrush_config=KVCrushConfig(budget=2, anchor_point_mode=KVCrushAnchorPointMode.ALTERNATE)
+    ),
+    # Config 4: KVCrush(max_cache_size=480, budget=1, anchor_point_mode=RANDOM)
+    CacheEvictionConfig(
+        start_size=32, 
+        recent_size=128, 
+        max_cache_size=448, 
+        aggregation_mode=AggregationMode.NORM_SUM,
+        apply_rotation=False,
+        snapkv_window_size=1,
+        kvcrush_config=KVCrushConfig(budget=2, anchor_point_mode=KVCrushAnchorPointMode.RANDOM)
+    )
+]
 
 @dataclass
 class LongBenchTestData:
     subset: str
+    config_name: str
+    config_idx: int
 
 
-# @pytest.mark.nightly
-# @pytest.mark.parametrize("device", ["CPU"])
-# @pytest.mark.parametrize("test_struct", [
-#     LongBenchTestData("qmsum"),
-#     LongBenchTestData("qasper"),
-#     LongBenchTestData("samsum"),
-#     LongBenchTestData("repobench-p"),
-#     LongBenchTestData("hotpotqa"),
-#     LongBenchTestData("trec")
-# ])
 @pytest.mark.nightly
 @pytest.mark.parametrize("device", ["CPU"])
 @pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("qmsum"),
-    LongBenchTestData("qasper"),
-    LongBenchTestData("samsum"),
-    LongBenchTestData("repobench-p"),
-    LongBenchTestData("hotpotqa"),
-    LongBenchTestData("trec")
+    # Run each dataset with each configuration   
+
+    *[LongBenchTestData(subset="qasper", 
+                        config_name=f"Config{i+1}_{cfg.kvcrush_config.anchor_point_mode.name}_B{cfg.kvcrush_config.budget}", 
+                        config_idx=i)
+      for i, cfg in enumerate(LONGBENCH_CACHE_EVICTION_CONFIGS)],
+
+    *[LongBenchTestData(subset="samsum", 
+                        config_name=f"Config{i+1}_{cfg.kvcrush_config.anchor_point_mode.name}_B{cfg.kvcrush_config.budget}", 
+                        config_idx=i)
+      for i, cfg in enumerate(LONGBENCH_CACHE_EVICTION_CONFIGS)],
+    
+    *[LongBenchTestData(subset="trec", 
+                        config_name=f"Config{i+1}_{cfg.kvcrush_config.anchor_point_mode.name}_B{cfg.kvcrush_config.budget}", 
+                        config_idx=i)
+      for i, cfg in enumerate(LONGBENCH_CACHE_EVICTION_CONFIGS)],
 ])
 def test_optimized_generation_longbench(device, test_struct):
     seqs_per_request = 32
@@ -78,7 +118,14 @@ def test_optimized_generation_longbench(device, test_struct):
     scheduler_config_opt = get_scheduler_config(num_kv_blocks)
     scheduler_config_opt.use_cache_eviction = True
     if scheduler_config_opt.use_cache_eviction:
-        scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+        # Use the specified configuration
+        scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIGS[test_struct.config_idx]
+    
+    print(f"\n\n========================================")
+    print(f"Running test with {test_struct.config_name} on {test_struct.subset} dataset")
+    print(f"KVCrush mode: {LONGBENCH_CACHE_EVICTION_CONFIGS[test_struct.config_idx].kvcrush_config.anchor_point_mode.name}")
+    print(f"KVCrush budget: {LONGBENCH_CACHE_EVICTION_CONFIGS[test_struct.config_idx].kvcrush_config.budget}")
+    print(f"========================================\n")
 
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
@@ -128,12 +175,38 @@ def test_optimized_generation_longbench(device, test_struct):
     max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
     avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
     print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
+    
+    # Save results to CSV
+    os.makedirs("results", exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    result_file = f"results/kvcrush_results.csv"
+    file_exists = os.path.isfile(result_file)
+    
+    with open(result_file, 'a', newline='') as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(['Timestamp', 'Subset', 'Config', 'Mode', 'Budget', 'Score', 'RefScore', 
+                            'MaxCacheUsage', 'AvgCacheUsage', 'MaxOptRatio', 'AvgOptRatio', 'ScoreDiff'])
+        
+        config = LONGBENCH_CACHE_EVICTION_CONFIGS[test_struct.config_idx]
+        writer.writerow([
+            timestamp,
+            subset,
+            test_struct.config_name,
+            config.kvcrush_config.anchor_point_mode.name,
+            config.kvcrush_config.budget,
+            score,
+            ref_score,
+            pipeline_opt_metrics.max_cache_usage,
+            pipeline_opt_metrics.avg_cache_usage,
+            max_optimization_ratio,
+            avg_optimization_ratio,
+            ref_score - score
+        ])
+    
+    print(f"Results saved to {result_file}")
 
     del model_cb_opt
     del model_cb_noopt
     import gc
     gc.collect()
-
-    # assert ref_score - score <= test_struct.threshold
-    # assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
-    # assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio

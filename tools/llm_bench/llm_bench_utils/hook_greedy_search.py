@@ -17,7 +17,7 @@ from transformers.generation.stopping_criteria import (
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
-import llm_bench_utils.hook_sample as hook_sample
+import llm_bench_utils.llm_hook_sample.hook_sample as hook_sample
 from packaging import version
 
 
@@ -379,14 +379,17 @@ class GreedySearchHook:
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
         trans_version = version.parse(transformers.__version__)
-        if trans_version >= version.parse('4.51.0'):
-            import llm_bench_utils.hook_sample_v51 as hook_sample_v51
+        if trans_version >= version.parse('4.52.0'):
+            import llm_bench_utils.llm_hook_sample.hook_sample_v52 as hook_sample_v52
+            model._sample = hook_sample_v52.new_sample.__get__(model, model.__class__)
+        elif trans_version >= version.parse('4.51.0'):
+            import llm_bench_utils.llm_hook_sample.hook_sample_v51 as hook_sample_v51
             model._sample = hook_sample_v51.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.45.0'):
-            import llm_bench_utils.hook_sample_v45 as hook_sample_v45
+            import llm_bench_utils.llm_hook_sample.hook_sample_v45 as hook_sample_v45
             model._sample = hook_sample_v45.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.43.0'):
-            import llm_bench_utils.hook_sample_v43 as hook_sample_v43
+            import llm_bench_utils.llm_hook_sample.hook_sample_v43 as hook_sample_v43
             model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)
         else:
             model._sample = hook_sample.new_sample.__get__(model, model.__class__) 

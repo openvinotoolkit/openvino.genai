@@ -109,6 +109,9 @@
 - 'samples/python/rag/**/*'
 - 'tests/python_tests/samples/test_text_embedding_pipeline.py'
 
+'category: structured output generation':
+- 'src/cpp/src/sampling/structured_output/*'
+
 'category: whisper':
 - 'src/cpp/include/openvino/genai/whisper_generation_config.hpp'
 - 'src/cpp/include/openvino/genai/whisper_pipeline.hpp'
@@ -123,6 +126,14 @@
 - 'src/cpp/src/image_generation/**/*'
 - 'src/python/py_image_generation_models.cpp'
 - 'src/python/py_image_generation_pipelines.cpp'
+
+'category: speech generation':
+- 'src/include/openvino/genai/speech_generation/**/*'
+- 'src/cpp/src/speech_generation/**/*'
+- 'src/python/py_speech_generation.cpp'
+- 'samples/cpp/speech_generation/**/*'
+- 'samples/python/speech_generation/**/*'
+- 'tests/python_tests/samples/test_text2speech.py'
 
 'category: speculative decoding':
 - 'src/cpp/src/speculative_decoding/**/*'
@@ -157,6 +168,10 @@
 
 'category: GGUF':
 - 'src/cpp/src/gguf_utils/**/*'
+
+'category: Structured Output samples':
+- 'samples/python/text_generation/structured_output_generation.py'
+- 'tests/python_tests/samples/test_structured_output_sample.py'
 
 'category: cmake / build':
 - 'cmake/**/*'

@@ -491,9 +491,10 @@ int main(int argc, char* argv[]) try {
         scheduler_config.cache_eviction_config =
             ov::genai::CacheEvictionConfig(32,
                                            32,
-                                           128,
+                                           672,
                                            ov::genai::AggregationMode::NORM_SUM,
                                            false,
+                                           8,
                                            ov::genai::KVCrushConfig(256, ov::genai::KVCrushAnchorPointMode::MEAN));
     }
 

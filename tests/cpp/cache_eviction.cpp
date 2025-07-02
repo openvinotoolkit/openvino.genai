@@ -14,11 +14,11 @@ using ov::genai::KVCrushAnchorPointMode;
 using ov::genai::KVCrushConfig;
 
 const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG =
-    {32, 32, 192, ov::genai::AggregationMode::NORM_SUM, false, KVCrushConfig(0, KVCrushAnchorPointMode::MEAN)};
+    {32, 32, 192, ov::genai::AggregationMode::NORM_SUM, false, 8, KVCrushConfig(0, KVCrushAnchorPointMode::MEAN)};
 const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG =
-    {32, 32, 72, ov::genai::AggregationMode::NORM_SUM, false, KVCrushConfig(0, KVCrushAnchorPointMode::MEAN)};
+    {32, 32, 72, ov::genai::AggregationMode::NORM_SUM, false, 8, KVCrushConfig(0, KVCrushAnchorPointMode::MEAN)};
 const ov::genai::CacheEvictionConfig KVCRUSH_CACHE_EVICTION_CONFIG =
-    {32, 32, 192, ov::genai::AggregationMode::NORM_SUM, false, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)};
+    {32, 32, 192, ov::genai::AggregationMode::NORM_SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)};
 
 constexpr size_t DEFAULT_BLOCK_SIZE = 4;
 constexpr size_t DEFAULT_NUM_DECODER_LAYERS = 2;
@@ -26,7 +26,7 @@ constexpr size_t DEFAULT_NUM_DECODER_LAYERS = 2;
 class DefaultCacheEvictionAlgoTest : public testing::Test {
 protected:
     DefaultCacheEvictionAlgoTest() {
-        algo = ov::genai::CacheEvictionAlgorithm(eviction_config, block_size, num_decoder_layers);
+        algo = ov::genai::CacheEvictionAlgorithm(eviction_config, block_size, num_decoder_layers, /* max_pool_window_size = */ 1);
     }
     size_t block_size = DEFAULT_BLOCK_SIZE;
     size_t num_decoder_layers = DEFAULT_NUM_DECODER_LAYERS;
@@ -131,7 +131,7 @@ using CacheEvictionAlgoConfigurationTest = ::testing::TestWithParam<size_t>;
 
 TEST_P(CacheEvictionAlgoConfigurationTest, EvictedBlocksAreLayeredAsConfigured) {
     size_t ref_num_layers = GetParam();
-    auto algo = ov::genai::CacheEvictionAlgorithm(DEFAULT_CACHE_EVICTION_CONFIG, DEFAULT_BLOCK_SIZE, ref_num_layers);
+    auto algo = ov::genai::CacheEvictionAlgorithm(DEFAULT_CACHE_EVICTION_CONFIG, DEFAULT_BLOCK_SIZE, ref_num_layers, /* max_pool_window_size = */ 1);
     auto blocks_to_evict = algo.evict_logical_blocks();
     ASSERT_EQ(blocks_to_evict.size(), ref_num_layers);
 }
@@ -250,7 +250,7 @@ const std::vector<LowScoreBlocksTestStruct> LOW_SCORE_BLOCK_EVICTION_TEST_CASES 
 TEST_P(CacheEvictionLowScoreBlocksParameterizedTest, EvictsLowestScoredBlocks) {
     auto test_struct = GetParam();
     size_t num_decoder_layers = DEFAULT_NUM_DECODER_LAYERS;
-    auto algo = ov::genai::CacheEvictionAlgorithm(test_struct.eviction_config, DEFAULT_BLOCK_SIZE, num_decoder_layers);
+    auto algo = ov::genai::CacheEvictionAlgorithm(test_struct.eviction_config, DEFAULT_BLOCK_SIZE, num_decoder_layers, /* max_pool_window_size = */ 1);
     std::vector<std::set<size_t>> ref_lowest_scored_block_indices = test_struct.zero_filled_blocks;
     ASSERT_EQ(ref_lowest_scored_block_indices.size(), num_decoder_layers);
 
@@ -336,7 +336,7 @@ TEST_P(CacheEvictionNormalizationSettingTest, TokenLifetimeNormalizationHasEffec
     config.aggregation_mode = test_struct.normalization_mode;
 
     const size_t NUM_DECODER_LAYERS = 1;
-    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS);
+    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS, /* max_pool_window_size = */ 1);
     auto scores = get_mock_scores(NUM_DECODER_LAYERS, algo.get_max_cache_size_after_eviction() + BLOCKS_TO_EVICT * DEFAULT_BLOCK_SIZE);
     for (auto& scores_per_layer : scores) {
         const size_t SCORES_SIZE = scores_per_layer.get_size();
@@ -398,7 +398,7 @@ TEST_P(CacheEvictionConfigModeCommonBehaviour, ScoresAreAccumulated) {
     auto config = DEFAULT_CACHE_EVICTION_CONFIG;
     config.aggregation_mode = aggregation_mode;
     const size_t NUM_DECODER_LAYERS = 1;
-    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS);
+    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS, /* max_pool_window_size = */ 1);
 
     auto scores_phase_1 = get_mock_scores(NUM_DECODER_LAYERS, algo.get_max_cache_size_after_eviction() + BLOCKS_TO_EVICT * DEFAULT_BLOCK_SIZE);
     for (auto& scores_per_layer : scores_phase_1) {
@@ -443,6 +443,7 @@ struct CacheEvictionConfigInitParamsForTest {
     size_t start_size;
     size_t recent_size;
     size_t max_cache_size;
+    size_t snapkv_window_size;
     size_t kvcrush_budget;
 };
 
@@ -450,12 +451,15 @@ using CacheEvictionConfigInitializationTest = ::testing::TestWithParam<CacheEvic
 
 const std::vector<CacheEvictionConfigInitParamsForTest> INVALID_CONFIG_INIT_PARAMS_CASES = {
         // zero area sizes
-        {32, 32, 64, 10},
-        {0, 13, 39, 10},
-        {128, 0, 384, 10},
+        {32, 32, 64, 8, 10},
+        {0, 13, 39, 1, 10},
+        {128, 0, 384, 7, 10},
 
         // max_cache_size less than start_size + recent_size
         {32, 64, 32, 10},
+
+        // zero snapkv window
+        {32, 32, 256, 0},
 };
 
 TEST_P(CacheEvictionConfigInitializationTest, ThrowsForInvalidConfigParams) {
@@ -463,8 +467,7 @@ TEST_P(CacheEvictionConfigInitializationTest, ThrowsForInvalidConfigParams) {
     EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size,
                                                 params.recent_size,
                                                 params.max_cache_size,
-                                                ov::genai::AggregationMode::NORM_SUM,
-                                                false,
+                                                ov::genai::AggregationMode::NORM_SUM, /* apply_rotation = */ false, params.snapkv_window_size,
                                                 KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)),
                  ov::Exception);
 }
@@ -482,18 +485,21 @@ using CacheEvictionAlgoInitializationTest = ::testing::TestWithParam<CacheEvicti
 
 const std::vector<CacheEvictionAlgoInitParamsForTest> INVALID_ALGO_INIT_PARAMS_CASES = {
     // area sizes not multiple of block size
-    {{32, 32, 97, ov::genai::AggregationMode::SUM, false, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)}, 16, 8},
-    {{11, 13, 50, ov::genai::AggregationMode::NORM_SUM, false, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)}, 13, 1},
-    {{128, 200, 584, ov::genai::AggregationMode::NORM_SUM, false, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)},
+    {{32, 32, 97, ov::genai::AggregationMode::SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)}, 16, 8},
+    {{11, 13, 50, ov::genai::AggregationMode::NORM_SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)},
+     13,
+     1},
+    {{128, 200, 584, ov::genai::AggregationMode::NORM_SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)},
      128,
      19},
 
     // zero decoder layers
-    {{32, 64, 192, ov::genai::AggregationMode::SUM, false, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)}, 32, 0},
+    {{32, 64, 192, ov::genai::AggregationMode::SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)}, 32, 0},
 };
+
 TEST_P(CacheEvictionAlgoInitializationTest, ThrowsForInvalidConfigs) {
     auto params = GetParam();
-    EXPECT_THROW(ov::genai::CacheEvictionAlgorithm(params.config, params.block_size, params.num_decoder_layers), ov::Exception);
+    EXPECT_THROW(ov::genai::CacheEvictionAlgorithm(params.config, params.block_size, params.num_decoder_layers, /* max_pool_window_size = */ 1), ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionAlgoInitializationTest,
