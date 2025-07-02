@@ -378,12 +378,8 @@ void deduce_input_output_dims(NodePtr node, ov::Dimension& input_dim, ov::Dimens
 
 using LoRAVarMap = std::map<std::string, LoRAVarIDs>;
 
-struct BaseStateGetter {
-    std::shared_ptr<ov::Model> model;
-
-    BaseStateGetter(std::shared_ptr<ov::Model> model) : model(model) {}
-
-    NodePtr add_variable(const ov::op::util::VariableInfo& variable_info) const {
+namespace {
+        NodePtr add_variable(const ov::op::util::VariableInfo& variable_info, std::shared_ptr<ov::Model> model) {
         auto variable = std::make_shared<ov::op::util::Variable>(variable_info);
         model->add_variables({variable});
         #if 0
@@ -401,22 +397,22 @@ struct BaseStateGetter {
         model->add_sinks({std::make_shared<v6::Assign>(read_value, variable)});  // FIXME: Required? -- Yes, create ticket against CPU
         return read_value;
     }
-};
-
+}
 
 // Creates ReadValue and Assign nodes to inject LoRA tensors as variables for a given node but
 // doesn't connect them to the model returning as LoRANode instance.
-struct LoRAWeightStateGetter : public BaseStateGetter {
+struct LoRAWeightStateGetter {
+    std::shared_ptr<ov::Model> model;
     LoRAParametersGetter params_getter;
     LoRAVarMap& variable_ids;
     // TODO: Use variable indices instead of variable_id for faster search for a state tensor
 
-    LoRAWeightStateGetter (const LoRAParametersGetter& params_getter,
-                           std::shared_ptr<ov::Model> model,
-                           LoRAVarMap& variable_ids) :
-        BaseStateGetter(model),
-        params_getter(params_getter),
-        variable_ids(variable_ids) {}
+    LoRAWeightStateGetter(const LoRAParametersGetter& params_getter,
+                          std::shared_ptr<ov::Model> model,
+                          LoRAVarMap& variable_ids)
+        : model(model),
+          params_getter(params_getter),
+          variable_ids(variable_ids) {}
 
     std::optional<LoRANode> operator() (NodePtr node) const {
         if(auto params = params_getter(node)) {
@@ -437,7 +433,7 @@ struct LoRAWeightStateGetter : public BaseStateGetter {
                 params->type,
                 variable_id_prefix + ".A"
             };
-            result.A = add_variable(var_ids.A);
+            result.A = add_variable(var_ids.A, model);
             // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             //indices.A = model->get_variables().size();
             var_ids.alpha = ov::op::util::VariableInfo{
@@ -445,7 +441,7 @@ struct LoRAWeightStateGetter : public BaseStateGetter {
                 ov::element::f32,   // alpha is always f32 because it is set from host as float data type
                 variable_id_prefix + ".alpha"
             };
-            result.alpha = add_variable(var_ids.alpha);
+            result.alpha = add_variable(var_ids.alpha, model);
             // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             //indices.B = model->get_variables().size();
             var_ids.B = ov::op::util::VariableInfo{
@@ -453,7 +449,7 @@ struct LoRAWeightStateGetter : public BaseStateGetter {
                 params->type,
                 variable_id_prefix + ".B"
             };
-            result.B = add_variable(var_ids.B);
+            result.B = add_variable(var_ids.B, model);
             variable_ids.emplace(name, var_ids);
             return result;
         } else {
@@ -462,17 +458,18 @@ struct LoRAWeightStateGetter : public BaseStateGetter {
     }
 };
 
-struct LoRAStateGetterForConst : public BaseStateGetter {
+struct LoRAStateGetterForConst {
+    std::shared_ptr<ov::Model> model;
     LoRAConstantGetter getter;
     std::map<std::string, ov::op::util::VariableInfo>& variable_ids;
     const std::string if_variable_id = "lora_state_0_replace_orig_constant";
 
     LoRAStateGetterForConst(const LoRAConstantGetter& getter,
                             std::shared_ptr<ov::Model> model,
-                            std::map<std::string, ov::op::util::VariableInfo>& variable_ids) :
-        BaseStateGetter(model),
-        getter(getter),
-        variable_ids(variable_ids) {}
+                            std::map<std::string, ov::op::util::VariableInfo>& variable_ids)
+        : model(model),
+          getter(getter),
+          variable_ids(variable_ids) {}
 
     std::optional<LoRAConstantNode> operator() (NodePtr node) const {
         std::string name = node->get_friendly_name();
@@ -488,7 +485,7 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
                 ov::Output<ov::Node>(*params, 0).get_element_type(),
                 variable_id_name
             };
-            result = add_variable(variable_info);
+            result = add_variable(variable_info, model);
             variable_ids.emplace(name, variable_info);
 
             return result;
@@ -504,7 +501,7 @@ struct LoRAStateGetterForConst : public BaseStateGetter {
             if_variable_id
         };
         variable_ids.emplace(if_variable_id, variable_info);
-        auto result_tensor = add_variable(variable_info);
+        auto result_tensor = add_variable(variable_info, model);
         return result_tensor;
     }
 };
@@ -1228,7 +1225,7 @@ struct AdapterControllerImpl {
             }
         };
 
-        auto const_replacement_getter = [&, this](NodePtr node) -> std::optional<LoRAConstantNode> {
+        auto const_replacement_getter = [const_getter](NodePtr node) -> std::optional<LoRAConstantNode> {
             if (const_getter) {
                 return const_getter(node->get_friendly_name());
             } else {
