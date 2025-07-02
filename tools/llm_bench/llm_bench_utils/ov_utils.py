@@ -130,7 +130,9 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, **kwargs)
+
         log.info("Selected Optimum Intel for benchmarking")
+        ov_config.pop("ATTENTION_BACKEND", None)
         remote_code = False
         try:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
@@ -167,13 +169,11 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
 def get_scheduler_config_genai(user_config, config_name="CB config"):
     import openvino_genai
 
-    default_cb_config = {"cache_size": 1}
     scheduler_config = openvino_genai.SchedulerConfig()
-    scheduler_params = user_config or default_cb_config
-    if scheduler_params:
-        log.info(f"Scheduler parameters for {config_name}:\n{scheduler_params}")
+    if user_config:
+        log.info(f"Scheduler parameters for {config_name}:\n{user_config}")
 
-        for param, value in scheduler_params.items():
+        for param, value in user_config.items():
             setattr(scheduler_config, param, value)
 
     return scheduler_config
@@ -191,11 +191,9 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, *
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     draft_model_path = kwargs.get("draft_model", '')
-    cb = kwargs.get("use_cb", False)
     cb_config = kwargs.get("cb_config")
     use_streamer_metrics = False
-    if cb or cb_config is not None or draft_model_path:
-        log.info("Continuous Batching mode activated")
+    if cb_config is not None:
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
         version = get_version_in_format_to_pars(openvino_genai.get_version())
@@ -539,7 +537,7 @@ def create_speech_2_txt_model(model_path, device, memory_monitor, **kwargs):
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type]]:
-                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
+                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default benchmarking")
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_speech_2_txt_model(model_path, device, memory_monitor, **kwargs)
@@ -599,10 +597,8 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
 
     processor_config = get_vlm_processor(model_path)
 
-    cb = kwargs.get("use_cb", False)
     cb_config = kwargs.get("cb_config")
-    if cb or cb_config is not None:
-        log.info("Continuous Batching mode activated")
+    if cb_config is not None:
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
     if kwargs.get("mem_consumption"):
@@ -617,6 +613,122 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
     return llm_pipe, processor_config, end - start, None, True
+
+
+def create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs):
+    import openvino_genai
+
+    pooling_type = kwargs.get("emb_pooling_type")
+    max_length = kwargs.get("emb_max_length")
+    normalize = kwargs.get("emb_normalize", False)
+
+    config = openvino_genai.TextEmbeddingPipeline.Config()
+    if pooling_type is not None:
+        if pooling_type == "mean":
+            config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN
+        else:
+            config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
+    if max_length is not None:
+        config.max_length = max_length
+    if normalize:
+        config.normalize = normalize
+    ov_config = kwargs['config']
+
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
+    start = time.perf_counter()
+
+    pipe = openvino_genai.TextEmbeddingPipeline(model_path, device.upper(), config, **ov_config)
+
+    end = time.perf_counter()
+
+    log.info("Selected OpenVINO GenAI for benchmarking")
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for copmpilation phase')
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+    except Exception:
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    return pipe, tokenizer, end - start, None, True
+
+
+def create_text_embeddings_model(model_path, device, memory_monitor, **kwargs):
+    model_path = Path(model_path)
+    if model_path.name.endswith('xml'):
+        model_path = model_path.parents[2]
+
+    ov_config = kwargs['config']
+
+    model_path_existed = Path(model_path).exists()
+    # load model
+    if not model_path_existed:
+        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+
+    trust_remote_code = False
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+    except Exception:
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        trust_remote_code = True
+    if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+        try:
+            return create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs)
+        except Exception as exp:
+            log.warning(
+                f"Model is not supported by OpenVINO GenAI. "
+                f"GenAI pipeline loading failed with following error: {exp}"
+                "Benchmark will be switched to Optimum Intel pipeline realization"
+            )
+
+        log.info("Selected Optimum Intel for benchmarking")
+    model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
+    start = time.perf_counter()
+    ov_model = model_class.from_pretrained(
+        model_path,
+        device=device,
+        ov_config=ov_config,
+        trust_remote_code=trust_remote_code
+    )
+    end = time.perf_counter()
+    pooling_type = kwargs.get("emb_pooling_type", "cls")
+    normalize = kwargs.get("emb_normalize", False)
+
+    ov_model._embed_forward = ov_model.forward
+
+    def forward_with_pooling(self, input_ids, attention_mask, token_type_ids=None, **kwargs):
+        import torch
+        outputs = self._embed_forward(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, **kwargs)
+        token_embeddings = outputs.last_hidden_state
+        if pooling_type == "cls":
+            out_embd = token_embeddings[:, 0]
+        else:
+            input_mask_expanded = (
+                attention_mask.unsqueeze(-1).expand(token_embeddings.size()).to(token_embeddings.dtype)
+            )
+            sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+            sum_mask = input_mask_expanded.sum(1)
+
+            sum_mask = torch.clamp(sum_mask, min=1e-9)
+
+            out_embd = sum_embeddings / sum_mask
+        if normalize:
+            out_embd = torch.nn.functional.normalize(out_embd, p=2, dim=1)
+
+        return out_embd
+
+    ov_model.forward = types.MethodType(forward_with_pooling, ov_model)
+
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for copmpilation phase')
+    bench_hook = get_bench_hook(1, ov_model, embed=True)
+    from_pretrained_time = end - start
+    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    return ov_model, tokenizer, from_pretrained_time, bench_hook, False
 
 
 def create_image_text_gen_model(model_path, device, memory_monitor, **kwargs):
@@ -649,6 +761,7 @@ def create_image_text_gen_model(model_path, device, memory_monitor, **kwargs):
                 )
 
         log.info("Selected Optimum Intel for benchmarking")
+        ov_config.pop("ATTENTION_BACKEND", None)
         model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
         if kwargs.get("mem_consumption"):
             memory_monitor.start()

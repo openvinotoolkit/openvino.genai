@@ -110,12 +110,18 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
 
 class TextSimilarity:
     def __init__(self, model_id) -> None:
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        trust_remote_code = False
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=False)
+        except Exception:
+            trust_remote_code = True
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+
         if hasattr(tokenizer, "pad_token") and tokenizer.pad_token:
             pad_token = tokenizer.pad_token
         else:
             pad_token = tokenizer.eos_token
-        self.model = SentenceTransformer(model_id, tokenizer_kwargs={"pad_token": pad_token}, trust_remote_code=True)
+        self.model = SentenceTransformer(model_id, tokenizer_kwargs={"pad_token": pad_token}, trust_remote_code=trust_remote_code)
 
     def evaluate(self, gt, prediction):
         return evaluate_similarity(self.model, gt, prediction)

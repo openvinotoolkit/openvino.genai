@@ -343,6 +343,10 @@ void StatefulLLMPipeline::finish_chat() {
     m_history.clear();
 };
 
+StatefulLLMPipeline::~StatefulLLMPipeline() {
+    m_request.get_compiled_model().release_memory();
+}
+
 std::unique_ptr<LLMPipelineImplBase>
 LLMPipelineFactory::create(const std::filesystem::path& models_path,
                            const ov::AnyMap& config) {
@@ -375,6 +379,7 @@ LLMPipelineFactory::create(const std::filesystem::path& models_path,
     }
     OPENVINO_ASSERT(false);
 }
+
 
 }  // namespace static_llm
 }  // namespace genai

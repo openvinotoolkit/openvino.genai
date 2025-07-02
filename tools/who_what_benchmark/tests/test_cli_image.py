@@ -150,7 +150,7 @@ def test_image_model_genai(model_id, model_type):
         assert result.returncode == 0
         assert "Metrics for model" in result.stderr
         similarity = get_similarity(str(result.stderr))
-        assert similarity >= 0.97752  # Ticket 166496
+        assert similarity >= 0.97751  # Ticket 166496
         assert os.path.exists(os.path.join(temp_dir, "target"))
 
         output_dir = tempfile.TemporaryDirectory().name

@@ -255,12 +255,94 @@ std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
     };
 }
 
-//std::tuple<Output<Node>, std::vector<std::shared_ptr<VariableState>>, std::pair<Output<Node>, Output<Node>>, Output<Node>>
+
+ov::Output<ov::Node> make_rms_norm_qwen3(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& weights,
+    float rms_norm_eps) {
+    auto eps_node = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1,1,1,1}, rms_norm_eps);
+    auto square = std::make_shared<ov::op::v1::Power>(
+        input, 
+        std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{}, 2.0f));
+    
+    auto variance = std::make_shared<ov::op::v1::ReduceMean>(
+        square, 
+        std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{1}, -1),
+        true);
+
+    auto add_eps = std::make_shared<ov::op::v1::Add>(variance, eps_node);
+    auto sqrt_node = std::make_shared<ov::op::v0::Sqrt>(add_eps);
+    auto reciprocal = std::make_shared<ov::op::v1::Divide>(
+        std::make_shared<ov::op::v0::Constant>(
+            ov::element::f32, ov::Shape{}, 1.0f),
+        sqrt_node);
+
+    std::shared_ptr<ov::Node> mul = std::make_shared<ov::op::v1::Multiply>(
+        reciprocal, input, AutoBroadcastType::NUMPY);
+
+    auto weight_tensor = weights.at(key + ".weight");
+    // Check if all elements are 1.0
+    bool all_ones = true;
+    if (weight_tensor.get_element_type() == ov::element::f32) {
+        const float* data = weight_tensor.data<float>();
+        for (size_t i = 0; i < weight_tensor.get_size(); ++i) {
+            if (data[i] != 1.0f) {
+                all_ones = false;
+                break;
+            }
+        }
+    } else if (weight_tensor.get_element_type() == ov::element::f16) {
+        const uint16_t* data = weight_tensor.data<uint16_t>();
+        const uint16_t one_in_fp16 = 0x3C00;
+        for (size_t i = 0; i < weight_tensor.get_size(); ++i) {
+            if (data[i] != one_in_fp16) {
+                all_ones = false;
+                break;
+            }
+        }
+    } else {
+        OPENVINO_THROW("Unsupported weight type ", weight_tensor.get_element_type());
+    }
+
+    if (!all_ones) {
+        weight_tensor.set_shape(ov::Shape{1, 1, 1, weight_tensor.get_shape()[0]});
+        auto weights_const = std::make_shared<ov::op::v0::Constant>(weight_tensor);
+        auto weights_f32 = std::make_shared<ov::op::v0::Convert>(weights_const, ov::element::f32);
+        mul = std::make_shared<ov::op::v1::Multiply>(mul, weights_f32, AutoBroadcastType::NUMPY);
+    }
+
+    return mul;
+}
+
+// Helper function to split heads
+// There are q_norm k_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built, if not it will go to else branch.
+std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
+                                            int num_h,
+                                            int  head_dim,
+                                            float rms_norm_eps,
+                                            const std::string& key,
+                                            const std::unordered_map<std::string, ov::Tensor>& weights) {
+    auto shape = std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, 0, num_h, head_dim});
+    auto reshaped = std::make_shared<v1::Reshape>(x, shape, true);
+    if (weights.count(key + ".weight")) { //Qwen3 rms_norm
+        auto mul = make_rms_norm_qwen3(key, reshaped, weights, rms_norm_eps);
+        auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
+        
+        return std::make_shared<v1::Transpose>(mul, transpose_order);
+    } else { //none-Qwen3 architecture
+        auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
+        return std::make_shared<v1::Transpose>(reshaped, transpose_order);
+    } 
+};
+
 std::tuple<Output<Node>, ov::SinkVector, std::pair<Output<Node>, Output<Node>>, Output<Node>>
 multi_head_attention(
     const Output<Node>& query,
     const Output<Node>& key,
     const Output<Node>& value,
+    const std::string& key_name,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
     const std::map<std::string, GGUFMetaData>& configs,
     const Output<Node>& batch_dim,
     int layer_idx,
@@ -276,19 +358,13 @@ multi_head_attention(
     int num_heads = std::get<int>(configs.at("head_num"));
     int head_dim = std::get<int>(configs.at("head_size"));
     int num_heads_kv = std::get<int>(configs.at("head_num_kv"));
-
-    // Helper function to split heads
-    auto split_heads = [&](const Output<Node>& x, int num_h) {
-        auto shape = std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, 0, num_h, head_dim});
-        auto reshaped = std::make_shared<v1::Reshape>(x, shape, true);
-        auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
-        return std::make_shared<v1::Transpose>(reshaped, transpose_order);
-    };
-
+    float rms_norm_eps = std::get<float>(configs.at("rms_norm_eps"));
+    
     // 1. Split heads
-    auto q_split = split_heads(query, num_heads);
-    auto k_split = split_heads(key, num_heads_kv);
-    auto v_split = split_heads(value, num_heads_kv);
+    // There are q_norm k_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built.
+    auto q_split = split_heads(query, num_heads, head_dim, rms_norm_eps, key_name + ".self_attn.q_norm", consts);
+    auto k_split = split_heads(key, num_heads_kv, head_dim, rms_norm_eps, key_name  + ".self_attn.k_norm", consts);
+    auto v_split = split_heads(value, num_heads_kv, head_dim, rms_norm_eps, key_name + ".self_attn.v_norm", consts);
 
     // 2. Apply rotary embeddings
     Output<Node> cos, sin;
@@ -830,7 +906,7 @@ std::tuple<ov::Output<ov::Node>,
         qtypes.at(layer_prefix + ".self_attn.q_proj.qtype"),
         reorder,
         std::get<int>(configs.at("head_size")));
-
+    
     auto k = make_fc(
         layer_prefix + ".self_attn.k_proj",
         input_layernorm,
@@ -863,6 +939,8 @@ std::tuple<ov::Output<ov::Node>,
     // Multi-head attention
     auto [attn_output, sinks, new_cos_sin, new_causal_mask] = multi_head_attention(
         q, k, v,
+        layer_prefix,
+        consts,
         configs,
         batch_dim,
         layer_idx,

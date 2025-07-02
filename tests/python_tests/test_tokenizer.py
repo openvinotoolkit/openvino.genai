@@ -320,9 +320,10 @@ def hf_ov_genai_models(request, tmp_path_factory):
     model_dir.mkdir(exist_ok=True, parents=True)
 
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_args)
-    convert_and_save_tokenizer(hf_tokenizer, model_dir)
-    genai_tokenzier = Tokenizer(model_dir)
-    return hf_tokenizer, genai_tokenzier
+    convert_args = {"number_of_inputs": hf_args.pop("number_of_inputs")} if "number_of_inputs" in hf_args else {}
+    convert_and_save_tokenizer(hf_tokenizer, model_dir, **convert_args)
+    genai_tokenizer = Tokenizer(model_dir)
+    return hf_tokenizer, genai_tokenizer
 
 
 prompts = [
@@ -379,10 +380,12 @@ def test_padding(
     # which cannot store irregular/ragged array.
     # Therefore, for default mode truncation=True.
     # For the same reason runcation is always applied.
+    # Truncate only if max_length is set.
+    is_max_len_set = max_length is not None
     hf_pad_params_map = {
-        None: {"padding": "longest", "truncation": True},
-        False: {"padding": "longest", "truncation": True},
-        True: {"padding": "max_length", "truncation": True},
+        None: {"padding": "longest", "truncation": is_max_len_set},
+        False: {"padding": "longest", "truncation": is_max_len_set},
+        True: {"padding": "max_length", "truncation": is_max_len_set},
     }
     hf_params = dict(
         add_special_tokens=add_special_tokens,
@@ -404,6 +407,57 @@ def test_padding(
     hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
     assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
     assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
+
+
+models_with_pair_input =[
+    ("answerdotai/ModernBERT-base", {"padding_side": None, 'number_of_inputs': 2}),
+    ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None, 'number_of_inputs': 2}),
+    ("katuni4ka/tiny-random-llava-next", {"padding_side": "right", 'number_of_inputs': 2}),
+    ("katuni4ka/tiny-random-llava-next", {"padding_side": "left", 'number_of_inputs': 2}),
+]
+
+
+@pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("input_pair", [
+    [["hi", "sun in yellow"]],
+    [["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!"]],
+    [["Eng... test, string?!", "Multiline\nstring!\nWow!" * 100]],
+    [["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!" * 100]],
+    [["hi" * 20, "buy" * 90]],
+])
+def test_two_inputs_string_list_of_lists(hf_ov_genai_models, input_pair):
+    # Check with inputs consisted of lists of lists consistent with HF format.
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models
+    ov_encoded = genai_tokenzier.encode(input_pair).input_ids.data
+    hf_encoded = hf_tokenizer(input_pair, return_tensors="np")["input_ids"]
+    assert np.all(ov_encoded == hf_encoded)
+
+
+@pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("input_pair", [
+    [["Eng... test, string?!" * 100], ["Multiline\nstring!\nWow!"]],
+    [["hi" * 20], ["buy" * 90]],
+    # [["What is the capital of Great Britain"] * 4, ["London is capital of Great Britain"]],  # TODO: broadcast of [4, 1] to [4, 4] fails
+    [["What is the capital of Great Britain"], ["London is capital of Great Britain"] * 4],
+])
+def test_two_inputs_string(hf_ov_genai_models, input_pair):
+    # Test when inputs are separate and they are broadcasted to the same length.
+    # For HF we broadcast manually, but in GenAI this happens automatically.
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models
+
+    # broadcast ([N], [1]) and ([1], [N]) to ([N], [N]) for HF
+    if len(input_pair[0]) > len(input_pair[1]):
+        input_pair_hf = [[input_pair[0][i], input_pair[1][0]] for i in range(len(input_pair[0]))]
+    else:
+        input_pair_hf = [[input_pair[0][0], input_pair[1][i]] for i in range(len(input_pair[1]))]
+    
+    ov_encoded = genai_tokenzier.encode(*input_pair).input_ids.data
+    hf_encoded = hf_tokenizer(input_pair_hf, return_tensors="np")["input_ids"]
+    assert np.all(ov_encoded == hf_encoded)
 
 
 @pytest.mark.precommit
@@ -609,3 +663,4 @@ def test_set_special_runtime_template(tmp_path):
 def test_template_priorities(tmp_path, chat_templates):
     tokenizer = generate_tokenizer(tmp_path, chat_templates)
     assert tokenizer.chat_template == chat_templates.reference
+

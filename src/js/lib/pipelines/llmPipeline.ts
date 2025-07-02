@@ -1,8 +1,12 @@
 import util from 'node:util';
 import addon from '../addon.js';
+import { GenerationConfig, StreamingStatus } from '../utils.js';
 
 export type ResolveFunction = (arg: { value: string, done: boolean }) => void;
-export type Options = {[key: string]: string | boolean | number | BigInt};
+export type Options = {
+  disableStreamer?: boolean,
+  'max_new_tokens'?: number
+};
 
 export class LLMPipeline {
   modelPath: string | null = null;
@@ -57,13 +61,16 @@ export class LLMPipeline {
     return result;
   }
 
-  stream(prompt: string, generationOptions: Options = {}) {
+  stream(
+    prompt: string,
+    generationConfig: GenerationConfig = {},
+  ) {
     if (!this.isInitialized)
       throw new Error('Pipeline is not initialized');
 
     if (typeof prompt !== 'string')
       throw new Error('Prompt must be a string');
-    if (typeof generationOptions !== 'object')
+    if (typeof generationConfig !== 'object')
       throw new Error('Options must be an object');
 
     const queue: { isDone: boolean; subword: string; }[] = [];
@@ -81,7 +88,7 @@ export class LLMPipeline {
       }
     }
 
-    this.pipeline.generate(prompt, chunkOutput, generationOptions);
+    this.pipeline.generate(prompt, chunkOutput, generationConfig);
 
     return {
       async next() {
@@ -105,18 +112,19 @@ export class LLMPipeline {
 
   async generate(
     prompt: string | string[],
-    options: Options,
+    generationConfig: GenerationConfig = {},
     callback: (chunk: string)=>void | undefined,
   ) {
     if (typeof prompt !== 'string'
       && !(Array.isArray(prompt)
       && prompt.every(item => typeof item === 'string')))
       throw new Error('Prompt must be a string or string[]');
-    if (typeof options !== 'object')
+    if (typeof generationConfig !== 'object')
       throw new Error('Options must be an object');
     if (callback !== undefined && typeof callback !== 'function')
       throw new Error('Callback must be a function');
 
+    const options: {'disableStreamer'?: boolean} = {};
     if (!callback) {
       options['disableStreamer'] = true;
     }
@@ -126,9 +134,13 @@ export class LLMPipeline {
         const chunkOutput = (isDone: boolean, subword: string) => {
           if (isDone) {
             resolve(subword);
-          } else if (callback) callback(subword);
+          } else if (callback) {
+            return callback(subword);
+          }
+
+          return StreamingStatus.RUNNING;
         };
-        this.pipeline.generate(prompt, chunkOutput, options);
+        this.pipeline.generate(prompt, chunkOutput, generationConfig, options);
       },
     );
   }

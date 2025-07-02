@@ -50,6 +50,11 @@ auto cache_eviction_config_docstring = R"(
       Set this to false if your model has different RoPE scheme from the one used in the
       original llama model and you experience accuracy issues with cache eviction enabled.
     :type apply_rotation: bool
+
+    :param snapkv_window_size The size of the importance score aggregation window (in token positions from the end of the prompt) for
+      computing initial importance scores at the beginning of the generation phase for purposes of eviction,
+      following the SnapKV article approach (https://arxiv.org/abs/2404.14469).
+    :type snapkv_window_size int
 )";
 
 auto scheduler_config_docstring = R"(
@@ -261,12 +266,13 @@ void init_continuous_batching_pipeline(py::module_& m) {
                            size_t max_cache_size,
                            AggregationMode aggregation_mode,
                            bool apply_rotation,
+                            size_t snapkv_window_size,
                            const KVCrushConfig& kvcrush_config) {
                  return CacheEvictionConfig{start_size,
                                             recent_size,
                                             max_cache_size,
                                             aggregation_mode,
-                                            apply_rotation,
+                                            apply_rotation, snapkv_window_size,
                                             kvcrush_config};
              }),
              py::arg("start_size"),
@@ -274,9 +280,11 @@ void init_continuous_batching_pipeline(py::module_& m) {
              py::arg("max_cache_size"),
              py::arg("aggregation_mode"),
              py::arg("apply_rotation") = false,
+                 py::arg("snapkv_window_size") = 8,
              py::arg("kvcrush_config") = KVCrushConfig())
         .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode)
         .def_readwrite("apply_rotation", &CacheEvictionConfig::apply_rotation)
+            .def_readwrite("snapkv_window_size", &CacheEvictionConfig::snapkv_window_size)
         .def_readwrite("kvcrush_config", &CacheEvictionConfig::kvcrush_config)
         .def("get_start_size", &CacheEvictionConfig::get_start_size)
         .def("get_recent_size", &CacheEvictionConfig::get_recent_size)

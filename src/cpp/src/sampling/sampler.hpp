@@ -16,10 +16,12 @@
 
 #include "openvino/runtime/tensor.hpp"
 
+#include "sampling/logit_transformers.hpp"
 #include "sampling/logit_processor.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "sequence_group.hpp"
 #include "threadpool.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov::genai {
 // Handle stop_token_ids
@@ -77,7 +79,7 @@ class Sampler {
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
-                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample);
+                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probolities);
 
     SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits,
                                                         LogitProcessor& logit_processor, const std::pair<size_t, std::set<std::string>>& stop_strings,
@@ -97,7 +99,7 @@ class Sampler {
     Tokenizer m_tokenizer;
 
     ThreadPool m_thread_pool;
-
+    std::shared_ptr<ov::genai::StructuredOutputController> m_structured_output_controller;
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;

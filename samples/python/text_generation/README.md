@@ -13,10 +13,35 @@ There are also Jupyter notebooks for some samples. You can find links to them in
 ## Download and convert the model and tokenizers
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
+
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model <model> <output_folder>
 ```
+
+Alternatively, do it in Python code (e.g. TinyLlama_v1.1). If NNCF is installed, the model will be compressed to INT8 automatically.
+
+```python
+from optimum.exporters.openvino.convert import export_tokenizer
+from optimum.intel import OVModelForCausalLM
+from transformers import AutoTokenizer
+
+output_dir = "chat_model"
+
+model = OVModelForCausalLM.from_pretrained("TinyLlama/TinyLlama_v1.1", export=True)
+model.save_pretrained(output_dir)
+
+tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama_v1.1")
+tokenizer.save_pretrained(output_dir)
+export_tokenizer(tokenizer, output_dir)
+```
+[//]: # "tokenizer.save_pretrained(output_dir) is required above to mitigate runtime errors"
+
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
 ```sh
 pip install huggingface-hub
@@ -153,7 +178,8 @@ For more information how performance metrics are calculated please follow [perfo
   ```
   #### Options
 - `-m, --model`: Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
+- `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p` and `-pf`, the default prompt is `"The Sky is blue because"`
+- `-pf, --prompt_file` Read prompt from file.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
@@ -170,6 +196,35 @@ Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
   python react_sample.py model_dir
   ```
 
+
+### 11. Structured Output Sample (`structured_output_sample`)
+- **Description:**
+This sample demonstrates how to use OpenVINO GenAI to generate structured outputs such as JSON from text prompts. This sample implementation is split into multiple "generate" calls to mitigate generating complex, variadic JSON structures in a single pass. This is done because not all models are able to generate a complex JSON, with a variadic number of elements in one shot, especially if the model is small and not fine-tuned for this task. By separating the task into two stages, it becomes possible to use smaller models and still achieve generated JSON good quality.
+
+Recommended models: meta-llama/Llama-3.2-1B-Instruct, meta-llama/Llama-3.2-8B-Instruct
+- **Run Command:**
+  ```bash
+  python structured_output_generation.py model_dir
+  ```
+  After running the command, an interactive dialog starts. You can enter a prompt and receive a structured output in response. The process is divided into two stages:
+
+1. **Stage One:** The model generates a JSON schema indicating the number of items of each type the user requests. For example, if you prompt:  
+   `Generate a JSON for 2 cars and 1 person with an Irish surname`  
+   The model might output:  
+   `{"person": 1, "car": 2, "transaction": 0}`  
+   This internal JSON is used to determine how many items of each type to generate in the next stage. It is not shown to the user.
+
+2. **Stage Two:** For each item type and count specified in the schema, the model is prompted to generate a JSON object. The original prompt is reused, but the schema guides the model to produce the correct structure. For the example above, the output might look like:
+   ```
+   > Generate a JSON for 2 cars and 1 person with an Irish surname
+   output:
+   {"name": "John Doe", "surname": "O'Reilly", "age": 30, "city": "Dublin"}
+   {"model": "Toyota", "year": 2020, "engine": "hybrid"}
+   {"model": "Ford", "year": 2019, "color": "red"}
+   ```
+
+**Note:**  
+Structured output enforcement guarantees correct JSON formatting, but does not ensure the factual correctness or sensibility of the content. The model may generate implausible or nonsensical data, such as `{"name": "John", "age": 200000}` or `{"model": "AbrakaKadabra9999######4242"}`. These are valid JSONs but may not make sense. For best results, use the latest or fine-tuned models for this task to improve the quality and relevance of the generated output.
 
 ## Troubleshooting
 

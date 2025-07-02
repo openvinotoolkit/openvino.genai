@@ -9,7 +9,6 @@
 #include <openvino/runtime/infer_request.hpp>
 
 #include "visual_language/embedding_model.hpp"
-#include "debug_utils.hpp"
 #include "sequence_group.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/timer.hpp"
@@ -41,6 +40,8 @@ class ModelRunner {
     std::vector<ov::Tensor> m_cache_rotation_deltas_for_each_layer;
     ov::Tensor m_cache_rotation_trig_lut;
 
+    bool m_is_aggregate_attention_scores;
+
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
@@ -56,20 +57,27 @@ public:
      * optimizations (such as cache eviction algorithm).
      * @param is_use_per_layer_cache_control If true, then the runner will pass cache control input tensors to the model
      * on a per-attention layer basis.
+     * @param is_use_rotation_inputs If true, then the runner will pass cache rotation input tensors to the model
+     * on a per-attention layer basis.
+     * @param is_aggregate_attention_scores If true, then the runner will pass the input tensors containing per-sequence
+     * score aggregation window sizes to the model as requested by the scheduler.
+     * on a per-attention layer basis.
      */
     ModelRunner(ov::InferRequest request,
                 size_t block_size,
                 size_t num_decoder_layers = 1,
                 bool collect_attention_scores = false,
                 bool is_use_per_layer_cache_control = false,
-                bool is_use_rotation_inputs = false)
+                bool is_use_rotation_inputs = false,
+                bool is_aggregate_attention_scores = false)
         : m_request(std::move(request)),
           m_block_size(block_size),
           m_num_decoder_layers(num_decoder_layers),
           m_collect_attention_scores(collect_attention_scores),
           m_is_use_per_layer_cache_control(is_use_per_layer_cache_control),
           m_is_use_rotation_inputs(is_use_rotation_inputs),
-          m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers) {
+          m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers),
+          m_is_aggregate_attention_scores(is_aggregate_attention_scores) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
     }
@@ -93,6 +101,7 @@ public:
     const AttentionScoresForEachSubsequence& get_last_attention_scores() const {
         return m_last_attention_scores;
     }
+
 
     void set_cache_rotation_trig_lut(ov::Tensor&& rotation_trig_lut) {
         m_cache_rotation_trig_lut = std::move(rotation_trig_lut);
@@ -146,7 +155,9 @@ public:
             // block_indices are handled in a special fashion below
             block_indices_begins(ov::element::i32, {batch_size_in_sequences + 1}),
             max_context_len(ov::element::i32, {});
-        
+
+        ov::Tensor score_aggregation_window(ov::element::i32, {batch_size_in_sequences});
+
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
 
@@ -155,7 +166,7 @@ public:
         // get raw pointers to copy to
         float *inputs_embeds_data = nullptr;
         int64_t *input_ids_data = nullptr;
-        
+
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
@@ -165,10 +176,11 @@ public:
         int64_t
             * position_ids_data = position_ids.data<int64_t>();
 
-        int32_t 
+        int32_t
             * past_lens_data = past_lens.data<int32_t>(),
             * subsequence_begins_data = subsequence_begins.data<int32_t>(),
-            * block_indices_begins_data = block_indices_begins.data<int32_t>();
+            * block_indices_begins_data = block_indices_begins.data<int32_t>(),
+            * score_aggregation_window_data = score_aggregation_window.data<int32_t>();
 
         // sub-sequence data starts with 0
         subsequence_begins_data[0] = 0;
@@ -198,9 +210,9 @@ public:
             const bool sampling_is_required = sequence_group->requires_sampling();
             const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
 
-            for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id) {
+            for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
                 output_seq_len = 0;
-                Sequence::CPtr sequence = running_sequences[seq_id];
+                Sequence::CPtr sequence = running_sequences[seq_idx];
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
                     if (sequence_group_type == SequenceGroupType::TOKENS) {
@@ -247,10 +259,25 @@ public:
                     inputs_embeds_data += num_scheduled_tokens * hidden_size;
                 }
 
+
+                if (m_is_aggregate_attention_scores) {
+                    size_t seq_id = sequence->get_id();
+                    auto it = scheduler_output.m_score_aggregation_windows.find(seq_id);
+                    if (it != scheduler_output.m_score_aggregation_windows.end()) {
+                        *score_aggregation_window_data = it->second; // the prompt has reached the SnapKV window, either fully or partially
+                    }
+                    else {
+                        // either the prompt has not reached the SnapKV window yet (in which case we will disregard the scores anyway),
+                        // or the sequence is in the generation stage already
+                        *score_aggregation_window_data = 1;
+                    }
+                }
+
                 position_ids_data += num_scheduled_tokens;
                 past_lens_data += 1;
                 subsequence_begins_data += 1;
                 block_indices_begins_data += 1;
+                score_aggregation_window_data += 1;
             }
             sequence_group->set_output_seq_len(matmul_gathering_is_available ? output_seq_len : num_scheduled_tokens);
         }
@@ -284,14 +311,9 @@ public:
             m_request.set_tensor("sampled_tokens_indices", gather_indices);
         }
 
-        // print_tensor("input_ids", input_ids);
-        // print_tensor("position_ids", position_ids);
-
-        // print_tensor("past_lens", past_lens);
-        // print_tensor("subsequence_begins", subsequence_begins);
-        // print_tensor("block_indices", block_indices);
-        // print_tensor("block_indices_begins", block_indices_begins);
-        // print_tensor("max_context_len", max_context_len);
+        if (m_is_aggregate_attention_scores) {
+            m_request.set_tensor("score_aggregation_window", score_aggregation_window);
+        }
 
         {
             static ManualTimer timer("pure generate inference");
@@ -495,18 +517,28 @@ private:
         using IndexSpan = std::pair<size_t, size_t>;
         std::list<std::pair<size_t, IndexSpan>> running_sequence_group_ids_and_kvcache_spans;
         size_t offset = 0;
-        for (size_t i = 0; i < num_sequence_groups; ++i) {
-            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
-            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+        for (size_t i = 0; i < num_sequence_groups; ++i) { size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i]; SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id]; std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
 
-            for (size_t seq_id = 0; seq_id < running_sequences.size(); ++seq_id) {
-                Sequence::CPtr sequence = running_sequences[seq_id];
+            for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                Sequence::CPtr sequence = running_sequences[seq_idx];
                 size_t subsequence_length = sequence_group->get_context_len() - sequence_group->get_num_evicted_tokens();
                 IndexSpan span = {offset, offset + subsequence_length};
-                size_t global_sequence_id = sequence->get_id();
-                running_sequence_group_ids_and_kvcache_spans.emplace_back(global_sequence_id, span);
                 offset += subsequence_length;
+
+                size_t global_sequence_id = sequence->get_id();
+
+                bool is_prefill_finished = sequence_group->can_generate_tokens();
+                bool has_snapkv_scores = (scheduler_output.m_score_aggregation_windows.find(global_sequence_id) != scheduler_output.m_score_aggregation_windows.end());
+                if (is_prefill_finished || (!is_prefill_finished && has_snapkv_scores)) {
+                    // During prompt phase, will only collect the scores for sequences that have been processed up to their SnapKV window size
+                    // (this may happen across multiple scheduling iterations - assuming here that the code using the collected scores does simple aggregation
+                    // such as addition and therefore does not need to know which part of the SnapKV window a given score vector belongs to).
+                    //
+                    // During generation phase, the scores may be either SnapKV-aggregated (if the phase included the very last part of the prompt) or
+                    // not (regular non-aggregated single-token-position scores for the newly generated token), but this should also not matter to the simple aggregation
+                    // code.
+                    running_sequence_group_ids_and_kvcache_spans.emplace_back(global_sequence_id, span);
+                }
             }
         }
 

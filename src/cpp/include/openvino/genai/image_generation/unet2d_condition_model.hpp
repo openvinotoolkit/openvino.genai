@@ -72,6 +72,8 @@ public:
 
     UNet2DConditionModel(const UNet2DConditionModel&);
 
+    UNet2DConditionModel clone();
+
     const Config& get_config() const;
 
     UNet2DConditionModel& reshape(int batch_size, int height, int width, int tokenizer_model_max_length);

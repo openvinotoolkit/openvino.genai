@@ -75,6 +75,8 @@ public:
     void start_chat(const std::string& system_message) override;
 
     void finish_chat() override;
+
+    ~StatefulLLMPipeline();
 };
 
 } // namespace ov::genai

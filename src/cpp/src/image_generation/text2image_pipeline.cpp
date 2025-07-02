@@ -227,5 +227,10 @@ ImageGenerationPerfMetrics Text2ImagePipeline::get_performance_metrics() {
     return m_impl->get_performance_metrics();
 }
 
+Text2ImagePipeline Text2ImagePipeline::clone() {
+    Text2ImagePipeline pipe(m_impl->clone());
+    return pipe;
+}
+
 }  // namespace genai
 }  // namespace ov

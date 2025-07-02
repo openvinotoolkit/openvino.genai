@@ -122,6 +122,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
     cmake --build ./build/ --config Release -j
     ```
+> **NOTE**: On Windows, if you are building Debug version, then -DENABLE_XGRAMMAR=OFF is set forcefully, because XGrammar is not supported in Debug configuration on Windows.
 
 5. Install OpenVINO GenAI:
 
@@ -223,6 +224,29 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
 ### Build OpenVINO GenAI JavaScript Bindings
 
 Build OpenVINO GenAI JavaScript Bindings from sources following the [instructions](../js/BUILD.md).
+
+### Building OpenVINO GenAI with Additional Features
+
+OpenVINO GenAI can be built with optional features such as JavaScript bindings. Some features, like GGUF support, XGrammar structured output and Python bindings, are enabled by default due to their popularity. You can enable or disable these features using CMake `-D` options during the build process to customize your build and reduce binary size if needed.
+
+After setting up your environment, use the following commands to configure additional features:
+
+- **Enable JavaScript bindings:**
+    ```sh
+    cmake -DENABLE_JS=ON -S ./ -B ./build/
+    ```
+- **Disable XGrammar backend for structured generation:**
+    ```sh
+    cmake -DENABLE_XGRAMMAR=OFF -S ./ -B ./build/
+    ```
+- **Disable GGUF support:**
+    ```sh
+    cmake -DENABLE_GGUF_SUPPORT=OFF -S ./ -B ./build/
+    ```
+- **Disable Python bindings to reduce build size:**
+    ```sh
+    cmake -DENABLE_PYTHON_BINDINGS=OFF -S ./ -B ./build/
+    ```
 
 ### Install OpenVINO GenAI From Source
 

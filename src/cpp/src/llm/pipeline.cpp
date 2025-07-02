@@ -19,78 +19,6 @@ namespace ov {
 
 namespace genai {
 
-namespace {
-
-const std::string PA_BACKEND = "PA";
-const std::string SDPA_BACKEND = "SDPA";
-
-inline bool is_paged_attention_available() {
-#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-    return true;
-#else
-    return false;
-#endif
-}
-
-SchedulerConfig get_latency_oriented_scheduler_config() {
-    SchedulerConfig default_config;
-    default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
-    default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
-    return default_config;
-}
-
-bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
-    auto attention_backend_it = properties.find("ATTENTION_BACKEND");
-
-    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
-        (attention_backend_it != properties.end() && attention_backend_it->second.as<std::string>() == PA_BACKEND)) {
-        if (is_paged_attention_available()) {
-            return true;
-        } else {
-            OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
-        }
-    }
-    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
-        if (is_paged_attention_available()) {
-            return true;
-        } else {
-            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
-        }
-    }
-    if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
-        if (is_paged_attention_available()) {
-            return true;
-        } else {
-            OPENVINO_THROW("Prompt lookup decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
-        }
-    }
-    return false;
-}
-
-std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
-    std::string attention_backend = PA_BACKEND;
-    ov::AnyMap properties = external_properties;
-
-    auto it = properties.find("ATTENTION_BACKEND");
-    if (it != properties.end()) {
-        attention_backend = it->second.as<std::string>();
-        OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SDPA_BACKEND,
-            "Attention backend must be either '", PA_BACKEND, "' or '", SDPA_BACKEND, "', got '", attention_backend, "'");
-        properties.erase(it);
-    }
-
-    if (explicitly_requires_paged_attention(external_properties)) {
-        OPENVINO_ASSERT(attention_backend == PA_BACKEND,
-            "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
-    }
-
-    return {properties, attention_backend};
-};
-
-
-} // namespace
-
-
 std::pair<std::string, Any> streamer(StreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
         return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
@@ -147,29 +75,26 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& user_properties) {
+    const ov::AnyMap& user_properties) :
+    m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
-    auto [properties, attention_backend] = extract_attention_backend(user_properties);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (explicitly_requires_paged_attention(user_properties)) {
-        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
+    if (utils::explicitly_requires_paged_attention(user_properties)) {
+        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
-    }
-
-    if (m_pimpl == nullptr && device == "NPU") {
+    } else if (device == "NPU") {
         m_pimpl = properties.count("STATIC_PIPELINE")
             ? static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties)
             : std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
-    }
-
-    // try to call CB adapter one more time, but with safe guard to silent exception
-    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
+    } else if (attention_backend == PA_BACKEND) {
+        // try to call CB adapter one more time, but with safe guard to silent exception
         try {
-            // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
+            // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
-#ifdef OPENVINO_ARCH_X86_64
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, get_latency_oriented_scheduler_config(), device, properties);
+#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties);
 #endif
         } catch (ov::Exception&) {
             // ignore exceptions from PA
@@ -186,30 +111,27 @@ ov::genai::LLMPipeline::LLMPipeline(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& user_properties) {
+    const ov::AnyMap& user_properties) :
+    m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
 
-    auto [properties, attention_backend] = extract_attention_backend(user_properties);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (explicitly_requires_paged_attention(user_properties)) {
-        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
+    if (utils::explicitly_requires_paged_attention(user_properties)) {
+        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
-    }
-
-    if (m_pimpl == nullptr && device == "NPU") {
+    } else if (device == "NPU") {
         m_pimpl = properties.count("STATIC_PIPELINE")
             ? static_llm::LLMPipelineFactory::create(models_path, properties)
             : std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
-    }
-
-    // try to call CB adapter one more time, but with safe guard to silent exception
-    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
+    } else if (attention_backend == PA_BACKEND) {
+        // try to call CB adapter one more time, but with safe guard to silent exception
         try {
-            // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
+            // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
-#ifdef OPENVINO_ARCH_X86_64
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, get_latency_oriented_scheduler_config(), device, properties);
+#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, utils::get_latency_oriented_scheduler_config(), device, properties);
 #endif
         } catch (ov::Exception&) {
             // ignore exceptions from PA
@@ -229,19 +151,18 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& user_properties,
-    const ov::genai::GenerationConfig& generation_config) {
+    const ov::genai::GenerationConfig& generation_config) :
+    m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
 
-    auto [properties, attention_backend] = extract_attention_backend(user_properties);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (explicitly_requires_paged_attention(user_properties)) {
-        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
+    if (utils::explicitly_requires_paged_attention(user_properties)) {
+        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
                                                               tokenizer, scheduler_config, device, device_properties, generation_config);
-    }
-
-    if (m_pimpl == nullptr && device == "NPU") {
+    } else if (device == "NPU") {
         m_pimpl = properties.count("STATIC_PIPELINE")
             ? static_llm::LLMPipelineFactory::create(
                   utils::singleton_core().read_model(model_str, weights_tensor),
@@ -254,16 +175,14 @@ ov::genai::LLMPipeline::LLMPipeline(
                 device,
                 properties,
                 generation_config);
-    }
-
-    // try to call CB adapter one more time, but with safe guard to silent exception
-    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
+    } else if (attention_backend == PA_BACKEND) {
+        // try to call CB adapter one more time, but with safe guard to silent exception
         try {
-            // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
+            // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
-#ifdef OPENVINO_ARCH_X86_64
+#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor, tokenizer,
-                                                                  get_latency_oriented_scheduler_config(), device, properties, generation_config);
+                                                                  utils::get_latency_oriented_scheduler_config(), device, properties, generation_config);
 #endif
         } catch (ov::Exception&) {
             // ignore exceptions from PA
@@ -332,7 +251,10 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
     m_pimpl->set_generation_config(config);
 }
 
-ov::genai::LLMPipeline::~LLMPipeline() = default;
+ov::genai::LLMPipeline::~LLMPipeline() {
+    m_pimpl.reset();
+    utils::release_core_plugin(m_device);
+}
 
 } // namespace genai
 } // namespace ov

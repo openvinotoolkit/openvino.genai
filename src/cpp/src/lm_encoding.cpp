@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "utils.hpp"
-#include "debug_utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"

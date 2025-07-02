@@ -118,7 +118,11 @@ MODELS = {
     "BAAI/bge-small-en-v1.5": {
         "name": "BAAI/bge-small-en-v1.5",
         "convert_args": ['--trust-remote-code']
-    }
+    },
+    "tiny-random-SpeechT5ForTextToSpeech": {
+        "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
+        "convert_args": ["--model-kwargs",  json.dumps({"vocoder": "fxmarty/speecht5-hifigan-tiny"})]
+    },
 }
 
 TEST_FILES = {
@@ -145,7 +149,7 @@ SAMPLES_JS_DIR = os.environ.get("SAMPLES_JS_DIR", os.path.abspath(os.path.join(o
 def setup_and_teardown(request, tmp_path_factory):
     """Fixture to set up and tear down the temporary directories."""
     
-    ov_cache = get_ov_cache_dir(tmp_path_factory.mktemp("ov_cache"))           
+    ov_cache = get_ov_cache_dir(tmp_path_factory.mktemp("ov_cache"))  
     models_dir = os.path.join(ov_cache, "test_models")
     test_data = os.path.join(ov_cache, "test_data")
     

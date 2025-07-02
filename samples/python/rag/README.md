@@ -10,7 +10,28 @@ Install [../../export-requirements.txt](../../export-requirements.txt) to conver
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --trust-remote-code --model BAAI/bge-small-en-v1.5 BAAI/bge-small-en-v1.5
+```
+
+Alternatively, do it in Python code:
+
+```python
+from optimum.exporters.openvino.convert import export_tokenizer
+from optimum.intel import OVModelForFeatureExtraction
+from transformers import AutoTokenizer
+
+output_dir = "embedding_model"
+
+model = OVModelForFeatureExtraction.from_pretrained("BAAI/bge-small-en-v1.5", export=True, trust_remote_code=True)
+model.save_pretrained(output_dir)
+
+tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-small-en-v1.5")
+export_tokenizer(tokenizer, output_dir)
 ```
 
 ## Run
@@ -24,7 +45,6 @@ See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-embeddings-models) f
 # Text Embedding Pipeline Usage
 
 ```python
-import argparse
 import openvino_genai
 
 pipeline = openvino_genai.TextEmbeddingPipeline(model_dir, "CPU")

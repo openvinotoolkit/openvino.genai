@@ -58,7 +58,7 @@ public:
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): LLMPipelineImplBase{Tokenizer(models_path), GenerationConfig()} {
+    ): LLMPipelineImplBase{Tokenizer(models_path, plugin_config), GenerationConfig()} {
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, m_tokenizer, scheduler_config, device, mutable_plugin_config);
@@ -205,12 +205,12 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
-        m_impl->start_chat();
-    };
+        m_impl->start_chat(system_message);
+    }
 
     void finish_chat() override {
         m_impl->finish_chat();
-    };
+    }
 };
 
 } // namespace ov::genai

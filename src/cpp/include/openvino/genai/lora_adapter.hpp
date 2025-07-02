@@ -51,7 +51,7 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
         MODE_AUTO,          // Automatically selected (depends on the place where this mode is applied and device selection)
         MODE_DYNAMIC,       // A, B, alpha are fully variable
         MODE_STATIC_RANK,   // A and B have static shape, alpha is variable // FIXME: WA to unlock experiments, gives a unique perf level
-        MODE_STATIC,        // A, B and alpha are constants
+        MODE_STATIC,        // A, B and alpha are constants. Use instead of MODE_FUSE if preserving weights precision is required at the cost of inference time
         MODE_FUSE           // A, B and alpha are constants, fused to main matrix W
     };
 

@@ -1,11 +1,11 @@
 """
-Pybind11 binding for OpenVINO GenAI library
+Pybind11 binding for Text-to-speech Pipeline
 """
 from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuredOutputConfig', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -316,10 +316,16 @@ class CacheEvictionConfig:
           Set this to false if your model has different RoPE scheme from the one used in the
           original llama model and you experience accuracy issues with cache eviction enabled.
         :type apply_rotation: bool
+    
+        :param snapkv_window_size The size of the importance score aggregation window (in token positions from the end of the prompt) for
+          computing initial importance scores at the beginning of the generation phase for purposes of eviction,
+          following the SnapKV article approach (https://arxiv.org/abs/2404.14469).
+        :type snapkv_window_size int
     """
     aggregation_mode: AggregationMode
     apply_rotation: bool
-    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode, apply_rotation: bool = False) -> None:
+    snapkv_window_size: int
+    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode, apply_rotation: bool = False, snapkv_window_size: int = 8) -> None:
         ...
     def get_evictable_size(self) -> int:
         ...
@@ -601,6 +607,7 @@ class GenerationConfig:
     stop_criteria: StopCriteria
     stop_strings: set[str]
     stop_token_ids: set[int]
+    structured_output_config: StructuredOutputConfig | None
     temperature: float
     top_k: int
     top_p: float
@@ -1625,6 +1632,56 @@ class SchedulerConfig:
     use_cache_eviction: bool
     def __init__(self) -> None:
         ...
+class SpeechGenerationConfig(GenerationConfig):
+    """
+    
+        SpeechGenerationConfig
+        
+        Speech-generation specific parameters:
+        :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+        :type minlenratio: float
+    
+        :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+        :type minlenratio: float
+    
+        :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+        :type threshold: float
+    """
+    maxlenratio: float
+    minlenratio: float
+    threshold: float
+    @typing.overload
+    def __init__(self, json_path: os.PathLike) -> None:
+        """
+        path where generation_config.json is stored
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        ...
+    def update_generation_config(self, **kwargs) -> None:
+        ...
+class SpeechGenerationPerfMetrics(PerfMetrics):
+    """
+    
+        Structure with raw performance metrics for each generation before any statistics are calculated.
+    
+        :param num_generated_samples: Returns a number of generated samples in output
+        :type num_generated_samples: int
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def generate_duration(self) -> MeanStdPair:
+        ...
+    @property
+    def m_evaluated(self) -> bool:
+        ...
+    @property
+    def num_generated_samples(self) -> int:
+        ...
+    @property
+    def throughput(self) -> MeanStdPair:
+        ...
 class StopCriteria:
     """
     
@@ -1732,6 +1789,53 @@ class StreamingStatus:
         ...
     @property
     def value(self) -> int:
+        ...
+class StructuredOutputConfig:
+    """
+    
+        Structure to keep generation config parameters for structured output generation.
+        It is used to store the configuration for structured generation, which includes
+        the JSON schema and other related parameters.
+    
+        Structured output parameters:
+        json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
+        regex:          if set, the output will be constraint by specified regex.
+        grammar:        if set, the output will be constraint by specified grammar.
+    
+    """
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Default constructor for StructuredOutputConfig
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        """
+        Constructor that initializes the structured output configuration with kwargs.
+        """
+    @property
+    def grammar(self) -> str | None:
+        """
+        Grammar for structured output generation
+        """
+    @grammar.setter
+    def grammar(self, arg0: str | None) -> None:
+        ...
+    @property
+    def json_schema(self) -> str | None:
+        """
+        JSON schema for structured output generation
+        """
+    @json_schema.setter
+    def json_schema(self, arg0: str | None) -> None:
+        ...
+    @property
+    def regex(self) -> str | None:
+        """
+        Regular expression for structured output generation
+        """
+    @regex.setter
+    def regex(self, arg0: str | None) -> None:
         ...
 class T5EncoderModel:
     """
@@ -1871,6 +1975,104 @@ class Text2ImagePipeline:
     def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
+        ...
+class Text2SpeechDecodedResults:
+    """
+    
+        Structure that stores the result from the generate method, including a list of waveform tensors
+        sampled at 16 kHz, along with performance metrics
+    
+        :param speeches: a list of waveform tensors sampled at 16 kHz
+        :type speeches: list
+    
+        :param perf_metrics: performance metrics
+        :type perf_metrics: SpeechGenerationPerfMetrics
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def perf_metrics(self) -> SpeechGenerationPerfMetrics:
+        ...
+    @property
+    def speeches(self) -> list[openvino._pyopenvino.Tensor]:
+        ...
+class Text2SpeechPipeline:
+    """
+    Text-to-speech pipeline
+    """
+    def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
+        """
+                    Text2SpeechPipeline class constructor.
+                    models_path (os.PathLike): Path to the model file.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
+        """
+    @typing.overload
+    def generate(self, text: str, speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speeches based on input texts
+        
+            :param text(s): input text(s) for which to generate speech
+            :type text(s): str or list[str]
+        
+            :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
+                                     voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
+                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+            :type speaker_embedding: openvino.Tensor or None
+        
+            :param properties: speech generation parameters specified as properties
+            :type properties: dict
+        
+            :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+            :rtype: Text2SpeechDecodedResults
+         
+         
+            SpeechGenerationConfig
+            
+            Speech-generation specific parameters:
+            :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+            :type minlenratio: float
+        
+            :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+            :type minlenratio: float
+        
+            :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+            :type threshold: float
+        """
+    @typing.overload
+    def generate(self, texts: list[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speeches based on input texts
+        
+            :param text(s): input text(s) for which to generate speech
+            :type text(s): str or list[str]
+        
+            :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
+                                     voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
+                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+            :type speaker_embedding: openvino.Tensor or None
+        
+            :param properties: speech generation parameters specified as properties
+            :type properties: dict
+        
+            :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+            :rtype: Text2SpeechDecodedResults
+         
+         
+            SpeechGenerationConfig
+            
+            Speech-generation specific parameters:
+            :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+            :type minlenratio: float
+        
+            :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+            :type minlenratio: float
+        
+            :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+            :type threshold: float
+        """
+    def get_generation_config(self) -> SpeechGenerationConfig:
+        ...
+    def set_generation_config(self, config: SpeechGenerationConfig) -> None:
         ...
 class TextEmbeddingPipeline:
     """
@@ -2047,6 +2249,17 @@ class Tokenizer:
         """
         Encodes a single prompt into tokenized input.
         """
+    @typing.overload
+    def encode(self, prompts_1: list[str], prompts_2: list[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
+        """
+        Encodes a list of prompts into tokenized inputs. The number of strings must be the same, or one of the inputs can contain one string.
+                    In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.
+        """
+    @typing.overload
+    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
+        """
+        Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
+        """
     def get_bos_token(self) -> str:
         ...
     def get_bos_token_id(self) -> int:
@@ -2061,9 +2274,12 @@ class Tokenizer:
         ...
     def get_vocab(self) -> dict:
         """
-        Returns the vocabulary as a Python dictionary with bytes keys and integer values.
-        
-        Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        Returns the vocabulary as a Python dictionary with bytes keys and integer values. 
+                     Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        """
+    def get_vocab_vector(self) -> list[str]:
+        """
+        Returns the vocabulary as list of strings, where position of a string represents token ID.
         """
     def set_chat_template(self, chat_template: str) -> None:
         """
@@ -2217,6 +2433,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
@@ -2254,6 +2471,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
@@ -2290,6 +2508,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are

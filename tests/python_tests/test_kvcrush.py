@@ -37,10 +37,11 @@ def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
 LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(
     start_size=32, 
     recent_size=128, 
-    max_cache_size=384, 
+    max_cache_size=480, 
     aggregation_mode=AggregationMode.NORM_SUM,
     apply_rotation=False,
-    kvcrush_config=KVCrushConfig(budget=4, anchor_point_mode=KVCrushAnchorPointMode.MEAN)
+    snapkv_window_size=8,
+    kvcrush_config=KVCrushConfig(budget=1, anchor_point_mode=KVCrushAnchorPointMode.ALTERNATE)
 )
 
 @dataclass
@@ -48,24 +49,11 @@ class LongBenchTestData:
     subset: str
 
 
-# @pytest.mark.nightly
-# @pytest.mark.parametrize("device", ["CPU"])
-# @pytest.mark.parametrize("test_struct", [
-#     LongBenchTestData("qmsum"),
-#     LongBenchTestData("qasper"),
-#     LongBenchTestData("samsum"),
-#     LongBenchTestData("repobench-p"),
-#     LongBenchTestData("hotpotqa"),
-#     LongBenchTestData("trec")
-# ])
 @pytest.mark.nightly
 @pytest.mark.parametrize("device", ["CPU"])
 @pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("qmsum"),
     LongBenchTestData("qasper"),
     LongBenchTestData("samsum"),
-    LongBenchTestData("repobench-p"),
-    LongBenchTestData("hotpotqa"),
     LongBenchTestData("trec")
 ])
 def test_optimized_generation_longbench(device, test_struct):

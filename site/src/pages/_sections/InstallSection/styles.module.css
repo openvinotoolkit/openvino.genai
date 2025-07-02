@@ -1,0 +1,60 @@
+.installSection {
+  composes: section from '../section-styles.module.css';
+}
+
+.sectionTitle {
+  composes: sectionTitle from '../section-styles.module.css';
+}
+
+.sectionContent {
+  composes: sectionContent from '../section-styles.module.css';
+
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  align-items: center;
+
+  .sectionDescription {
+    margin-bottom: 0;
+    text-align: center;
+  }
+
+  .quickInstall,
+  .os {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    h3 {
+      font-weight: 500;
+    }
+  }
+
+  .quickInstallCommand {
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+    min-width: 365px;
+  }
+
+  .osList {
+    display: flex;
+    flex-direction: row;
+    gap: 2.5rem;
+
+    .osItem {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1rem;
+      gap: 0.5rem;
+
+      .osItemIcon {
+        height: 2.5rem;
+      }
+
+      .osItemTitle {
+        font-weight: 500;
+      }
+    }
+  }
+}

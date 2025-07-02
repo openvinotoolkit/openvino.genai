@@ -30,10 +30,10 @@ public:
                         size_t recent_size,
                         size_t max_cache_size,
                         AggregationMode aggregation_mode_,
-                        bool apply_rotation_ = false,
+                        bool apply_rotation_ = false, size_t snapkv_window_size_ = 8,
                         const KVCrushConfig& kvcrush_config_ = KVCrushConfig(128, KVCrushAnchorPointMode::RANDOM))
         : aggregation_mode(aggregation_mode_),
-          apply_rotation(apply_rotation_),
+          apply_rotation(apply_rotation_), snapkv_window_size(snapkv_window_size_),
           m_start_size(start_size),
           m_recent_size(recent_size),
           m_max_cache_size(max_cache_size),
@@ -41,6 +41,7 @@ public:
         OPENVINO_ASSERT(start_size, "CacheEvictionConfig.start_size must be non-zero");
         OPENVINO_ASSERT(recent_size, "CacheEvictionConfig.recent_size must be non-zero");
         OPENVINO_ASSERT(max_cache_size, "CacheEvictionConfig.max_cache_size must be non-zero");
+        OPENVINO_ASSERT(snapkv_window_size, "CacheEvictionConfig.snapkv_window_size must be non-zero");
 
         OPENVINO_ASSERT(max_cache_size > (start_size + recent_size),
                         "CacheEvictionConfig.max_cache_size must be larger than CacheEvictionConfig.start_size + CacheEvictionConfig.recent_size");
@@ -94,6 +95,12 @@ public:
      *  original llama model and you experience accuracy issues with cache eviction enabled
      *  and apply_rotation=true.**/
     bool apply_rotation = false;
+
+    /** The size of the importance score aggregation window (in token positions from the end of the prompt) for
+     * computing initial importance scores at the beginning of the generation phase for purposes of eviction,
+     * following the SnapKV article approach (https://arxiv.org/abs/2404.14469). **/
+    size_t snapkv_window_size = 8;
+
     /** KVCrush configuration for this cache eviction algorithm.
      * KVCrush is an additional mechanism that allows to retain some tokens in the cache
      * even if they are not among the most important ones.*/
@@ -120,3 +127,4 @@ private:
 };
 
 } // namespace ov::genai
+

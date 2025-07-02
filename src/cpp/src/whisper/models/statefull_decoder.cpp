@@ -3,7 +3,6 @@
 
 #include "statefull_decoder.hpp"
 
-#include "debug_utils.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
