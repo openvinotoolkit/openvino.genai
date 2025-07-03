@@ -665,7 +665,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
 
         if (skip_set.empty()) {
             // For now, will only register token scores from the dense attention stages
-            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set);
+            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set, scheduler_output.m_score_aggregation_windows.at(seq_id));
         }
 
         auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
