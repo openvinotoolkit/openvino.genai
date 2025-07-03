@@ -421,31 +421,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     GenerationHandle& generation = generations.at(0);
 
     streamer_ptr->start();
-
-    // TODO: It's done because after all the steps are finished logit_transformers are destroyed
-    // Find a more clever solution.
-    bool first_step = true;
-    
+    m_sampler->clear_structured_output_compile_times();
     while (has_non_finished_requests()) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
-            if (first_step) {
-                auto times = m_sampler->get_structured_output_times();
-                // each sequence id will be added as a separate compilation time.
-                // but compiler initialization will be done only once.
-                for (const auto& t: times) {
-                    if (raw_perf_counters.m_grammar_init_time.empty()) {
-                        raw_perf_counters.m_grammar_init_time.emplace_back(t.second.first);
-                    } else {
-                        OPENVINO_ASSERT(raw_perf_counters.m_grammar_init_time.back().count() == t.second.first,
-                            "Grammar initialization time should be the same for all sequences in the first step");
-                    }
-                    raw_perf_counters.m_grammar_compile_time.emplace_back(t.second.second);
-                }
-                first_step = false;
-            }
-
+            
             // During prefill step (or steps if max_batch_size < prompt_len) we don't generate new tokens,
             // but still inference took place, so we need to add this time to the total inference duration.
             raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
@@ -462,6 +443,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             std::rethrow_exception(std::current_exception());
         }
         stream_tokens(streamer_ptr, generation);
+    }
+
+    auto times = m_sampler->get_structured_output_times();
+    raw_perf_counters.m_grammar_init_time.emplace_back(times.first);
+    for (const auto& t: times.second) {
+        raw_perf_counters.m_grammar_compile_time.emplace_back(t);
     }
 
     // waiting for competion of streaming

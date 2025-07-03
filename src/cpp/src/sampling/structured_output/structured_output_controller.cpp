@@ -52,12 +52,19 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
         }
 
         // Create the backend instance and store it
+        const auto start = std::chrono::steady_clock::now();
         m_impls[backend_name] = factory_it->second(m_tokenizer, m_vocab_size);
         impl_it = m_impls.find(backend_name);
+        const auto end = std::chrono::steady_clock::now();
+        m_init_grammar_compiler_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     }
 
     // Use the instantiated backend
-    return impl_it->second->get_logits_transformer(sampling_parameters);
+    const auto start = std::chrono::steady_clock::now();
+    auto res = impl_it->second->get_logits_transformer(sampling_parameters);
+    const auto end = std::chrono::steady_clock::now();
+    m_grammar_compile_times.emplace_back(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+    return res;
 }
 
 } // namespace genai

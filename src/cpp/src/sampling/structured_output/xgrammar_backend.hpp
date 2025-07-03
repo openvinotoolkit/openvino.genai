@@ -24,7 +24,7 @@ namespace LogitTransformers {
  * which applies grammar constraints to the logits each time a new token is generated, and 
  * accepts tokens to update the internal state of the grammar matcher.
  */
-class XGrammarLogitsTransformer : public IStatefulLogitTransformer, public LogitTransformersMetrics {
+class XGrammarLogitsTransformer : public IStatefulLogitTransformer {
 public:                            
     XGrammarLogitsTransformer(
         const xgrammar::CompiledGrammar& compiled_grammar,
@@ -36,13 +36,6 @@ public:
     void accept_tokens(const TokenIds& input_ids) override;
 
     void apply(Logits& logits) override;
-    
-    std::pair<float, float> get_structured_output_times() const override {
-        return {m_init_grammar_compiler_time, m_grammar_compile_time};
-    };
-    
-    float m_init_grammar_compiler_time;
-    float m_grammar_compile_time;
 protected:
     xgrammar::GrammarMatcher m_grammar_matcher;
 
@@ -87,7 +80,6 @@ public:
     std::shared_ptr<LogitTransformers::ILogitTransformer> get_logits_transformer(const GenerationConfig& sampling_parameters) override;
 private:
     std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
-    float m_init_grammar_compiler_time;
 };
 
 

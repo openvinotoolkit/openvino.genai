@@ -53,6 +53,17 @@ struct OPENVINO_GENAI_EXPORTS MeanStdPair {
 };
 
 /**
+* @brief Structure to store list of durations in milliseconds.
+*/
+struct OPENVINO_GENAI_EXPORTS DurationValues {
+    float min;
+    float max;
+    float mean;
+    float std;
+    std::vector<float> values;
+};
+
+/**
  * @brief Holds performance metrics for each generate call.
  *
  * PerfMetrics holds fields with mean and standard deviations for the following metrics:

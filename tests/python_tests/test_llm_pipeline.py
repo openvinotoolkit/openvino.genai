@@ -870,9 +870,11 @@ def test_perf_metrics_with_structured_output(generation_config, prompt):
     assert len(raw_metrics.m_grammar_init_time) == 1
     assert len(raw_metrics.m_grammar_compile_time) > 0
 
-    assert np.allclose(raw_metrics.m_grammar_init_time * 1000, perf_metrics.get_grammar_init_time().mean)
-    assert np.allclose(raw_metrics.m_grammar_compile_time * 1000, perf_metrics.get_grammar_compile_time().mean)
-
+    raw_init_times = np.array(raw_metrics.m_grammar_init_time) / 1000
+    raw_compile_times = np.array(raw_metrics.m_grammar_compile_time) / 1000
+    assert np.allclose(np.mean(raw_init_times), perf_metrics.get_grammar_compiler_init_time().mean)
+    assert np.allclose(np.mean(raw_compile_times), perf_metrics.get_grammar_compile_time().mean)
+    # TODO: get max, min values as well
 
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
 @pytest.mark.parametrize("stop_str", {True, False})

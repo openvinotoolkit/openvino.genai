@@ -8,7 +8,6 @@ namespace ov {
 namespace genai {
 
 XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size) {
-  const auto start = std::chrono::steady_clock::now();
     auto vocab_vector = tokenizer.get_vocab_vector();
     if (!vocab_size.has_value()) {
         vocab_size = vocab_vector.size();
@@ -21,10 +20,7 @@ XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, s
         std::vector<int32_t>{static_cast<int32_t>(tokenizer.get_eos_token_id())},
         true
     );
-    
     m_grammar_compiler = std::make_unique<xgrammar::GrammarCompiler>(std::move(tokenizer_info));
-    const auto end = std::chrono::steady_clock::now();
-    m_init_grammar_compiler_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
 }
 
 std::shared_ptr<LogitTransformers::ILogitTransformer>
@@ -35,8 +31,6 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
     auto& guided_gen_config = *sampling_parameters.structured_output_config;
     guided_gen_config.validate();
 
-    auto start = std::chrono::steady_clock::now();
-    
     xgrammar::Grammar grammar;
     if (guided_gen_config.json_schema.has_value()) {
         grammar = xgrammar::Grammar::FromJSONSchema(*guided_gen_config.json_schema);
@@ -47,17 +41,9 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
     }
 
     auto compiled_grammar = m_grammar_compiler->CompileGrammar(grammar);
-    
     std::vector<int> override_stop_tokens(sampling_parameters.stop_token_ids.begin(), sampling_parameters.stop_token_ids.end());
-    auto logit_transformer = std::make_shared<LogitTransformers::XGrammarLogitsTransformer>(std::move(compiled_grammar), override_stop_tokens);
     
-    auto stop = std::chrono::steady_clock::now();
-
-    // In order to keep all the metrics in one place we store grammaer compiler initilization time 
-    // in the logit_transofmer as well, even though grammar compiler is initialzed prior to 
-    logit_transformer->m_init_grammar_compiler_time = m_init_grammar_compiler_time;
-    logit_transformer->m_grammar_compile_time = std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count();
-    return logit_transformer;
+    return std::make_shared<LogitTransformers::XGrammarLogitsTransformer>(std::move(compiled_grammar), override_stop_tokens);
 }
 
 namespace LogitTransformers {
