@@ -122,10 +122,10 @@ public:
                                  const ov::Tensor& input_ids,
                                  ov::genai::GenerationConfig sampling_params) override;
 
-    GenerationHandle add_request_with_token_type_ids(uint64_t request_id,
+    GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  ov::genai::GenerationConfig sampling_params,
-                                 const std::optional<ov::Tensor>& token_type_ids = std::nullopt);
+                                 const std::optional<ov::Tensor>& token_type_ids);
 
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
@@ -142,9 +142,9 @@ public:
 
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt);
+            const std::vector<GenerationConfig>& sampling_params,
+            const StreamerVariant& streamer,
+            const std::optional<std::vector<ov::Tensor>>& token_type_ids) override;
 
     /**
      * Updates LoRA adapters for current generation call

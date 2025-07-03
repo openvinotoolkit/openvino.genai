@@ -127,6 +127,14 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer);
 
+    virtual std::vector<EncodedGenerationResult>
+    generate(const std::vector<ov::Tensor>& input_ids,
+            const std::vector<GenerationConfig>& sampling_params,
+            const StreamerVariant& streamer,
+            const std::optional<std::vector<ov::Tensor>>& token_type_ids) {
+        throw std::runtime_error("token_type_ids generation not supported by this implementation");
+    }
+    
     /**
      * Starts chat with a given system prompt
      * 
