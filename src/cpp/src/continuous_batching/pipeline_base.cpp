@@ -182,9 +182,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         if (m_inputs_embedder->has_token_type_ids()) {
             auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
             input_embeds_list.push_back(std::move(embeds));
-            if (!token_type_ids_list) {
-                token_type_ids_list.emplace();
-            }
             token_type_ids_list->emplace_back(std::move(tt_ids));
         } else {
             auto inputs_embeds = m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
@@ -207,9 +204,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             if (m_inputs_embedder->has_token_type_ids()) {
                 auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence);
                 input_embeds_list.push_back(std::move(embeds));
-                if (!token_type_ids_list) {
-                    token_type_ids_list.emplace();
-                }
                 token_type_ids_list->emplace_back(std::move(tt_ids));
             } else {
                 input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence));
