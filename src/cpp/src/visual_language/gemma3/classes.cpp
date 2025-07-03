@@ -44,18 +44,12 @@ EncodedImage VisionEncoderGemma3::encode( const ov::Tensor& image, const ov::Any
     auto pixel_values_ptr = pixel_values.data<float>();
     ov::Shape pixel_values_shape = pixel_values.get_shape();
 
-    size_t pixel_values_base_index = 0 * (pixel_values_shape[1] * pixel_values_shape[2]) + 0 * (pixel_values_shape[2]); 
-
     encoder.set_tensor("pixel_values", pixel_values);
     encoder.infer();
 
     const ov::Tensor& infer_output = encoder.get_output_tensor();
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
-    
-    auto image_features_ptr = image_features.data<float>();
-    ov::Shape image_features_shape = image_features.get_shape();
-    size_t base_index = 0 * (image_features_shape[1] * image_features_shape[2]) + 0 * (image_features_shape[2]);
 
     ImageSize resized_source_size{config.size_height / config.patch_size, config.size_width / config.patch_size};
     return {std::move(image_features), resized_source_size};
@@ -132,7 +126,19 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma3::get_inputs_embeds_with_t
     for (size_t new_image_id : images_sequence) {
         image_embeds.push_back(images.at(new_image_id).resized_source);
     }
-  
+
+    // HF/optimum-intel first apply chat template to messages/text prompt:
+    //      <bos><start_of_turn>user\n<start_of_image>text prompt example<end_of_turn>\n<start_of_turn>model
+    // Then templated prompt string is modified - they replace image start token with image pad + end tokens and pad double newlines from both sides:
+    //      <start_of_image> -> \n\n<start_of_image><image_soft_token>...<image_soft_token><end_of_image>\n\n
+    // In GenAI we first prepare unified prompt that already includes all image tokens (start, pad, end) and new lines, 
+    //  and only then apply chat template.
+    // As Gemma3 original chat template has trim filter for message content (`{{ message['content'] | trim }}`),
+    //  unified prompt in GenAI is affected:
+    //  - left padded double newline is removed
+    //  - right padded double newline transformed to single newline (Jinja2Cpp behaviour)
+    // Removing trim filter in chat template fallback resolves this issue.
+    // TODO Check trim filter behaviour and chat template rendering with minja.
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
@@ -215,6 +221,12 @@ ov::Tensor InputsEmbedderGemma3::merge_text_and_image_embeddings_llava(const ov:
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
     std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
     return inputs_embeds;
+}
+
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma3::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
+    // position_ids in Gemma3 are 1-indexed
+    // https://github.com/huggingface/optimum-intel/blob/v1.24.0/optimum/intel/openvino/modeling_visual_language.py#L874-L876
+    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size + 1);
 }
 
 } // namespace ov::genai
