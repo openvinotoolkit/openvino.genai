@@ -130,6 +130,7 @@ export const VLM_MODELS: VLMModelType[] = [
         loraSupport: false,
         links: [
           'https://huggingface.co/google/gemma-3-4b-it',
+          'https://huggingface.co/google/gemma-3-12b-it',
         ],
       },
     ],

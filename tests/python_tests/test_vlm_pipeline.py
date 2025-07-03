@@ -852,8 +852,8 @@ class TestImageTags:
         pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
-        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (896, 896), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (896, 896), "PA"),
+        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "SDPA"),
+        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "PA"),
     ],
 )
 def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size, backend):
@@ -879,6 +879,11 @@ def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size
             ],
         }
     ]
+
+    # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
+    if model.config.model_type == "gemma3":
+        processor.tokenizer.add_bos_token = False
+
     templated_prompt = processor.apply_chat_template(conversation,add_generation_prompt=True)
     inputs = processor(text=[templated_prompt], images=[resized_image], padding=True, return_tensors="pt")
     output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens)
