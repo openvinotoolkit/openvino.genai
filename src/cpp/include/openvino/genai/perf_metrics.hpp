@@ -55,12 +55,11 @@ struct OPENVINO_GENAI_EXPORTS MeanStdPair {
 /**
 * @brief Structure to store list of durations in milliseconds.
 */
-struct OPENVINO_GENAI_EXPORTS DurationValues {
-    float min;
-    float max;
+struct OPENVINO_GENAI_EXPORTS SummaryStats {
     float mean;
     float std;
-    std::vector<float> values;
+    float min;
+    float max;
 };
 
 /**
@@ -117,8 +116,8 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair ipot;  // Inference time (in ms) per output token.
     MeanStdPair throughput;  // Tokens per second.
 
-    MeanStdPair grammar_compiler_init_time;  // Time to initialize grammar compiler in ms.
-    MeanStdPair grammar_compile_time;        // Time to compile grammar in ms.
+    SummaryStats grammar_compiler_init_time;  // Time to initialize grammar compiler in ms.
+    SummaryStats grammar_compile_time;        // Time to compile grammar in ms.
 
     MeanStdPair generate_duration;
     MeanStdPair inference_duration;
@@ -136,8 +135,8 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair get_ipot();         // Inference time (in ms) per output token.
     MeanStdPair get_throughput();   // Tokens per second.
     
-    MeanStdPair get_grammar_compiler_init_time();
-    MeanStdPair get_grammar_compile_time();
+    SummaryStats get_grammar_compiler_init_time();
+    SummaryStats get_grammar_compile_time();
 
     MeanStdPair get_inference_duration();       // in ms
     MeanStdPair get_generate_duration();        // in ms

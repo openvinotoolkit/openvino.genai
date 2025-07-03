@@ -30,6 +30,15 @@ ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSecon
     return {mean, std};
 }
 
+ov::genai::SummaryStats calc_full_stat(const std::vector<ov::genai::MicroSeconds>& durations) {
+    if (durations.size() == 0) {
+        return {-1, -1, -1, -1};
+    }
+    auto minmax = std::minmax_element(durations.begin(), durations.end());
+    auto meanstd = calc_mean_and_std(durations);
+    return {minmax.first->count() / 1000.0f, minmax.second->count() / 1000.0f, meanstd.mean, meanstd.std};
+}
+
 float PerfMetrics::get_load_time() {
     return load_time;
 }
@@ -84,12 +93,12 @@ MeanStdPair PerfMetrics::get_inference_duration() {
     return inference_duration;
 }
 
-MeanStdPair PerfMetrics::get_grammar_compiler_init_time() {
+SummaryStats PerfMetrics::get_grammar_compiler_init_time() {
     evaluate_statistics();
     return grammar_compiler_init_time;
 }
 
-MeanStdPair PerfMetrics::get_grammar_compile_time() {
+SummaryStats PerfMetrics::get_grammar_compile_time() {
     evaluate_statistics();
     return grammar_compile_time;
 }
@@ -131,8 +140,8 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     ipot = calc_mean_and_std(raw_metrics.m_token_infer_durations);
     ttft = calc_mean_and_std(raw_metrics.m_times_to_first_token);
 
-    grammar_compiler_init_time = calc_mean_and_std(raw_metrics.m_grammar_init_time);
-    grammar_compile_time = calc_mean_and_std(raw_metrics.m_grammar_compile_time);
+    grammar_compile_time = calc_full_stat(raw_metrics.m_grammar_compile_time);
+    grammar_compiler_init_time = calc_full_stat(raw_metrics.m_grammar_init_time);
 
     generate_duration = calc_mean_and_std(raw_metrics.generate_durations);
     tokenization_duration = calc_mean_and_std(raw_metrics.tokenization_durations);

@@ -12,7 +12,7 @@
 
 namespace py = pybind11;
 
-using ov::genai::DurationValues;
+using ov::genai::SummaryStats;
 using ov::genai::MeanStdPair;
 using ov::genai::PerfMetrics;
 using ov::genai::RawPerfMetrics;
@@ -155,13 +155,15 @@ void init_perf_metrics(py::module_& m) {
             return pyutils::get_ms(rw, &RawPerfMetrics::m_grammar_compile_time);
         });
 
-    py::class_<DurationValues>(m, "DurationValues")
+    py::class_<SummaryStats>(m, "SummaryStats")
         .def(py::init<>())
-        .def_readonly("mean", &DurationValues::mean)
-        .def_readonly("std", &DurationValues::std);
-        // .def("__iter__", [](const MeanStdPair &self) {
-        //     return py::make_iterator(&self.mean, &self.std + 1);
-        // }, py::keep_alive<0, 1>());  // Keep object alive while the iterator is used;
+        .def_readonly("mean", &SummaryStats::mean)
+        .def_readonly("std", &SummaryStats::std)
+        .def_readonly("min", &SummaryStats::min)
+        .def_readonly("max", &SummaryStats::max)
+        .def("as_tuple", [](const SummaryStats& self) {
+            return py::make_tuple(self.mean, self.std, self.min, self.max);
+        });
 
     py::class_<MeanStdPair>(m, "MeanStdPair")
         .def(py::init<>())

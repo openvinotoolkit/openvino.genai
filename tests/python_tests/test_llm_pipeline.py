@@ -874,7 +874,8 @@ def test_perf_metrics_with_structured_output(generation_config, prompt):
     raw_compile_times = np.array(raw_metrics.m_grammar_compile_time) / 1000
     assert np.allclose(np.mean(raw_init_times), perf_metrics.get_grammar_compiler_init_time().mean)
     assert np.allclose(np.mean(raw_compile_times), perf_metrics.get_grammar_compile_time().mean)
-    # TODO: get max, min values as well
+    assert np.allclose(np.max(raw_init_times), perf_metrics.get_grammar_compiler_init_time().max)
+    assert np.allclose(np.min(raw_init_times), perf_metrics.get_grammar_compiler_init_time().min)
 
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
 @pytest.mark.parametrize("stop_str", {True, False})
