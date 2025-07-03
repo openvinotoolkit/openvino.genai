@@ -77,11 +77,11 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     auto temporal_images = std::make_shared<ov::op::v3::Broadcast>(resized_images_s, broadcast_shape);
     auto reshaped_8d = std::make_shared<ov::op::v1::Reshape>(temporal_images, temp_shape8d, true);
     auto transposed_8d = std::make_shared<ov::op::v1::Transpose>(reshaped_8d, 
-        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{8}, std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7})
+        std::make_shared<ov::op::v0::Constant>(ov::element::i32, Shape{8}, std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7})
     );
     auto reshaped_4d = std::make_shared<ov::op::v1::Reshape>(transposed_8d, temp_shape4d, true);
     auto transposed_4d = std::make_shared<ov::op::v1::Transpose>(reshaped_4d, 
-        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3})
+        std::make_shared<ov::op::v0::Constant>(ov::element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3})
     );
     auto reshaped_to_2d = std::make_shared<ov::op::v1::Reshape>(transposed_4d, last_shape, true);
 
@@ -380,16 +380,20 @@ ov::Tensor merge_text_and_image_embeddings(
 
 } // namespace qwen2vl_utils
 
-VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
-    auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
-    auto model = patch_preprocess_into_model(model_org);
-    auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
+std::unique_ptr<CircularBufferQueue<ov::InferRequest>> VisionEncoderQwen2VL::create_ireq(ov::CompiledModel& compiled_model) {
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
-    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+    return std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
+}
+
+VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
+    auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
+    auto model = patch_preprocess_into_model(model_org);
+    auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
+    m_ireq_queue_vision_encoder = create_ireq(compiled_model);
 }
 
 VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
@@ -403,12 +407,7 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
     auto model = patch_preprocess_into_model(model_org);
 
     auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
-    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
+    m_ireq_queue_vision_encoder = create_ireq(compiled_model);
 }
 
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
@@ -486,8 +485,6 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
 
     return {std::move(image_features), resized_source_size};
 }
-
-
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const VLMConfig& vlm_config,
