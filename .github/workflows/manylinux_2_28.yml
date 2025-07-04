@@ -165,6 +165,7 @@ jobs:
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           /usr/bin/cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=ON \
+                -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \ # Bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
                 -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                 -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
