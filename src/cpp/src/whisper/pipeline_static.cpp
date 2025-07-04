@@ -138,7 +138,7 @@ void set_decoder_input_ids(ov::InferRequest& decoder,
 
     // NB: attention_mask format: [1, 1, 0, 0]
     auto padded_attention_mask = decoder.get_tensor("attention_mask");
-    OPENVINO_ASSERT(padded_input_ids.get_size() >= init_ids.size());
+    OPENVINO_ASSERT(padded_attention_mask.get_size() >= init_ids.size());
     auto* padded_mask_data = padded_attention_mask.data<int64_t>();
     std::fill_n(padded_mask_data, padded_attention_mask.get_size(), 0u);
     std::fill_n(padded_mask_data, init_ids.size(), 1u);
@@ -180,7 +180,8 @@ ov::Tensor decode_with_past(ov::InferRequest& decoder_with_past,
                             ov::genai::RawPerfMetrics& raw_metrics) {
     decoder_with_past.get_tensor("input_ids").data<int64_t>()[0] = input_id;
     decoder_with_past.get_tensor("cache_position").data<int64_t>()[0] = position_id;
-    decoder_with_past.get_tensor("attention_mask").data<float>()[position_id - 1] = 0u;
+    OPENVINO_ASSERT(position_id >= 1);
+    decoder_with_past.get_tensor("attention_mask").data<float>()[position_id - 1] = 0.0f;
 
     ov::genai::utils::infer_with_perf_metrics(decoder_with_past, raw_metrics);
     return decoder_with_past.get_tensor("logits");
@@ -198,7 +199,7 @@ void zero_past_key_values(ov::InferRequest& request) {
 }
 
 void prepare_decoder_with_past(ov::InferRequest& decoder_with_past, ov::InferRequest& decoder, const size_t init_ids_size) {
-    // NB: Prepare attetion mask to be in a format [0, 0, 0, 1, 1, 1, ..., 1, 0, 1]
+    // NB: Prepare attention mask to be in a format [0, 0, 0, 1, 1, 1, ..., 1, 0, 1]
     auto padded_attention_mask = decoder_with_past.get_tensor("attention_mask");
     OPENVINO_ASSERT(padded_attention_mask.get_size() >= init_ids_size);
     OPENVINO_ASSERT(padded_attention_mask.get_size() >= 2);
@@ -468,13 +469,13 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
                 auto shape_cst = std::make_shared<v0::Constant>(
                     ov::element::i64,
                     ov::Shape{2},
-                    std::vector<float>{MAX_PROMPT_LEN, 1}
+                    std::vector<int64_t>{MAX_PROMPT_LEN, 1}
                 );
 
                 auto target_shape = std::make_shared<v0::Constant>(
                     ov::element::i64,
                     ov::Shape{2},
-                    std::vector<float>{MAX_PROMPT_LEN, static_cast<float>(hidden_state_seq_size)}
+                    std::vector<int64_t>{MAX_PROMPT_LEN, static_cast<int64_t>(hidden_state_seq_size)}
                 );
                 // FIXME: Must be transpose if batch present
                 auto reshape = std::make_shared<v1::Reshape>(cvt->output(0), shape_cst->output(0), false);
