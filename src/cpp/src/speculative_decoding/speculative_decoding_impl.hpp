@@ -7,6 +7,7 @@
 #include "continuous_batching/pipeline_impl.hpp"
 #include "speculative_decoding/continuous_batching_for_speculative_decoding_impl.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
+#include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 
 namespace ov::genai {
 
@@ -39,7 +40,7 @@ protected:
     std::shared_ptr<ContinuousBatchingForSpeculativeDecodingImpl> m_main_pipeline, m_draft_pipeline;
     // Metrics
     SpeculativeDecodingMetrics m_sd_metrics;
-    PerfMetrics m_perf_metrics;
+    ov::genai::SDPerModelsPerfMetrics m_perf_metrics;
 
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
