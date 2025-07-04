@@ -164,16 +164,33 @@ jobs:
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           /usr/bin/cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
-                -DENABLE_PYTHON=ON \
+                -DENABLE_PYTHON=OFF \
                 -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                 -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
           /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+          for py_version in "39" "310" "311" "312" "313"
+          do
+            rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
+
+            python_path=/opt/python/cp${py_version}-cp${py_version}/bin/python3
+
+            echo "Configuring cmake for python$py_version"
+            /usr/bin/cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
+                  -DENABLE_PYTHON=ON \
+                  -DPython3_EXECUTABLE=${python_path} \
+                  -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+                  -S ${{ env.SRC_DIR }} \
+                  -B ${{ env.BUILD_DIR }}
+            echo "Configuring cmake done for python$py_version"
+            
+            /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+            /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+            deactivate
+          done          
         env:
-          CXXFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
-          CFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
-          LDFLAGS: "-fno-lto"
+          CXXFLAGS: "-Wno-dangling-reference" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, 
+          LDFLAGS: "-fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
 
       - name: Pack Artifacts
         run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
