@@ -150,7 +150,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "num_assistant_tokens", num_assistant_tokens);
     read_anymap_param(properties, "max_ngram_size", max_ngram_size);
 
-    // Structured Output generation
+    // Structured output
     read_anymap_param(properties, "structured_output_config", structured_output_config);
 }
 

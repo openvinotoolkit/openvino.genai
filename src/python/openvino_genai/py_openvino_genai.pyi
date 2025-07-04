@@ -1330,6 +1330,12 @@ class PerfMetrics:
         :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
         :type get_detokenization_duration: MeanStdPair
     
+        :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
+        :type get_grammar_compiler_init_times: dict[str, float]
+    
+        :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
+        :type get_grammar_compile_time: SummaryStats
+    
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
     """
@@ -1345,7 +1351,7 @@ class PerfMetrics:
         ...
     def get_grammar_compile_time(self) -> SummaryStats:
         ...
-    def get_grammar_compiler_init_times(self) -> SummaryStats:
+    def get_grammar_compiler_init_times(self) -> dict[str, float]:
         ...
     def get_inference_duration(self) -> MeanStdPair:
         ...
@@ -1463,6 +1469,9 @@ class RawPerfMetrics:
     
         :param inference_durations : Total inference duration for each generate call in milliseconds.
         :type batch_sizes: list[float]
+    
+        :param grammar_compile_times: Time to compile the grammar in milliseconds.
+        :type grammar_compile_times: list[float]
     """
     def __init__(self) -> None:
         ...
@@ -1473,6 +1482,9 @@ class RawPerfMetrics:
     def generate_durations(self) -> list[float]:
         ...
     @property
+    def grammar_compile_times(self) -> list[float]:
+        ...
+    @property
     def inference_durations(self) -> list[float]:
         ...
     @property
@@ -1480,12 +1492,6 @@ class RawPerfMetrics:
         ...
     @property
     def m_durations(self) -> list[float]:
-        ...
-    @property
-    def m_grammar_compile_time(self) -> list[float]:
-        ...
-    @property
-    def m_grammar_init_time(self) -> list[float]:
         ...
     @property
     def m_new_token_times(self) -> list[float]:
