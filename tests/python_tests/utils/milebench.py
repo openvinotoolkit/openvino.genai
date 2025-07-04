@@ -35,8 +35,6 @@ class MileBenchDataset:
 
     @staticmethod
     def _transform_string(s: str) -> str:
-        import re
-
         counter = iter(range(1, s.count("{i}") + 1))
         return re.sub(r"\{i\}", lambda _: str(next(counter)), s)
 
@@ -155,7 +153,6 @@ class Eval:
         answer = answer.replace("\t", " ")
         answer = answer.strip()
         answer = self.processPunctuation(answer)
-        answer = answer.strip('"')
         answer = answer.strip('"')
         answer = answer.strip().lower()
         return answer
