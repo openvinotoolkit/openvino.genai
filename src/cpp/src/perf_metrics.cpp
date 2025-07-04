@@ -36,7 +36,7 @@ ov::genai::SummaryStats calc_full_stat(const std::vector<ov::genai::MicroSeconds
     }
     auto minmax = std::minmax_element(durations.begin(), durations.end());
     auto meanstd = calc_mean_and_std(durations);
-    return {minmax.first->count() / 1000.0f, minmax.second->count() / 1000.0f, meanstd.mean, meanstd.std};
+    return {meanstd.mean, meanstd.std, minmax.first->count() / 1000.0f, minmax.second->count() / 1000.0f};
 }
 
 float PerfMetrics::get_load_time() {
@@ -93,7 +93,7 @@ MeanStdPair PerfMetrics::get_inference_duration() {
     return inference_duration;
 }
 
-SummaryStats PerfMetrics::get_grammar_compiler_init_time() {
+float PerfMetrics::get_grammar_compiler_init_time() {
     evaluate_statistics();
     return grammar_compiler_init_time;
 }
@@ -140,8 +140,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     ipot = calc_mean_and_std(raw_metrics.m_token_infer_durations);
     ttft = calc_mean_and_std(raw_metrics.m_times_to_first_token);
 
-    grammar_compile_time = calc_full_stat(raw_metrics.m_grammar_compile_time);
-    grammar_compiler_init_time = calc_full_stat(raw_metrics.m_grammar_init_time);
+    grammar_compile_time = calc_full_stat(raw_metrics.m_grammar_compile_times);
 
     generate_duration = calc_mean_and_std(raw_metrics.generate_durations);
     tokenization_duration = calc_mean_and_std(raw_metrics.tokenization_durations);
@@ -155,7 +154,9 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
 
 PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
     OPENVINO_ASSERT(right.load_time == load_time, "generation metrics can be accumulated only for the same pipeline");
-    
+    // TODO: rewrite this map will be used
+    OPENVINO_ASSERT(right.grammar_compiler_init_time == grammar_compiler_init_time, "grammar compile time can be accumulated only for the same pipeline");
+
     // Copy left value to res.
     PerfMetrics res = *this;
 

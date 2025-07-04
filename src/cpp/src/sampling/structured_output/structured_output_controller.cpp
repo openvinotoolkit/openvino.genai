@@ -41,6 +41,8 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
     }
     std::string backend_name = (*guided_gen_config).backend.value_or(get_default_backend_name());
     
+    std::unique_lock<std::mutex> lock(m_mutex);
+
     // Check if backend already instantiated
     auto impl_it = m_impls.find(backend_name);
     if (impl_it == m_impls.end()) {
@@ -56,6 +58,8 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
         m_impls[backend_name] = factory_it->second(m_tokenizer, m_vocab_size);
         impl_it = m_impls.find(backend_name);
         const auto end = std::chrono::steady_clock::now();
+        // TODO: save into map and return as a single value not a list
+        // TODO: add mutex
         m_init_grammar_compiler_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     }
 

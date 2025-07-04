@@ -50,6 +50,9 @@ auto raw_perf_metrics_docstring = R"(
 
     :param inference_durations : Total inference duration for each generate call in milliseconds.
     :type batch_sizes: list[float]
+
+    :param grammar_compile_times: Time to compile the grammar in milliseconds.
+    :type grammar_compile_times: list[float]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -148,11 +151,8 @@ void init_perf_metrics(py::module_& m) {
         .def_property_readonly("inference_durations", [](const RawPerfMetrics &rw) {
             return pyutils::get_ms(rw, &RawPerfMetrics::m_inference_durations);
         })
-        .def_property_readonly("m_grammar_init_time", [](const RawPerfMetrics &rw) {
-            return pyutils::get_ms(rw, &RawPerfMetrics::m_grammar_init_time);
-        })
-        .def_property_readonly("m_grammar_compile_time", [](const RawPerfMetrics &rw) {
-            return pyutils::get_ms(rw, &RawPerfMetrics::m_grammar_compile_time);
+        .def_property_readonly("grammar_compile_times", [](const RawPerfMetrics &rw) {
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_grammar_compile_times);
         });
 
     py::class_<SummaryStats>(m, "SummaryStats")

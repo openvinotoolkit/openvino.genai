@@ -446,9 +446,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
 
     auto times = m_sampler->get_structured_output_times();
-    raw_perf_counters.m_grammar_init_time.emplace_back(times.first);
+    perf_metrics.grammar_compiler_init_time = times.first;
     for (const auto& t: times.second) {
-        raw_perf_counters.m_grammar_compile_time.emplace_back(t);
+        raw_perf_counters.m_grammar_compile_times.emplace_back(t);
     }
 
     // waiting for competion of streaming
