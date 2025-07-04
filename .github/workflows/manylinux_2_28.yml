@@ -268,9 +268,13 @@ jobs:
 
       - name: Build GenAI Wheel
         run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
-              ${{ env.SRC_DIR }}
+          for py_version in "39" "310" "311" "312" "313"
+          do
+            python_path=/opt/python/cp${py_version}-cp${py_version}/bin/python3
+            $python_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+                ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+                ${{ env.SRC_DIR }}
+          done
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Build WWB Wheel
