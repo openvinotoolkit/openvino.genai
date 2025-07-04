@@ -1,9 +1,39 @@
 import { createRequire } from 'module';
 import { platform } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
+import {
+  EmbeddingResult,
+  EmbeddingResults
+} from './utils.js';
+
+export interface TextEmbeddingPipelineWrapper {
+  new (): TextEmbeddingPipelineWrapper;
+  init(
+    modelPath: string,
+    device: string,
+    config: object,
+    ovProperties: object,
+    callback: (err: NodeJS.ErrnoException | null) => void,
+  ): void;
+  embedQuery(
+    text: string,
+    callback: (err: NodeJS.ErrnoException | null, value: EmbeddingResult) => void,
+  ): void;
+  embedDocuments(
+    documents: string[],
+    callback: (err: NodeJS.ErrnoException | null, value: EmbeddingResults) => void,
+  ): void;
+  embedQuerySync(text: string): EmbeddingResult;
+  embedDocumentsSync(documents: string[]): EmbeddingResults;
+}
+
+interface OpenVINOGenAIAddon {
+  TextEmbeddingPipeline: TextEmbeddingPipelineWrapper,
+  LLMPipeline: any,
+}
 
 // We need to use delayed import to get an updated Path if required
-function getGenAIAddon() {
+function getGenAIAddon(): OpenVINOGenAIAddon {
   const require = createRequire(import.meta.url);
   const ovPath = require.resolve('openvino-node');
   if (platform() == 'win32') {

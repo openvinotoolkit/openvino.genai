@@ -24,7 +24,7 @@ huggingface-cli download <model> --local-dir <output_folder>
 
 Compile GenAI JavaScript bindings archive first using the instructions in [../../../src/js/README.md](../../../src/js/README.md#build-bindings).
 
-Run `npm install` in current folder and then the examples will be ready to run.
+Run `npm install` and the examples will be ready to run.
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.
 

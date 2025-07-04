@@ -108,3 +108,28 @@ export type GenerationConfig = GenericGenerationConfig
     & BeamSearchGenerationConfig
     & RandomSamplingsGenerationConfig
     & AssistingGenerationConfig;
+
+export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
+export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
+
+/**
+     * Pooling strategy
+     */
+export enum PoolingType {
+    /** First token embeddings */
+    CLS,
+    /** The average of all token embeddings */
+    MEAN,
+}
+export type TextEmbeddingConfig = {
+    /** Instruction to use for embedding a document */
+    embed_instruction?: string,
+    /** Maximum length of tokens passed to the embedding model */
+    max_length?: number,
+    /** If 'true', L2 normalization is applied to embeddings */
+    normalize?: boolean
+    /** Pooling strategy applied to model output tensor */
+    pooling_type?: PoolingType
+    /** Instruction to use for embedding a query */
+    query_instruction?: string
+};
