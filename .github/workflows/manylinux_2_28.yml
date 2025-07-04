@@ -189,7 +189,8 @@ jobs:
             deactivate
           done          
         env:
-          CXXFLAGS: "-Wno-dangling-reference" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, 
+          CXXFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
+          CFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
           LDFLAGS: "-fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
 
       - name: Pack Artifacts
