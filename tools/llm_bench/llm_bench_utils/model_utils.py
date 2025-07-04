@@ -222,7 +222,8 @@ def get_use_case(model_name_or_path):
     if (Path(model_name_or_path) / "model_index.json").exists():
         diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
         pipe_type = diffusers_config.get("_class_name")
-        if pipe_type in ["StableDiffusionPipeline", "StableDiffusionXLPipeline", "StableDiffusion3Pipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
+        if pipe_type in ["StableDiffusionPipeline", "StableDiffusionXLPipeline", "StableDiffusion3Pipeline", "StableDiffusionInpaintPipeline",
+                         "StableDiffusionXLInpaintPipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
             return "image_gen", pipe_type.replace("Pipeline", "")
 
     if config is not None:
@@ -259,7 +260,7 @@ def resolve_complex_model_types(config):
 
 def get_model_name(model_name_or_path):
     # try to get use_case from model name
-    path = os.path.normpath(model_name_or_path)
+    path = os.path.abspath(model_name_or_path)
     model_names = path.split(os.sep)
     for model_name in reversed(model_names):
         for case, model_ids in USE_CASES.items():

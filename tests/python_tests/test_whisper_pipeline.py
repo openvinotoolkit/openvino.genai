@@ -179,7 +179,10 @@ MAX_DATASET_LENGTH = 30
 
 @functools.lru_cache(16)
 def get_whisper_dataset(language: str, long_form: bool) -> list:
-    if not long_form:
+    # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0" 
+    # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
+    # if not long_form:
+    if False:  
         ds = datasets.load_dataset(
             "mozilla-foundation/common_voice_11_0",
             language,
@@ -194,7 +197,6 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             streaming=True,
             trust_remote_code=True,
         )
-
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
     ds = ds.take(MAX_DATASET_LENGTH)
