@@ -93,9 +93,8 @@ MeanStdPair PerfMetrics::get_inference_duration() {
     return inference_duration;
 }
 
-float PerfMetrics::get_grammar_compiler_init_time() {
-    evaluate_statistics();
-    return grammar_compiler_init_time;
+std::map<std::string, float> PerfMetrics::get_grammar_compiler_init_times() {
+    return grammar_compiler_init_times;
 }
 
 SummaryStats PerfMetrics::get_grammar_compile_time() {
@@ -154,11 +153,22 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
 
 PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
     OPENVINO_ASSERT(right.load_time == load_time, "generation metrics can be accumulated only for the same pipeline");
-    // TODO: rewrite this map will be used
-    OPENVINO_ASSERT(right.grammar_compiler_init_time == grammar_compiler_init_time, "grammar compile time can be accumulated only for the same pipeline");
 
     // Copy left value to res.
     PerfMetrics res = *this;
+    
+    // maps with grammar compiler init times should not have conflicting keys
+    // {{"xgrammar", 10}} + {{"llmguidance", 20}} = {{"grammar", 10}, {"llmguidance", 20}} - is OK!
+    // {{"xgrammar", 10}} + {{"xgrammar", 10}} = {{"xgrammar", 10}} - is OK!
+    // {{"xgrammar", 10}} + {{"xgrammar", 20}} = is NOT OK! Fails on assert!
+    for (const auto& [key, value] : right.grammar_compiler_init_times) {
+        auto it = res.grammar_compiler_init_times.find(key);
+        if (it != res.grammar_compiler_init_times.end()) {
+            OPENVINO_ASSERT(it->second == value, "Grammar compiler init time for the same backend should be the same. ", 
+                                                 "You are trying to accumulate metrics for different pipelines which is not allowed.");
+        }
+        res.grammar_compiler_init_times[key] = value;
+    }
 
     // Concatenate durations, batch_sizes first token times.
     auto& new_durations = res.raw_metrics.m_durations;
@@ -189,6 +199,10 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
     new_tok_durations.insert(new_tok_durations.end(), right_tok_durations.begin(), right_tok_durations.end());
     new_detok_durations.insert(new_detok_durations.end(), right_detok_durations.begin(), right_detok_durations.end());
     new_gen_durations.insert(new_gen_durations.end(), right_gen_durations.begin(), right_gen_durations.end());
+
+    // Concatenate structured output compilation times.
+    auto& new_grammar_compile_times = res.raw_metrics.m_grammar_compile_times;
+    new_grammar_compile_times.insert(new_grammar_compile_times.end(), right.raw_metrics.m_grammar_compile_times.begin(), right.raw_metrics.m_grammar_compile_times.end());
 
     res.num_generated_tokens += right.num_generated_tokens;
     res.num_input_tokens += right.num_input_tokens;

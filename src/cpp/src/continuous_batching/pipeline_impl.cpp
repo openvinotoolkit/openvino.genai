@@ -446,7 +446,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
 
     auto times = m_sampler->get_structured_output_times();
-    perf_metrics.grammar_compiler_init_time = times.first;
+    perf_metrics.grammar_compiler_init_times = times.first;
     for (const auto& t: times.second) {
         raw_perf_counters.m_grammar_compile_times.emplace_back(t);
     }

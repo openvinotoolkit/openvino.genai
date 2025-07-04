@@ -58,9 +58,7 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
         m_impls[backend_name] = factory_it->second(m_tokenizer, m_vocab_size);
         impl_it = m_impls.find(backend_name);
         const auto end = std::chrono::steady_clock::now();
-        // TODO: save into map and return as a single value not a list
-        // TODO: add mutex
-        m_init_grammar_compiler_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        m_init_grammar_compiler_times[backend_name] = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     }
 
     // Use the instantiated backend
@@ -69,6 +67,15 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
     const auto end = std::chrono::steady_clock::now();
     m_grammar_compile_times.emplace_back(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
     return res;
+}
+
+std::pair<std::map<std::string, float>, std::vector<float>> StructuredOutputController::get_times() const {
+    return {m_init_grammar_compiler_times, m_grammar_compile_times};
+}
+
+void StructuredOutputController::clear_compile_times() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_grammar_compile_times.clear();
 }
 
 } // namespace genai

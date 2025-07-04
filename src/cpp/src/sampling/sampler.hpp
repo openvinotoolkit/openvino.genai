@@ -123,7 +123,8 @@ public:
     void create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_parameters, const TokenIds& prompt);
 
     std::map<size_t, int32_t> get_beam_idxs(SequenceGroup::CPtr sequence_group);
-    std::pair<float, std::vector<float>> get_structured_output_times();
+    // pair with map with backend name and corresponding acompiler init time, and vector of compile times for each concrete grammar
+    std::pair<std::map<std::string, float>, std::vector<float>> get_structured_output_times();
     void clear_structured_output_compile_times();
 };
 

@@ -101,6 +101,12 @@ auto perf_metrics_docstring = R"(
     :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
     :type get_detokenization_duration: MeanStdPair
 
+    :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
+    :type get_grammar_compiler_init_times: dict[str, float]
+
+    :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
+    :type get_grammar_compile_time: SummaryStats
+
     :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
     :type raw_metrics: RawPerfMetrics
 )";
@@ -176,7 +182,7 @@ void init_perf_metrics(py::module_& m) {
     py::class_<PerfMetrics>(m, "PerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_load_time", &PerfMetrics::get_load_time)
-        .def("get_grammar_compiler_init_time", &PerfMetrics::get_grammar_compiler_init_time)
+        .def("get_grammar_compiler_init_times", &PerfMetrics::get_grammar_compiler_init_times)
         .def("get_grammar_compile_time", &PerfMetrics::get_grammar_compile_time)
         .def("get_num_generated_tokens", &PerfMetrics::get_num_generated_tokens)
         .def("get_num_input_tokens", &PerfMetrics::get_num_input_tokens)

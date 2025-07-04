@@ -7,6 +7,8 @@
 #include "openvino/genai/visibility.hpp"
 #include <vector>
 #include <memory>
+#include <map>
+#include <string>
 #include <optional>
 
 namespace ov {
@@ -89,7 +91,7 @@ struct OPENVINO_GENAI_EXPORTS SummaryStats {
  * @param get_generate_duration Returns the mean and standard deviation of generate duration.
  * @param get_tokenization_duration Returns the mean and standard deviation of tokenization duration.
  * @param get_detokenization_duration Returns the mean and standard deviation of detokenization duration.
- * @param get_grammar_compiler_init_time Returns the time to initialize the grammar compiler in milliseconds.
+ * @param get_grammar_compiler_init_times Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
  * @param get_grammar_compile_time Returns the time to compile the grammar in milliseconds.
  * @param get_microsec Converts a duration to microseconds.
  * @param m_evaluated Flag indicating if raw metrics were evaluated.
@@ -118,7 +120,8 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair ipot;  // Inference time (in ms) per output token.
     MeanStdPair throughput;  // Tokens per second.
 
-    float grammar_compiler_init_time;     // Time to initialize grammar compiler in ms.
+    // Time to initialize grammar compiler for each backend in ms.
+    std::map<std::string, float> grammar_compiler_init_times;     
     SummaryStats grammar_compile_time;    // Time to compile grammar in ms.
 
     MeanStdPair generate_duration;
@@ -137,7 +140,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair get_ipot();         // Inference time (in ms) per output token.
     MeanStdPair get_throughput();   // Tokens per second.
     
-    float get_grammar_compiler_init_time();     // in ms
+    std::map<std::string, float> get_grammar_compiler_init_times();
     SummaryStats get_grammar_compile_time();    // in ms
 
     MeanStdPair get_inference_duration();       // in ms

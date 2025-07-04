@@ -76,9 +76,11 @@ public:
     static std::string& get_default_backend_name();
     static std::unordered_map<std::string, BackendFactory>& get_backend_registry();
     
-    float m_init_grammar_compiler_time;
-    std::vector<float> m_grammar_compile_times;
+    std::pair<std::map<std::string, float>, std::vector<float>> get_times() const;
+    void clear_compile_times();
 private:
+    std::map<std::string, float> m_init_grammar_compiler_times;
+    std::vector<float> m_grammar_compile_times;
     std::unordered_map<std::string, std::unique_ptr<IStructuredOutputImpl>> m_impls;
     const ov::genai::Tokenizer& m_tokenizer;
     std::optional<int> m_vocab_size;
