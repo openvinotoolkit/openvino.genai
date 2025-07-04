@@ -162,18 +162,16 @@ jobs:
 
       - name: CMake Build
         run: |
-          # -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF is for Bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           /usr/bin/cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=ON \
-                -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
                 -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                 -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
           /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
           /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
         env:
-          CXXFLAGS: "-Wno-dangling-reference" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532
+          CXXFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
 
       - name: Pack Artifacts
         run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
