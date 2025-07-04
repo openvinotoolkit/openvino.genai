@@ -122,4 +122,17 @@ export const VLM_MODELS: VLMModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'Gemma3ForConditionalGeneration',
+    models: [
+      {
+        name: 'gemma3',
+        loraSupport: false,
+        links: [
+          'https://huggingface.co/google/gemma-3-4b-it',
+          'https://huggingface.co/google/gemma-3-12b-it',
+        ],
+      },
+    ],
+  },
 ];
