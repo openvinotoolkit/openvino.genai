@@ -120,7 +120,9 @@ def download_test_content(request):
     # If the file is a tarball, extract it
     extracted_dir = None
     if file_name.endswith(".tar.gz"):
-        extracted_dir = os.path.join(test_data, os.path.splitext(os.path.splitext(file_name)[0])[0])
+        file_name_with_tar = os.path.splitext(file_name)[0]  # Removes .gz
+        file_name = os.path.splitext(file_name_with_tar)[0]  # Removes .tar
+        extracted_dir = os.path.join(test_data, file_name)
         if not os.path.exists(extracted_dir):
             os.makedirs(extracted_dir, exist_ok=True)
             shutil.unpack_archive(file_path, extracted_dir)
