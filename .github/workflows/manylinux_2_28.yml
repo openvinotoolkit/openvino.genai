@@ -164,7 +164,7 @@ jobs:
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           /usr/bin/cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
-                -DENABLE_PYTHON=ON \
+                -DENABLE_PYTHON=OFF \
                 -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                 -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
