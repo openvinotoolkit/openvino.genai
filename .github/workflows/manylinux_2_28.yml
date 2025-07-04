@@ -87,7 +87,7 @@ jobs:
         - ${{ github.workspace }}:${{ github.workspace }}
 
     steps:
-    - uses: akashchi/openvino/.github/actions/openvino_provider@75bdb6309f4acbc6d133db45242a2cc3057b2d9e # TODO: switch back to OV master
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
       id: openvino_download
       with:
         platform: almalinux8
