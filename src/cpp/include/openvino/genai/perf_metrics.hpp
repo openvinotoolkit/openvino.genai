@@ -7,6 +7,8 @@
 #include "openvino/genai/visibility.hpp"
 #include <vector>
 #include <memory>
+#include <map>
+#include <string>
 #include <optional>
 
 namespace ov {
@@ -27,6 +29,7 @@ using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
  * @param m_batch_sizes Batch sizes for each generate call.
  * @param m_durations Total durations for each generate call in microseconds.
  * @param m_inference_durations Total inference duration for each generate call in microseconds.
+ * @param m_grammar_compile_times Time to compile the grammar in microseconds.
  */
 struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<MicroSeconds> generate_durations;
@@ -39,6 +42,8 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<size_t> m_batch_sizes;
     std::vector<MicroSeconds> m_durations;
     std::vector<MicroSeconds> m_inference_durations;
+
+    std::vector<MicroSeconds> m_grammar_compile_times;
 };
 
 /**
@@ -47,6 +52,16 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
 struct OPENVINO_GENAI_EXPORTS MeanStdPair {
     float mean;
     float std;
+};
+
+/**
+* @brief Structure to store list of durations in milliseconds.
+*/
+struct OPENVINO_GENAI_EXPORTS SummaryStats {
+    float mean;
+    float std;
+    float min;
+    float max;
 };
 
 /**
@@ -76,6 +91,8 @@ struct OPENVINO_GENAI_EXPORTS MeanStdPair {
  * @param get_generate_duration Returns the mean and standard deviation of generate duration.
  * @param get_tokenization_duration Returns the mean and standard deviation of tokenization duration.
  * @param get_detokenization_duration Returns the mean and standard deviation of detokenization duration.
+ * @param get_grammar_compiler_init_times Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
+ * @param get_grammar_compile_time Returns the time to compile the grammar in milliseconds.
  * @param get_microsec Converts a duration to microseconds.
  * @param m_evaluated Flag indicating if raw metrics were evaluated.
  *        If false, current mean/std TTFT, TPOT, etc. are not actual and evaluate_statistics() should recalculate them.
@@ -103,6 +120,10 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair ipot;  // Inference time (in ms) per output token.
     MeanStdPair throughput;  // Tokens per second.
 
+    // Time to initialize grammar compiler for each backend in ms.
+    std::map<std::string, float> grammar_compiler_init_times;     
+    SummaryStats grammar_compile_time;    // Time to compile grammar in ms.
+
     MeanStdPair generate_duration;
     MeanStdPair inference_duration;
     MeanStdPair tokenization_duration = {-1.0f, -1.0f};
@@ -118,6 +139,9 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair get_tpot();         // Time (in ms) per output token (TPOT).
     MeanStdPair get_ipot();         // Inference time (in ms) per output token.
     MeanStdPair get_throughput();   // Tokens per second.
+    
+    std::map<std::string, float> get_grammar_compiler_init_times();
+    SummaryStats get_grammar_compile_time();    // in ms
 
     MeanStdPair get_inference_duration();       // in ms
     MeanStdPair get_generate_duration();        // in ms
