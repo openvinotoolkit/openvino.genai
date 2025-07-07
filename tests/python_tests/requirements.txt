@@ -9,6 +9,9 @@ hf_transfer
 langchain_community
 gguf>=0.10.0
 
+# requirements for awq and gptq models.
+gptqmodel
+
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
 rjieba
