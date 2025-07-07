@@ -24,7 +24,7 @@ class TestTextEmbeddingPipeline:
         cpp_result = run_sample(cpp_command)
 
         # Run JS sample
-        js_sample = os.path.join(SAMPLES_JS_DIR, "text_embeddings.js")
+        js_sample = os.path.join(SAMPLES_JS_DIR, "rag/text_embeddings.js")
         js_command =['node', js_sample, convert_model, "Document 1", "Document 2"]
         js_result = run_sample(js_command)
         

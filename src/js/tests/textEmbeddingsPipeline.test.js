@@ -13,7 +13,7 @@ if (!EMBEDDING_MODEL_PATH) throw new Error(
 );
 
 describe('TextEmbeddingPipeline', async () => {
-  let pipeline;
+  let pipeline = null;
 
   before(async () => {
     pipeline = await TextEmbeddingPipeline(EMBEDDING_MODEL_PATH, 'CPU');
