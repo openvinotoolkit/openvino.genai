@@ -477,6 +477,168 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
     }
 }
 
+size_t Sampler::TopKSelector::m_tree_layer_counter = 0;
+Sampler::TopKSelector::TopKSelector(SequenceGroup::Ptr sequence_group)
+    : m_sequence_group(sequence_group),
+        m_parameters{m_sequence_group->get_sampling_parameters()} {
+    OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1); // for eagle, support 1 running seq at the very beginning
+    //m_tree_layers.resize(m_parameters.eagle_depth + 1); // +1 for root layer
+    //m_tree_layers[0].push_back(Beam(*sequence_group)[0]);
+    m_beams.reserve(m_parameters.eagle_branching_factor);
+    auto beam = Beam((*sequence_group)[0]);
+    beam.m_score = 0.0f;
+    m_beams.push_back(beam);
+    m_eagle2_candidate_graph = std::make_shared<Eagle2CandidateGraph>(beam, m_parameters.eagle_final_candidates, m_parameters.eagle_depth);
+}
+
+void Sampler::TopKSelector::finalize_eagle2_candidates(SamplerOutput& sampler_output) {
+    
+    auto final_candidates = m_eagle2_candidate_graph->get_top_k_candidates(); // currently draft model output wrong candidates
+    auto leaf_nodes = m_eagle2_candidate_graph->get_leaf_nodes_from_candidates(final_candidates);
+    for (auto& iter : leaf_nodes) {
+        // reconstruct the path from leaf to root
+        auto path = m_eagle2_candidate_graph->get_path_to_node(iter.m_beam_id);
+    }
+    /*std::vector<Beam> leaf_candidates;
+    
+    std::map<uint64_t, size_t> sequence_to_depth;
+    for (size_t layer = 0; layer < m_tree_layers.size(); ++layer) {
+        for (const Beam& beam : m_tree_layers[layer]) {
+            sequence_to_depth[beam.m_sequence->get_id()] = layer;
+        }
+    }
+
+    std::sort(final_candidates.begin(), final_candidates.end(), [&sequence_to_depth](const Beam& a, const Beam& b) {
+        return sequence_to_depth[a.m_sequence->get_id()] > sequence_to_depth[b.m_sequence->get_id()];
+    });
+
+    leaf_candidates = final_candidates;
+
+    std::vector<std::vector<int64_t>> complete_paths = retrieve_indices(leaf_candidates);
+    for (size_t i = 0; i < leaf_candidates.size(); ++i) {
+        Beam& candidate = leaf_candidates[i];
+        const std::vector<int64_t>& path = complete_paths[i];
+
+        // can we reuse sequence?
+        Sequence::Ptr forked_sequence = m_sequence_group->fork_sequence(m_tree_layers[0][0].m_sequence);
+        
+        for (int64_t token_id : path) {
+            forked_sequence->append_token(token_id, candidate.m_log_prob / path.size());
+        }
+        sampler_output.m_forked_sequences[m_tree_layers[0][0].m_sequence->get_id()].push_back(forked_sequence->get_id());
+    }*/
+}
+
+void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits,
+    SamplerOutput& sampler_output) {
+    // parent sequence ID -> number of child sequences
+    std::map<uint64_t, uint64_t> parent_2_num_childs_map;
+    if (m_tree_layer_counter == 0 && m_beams.empty()) {
+        m_beams.push_back(Beam((*m_sequence_group)[0]));
+    }
+    
+    for (Beam& beam : m_beams) {
+        sampler_output.num_generated_tokens++;
+        uint64_t parent_seq_id = beam.m_sequence->get_id();
+
+        // here we need to map index of sequence in beam search group(s) and sequence group
+        beam.m_global_beam_idx = [this] (uint64_t seq_id) -> size_t {
+            std::vector<Sequence::Ptr> running_seqs = m_sequence_group->get_running_sequences();
+            for (size_t seq_global_index = 0; seq_global_index < running_seqs.size(); ++seq_global_index) {
+                if (seq_id == running_seqs[seq_global_index]->get_id())
+                    return seq_global_index;
+            }
+            OPENVINO_THROW("Internal error in beam search: should not be here");
+        } (parent_seq_id);
+
+        // zero out all parent forks counts
+        parent_2_num_childs_map[parent_seq_id] = 0;
+    }
+
+    std::vector<Beam> candidates;
+    std::vector<Beam> child_beams; // beams for next execution in step()
+    candidates.reserve(m_parameters.eagle_tree_width * m_beams.size()); // num_beams for each beam
+    m_tree_layer_counter++;
+    for (const Beam& beam : m_beams) {
+        std::vector<Token> tokens = log_softmax(logits, beam.m_global_beam_idx);
+
+        // sort tokens
+        std::sort(tokens.begin(), tokens.end(), [](Token left, Token right) {
+            return left.m_log_prob > right.m_log_prob;  // Most probable tokens in front
+        });
+
+        size_t add_count = 0;
+        for (Token token : tokens) {
+            Beam new_candidate = beam; 
+            new_candidate.m_score += new_candidate.m_log_prob = token.m_log_prob;
+            new_candidate.m_token_id = token.m_index;
+            new_candidate.m_tree_layer = m_tree_layer_counter;
+            candidates.push_back(new_candidate);
+            m_eagle2_candidate_graph->add_candidate(new_candidate, beam);
+            if (++add_count == m_parameters.eagle_branching_factor) {
+                break;
+            }
+        }
+    }
+
+    // Sample 2 * group_size highest score tokens to get at least 1 non EOS token per beam
+    //OPENVINO_ASSERT(candidates.size() >= 2 * group_size, "No beams left to search");
+
+    std::sort(candidates.begin(), candidates.end(), greater); // select top k of cumulative probs
+    //size_t next_layer_size = std::min(candidates.size(), 
+                                    //m_parameters.eagle_tree_width);
+
+    for (size_t cand_idx = 0; cand_idx < m_parameters.eagle_branching_factor; ++cand_idx) {
+        Beam & candidate = candidates[cand_idx];
+
+        parent_2_num_childs_map[candidate.m_sequence->get_id()] += 1;
+        child_beams.push_back(candidate); // select top beams
+    }
+
+    // fork child sequences
+    for (Beam& child_beam : child_beams) {
+        uint64_t parent_sequence_id = child_beam.m_sequence->get_id();
+        uint64_t& num_childs = parent_2_num_childs_map[parent_sequence_id];
+
+        // if current beam is forked multiple times
+        if (num_childs > 1) {
+            child_beam.m_sequence = m_sequence_group->fork_sequence(child_beam.m_sequence);
+            child_beam.m_sequence->append_token(child_beam.m_token_id, child_beam.m_log_prob);
+
+            // reduce forks count, since fork already happened and next loop iteration
+            // will go by the second branch (num_childs == 1)
+            --num_childs;
+
+            // fill out sampler output
+            sampler_output.m_forked_sequences[parent_sequence_id].push_back(child_beam.m_sequence->get_id());
+        } else if (num_childs == 1) {
+            // keep current sequence going and add a new token
+            child_beam.m_sequence->append_token(child_beam.m_token_id, child_beam.m_log_prob);
+        }
+    }
+
+    // drop beams which are de-selected during top-k selection
+    for (const Beam& beam : m_beams) {
+        size_t num_childs = parent_2_num_childs_map[beam.m_sequence->get_id()];
+        if (num_childs == 0) {
+            // drop sequence as not forked
+            sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
+            m_sequence_group->remove_sequence(beam.m_sequence->get_id());
+        }
+    }
+
+    // child become parents
+    m_beams = child_beams;
+
+    // finalize the candidates after depth of iterations of draft pipeline
+    if (m_tree_layer_counter == m_parameters.eagle_depth) {
+        finalize_eagle2_candidates(sampler_output);
+        m_tree_layer_counter = 0; // reset counter
+        m_beams.clear();
+        return;
+    }
+}
+
 Logits Sampler::_get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx) {
     ov::Shape logits_shape = logits.get_shape();
     size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
@@ -869,6 +1031,18 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
             sg_sampling_info.sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
         }
+    } else if (sampling_params.is_eagle_tree()) {
+        TopKSelector* topk_searcher;
+        {
+            uint64_t request_id = sequence_group->get_request_id();
+            std::lock_guard<std::mutex> lock(m_beam_search_info_mutex);
+            if (m_top_k_selector_info.find(request_id) == m_top_k_selector_info.end()) {
+                m_top_k_selector_info.emplace(request_id, TopKSelector(sequence_group));
+            }
+            topk_searcher = &m_top_k_selector_info.at(request_id);
+        }
+            topk_searcher->select_top_k(sequence_group_logits, sg_sampling_info.sampler_output);
+    
     } else if (sampling_params.is_beam_search()) {
         uint64_t request_id = sequence_group->get_request_id();
 

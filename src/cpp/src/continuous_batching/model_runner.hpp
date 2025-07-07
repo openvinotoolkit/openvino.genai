@@ -23,6 +23,13 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
     return ss.str();
 }
 
+/*struct ModelOutput {
+    ov::Tensor logits;
+    ov::Tensor hidden_states;
+
+    ModelOutput(ov::Tensor _logits, ov::Tensor _hidden_states = ov::Tensor()) 
+        : logits(std::move(_logits)), hidden_states(std::move(_hidden_states)) {}
+};*/
 /**
  * @brief Runs the LLM infer request, parsing the continuous batching scheduler output into proper inputs in terms of OV API (e.g. token input IDs,
  * KV cache block indices etc.) and returning the logit scores for the next token to be generated for each of the currently scheduled sequences.
@@ -34,7 +41,7 @@ class ModelRunner {
     size_t m_num_decoder_layers;
     bool m_collect_attention_scores;
     bool m_is_use_per_layer_cache_control;
-
+    ov::Tensor m_hidden_states;
     bool m_is_use_rotation_inputs;
     std::vector<std::map<size_t, std::vector<size_t>>> m_rotated_block_logical_indices_per_sequence_for_each_layer;
     std::vector<ov::Tensor> m_cache_rotation_deltas_for_each_layer;
@@ -87,6 +94,11 @@ public:
      */
     ov::InferRequest get_infer_request() {
         return m_request;
+    }
+
+    // hidden states for a single step
+    ov::Tensor get_hidden_states() const {
+        return m_hidden_states;
     }
 
     void set_embedding_model(const EmbeddingsModel::Ptr& embedder) {
@@ -327,6 +339,13 @@ public:
         }
 
         _reset_cache_rotation_coefficients();
+
+        try {
+            m_hidden_states = m_request.get_tensor("last_hidden_state");
+        } catch (const ov::Exception&) {
+            // If the model does not produce hidden states, we will not return them.
+            m_hidden_states = ov::Tensor();
+        }
 
         // return logits
         return m_request.get_tensor("logits");

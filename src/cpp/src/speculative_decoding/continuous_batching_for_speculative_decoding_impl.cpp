@@ -16,6 +16,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
     initialize_pipeline(model, scheduler_config, device, plugin_config);
+    //m_candidate_graph = Eagle2CandidateGraph(m_generation_config.eagle_tree_width, m_generation_config.eagle_tree_depth);
 }
 
 void
@@ -329,6 +330,218 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             } else if (request->get_num_processed_tokens() == request->get_prompt_len()) {
                 request->pause_generation(true);
             } else if (is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
+                request->pause_generation(true);
+            }
+            to_generate |= request->can_generate_tokens();
+        }
+    }
+}
+
+// Eagle impl
+ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::ContinuousBatchingForEagleDecodingImpl(
+    const std::shared_ptr<ov::Model>& model,
+    const Tokenizer& tokenizer,
+    const GenerationConfig& generation_config,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const ov::AnyMap& plugin_config,
+    bool is_validation_mode_enabled) {
+    m_tokenizer = tokenizer;
+    m_generation_config = generation_config;
+    m_is_validation_mode_enabled = is_validation_mode_enabled;
+    initialize_pipeline(model, scheduler_config, device, plugin_config);
+    //m_candidate_graph = Eagle2CandidateGraph(m_generation_config.eagle_tree_width, m_generation_config.eagle_tree_depth);
+}
+
+void
+ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::finish_request(SequenceGroup::Ptr request) {
+    for (const auto& sequence: request->get_sequences()) {
+        if (m_scheduler->has_block_table(sequence->get_id())) {
+            m_scheduler->free_sequence(sequence->get_id());
+        }
+    }
+    m_sampler->clear_request_info(request->get_request_id());
+    request->set_generation_status(GenerationStatus::STOP);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::finish_request(int64_t request_id) {
+    auto it = m_requests.begin();
+    while (it != m_requests.end()) {
+        auto& request = *it;
+        if (request->get_request_id() != request_id && request_id != -1) {
+            it++;
+            continue;
+        }
+        finish_request(request);
+        m_requests.erase(it);
+        it = request_id == -1 ? m_requests.begin() : m_requests.end();
+    }
+    if (request_id == -1) {
+        OPENVINO_ASSERT(m_requests.empty());
+    }
+}
+
+GeneratedRequests
+ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::get_generated_requests() {
+    GeneratedRequests result;
+    for (const auto& request : m_requests) {
+        const auto& request_id = request->get_request_id();
+        if (!result.count(request_id)) {
+            result.insert({request_id, {{}} });
+        }
+        auto& generated_request = result[request_id];
+        for (const auto& sequence : request->get_running_sequences()) {
+            const auto& sequence_id = sequence->get_grouped_id();
+            OPENVINO_ASSERT(!generated_request.count(sequence_id));
+            generated_request.insert({{sequence_id, { sequence->get_generated_ids(), sequence->get_generated_log_probs() } }});
+        }
+    }
+    return result;
+}
+
+UpdateRequestResult 
+ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::init_request_by_candidate(
+    uint64_t request_id,
+    const GeneratedSequences& candidates) {
+    for (auto& request : m_requests) {
+        if (request->get_request_id() != request_id) {
+            continue;
+        }
+        
+        UpdateRequestResult result;
+        m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
+        auto& logit_processor = m_sampler->get_logit_processor(request_id);
+        result.inserted_tokens_cnt = init_request(request, candidates, logit_processor, true, true);
+        request->set_num_validated_tokens(result.inserted_tokens_cnt);
+        return result;
+    }
+    return {0, 0};
+}
+
+UpdateRequestResult
+ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::update_request(uint64_t request_id,
+                                                                                         const GeneratedSequences& candidates,
+                                                                                         bool is_update_logit_processor) {
+    UpdateRequestResult result{0, 0};
+    for (auto& request : m_requests) {
+        if (request_id != request->get_request_id()) {
+            continue;
+        }
+
+        std::vector<Sequence::Ptr> running_sequences = request->get_running_sequences();
+        OPENVINO_ASSERT(running_sequences.size() > 0);
+        size_t min_generated_tokens, min_candidate_len;
+        if (running_sequences.front()->get_generated_len() == 0 && !request->get_num_tokens_to_validate()) {
+            m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
+            auto& logit_processor = m_sampler->get_logit_processor(request_id);
+            result.inserted_tokens_cnt = init_request(request, candidates, logit_processor, is_update_logit_processor);
+            min_generated_tokens = result.inserted_tokens_cnt;
+            running_sequences = request->get_running_sequences();
+            min_candidate_len = result.inserted_tokens_cnt;
+        } else {
+            // update existing sequences by the candidates
+            auto& logit_processor = m_sampler->get_logit_processor(request_id);
+            std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates);
+
+            for (auto& running_sequence : running_sequences) {
+                if (!candidates.count(running_sequence->get_grouped_id())) {
+                    continue;
+                }
+
+                result.removed_tokens_cnt = remove_tokens_from_sequence(running_sequence, min_generated_tokens, logit_processor);
+
+                auto candidate_sequence = candidates.at(running_sequence->get_grouped_id());
+                std::vector<int64_t> candidate_token_ids = candidate_sequence.token_ids;
+                std::vector<float> candidate_token_log_probs = candidate_sequence.log_probs;
+                candidate_token_ids.resize(min_candidate_len);
+                candidate_token_log_probs.resize(min_candidate_len);
+                result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence, candidate_token_ids, candidate_token_log_probs, logit_processor, is_update_logit_processor);
+            }
+            // we should update a logit processor just for draft model to generate the same tokens
+            // logit processors of main model will be updated in sampler while validation mode
+            if (is_update_logit_processor) {
+                logit_processor.update_generated_len(min_candidate_len);
+            }
+        }
+
+        // update request context information to provide correct scheduling phase
+        const size_t num_processed_tokens = request->get_num_processed_tokens(),
+                     prompt_len = request->get_prompt_len(),
+                     updated_context_len = min_candidate_len + prompt_len,
+                     max_new_tokens = request->get_max_new_tokens();
+        size_t generated_len = request->get_context_len() >= request->get_prompt_len() ? request->get_context_len() - request->get_prompt_len() + 1 : 0;
+        if (generated_len > 0 && result.removed_tokens_cnt > 0) {
+            request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1);
+        }
+        if (result.inserted_tokens_cnt > 0 && result.removed_tokens_cnt == 0) {
+            request->set_num_validated_tokens(result.inserted_tokens_cnt);
+        }
+        // to pause `draft_model` generation in case of `generated_len >= max_new_tokens - 1` to generate last token by `main_model`
+        if (!m_is_validation_mode_enabled) {
+            bool pause_gen_status = false;
+            generated_len -= result.removed_tokens_cnt;
+            generated_len += result.inserted_tokens_cnt;
+            if (generated_len >= max_new_tokens - 1 || generated_len != 0 && result.inserted_tokens_cnt == 0) {
+                pause_gen_status = true;
+            }
+            request->pause_generation(pause_gen_status);
+        }
+        break;
+    }
+    return result;
+}
+
+bool ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::is_requests_empty() {
+    return m_requests.empty();
+}
+
+size_t ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::get_processed_tokens_per_iteration() {
+    return m_batch_size;
+}
+
+void
+ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::pull_awaiting_requests(bool is_pause_request) {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    if (is_pause_request) {
+        for (auto& awaiting_request : m_awaiting_requests) {
+            awaiting_request->pause_generation(true);
+        }
+    }
+    m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
+    m_awaiting_requests.clear();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::multistep() {
+    bool to_generate = true;
+    size_t generated_tokens_cnt = 0;
+    size_t step_count = 0;
+    // cycle to generate several tokens per one iteration for speculative decoding case
+    while (to_generate) {
+        generated_tokens_cnt++;
+        step_count++;
+
+        step();
+
+        to_generate = false;
+        for (auto& request : m_requests) {
+            const auto& sampling_params = request->get_sampling_parameters();
+            if (!sampling_params.is_assisting_generation()) {
+                // generate only one token in case of non speculative decoding
+                request->pause_generation(true);
+            } else if (request->get_num_processed_tokens() >= request->get_prompt_len() &&
+                (request->get_num_processed_tokens() - request->get_prompt_len() + 1) >= request->get_max_new_tokens() - 1) {
+                request->pause_generation(true);
+            } else if (request->get_num_processed_tokens() == 0 && sampling_params.num_return_sequences > 1) {
+                request->pause_generation(true);
+            } else if (sampling_params.num_assistant_tokens <= generated_tokens_cnt && sampling_params.assistant_confidence_threshold == 0.f) {
+                request->pause_generation(true);
+            } else if (request->get_max_new_tokens() == 0) {
+                request->pause_generation(true);
+            } else if (request->get_num_processed_tokens() == request->get_prompt_len()) {
+                request->pause_generation(true);
+            } else if (is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
+                request->pause_generation(true);
+            } else if(sampling_params.eagle_depth > 0 && step_count >= sampling_params.eagle_depth) {
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();

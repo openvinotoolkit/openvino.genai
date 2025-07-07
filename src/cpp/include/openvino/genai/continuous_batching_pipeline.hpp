@@ -65,13 +65,17 @@ protected:
     class ContinuousBatchingImpl;
 
     class ContinuousBatchingForSpeculativeDecodingImpl;
+    class ContinuousBatchingForEagleDecodingImpl;
     class ContinuousBatchingForPromptLookupImpl;
     class SpeculativeDecodingImpl;
+    class EagleDecodingImpl;
     class PromptLookupImpl;
 
     friend class ContinuousBatchingForSpeculativeDecodingImpl;
+    friend class ContinuousBatchingForEagleDecodingImpl;
     friend class ContinuousBatchingForPromptLookupImpl;
     friend class SpeculativeDecodingImpl;
+    friend class EagleDecodingImpl;
     friend class PromptLookupImpl;
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;

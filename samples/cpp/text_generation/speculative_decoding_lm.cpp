@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) try {
 
     // User can run main and draft model on different devices.
     // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
-    std::string main_device = "CPU", draft_device = "CPU";
+    std::string main_device = "GPU", draft_device = "GPU";
 
     ov::genai::LLMPipeline pipe(
         main_model_path,

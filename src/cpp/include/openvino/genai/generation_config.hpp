@@ -128,6 +128,14 @@ public:
     size_t num_assistant_tokens = 0;
     size_t max_ngram_size = 0;
 
+    // eagle parameters for assisting generation
+    bool eagle_model = false;
+    size_t eagle_tree_width = 0; // maximum number of candidate tokens at each level of eagle tree
+    size_t eagle_branching_factor = 0; // Number of branches to explore at each level
+    size_t eagle_depth = 0; // How deep to look ahead, eagle tree depth
+    size_t eagle_total_tokens = 0; // Total number of tokens to generate in eagle tree
+    size_t eagle_final_candidates = 0; // Number of final candidates to return from eagle tree each time
+    size_t eagle_layer_decay = 0; // Decay factor for layer weights in eagle tree
     std::optional<AdapterConfig> adapters;
 
     // set to true if chat template should be applied for non-chat scenarios, set to false otherwise
@@ -144,7 +152,7 @@ public:
     bool is_multinomial() const;
     bool is_assisting_generation() const;
     bool is_prompt_lookup() const;
-
+    bool is_eagle_tree() const;
     OPENVINO_DEPRECATED("Please, use `is_assisting_generation()` instead of `is_speculative_decoding()`. This method will be removed in 2026.0.0 release")
     bool is_speculative_decoding() const;
 

@@ -5,7 +5,13 @@
 
 #include <vector>
 #include <map>
-
+#include <iostream>
+#include <queue>
+#include <unordered_map>
+#include <memory>
+#include <cmath>
+#include <algorithm>
+#include <limits>
 namespace ov::genai {
 struct GeneratedSequence {
     std::vector<int64_t> token_ids;
@@ -30,4 +36,15 @@ using GeneratedSequences = std::map<uint64_t, GeneratedSequence>;
 
 // { request_id : generated_sequence }
 using GeneratedRequests = std::map<uint64_t, GeneratedSequences>;
+class EagleGeneratedSequence : public GeneratedSequence {
+public:
+    std::vector<std::vector<float>> hidden_states;
+    std::vector<std::vector<int>> retrive_indices;
+
+    EagleGeneratedSequence(const std::vector<int64_t>& generated_token_ids,
+                           const std::vector<float>& generated_log_probs,
+                           const std::vector<std::vector<float>>& generated_hidden_states) :
+        GeneratedSequence(generated_token_ids, generated_log_probs),
+        hidden_states(generated_hidden_states) {};
+};
 }

@@ -15,9 +15,9 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 20;
-    config.num_beam_groups = 3;
-    config.num_beams = 15;
-    config.diversity_penalty = 1.0f;
+    config.num_beam_groups = 1;
+    config.num_beams = 2;
+    //config.diversity_penalty = 1.0f;
     config.num_return_sequences = config.num_beams;
 
     auto beams = pipe.generate(prompts, config);
