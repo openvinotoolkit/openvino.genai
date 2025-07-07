@@ -10,7 +10,7 @@ langchain_community
 gguf>=0.10.0
 
 # requirements for awq and gptq models.
-gptqmodel
+gptqmodel --global-option="--no-build-isolation"
 
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
