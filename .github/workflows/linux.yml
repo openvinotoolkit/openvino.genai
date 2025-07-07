@@ -736,11 +736,6 @@ jobs:
           python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
         working-directory: ${{ env.INSTALL_DIR }}
 
-      - name: Install gptqmodel wheel
-        run: |
-          python3 -m pip install gptqmodel --no-build-isolation
-        working-directory: ${{ env.INSTALL_DIR }}
-
       - name: Install GenAI wheels
         uses: ./src/.github/actions/install_wheel
         with:

@@ -9,6 +9,11 @@ hf_transfer
 langchain_community
 gguf>=0.10.0
 
+
+# requirements for awq and gptq models.
+# install gptqmodel from the GitHub repository to awoid issues with the cuda kernels building
+gptqmodel @ git+https://github.com/alexsu52/GPTQModel.git#egg=gptqmodel
+
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
 rjieba
