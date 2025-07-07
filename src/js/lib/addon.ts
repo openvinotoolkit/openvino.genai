@@ -1,27 +1,49 @@
 import { createRequire } from 'module';
 import { platform } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
-import {
-  EmbeddingResult,
-  EmbeddingResults
-} from './utils.js';
+
+export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
+export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
+/**
+  * Pooling strategy
+  */
+export enum PoolingType {
+  /** First token embeddings */
+  // eslint-disable-next-line no-unused-vars
+  CLS,
+  /** The average of all token embeddings */
+  // eslint-disable-next-line no-unused-vars
+  MEAN,
+}
+export type TextEmbeddingConfig = {
+  /** Instruction to use for embedding a document */
+  embed_instruction?: string,
+  /** Maximum length of tokens passed to the embedding model */
+  max_length?: number,
+  /** If 'true', L2 normalization is applied to embeddings */
+  normalize?: boolean
+  /** Pooling strategy applied to model output tensor */
+  pooling_type?: PoolingType
+  /** Instruction to use for embedding a query */
+  query_instruction?: string
+};
 
 export interface TextEmbeddingPipelineWrapper {
   new (): TextEmbeddingPipelineWrapper;
   init(
     modelPath: string,
     device: string,
-    config: object,
+    config: TextEmbeddingConfig,
     ovProperties: object,
-    callback: (err: NodeJS.ErrnoException | null) => void,
+    callback: (err: Error | null) => void,
   ): void;
   embedQuery(
     text: string,
-    callback: (err: NodeJS.ErrnoException | null, value: EmbeddingResult) => void,
+    callback: (err: Error | null, value: EmbeddingResult) => void,
   ): void;
   embedDocuments(
     documents: string[],
-    callback: (err: NodeJS.ErrnoException | null, value: EmbeddingResults) => void,
+    callback: (err: Error | null, value: EmbeddingResults) => void,
   ): void;
   embedQuerySync(text: string): EmbeddingResult;
   embedDocumentsSync(documents: string[]): EmbeddingResults;

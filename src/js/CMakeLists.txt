@@ -37,19 +37,11 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(node-addon-api)
 
+file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+
 # Create a library
 add_library(${PROJECT_NAME} SHARED
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/addon.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/llm_pipeline/llm_pipeline_wrapper.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/llm_pipeline/finish_chat_worker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/llm_pipeline/start_chat_worker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/llm_pipeline/init_worker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/text_embedding_pipeline/init_worker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/text_embedding_pipeline/embed_query_worker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/text_embedding_pipeline/embed_documents_worker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/text_embedding_pipeline/pipeline_wrapper.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/helper.cpp
-
+    ${SOURCE_FILES}
     ${CMAKE_JS_SRC}
 )
 

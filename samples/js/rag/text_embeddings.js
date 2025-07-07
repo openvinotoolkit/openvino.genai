@@ -7,14 +7,15 @@ async function main() {
     const modelPath = process.argv[2];
     const texts = process.argv.slice(3);
 
+    const usageCommand = `Usage: node ${basename(process.argv[1])} <MODEL_DIR> '<TEXT 1>' ['<TEXT 2>' ...]`;
     if (!modelPath) {
-        console.error('Please specify path to model directory\n'
-                    + `Run command must be: 'node ${basename(process.argv[1])} *path_to_model_dir* *prompt*'`);
+        console.error('Please specify path to model directory');
+        console.error(usageCommand);
         process.exit(1);
     }
-    if (!texts) {
-        console.error('Please specify prompt\n'
-                      + `Run command must be: 'node ${basename(process.argv[1])} *path_to_model_dir* *prompt*'`);
+    if (!texts.length) {
+        console.error('Please specify prompt');
+        console.error(usageCommand);
         process.exit(1);
     }
 

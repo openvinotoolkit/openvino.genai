@@ -1,44 +1,51 @@
-import { describe, it } from 'node:test';
+import { describe, it, before } from 'node:test';
 import { TextEmbeddingPipeline } from '../dist/index.js';
 import { isFloat32Array } from 'util/types';
 import assert from 'node:assert/strict';
+import { models } from './models.js';
 
-const EMBEDDING_MODEL_PATH = process.env.EMBEDDING_MODEL_PATH;
+const EMBEDDING_MODEL_PATH = process.env.EMBEDDING_MODEL_PATH
+  || `./tests/models/${models.Embedding.split('/')[1]}`;
 
 if (!EMBEDDING_MODEL_PATH) throw new Error(
-    'Set the path to the model directory in the EMBEDDING_MODEL_PATH environment variable.'
+  'Set the path to the model directory in the '
+    + 'EMBEDDING_MODEL_PATH environment variable.',
 );
 
 describe('TextEmbeddingPipeline', async () => {
-    let pipeline = await TextEmbeddingPipeline(EMBEDDING_MODEL_PATH, 'CPU');
+  let pipeline;
 
-    await it('async embed query', async () => {
-        const result = pipeline.embedQuery("test");
-        assert.ok(result instanceof Promise, "result should be Promise");
+  before(async () => {
+    pipeline = await TextEmbeddingPipeline(EMBEDDING_MODEL_PATH, 'CPU');
+  });
 
-        const embed_result = await result;
-        assert.ok(isFloat32Array(embed_result));
-    });
+  await it('async embed query', async () => {
+    const result = pipeline.embedQuery('test');
+    assert.ok(result instanceof Promise, 'result should be Promise');
 
-    await it('async embed documents', async () => {
-        const result = pipeline.embedDocuments(["Hello", "World"]);
-        assert.ok(result instanceof Promise, "result should be Promise");
+    const embedResult = await result;
+    assert.ok(isFloat32Array(embedResult));
+  });
 
-        const embed_result = await result;
-        assert.ok(embed_result instanceof Array)
-        assert.strictEqual(embed_result.length, 2)
-        assert.ok(isFloat32Array(embed_result[0]));
-    });
+  await it('async embed documents', async () => {
+    const result = pipeline.embedDocuments(['Hello', 'World']);
+    assert.ok(result instanceof Promise, 'result should be Promise');
 
-    it('sync embed query', () => {
-        const embed_result = pipeline.embedQuerySync("test");
-        assert.ok(isFloat32Array(embed_result));
-    });
+    const embedResult = await result;
+    assert.ok(embedResult instanceof Array);
+    assert.strictEqual(embedResult.length, 2);
+    assert.ok(isFloat32Array(embedResult[0]));
+  });
 
-    it('sync embed documents', () => {
-        const embed_result = pipeline.embedDocumentsSync(["Hello", "World"]);
-        assert.ok(embed_result instanceof Array)
-        assert.strictEqual(embed_result.length, 2)
-        assert.ok(isFloat32Array(embed_result[0]));
-    });
+  it('sync embed query', () => {
+    const embedResult = pipeline.embedQuerySync('test');
+    assert.ok(isFloat32Array(embedResult));
+  });
+
+  it('sync embed documents', () => {
+    const embedResult = pipeline.embedDocumentsSync(['Hello', 'World']);
+    assert.ok(embedResult instanceof Array);
+    assert.strictEqual(embedResult.length, 2);
+    assert.ok(isFloat32Array(embedResult[0]));
+  });
 });

@@ -1,67 +1,77 @@
 import util from 'node:util';
-import addon, { 
-    TextEmbeddingPipelineWrapper,
+import addon, {
+  TextEmbeddingPipelineWrapper,
+  EmbeddingResult,
+  EmbeddingResults,
+  TextEmbeddingConfig,
 } from '../addon.js';
-import {
-    EmbeddingResult,
-    EmbeddingResults,
-    TextEmbeddingConfig,
-} from '../utils.js'
 
 export class TextEmbeddingPipeline {
-    modelPath: string;
-    device: string;
-    config: TextEmbeddingConfig;
-    ovProperties: object;
-    pipeline: TextEmbeddingPipelineWrapper | null = null;
-    isInitialized = false;
+  modelPath: string;
+  device: string;
+  config: TextEmbeddingConfig;
+  ovProperties: object;
+  pipeline: TextEmbeddingPipelineWrapper | null = null;
+  isInitialized = false;
 
-    constructor(modelPath: string, device: string, config?: TextEmbeddingConfig, ovProperties?: object) {
-        this.modelPath = modelPath;
-        this.device = device;
-        this.config = config || {};
-        this.ovProperties = ovProperties || {};
-    }
+  constructor(
+    modelPath: string,
+    device: string,
+    config?: TextEmbeddingConfig,
+    ovProperties?: object,
+  ) {
+    this.modelPath = modelPath;
+    this.device = device;
+    this.config = config || {};
+    this.ovProperties = ovProperties || {};
+  }
 
-    async init() {
-        if (this.isInitialized)
-          throw new Error('TextEmbeddingPipeline is already initialized');
-    
-        this.pipeline = new addon.TextEmbeddingPipeline();
-    
-        const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
-        const result = await initPromise(this.modelPath, this.device, this.config, this.ovProperties);
-    
-        this.isInitialized = true;
-    
-        return result;
-    }
+  async init() {
+    if (this.pipeline)
+      throw new Error('TextEmbeddingPipeline is already initialized');
 
-    embedDocumentsSync(texts: string[]): EmbeddingResults {
-        if (this.pipeline === null ) throw new Error('Pipeline is not initialized');
-        return this.pipeline.embedDocumentsSync(texts);
-    }
+    this.pipeline = new addon.TextEmbeddingPipeline();
 
-    embedQuerySync(text: string): EmbeddingResult {
-        if (this.pipeline === null ) throw new Error('Pipeline is not initialized');
-        return this.pipeline.embedQuerySync(text);
-    }
+    const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
+    await initPromise(
+      this.modelPath,
+      this.device,
+      this.config,
+      this.ovProperties,
+    );
 
-    async embedDocuments(documents: string[]): Promise<EmbeddingResults> {
-        if (this.pipeline === null ) throw new Error('Pipeline is not initialized');
-        const embedDocuments = util.promisify(
-          this.pipeline.embedDocuments.bind(this.pipeline),
-        );
-        const result = await embedDocuments(documents);
-        return result;
-    }
+    return;
+  }
 
-    async embedQuery(text: string): Promise<EmbeddingResult> {
-        if (this.pipeline === null ) throw new Error('Pipeline is not initialized');
-        const embedQuery = util.promisify(
-          this.pipeline.embedQuery.bind(this.pipeline),
-        );
-        const result = await embedQuery(text);
-        return result;
-    }
+  embedDocumentsSync(texts: string[]): EmbeddingResults {
+    if (!this.pipeline) throw new Error('Pipeline is not initialized');
+
+    return this.pipeline.embedDocumentsSync(texts);
+  }
+
+  embedQuerySync(text: string): EmbeddingResult {
+    if (!this.pipeline) throw new Error('Pipeline is not initialized');
+
+    return this.pipeline.embedQuerySync(text);
+  }
+
+  async embedDocuments(documents: string[]): Promise<EmbeddingResults> {
+    if (!this.pipeline) throw new Error('Pipeline is not initialized');
+    const embedDocuments = util.promisify(
+      this.pipeline.embedDocuments.bind(this.pipeline),
+    );
+    const result = await embedDocuments(documents);
+
+    return result;
+  }
+
+  async embedQuery(text: string): Promise<EmbeddingResult> {
+    if (!this.pipeline) throw new Error('Pipeline is not initialized');
+    const embedQuery = util.promisify(
+      this.pipeline.embedQuery.bind(this.pipeline),
+    );
+    const result = await embedQuery(text);
+
+    return result;
+  }
 }

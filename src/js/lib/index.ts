@@ -1,6 +1,6 @@
 import { LLMPipeline as LLM } from './pipelines/llmPipeline.js';
-import { 
-  TextEmbeddingPipeline as Embedding
+import {
+  TextEmbeddingPipeline as Embedding,
 } from './pipelines/textEmbeddingPipeline.js';
 
 class PipelineFactory {
@@ -20,3 +20,4 @@ class PipelineFactory {
 
 export const {LLMPipeline, TextEmbeddingPipeline} = PipelineFactory;
 export * from './utils.js';
+export * from './addon.js';
