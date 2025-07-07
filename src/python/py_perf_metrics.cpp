@@ -122,7 +122,7 @@ auto sd_perf_metrics_docstring = R"(
     :type get_ttst: MeanStdPair
 
     :param get_latency: Returns the mean and standard deviation of the latency from the third token in milliseconds per inference,
-                        which includs also prev and post processing. First and second token time is presented separately as ttft and ttst.
+                        which includes also prev and post processing. First and second token time is presented separately as ttft and ttst.
     :type get_latency: MeanStdPair
 
     Additional points:

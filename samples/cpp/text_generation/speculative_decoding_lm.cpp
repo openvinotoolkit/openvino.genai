@@ -60,7 +60,7 @@ int main(int argc, char* argv[]) try {
         std::cout << "  TTFT: " << draft_model_metrics.get_ttft().mean  << " ms" << std::endl;
         std::cout << "  TTST: " << draft_model_metrics.get_ttst().mean  << " ms/token " << std::endl;
         std::cout << "  TPOT: " << draft_model_metrics.get_tpot().mean  << " ± " << draft_model_metrics.get_tpot().std << " ms/token " << std::endl;
-        std::cout << "  AVG Latency: " << draft_model_metrics.get_latency().mean  << " ± " << main_model_metrics.get_latency().std << " ms/iteration " << std::endl;
+        std::cout << "  AVG Latency: " << draft_model_metrics.get_latency().mean  << " ± " << draft_model_metrics.get_latency().std << " ms/iteration " << std::endl;
         std::cout << "  Num generated token: " << draft_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
         std::cout << "  Total iteration number: " << draft_model_metrics.raw_metrics.m_durations.size() << std::endl;
     }

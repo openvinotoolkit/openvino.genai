@@ -57,7 +57,7 @@ def main():
         print(f"  TTFT: {draft_model_metrics.get_ttft().mean:.2f} ms")
         print(f"  TTST: {draft_model_metrics.get_ttst().mean:.2f} ms/token")
         print(f"  TPOT: {draft_model_metrics.get_tpot().mean:.2f} ± {draft_model_metrics.get_tpot().std:.2f} ms/token")
-        print(f"  AVG Latency: {draft_model_metrics.get_latency().mean:.2f} ± {main_model_metrics.get_latency().std:.2f} ms/iteration")
+        print(f"  AVG Latency: {draft_model_metrics.get_latency().mean:.2f} ± {draft_model_metrics.get_latency().std:.2f} ms/iteration")
         print(f"  Num generated token: {draft_model_metrics.get_num_generated_tokens()} tokens")
         print(f"  Total iteration number: {len(draft_model_metrics.raw_metrics.m_durations)}")
         print()
