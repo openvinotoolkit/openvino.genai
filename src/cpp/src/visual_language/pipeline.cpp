@@ -98,14 +98,7 @@ public:
         auto embedder_properties = device_propertes.empty()
             ? properties_copy
             : utils::pop_or_default<ov::AnyMap>(device_propertes, embedder_device, {});
-        // CPU plugin does not support scheduler_config
-        if (embedder_device.find("CPU") != std::string::npos) {
-            const std::string keyToRemove = "scheduler_config";
-            auto it = embedder_properties.find(keyToRemove);
-            if (it != embedder_properties.end()) {
-                embedder_properties.erase(it);
-            }
-        }
+
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
@@ -374,11 +367,11 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     if (device == "NPU") {
-        m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, user_properties);
+        ov::genai::utils::pop_option(properties, "scheduler_config");
+        m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     } else {
-        auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
-
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -398,6 +391,7 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
+            ov::genai::utils::pop_option(properties, "scheduler_config");
             m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
         }
     }
@@ -416,11 +410,11 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     if (device == "NPU") {
-        m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, user_properties, generation_config);
+        ov::genai::utils::pop_option(properties, "scheduler_config");
+        m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     } else {
-        auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
-
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -440,6 +434,7 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
+            ov::genai::utils::pop_option(properties, "scheduler_config");
             m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
         }
 
