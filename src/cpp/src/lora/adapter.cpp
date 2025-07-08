@@ -22,7 +22,6 @@
 #include "openvino/op/convert.hpp"
 #include "openvino/op/convolution.hpp"
 #include "openvino/op/if.hpp"
-#include "openvino/op/matmul.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/broadcast.hpp"
@@ -68,7 +67,6 @@ using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
 // Holds usual LoRA parameters alpha, A and B of a given type.
 using LoRANode = LoRAParts<std::shared_ptr<ov::Node>>;
-using NodePtr = std::shared_ptr<ov::Node>;
 using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string& name)>>;
 
 // Converts Safetensors element type to OV element type. Only part of the types are supported.
@@ -462,7 +460,6 @@ struct LoRAStateGetterForConst {
     std::shared_ptr<ov::Model> model;
     LoRAConstantGetter getter;
     std::map<std::string, ov::op::util::VariableInfo>& variable_ids;
-    const std::string if_variable_id = "lora_state_0_replace_orig_constant";
 
     LoRAStateGetterForConst(const LoRAConstantGetter& getter,
                             std::shared_ptr<ov::Model> model,
@@ -495,7 +492,8 @@ struct LoRAStateGetterForConst {
     }
 
     NodePtr create_if_input() {
-        auto variable_info = ov::op::util::VariableInfo{
+        const std::string if_variable_id = "lora_state_0_replace_orig_constant";
+        auto variable_info = ov::op::util::VariableInfo {
             ov::Shape{1},
             ov::element::Type_t::boolean,
             if_variable_id
