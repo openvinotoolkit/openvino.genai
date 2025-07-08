@@ -4,6 +4,7 @@
 
 add_subdirectory(cpp/text_generation)
 add_subdirectory(cpp/image_generation)
+add_subdirectory(cpp/speech_generation)
 add_subdirectory(cpp/visual_language_chat)
 add_subdirectory(cpp/whisper_speech_recognition)
 add_subdirectory(cpp/rag)
@@ -19,6 +20,7 @@ install(FILES
 install(DIRECTORY
             cpp/text_generation
             cpp/image_generation
+            cpp/speech_generation
             cpp/visual_language_chat
             cpp/whisper_speech_recognition
             cpp/rag
@@ -27,6 +29,7 @@ install(DIRECTORY
 install(DIRECTORY
             python/text_generation
             python/image_generation
+            python/speech_generation
             python/visual_language_chat
             python/whisper_speech_recognition
             python/rag

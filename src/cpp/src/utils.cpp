@@ -21,6 +21,14 @@
 
 #include "sampling/sampler.hpp"
 
+namespace ov {
+
+namespace genai {
+const std::string PA_BACKEND = "PA";
+const std::string SDPA_BACKEND = "SDPA";
+}
+}
+
 namespace {
 
 void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
@@ -84,6 +92,14 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
     rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
+}
+
+inline bool is_paged_attention_available() {
+#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+    return true;
+#else
+    return false;
+#endif
 }
 
 } // anonymous
@@ -285,17 +301,45 @@ ov::Core singleton_core() {
 
 
 namespace {
-
 bool is_gguf_model(const std::filesystem::path& file_path) {
     return file_path.extension() == ".gguf";
 }
 
 } // namespace
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config) {
+std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
+    bool enable_save_ov_model = false;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find(ov::genai::enable_save_ov_model.name());
+    if (it != properties.end()) {
+        enable_save_ov_model = it->second.as<bool>();
+        properties.erase(it);
+    }
+
+    return {properties, enable_save_ov_model};
+}
+
+void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
+    try {
+        auto serialize_start_time = std::chrono::high_resolution_clock::now();
+        ov::save_model(model, save_path, compress_to_fp16);
+        auto serialize_finish_time = std::chrono::high_resolution_clock::now();
+        auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
+        std::stringstream ss;
+        ss << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms";
+        ov::genai::utils::print_gguf_debug_info(ss.str());
+    }
+    catch (const ov::Exception& e) {
+        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::enable_save_ov_model' property to false");
+    }
+}
+
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
+    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string());
+        return create_from_gguf(model_dir.string(), enable_save_ov_model);
 #else
         OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif
@@ -310,7 +354,7 @@ std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  c
             OPENVINO_THROW("Could not find a model in the directory '", model_dir, "'");
         }
 
-        return singleton_core().read_model(model_path, {}, config);
+        return singleton_core().read_model(model_path, {}, filtered_properties);
     }
 }
 
@@ -451,6 +495,13 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
     }
 }
 
+void print_gguf_debug_info(const std::string &debug_info) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+    std::cout << "[GGUF Reader]: " << debug_info << std::endl;
+}
+
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                         const ov::AnyMap& config,
@@ -530,6 +581,63 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
         scheduler_config = *default_config;
     }
     return {plugin_config, scheduler_config};
+};
+
+SchedulerConfig get_latency_oriented_scheduler_config() {
+    SchedulerConfig default_config;
+    default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
+    default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
+    return default_config;
+}
+
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
+    auto attention_backend_it = properties.find("ATTENTION_BACKEND");
+
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
+        (attention_backend_it != properties.end() && attention_backend_it->second.as<std::string>() == PA_BACKEND)) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+        }
+    }
+    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+        }
+    }
+
+    auto prompt_lookup_prop = properties.find("prompt_lookup");
+    if (prompt_lookup_prop != properties.end() && prompt_lookup_prop->second.as<bool>() == true) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Prompt lookup decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+        }
+    }
+    return false;
+}
+
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
+    std::string attention_backend = PA_BACKEND;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find("ATTENTION_BACKEND");
+    if (it != properties.end()) {
+        attention_backend = it->second.as<std::string>();
+        OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SDPA_BACKEND,
+            "Attention backend must be either '", PA_BACKEND, "' or '", SDPA_BACKEND, "', got '", attention_backend, "'");
+        properties.erase(it);
+    }
+
+    if (explicitly_requires_paged_attention(external_properties)) {
+        OPENVINO_ASSERT(attention_backend == PA_BACKEND,
+            "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
+    }
+
+    return {properties, attention_backend};
 };
 
 void release_core_plugin(const std::string& device) {

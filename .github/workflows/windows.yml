@@ -24,6 +24,10 @@ env:
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win
+  ARTIFACTS_SHARE: '/mount/build-artifacts'
+  BASE_PRODUCT_TYPE: public_windows_vs2022
+  GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
+  GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_cpack'
 
 jobs:
   smart_ci:
@@ -105,6 +109,7 @@ jobs:
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
       CCACHE_DIR: ${{ github.workspace }}\ccache
+      MANIFEST_PATH: ${{ github.workspace }}\manifest.yml
 
     steps:
       - name: Clone genai
@@ -152,6 +157,16 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack
           path: ${{ env.CCACHE_DIR }}
 
+      - name: Generate product manifest
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          target_arch: 'x86_64'
+          build_type: ${{ matrix.build-type }}
+          save_to: ${{ env.MANIFEST_PATH }}
+
       - name: Clean ccache stats
         run: ccache --zero-stats --show-config
 
@@ -179,6 +194,16 @@ jobs:
       # Upload build artifacts
       #
 
+      - name: Pack Artifacts
+        run: |
+          $file=Get-ChildItem -Path "${{ env.GENAI_INSTALL_DIR }}"
+          $compress = @{
+            Path = $file
+            CompressionLevel = "Optimal"
+            DestinationPath = "${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip"
+          }
+          Compress-Archive @compress
+
       - name: Save ccache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -191,7 +216,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: genai_cpack_${{ matrix.build-type }}
-          path: ${{ env.GENAI_INSTALL_DIR }}
+          path: ${{ env.BUILD_DIR }}/*.zip
           if-no-files-found: 'error'
 
       - name: Upload Tools
@@ -208,6 +233,14 @@ jobs:
         with:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
+          if-no-files-found: 'error'
+
+      - name: Upload manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: manifest_${{ matrix.build-type }}
+          path: ${{ env.MANIFEST_PATH }}
           if-no-files-found: 'error'
 
   genai_build_wheel:
@@ -270,6 +303,16 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-wheel
           path: ${{ env.CCACHE_DIR }}
 
+      - name: Set CI environment
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
+          target_arch: 'x86_64'
+          build_type: Release
+          save_to: ${{ github.workspace }}
+
       #
       # Build
       #
@@ -295,6 +338,7 @@ jobs:
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
             --config-settings=override=cmake.generator='Ninja' `
             --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
+            --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
             ${{ needs.openvino_download.outputs.ov_wheel_source }} `
             ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
@@ -324,6 +368,53 @@ jobs:
           name: genai_wheels
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
+
+  store_artifacts:
+    name: Store build artifacts
+    strategy:
+      matrix:
+        build-type: [Release]
+    needs: [openvino_download, genai_build_wheel, genai_build_cpack]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-medium
+    container:
+      image: openvinogithubactions.azurecr.io/library/python:3.12-slim
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+    env:
+      WHEEL_PACKAGE: ${{ github.workspace }}/wheels
+      MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
+
+    steps:
+      - name: Download genai package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
+          path: ${{ github.workspace }}
+
+      - name: Download manifest and wheels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: '{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},manifest_${{ matrix.build-type }}}'
+          path: ${{ github.workspace }}
+          merge-multiple: true
+
+      - name: Store ${{ matrix.build_type }} artifacts to a shared drive
+        id: store_artifacts
+        if: ${{ always() }}
+        uses: openvinotoolkit/openvino/.github/actions/store_artifacts@master
+        with:
+          artifacts: |
+            ${{ github.workspace }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip
+            ${{ env.WHEEL_PACKAGE }}
+            ${{ env.MANIFEST_PATH }}
+          storage_dir: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          storage_root: ${{ env.ARTIFACTS_SHARE }}
+          product_name: ${{ github.event.repository.name }}
 
   genai_build_samples:
     name: Build Samples - ${{ matrix.build-type }}
@@ -355,6 +446,9 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_cpack_${{ matrix.build-type }}}"
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
+
+      - name: Extract Artifacts
+        run: Expand-Archive -Path ${{ env.OV_INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.OV_INSTALL_DIR }}
 
       - name: Build Samples (Release)
         if: ${{ 'Release' == matrix.build-type }}
@@ -440,18 +534,18 @@ jobs:
       matrix:
         test:
           - name: 'Whisper'
-            cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
-            run_condition: false
-            # run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
+            cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 45
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 60
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
+            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
+            timeout: 120
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -541,6 +635,11 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-win-4-cores-8gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
+          - name: 'Speech generation'
+            marker: 'speech_generation'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-win-4-cores-8gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
     needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 120
@@ -567,6 +666,10 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_cpack_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
+
+      - name: Extract Artifacts
+        if: ${{ matrix.test.run_condition }}
+        run: Expand-Archive -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.INSTALL_DIR }}
 
       - name: Download GenAI JS Bildings Artifacts
         if: ${{ matrix.test.run_condition }}
@@ -657,6 +760,9 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_cpack_${{ matrix.build-type }},genai_tools_${{ matrix.build-type }},genai_tests_${{ matrix.build-type }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
+
+      - name: Extract Artifacts
+        run: Expand-Archive -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.INSTALL_DIR }}
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0

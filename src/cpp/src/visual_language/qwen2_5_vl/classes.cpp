@@ -147,10 +147,9 @@ InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(
 
 ov::Tensor InputsEmbedderQwen2_5_VL::run_image_embeddings_merger(
     const std::vector<EncodedImage>& images, 
-    const std::vector<size_t>& images_sequence, 
-    const size_t image_id
+    const std::vector<size_t>& images_sequence
 ) {
-    auto [reordered_image_embeds, reordered_images_grid_thw] = qwen2_vl_utils::reorder_image_embeds_and_grid_thw(images, images_sequence, image_id);
+    auto [reordered_image_embeds, reordered_images_grid_thw] = qwen2_vl_utils::reorder_image_embeds_and_grid_thw(images, images_sequence);
 
     ov::Tensor concatenated_embeds = qwen2_vl_utils::concatenate_image_embeds(reordered_image_embeds);
     ov::Tensor attention_mask = qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw);

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include "lora/helper.hpp"
 #include "image_generation/models/unet_inference.hpp"
 #include "utils.hpp"
@@ -12,7 +14,25 @@ namespace genai {
 
 // Static Batch-Size 1 variant of UNetInference
 class UNet2DConditionModel::UNetInferenceStaticBS1 : public UNet2DConditionModel::UNetInference {
+
+    UNetInferenceStaticBS1(const UNetInferenceStaticBS1&) = delete;
+    UNetInferenceStaticBS1(UNetInferenceStaticBS1&&) = delete;
+    UNetInferenceStaticBS1(UNetInferenceStaticBS1& other) = delete;
+
 public:
+    UNetInferenceStaticBS1() : UNetInference(), m_native_batch_size(0) {}
+
+    virtual std::shared_ptr<UNetInference> clone() override {
+        OPENVINO_ASSERT(m_requests.size(), "UNet2DConditionModel must have m_requests initialized");
+        auto clone = std::make_shared<UNetInferenceStaticBS1>();
+        clone->m_native_batch_size = m_native_batch_size;
+        clone->m_requests.reserve(m_requests.size());
+        for (auto& request : m_requests) {
+            clone->m_requests.push_back(request.get_compiled_model().create_infer_request());
+        }
+        return clone;
+    }
+
     virtual void compile(std::shared_ptr<ov::Model> model,
                          const std::string& device,
                          const ov::AnyMap& properties) override {
