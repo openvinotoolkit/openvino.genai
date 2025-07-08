@@ -44,7 +44,7 @@ Argument `--model_ids` can be used to run tests selectively only for specific mo
 python -m pytest tests/python_tests/ -m precommit -k "test_multibatch" --model_ids "TinyLlama/TinyLlama-1.1B-Chat-v1.0 Qwen/Qwen2-0.5B-Instruct"
 ```
 
-List of currently supported models can be found in tests/python_tests/ov_genai_test_utils.py:get_models_list
+List of currently supported models can be found in tests/python_tests/models.py:get_models_list
 
 ## Test Samples
 To test samples, set the `SAMPLES_PY_DIR` and `SAMPLES_CPP_DIR` environment variables to the directories containing your Python samples and built C++ samples respectively. The `SAMPLES_CPP_DIR` should point to the folder with built C++ samples, which can be installed using `cmake --component samples_bin`. For example:
