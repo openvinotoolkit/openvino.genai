@@ -75,7 +75,6 @@ def main():
         scheduler_config = ov_genai.SchedulerConfig()
         scheduler_config.enable_prefix_caching = False
         scheduler_config.max_num_batched_tokens = sys.maxsize
-
         pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
 
     input_data = pipe.get_tokenizer().encode(prompt)
