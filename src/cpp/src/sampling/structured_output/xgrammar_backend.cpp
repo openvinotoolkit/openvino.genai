@@ -28,16 +28,27 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
     OPENVINO_ASSERT(sampling_parameters.is_structured_output_generation(),
                    "XGrammarStructuredOutput can only be used for structured output generation");
     
-    auto& guided_gen_config = *sampling_parameters.structured_output_config;
-    guided_gen_config.validate();
+    auto& structured_output_config = *sampling_parameters.structured_output_config;
+    structured_output_config.validate();
 
     xgrammar::Grammar grammar;
-    if (guided_gen_config.json_schema.has_value()) {
-        grammar = xgrammar::Grammar::FromJSONSchema(*guided_gen_config.json_schema);
-    } else if (guided_gen_config.regex.has_value()) {
-        grammar = xgrammar::Grammar::FromRegex(*guided_gen_config.regex);
-    } else if (guided_gen_config.grammar.has_value()) {
-        grammar = xgrammar::Grammar::FromEBNF(*guided_gen_config.grammar);
+    if (structured_output_config.json_schema.has_value()) {
+        grammar = xgrammar::Grammar::FromJSONSchema(*structured_output_config.json_schema);
+    } else if (structured_output_config.regex.has_value()) {
+        grammar = xgrammar::Grammar::FromRegex(*structured_output_config.regex);
+    } else if (structured_output_config.grammar.has_value()) {
+        grammar = xgrammar::Grammar::FromEBNF(*structured_output_config.grammar);
+    } else if (structured_output_config.structural_tags_config.has_value()) {
+        std::vector<xgrammar::StructuralTagItem> xgrammar_structural_tags;
+        for (const auto& tag : structured_output_config.structural_tags_config->structural_tags) {
+            auto structural_tag = xgrammar::StructuralTagItem{tag.begin, tag.schema, tag.end};
+            xgrammar_structural_tags.push_back(std::move(structural_tag));
+        }
+        grammar = xgrammar::Grammar::FromStructuralTag(
+            xgrammar_structural_tags, structured_output_config.structural_tags_config->triggers
+        );
+    } else {
+        OPENVINO_THROW("No grammar definition provided for structured output generation.");
     }
 
     auto compiled_grammar = m_grammar_compiler->CompileGrammar(grammar);
