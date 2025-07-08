@@ -369,7 +369,8 @@ VLMPipeline::VLMPipeline(
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     if (device == "NPU") {
-        ov::genai::utils::pop_option(properties, "scheduler_config");
+        auto it = properties.find("scheduler_config");
+        OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     } else {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -391,7 +392,6 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
-            ov::genai::utils::pop_option(properties, "scheduler_config");
             m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
         }
     }
@@ -412,7 +412,8 @@ VLMPipeline::VLMPipeline(
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     if (device == "NPU") {
-        ov::genai::utils::pop_option(properties, "scheduler_config");
+        auto it = properties.find("scheduler_config");
+        OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     } else {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -434,7 +435,6 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
-            ov::genai::utils::pop_option(properties, "scheduler_config");
             m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
         }
 
