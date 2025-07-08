@@ -154,6 +154,63 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "structured_output_config", structured_output_config);
 }
 
+
+StructuralTagItem::StructuralTagItem(const ov::AnyMap& properties) {
+    update_config(properties);
+}
+
+void StructuralTagItem::update_config(const ov::AnyMap& properties) {
+    using utils::read_anymap_param;
+
+    read_anymap_param(properties, "begin", begin);
+    read_anymap_param(properties, "schema", schema);
+    read_anymap_param(properties, "end", end);
+}
+
+
+std::string StructuralTagItem::to_string() const {
+    return "StructuralTagItem(begin=" + begin +
+           ", schema=" + schema +
+           ", end=" + end + ")";
+}
+
+
+StructuralTagsConfig::StructuralTagsConfig(const ov::AnyMap& properties) {
+    update_config(properties);
+}
+
+
+void StructuralTagsConfig::update_config(const ov::AnyMap& properties) {
+    using utils::read_anymap_param;
+
+    read_anymap_param(properties, "structural_tags", structural_tags);
+    read_anymap_param(properties, "triggers", triggers);
+}
+
+
+std::string StructuralTagsConfig::to_string() const {
+    std::string tags_repr = "[";
+    for (const auto& tag : structural_tags) {
+        tags_repr += tag.to_string() + ", ";
+    }
+    if (!structural_tags.empty()) {
+        tags_repr.pop_back(); tags_repr.pop_back();
+    }
+    tags_repr += "]";
+
+    std::string triggers_repr = "[";
+    for (const auto& trigger : triggers) {
+        triggers_repr += trigger + ", ";
+    }
+    if (!triggers.empty()) {
+        triggers_repr.pop_back(); triggers_repr.pop_back();
+    }
+    triggers_repr += "]";
+
+    return "StructuralTagsConfig(structural_tags=" + tags_repr +
+           ", triggers=" + triggers_repr + ")";
+}
+
 StructuredOutputConfig::StructuredOutputConfig(const ov::AnyMap& properties) {
     update_config(properties);
     validate();
@@ -165,8 +222,8 @@ void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "json_schema", json_schema);
     read_anymap_param(properties, "regex", regex);
     read_anymap_param(properties, "grammar", grammar);
+    read_anymap_param(properties, "structural_tags_config", structural_tags_config);
     read_anymap_param(properties, "backend", backend);
-
 }
 
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
@@ -304,11 +361,12 @@ void StructuredOutputConfig::validate() const {
                     "Please recompile with -DENABLE_" + upper_name + "=ON option to enable it.");
 
     OPENVINO_ASSERT(
-        (json_schema.has_value() + regex.has_value() +  grammar.has_value()) == 1,
+        (json_schema.has_value() + regex.has_value() + grammar.has_value() + structural_tags_config.has_value()) == 1,
         "Only one of json, regex or grammar should be set in StructuredOutputConfig, but got: ",
         (json_schema.has_value() ? "json=" + *json_schema +", " : ""),
         (regex.has_value() ? "regex=" + *regex + ", " : ""),
-        (grammar.has_value() ? "grammar=" + *grammar : "")
+        (grammar.has_value() ? "grammar=" + *grammar : ""),
+        (structural_tags_config.has_value() ? "structural_tags_config=" + structural_tags_config->to_string() : "")
     );
 }
 

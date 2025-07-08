@@ -226,6 +226,39 @@ Recommended models: meta-llama/Llama-3.2-1B-Instruct, meta-llama/Llama-3.2-8B-In
 **Note:**  
 Structured output enforcement guarantees correct JSON formatting, but does not ensure the factual correctness or sensibility of the content. The model may generate implausible or nonsensical data, such as `{"name": "John", "age": 200000}` or `{"model": "AbrakaKadabra9999######4242"}`. These are valid JSONs but may not make sense. For best results, use the latest or fine-tuned models for this task to improve the quality and relevance of the generated output.
 
+
+### 12. Tool Calling with Structural Tags Sample (`structural_tags_generation`)
+- **Description:**
+  Structural tags is a technique that allows to switch from regular sampling to structural output generation and back during the text generation.
+  If during the sampling process the model produces a trigger string, it switches to structured mode and generates output according to the schema defined by the tag. After that the model switches back to regular sampling mode.
+  This is useful for generating function calls or other structured outputs that need to follow a specific format.
+
+  This sample demonstrates how to use OpenVINO GenAI to generate structured tool calls from natural language prompts using structural tags. 
+  The model is guided to output function calls in a specific format, enabling integration with external tools: 
+  - Weather API 
+  - Currency exchange APIs
+
+  The system message instructs the model to call tools using a strict format:
+  ```
+  <function="function_name">
+  {"argument1": "value1", ...}
+  </function>
+  ```
+  The sample includes schemas for each tool, and the model is prompted to use them for tool calling. There are two model calls - with and without structural tags. 
+  You can compare the results to see how the model generates structured outputs when using structural tags. 
+  If there is no prompt provided, the sample will use a default prompt: `"What is the weather in London today and in Paris yesterday, and how many pounds can I get for 100 euros?"`
+
+- **Main Feature:** Structured tool call generation with LLM using schema enforcement with structural tags.
+- **Run Command:**
+  ```bash
+  python structural_tags_generation.py model_dir [--prompt "Your prompt here"]
+  ```
+  After running, the script will print the generated text output, and display the parsed tool calls.
+
+**Note:**  
+This approach is useful for building LLM-powered agents that interact with external APIs or services in a controlled, structured way. For best results, use models fine-tuned for function calling. If the model does not generate a trigger string there will be no structural constraints during the generation. The sample is tested with `meta-llama/Llama-3.2-3B-Instruct` model.
+
+
 ## Troubleshooting
 
 ### Unicode characters encoding error on Windows

@@ -14,6 +14,8 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::StopCriteria;
+using ov::genai::StructuralTagItem;
+using ov::genai::StructuralTagsConfig;
 using ov::genai::StructuredOutputConfig;
 using ov::genai::GenerationConfig;
 
@@ -37,7 +39,29 @@ auto structured_output_config_docstring = R"(
     json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
     regex:          if set, the output will be constraint by specified regex.
     grammar:        if set, the output will be constraint by specified grammar.
+    structural_tags_config: if set, the output will be constraint by specified structural tags configuration.
 
+)";
+
+auto structured_tags_config_docstring = R"(
+    Structure to keep generation config parameters for structured tags in structured output generation.
+    It is used to store the configuration for structural tags, which includes a list of structural tag items
+    and a list of trigger strings that will switch the generation to structured output mode.
+
+    Parameters:
+    structural_tags: a list of StructuralTagItem objects that define the structured tags for structured output generation.
+    triggers: a list of strings that will trigger the generation of structured output.
+)";
+
+auto structured_tags_item_docstring = R"(
+    Structure to keep generation config parameters for structural tags in structured output generation.
+    It is used to store the configuration for a single structural tag item, which includes the begin string,
+    schema, and end string.
+
+    Parameters:
+    begin:  the string that marks the beginning of the structural tag.
+    schema: the JSON schema that defines the structure of the tag.
+    end:    the string that marks the end of the structural tag.
 )";
 
 } // namespace
@@ -96,15 +120,55 @@ void init_generation_config(py::module_& m) {
         .value("HEURISTIC", StopCriteria::HEURISTIC)
         .value("NEVER", StopCriteria::NEVER);
 
+
+    py::class_<StructuralTagItem>(m, "StructuralTagItem", structured_tags_item_docstring)
+        .def(py::init<>(), "Default constructor for StructuralTagItem")
+        .def(py::init([](py::kwargs kwargs) {
+            return StructuralTagItem(pyutils::kwargs_to_any_map(kwargs));
+        }), "Constructor that initializes the structured tags configuration with kwargs.")
+        .def_readwrite("begin", &StructuralTagItem::begin, "Begin string for Structural Tag Item")
+        .def_readwrite("schema", &StructuralTagItem::schema, "Json schema for Structural Tag Item")
+        .def_readwrite("end", &StructuralTagItem::end, "End string for Structural Tag Item")
+        .def("__repr__",
+            [](const StructuralTagItem &self) {
+                return "StructuralTagItem(begin=" + py::repr(py::cast(self.begin)).cast<std::string>() +
+                       ", schema=" + py::repr(py::cast(self.schema)).cast<std::string>() +
+                       ", end=" + py::repr(py::cast(self.end)).cast<std::string>() + ")";
+            }
+        );
+
+
+    py::class_<StructuralTagsConfig>(m, "StructuralTagsConfig", structured_tags_config_docstring)
+        .def(py::init<>(), "Default constructor for StructuralTagsConfig")
+        .def(py::init([](py::kwargs kwargs) {
+            return StructuralTagsConfig(pyutils::kwargs_to_any_map(kwargs));
+        }), "Constructor that initializes the structured tags configuration with kwargs.")
+        .def_readwrite("structural_tags", &StructuralTagsConfig::structural_tags, "List of structural tag items for structured output generation")
+        .def_readwrite("triggers", &StructuralTagsConfig::triggers, "List of strings that will trigger generation of structured output")
+        .def("__repr__",
+            [](const StructuralTagsConfig &self) {
+                return "StructuralTagsConfig(structural_tags=" + py::repr(py::cast(self.structural_tags)).cast<std::string>() +
+                       ", triggers=" + py::repr(py::cast(self.triggers)).cast<std::string>() + ")";
+            }
+        );
+
     py::class_<StructuredOutputConfig>(m, "StructuredOutputConfig", structured_output_config_docstring)
         .def(py::init<>(), "Default constructor for StructuredOutputConfig")
         .def(py::init([](py::kwargs kwargs) {
-            return StructuredOutputConfig(pyutils::kwargs_to_any_map(kwargs)); 
+            return StructuredOutputConfig(pyutils::kwargs_to_any_map(kwargs));
         }), "Constructor that initializes the structured output configuration with kwargs.")
         .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
         .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
-        .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation");
-        
+        .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation")
+        .def_readwrite("structural_tags_config", &StructuredOutputConfig::structural_tags_config, "Configuration for structural tags in structured output generation")
+        .def("__repr__",
+            [](const StructuredOutputConfig &self) {
+                return "StructuredOutputConfig(json_schema=" + py::repr(py::cast(self.json_schema)).cast<std::string>() +
+                       ", regex=" + py::repr(py::cast(self.regex)).cast<std::string>() +
+                       ", grammar=" + py::repr(py::cast(self.grammar)).cast<std::string>() +
+                       ", structural_tags_config=" + py::repr(py::cast(self.structural_tags_config)).cast<std::string>() + ")";
+            }
+        );
 
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
