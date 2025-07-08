@@ -450,7 +450,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_manylinux_2_28
-    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheel]
+    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_tests_wheel]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
