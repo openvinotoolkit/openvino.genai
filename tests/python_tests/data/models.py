@@ -8,7 +8,7 @@ from os.path import sep
 
 def get_models_list():
     precommit_models = [
-        "katuni4ka/tiny-random-phi3",
+        "Wovchena/tiny-random-phi3",
     ]
 
     nightly_models = [

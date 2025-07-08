@@ -80,7 +80,7 @@ MODELS = {
         "convert_args": []
     },
     "tiny-random-minicpmv-2_6": {
-        "name": "katuni4ka/tiny-random-minicpmv-2_6",
+        "name": "Wovchena/tiny-random-minicpmv-2_6",
         "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
     },
     "InternVL2-1B": {
@@ -108,11 +108,11 @@ MODELS = {
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "tiny-random-latent-consistency-lora": {
-        "name": "katuni4ka/tiny-random-latent-consistency-lora",
+        "name": "Wovchena/tiny-random-latent-consistency-lora",
         "convert_args": []
     },
     "tiny-random-llava": {
-        "name": "katuni4ka/tiny-random-llava",
+        "name": "Wovchena/tiny-random-llava",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     },
     "BAAI/bge-small-en-v1.5": {

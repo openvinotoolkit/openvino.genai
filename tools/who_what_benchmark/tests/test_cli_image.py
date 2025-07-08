@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 MODEL_CACHE = tempfile.mkdtemp()
 OV_IMAGE_MODELS = ["echarlaix/tiny-random-stable-diffusion-xl",
                    "yujiepan/stable-diffusion-3-tiny-random",
-                   "katuni4ka/tiny-random-flux",
-                   "katuni4ka/tiny-random-flux-fill"]
+                   "Wovchena/tiny-random-flux",
+                   "Wovchena/tiny-random-flux-fill"]
 
 
 def run_wwb(args):

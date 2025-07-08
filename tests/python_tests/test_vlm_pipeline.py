@@ -93,14 +93,14 @@ image_links_for_testing = [
 ]
 
 model_ids = [
-    "katuni4ka/tiny-random-minicpmv-2_6",
-    "katuni4ka/tiny-random-phi3-vision",
-    "katuni4ka/tiny-random-phi-4-multimodal",
-    "katuni4ka/tiny-random-llava",
-    "katuni4ka/tiny-random-llava-next",
-    "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-qwen2vl",
-    "katuni4ka/tiny-random-qwen2.5-vl",
+    "Wovchena/tiny-random-minicpmv-2_6",
+    "Wovchena/tiny-random-phi3-vision",
+    "Wovchena/tiny-random-phi-4-multimodal",
+    "Wovchena/tiny-random-llava",
+    "Wovchena/tiny-random-llava-next",
+    "Wovchena/tiny-random-internvl2",
+    "Wovchena/tiny-random-qwen2vl",
+    "Wovchena/tiny-random-qwen2.5-vl",
 ]
 
 attention_backend = ["PA", "SDPA"]
@@ -349,7 +349,7 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
 @pytest.mark.nightly
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_get_tokenizer(cache, backend):
-    models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
+    models_path = get_ov_model("Wovchena/tiny-random-minicpmv-2_6")
     pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     tokenizer = pipe.get_tokenizer()
     tokenizer.encode("")
@@ -366,7 +366,7 @@ def test_vlm_get_tokenizer(cache, backend):
 )
 @pytest.mark.parametrize("backend", attention_backend)
 def test_sampling(config, backend):
-    models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
+    models_path = get_ov_model("Wovchena/tiny-random-minicpmv-2_6")
     image = get_image_by_link(image_links[0])
     pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     pipe.generate(prompts[0], image=image, generation_config=config)
@@ -379,7 +379,7 @@ def test_perf_metrics(cache, backend):
     import numpy as np
     from time import perf_counter_ns
 
-    models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
+    models_path = get_ov_model("Wovchena/tiny-random-minicpmv-2_6")
 
     images = [get_image_by_link(image_links[0])]
     image_tokens_num = 54  # the number of tokens into which this test image is encoded
@@ -449,7 +449,7 @@ def test_perf_metrics(cache, backend):
 )
 def test_vlm_npu_no_exception(model_id, backend):
     unsupported_models = {
-        "katuni4ka/tiny-random-internvl2",
+        "Wovchena/tiny-random-internvl2",
     }
 
     if model_id in unsupported_models:
@@ -648,22 +648,22 @@ def requests():
 
 
 tag_inserted_by_template = [
-    ("katuni4ka/tiny-random-llava", lambda idx: "<image>"),
-    ("katuni4ka/tiny-random-llava-next", lambda idx: "<image>"),
-    ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
-    ("katuni4ka/tiny-random-qwen2.5-vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
+    ("Wovchena/tiny-random-llava", lambda idx: "<image>"),
+    ("Wovchena/tiny-random-llava-next", lambda idx: "<image>"),
+    ("Wovchena/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
+    ("Wovchena/tiny-random-qwen2.5-vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
 ]
 
 image_id_ignorant =  tag_inserted_by_template + [
-    ("katuni4ka/tiny-random-internvl2", lambda idx: "<image>\n"),
+    ("Wovchena/tiny-random-internvl2", lambda idx: "<image>\n"),
 ]
 
 
 models_to_tag = image_id_ignorant + [
     # minicpm tracks image number in expanded tags
-    ("katuni4ka/tiny-random-minicpmv-2_6", lambda idx: "(<image>./</image>)\n"),
+    ("Wovchena/tiny-random-minicpmv-2_6", lambda idx: "(<image>./</image>)\n"),
     (
-        "katuni4ka/tiny-random-phi3-vision",
+        "Wovchena/tiny-random-phi3-vision",
         lambda idx: "<|image_" + str(idx + 1) + "|>\n",
     ),
 ]
@@ -851,10 +851,10 @@ class TestImageTags:
 @pytest.mark.parametrize(
     "model_id, image_link, target_size, backend",
     [
-        pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316"))
+        pytest.param("Wovchena/tiny-random-qwen2vl", image_links[0], (336, 336), "SDPA"),
+        pytest.param("Wovchena/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
+        pytest.param("Wovchena/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
+        pytest.param("Wovchena/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316"))
     ],
 )
 def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size, backend):

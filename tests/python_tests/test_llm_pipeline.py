@@ -95,7 +95,7 @@ def test_batch_string_inputs(model_id, generation_config_dict, prompts, pipeline
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_size_switch():
-    model_id = 'katuni4ka/tiny-random-phi3'
+    model_id = 'Wovchena/tiny-random-phi3'
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
@@ -107,7 +107,7 @@ def test_batch_size_switch():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_empty_encoded_inputs_throw():
-    model_id = 'katuni4ka/tiny-random-phi3'
+    model_id = 'Wovchena/tiny-random-phi3'
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
@@ -710,7 +710,7 @@ test_cases = [
 def test_perf_metrics(generation_config, prompt):
     import time
     start_time = time.perf_counter()
-    model_id = 'katuni4ka/tiny-random-gemma2'
+    model_id = 'Wovchena/tiny-random-gemma2'
     perf_metrics = run_perf_metrics_collection(model_id, generation_config, prompt)
     total_time = (time.perf_counter() - start_time) * 1000
 

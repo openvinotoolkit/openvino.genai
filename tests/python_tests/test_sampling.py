@@ -29,7 +29,7 @@ from utils.hugging_face import download_and_convert_model
                             #   "echo_with_generation",
                               ])
 def test_basic_stop_criteria(generation_config, prompt):
-    model_id : str = "katuni4ka/tiny-random-phi3"
+    model_id : str = "Wovchena/tiny-random-phi3"
     generate_and_compare(model_id, [prompt], generation_config)
 
 
@@ -71,7 +71,7 @@ def test_stop_strings(generation_config, model_id, pipeline_type):
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
 def test_greedy(generation_config, prompt):
-    model_id : str = "katuni4ka/tiny-random-phi3"
+    model_id : str = "Wovchena/tiny-random-phi3"
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
     generate_and_compare(model=model_id, 

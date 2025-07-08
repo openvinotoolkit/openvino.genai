@@ -29,7 +29,7 @@ class RESTAPIResponse(BaseModel):
 
 structured_id_models = [
     'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
-    'katuni4ka/tiny-random-phi3',
+    'Wovchena/tiny-random-phi3',
 ]
 
 @pytest.mark.precommit

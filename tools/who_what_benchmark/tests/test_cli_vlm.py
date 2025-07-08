@@ -20,7 +20,7 @@ def run_wwb(args):
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("katuni4ka/tiny-random-llava", "visual-text"),
+        ("Wovchena/tiny-random-llava", "visual-text"),
     ],
 )
 def test_vlm_basic(model_id, model_type):
