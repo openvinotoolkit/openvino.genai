@@ -203,6 +203,7 @@ public:
 
         pipeline->m_root_dir = m_root_dir;
         pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
+        pipeline->set_generation_config(m_generation_config);
         return pipeline;
     }
 
