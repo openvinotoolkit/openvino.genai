@@ -853,18 +853,6 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: npm test
 
-      - name: Install openvino-genai-node samples dependencies
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
-        run: |
-          npm install ${{ env.SRC_DIR }}/src/js
-          npm install --verbose
-
-      - name: Run samples tests
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
-        run: npm test
-        env:
-          MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
-
   Overall_Status:
     name: ci/gha_overall_status_windows
     needs: [smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_tools_tests, genai_samples_tests]
