@@ -38,45 +38,6 @@ protected:
     void _pull_awaiting_requests() override {};
 };
 
-class Eagle2CandidateManager {
-public:
-    Eagle2CandidateManager(const GenerationConfig& config) 
-        : m_config(config),
-          m_candidate_graph(config.eagle_tree_width, config.eagle_depth, config.eagle_final_candidates) {}
-    
-    void initialize_for_request(uint64_t request_id, const std::vector<int64_t>& prompt_ids) {
-        m_request_graphs[request_id] = Eagle2CandidateGraph(
-            m_config.eagle_tree_width, 
-            m_config.eagle_depth, 
-            m_config.eagle_final_candidates
-        );
-    }
-    
-    void add_tree_layer(uint64_t request_id, const std::vector<std::vector<Token>>& layer_tokens) {
-        if (m_request_graphs.find(request_id) != m_request_graphs.end()) {
-            m_request_graphs[request_id].add_candidate_layer(layer_tokens);
-        }
-    }
-    
-    std::vector<std::vector<int64_t>> finalize_candidates(uint64_t request_id) {
-        if (m_request_graphs.find(request_id) != m_request_graphs.end()) {
-            auto paths = m_request_graphs[request_id].get_top_k_paths();
-            m_request_graphs[request_id].reset();
-            return paths;
-        }
-        return {};
-    }
-    
-    void cleanup_request(uint64_t request_id) {
-        m_request_graphs.erase(request_id);
-    }
-
-private:
-    GenerationConfig m_config;
-    Eagle2CandidateGraph m_candidate_graph;
-    std::unordered_map<uint64_t, Eagle2CandidateGraph> m_request_graphs;
-};
-
 class ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl
     : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
 public:

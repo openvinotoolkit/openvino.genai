@@ -491,51 +491,6 @@ Sampler::TopKSelector::TopKSelector(SequenceGroup::Ptr sequence_group)
     m_eagle2_candidate_graph = std::make_shared<Eagle2CandidateGraph>(beam, m_parameters.eagle_final_candidates, m_parameters.eagle_depth);
 }
 
-bool Sampler::validate_eagle2_path(
-    Sequence::Ptr candidate_sequence,
-    const std::vector<int64_t>& path,
-    LogitProcessor& logit_processor) {
-    
-    // Get the main model's logits for each position in the path
-    for (size_t i = 0; i < path.size(); i++) {
-        // Get the logits for this position
-        ov::Tensor position_logits = get_logits_for_position(candidate_sequence, i);
-        
-        // Apply logit processing
-        std::vector<Token> tokens = log_softmax(position_logits, 0);
-        logit_processor.apply(tokens);
-        
-        // Find the path token in the distribution
-        int64_t path_token = path[i];
-        auto token_it = std::find_if(tokens.begin(), tokens.end(),
-                                     [path_token](const Token& t) { 
-                                         return t.m_index == path_token; 
-                                     });
-        
-        if (token_it == tokens.end()) {
-            // Token not found in distribution - invalid path
-            return false;
-        }
-        
-        float main_model_prob = std::exp(token_it->m_log_prob);
-        float draft_model_prob = std::exp(candidate_sequence->get_generated_log_probs()[i]);
-        
-        // Apply probability ratio test
-        float probability_ratio = main_model_prob / draft_model_prob;
-        float r = get_random_uniform();
-        
-        if (r > probability_ratio) {
-            // Token rejected
-            return false;
-        }
-        
-        // Update log probability with the main model's value
-        candidate_sequence->update_generated_log_prob(i, token_it->m_log_prob);
-    }
-    
-    return true;
-}
-
 void Sampler::TopKSelector::finalize_eagle2_candidates(SamplerOutput& sampler_output) {
     
     auto final_candidates = m_eagle2_candidate_graph->get_top_k_candidates(); // currently draft model output wrong candidates
@@ -878,6 +833,316 @@ align_all_sequence_len(SequenceGroup::Ptr& sequence_group,
         }
     }
     logit_processor.update_generated_len(min_generated_tokens);
+}
+
+Eagle2ValidationResult Sampler::validate_eagle2_tree(const std::vector<std::vector<int64_t>>& candidate_paths,
+                                                     const std::vector<std::vector<float>>& candidate_log_probs,
+                                                     Sequence::Ptr running_sequence,
+                                                     const ov::Tensor& main_model_logits,
+                                                     LogitProcessor& logit_processor,
+                                                     bool do_sample) {
+    Eagle2ValidationResult result;
+
+    if (candidate_paths.empty()) {
+        return result;
+    }
+
+    // Find the longest common prefix among all candidate paths
+    size_t max_common_prefix = 0;
+    if (candidate_paths.size() > 1) {
+        max_common_prefix = find_common_prefix_length(candidate_paths);
+    } else {
+        max_common_prefix = candidate_paths[0].size();
+    }
+
+    // Validate tokens position by position
+    for (size_t pos = 0; pos < max_common_prefix; ++pos) {
+        // All paths should have the same token at this position due to common prefix
+        int64_t candidate_token = candidate_paths[0][pos];
+        float candidate_log_prob = candidate_log_probs[0][pos];
+
+        // Get main model logits for this position
+        auto logit_vector = _get_logit_vector(main_model_logits, 0, pos);
+        logit_processor.apply(logit_vector);
+
+        // Find the candidate token in main model distribution
+        auto token_prob_pair = find_token_probability(logit_vector, candidate_token);
+        if (!token_prob_pair.first) {
+            // Token not found in main model distribution
+            result.rejected_at_position = pos;
+            break;
+        }
+
+        float main_model_log_prob = token_prob_pair.second;
+
+        // Apply acceptance criteria
+        bool is_accepted = false;
+        if (do_sample) {
+            // Speculative sampling: probability ratio test
+            float main_model_prob = std::exp(main_model_log_prob);
+            float draft_model_prob = std::exp(candidate_log_prob);
+            float probability_ratio = std::min(1.0f, main_model_prob / draft_model_prob);
+
+            auto dist = std::uniform_real_distribution<float>(0.0f, 1.0f);
+            float r = dist(rng_engine);
+            is_accepted = r <= probability_ratio;
+        } else {
+            // Greedy validation: exact token match with highest probability
+            auto highest_prob_token = get_highest_probability_token(logit_vector);
+            is_accepted = (candidate_token == highest_prob_token.m_index);
+        }
+
+        if (is_accepted) {
+            result.accepted_tokens.push_back(candidate_token);
+            result.updated_log_probs.push_back(main_model_log_prob);
+            result.accepted_path_length++;
+        } else {
+            result.rejected_at_position = pos;
+            break;
+        }
+    }
+
+    // If we validated the common prefix successfully, try to extend with one of the paths
+    if (result.accepted_path_length == max_common_prefix && candidate_paths.size() > 1) {
+        // Select the best path to continue validation beyond common prefix
+        size_t best_path_idx = select_best_continuation_path(candidate_paths,
+                                                             candidate_log_probs,
+                                                             max_common_prefix,
+                                                             main_model_logits,
+                                                             logit_processor);
+
+        // Continue validation on the selected path
+        const auto& selected_path = candidate_paths[best_path_idx];
+        const auto& selected_log_probs = candidate_log_probs[best_path_idx];
+
+        for (size_t pos = max_common_prefix; pos < selected_path.size(); ++pos) {
+            int64_t candidate_token = selected_path[pos];
+            float candidate_log_prob = selected_log_probs[pos];
+
+            auto logit_vector = _get_logit_vector(main_model_logits, 0, pos);
+            logit_processor.apply(logit_vector);
+
+            auto token_prob_pair = find_token_probability(logit_vector, candidate_token);
+            if (!token_prob_pair.first) {
+                result.rejected_at_position = pos;
+                break;
+            }
+
+            float main_model_log_prob = token_prob_pair.second;
+
+            bool is_accepted = false;
+            if (do_sample) {
+                float main_model_prob = std::exp(main_model_log_prob);
+                float draft_model_prob = std::exp(candidate_log_prob);
+                float probability_ratio = std::min(1.0f, main_model_prob / draft_model_prob);
+
+                auto dist = std::uniform_real_distribution<float>(0.0f, 1.0f);
+                float r = dist(rng_engine);
+                is_accepted = r <= probability_ratio;
+            } else {
+                auto highest_prob_token = get_highest_probability_token(logit_vector);
+                is_accepted = (candidate_token == highest_prob_token.m_index);
+            }
+
+            if (is_accepted) {
+                result.accepted_tokens.push_back(candidate_token);
+                result.updated_log_probs.push_back(main_model_log_prob);
+                result.accepted_path_length++;
+            } else {
+                result.rejected_at_position = pos;
+                break;
+            }
+        }
+    }
+
+    // Generate one additional token if no rejection occurred
+    if (result.rejected_at_position == 0 || result.accepted_path_length > 0) {
+        size_t next_pos = result.accepted_path_length;
+        auto logit_vector = _get_logit_vector(main_model_logits, 0, next_pos);
+        logit_processor.apply(logit_vector);
+
+        Token next_token;
+        if (do_sample) {
+            auto sampled_tokens = _multinomial_sample(logit_vector, 1);
+            next_token = sampled_tokens[0];
+        } else {
+            next_token = _greedy_sample(logit_vector, 0);
+        }
+
+        result.accepted_tokens.push_back(next_token.m_index);
+        result.updated_log_probs.push_back(next_token.m_log_prob);
+        result.accepted_path_length++;
+    }
+
+    result.is_path_accepted = (result.accepted_path_length > 0);
+    return result;
+}
+
+// Helper function to find common prefix length among multiple paths
+size_t Sampler::find_common_prefix_length(const std::vector<std::vector<int64_t>>& paths) {
+    if (paths.empty())
+        return 0;
+
+    size_t min_length = paths[0].size();
+    for (const auto& path : paths) {
+        min_length = std::min(min_length, path.size());
+    }
+
+    size_t common_length = 0;
+    for (size_t pos = 0; pos < min_length; ++pos) {
+        int64_t first_token = paths[0][pos];
+        bool all_match = true;
+
+        for (size_t path_idx = 1; path_idx < paths.size(); ++path_idx) {
+            if (paths[path_idx][pos] != first_token) {
+                all_match = false;
+                break;
+            }
+        }
+
+        if (all_match) {
+            common_length++;
+        } else {
+            break;
+        }
+    }
+
+    return common_length;
+}
+
+// Helper function to find token probability in logit distribution
+std::pair<bool, float> Sampler::find_token_probability(const Logits& logits, int64_t token_id) {
+    if (logits.is_vector_initialized()) {
+        for (const auto& token : logits.m_vector) {
+            if (token.m_index == token_id) {
+                return {true, token.m_log_prob};
+            }
+        }
+    } else {
+        if (token_id >= 0 && token_id < static_cast<int64_t>(logits.m_size)) {
+            // Apply log softmax to get proper log probability
+            float max_logit = *std::max_element(logits.m_data, logits.m_data + logits.m_size);
+            float log_sum = std::log(std::accumulate(logits.m_data,
+                                                     logits.m_data + logits.m_size,
+                                                     0.0f,
+                                                     [max_logit](float accumulated, float to_add) {
+                                                         return accumulated + std::exp(to_add - max_logit);
+                                                     }));
+            float log_prob = logits.m_data[token_id] - max_logit - log_sum;
+            return {true, log_prob};
+        }
+    }
+    return {false, 0.0f};
+}
+
+// Helper function to get highest probability token
+Token Sampler::get_highest_probability_token(const Logits& logits) {
+    if (logits.is_vector_initialized()) {
+        auto max_it =
+            std::max_element(logits.m_vector.begin(), logits.m_vector.end(), [](const Token& a, const Token& b) {
+                return a.m_log_prob < b.m_log_prob;
+            });
+        return *max_it;
+    } else {
+        auto max_it = std::max_element(logits.m_data, logits.m_data + logits.m_size);
+        size_t max_idx = std::distance(logits.m_data, max_it);
+
+        // Apply log softmax
+        float max_logit = *max_it;
+        float log_sum = std::log(std::accumulate(logits.m_data,
+                                                 logits.m_data + logits.m_size,
+                                                 0.0f,
+                                                 [max_logit](float accumulated, float to_add) {
+                                                     return accumulated + std::exp(to_add - max_logit);
+                                                 }));
+        float log_prob = max_logit - max_logit - log_sum;
+
+        return Token(log_prob, max_idx);
+    }
+}
+
+// Helper function to select best continuation path beyond common prefix
+size_t Sampler::select_best_continuation_path(const std::vector<std::vector<int64_t>>& candidate_paths,
+                                              const std::vector<std::vector<float>>& candidate_log_probs,
+                                              size_t common_prefix_length,
+                                              const ov::Tensor& main_model_logits,
+                                              LogitProcessor& logit_processor) {
+    if (candidate_paths.size() <= 1)
+        return 0;
+
+    float best_score = -std::numeric_limits<float>::infinity();
+    size_t best_path_idx = 0;
+
+    for (size_t path_idx = 0; path_idx < candidate_paths.size(); ++path_idx) {
+        const auto& path = candidate_paths[path_idx];
+        const auto& log_probs = candidate_log_probs[path_idx];
+
+        if (path.size() <= common_prefix_length)
+            continue;
+
+        // Score based on next token probability from main model
+        int64_t next_token = path[common_prefix_length];
+        auto logit_vector = _get_logit_vector(main_model_logits, 0, common_prefix_length);
+        logit_processor.apply(logit_vector);
+
+        auto token_prob_pair = find_token_probability(logit_vector, next_token);
+        if (token_prob_pair.first) {
+            float score = token_prob_pair.second;  // Use main model log probability as score
+            if (score > best_score) {
+                best_score = score;
+                best_path_idx = path_idx;
+            }
+        }
+    }
+
+    return best_path_idx;
+}
+// Enhanced validation function for EAGLE2 that integrates with existing sampler
+bool Sampler::validate_eagle2_candidates(Sequence::Ptr running_sequence,
+                                         const std::vector<std::vector<int64_t>>& candidate_paths,
+                                         const std::vector<std::vector<float>>& candidate_log_probs,
+                                         const ov::Tensor& main_model_logits,
+                                         LogitProcessor& logit_processor,
+                                         size_t& accepted_tokens_count,
+                                         size_t& max_removed_tokens,
+                                         bool do_sample) {
+    auto validation_result = validate_eagle2_tree(candidate_paths,
+                                                  candidate_log_probs,
+                                                  running_sequence,
+                                                  main_model_logits,
+                                                  logit_processor,
+                                                  do_sample);
+
+    if (!validation_result.is_path_accepted) {
+        return false;
+    }
+
+    // Remove any existing generated tokens that weren't accepted
+    size_t current_generated_len = running_sequence->get_generated_len();
+    if (current_generated_len > validation_result.accepted_path_length) {
+        size_t tokens_to_remove = current_generated_len - validation_result.accepted_path_length;
+        running_sequence->remove_last_tokens(tokens_to_remove);
+        max_removed_tokens = std::max(max_removed_tokens, tokens_to_remove);
+    }
+
+    // Add the accepted tokens with updated probabilities
+    for (size_t i = 0; i < validation_result.accepted_tokens.size(); ++i) {
+        int64_t token_id = validation_result.accepted_tokens[i];
+        float log_prob = validation_result.updated_log_probs[i];
+
+        if (i < running_sequence->get_generated_len()) {
+            // Update existing token probability
+            running_sequence->update_generated_log_prob(i, log_prob);
+        } else {
+            // Add new token
+            running_sequence->append_token(token_id, log_prob);
+        }
+
+        logit_processor.register_new_generated_token(token_id);
+    }
+
+    accepted_tokens_count = validation_result.accepted_path_length;
+    return true;
 }
 
 bool Sampler::validate_candidate(

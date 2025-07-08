@@ -350,10 +350,6 @@ ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::ContinuousBa
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
     initialize_pipeline(model, scheduler_config, device, plugin_config);
-    // Initialize Eagle2 manager
-    if (m_generation_config.is_eagle_generation()) {
-        m_eagle2_manager = std::make_unique<Eagle2CandidateManager>(m_generation_config);
-    }
 }
 
 void
