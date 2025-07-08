@@ -171,23 +171,146 @@ public:
     std::map<size_t, int32_t> get_beam_idxs();
 };
 
-class Sampler::TopKSelector {
-    struct Beam {
-        Sequence::Ptr m_sequence;
-        size_t m_global_beam_idx = 0;
-        float m_log_prob = 0.0f;
-        int64_t m_token_id = -1;
-        uint64_t m_beam_id = 0;
-        // cumulative log probabilities
-        float m_score = -std::numeric_limits<float>::infinity();
-        size_t m_tree_layer = 0;
-        Beam(Sequence::Ptr sequence)
-            : m_sequence(std::move(sequence)) { }
+struct Eagle2Node {
+    int64_t token_id;
+    float log_prob;
+    float cumulative_score;
+    size_t depth;
+    uint64_t node_id;
+    std::vector<std::shared_ptr<Eagle2Node>> children;
+    std::weak_ptr<Eagle2Node> parent;
+    
+    Eagle2Node(int64_t token, float prob, size_t d, uint64_t id) 
+        : token_id(token), log_prob(prob), cumulative_score(prob), depth(d), node_id(id) {}
+};
 
-        size_t get_generated_len() const {
-            return m_sequence->get_generated_len();
+class Eagle2CandidateGraph {
+public:
+    Eagle2CandidateGraph(size_t max_width, size_t max_depth, size_t final_candidates)
+        : m_max_width(max_width), m_max_depth(max_depth), 
+          m_final_candidates(final_candidates), m_next_node_id(1) {
+        // Root node with dummy token
+        m_root = std::make_shared<Eagle2Node>(-1, 0.0f, 0, 0);
+        m_node_map[0] = m_root;
+    }
+    
+    void add_candidate_layer(const std::vector<std::vector<Token>>& layer_tokens) {
+        if (m_current_depth >= m_max_depth) return;
+        
+        std::vector<std::shared_ptr<Eagle2Node>> current_layer_nodes;
+        
+        // Get nodes from previous layer to expand
+        std::vector<std::shared_ptr<Eagle2Node>> nodes_to_expand;
+        if (m_current_depth == 0) {
+            nodes_to_expand.push_back(m_root);
+        } else {
+            nodes_to_expand = m_layers[m_current_depth - 1];
         }
-    };
+        
+        // Expand each node with its candidates
+        for (size_t node_idx = 0; node_idx < nodes_to_expand.size() && node_idx < layer_tokens.size(); ++node_idx) {
+            auto parent_node = nodes_to_expand[node_idx];
+            const auto& tokens = layer_tokens[node_idx];
+            
+            // Add top-k tokens as children
+            size_t num_children = std::min(tokens.size(), m_max_width);
+            for (size_t i = 0; i < num_children; ++i) {
+                const auto& token = tokens[i];
+                
+                auto child_node = std::make_shared<Eagle2Node>(
+                    token.m_index, 
+                    token.m_log_prob,
+                    m_current_depth + 1,
+                    m_next_node_id++
+                );
+                
+                // Calculate cumulative score
+                child_node->cumulative_score = parent_node->cumulative_score + token.m_log_prob;
+                child_node->parent = parent_node;
+                
+                parent_node->children.push_back(child_node);
+                m_node_map[child_node->node_id] = child_node;
+                current_layer_nodes.push_back(child_node);
+            }
+        }
+        
+        m_layers[m_current_depth] = current_layer_nodes;
+        m_current_depth++;
+    }
+    
+    std::vector<std::vector<int64_t>> get_top_k_paths() {
+        // Collect all leaf nodes
+        std::vector<std::shared_ptr<Eagle2Node>> leaf_nodes;
+        collect_leaf_nodes(m_root, leaf_nodes);
+        
+        // Sort by cumulative score
+        std::sort(leaf_nodes.begin(), leaf_nodes.end(),
+                 [](const auto& a, const auto& b) {
+                     return a->cumulative_score > b->cumulative_score;
+                 });
+        
+        // Extract top-k paths
+        std::vector<std::vector<int64_t>> paths;
+        size_t num_paths = std::min(leaf_nodes.size(), m_final_candidates);
+        
+        for (size_t i = 0; i < num_paths; ++i) {
+            auto path = extract_path(leaf_nodes[i]);
+            if (!path.empty()) {
+                paths.push_back(path);
+            }
+        }
+        
+        return paths;
+    }
+    
+    void reset() {
+        m_node_map.clear();
+        m_layers.clear();
+        m_current_depth = 0;
+        m_next_node_id = 1;
+        
+        m_root = std::make_shared<Eagle2Node>(-1, 0.0f, 0, 0);
+        m_node_map[0] = m_root;
+    }
+
+private:
+    std::shared_ptr<Eagle2Node> m_root;
+    std::unordered_map<uint64_t, std::shared_ptr<Eagle2Node>> m_node_map;
+    std::unordered_map<size_t, std::vector<std::shared_ptr<Eagle2Node>>> m_layers;
+    
+    size_t m_max_width;
+    size_t m_max_depth;
+    size_t m_final_candidates;
+    size_t m_current_depth = 0;
+    uint64_t m_next_node_id;
+    
+    void collect_leaf_nodes(std::shared_ptr<Eagle2Node> node, 
+                           std::vector<std::shared_ptr<Eagle2Node>>& leaves) {
+        if (node->children.empty() && node != m_root) {
+            leaves.push_back(node);
+        } else {
+            for (auto& child : node->children) {
+                collect_leaf_nodes(child, leaves);
+            }
+        }
+    }
+    
+    std::vector<int64_t> extract_path(std::shared_ptr<Eagle2Node> leaf) {
+        std::vector<int64_t> path;
+        auto current = leaf;
+        
+        while (current && current != m_root) {
+            path.push_back(current->token_id);
+            current = current->parent.lock();
+        }
+        
+        std::reverse(path.begin(), path.end());
+        return path;
+    }
+};
+
+class Sampler::TopKSelector {
+
 
     static bool greater(const Beam& left, const Beam& right) {
         return left.m_score > right.m_score;

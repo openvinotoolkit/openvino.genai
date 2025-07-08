@@ -350,7 +350,10 @@ ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::ContinuousBa
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
     initialize_pipeline(model, scheduler_config, device, plugin_config);
-    //m_candidate_graph = Eagle2CandidateGraph(m_generation_config.eagle_tree_width, m_generation_config.eagle_tree_depth);
+    // Initialize Eagle2 manager
+    if (m_generation_config.is_eagle_generation()) {
+        m_eagle2_manager = std::make_unique<Eagle2CandidateManager>(m_generation_config);
+    }
 }
 
 void
@@ -383,6 +386,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::finish_
 
 GeneratedRequests
 ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::get_generated_requests() {
+    // eagle draft pipeline will generate several branches for each request
     GeneratedRequests result;
     for (const auto& request : m_requests) {
         const auto& request_id = request->get_request_id();
@@ -444,10 +448,10 @@ ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::update_reque
             std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates);
 
             for (auto& running_sequence : running_sequences) {
-                if (!candidates.count(running_sequence->get_grouped_id())) {
+                /*if (!candidates.count(running_sequence->get_grouped_id())) {
                     continue;
-                }
-
+                }*/
+                
                 result.removed_tokens_cnt = remove_tokens_from_sequence(running_sequence, min_generated_tokens, logit_processor);
 
                 auto candidate_sequence = candidates.at(running_sequence->get_grouped_id());

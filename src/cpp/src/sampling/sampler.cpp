@@ -491,6 +491,51 @@ Sampler::TopKSelector::TopKSelector(SequenceGroup::Ptr sequence_group)
     m_eagle2_candidate_graph = std::make_shared<Eagle2CandidateGraph>(beam, m_parameters.eagle_final_candidates, m_parameters.eagle_depth);
 }
 
+bool Sampler::validate_eagle2_path(
+    Sequence::Ptr candidate_sequence,
+    const std::vector<int64_t>& path,
+    LogitProcessor& logit_processor) {
+    
+    // Get the main model's logits for each position in the path
+    for (size_t i = 0; i < path.size(); i++) {
+        // Get the logits for this position
+        ov::Tensor position_logits = get_logits_for_position(candidate_sequence, i);
+        
+        // Apply logit processing
+        std::vector<Token> tokens = log_softmax(position_logits, 0);
+        logit_processor.apply(tokens);
+        
+        // Find the path token in the distribution
+        int64_t path_token = path[i];
+        auto token_it = std::find_if(tokens.begin(), tokens.end(),
+                                     [path_token](const Token& t) { 
+                                         return t.m_index == path_token; 
+                                     });
+        
+        if (token_it == tokens.end()) {
+            // Token not found in distribution - invalid path
+            return false;
+        }
+        
+        float main_model_prob = std::exp(token_it->m_log_prob);
+        float draft_model_prob = std::exp(candidate_sequence->get_generated_log_probs()[i]);
+        
+        // Apply probability ratio test
+        float probability_ratio = main_model_prob / draft_model_prob;
+        float r = get_random_uniform();
+        
+        if (r > probability_ratio) {
+            // Token rejected
+            return false;
+        }
+        
+        // Update log probability with the main model's value
+        candidate_sequence->update_generated_log_prob(i, token_it->m_log_prob);
+    }
+    
+    return true;
+}
+
 void Sampler::TopKSelector::finalize_eagle2_candidates(SamplerOutput& sampler_output) {
     
     auto final_candidates = m_eagle2_candidate_graph->get_top_k_candidates(); // currently draft model output wrong candidates
@@ -499,34 +544,40 @@ void Sampler::TopKSelector::finalize_eagle2_candidates(SamplerOutput& sampler_ou
         // reconstruct the path from leaf to root
         auto path = m_eagle2_candidate_graph->get_path_to_node(iter.m_beam_id);
     }
-    /*std::vector<Beam> leaf_candidates;
-    
-    std::map<uint64_t, size_t> sequence_to_depth;
-    for (size_t layer = 0; layer < m_tree_layers.size(); ++layer) {
-        for (const Beam& beam : m_tree_layers[layer]) {
-            sequence_to_depth[beam.m_sequence->get_id()] = layer;
-        }
-    }
-
-    std::sort(final_candidates.begin(), final_candidates.end(), [&sequence_to_depth](const Beam& a, const Beam& b) {
-        return sequence_to_depth[a.m_sequence->get_id()] > sequence_to_depth[b.m_sequence->get_id()];
-    });
-
-    leaf_candidates = final_candidates;
-
-    std::vector<std::vector<int64_t>> complete_paths = retrieve_indices(leaf_candidates);
-    for (size_t i = 0; i < leaf_candidates.size(); ++i) {
-        Beam& candidate = leaf_candidates[i];
-        const std::vector<int64_t>& path = complete_paths[i];
-
-        // can we reuse sequence?
-        Sequence::Ptr forked_sequence = m_sequence_group->fork_sequence(m_tree_layers[0][0].m_sequence);
+    size_t num_final_candidates = std::min(leaf_nodes.size(), m_parameters.eagle_final_candidates);
+    // Create sequences for each selected leaf node
+    for (size_t i = 0; i < num_final_candidates; ++i) {
+        const Beam& leaf = leaf_nodes[i];
         
+        // Get the path from root to this leaf
+        std::vector<int64_t> path = m_eagle2_candidate_graph->get_path_to_node(leaf.m_beam_id);
+        
+        // Create a new sequence with this path
+        Sequence::Ptr new_sequence = m_sequence_group->fork_sequence((*m_sequence_group)[0]);
+        
+        // Add all tokens along the path
         for (int64_t token_id : path) {
-            forked_sequence->append_token(token_id, candidate.m_log_prob / path.size());
+            new_sequence->append_token(token_id, leaf.m_log_prob);
         }
-        sampler_output.m_forked_sequences[m_tree_layers[0][0].m_sequence->get_id()].push_back(forked_sequence->get_id());
-    }*/
+        
+        // Record the forked sequence
+        sampler_output.m_forked_sequences[(*m_sequence_group)[0]->get_id()].push_back(
+            new_sequence->get_id());
+    }
+    
+    // Reset the tree layer counter
+    m_tree_layer_counter = 0;
+    
+    // Clear the beams to prepare for next round
+    m_beams.clear();
+    
+    // Create a new candidate graph for the next round
+    Beam root_beam((*m_sequence_group)[0]);
+    m_eagle2_candidate_graph = std::make_shared<Eagle2CandidateGraph>(
+        root_beam, 
+        m_parameters.eagle_final_candidates,
+        m_parameters.eagle_depth
+    );
 }
 
 void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits,
@@ -621,8 +672,9 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits,
     for (const Beam& beam : m_beams) {
         size_t num_childs = parent_2_num_childs_map[beam.m_sequence->get_id()];
         if (num_childs == 0) {
-            // drop sequence as not forked
-            sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
+            // do not drop, keep for further trace back
+            beam.m_sequence->set_status(SequenceStatus::WAITING);
+            //sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
             m_sequence_group->remove_sequence(beam.m_sequence->get_id());
         }
     }

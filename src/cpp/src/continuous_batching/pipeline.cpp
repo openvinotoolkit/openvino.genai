@@ -105,7 +105,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
 
     auto model = utils::read_model(models_path, properties_without_draft_model);
     auto generation_config = utils::from_config_json_if_exists(models_path);
-    auto eagle_mode = true; //extact_eagle_mode_from_config(properties_without_draft_model);
+    auto eagle_mode = false; //extact_eagle_mode_from_config(properties_without_draft_model);
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_without_draft_model);
