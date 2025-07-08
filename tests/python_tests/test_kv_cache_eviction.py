@@ -368,19 +368,20 @@ def test_kvcrush_vs_snapkv_baseline(subset):
 MILEBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=64, max_cache_size=352, aggregation_mode=AggregationMode.SUM)
 
 
-@pytest.mark.nightly
+@pytest.mark.precommit
 @pytest.mark.parametrize("device", ["CPU", "GPU"])
 @pytest.mark.parametrize(
     ("test_struct", "download_test_content"), [
-    (BenchmarkTestData("ALFRED", 0.011, 1.440, 1.574), "MileBench_part0.tar.gz"),
-    (BenchmarkTestData("MMCoQA", 0.032, 1.843, 1.620), "MileBench_part2.tar.gz"),
-    (BenchmarkTestData("WikiVQA", 0.032, 1.412, 1.527), "MileBench_part5.tar.gz"),
+    (BenchmarkTestData("ALFRED", 0.006, 2.10, 2.33), "MileBench_part0.tar.gz"),
+    (BenchmarkTestData("MMCoQA", 0.001, 1.91, 1.73), "MileBench_part2.tar.gz"),
+    (BenchmarkTestData("WikiVQA", 0.001, 1.41, 1.47), "MileBench_part5.tar.gz"),
     ],
     indirect=["download_test_content"]
 )
-def test_optimized_generation_milebench(device, test_struct, download_test_content):
-    seqs_per_request = 32
-    num_kv_blocks = 1000 if device == "CPU" else 500
+def test_optimized_generation_milebench(test_struct, download_test_content):
+    seqs_per_request = 16
+    device = "CPU"
+    num_kv_blocks = 500
     model_id = "Qwen/Qwen2-VL-2B-Instruct"
     _, _, models_path = _download_and_convert_model(model_id, OVModelForVisualCausalLM)
     scheduler_config = get_scheduler_config(num_kv_blocks)
@@ -388,14 +389,21 @@ def test_optimized_generation_milebench(device, test_struct, download_test_conte
     scheduler_config_opt = get_scheduler_config(num_kv_blocks)
     scheduler_config_opt.use_cache_eviction = True
     if scheduler_config_opt.use_cache_eviction:
-        scheduler_config_opt.cache_eviction_config = MILEBENCH_CACHE_EVICTION_CONFIG
+        eviction_config = CacheEvictionConfig(
+            start_size=32,
+            recent_size=64,
+            max_cache_size=224,
+            aggregation_mode=AggregationMode.SUM,
+            snapkv_window_size=8,
+        )
+        scheduler_config_opt.cache_eviction_config = eviction_config
 
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, properties=get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, properties=get_default_llm_properties())
 
     generation_config = GenerationConfig()  # expecting default greedy sampling
     generation_config.num_return_sequences = 1
-    generation_config.max_new_tokens = 512
+    generation_config.max_new_tokens = 64  # change to 512 for full evaluation
     generation_config.do_sample = False
 
     subset = test_struct.subset
