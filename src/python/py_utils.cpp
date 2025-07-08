@@ -217,10 +217,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             case PY_TYPE::INT:
                 return _dict.cast<std::map<std::string, int64_t>>();
             default:
-                OPENVINO_THROW("2Property \"" + property_name + "\" got unsupported type.");
+                OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
             }
         default:
-            OPENVINO_THROW("3Property \"" + property_name + "\" got unsupported type.");
+            OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
         }
     } else if (py::isinstance<py::set>(py_obj)) {
         auto _set = py_obj.cast<py::set>();
@@ -258,7 +258,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         case PY_TYPE::BOOL:
             return _set.cast<std::set<bool>>();
         default:
-            OPENVINO_THROW("4Property \"" + property_name + "\" got unsupported type.");
+            OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
         }
 
     // OV types
