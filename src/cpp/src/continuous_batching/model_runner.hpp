@@ -302,9 +302,7 @@ public:
         else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             m_request.set_tensor("inputs_embeds", inputs_embeds);
             if (have_token_type_ids) {
-                // TODO(WIP): Temporarily disabled — causes shape mismatch error:
-                // "Can't set the input tensor with index: 1, because the model input (shape=[?,?]) and the tensor (shape=(270)) are incompatible."
-                // m_request.set_tensor("token_type_ids", token_type_ids); 
+                m_request.set_tensor("token_type_ids", token_type_ids); 
             }
         }
 
