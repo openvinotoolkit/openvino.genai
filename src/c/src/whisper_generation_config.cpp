@@ -16,7 +16,7 @@ ov_status_e ov_genai_whisper_generation_config_create(ov_genai_whisper_generatio
         _config->object = std::make_shared<ov::genai::WhisperGenerationConfig>();
         *config = _config.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -31,7 +31,7 @@ ov_status_e ov_genai_whisper_generation_config_create_from_json(const char* json
         _config->object = std::make_shared<ov::genai::WhisperGenerationConfig>(std::filesystem::path(json_path));
         *config = _config.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -52,7 +52,7 @@ ov_status_e ov_genai_whisper_generation_config_get_generation_config(const ov_ge
         _generation_config->object = std::make_shared<ov::genai::GenerationConfig>(*(config->object));
         *generation_config = _generation_config.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -65,7 +65,7 @@ ov_status_e ov_genai_whisper_generation_config_set_decoder_start_token_id(ov_gen
     try {
         config->object->decoder_start_token_id = token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -78,7 +78,7 @@ ov_status_e ov_genai_whisper_generation_config_get_decoder_start_token_id(const 
     try {
         *token_id = config->object->decoder_start_token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -91,7 +91,7 @@ ov_status_e ov_genai_whisper_generation_config_set_pad_token_id(ov_genai_whisper
     try {
         config->object->pad_token_id = token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -104,7 +104,7 @@ ov_status_e ov_genai_whisper_generation_config_get_pad_token_id(const ov_genai_w
     try {
         *token_id = config->object->pad_token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -117,7 +117,7 @@ ov_status_e ov_genai_whisper_generation_config_set_translate_token_id(ov_genai_w
     try {
         config->object->translate_token_id = token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -130,7 +130,7 @@ ov_status_e ov_genai_whisper_generation_config_get_translate_token_id(const ov_g
     try {
         *token_id = config->object->translate_token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -143,7 +143,7 @@ ov_status_e ov_genai_whisper_generation_config_set_transcribe_token_id(ov_genai_
     try {
         config->object->transcribe_token_id = token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -156,7 +156,7 @@ ov_status_e ov_genai_whisper_generation_config_get_transcribe_token_id(const ov_
     try {
         *token_id = config->object->transcribe_token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -169,7 +169,7 @@ ov_status_e ov_genai_whisper_generation_config_set_prev_sot_token_id(ov_genai_wh
     try {
         config->object->prev_sot_token_id = token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -182,7 +182,7 @@ ov_status_e ov_genai_whisper_generation_config_get_prev_sot_token_id(const ov_ge
     try {
         *token_id = config->object->prev_sot_token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -195,7 +195,7 @@ ov_status_e ov_genai_whisper_generation_config_set_no_timestamps_token_id(ov_gen
     try {
         config->object->no_timestamps_token_id = token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -208,7 +208,7 @@ ov_status_e ov_genai_whisper_generation_config_get_no_timestamps_token_id(const 
     try {
         *token_id = config->object->no_timestamps_token_id;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -221,7 +221,7 @@ ov_status_e ov_genai_whisper_generation_config_set_max_initial_timestamp_index(o
     try {
         config->object->max_initial_timestamp_index = index;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -234,7 +234,7 @@ ov_status_e ov_genai_whisper_generation_config_get_max_initial_timestamp_index(c
     try {
         *index = config->object->max_initial_timestamp_index;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -247,7 +247,7 @@ ov_status_e ov_genai_whisper_generation_config_set_is_multilingual(ov_genai_whis
     try {
         config->object->is_multilingual = is_multilingual;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -260,7 +260,7 @@ ov_status_e ov_genai_whisper_generation_config_get_is_multilingual(const ov_gena
     try {
         *is_multilingual = config->object->is_multilingual;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -277,7 +277,7 @@ ov_status_e ov_genai_whisper_generation_config_set_language(ov_genai_whisper_gen
             config->object->language = std::nullopt;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -305,7 +305,7 @@ ov_status_e ov_genai_whisper_generation_config_get_language(const ov_genai_whisp
             *language_size = str.length() + 1;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -322,7 +322,7 @@ ov_status_e ov_genai_whisper_generation_config_set_task(ov_genai_whisper_generat
             config->object->task = std::nullopt;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -350,7 +350,7 @@ ov_status_e ov_genai_whisper_generation_config_get_task(const ov_genai_whisper_g
             *task_size = str.length() + 1;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -363,7 +363,7 @@ ov_status_e ov_genai_whisper_generation_config_set_return_timestamps(ov_genai_wh
     try {
         config->object->return_timestamps = return_timestamps;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -376,7 +376,7 @@ ov_status_e ov_genai_whisper_generation_config_get_return_timestamps(const ov_ge
     try {
         *return_timestamps = config->object->return_timestamps;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -393,7 +393,7 @@ ov_status_e ov_genai_whisper_generation_config_set_initial_prompt(ov_genai_whisp
             config->object->initial_prompt = std::nullopt;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -421,7 +421,7 @@ ov_status_e ov_genai_whisper_generation_config_get_initial_prompt(const ov_genai
             *prompt_size = str.length() + 1;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -438,7 +438,7 @@ ov_status_e ov_genai_whisper_generation_config_set_hotwords(ov_genai_whisper_gen
             config->object->hotwords = std::nullopt;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -466,7 +466,7 @@ ov_status_e ov_genai_whisper_generation_config_get_hotwords(const ov_genai_whisp
             *hotwords_size = str.length() + 1;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -483,7 +483,7 @@ ov_status_e ov_genai_whisper_generation_config_set_begin_suppress_tokens(ov_gena
             config->object->begin_suppress_tokens.assign(tokens, tokens + tokens_count);
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -496,7 +496,7 @@ ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens_count(c
     try {
         *tokens_count = config->object->begin_suppress_tokens.size();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -515,7 +515,7 @@ ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens(const o
                   config->object->begin_suppress_tokens.end(),
                   tokens);
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -532,7 +532,7 @@ ov_status_e ov_genai_whisper_generation_config_set_suppress_tokens(ov_genai_whis
             config->object->suppress_tokens.assign(tokens, tokens + tokens_count);
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -545,7 +545,7 @@ ov_status_e ov_genai_whisper_generation_config_get_suppress_tokens_count(const o
     try {
         *tokens_count = config->object->suppress_tokens.size();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -564,7 +564,7 @@ ov_status_e ov_genai_whisper_generation_config_get_suppress_tokens(const ov_gena
                   config->object->suppress_tokens.end(),
                   tokens);
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -576,7 +576,7 @@ ov_status_e ov_genai_whisper_generation_config_validate(ov_genai_whisper_generat
     try {
         config->object->validate();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }

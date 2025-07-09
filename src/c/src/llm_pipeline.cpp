@@ -17,7 +17,7 @@ ov_status_e ov_genai_decoded_results_create(ov_genai_decoded_results** results) 
         _results->object = std::make_shared<ov::genai::DecodedResults>();
         *results = _results.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -36,7 +36,7 @@ ov_status_e ov_genai_decoded_results_get_perf_metrics(const ov_genai_decoded_res
         _metrics->object = std::make_shared<ov::genai::PerfMetrics>(results->object->perf_metrics);
         *metrics = _metrics.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -64,7 +64,7 @@ ov_status_e ov_genai_decoded_results_get_string(const ov_genai_decoded_results* 
             *output_size = str.length() + 1;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -101,7 +101,7 @@ ov_status_e ov_genai_llm_pipeline_create(const char* models_path, const char* de
             std::make_shared<ov::genai::LLMPipeline>(std::filesystem::path(models_path), std::string(device), property);
         *pipe = _pipe.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -140,7 +140,7 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
         }
 
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -151,7 +151,7 @@ ov_status_e ov_genai_llm_pipeline_start_chat(ov_genai_llm_pipeline* pipe) {
     try {
         pipe->object->start_chat();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -162,7 +162,7 @@ ov_status_e ov_genai_llm_pipeline_finish_chat(ov_genai_llm_pipeline* pipe) {
     try {
         pipe->object->finish_chat();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -176,7 +176,7 @@ ov_status_e ov_genai_llm_pipeline_get_generation_config(const ov_genai_llm_pipel
         _config->object = std::make_shared<ov::genai::GenerationConfig>(pipe->object->get_generation_config());
         *config = _config.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -188,7 +188,7 @@ ov_status_e ov_genai_llm_pipeline_set_generation_config(ov_genai_llm_pipeline* p
     try {
         pipe->object->set_generation_config(*(config->object));
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }

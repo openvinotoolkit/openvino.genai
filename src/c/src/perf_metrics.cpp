@@ -26,7 +26,7 @@ ov_status_e ov_genai_perf_metrics_get_load_time(const ov_genai_perf_metrics* met
     try {
         *load_time = metrics->object->get_load_time();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -38,7 +38,7 @@ ov_status_e ov_genai_perf_metrics_get_num_generation_tokens(const ov_genai_perf_
     try {
         *num_generated_tokens = metrics->object->get_num_generated_tokens();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -49,7 +49,7 @@ ov_status_e ov_genai_perf_metrics_get_num_input_tokens(const ov_genai_perf_metri
     try {
         *num_input_tokens = metrics->object->get_num_input_tokens();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -62,7 +62,7 @@ ov_status_e ov_genai_perf_metrics_get_ttft(const ov_genai_perf_metrics* metrics,
         *mean = ttft.mean;
         *std = ttft.std;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -75,7 +75,7 @@ ov_status_e ov_genai_perf_metrics_get_tpot(const ov_genai_perf_metrics* metrics,
         *mean = tpot.mean;
         *std = tpot.std;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -89,7 +89,7 @@ ov_status_e ov_genai_perf_metrics_get_ipot(const ov_genai_perf_metrics* metrics,
         *mean = ipot.mean;
         *std = ipot.std;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -102,7 +102,7 @@ ov_status_e ov_genai_perf_metrics_get_throughput(const ov_genai_perf_metrics* me
         *mean = throughput.mean;
         *std = throughput.std;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -118,7 +118,7 @@ ov_status_e ov_genai_perf_metrics_get_inference_duration(const ov_genai_perf_met
         *mean = inference_duration.mean;
         *std = inference_duration.std;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -132,7 +132,7 @@ ov_status_e ov_genai_perf_metrics_get_generate_duration(const ov_genai_perf_metr
         *mean = generation_duration.mean;
         *std = generation_duration.std;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -147,7 +147,7 @@ ov_status_e ov_genai_perf_metrics_get_tokenization_duration(const ov_genai_perf_
         *mean = tokenization_duration.mean;
         *std = tokenization_duration.std;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -162,7 +162,7 @@ ov_status_e ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_per
         *mean = detokenization_duration.mean;
         *std = detokenization_duration.std;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -173,7 +173,7 @@ ov_status_e ov_genai_perf_metrics_add_in_place(ov_genai_perf_metrics* left, cons
     try {
         *(left->object) += *(right->object);
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }

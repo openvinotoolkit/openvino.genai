@@ -19,7 +19,7 @@ ov_status_e ov_genai_whisper_decoded_result_chunk_create(ov_genai_whisper_decode
         _chunk->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>();
         *chunk = _chunk.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -38,7 +38,7 @@ ov_status_e ov_genai_whisper_decoded_result_chunk_get_start_ts(const ov_genai_wh
     try {
         *start_ts = chunk->object->start_ts;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -51,7 +51,7 @@ ov_status_e ov_genai_whisper_decoded_result_chunk_get_end_ts(const ov_genai_whis
     try {
         *end_ts = chunk->object->end_ts;
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -75,7 +75,7 @@ ov_status_e ov_genai_whisper_decoded_result_chunk_get_text(const ov_genai_whispe
             *text_size = str.length() + 1;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -90,7 +90,7 @@ ov_status_e ov_genai_whisper_decoded_results_create(ov_genai_whisper_decoded_res
         _results->object = std::make_shared<ov::genai::WhisperDecodedResults>();
         *results = _results.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -111,7 +111,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_perf_metrics(const ov_genai_whi
         _metrics->object = std::make_shared<ov::genai::PerfMetrics>(results->object->perf_metrics);
         *metrics = _metrics.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -124,7 +124,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_texts_count(const ov_genai_whis
     try {
         *count = results->object->texts.size();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -152,7 +152,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_text_at(const ov_genai_whisper_
             *text_size = str.length() + 1;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -169,7 +169,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_score_at(const ov_genai_whisper
         }
         *score = results->object->scores[index];
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -182,7 +182,7 @@ ov_status_e ov_genai_whisper_decoded_results_has_chunks(const ov_genai_whisper_d
     try {
         *has_chunks = results->object->chunks.has_value();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -199,7 +199,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_chunks_count(const ov_genai_whi
             *count = 0;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -222,7 +222,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper
         _chunk->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>(results->object->chunks->at(index));
         *chunk = _chunk.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -246,7 +246,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_string(const ov_genai_whisper_d
             *output_size = str.length() + 1;
         }
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -278,7 +278,7 @@ ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
         );
         *pipeline = _pipeline.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -313,7 +313,7 @@ ov_status_e ov_genai_whisper_pipeline_generate(ov_genai_whisper_pipeline* pipeli
         
         *results = _results.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -328,7 +328,7 @@ ov_status_e ov_genai_whisper_pipeline_get_generation_config(const ov_genai_whisp
         _config->object = std::make_shared<ov::genai::WhisperGenerationConfig>(pipeline->object->get_generation_config());
         *config = _config.release();
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -341,7 +341,7 @@ ov_status_e ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pip
     try {
         pipeline->object->set_generation_config(*(config->object));
     } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
+        return ov_status_e::UNKNOWN_EXCEPTION;
     }
     return ov_status_e::OK;
 }
