@@ -20,7 +20,7 @@
             case OUT_OF_BOUNDS: error_msg = "Out of bounds"; break;                     \
             case UNEXPECTED: error_msg = "Unexpected error"; break;                     \
             case NOT_IMPLEMENTED: error_msg = "Not implemented"; break;                  \
-            case UNKNOWN_EXCEPTION: error_msg = "Unknown exception"; break;              \
+            case UNKNOW_EXCEPTION: error_msg = "Unknown exception"; break;              \
         }                                                                                \
         fprintf(stderr, "[ERROR] %s (status code: %d) at line %d\n",                    \
                 error_msg, return_status, __LINE__);                                     \
@@ -430,7 +430,7 @@ int main(int argc, char* argv[]) {
     printf("Creating Whisper pipeline...\n");
     ov_status_e status = ov_genai_whisper_pipeline_create(options.model_path, options.device, 0, &pipeline);
     if (status != OK) {
-        if (status == UNKNOWN_EXCEPTION) {
+        if (status == UNKNOW_EXCEPTION) {
             fprintf(stderr, "Error: Failed to create Whisper pipeline. Please check:\n");
             fprintf(stderr, "  - Model path exists and contains valid Whisper model files\n");
             fprintf(stderr, "  - Device '%s' is available and supported\n", options.device);

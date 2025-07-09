@@ -16,7 +16,7 @@ ov_status_e ov_genai_generation_config_create(ov_genai_generation_config** confi
         *config = _config.release();
 
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -29,7 +29,7 @@ ov_status_e ov_genai_generation_config_create_from_json(const char* json_path, o
         _config->object = std::make_shared<ov::genai::GenerationConfig>(std::filesystem::path(json_path));
         *config = _config.release();
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -46,7 +46,7 @@ ov_status_e ov_genai_generation_config_set_max_new_tokens(ov_genai_generation_co
     try {
         config->object->max_new_tokens = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -57,7 +57,7 @@ ov_status_e ov_genai_generation_config_set_max_length(ov_genai_generation_config
     try {
         config->object->max_length = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -68,7 +68,7 @@ ov_status_e ov_genai_generation_config_set_ignore_eos(ov_genai_generation_config
     try {
         config->object->ignore_eos = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -79,7 +79,7 @@ ov_status_e ov_genai_generation_config_set_min_new_tokens(ov_genai_generation_co
     try {
         config->object->min_new_tokens = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -90,7 +90,7 @@ ov_status_e ov_genai_generation_config_set_echo(ov_genai_generation_config* conf
     try {
         config->object->echo = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -101,7 +101,7 @@ ov_status_e ov_genai_generation_config_set_logprobs(ov_genai_generation_config* 
     try {
         config->object->logprobs = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -114,7 +114,7 @@ ov_status_e ov_genai_generation_config_set_include_stop_str_in_output(ov_genai_g
     try {
         config->object->include_stop_str_in_output = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -132,7 +132,7 @@ ov_status_e ov_genai_generation_config_set_stop_strings(ov_genai_generation_conf
         }
         config->object->stop_strings = stopStrings;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -149,7 +149,7 @@ ov_status_e ov_genai_generation_config_set_stop_token_ids(ov_genai_generation_co
         }
         config->object->stop_token_ids = stop_token_ids;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -160,7 +160,7 @@ ov_status_e ov_genai_generation_config_set_num_beam_groups(ov_genai_generation_c
     try {
         config->object->num_beam_groups = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -171,7 +171,7 @@ ov_status_e ov_genai_generation_config_set_num_beams(ov_genai_generation_config*
     try {
         config->object->num_beams = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -182,7 +182,7 @@ ov_status_e ov_genai_generation_config_set_diversity_penalty(ov_genai_generation
     try {
         config->object->diversity_penalty = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -193,7 +193,7 @@ ov_status_e ov_genai_generation_config_set_length_penalty(ov_genai_generation_co
     try {
         config->object->length_penalty = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -205,7 +205,7 @@ ov_status_e ov_genai_generation_config_set_num_return_sequences(ov_genai_generat
     try {
         config->object->num_return_sequences = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -217,7 +217,7 @@ ov_status_e ov_genai_generation_config_set_no_repeat_ngram_size(ov_genai_generat
     try {
         config->object->no_repeat_ngram_size = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -229,7 +229,7 @@ ov_status_e ov_genai_generation_config_set_stop_criteria(ov_genai_generation_con
     try {
         config->object->stop_criteria = static_cast<ov::genai::StopCriteria>(value);
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -241,7 +241,7 @@ ov_status_e ov_genai_generation_config_set_temperature(ov_genai_generation_confi
     try {
         config->object->temperature = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -252,7 +252,7 @@ ov_status_e ov_genai_generation_config_set_top_p(ov_genai_generation_config* con
     try {
         config->object->top_p = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -263,7 +263,7 @@ ov_status_e ov_genai_generation_config_set_top_k(ov_genai_generation_config* con
     try {
         config->object->top_k = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -274,7 +274,7 @@ ov_status_e ov_genai_generation_config_set_do_sample(ov_genai_generation_config*
     try {
         config->object->do_sample = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -285,7 +285,7 @@ ov_status_e ov_genai_generation_config_set_repetition_penalty(ov_genai_generatio
     try {
         config->object->repetition_penalty = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -296,7 +296,7 @@ ov_status_e ov_genai_generation_config_set_presence_penalty(ov_genai_generation_
     try {
         config->object->presence_penalty = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -307,7 +307,7 @@ ov_status_e ov_genai_generation_config_set_frequency_penalty(ov_genai_generation
     try {
         config->object->frequency_penalty = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -318,7 +318,7 @@ ov_status_e ov_genai_generation_config_set_rng_seed(ov_genai_generation_config* 
     try {
         config->object->rng_seed = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -331,7 +331,7 @@ ov_status_e ov_genai_generation_config_set_assistant_confidence_threshold(ov_gen
     try {
         config->object->assistant_confidence_threshold = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -343,7 +343,7 @@ ov_status_e ov_genai_generation_config_set_num_assistant_tokens(ov_genai_generat
     try {
         config->object->num_assistant_tokens = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -354,7 +354,7 @@ ov_status_e ov_genai_generation_config_set_max_ngram_size(ov_genai_generation_co
     try {
         config->object->max_ngram_size = value;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -366,7 +366,7 @@ ov_status_e ov_genai_generation_config_set_eos_token_id(ov_genai_generation_conf
     try {
         config->object->eos_token_id = id;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -379,7 +379,7 @@ ov_status_e ov_genai_generation_config_get_max_new_tokens(const ov_genai_generat
     try {
         *max_new_tokens = config->object->max_new_tokens;
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
@@ -390,7 +390,7 @@ ov_status_e ov_genai_generation_config_validate(ov_genai_generation_config* conf
     try {
         config->object->validate();
     } catch (...) {
-        return ov_status_e::UNKNOWN_EXCEPTION;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
 }
