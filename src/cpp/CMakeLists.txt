@@ -83,9 +83,6 @@ if(ENABLE_XGRAMMAR)
       GIT_SUBMODULES_RECURSE ON
     )
 
-    # Set the build type for xgrammar explicitly
-    set(CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE}" CACHE STRING "Build type" FORCE)
-
     set(XGRAMMAR_BUILD_PYTHON_BINDINGS OFF CACHE BOOL "Build Python bindings" FORCE)
     FetchContent_GetProperties(xgrammar)
     if(NOT xgrammar_POPULATED)
@@ -98,6 +95,10 @@ if(ENABLE_XGRAMMAR)
             string(REGEX REPLACE "XGRAMMAR_BUILD_PYTHON_BINDINGS ON"
                                 "XGRAMMAR_BUILD_PYTHON_BINDINGS OFF"
                                 MODIFIED_CONFIG "${CONFIG_CONTENT}")
+            
+            string(REGEX REPLACE "^set\\(CMAKE_BUILD_TYPE .*$"
+                                "set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE})"
+                                MODIFIED_CONFIG "${MODIFIED_CONFIG}")
             file(WRITE "${CONFIG_FILE}" "${MODIFIED_CONFIG}")
         endif()
 
@@ -105,7 +106,7 @@ if(ENABLE_XGRAMMAR)
         set(XGRAMMAR_ENABLE_CPPTRACE OFF CACHE BOOL "Enable CPPTrace" FORCE)
         set(XGRAMMAR_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA" FORCE)
 
-        add_subdirectory("${xgrammar_SOURCE_DIR}" "${xgrammar_BINARY_DIR}/${CMAKE_BUILD_TYPE}" EXCLUDE_FROM_ALL)
+        add_subdirectory("${xgrammar_SOURCE_DIR}" "${xgrammar_BINARY_DIR}" EXCLUDE_FROM_ALL)
     endif()
 endif()
 # generate version files
