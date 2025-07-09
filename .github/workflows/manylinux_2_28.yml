@@ -286,7 +286,7 @@ jobs:
 
       - name: Build GenAI Wheel
         run: |
-          for py_version in "39" "310" "311" "312" "313"
+          for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
           do
             python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
             $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
