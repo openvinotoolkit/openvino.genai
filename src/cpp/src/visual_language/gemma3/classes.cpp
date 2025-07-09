@@ -110,7 +110,17 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prom
             expanded_tag += image_token;
         }
         expanded_tag += end_of_image;
-        unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
+
+        size_t start_pos = unified_prompt.find(start_of_image);
+        size_t native_pos = unified_prompt.find(NATIVE_TAG);
+
+        if (start_pos != std::string::npos && native_pos == std::string::npos) {
+            unified_prompt.replace(start_pos, start_of_image.length(), expanded_tag);
+        } else if (native_pos != std::string::npos) {
+            unified_prompt.replace(native_pos, NATIVE_TAG.length(), expanded_tag);
+        } else {
+            std::cerr << "Did not find <start_of_image> or NATIVE_TAG in prompt!" << std::endl;
+        }
     }
     return {std::move(unified_prompt), std::move(images_sequence)};
 }
