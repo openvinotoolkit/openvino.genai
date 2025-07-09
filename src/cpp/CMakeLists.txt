@@ -67,11 +67,6 @@ if(ENABLE_GGUF)
     target_include_directories(gguflib PUBLIC "${gguflib_SOURCE_DIR}")
 endif()
 
-# Check if it's Debug and Windows set ENABLE_XGRAMMAR=OFF forcefully
-if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND WIN32)
-    set(ENABLE_XGRAMMAR OFF CACHE BOOL "Enable XGrammar" FORCE)
-endif()
-
 # Disable XGrammar for Android platform, causes issues in CI
 if(ANDROID)
     set(ENABLE_XGRAMMAR OFF CACHE BOOL "Enable XGrammar" FORCE)
@@ -87,6 +82,9 @@ if(ENABLE_XGRAMMAR)
       GIT_TAG ${XGRAMMAR_VERSION}
       GIT_SUBMODULES_RECURSE ON
     )
+
+    # Set the build type for xgrammar explicitly
+    set(CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE}" CACHE STRING "Build type" FORCE)
 
     set(XGRAMMAR_BUILD_PYTHON_BINDINGS OFF CACHE BOOL "Build Python bindings" FORCE)
     FetchContent_GetProperties(xgrammar)
@@ -107,7 +105,7 @@ if(ENABLE_XGRAMMAR)
         set(XGRAMMAR_ENABLE_CPPTRACE OFF CACHE BOOL "Enable CPPTrace" FORCE)
         set(XGRAMMAR_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA" FORCE)
 
-        add_subdirectory("${xgrammar_SOURCE_DIR}" "${xgrammar_BINARY_DIR}" EXCLUDE_FROM_ALL)
+        add_subdirectory("${xgrammar_SOURCE_DIR}" "${xgrammar_BINARY_DIR}/${CMAKE_BUILD_TYPE}" EXCLUDE_FROM_ALL)
     endif()
 endif()
 # generate version files
