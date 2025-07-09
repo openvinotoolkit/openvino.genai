@@ -66,7 +66,7 @@ protected:
     int64_t m_rope_delta = 0;
     ov::Tensor m_merged_image_embeddings;
 
-    bool m_with_cu_seqlens_input = true;
+    bool m_with_cu_seqlens_input = false;
 
     virtual ov::Tensor run_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 

@@ -1,10 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "continuous_batching/paged_attention_transformations.hpp"
-
-#include "openvino/pass/manager.hpp"
-#include "openvino/pass/sdpa_to_vlsdpa.hpp"
+#include "visual_language/vl_sdpa_transformations.hpp"
 
 namespace ov {
 namespace genai {
@@ -14,9 +11,22 @@ void apply_vl_sdpa_transformations(std::shared_ptr<ov::Model> model) {
     const ov::op::util::VariableVector& variables = model->get_variables();
     OPENVINO_ASSERT(variables.empty(), "Model is supposed to be stateless");
 
-    ov::pass::SDPAToVLSDPA().run_on_model(model);
+    model->set_rt_info("QWenVL", "model_type_hint");
+}
 
-    model->validate_nodes_and_infer_types();
+bool check_vl_sdpa_transformations(ov::CompiledModel& compiled_model) {
+    const std::vector<std::string> target_names {"cu_seq_lens", "cu_window_seqlens"};
+
+    bool exists = false;
+    for (auto &input : compiled_model.inputs()) {
+        const auto& names = input.get_names();
+
+        for (const auto& target : target_names) {
+            exists |= (names.find(target) != names.end());
+        }
+    }
+
+    return exists;
 }
 
 }  // namespace utils

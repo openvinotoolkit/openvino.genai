@@ -517,13 +517,15 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, model_dir, device, device_config) {
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_merger_model.xml");
-    if (std::getenv("DISABLE_VLSDPA") != nullptr) {
-        m_with_cu_seqlens_input = false;
-    } else {
-        utils::apply_vl_sdpa_transformations(model);
-    }
+    utils::apply_vl_sdpa_transformations(model);
+
     auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
+
+    if (utils::check_vl_sdpa_transformations(compiled_model)) {
+        m_with_cu_seqlens_input = true;
+    }
+
     m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {
@@ -542,16 +544,16 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     auto model = utils::singleton_core().read_model(
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
-    if (std::getenv("DISABLE_VLSDPA") != nullptr) {
-        m_with_cu_seqlens_input = false;
-    } else {
-        utils::apply_vl_sdpa_transformations(model);
-    }
+    utils::apply_vl_sdpa_transformations(model);
+
     auto compiled_model = utils::singleton_core().compile_model(model,
         device,
         device_config
     );
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
+    if (utils::check_vl_sdpa_transformations(compiled_model)) {
+        m_with_cu_seqlens_input = true;
+    }
     m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {
