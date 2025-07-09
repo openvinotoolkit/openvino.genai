@@ -12,14 +12,14 @@ if (!EMBEDDING_MODEL_PATH) throw new Error(
     + 'EMBEDDING_MODEL_PATH environment variable.',
 );
 
-describe('TextEmbeddingPipeline', async () => {
+describe('TextEmbeddingPipeline', () => {
   let pipeline = null;
 
   before(async () => {
     pipeline = await TextEmbeddingPipeline(EMBEDDING_MODEL_PATH, 'CPU');
   });
 
-  await it('async embed query', async () => {
+  it('async embed query', async () => {
     const result = pipeline.embedQuery('test');
     assert.ok(result instanceof Promise, 'result should be Promise');
 
@@ -27,7 +27,7 @@ describe('TextEmbeddingPipeline', async () => {
     assert.ok(isFloat32Array(embedResult));
   });
 
-  await it('async embed documents', async () => {
+  it('async embed documents', async () => {
     const result = pipeline.embedDocuments(['Hello', 'World']);
     assert.ok(result instanceof Promise, 'result should be Promise');
 

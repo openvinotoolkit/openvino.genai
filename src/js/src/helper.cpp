@@ -140,7 +140,7 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& 
             Napi::Value typed_array = Napi::Uint8Array::New(env, buffer_size, buffer, 0);
             return typed_array;
         },
-        [env](auto& args) -> Napi::Value { OPENVINO_THROW("Unsupported type for EmbeddingResult: "); }
+        [env](auto& args) -> Napi::Value { OPENVINO_THROW("Unsupported type for EmbeddingResult."); }
     }, embedding_result);
 }
 
