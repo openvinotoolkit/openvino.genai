@@ -451,6 +451,7 @@ def test_perf_metrics(cache, backend):
 def test_vlm_npu_no_exception(model_id, backend):
     unsupported_models = {
         "katuni4ka/tiny-random-internvl2",
+        "katuni4ka/tiny-random-gemma3",
     }
 
     if model_id in unsupported_models:
