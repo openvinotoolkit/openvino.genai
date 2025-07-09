@@ -142,8 +142,8 @@ LoRAPartsParser default_lora_patterns () {
 // to a layer name in the base model. Example: https://hf-mirror.com/hfl/llama-3-chinese-8b-lora
 std::vector<RegexParser> default_lora_constant_patterns () {
     return {
-        RegexParser("(.*).lm_head.weight", 0),
-        RegexParser("(.*).embed_tokens.weight", 0),
+        RegexParser("(.*)\\.lm_head\\.weight", 0),
+        RegexParser("(.*)\\.embed_tokens\\.weight", 0),
     };
 }
 
