@@ -169,16 +169,16 @@ jobs:
                 -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
           /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          for py_version in "39" "310" "311" "312" "313"
+          for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
           do
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
-
-            python_path=/opt/python/cp${py_version}-cp${py_version}/bin/python3
+            
+            python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
 
             echo "Configuring cmake for python$py_version"
             /usr/bin/cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                   -DENABLE_PYTHON=ON \
-                  -DPython3_EXECUTABLE=${python_path} \
+                  -DPython3_EXECUTABLE=${python_exec_path} \
                   -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
                   -S ${{ env.SRC_DIR }} \
                   -B ${{ env.BUILD_DIR }}
@@ -288,8 +288,8 @@ jobs:
         run: |
           for py_version in "39" "310" "311" "312" "313"
           do
-            python_path=/opt/python/cp${py_version}-cp${py_version}/bin/python3
-            $python_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+            python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
+            $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
                 ${{ needs.openvino_download.outputs.ov_wheel_source }} \
                 ${{ env.SRC_DIR }}
           done
