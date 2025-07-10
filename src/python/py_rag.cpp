@@ -168,8 +168,13 @@ kwargs: Plugin and/or config properties
                 "rerank",
                 [](ov::genai::TextRerankPipeline& pipe,
                    const std::string& query,
-                   const std::vector<std::string>& texts) -> std::vector<std::pair<size_t, float>> {
-                    return pipe.rerank(query, texts);
+                   const std::vector<std::string>& texts) -> py::typing::Union<std::vector<std::pair<size_t, float>>> {
+                    std::vector<std::pair<size_t, float>> res;
+                    {
+                        py::gil_scoped_release rel;
+                        res = pipe.rerank(query, texts);
+                    }
+                    return py::cast(res);
                 },
                 py::arg("query"),
                 py::arg("texts"),
@@ -189,8 +194,13 @@ kwargs: Plugin and/or config properties
                 "Asynchronously reranks a vector of texts based on the query.")
             .def(
                 "wait_rerank",
-                [](ov::genai::TextRerankPipeline& pipe) -> std::vector<std::pair<size_t, float>> {
-                    return pipe.wait_rerank();
+                [](ov::genai::TextRerankPipeline& pipe) -> py::typing::Union<std::vector<std::pair<size_t, float>>> {
+                    std::vector<std::pair<size_t, float>> res;
+                    {
+                        py::gil_scoped_release rel;
+                        res = pipe.wait_rerank();
+                    }
+                    return py::cast(res);
                 },
                 "Waits for reranked texts.");
 

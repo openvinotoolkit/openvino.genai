@@ -43,7 +43,7 @@ public:
 
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
 
-        utils::print_compiled_model_properties(compiled_model, "text embedding model");
+        utils::print_compiled_model_properties(compiled_model, "text rerank model");
         m_request = compiled_model.create_infer_request();
     };
 
