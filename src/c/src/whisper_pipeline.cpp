@@ -301,6 +301,7 @@ ov_status_e ov_genai_whisper_pipeline_generate(ov_genai_whisper_pipeline* pipeli
         std::unique_ptr<ov_genai_whisper_decoded_results> _results = std::make_unique<ov_genai_whisper_decoded_results>();
         _results->object = std::make_shared<ov::genai::WhisperDecodedResults>();
         
+        
         // Convert raw speech input to vector
         ov::genai::RawSpeechInput speech_input(raw_speech, raw_speech + raw_speech_size);
         

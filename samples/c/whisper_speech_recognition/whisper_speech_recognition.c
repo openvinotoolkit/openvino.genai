@@ -336,27 +336,6 @@ float* resample_audio(const float* input, size_t input_length, float input_rate,
     return output;
 }
 
-void print_configuration(const Options* options) {
-    printf("\nConfiguration:\n");
-    printf("  Model path: %s\n", options->model_path);
-    if (options->audio_path) {
-        printf("  Audio input: %s\n", options->audio_path);
-    } else {
-        printf("  Audio input: Synthetic (%.1fs @ %.0fHz)\n", options->duration, options->sample_rate);
-    }
-    printf("  Device: %s\n", options->device);
-    printf("  Language: %s\n", strlen(options->language) > 0 ? options->language : "auto-detect");
-    printf("  Task: %s\n", options->task);
-    if (options->initial_prompt) {
-        printf("  Initial prompt: %s\n", options->initial_prompt);
-    }
-    printf("  Return timestamps: %s\n", options->return_timestamps ? "yes" : "no");
-    if (options->num_iter > 1) {
-        printf("  Warmup iterations: %zu\n", options->num_warmup);
-        printf("  Benchmark iterations: %zu\n", options->num_iter);
-    }
-    printf("\n");
-}
 
 int main(int argc, char* argv[]) {
     Options options;
@@ -367,8 +346,6 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;  // Error in arguments
     }
 
-    // Print configuration
-    print_configuration(&options);
 
     // Initialize variables
     ov_genai_whisper_pipeline* pipeline = NULL;
@@ -385,14 +362,12 @@ int main(int argc, char* argv[]) {
     // Load or generate audio
     if (options.audio_path) {
         float file_sample_rate;
-        printf("Loading audio from %s...\n", options.audio_path);
         if (load_wav_file(options.audio_path, &audio_data, &audio_length, &file_sample_rate) != 0) {
             goto err;
         }
         
         // Resample to 16kHz if needed
         if (file_sample_rate != 16000.0f) {
-            printf("Resampling from %.0fHz to 16000Hz...\n", file_sample_rate);
             size_t resampled_length;
             resampled_audio = resample_audio(audio_data, audio_length, file_sample_rate, 16000.0f, &resampled_length);
             if (!resampled_audio) {
@@ -404,8 +379,6 @@ int main(int argc, char* argv[]) {
             audio_length = resampled_length;
             resampled_audio = NULL;
         }
-        
-        printf("Loaded %.2f seconds of audio\n", audio_length / 16000.0f);
     } else {
         // Generate synthetic audio
         audio_length = (size_t)(options.sample_rate * options.duration);
@@ -414,20 +387,10 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "Error: Failed to allocate memory for audio data\n");
             goto err;
         }
-        printf("Generating %.1f seconds of synthetic audio...\n", options.duration);
         generate_synthetic_audio(audio_data, audio_length, 440.0f, options.sample_rate);
     }
     
-    // Validate model directory exists
-    FILE* test_file = fopen(options.model_path, "r");
-    if (test_file) {
-        fclose(test_file);
-        fprintf(stderr, "Error: Model path appears to be a file, not a directory: %s\n", options.model_path);
-        goto err;
-    }
-    
     // Create pipeline
-    printf("Creating Whisper pipeline...\n");
     ov_status_e status = ov_genai_whisper_pipeline_create(options.model_path, options.device, 0, &pipeline);
     if (status != OK) {
         if (status == UNKNOW_EXCEPTION) {
@@ -455,7 +418,6 @@ int main(int argc, char* argv[]) {
     
     // Warmup runs
     if (options.num_warmup > 0) {
-        printf("Running %zu warmup iteration(s)...\n", options.num_warmup);
         for (size_t i = 0; i < options.num_warmup; i++) {
             if (results) {
                 ov_genai_whisper_decoded_results_free(results);
@@ -466,7 +428,6 @@ int main(int argc, char* argv[]) {
     }
     
     // Benchmark runs
-    printf("Running %zu iteration(s)...\n", options.num_iter);
     clock_t start_time = clock();
     
     for (size_t iter = 0; iter < options.num_iter; iter++) {
@@ -483,7 +444,7 @@ int main(int argc, char* argv[]) {
         } else {
             CHECK_STATUS(ov_genai_whisper_decoded_results_get_perf_metrics(results, &metrics));
             CHECK_STATUS(ov_genai_perf_metrics_add_in_place(cumulative_metrics, metrics));
-            ov_genai_decoded_results_perf_metrics_free(metrics);
+            ov_genai_perf_metrics_free(metrics);
             metrics = NULL;
         }
     }
@@ -492,8 +453,6 @@ int main(int argc, char* argv[]) {
     double total_time = ((double)(end_time - start_time)) / CLOCKS_PER_SEC * 1000.0;
     
     // Get and print results from the last iteration
-    printf("\n=== Transcription Results ===\n");
-    
     // Get the transcription text
     CHECK_STATUS(ov_genai_whisper_decoded_results_get_string(results, NULL, &output_size));
     output = (char*)malloc(output_size);
@@ -503,33 +462,8 @@ int main(int argc, char* argv[]) {
     }
     
     CHECK_STATUS(ov_genai_whisper_decoded_results_get_string(results, output, &output_size));
-    printf("\nFull transcription:\n%s\n", output);
+    printf("%s\n", output);
     
-    // Display individual text results with scores
-    size_t texts_count = 0;
-    CHECK_STATUS(ov_genai_whisper_decoded_results_get_texts_count(results, &texts_count));
-    
-    if (texts_count > 1) {
-        printf("\nDetailed results (%zu texts):\n", texts_count);
-        for (size_t i = 0; i < texts_count; i++) {
-            size_t text_size = 0;
-            CHECK_STATUS(ov_genai_whisper_decoded_results_get_text_at(results, i, NULL, &text_size));
-            
-            char* text = (char*)malloc(text_size);
-            if (!text) {
-                fprintf(stderr, "Warning: Failed to allocate memory for text %zu\n", i);
-                continue;
-            }
-            
-            CHECK_STATUS(ov_genai_whisper_decoded_results_get_text_at(results, i, text, &text_size));
-            
-            float score = 0.0f;
-            CHECK_STATUS(ov_genai_whisper_decoded_results_get_score_at(results, i, &score));
-            
-            printf("  [%zu] Score: %.4f, Text: %s\n", i, score, text);
-            free(text);
-        }
-    }
     
     // Display timestamps if available
     bool has_chunks = false;
@@ -539,7 +473,6 @@ int main(int argc, char* argv[]) {
         size_t chunks_count = 0;
         CHECK_STATUS(ov_genai_whisper_decoded_results_get_chunks_count(results, &chunks_count));
         
-        printf("\nTimestamp information (%zu chunks):\n", chunks_count);
         for (size_t i = 0; i < chunks_count; i++) {
             ov_genai_whisper_decoded_result_chunk* chunk = NULL;
             CHECK_STATUS(ov_genai_whisper_decoded_results_get_chunk_at(results, i, &chunk));
@@ -560,49 +493,13 @@ int main(int argc, char* argv[]) {
             
             CHECK_STATUS(ov_genai_whisper_decoded_result_chunk_get_text(chunk, chunk_text, &chunk_text_size));
             
-            printf("  [%zu] %.2fs - %.2fs: %s\n", i, start_ts, end_ts, chunk_text);
+            printf("timestamps: [%.2f, %.2f] text:%s\n", start_ts, end_ts, chunk_text);
             
             free(chunk_text);
             ov_genai_whisper_decoded_result_chunk_free(chunk);
         }
     }
     
-    // Print performance metrics if multiple iterations
-    if (options.num_iter > 1 && cumulative_metrics) {
-        printf("\n=== Performance Metrics ===\n");
-        printf("Average inference time per iteration: %.2f ms\n", total_time / options.num_iter);
-        
-        float mean = 0.0f, std = 0.0f;
-        
-        CHECK_STATUS(ov_genai_perf_metrics_get_load_time(cumulative_metrics, &mean));
-        printf("Model load time: %.2f ms\n", mean);
-        
-        CHECK_STATUS(ov_genai_perf_metrics_get_generate_duration(cumulative_metrics, &mean, &std));
-        printf("Generate time: %.2f ± %.2f ms\n", mean, std);
-        
-        CHECK_STATUS(ov_genai_perf_metrics_get_tokenization_duration(cumulative_metrics, &mean, &std));
-        printf("Tokenization time: %.2f ± %.2f ms\n", mean, std);
-        
-        CHECK_STATUS(ov_genai_perf_metrics_get_detokenization_duration(cumulative_metrics, &mean, &std));
-        printf("Detokenization time: %.2f ± %.2f ms\n", mean, std);
-        
-        CHECK_STATUS(ov_genai_perf_metrics_get_ttft(cumulative_metrics, &mean, &std));
-        printf("Time to first token (TTFT): %.2f ± %.2f ms\n", mean, std);
-        
-        CHECK_STATUS(ov_genai_perf_metrics_get_tpot(cumulative_metrics, &mean, &std));
-        printf("Time per output token (TPOT): %.2f ± %.2f ms/token\n", mean, std);
-        
-        CHECK_STATUS(ov_genai_perf_metrics_get_throughput(cumulative_metrics, &mean, &std));
-        printf("Throughput: %.2f ± %.2f tokens/s\n", mean, std);
-        
-        // Audio processing speed
-        float audio_duration = audio_length / 16000.0f;  // Whisper uses 16kHz
-        float rtf = (total_time / 1000.0f) / (audio_duration * options.num_iter);
-        printf("\nAudio duration: %.2f seconds\n", audio_duration);
-        printf("Real-time factor (RTF): %.3fx (lower is better)\n", rtf);
-    }
-    
-    printf("\nSpeech recognition completed successfully!\n");
 
 err:
     // Cleanup
@@ -613,9 +510,9 @@ err:
     if (results)
         ov_genai_whisper_decoded_results_free(results);
     if (metrics)
-        ov_genai_decoded_results_perf_metrics_free(metrics);
+        ov_genai_perf_metrics_free(metrics);
     if (cumulative_metrics)
-        ov_genai_decoded_results_perf_metrics_free(cumulative_metrics);
+        ov_genai_perf_metrics_free(cumulative_metrics);
     if (output)
         free(output);
     if (audio_data)

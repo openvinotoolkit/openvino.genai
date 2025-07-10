@@ -14,6 +14,8 @@ ov_status_e ov_genai_whisper_generation_config_create(ov_genai_whisper_generatio
     try {
         std::unique_ptr<ov_genai_whisper_generation_config> _config = std::make_unique<ov_genai_whisper_generation_config>();
         _config->object = std::make_shared<ov::genai::WhisperGenerationConfig>();
+        // Set reasonable defaults for C API to avoid integer underflow
+        _config->object->max_length = 448;  // Default from whisper-tiny model
         *config = _config.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
