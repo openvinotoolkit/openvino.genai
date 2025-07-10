@@ -31,8 +31,6 @@
 #define DEFAULT_DEVICE         "CPU"
 #define DEFAULT_LANGUAGE       ""
 #define DEFAULT_TASK           "transcribe"
-#define DEFAULT_NUM_WARMUP     1
-#define DEFAULT_NUM_ITER       1
 #define DEFAULT_SAMPLE_RATE    16000.0f
 #define DEFAULT_DURATION       2.0f
 
@@ -44,8 +42,6 @@ typedef struct {
     const char* task;
     const char* initial_prompt;
     bool return_timestamps;
-    size_t num_warmup;
-    size_t num_iter;
     bool use_synthetic_audio;
     float sample_rate;
     float duration;
@@ -62,8 +58,6 @@ void print_usage(const char* program_name) {
     printf("  -t, --task             Task: 'transcribe' or 'translate' (default: %s)\n", DEFAULT_TASK);
     printf("  --initial_prompt       Initial prompt to guide transcription\n");
     printf("  --timestamps           Return timestamps for each segment\n");
-    printf("  --nw, --num_warmup     Number of warmup iterations (default: %d)\n", DEFAULT_NUM_WARMUP);
-    printf("  -n, --num_iter         Number of benchmark iterations (default: %d)\n", DEFAULT_NUM_ITER);
     printf("  -h, --help             Print this help message\n");
     printf("\nSynthetic audio options (when no input file specified):\n");
     printf("  --duration             Duration of synthetic audio in seconds (default: %.1f)\n", DEFAULT_DURATION);
@@ -72,8 +66,8 @@ void print_usage(const char* program_name) {
     printf("  %s -m /path/to/whisper/model -i audio.wav\n", program_name);
     printf("\n  # Translate French audio to English\n");
     printf("  %s -m /path/to/whisper/model -i french_audio.wav -l fr -t translate\n", program_name);
-    printf("\n  # Benchmark with synthetic audio\n");
-    printf("  %s -m /path/to/whisper/model --num_warmup 3 --num_iter 10\n", program_name);
+    printf("\n  # Use synthetic audio\n");
+    printf("  %s -m /path/to/whisper/model\n", program_name);
 }
 
 int parse_arguments(int argc, char* argv[], Options* options) {
@@ -85,8 +79,6 @@ int parse_arguments(int argc, char* argv[], Options* options) {
     options->task = DEFAULT_TASK;
     options->initial_prompt = NULL;
     options->return_timestamps = false;
-    options->num_warmup = DEFAULT_NUM_WARMUP;
-    options->num_iter = DEFAULT_NUM_ITER;
     options->use_synthetic_audio = true;
     options->sample_rate = DEFAULT_SAMPLE_RATE;
     options->duration = DEFAULT_DURATION;
@@ -141,20 +133,6 @@ int parse_arguments(int argc, char* argv[], Options* options) {
             }
         } else if (strcmp(argv[i], "--timestamps") == 0) {
             options->return_timestamps = true;
-        } else if (strcmp(argv[i], "--nw") == 0 || strcmp(argv[i], "--num_warmup") == 0) {
-            if (i + 1 < argc) {
-                options->num_warmup = (size_t)atoi(argv[++i]);
-            } else {
-                fprintf(stderr, "Error: --num_warmup requires an argument\n");
-                return -1;
-            }
-        } else if (strcmp(argv[i], "-n") == 0 || strcmp(argv[i], "--num_iter") == 0) {
-            if (i + 1 < argc) {
-                options->num_iter = (size_t)atoi(argv[++i]);
-            } else {
-                fprintf(stderr, "Error: --num_iter requires an argument\n");
-                return -1;
-            }
         } else if (strcmp(argv[i], "--duration") == 0) {
             if (i + 1 < argc) {
                 options->duration = (float)atof(argv[++i]);
@@ -351,8 +329,6 @@ int main(int argc, char* argv[]) {
     ov_genai_whisper_pipeline* pipeline = NULL;
     ov_genai_whisper_generation_config* config = NULL;
     ov_genai_whisper_decoded_results* results = NULL;
-    ov_genai_perf_metrics* metrics = NULL;
-    ov_genai_perf_metrics* cumulative_metrics = NULL;
     float* audio_data = NULL;
     float* resampled_audio = NULL;
     size_t audio_length = 0;
@@ -416,43 +392,10 @@ int main(int argc, char* argv[]) {
         CHECK_STATUS(ov_genai_whisper_generation_config_set_initial_prompt(config, options.initial_prompt));
     }
     
-    // Warmup runs
-    if (options.num_warmup > 0) {
-        for (size_t i = 0; i < options.num_warmup; i++) {
-            if (results) {
-                ov_genai_whisper_decoded_results_free(results);
-                results = NULL;
-            }
-            CHECK_STATUS(ov_genai_whisper_pipeline_generate(pipeline, audio_data, audio_length, config, &results));
-        }
-    }
+    // Generate transcription
+    CHECK_STATUS(ov_genai_whisper_pipeline_generate(pipeline, audio_data, audio_length, config, &results));
     
-    // Benchmark runs
-    clock_t start_time = clock();
-    
-    for (size_t iter = 0; iter < options.num_iter; iter++) {
-        if (results) {
-            ov_genai_whisper_decoded_results_free(results);
-            results = NULL;
-        }
-        
-        CHECK_STATUS(ov_genai_whisper_pipeline_generate(pipeline, audio_data, audio_length, config, &results));
-        
-        // Get performance metrics
-        if (iter == 0) {
-            CHECK_STATUS(ov_genai_whisper_decoded_results_get_perf_metrics(results, &cumulative_metrics));
-        } else {
-            CHECK_STATUS(ov_genai_whisper_decoded_results_get_perf_metrics(results, &metrics));
-            CHECK_STATUS(ov_genai_perf_metrics_add_in_place(cumulative_metrics, metrics));
-            ov_genai_perf_metrics_free(metrics);
-            metrics = NULL;
-        }
-    }
-    
-    clock_t end_time = clock();
-    double total_time = ((double)(end_time - start_time)) / CLOCKS_PER_SEC * 1000.0;
-    
-    // Get and print results from the last iteration
+    // Get and print results
     // Get the transcription text
     CHECK_STATUS(ov_genai_whisper_decoded_results_get_string(results, NULL, &output_size));
     output = (char*)malloc(output_size);
@@ -509,10 +452,6 @@ err:
         ov_genai_whisper_generation_config_free(config);
     if (results)
         ov_genai_whisper_decoded_results_free(results);
-    if (metrics)
-        ov_genai_perf_metrics_free(metrics);
-    if (cumulative_metrics)
-        ov_genai_perf_metrics_free(cumulative_metrics);
     if (output)
         free(output);
     if (audio_data)
