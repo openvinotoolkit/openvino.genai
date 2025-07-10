@@ -115,7 +115,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prom
         size_t native_pos = unified_prompt.find(NATIVE_TAG);
 
         if (start_pos != std::string::npos && native_pos == std::string::npos) {
-            unified_prompt.replace(start_pos, start_of_image.length(), expanded_tag);
+            unified_prompt.replace(start_pos, start_of_image.length(), "\n\n" + expanded_tag + "\n\n");
         } else if (native_pos != std::string::npos) {
             unified_prompt.replace(native_pos, NATIVE_TAG.length(), expanded_tag);
         } else {
