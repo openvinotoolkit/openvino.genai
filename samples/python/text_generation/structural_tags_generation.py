@@ -117,7 +117,7 @@ def main():
     for use_structural_tags in [False, True]:
         print("=" * 80)
         print(
-            f"{'Using structured tags' if use_structural_tags else 'Using no structured tags':^80}"
+            f"{'Using structural tags' if use_structural_tags else 'Using no structural tags':^80}"
         )
         print("=" * 80)
         config = GenerationConfig()

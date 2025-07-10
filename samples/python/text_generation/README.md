@@ -245,7 +245,7 @@ Structured output enforcement guarantees correct JSON formatting, but does not e
   </function>
   ```
   The sample includes schemas for each tool, and the model is prompted to use them for tool calling. There are two model calls - with and without structural tags. 
-  You can compare the results to see how the model generates structured outputs when using structural tags. 
+  You can compare the results to see how the model generates structured outputs when using structural tags.
   If there is no prompt provided, the sample will use a default prompt: `"What is the weather in London today and in Paris yesterday, and how many pounds can I get for 100 euros?"`
 
 - **Main Feature:** Structured tool call generation with LLM using schema enforcement with structural tags.
@@ -253,10 +253,13 @@ Structured output enforcement guarantees correct JSON formatting, but does not e
   ```bash
   python structural_tags_generation.py model_dir [--prompt "Your prompt here"]
   ```
-  After running, the script will print the generated text output, and display the parsed tool calls.
+  After running, the script will print the generated text output with and without structural tags, and display the parsed tool calls.
 
 **Note:**  
-This approach is useful for building LLM-powered agents that interact with external APIs or services in a controlled, structured way. For best results, use models fine-tuned for function calling. If the model does not generate a trigger string there will be no structural constraints during the generation. The sample is tested with `meta-llama/Llama-3.2-3B-Instruct` model.
+This approach is useful for building LLM-powered agents that interact with external APIs or services in a controlled, structured way. 
+For best results, use models fine-tuned for function calling and adapt structural tags according to the model function call template.
+If the model does not generate trigger strings there will be no structural constraints during the generation. 
+The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 
 ## Troubleshooting
