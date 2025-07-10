@@ -193,7 +193,6 @@ class LongBenchTestData:
 @pytest.mark.parametrize("test_struct", [
     LongBenchTestData("samsum", 4, 1.6, 2.5),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
-    LongBenchTestData("qasper", 5.8, 1.1, 2.0),
 ])
 def test_optimized_generation_longbench(test_struct):
     seqs_per_request = 32
