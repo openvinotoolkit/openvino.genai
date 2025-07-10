@@ -50,7 +50,7 @@ class CurrencyExchangeRequest(ToolRequest):
 
 tools = {tool.get_name(): tool for tool in [WeatherRequest, CurrencyExchangeRequest]}
 
-new_line = "\n"
+new_line = "\n"  # to use inside f-string
 sys_message = (
     "You are a helpful assistant that can provide weather information and currency exchange rates. "
     f"Today is {datetime.today().strftime('%Y-%m-%d')}. "  # Use the current date in the system message in YYYY-MM-DD format
