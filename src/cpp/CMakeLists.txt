@@ -14,10 +14,11 @@ if(NOT TARGET nlohmann_json)
 endif()
 
 if(NOT TARGET minja)
-    FetchContent_Declare(minja
-        GIT_REPOSITORY "https://github.com/google/minja"
-        GIT_TAG "main"
-        GIT_SHALLOW TRUE)
+    FetchContent_Declare(
+        minja
+        GIT_REPOSITORY https://github.com/google/minja.git
+        GIT_TAG f06140fa52fd140fe38e531ec373d8dc9c86aa06
+    )
 
     FetchContent_GetProperties(minja)
     if(NOT minja_POPULATED)
