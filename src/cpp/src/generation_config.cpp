@@ -189,26 +189,24 @@ void StructuralTagsConfig::update_config(const ov::AnyMap& properties) {
 
 
 std::string StructuralTagsConfig::to_string() const {
-    std::string tags_repr = "[";
-    for (const auto& tag : structural_tags) {
-        tags_repr += tag.to_string() + ", ";
+    std::ostringstream tags_repr;
+    tags_repr << "[";
+    for (auto it = structural_tags.begin(); it != structural_tags.end(); ++it) {
+        if (it != structural_tags.begin()) tags_repr << ", ";
+        tags_repr << it->to_string();
     }
-    if (!structural_tags.empty()) {
-        tags_repr.pop_back(); tags_repr.pop_back();
-    }
-    tags_repr += "]";
+    tags_repr << "]";
 
-    std::string triggers_repr = "[";
-    for (const auto& trigger : triggers) {
-        triggers_repr += trigger + ", ";
+    std::ostringstream triggers_repr;
+    triggers_repr << "[";
+    for (auto it = triggers.begin(); it != triggers.end(); ++it) {
+        if (it != triggers.begin()) triggers_repr << ", ";
+        triggers_repr << *it;
     }
-    if (!triggers.empty()) {
-        triggers_repr.pop_back(); triggers_repr.pop_back();
-    }
-    triggers_repr += "]";
+    triggers_repr << "]";
 
-    return "StructuralTagsConfig(structural_tags=" + tags_repr +
-           ", triggers=" + triggers_repr + ")";
+    return "StructuralTagsConfig(structural_tags=" + tags_repr.str() +
+           ", triggers=" + triggers_repr.str() + ")";
 }
 
 StructuredOutputConfig::StructuredOutputConfig(const ov::AnyMap& properties) {
