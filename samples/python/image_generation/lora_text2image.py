@@ -21,7 +21,7 @@ def main():
 
     prompt = args.prompt
 
-    device = "CPU"  # GPU, NPU can be used as well
+    device = "CPU"  # GPU can be used as well
     adapter_config = openvino_genai.AdapterConfig()
 
     # Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
