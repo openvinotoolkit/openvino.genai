@@ -4,11 +4,9 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <jinja2cpp/template.h>
-#include <jinja2cpp/template_env.h>
-#include <jinja2cpp/user_callable.h>
-#include <jinja2cpp/generic_list.h>
-#include <jinja2cpp/generic_list_iterator.h>
+
+#include "minja/minja.hpp"
+#include "minja/chat-template.hpp"
 
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
@@ -81,7 +79,9 @@ const T& find_or_fallback(const ov::AnyMap& rt_info, const char name[], const T&
     return iter->second.as<T>();
 }
 
+// TODO Consider removing template patching
 std::string patch_template(std::string&& chat_template) {
+    return chat_template;
     // Replace what jinja2cpp doesn't support
     std::pair<std::string, std::string> replace_str_map[] = {
         {"'}", "' }"},
@@ -371,6 +371,7 @@ public:
                 m_chat_template = find_or_fallback(rt_info, "simplified_chat_template", m_chat_template);
             }
             m_chat_template = patch_template(std::move(m_chat_template));
+
             // Initialize tokenizer's cache to save time later.
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
             encode("non empty string");
@@ -687,54 +688,37 @@ public:
                         "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                         " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
                         " For more information see the section Troubleshooting in README.md");
-        jinja2::TemplateEnv env;
-        env.GetSettings().lstripBlocks = true;
-        env.GetSettings().trimBlocks = true;
-        jinja2::Template tpl(&env);
-        tpl.Load(chat_tpl);
 
-        jinja2::UserCallable slice_callable = jinja2::MakeCallable(
-            [](const jinja2::GenericList& messages, const size_t& start) {
-                jinja2::ValuesList result;
+        minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
 
-                size_t iter_num = 0;
-                for (auto message = messages.begin(); message != messages.end(); message++, iter_num++) {
-                    if (iter_num < start)
-                        continue;
-                    result.emplace_back(*message);
-                }
-
-                return result;
-            },
-            jinja2::ArgInfo{"messages"}, jinja2::ArgInfo{"start"}
-        );
-
-        jinja2::ValuesList jinja_messages;
-        jinja2::ValuesMap jinja_message;
+        nlohmann::ordered_json messages = nlohmann::ordered_json::array();
         for (const auto& message : history) {
-            jinja_message = {{"role", message.at("role")}, {"content", message.at("content")}};
-            jinja_messages.emplace_back(jinja_message);
+            nlohmann::ordered_json msg;
+            for (const auto& [key, value] : message) {
+                msg[key] = value;
+            }
+            messages.push_back(msg);
         }
 
-        jinja2::ValuesMap params = {
-            {"messages", jinja_messages},
-            {"bos_token", m_bos_token},
-            {"eos_token", m_eos_token},
-            {"pad_token", m_pad_token},
-            {"add_generation_prompt", add_generation_prompt},
-            {"slice", slice_callable},
-        };
+        minja::chat_template_inputs minja_inputs;
+        minja_inputs.messages = messages;
+        minja_inputs.add_generation_prompt = add_generation_prompt;
+        minja_inputs.tools = nlohmann::ordered_json::array();
+        minja_inputs.extra_context = nlohmann::ordered_json::object();
+        minja_inputs.extra_context["bos_token"] = m_bos_token;
+        minja_inputs.extra_context["eos_token"] = m_eos_token;
+        minja_inputs.extra_context["pad_token"] = m_pad_token;
 
         std::string result;
         try {
-            result = tpl.RenderAsString(params).value();
+            result = minja_template.apply(minja_inputs);
         } catch (const std::exception& error) {
-            OPENVINO_THROW("Jinja2Cpp failed to apply chat template. Possible solutions are\n"
+            OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
                            "* Provide a simplified chat template with set_chat_template().\n"
                            "* Set apply_chat_template to false in GenerationConfig. "
                            "It's possible to apply the template manually to your prompt before calling generate. "
                            "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
-                           "Jinja2Cpp's error: ", error.what());
+                           "Minja's error: ", error.what());
         }
         OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
                                          "Please check the chat template or apply template manually to your prompt before calling generate."
@@ -744,6 +728,7 @@ public:
 
     void set_chat_template(const std::string& chat_template) {
         m_chat_template = remap_and_patch(chat_template);
+        // m_chat_template = remap_template(chat_template).value_or(chat_template);
     }
 
     std::string get_chat_template() {
