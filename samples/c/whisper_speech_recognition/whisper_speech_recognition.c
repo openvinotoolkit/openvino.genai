@@ -24,6 +24,7 @@
         }                                                                                \
         fprintf(stderr, "[ERROR] %s (status code: %d) at line %d\n",                    \
                 error_msg, return_status, __LINE__);                                     \
+        exit_code = EXIT_FAILURE;                                                       \
         goto err;                                                                        \
     }
 
@@ -324,6 +325,8 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;  // Error in arguments
     }
 
+    // Track exit status
+    int exit_code = EXIT_SUCCESS;
 
     // Initialize variables
     ov_genai_whisper_pipeline* pipeline = NULL;
@@ -339,6 +342,7 @@ int main(int argc, char* argv[]) {
     if (options.audio_path) {
         float file_sample_rate;
         if (load_wav_file(options.audio_path, &audio_data, &audio_length, &file_sample_rate) != 0) {
+            exit_code = EXIT_FAILURE;
             goto err;
         }
         
@@ -348,6 +352,7 @@ int main(int argc, char* argv[]) {
             resampled_audio = resample_audio(audio_data, audio_length, file_sample_rate, 16000.0f, &resampled_length);
             if (!resampled_audio) {
                 fprintf(stderr, "Error: Failed to resample audio\n");
+                exit_code = EXIT_FAILURE;
                 goto err;
             }
             free(audio_data);
@@ -361,6 +366,7 @@ int main(int argc, char* argv[]) {
         audio_data = (float*)malloc(audio_length * sizeof(float));
         if (!audio_data) {
             fprintf(stderr, "Error: Failed to allocate memory for audio data\n");
+            exit_code = EXIT_FAILURE;
             goto err;
         }
         generate_synthetic_audio(audio_data, audio_length, 440.0f, options.sample_rate);
@@ -401,6 +407,7 @@ int main(int argc, char* argv[]) {
     output = (char*)malloc(output_size);
     if (!output) {
         fprintf(stderr, "Error: Failed to allocate memory for output\n");
+        exit_code = EXIT_FAILURE;
         goto err;
     }
     
@@ -431,6 +438,7 @@ int main(int argc, char* argv[]) {
             if (!chunk_text) {
                 fprintf(stderr, "Warning: Failed to allocate memory for chunk text %zu\n", i);
                 ov_genai_whisper_decoded_result_chunk_free(chunk);
+                exit_code = EXIT_FAILURE;
                 continue;
             }
             
@@ -459,5 +467,5 @@ err:
     if (resampled_audio)
         free(resampled_audio);
     
-    return EXIT_SUCCESS;
+    return exit_code; // Return the tracked exit status
 }
