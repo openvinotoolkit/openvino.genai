@@ -6,8 +6,12 @@ onnx==1.18.0
 pytest
 pytest-html
 hf_transfer
-langchain_community
 gguf>=0.10.0
+
+# rag requirements
+langchain_community
+llama-index==0.12.47
+llama-index-postprocessor-openvino-rerank==0.4.1
 
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM

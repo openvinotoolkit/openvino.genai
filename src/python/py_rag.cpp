@@ -8,6 +8,7 @@
 #include <pybind11/stl_bind.h>
 
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "py_utils.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 
@@ -15,6 +16,7 @@ namespace py = pybind11;
 using ov::genai::EmbeddingResult;
 using ov::genai::EmbeddingResults;
 using ov::genai::TextEmbeddingPipeline;
+using ov::genai::TextRerankPipeline;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -34,7 +36,15 @@ Attributes:
     embed_instruction (str, optional):
         Instruction to use for embedding a document.
 )";
-}
+
+const auto text_reranking_config_docstring = R"(
+Structure to keep TextRerankPipeline configuration parameters.
+Attributes:
+    top_n (int, optional):
+        Number of documents to return sorted by score.
+)";
+
+}  // namespace
 
 void init_rag_pipelines(py::module_& m) {
     auto text_embedding_pipeline =
@@ -149,6 +159,76 @@ Constructs a pipeline from xml/bin files, tokenizer and configuration in the sam
 models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
 device (str): Device to run the model on (e.g., CPU, GPU).
 config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
+kwargs: Plugin and/or config properties
+)");
+
+    auto text_rerank_pipeline =
+        py::class_<ov::genai::TextRerankPipeline>(m, "TextRerankPipeline", "Text rerank pipeline")
+            .def(
+                "rerank",
+                [](ov::genai::TextRerankPipeline& pipe,
+                   const std::string& query,
+                   const std::vector<std::string>& texts) -> std::vector<std::pair<size_t, float>> {
+                    return pipe.rerank(query, texts);
+                },
+                py::arg("query"),
+                py::arg("texts"),
+                "Query and list of texts to rerank",
+                "reranks a vector of texts based on the query.")
+            .def(
+                "start_rerank_async",
+                [](ov::genai::TextRerankPipeline& pipe,
+                   const std::string& query,
+                   const std::vector<std::string>& texts) -> void {
+                    py::gil_scoped_release rel;
+                    pipe.start_rerank_async(query, texts);
+                },
+                py::arg("query"),
+                py::arg("texts"),
+                "Query and list of texts to rerank",
+                "Asynchronously reranks a vector of texts based on the query.")
+            .def(
+                "wait_rerank",
+                [](ov::genai::TextRerankPipeline& pipe) -> std::vector<std::pair<size_t, float>> {
+                    return pipe.wait_rerank();
+                },
+                "Waits for reranked texts.");
+
+    py::class_<ov::genai::TextRerankPipeline::Config>(text_rerank_pipeline, "Config", text_reranking_config_docstring)
+        .def(py::init<>())
+        .def(py::init([](py::kwargs kwargs) {
+            return ov::genai::TextRerankPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
+        }))
+        .def_readwrite("top_n", &ov::genai::TextRerankPipeline::Config::top_n);
+
+    text_rerank_pipeline.def(
+        py::init([](const std::filesystem::path& models_path,
+                    const std::string& device,
+                    const std::optional<ov::genai::TextRerankPipeline::Config>& config,
+                    const py::kwargs& kwargs) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            if (config.has_value()) {
+                return std::make_unique<ov::genai::TextRerankPipeline>(models_path,
+                                                                       device,
+                                                                       *config,
+                                                                       pyutils::kwargs_to_any_map(kwargs));
+            }
+            return std::make_unique<ov::genai::TextRerankPipeline>(models_path,
+                                                                   device,
+                                                                   pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("models_path"),
+        "Path to the directory containing model xml/bin files and tokenizer",
+        py::arg("device"),
+        "Device to run the model on (e.g., CPU, GPU)",
+        py::arg("config") = std::nullopt,
+        "Optional pipeline configuration",
+        "Plugin and/or config properties",
+        R"(
+Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
+device (str): Device to run the model on (e.g., CPU, GPU).
+config: (TextRerankPipeline.Config): Optional pipeline configuration
 kwargs: Plugin and/or config properties
 )");
 }
