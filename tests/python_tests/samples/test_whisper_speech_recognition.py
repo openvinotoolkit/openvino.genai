@@ -25,7 +25,7 @@ class TestWhisperSpeechRecognition:
     @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
     def test_cpp_sample_whisper_speech_recognition(self, convert_model, download_test_content):
         # Run C++ sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'whisper_speech_recognition')
+        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'whisper_speech_recognition', 'whisper_speech_recognition')
         cpp_command = [cpp_sample, convert_model, download_test_content]
         run_sample(cpp_command)
 
@@ -35,6 +35,6 @@ class TestWhisperSpeechRecognition:
     @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
     def test_c_sample_whisper_speech_recognition(self, convert_model, download_test_content):
         # Run C sample
-        c_sample = os.path.join(SAMPLES_C_DIR, 'whisper_speech_recognition')
+        c_sample = os.path.join(SAMPLES_C_DIR, 'whisper_speech_recognition', 'whisper_speech_recognition_c')
         c_command = [c_sample, '-m', convert_model, '-i', download_test_content]
         run_sample(c_command)
