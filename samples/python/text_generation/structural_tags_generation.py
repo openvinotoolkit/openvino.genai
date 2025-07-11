@@ -63,7 +63,7 @@ sys_message = (
     "{\"argument1\": \"value1\", ...}"
     "</function>\n"
     "Use the tool name and arguments as defined in the tool schema.\n"
-    "If you don't know the answer, just say that you don't know, but try to call the tool if it will help to answer the question.\n"
+    "If you don't know the answer, just say that you don't know, but try to call the tool if it helps to answer the question.\n"
 )
 
 function_pattern = r'<function="([^"]+)">({.*?})</function>'
