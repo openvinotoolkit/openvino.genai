@@ -39,8 +39,12 @@ jobs:
       - name: Install Python build dependencies
         run: |
           pip install --upgrade pip
-          pip install build wheel setuptools
-          pip install openvino openvino-dev
+          pip install build wheel setuptools py-build-cmake
+          # Install OpenVINO nightly from Intel's repository
+          pip install --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly \
+                      --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release \
+                      "openvino~=2025.3.0.0.dev" \
+                      "openvino_tokenizers[transformers]~=2025.3.0.0.dev"
       
       - name: Configure CMake
         run: |
@@ -59,7 +63,6 @@ jobs:
       
       - name: Build Python wheel
         run: |
-          pip install py-build-cmake
           python -m build --wheel
       
       - name: Install Python package
