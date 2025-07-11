@@ -184,8 +184,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             input_embeds_list.push_back(std::move(embeds));
             token_type_ids_list->emplace_back(std::move(tt_ids));
         } else {
-            auto inputs_embeds = m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
-            input_embeds_list.push_back(std::move(inputs_embeds));
+            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids));
         }
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();

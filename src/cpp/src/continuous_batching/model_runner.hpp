@@ -128,7 +128,7 @@ public:
         size_t total_num_tokens = 0, total_num_blocks = 0;
         size_t max_context_len_val = 0;
         size_t hidden_size = 0;
-        bool have_token_type_ids = 0;
+        bool have_token_type_ids = false;
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
@@ -231,8 +231,8 @@ public:
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
                         if (have_token_type_ids) {
                             std::vector<int64_t> token_type_ids_vec  = sequence_group->get_token_type_ids();
-                            // OPENVINO_ASSERT(token_type_ids_vec.size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
-                            // OPENVINO_ASSERT(total_num_tokens >= prompt_len, "total_num_tokens must be >= prompt_len");
+                            OPENVINO_ASSERT(token_type_ids_vec.size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
+                            OPENVINO_ASSERT(total_num_tokens >= prompt_len, "total_num_tokens must be >= prompt_len");
                             for (size_t i = 0; i < total_num_tokens; ++i) {
                                 token_type_ids_data[i] = (i < prompt_len ? token_type_ids_vec[i] : 0);
                             }
