@@ -101,7 +101,6 @@ def test_cpp_structured_output_sample(convert_model, prompt, final_answer):
     user_input = prompt + "\n"
     cpp_result = run_sample(cpp_command, user_input)
     output = cpp_result.stdout
-    # breakpoint()
     
     res_json = json.loads(output.split('> ')[1].replace('\'', '"').replace('\n----------\n',''))
     assert 'steps' in res_json and len(res_json['steps']) > 0

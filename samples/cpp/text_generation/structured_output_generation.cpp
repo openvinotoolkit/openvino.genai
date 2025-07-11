@@ -24,9 +24,9 @@ int main(int argc, char* argv[]) try {
     );
 
     std::string sys_message = R"VOGON(
-    Decompose the task and do it spep by step and include it in a structured JSON.
+    Decompose the task and do it step by step and include it in a structured JSON.
     For every mathematical equation use the adequate mathematical method. Do not try to solve linear equations
-    as a quadratic/qubic ones and vice versa.
+    as a quadratic/cubic ones and vice versa.
     For example for 2*x - x**2 + 15 = 0 the output format should be as the following: 
     {"steps": [
         {"explanation": "Rearranging the equation to isolate x.", "output": "2*x - x**2 + 15 = 0"},
