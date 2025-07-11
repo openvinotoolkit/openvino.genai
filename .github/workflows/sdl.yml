@@ -66,9 +66,11 @@ jobs:
           scan-type: 'fs'
           scan-ref: '.'
 
-      - name: Dependency Review
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/dependency-review-action@da24556b548a50705dd671f47852072ea4c105d9 # v4.7.1
-        with:
-          config-file: './.github/dependency_review.yml'
+      # Dependency Review requires GitHub Advanced Security on private repos
+      # Commenting out since this is a private repo without Advanced Security
+      # - name: Dependency Review
+      #   if: ${{ github.event_name == 'pull_request' }}
+      #   uses: actions/dependency-review-action@da24556b548a50705dd671f47852072ea4c105d9 # v4.7.1
+      #   with:
+      #     config-file: './.github/dependency_review.yml'
 
