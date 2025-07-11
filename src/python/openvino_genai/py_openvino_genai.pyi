@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuredOutputConfig', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -1940,6 +1940,93 @@ class StreamingStatus:
     @property
     def value(self) -> int:
         ...
+class StructuralTagItem:
+    """
+    
+        Structure to keep generation config parameters for structural tags in structured output generation.
+        It is used to store the configuration for a single structural tag item, which includes the begin string,
+        schema, and end string.
+    
+        Parameters:
+        begin:  the string that marks the beginning of the structural tag.
+        schema: the JSON schema that defines the structure of the tag.
+        end:    the string that marks the end of the structural tag.
+    """
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Default constructor for StructuralTagItem
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        """
+        Constructor that initializes the structured tags configuration with kwargs.
+        """
+    def __repr__(self) -> str:
+        ...
+    @property
+    def begin(self) -> str:
+        """
+        Begin string for Structural Tag Item
+        """
+    @begin.setter
+    def begin(self, arg0: str) -> None:
+        ...
+    @property
+    def end(self) -> str:
+        """
+        End string for Structural Tag Item
+        """
+    @end.setter
+    def end(self, arg0: str) -> None:
+        ...
+    @property
+    def schema(self) -> str:
+        """
+        Json schema for Structural Tag Item
+        """
+    @schema.setter
+    def schema(self, arg0: str) -> None:
+        ...
+class StructuralTagsConfig:
+    """
+    
+        Structure to keep generation config parameters for structured tags in structured output generation.
+        It is used to store the configuration for structural tags, which includes a list of structural tag items
+        and a list of trigger strings that will switch the generation to structured output mode.
+    
+        Parameters:
+        structural_tags: a list of StructuralTagItem objects that define the structured tags for structured output generation.
+        triggers: a list of strings that will trigger the generation of structured output.
+    """
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Default constructor for StructuralTagsConfig
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        """
+        Constructor that initializes the structured tags configuration with kwargs.
+        """
+    def __repr__(self) -> str:
+        ...
+    @property
+    def structural_tags(self) -> list[StructuralTagItem]:
+        """
+        List of structural tag items for structured output generation
+        """
+    @structural_tags.setter
+    def structural_tags(self, arg0: list[StructuralTagItem]) -> None:
+        ...
+    @property
+    def triggers(self) -> list[str]:
+        """
+        List of strings that will trigger generation of structured output
+        """
+    @triggers.setter
+    def triggers(self, arg0: list[str]) -> None:
+        ...
 class StructuredOutputConfig:
     """
     
@@ -1951,6 +2038,7 @@ class StructuredOutputConfig:
         json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
         regex:          if set, the output will be constraint by specified regex.
         grammar:        if set, the output will be constraint by specified grammar.
+        structural_tags_config: if set, the output will be constraint by specified structural tags configuration.
     
     """
     @typing.overload
@@ -1963,6 +2051,8 @@ class StructuredOutputConfig:
         """
         Constructor that initializes the structured output configuration with kwargs.
         """
+    def __repr__(self) -> str:
+        ...
     @property
     def grammar(self) -> str | None:
         """
@@ -1986,6 +2076,14 @@ class StructuredOutputConfig:
         """
     @regex.setter
     def regex(self, arg0: str | None) -> None:
+        ...
+    @property
+    def structural_tags_config(self) -> StructuralTagsConfig | None:
+        """
+        Configuration for structural tags in structured output generation
+        """
+    @structural_tags_config.setter
+    def structural_tags_config(self, arg0: StructuralTagsConfig | None) -> None:
         ...
 class T5EncoderModel:
     """
