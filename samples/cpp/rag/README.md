@@ -10,8 +10,14 @@ Install [../../export-requirements.txt](../../export-requirements.txt) to conver
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --trust-remote-code --model BAAI/bge-small-en-v1.5 BAAI/bge-small-en-v1.5
 ```
+
 
 ## Run
 
