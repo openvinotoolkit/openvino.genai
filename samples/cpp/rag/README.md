@@ -1,6 +1,6 @@
 # Retrieval Augmented Generation Sample
 
-This example showcases inference of Text Embedding Models. The application has limited configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::TextEmbeddingPipeline` and uses text as an input source.
+This example showcases inference of Text Embedding and Text Rerank Models. The application has limited configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::TextEmbeddingPipeline` and `ov::genai::TextRerankPipeline` and uses text as an input source.
 
 ## Download and Convert the Model and Tokenizers
 
@@ -17,9 +17,23 @@ optimum-cli export openvino --trust-remote-code --model BAAI/bge-small-en-v1.5 B
 
 Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
-`text_embeddings BAAI/bge-small-en-v1.5 "Document 1" "Document 2"`
+### 1. Text Embedding Sample (`text_embeddings.cpp`)
+- **Description:**
+  Demonstrates inference of text embedding models using OpenVINO GenAI. Converts input text into vector embeddings for downstream tasks such as retrieval or semantic search.
+- **Run Command:**
+  ```sh
+  text_embeddings <MODEL_DIR> "Document 1" "Document 2"
+  ```
+- See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-embeddings-models) for the list of supported models.
 
-See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-embeddings-models) for the list of supported models.
+### 2. Text Rerank Sample (`text_rerank.cpp`)
+- **Description:**
+  Demonstrates inference of text rerank models using OpenVINO GenAI. Reranks a list of candidate documents based on their relevance to a query using a cross-encoder or reranker model.
+- **Run Command:**
+  ```sh
+  text_rerank <MODEL_DIR> '<QUERY>' '<TEXT 1>' ['<TEXT 2>' ...]
+  ```
+- See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-rerank-models) for the list of supported models.
 
 # Text Embedding Pipeline Usage
 
@@ -28,4 +42,13 @@ See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-embeddings-models) f
 
 ov::genai::TextEmbeddingPipeline pipeline(models_path, device, config);
 std::vector<ov::genai::EmbeddingResult> embeddings = pipeline.embed_documents(documents);
+```
+
+# Text Rerank Pipeline Usage
+
+```c++
+#include "openvino/genai/rag/text_rerank_pipeline.hpp"
+
+ov::genai::TextRerankPipeline pipeline(models_path, device, config);
+std::vector<std::pair<size_t, float>> rerank_result = pipeline.rerank(query, documents);
 ```
