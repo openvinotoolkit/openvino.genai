@@ -22,6 +22,6 @@ set_target_properties(whisper_speech_recognition_c PROPERTIES
 
 # Install
 install(TARGETS whisper_speech_recognition_c
-        RUNTIME DESTINATION samples_bin/c/whisper_speech_recognition
+        RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
