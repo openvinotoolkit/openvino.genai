@@ -50,6 +50,7 @@ jobs:
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DENABLE_PYTHON=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -GNinja
       
       - name: Build
