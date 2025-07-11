@@ -844,16 +844,20 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     , m_sampler(m_tokenizer) {
     ov::Core core = utils::singleton_core();
 
-    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties);
+    // Remove "STATIC_PIPELINE" as we don't need to pass it further
+    auto model_properties = properties;
+    utils::pop_option(model_properties, "STATIC_PIPELINE");
+
+    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, model_properties);
 
     std::shared_ptr<ov::Model> decoder_model;
     std::shared_ptr<ov::Model> decoder_with_past_model;
 
     if (std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml") ) {
-        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
-        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, properties);
+        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, model_properties);
+        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, model_properties);
     } else {
-        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
+        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, model_properties);
         ov::pass::StatefulToStateless().run_on_model(model);
 
         decoder_model = prepare_decoder_model(model);
@@ -881,14 +885,14 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     preprocess_decoder(decoder_with_past_model);
 
     ov::CompiledModel compiled_model;
-    compiled_model = core.compile_model(encoder_model, "NPU", properties);
+    compiled_model = core.compile_model(encoder_model, "NPU", model_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper encoder model");
     m_models.encoder = compiled_model.create_infer_request();
 
     // Will compile decoder model when it's needed 
-    m_decoder_cache = DecoderCache(decoder_model, properties);
+    m_decoder_cache = DecoderCache(decoder_model, model_properties);
 
-    compiled_model = core.compile_model(decoder_with_past_model, "NPU", properties);
+    compiled_model = core.compile_model(decoder_with_past_model, "NPU", model_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder with past model");
     m_models.decoder_with_past = compiled_model.create_infer_request();
 
