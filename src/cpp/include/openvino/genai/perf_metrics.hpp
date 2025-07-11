@@ -172,5 +172,8 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     RawPerfMetrics raw_metrics;
 };
 
+// interface for creating perf metrics for python API
+struct OPENVINO_GENAI_EXPORTS ExtendedPerfMetrics : public ov::genai::PerfMetrics {};
+
 } // namespace genai
 } // namespace ov
