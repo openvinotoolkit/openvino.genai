@@ -1,11 +1,21 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-find_package(OpenVINO REQUIRED)
+find_package(OpenVINOGenAI REQUIRED
+    PATHS
+        "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
+        ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+    NO_CMAKE_FIND_ROOT_PATH
+)
 
 # Whisper Speech Recognition Sample
 add_executable(whisper_speech_recognition_c whisper_speech_recognition.c)
-target_link_libraries(whisper_speech_recognition_c openvino::genai::c m)
+# Specifies that the source file should be compiled as a C source file
+set_source_files_properties(whisper_speech_recognition.c PROPERTIES LANGUAGE C)
+target_link_libraries(whisper_speech_recognition_c PRIVATE openvino::genai::c m)
+set_target_properties(whisper_speech_recognition_c PROPERTIES
+    # Ensure out-of-box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
 
 # Install
 install(TARGETS whisper_speech_recognition_c
