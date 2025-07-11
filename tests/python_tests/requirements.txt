@@ -9,9 +9,8 @@ hf_transfer
 gguf>=0.10.0
 
 # rag requirements
-langchain_community
-llama-index==0.12.47
-llama-index-postprocessor-openvino-rerank==0.4.1
+langchain_community==0.3.27
+langchain-core==0.3.68
 
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM

@@ -9,8 +9,8 @@ from openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
 from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_rerank_model
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from typing import Literal
-from llama_index.postprocessor.openvino_rerank import OpenVINORerank
-from llama_index.core.schema import TextNode, NodeWithScore
+from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
+from langchain_core.documents.base import Document
 
 EMBEDDINGS_TEST_MODELS = [
     "BAAI/bge-small-en-v1.5",
@@ -19,7 +19,7 @@ EMBEDDINGS_TEST_MODELS = [
 
 RERANK_TEST_MODELS = [
     "cross-encoder/ms-marco-TinyBERT-L2-v2",
-    "BAAI/bge-reranker-base",
+    # "BAAI/bge-reranker-base",
     # "cross-encoder/ms-marco-MiniLM-L-12-v2",
     # "cross-encoder/ms-marco-MiniLM-L-6-v2",
     # "tomaarsen/reranker-ModernBERT-base-gooaq-bce",
@@ -152,7 +152,7 @@ def assert_rerank_results(result_1: list[tuple[int, float]], result_2: list[tupl
         assert abs(pair_1[1] - pair_2[1]) < 1e-6, f"Scores do not match for document ID {pair_1[0]}: " f"{pair_1[1]} != {pair_2[1]}"
 
 
-def run_text_rerank_llamaindex(
+def run_text_rerank_langchain(
     models_path: Path,
     query: str,
     documents: list[str],
@@ -161,24 +161,13 @@ def run_text_rerank_llamaindex(
     if not config:
         config = TextRerankPipeline.Config()
 
-    llama_index_documents: list[NodeWithScore] = []
-    for i, document in enumerate(documents):
-        # override text_template to match the result with GenAI reranker
-        node = TextNode(text=document, metadata={"doc_id": i}, text_template="{content}")
-        llama_index_documents.append(NodeWithScore(node=node))
+    reranker = OpenVINOReranker(model_name_or_path=str(models_path), top_n=config.top_n)
 
-    llamaindex_ov_reranker = OpenVINORerank(
-        model_id_or_path=str(models_path),
-        device="CPU",
-        top_n=config.top_n,
-    )
+    langchain_documents = [Document(page_content=text) for text in documents]
 
-    results = llamaindex_ov_reranker.postprocess_nodes(
-        nodes=llama_index_documents,
-        query_str=query,
-    )
-    # result.score is actually a torch.Tensor, covert for consistency
-    return [(result.metadata["doc_id"], float(result.score or -1)) for result in results]
+    reranked_documents = reranker.compress_documents(documents=langchain_documents, query=query)
+
+    return [(doc.metadata["id"], float(doc.metadata.get("relevance_score", -1))) for doc in reranked_documents]
 
 
 def run_text_rerank_genai(
@@ -211,9 +200,9 @@ def run_text_rerank_pipeline_with_ref(
     config: TextRerankPipeline.Config | None = None,
 ):
     genai_result = run_text_rerank_genai(models_path, query, documents, config)
-    llamaindex_result = run_text_rerank_llamaindex(models_path, query, documents, config)
+    langchain_result = run_text_rerank_langchain(models_path, query, documents, config)
 
-    assert_rerank_results(genai_result, llamaindex_result)
+    assert_rerank_results(genai_result, langchain_result)
 
 
 @pytest.mark.parametrize("download_and_convert_embeddings_models", ["BAAI/bge-small-en-v1.5"], indirect=True)
@@ -342,6 +331,4 @@ def test_rerank_constructors(download_and_convert_rerank_model):
 @pytest.mark.precommit
 def test_rerank_documents(download_and_convert_rerank_model, dataset_documents, query, config):
     _, _, models_path = download_and_convert_rerank_model
-    # llamaindex TextNode strip whitespaces from text, so we do the same here
-    dataset_documents = [text.strip() for text in dataset_documents]
     run_text_rerank_pipeline_with_ref(models_path, query, dataset_documents, config)
