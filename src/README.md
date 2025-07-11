@@ -397,6 +397,49 @@ print(f'Median from token to token duration: {np.median(durations):.2f} ms')
 
 For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/text_generation/README.md) and C++ [benchmark_genai](../samples/cpp/text_generation/README.md) samples.
 
+
+### Structured Output generation
+OpenVINO™ GenAI supports structured output generation, which allows you to generate outputs in a structured format such as JSON, regex, or accoring to EBNF (Extended Backus–Naur form) grammar.
+
+Below is a minimal example that demonstrates how to use OpenVINO™ GenAI to generate structured JSON output for a single item type (e.g., `person`). This example uses a Pydantic schema to define the structure and constraints of the generated output.
+
+```python
+import json
+from openvino_genai import LLMPipeline, GenerationConfig, StructuredOutputConfig
+from pydantic import BaseModel, Field
+
+# Define the schema for a person
+class Person(BaseModel):
+    name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+    surname: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+    age: int
+    city: str
+
+pipe = LLMPipeline(models_path, "CPU")
+
+config = GenerationConfig()
+config.max_new_tokens = 100
+# If backend is not specified, it will use the default backend which is "xgrammar" for the moment.
+config.structured_output_config = StructuredOutputConfig(json_schema=json.dumps(Person.model_json_schema()), backend="xgrammar")
+
+# Generate structured output
+result = pipe.generate("Generate a JSON for a person.", config)
+print(json.loads(result))
+```
+
+This will generate a JSON object matching the `Person` schema, for example:
+```json
+{
+  "name": "John",
+  "surname": "Doe",
+  "age": 30,
+  "city": "Dublin"
+}
+```
+**Note:**  
+Structured output enforcement guarantees correct JSON formatting, but does not ensure the factual correctness or sensibility of the content. The model may generate implausible or nonsensical data, such as `{"name": "John", "age": 200000}` or `{"model": "AbrakaKadabra9999######4242"}`. These are valid JSONs but may not make sense. For best results, use the latest or fine-tuned models for this task to improve the quality and relevance of the generated output.
+
+
 ### Tokenization
 
 OpenVINO™ GenAI provides a way to tokenize and detokenize text using the `ov::genai::Tokenizer` class. The `Tokenizer` is a high level abstraction over the OpenVINO Tokenizers library.

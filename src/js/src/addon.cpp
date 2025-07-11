@@ -4,6 +4,7 @@
 #include "include/addon.hpp"
 
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
+#include "include/text_embedding_pipeline/pipeline_wrapper.hpp"
 
 void init_class(Napi::Env env,
                 Napi::Object exports,
@@ -22,6 +23,7 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
     env.SetInstanceData<AddonData>(addon_data);
 
     init_class(env, exports, "LLMPipeline", &LLMPipelineWrapper::get_class, addon_data->core);
+    init_class(env, exports, "TextEmbeddingPipeline", &TextEmbeddingPipelineWrapper::get_class, addon_data->core);
 
     return exports;
 }

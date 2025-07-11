@@ -14,15 +14,23 @@ namespace genai {
 
 // Static Batch-Size 1 variant of UNetInference
 class UNet2DConditionModel::UNetInferenceStaticBS1 : public UNet2DConditionModel::UNetInference {
+
+    UNetInferenceStaticBS1(const UNetInferenceStaticBS1&) = delete;
+    UNetInferenceStaticBS1(UNetInferenceStaticBS1&&) = delete;
+    UNetInferenceStaticBS1(UNetInferenceStaticBS1& other) = delete;
+
 public:
+    UNetInferenceStaticBS1() : UNetInference(), m_native_batch_size(0) {}
+
     virtual std::shared_ptr<UNetInference> clone() override {
         OPENVINO_ASSERT(m_requests.size(), "UNet2DConditionModel must have m_requests initialized");
-        UNetInferenceStaticBS1 cloned(*this);
-        cloned.m_requests.reserve(m_requests.size());
+        auto clone = std::make_shared<UNetInferenceStaticBS1>();
+        clone->m_native_batch_size = m_native_batch_size;
+        clone->m_requests.reserve(m_requests.size());
         for (auto& request : m_requests) {
-            cloned.m_requests.push_back(request.get_compiled_model().create_infer_request());
+            clone->m_requests.push_back(request.get_compiled_model().create_infer_request());
         }
-        return std::make_shared<UNetInferenceStaticBS1>(cloned);
+        return clone;
     }
 
     virtual void compile(std::shared_ptr<ov::Model> model,
