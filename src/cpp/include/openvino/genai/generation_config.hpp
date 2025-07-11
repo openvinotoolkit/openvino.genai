@@ -29,7 +29,7 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
 /**
  * @brief StructuralTagItem is used to define a structural tag with its properties.
  * @param begin the string that marks the beginning of the structural tag.
- * @param schema the main string that defines the structure of the tag. Usually, it is a JSON schema.
+ * @param schema JSON schema that defines the structure of the tag.
  * @param end the string that marks the end of the structural tag.
  */
 struct OPENVINO_GENAI_EXPORTS StructuralTagItem {
@@ -43,9 +43,12 @@ struct OPENVINO_GENAI_EXPORTS StructuralTagItem {
     std::string end;
 };
 
-/** @brief StructuralTagsConfig is used to define a set of structural tags and trigger strings.
+/**
+ * @brief StructuralTagsConfig is used to define a set of structural tags and trigger strings.
  * @param structural_tags a vector of StructuralTagItem that defines the structural tags.
  * @param triggers a vector of strings that a model should generate to trigger the structured output generation of structural tags.
+ *                 A trigger might be equal to the begin of some tags or a part of the begin of some tags.
+ *                 Different tags can have different begins and will require different trigger strings.
  */
 struct OPENVINO_GENAI_EXPORTS StructuralTagsConfig {
 public:
