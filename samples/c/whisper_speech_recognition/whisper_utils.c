@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "whisper_utils.h"
-#include <string.h>
-#include <math.h>
+
 #include <errno.h>
+#include <math.h>
+#include <string.h>
 
 void print_usage(const char* program_name) {
     printf("Usage: %s [OPTIONS]\n", program_name);
@@ -13,7 +14,8 @@ void print_usage(const char* program_name) {
     printf("\nOptional:\n");
     printf("  -i, --input            Path to audio file (WAV format). If not specified, uses synthetic audio\n");
     printf("  -d, --device           Device to run inference on (default: %s)\n", DEFAULT_DEVICE);
-    printf("  -l, --language         Language code (e.g., 'en', 'fr', 'de'). Empty for auto-detect (default: auto-detect)\n");
+    printf("  -l, --language         Language code (e.g., 'en', 'fr', 'de'). Empty for auto-detect (default: "
+           "auto-detect)\n");
     printf("  -t, --task             Task: 'transcribe' or 'translate' (default: %s)\n", DEFAULT_TASK);
     printf("  --initial_prompt       Initial prompt to guide transcription\n");
     printf("  --timestamps           Return timestamps for each segment\n");
@@ -147,7 +149,7 @@ int load_wav_file(const char* filename, float** audio_data, size_t* audio_length
         return -1;
     }
 
-    if (header.audio_format != 1) { // PCM
+    if (header.audio_format != 1) {  // PCM
         fprintf(stderr, "Error: Only PCM WAV files are supported\n");
         fclose(file);
         return -1;
@@ -219,7 +221,11 @@ void generate_synthetic_audio(float* audio, size_t length, float frequency, floa
     }
 }
 
-float* resample_audio(const float* input, size_t input_length, float input_rate, float target_rate, size_t* output_length) {
+float* resample_audio(const float* input,
+                      size_t input_length,
+                      float input_rate,
+                      float target_rate,
+                      size_t* output_length) {
     if (input_rate == target_rate) {
         *output_length = input_length;
         float* output = (float*)malloc(input_length * sizeof(float));
@@ -232,7 +238,7 @@ float* resample_audio(const float* input, size_t input_length, float input_rate,
     float ratio = input_rate / target_rate;
     *output_length = (size_t)(input_length / ratio);
     float* output = (float*)malloc(*output_length * sizeof(float));
-    
+
     if (!output) {
         return NULL;
     }
@@ -241,7 +247,7 @@ float* resample_audio(const float* input, size_t input_length, float input_rate,
         float src_idx = i * ratio;
         size_t idx0 = (size_t)src_idx;
         size_t idx1 = idx0 + 1;
-        
+
         if (idx1 >= input_length) {
             output[i] = input[input_length - 1];
         } else {
