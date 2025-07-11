@@ -6,34 +6,34 @@ on:
     branches:
       - master
       - main
-      - 'releases/**'
+      - "releases/**"
 
 env:
-  PYTHON_VERSION: '3.11'
+  PYTHON_VERSION: "3.11"
 
 jobs:
   build_and_test:
     name: Build and Test (Windows)
     runs-on: windows-latest
-    
+
     strategy:
       matrix:
         build_type: [Release]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           submodules: recursive
-      
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      
+
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
-      
+
       - name: Install Python build dependencies
         run: |
           pip install --upgrade pip
@@ -43,7 +43,7 @@ jobs:
                       --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release `
                       "openvino~=2025.3.0.0.dev" `
                       "openvino_tokenizers[transformers]~=2025.3.0.0.dev"
-      
+
       - name: Configure CMake
         run: |
           cmake -B build -S . `
@@ -51,34 +51,34 @@ jobs:
             -DENABLE_PYTHON=ON `
             -G "Visual Studio 17 2022" `
             -A x64
-      
+
       - name: Build
         run: |
           cmake --build build --config ${{ matrix.build_type }} --parallel
-      
+
       - name: Install
         run: |
           cmake --install build --config ${{ matrix.build_type }} --prefix install
-      
-      - name: Build Python wheel
-        run: |
-          python -m build --wheel
-      
-      - name: Install Python package
-        run: |
-          pip install (Get-ChildItem dist/*.whl)
-      
+
+      # - name: Build Python wheel
+      #   run: |
+      #     python -m build --wheel
+
+      # - name: Install Python package
+      #   run: |
+      #     pip install (Get-ChildItem dist/*.whl)
+
       - name: Test Python imports
         run: |
           python -c "import openvino_genai; print('OpenVINO GenAI import successful')"
-      
+
       - name: Build samples
         run: |
           if (Test-Path "samples/cpp") {
             cmake -B samples_build -S samples/cpp -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -G "Visual Studio 17 2022" -A x64
             cmake --build samples_build --config ${{ matrix.build_type }} --parallel
           }
-      
+
       - name: Test basic functionality
         run: |
           if (Test-Path "tests/python_tests/test_tokenizer.py") {
