@@ -22,18 +22,6 @@
 typedef struct ov_genai_perf_metrics_opaque ov_genai_perf_metrics;
 
 /**
- * @brief Create ov_genai_perf_metrics.
- * @return ov_genai_perf_metrics* A pointer to the newly created ov_genai_perf_metrics.
- */
-OPENVINO_GENAI_C_EXPORTS ov_genai_perf_metrics* ov_genai_perf_metrics_create();
-
-/**
- * @brief Release the memory allocated by ov_genai_perf_metrics.
- * @param metrics A pointer to the ov_genai_perf_metrics to free memory.
- */
-OPENVINO_GENAI_C_EXPORTS void ov_genai_perf_metrics_free(ov_genai_perf_metrics* metrics);
-
-/**
  * @brief Get load time from ov_genai_perf_metrics.
  * @param metrics A pointer to the ov_genai_perf_metrics instance.
  * @param load_time Load time in ms.
