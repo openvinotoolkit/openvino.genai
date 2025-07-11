@@ -7,6 +7,10 @@
 #include <math.h>
 #include <string.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 void print_usage(const char* program_name) {
     printf("Usage: %s [OPTIONS]\n", program_name);
     printf("\nRequired:\n");
