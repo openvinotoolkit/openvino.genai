@@ -170,6 +170,7 @@
 - 'src/cpp/src/gguf_utils/**/*'
 
 'category: Structured Output samples':
+- 'samples/cpp/text_generation/structured_output_generation'
 - 'samples/python/text_generation/structured_output_generation.py'
 - 'tests/python_tests/samples/test_structured_output_sample.py'
 
