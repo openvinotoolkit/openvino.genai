@@ -114,7 +114,7 @@ def main():
 
     print(f"User prompt: {args.prompt}")
 
-    for use_structural_tags in [False, True]:
+    for use_structural_tags in [True, False]:
         print("=" * 80)
         print(
             f"{'Using structural tags' if use_structural_tags else 'Using no structural tags':^80}"
