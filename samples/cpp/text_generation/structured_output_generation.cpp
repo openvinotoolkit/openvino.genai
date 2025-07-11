@@ -47,7 +47,7 @@ int main(int argc, char* argv[]) try {
     pipe.start_chat(sys_message);
     std::cout << "This is a sample of structured output generation.\n"
               << "You can enter a mathematical equation, and the model will solve it step by step.\n"
-              << "For example, try: 2*x - x**2 + 15 = 0\n"
+              << "For example, try: 2*x -2 + 15 = 0\n"
               << "To exit, press Ctrl+C or close the terminal.\n"
               << "> ";
 
