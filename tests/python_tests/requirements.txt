@@ -36,7 +36,8 @@ sacremoses
 # - openai/whisper-base
 librosa
 soundfile
-datasets==4.0.0
+datasets==4.0.0; sys_platform == "linux"
+datasets==3.6.0; sys_platform != "linux"
 torchcodec==0.4.0; sys_platform == "linux"
 rouge
 # - microsoft/Phi-4-multimodal-instruct
