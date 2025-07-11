@@ -20,7 +20,7 @@ using json = nlohmann::json;
 std::string csv_header =
     "iteration,model,framework,device,pretrain_time(s),input_size,infer_count,generation_time(s),"
     "output_size,latency(ms),1st_latency(ms),2nd_avg_latency(ms),precision,max_rss_mem(MB),max_uss_"
-    "mem(MB),max_shared_mem(MB),prompt_idx,1st_infer_latency(ms),2nd_infer_avg_latency(ms),num_"
+    "mem(MB),max_shared_mem(MB),vmpeak_before_compile(MB),vmpeak_after_compile(MB),vmpeak(MB),prompt_idx,1st_infer_latency(ms),2nd_infer_avg_latency(ms),num_"
     "beams,batch_size,tokenization_time,detokenization_time,result_md5,start,end";
 
 extern bool exit_mem_read;
@@ -43,6 +43,9 @@ typedef struct csv_report_data {
     int max_rss_mem;
     int max_uss_mem;
     int max_shared_mem;
+    int vm_peak_mem_start;
+    int vm_peak_mem_end;
+    int vm_peak_mem;
     int prompt_idx;
     float _1st_infer_latency;
     float _2nd_infer_avg_latency;
@@ -53,6 +56,26 @@ typedef struct csv_report_data {
     std::string result_md5;
 } CSV_REPORT_DATA;
 
+static unsigned long get_vmpeak_memory_consumption_info() {
+    pid_t pid = getpid();
+    std::string info;
+    std::string statpath = "/proc/";
+    unsigned long vmpeak=0;
+
+    statpath += std::to_string(pid) + "/status";
+    std::ifstream file(statpath);
+    while (std::getline(file, info)) {
+        if (info.rfind("VmPeak:", 0) == 0) {  // Line starts with "VmPeak"
+            std::string value;
+            std::istringstream iss(info);
+            iss.ignore(256, ':');      // Ignore until : of 'VmPeak:'
+            iss >> value;              // Extract memory size
+            vmpeak = std::stol(value);  // Convert to long
+            return vmpeak;
+        }
+    }
+    return vmpeak;
+}
 
 int main(int argc, char* argv[]) try {
 
@@ -132,7 +155,6 @@ int main(int argc, char* argv[]) try {
     config.ignore_eos = true;
     config.do_sample = false;
 
-    csv_report.model = fs::path(models_path).filename().string();
     csv_report.framework = "OV(Text Generation GenAI)";  // Default FW
     csv_report.device = device;
     csv_report.input_size = prompt_size;
@@ -161,15 +183,16 @@ int main(int argc, char* argv[]) try {
     std::tm start_tm[num_iter];
     std::tm end_tm[num_iter];
     size_t gen_token_size;
-
     // TBD: Collect the perf_metrics indiviually for each of the iteration and log them
     for (size_t i = 0; i < num_iter; i++) {
         // Record start time
         std::memcpy((void*)&start_tm[i], (void*)gettimenow(), sizeof(std::tm));
 
+        csv_report.vm_peak_mem_start = get_vmpeak_memory_consumption_info();
         res = pipe.generate(prompt_string, config);
         metrics_arr[i] = res.perf_metrics;
-
+        csv_report.vm_peak_mem_end = get_vmpeak_memory_consumption_info();
+        csv_report.vm_peak_mem = csv_report.vm_peak_mem_start - csv_report.vm_peak_mem_end;
         // Record end time.
         std::memcpy((void*)&end_tm[i], (void*)gettimenow(), sizeof(std::tm));
 
@@ -215,10 +238,11 @@ int main(int argc, char* argv[]) try {
 
     // Print report to csv file
     std::string report_string;
-
     for (int i=0; i<num_iter; i++) {
+        csv_report.iteration=i;
+        csv_report.model = fs::path(models_path).filename().string();
         report_string =
-            std::to_string(csv_report.iteration) + "," + csv_report.model + "," + csv_report.framework +
+            std::to_string(csv_report.iteration) + "," + csv_report.model.c_str() + "," + csv_report.framework +
             "," + csv_report.device + "," + std::to_string(csv_report.pretrain_time) + "," +
             std::to_string(csv_report.input_size) + "," +
             /*infer count*/ std::to_string(csv_report.infer_count) + "," +
@@ -232,6 +256,9 @@ int main(int argc, char* argv[]) try {
             std::to_string(float(genai_mem_info.rss_mem / 1024)) + "," +
             std::to_string(float(genai_mem_info.uss_mem / 1024)) + "," +
             std::to_string(float(genai_mem_info.sh_mem / 1024)) + "," +
+            std::to_string(float(csv_report.vm_peak_mem_start / 1024)) + "," +
+            std::to_string(float(csv_report.vm_peak_mem_end / 1024)) + "," +
+            std::to_string(float(csv_report.vm_peak_mem / 1024)) + "," +
             /*prompt_idx to 2nd infer latency*/ std::to_string(0) + ",NA,NA," +
             /*num beam, batchsize*/ std::to_string(csv_report.num_beams) + "," +
             std::to_string(csv_report.batch_size) + "," +
@@ -239,7 +266,6 @@ int main(int argc, char* argv[]) try {
             std::to_string(metrics_arr[i].get_detokenization_duration().mean) + "," +
             /*md5, start,end time*/ "NA," + gettimestamp(&start_tm[i]) + "," +
             gettimestamp(&end_tm[i]) + "\n";
-            csv_report.iteration++;
         report_file << report_string;
         report_file.flush();
     }
@@ -264,7 +290,7 @@ int main(int argc, char* argv[]) try {
     //Writing a summary
     std::string summary = "Summary (Avg)";
     report_string =
-        summary + "," + csv_report.model + "," + csv_report.framework +
+        summary + "," + "" + "," + csv_report.framework +
         "," + csv_report.device + "," + std::to_string(csv_report.pretrain_time) + "," +
         std::to_string(csv_report.input_size) + "," +
         /*infer count*/ std::to_string(csv_report.infer_count) + "," +
@@ -278,6 +304,9 @@ int main(int argc, char* argv[]) try {
         std::to_string(float(genai_mem_info.rss_mem / 1024)) + "," +
         std::to_string(float(genai_mem_info.uss_mem / 1024)) + "," +
         std::to_string(float(genai_mem_info.sh_mem / 1024)) + "," +
+        std::to_string(float(csv_report.vm_peak_mem_start / 1024)) + "," +
+        std::to_string(float(csv_report.vm_peak_mem_end / 1024)) + "," +
+        std::to_string(float(csv_report.vm_peak_mem / 1024)) + "," +
         /*prompt_idx to 2nd infer latency*/ std::to_string(0) + ",NA,NA," +
         /*num beam, batchsize*/ std::to_string(csv_report.num_beams) + "," +
         std::to_string(csv_report.batch_size) + "," +

@@ -114,6 +114,7 @@ static void get_memory_consumption_info(unsigned long* rss_mem, unsigned long* s
         file.seekg(0, std::ios::beg);
         usleep(1000);
     }
+    std::cout<<"exiting the thread"<<std::endl;
 }
 
 static void* memory_thread(void* params) {
