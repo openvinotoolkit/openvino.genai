@@ -110,7 +110,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
             encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
         } else {
-            encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+            encoded_input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
         }
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
