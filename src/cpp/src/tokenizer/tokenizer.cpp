@@ -93,7 +93,28 @@ void parse_chat_template_from_file(const std::filesystem::path& path, std::strin
             }
         }
     }
-    OPENVINO_THROW("Unknown chat_template format in file: ", path.string());
+    OPENVINO_THROW("Unsupported chat_template format in file: ", path.string());
+}
+
+void parse_chat_template_from_tokenizer(std::shared_ptr<ov::Model> ov_tokenizer, std::string& value) {
+    if (!ov_tokenizer->has_rt_info("chat_template")) {
+        return;
+    }
+    ov::Any chat_template_value = ov_tokenizer->get_rt_info<ov::Any>("chat_template");
+    if (chat_template_value.is<std::string>()) {
+        value = chat_template_value.as<std::string>();
+        return;
+    }
+    // Handle rt_info chat template format: <chat_template><default value="..." /></chat_template>
+    if (chat_template_value.is<ov::AnyMap>()) {
+        ov::AnyMap chat_template_map = chat_template_value.as<ov::AnyMap>();
+        auto default_iter = chat_template_map.find("default");
+        if (default_iter != chat_template_map.end() && default_iter->second.is<std::string>()) {
+            value = default_iter->second.as<std::string>();
+            return;
+        }
+    }
+    OPENVINO_THROW("Unsupported type for 'chat_template' in tokenizer model: ", chat_template_value.type_info().name());
 }
 
 template <typename T>
@@ -387,7 +408,8 @@ public:
             m_bos_token_id = find_or_fallback(rt_info, "bos_token_id", m_bos_token_id);
             m_eos_token_id = find_or_fallback(rt_info, "eos_token_id", m_eos_token_id);
 
-            m_chat_template = find_or_fallback(rt_info, "chat_template", m_chat_template);
+            parse_chat_template_from_tokenizer(ov_tokenizer, m_chat_template);
+
             std::optional<std::string> fallback = remap_template(m_chat_template);
             if (fallback.has_value()) {
                 m_chat_template = std::move(fallback).value();
