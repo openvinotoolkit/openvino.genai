@@ -39,6 +39,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install setuptools
+          pip install --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release openvino~=2025.3.0
       
       - name: Configure CMake
         run: |
