@@ -212,8 +212,8 @@ ov::Tensor encode(ov::InferRequest& request,
     raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
 
     // reset input tensor
-    auto m_is_npu = true;
-    uint8_t batch_size = m_is_npu ? 1 : 0;
+    auto devices = request.get_compiled_model().get_property(ov::execution_devices);
+    uint8_t batch_size = (devices[0] == "NPU") ? 1 : 0;
     request.set_tensor("input_features", ov::Tensor(ov::element::f32, {batch_size, feature_size, nb_max_frames}));
 
     return request.get_tensor("last_hidden_state");
