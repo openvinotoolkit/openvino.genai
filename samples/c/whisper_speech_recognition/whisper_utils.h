@@ -11,6 +11,10 @@
 
 #include "openvino/genai/c/whisper_pipeline.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 #define MAX_PATH_LENGTH 1024
 
 // Error handling macro
