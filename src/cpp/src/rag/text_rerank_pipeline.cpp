@@ -6,6 +6,8 @@
 #include "debug_utils.hpp"
 #include "openvino/core/except.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/opsets/opset.hpp"
+#include "openvino/opsets/opset1.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -19,6 +21,20 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
 
     return properties_copy;
 }
+
+std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model) {
+    PartialShape shape = model->get_output_partial_shape(0);
+    OPENVINO_ASSERT(shape[1] == 1, "Expected model output shape to have 1 class, but got: ", shape.to_string());
+
+    ov::preprocess::PrePostProcessor processor(model);
+
+    processor.output().postprocess().custom([](const ov::Output<ov::Node>& node) {
+        return std::make_shared<op::v0::Sigmoid>(node);
+    });
+
+    return processor.build();
+}
+
 }  // namespace
 
 namespace ov {
@@ -40,6 +56,8 @@ public:
         ov::Core core = utils::singleton_core();
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
+
+        model = apply_postprocessing(model);
 
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
 
@@ -68,34 +86,19 @@ public:
     std::vector<std::pair<size_t, float>> wait_rerank() {
         m_request.wait();
 
-        auto logits = m_request.get_output_tensor(0);
-        auto logits_shape = logits.get_shape();
-        const size_t batch_size = logits_shape[0];
-        auto logits_data = logits.data<float>();
+        // sigmoid postrpocessing is applied to the logits output
+        auto scores_tensor = m_request.get_tensor("logits");
+        auto scores_tensor_shape = scores_tensor.get_shape();
+        const size_t batch_size = scores_tensor_shape[0];
 
-        std::vector<float> scores;
-        scores.reserve(batch_size);
+        auto scores_data = scores_tensor.data<float>();
 
-        if (logits_shape[1] == 1) {
-            // compute sigmoid
-            for (size_t i = 0; i < batch_size; ++i) {
-                scores.push_back(1.0f / (1.0f + std::exp(-logits_data[i])));
-            }
-        } else {
-            // comptute softmax of class 1
-            for (size_t batch = 0; batch < batch_size; ++batch) {
-                const size_t batch_offset = batch * logits_shape[1];
-                float exp_sum = 0.0f;
-                for (size_t j = 0; j < logits_shape[1]; ++j) {
-                    exp_sum += std::exp(logits_data[batch_offset + j]);
-                }
-                scores.push_back(std::exp(logits_data[batch_offset + 1]) / exp_sum);
-            }
-        }
-
+        // copy scores to results
         std::vector<std::pair<size_t, float>> results;
+        results.reserve(batch_size);
+
         for (size_t batch = 0; batch < batch_size; batch++) {
-            results.emplace_back(batch, scores[batch]);
+            results.emplace_back(batch, scores_data[batch]);
         }
 
         const size_t top_n = m_config.top_n;
