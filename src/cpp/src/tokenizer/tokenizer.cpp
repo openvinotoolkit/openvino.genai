@@ -66,10 +66,34 @@ std::optional<std::string> remap_template(const std::string& chat_template) {
     return std::nullopt;
 }
 
-void parse_if_exists(const std::filesystem::path& path, std::string& value) {
-    if (std::filesystem::exists(path)) {
-        ov::genai::utils::read_json_param(nlohmann::json::parse(std::ifstream{path}), "chat_template", value);
+void parse_chat_template_from_file(const std::filesystem::path& path, std::string& value) {
+    if (!std::filesystem::exists(path)) {
+        return;
     }
+    auto json_data = nlohmann::json::parse(std::ifstream{path});
+    if (!json_data.contains("chat_template")) {
+        return;
+    }
+    auto chat_template_field = json_data["chat_template"];
+
+    if (chat_template_field.is_string()) {
+        value = chat_template_field.get<std::string>();
+        return;
+    }
+    // Handle chat template format: [{ "name": "default", "template": "..." }]
+    // e.g. for CohereLabs/aya-23-8B & CohereLabs/c4ai-command-r-v01 models
+    if (chat_template_field.is_array()) {
+        for (const auto& item : chat_template_field) {
+            if (
+                item.is_object() && item.contains("name") && item["name"] == "default" &&
+                item.contains("template") && item["template"].is_string()
+            ) {
+                value = item["template"].get<std::string>();
+                return;
+            }
+        }
+    }
+    OPENVINO_THROW("Unknown chat_template format in file: ", path.string());
 }
 
 template <typename T>
@@ -321,9 +345,9 @@ public:
         read_special_tokens_map(models_path);
         // Try to read tokenizer_config if some token ids or token str are not defined.
         read_tokenizer_config_if_necessary(models_path);
-        parse_if_exists(models_path / "tokenizer_config.json", m_chat_template);
-        parse_if_exists(models_path / "processor_config.json", m_chat_template);
-        parse_if_exists(models_path / "chat_template.json", m_chat_template);
+        parse_chat_template_from_file(models_path / "tokenizer_config.json", m_chat_template);
+        parse_chat_template_from_file(models_path / "processor_config.json", m_chat_template);
+        parse_chat_template_from_file(models_path / "chat_template.json", m_chat_template);
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
     }
 
