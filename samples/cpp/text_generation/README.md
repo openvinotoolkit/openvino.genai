@@ -168,6 +168,38 @@ For more information how performance metrics are calculated please follow [perfo
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 
+### 11. Structured Output Sample (`structured_output_sample`)
+- **Description:**
+This sample demonstrates how to use OpenVINO GenAI to generate structured outputs, such as JSON, from text prompts. It showcases how structured output generation enables a simple LLM to reason step by step. For example, you can prompt the model to solve mathematical equations step by step, and it will generate a JSON containing the reasoning steps and the final answer.
+
+Recommended models: meta-llama/Llama-3.2-1B-Instruct, meta-llama/Llama-3.2-8B-Instruct
+
+- **Run Command:**
+  ```bash
+  structured_output_generation <MODEL_DIR>
+  ```
+  After running the command, an interactive dialog starts. You can ask the model to solve equations step by step, for example:
+
+1. **Reasoning before final answer:**  
+   The model generates a JSON schema with the requested reasoning steps. For example, if you prompt:  
+   `Solve the equation 8x + 7 = -23 step by step`  
+   The model might output:
+   ```json
+   {
+     "steps": [
+       {"explanation": "Rearranging the equation to isolate x.", "output": "8x + 7 = -23"},
+       {"explanation": "Subtracting 7 from both sides of the equation.", "output": "8x + 7 - 7 = -23 - 7"},
+       {"explanation": "Simplifying the left side of the equation.", "output": "8x = -30"},
+       {"explanation": "Dividing both sides of the equation by 8.", "output": "8x / 8 = -30 / 8"},
+       {"explanation": "Simplifying the right side of the equation.", "output": "x = -30 / 8"},
+       {"explanation": "Finding the value of x.", "output": "x = -15/4"}
+     ],
+     "final_answer": "x = -15/4"
+   }
+   ```
+
+**Note:**  
+Structured output enforcement ensures correct JSON formatting, but does not guarantee factual accuracy or meaningfulness. The model may generate valid JSON that contains implausible or nonsensical data, such as `{"explanation": "John", "output": 200000}` or `{"final_answer": "AbrakaKadabra9999######4242"}`. For best results, use the latest or fine-tuned models to improve the quality and relevance of the generated output.
 
 ## Troubleshooting
 
