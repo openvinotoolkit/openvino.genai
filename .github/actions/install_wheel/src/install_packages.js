@@ -70,7 +70,7 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
     core.debug(`Installing packages with arguments: ${installArgs.join(' ')}`);
     console.log(`Installing packages: ${installArgs.join(' ')}`);
     const { stdout, stderr } = await execAsync(
-      `python -m pip install ${installArgs.join(' ')}`,
+      `python -m pip install ${installArgs.join(' ')} -v`,
       {
         stdio: 'inherit'
       }
