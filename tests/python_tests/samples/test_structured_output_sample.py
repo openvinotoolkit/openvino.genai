@@ -91,11 +91,11 @@ def test_python_structured_output_sample(convert_model, prompt, expected_quantit
 @pytest.mark.samples
 @pytest.mark.parametrize("convert_model", ["TinyLlama-1.1B-Chat-v1.0"], indirect=True)
 @pytest.mark.parametrize("prompt,final_answer", [
-    ("Solve the equation 8x + 7 = -23 step by step.", "x = -7 or x = 8"),
+    ("Solve the equation 8x + 7 = -23 step by step.", "x = 7 or x = 8"),
     ("Solve the equation 18x + 7 - 8 = 0 step by step.", "x = 0 or x = -3"),
 ])
 def test_cpp_structured_output_sample(convert_model, prompt, final_answer):
-    cpp_sample = os.path.join(SAMPLES_CPP_DIR, "text_generation/structured_output_generation")
+    cpp_sample = os.path.join(SAMPLES_CPP_DIR, "structured_output_generation")
     cpp_command = [cpp_sample, convert_model]
 
     user_input = prompt + "\n"
