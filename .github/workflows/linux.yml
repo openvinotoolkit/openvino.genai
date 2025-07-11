@@ -683,7 +683,7 @@ jobs:
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_JS_DIR: "${{ env.SRC_DIR }}/samples/js"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
-          SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
+          SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin/c"
 
   genai_tools_tests:
     name: Tools ${{ matrix.build-type }}
