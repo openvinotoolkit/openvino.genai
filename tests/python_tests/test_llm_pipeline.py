@@ -10,6 +10,8 @@ import os
 import json
 import numpy as np
 from pathlib import Path
+from typing import Literal
+from pydantic import BaseModel, Field
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -745,6 +747,44 @@ def test_perf_metrics(generation_config, prompt):
     assert len(raw_metrics.m_times_to_first_token) > 0
     assert len(raw_metrics.m_batch_sizes) > 0
     assert len(raw_metrics.m_durations) > 0
+
+
+test_cases = [
+    (dict(max_new_tokens=20), 'Generate json of a person'),
+]
+@pytest.mark.parametrize("generation_config,prompt", test_cases)
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_perf_metrics_with_structured_output(generation_config, prompt):
+    class Person(BaseModel):
+        name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+        surname: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+        age: int
+        city: Literal["Dublin", "Dubai", "Munich"]
+    generation_config.update(dict(structured_output_config=ov_genai.StructuredOutputConfig(json_schema=json.dumps(Person.model_json_schema()))))
+    
+    model_id = 'katuni4ka/tiny-random-gemma2'
+    _, _, models_path = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(models_path)
+    perf_metrics = ov_pipe.generate([prompt], **generation_config).perf_metrics
+    raw_metrics = perf_metrics.raw_metrics
+
+    assert len(perf_metrics.get_grammar_compiler_init_times()) > 0
+    assert 'xgrammar' in perf_metrics.get_grammar_compiler_init_times() and perf_metrics.get_grammar_compiler_init_times()['xgrammar'] > 0.0
+    
+    assert len(raw_metrics.grammar_compile_times) > 0
+
+    raw_compile_times = np.array(raw_metrics.grammar_compile_times) / 1000
+    assert np.allclose(np.mean(raw_compile_times), perf_metrics.get_grammar_compile_time().mean)
+    assert np.allclose(np.std(raw_compile_times), perf_metrics.get_grammar_compile_time().std)
+    assert np.allclose(np.min(raw_compile_times), perf_metrics.get_grammar_compile_time().min)
+    assert np.allclose(np.max(raw_compile_times), perf_metrics.get_grammar_compile_time().max)
+
+    # Check that metrics are correctly accumulated/concatenated
+    perf_metrics_2 = ov_pipe.generate([prompt], **generation_config).perf_metrics
+    raw_metrics_2 = perf_metrics_2.raw_metrics
+    accumulated_metrics = perf_metrics + perf_metrics_2
+    assert accumulated_metrics.raw_metrics.grammar_compile_times == raw_metrics.grammar_compile_times + raw_metrics_2.grammar_compile_times
 
 
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())

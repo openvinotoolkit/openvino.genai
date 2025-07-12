@@ -891,8 +891,7 @@ jobs:
           PYTHONPATH: "${{ env.BUILD_DIR }}:"
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py
-          # python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_structured_output.py
+          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -k "not test_perf_metrics_with_structured_output"
 
   Overall_Status:
     name: ci/gha_overall_status_linux
