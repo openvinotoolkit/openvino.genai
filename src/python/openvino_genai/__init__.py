@@ -92,7 +92,9 @@ from .py_openvino_genai import (
     GenerationStatus,
     SchedulerConfig,
     CacheEvictionConfig,
-    AggregationMode
+    AggregationMode,
+    KVCrushAnchorPointMode,
+    KVCrushConfig
 )
 
 # RAG
