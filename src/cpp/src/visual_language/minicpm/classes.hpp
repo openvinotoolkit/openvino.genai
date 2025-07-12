@@ -13,36 +13,41 @@
 namespace ov::genai {
 
 class VisionEncoderMiniCPM : public VisionEncoder {
-    // A resampler model to resample image embeddings.
-    // [N, H*W, old_hidden_size] is the input shape.
-    // [N, query_num, hidden_size] is the output shape.
-    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_resampler;
-    // Precomputed positional embeddings for the resampler.
-    // [70, 70, hidden_size]. 70 is the initial guess of the image
-    // height and width after dividing by patch_size.
-    ov::Tensor m_pos_embed_cache;
+private:
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_ireq(ov::CompiledModel& compiled_model);
     // VLM config
     VLMConfig m_vlm_config;
 
-    ov::Tensor resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes);
-
-    ResampledImage resample_encoded_image(const EncodedImage& image, const ov::Tensor& slices, const ImageSize& target_sizes);
 public:
     VisionEncoderMiniCPM(
         const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap properties);
 
-
     VisionEncoderMiniCPM(
         const ModelsMap& models_map,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap device_config);
+    
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 };
 
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
+protected:
+    // A model for merging image embeddings with text embeddings
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_merger;
+    
+    ov::Tensor m_merged_image_embeddings;
+    
+    virtual ov::Tensor run_image_embeddings_merger(
+        const std::vector<EncodedImage>& images,
+        const std::vector<size_t>& images_sequence);
+    
+    ov::Tensor create_position_ids(
+        const ov::Tensor& input_ids_tensor,
+        const std::vector<size_t>& images_sequence,
+        const int64_t vision_start_token_id);
 
 public:
     InputsEmbedderMiniCPM(
@@ -50,7 +55,7 @@ public:
         const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap device_config);
-    
+
     InputsEmbedderMiniCPM(
         const VLMConfig& vlm_config,
         const ModelsMap& models_map,
@@ -66,7 +71,17 @@ public:
         size_t base_id,
         const std::vector<EncodedImage>& images
     ) const override;
-
 };
+
+namespace minicpm_utils {
+
+std::pair<std::vector<ov::Tensor>, std::vector<ImageSize>> reorder_image_embeds_and_sizes(
+    const std::vector<EncodedImage>& encoded_images,
+    const std::vector<size_t>& images_sequence
+);
+
+ov::Tensor concatenate_image_embeds(const std::vector<ov::Tensor>& reordered_image_embeds);
+
+} // namespace minicpm_utils
 
 } // namespace ov::genai
