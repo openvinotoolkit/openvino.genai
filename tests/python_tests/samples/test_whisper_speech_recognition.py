@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR
 from test_utils import run_sample
 
 class TestWhisperSpeechRecognition:
@@ -24,5 +24,11 @@ class TestWhisperSpeechRecognition:
         cpp_command = [cpp_sample, convert_model, download_test_content]
         cpp_result = run_sample(cpp_command)
 
+        # Run C sample
+        c_sample = os.path.join(SAMPLES_C_DIR, 'whisper_speech_recognition', 'whisper_speech_recognition_c')
+        c_command = [c_sample, '-m', convert_model, '-i', download_test_content]
+        c_result = run_sample(c_command)
+
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
+        assert py_result.stdout == c_result.stdout, "Python and C results should match"
