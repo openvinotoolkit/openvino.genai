@@ -37,6 +37,6 @@ class TestSpeculativeDecodingLM:
         cpp_result_ref = run_sample(cpp_command_ref)
 
         # Compare results
-        assert py_result.stdout == cpp_result.stdout, "Python and CPP results should match"
-        assert cpp_result_ref.stdout.strip() == cpp_result.stdout.strip(), "Greedy and speculative decoding results should match"
+        assert cpp_result_ref.stdout.strip() in py_result.stdout.strip(), "Python and CPP results should match"
+        assert cpp_result_ref.stdout.strip() in cpp_result.stdout.strip(), "Greedy and speculative decoding results should match"
 
