@@ -1,5 +1,6 @@
 import time
 import types
+import statistics
 
 
 class MeanStdPair():
@@ -150,3 +151,79 @@ class EmbedForwardHook:
                 self_.tm_infer_list.append(t2 - t1)
                 return r
             model.request = new_request
+
+
+class TTSHook:
+    def __init__(self):
+        self.encoder_model_time = 0
+        self.decoder_model_time_list = []
+        self.postnet_model_time_list = []
+        self.vocoder_model_time = 0
+
+    def clear_statistics(self):
+        self.encoder_model_time = 0
+        self.decoder_model_time_list = []
+        self.postnet_model_time_list = []
+        self.vocoder_model_time = 0
+
+    def new_encoder(self, pipe):
+        old_encoder = pipe.encoder.request
+
+        def new_encoder_model(*args, **kwargs):
+            t1 = time.time()
+            r = old_encoder(*args, **kwargs)
+            t2 = time.time()
+            encoder_time = t2 - t1
+            self.encoder_model_time += encoder_time
+            return r
+        pipe.encoder.request = new_encoder_model
+
+    def new_decoder(self, pipe):
+        old_decoder = pipe.decoder.request
+
+        def new_decoder_model(*args, **kwargs):
+            t1 = time.time()
+            r = old_decoder(*args, **kwargs)
+            t2 = time.time()
+            decoder_time = t2 - t1
+            self.decoder_model_time_list.append(decoder_time)
+            return r
+        pipe.decoder.request = new_decoder_model
+
+    def new_postnet(self, pipe):
+        old_postnet = pipe.postnet.request
+
+        def new_postnet_model(*args, **kwargs):
+            t1 = time.time()
+            r = old_postnet(*args, **kwargs)
+            t2 = time.time()
+            postnet_time = t2 - t1
+            self.postnet_model_time_list.append(postnet_time)
+            return r
+        pipe.postnet.request = new_postnet_model
+
+    def new_vocoder(self, pipe):
+        old_vocoder = pipe.vocoder.request
+
+        def new_vocoder_model(*args, **kwargs):
+            t1 = time.time()
+            r = old_vocoder(*args, **kwargs)
+            t2 = time.time()
+            vocoder_time = t2 - t1
+            self.vocoder_model_time += vocoder_time
+            return r
+        pipe.vocoder.request = new_vocoder_model
+
+    def print_tts_latency(self, iter_str, prompt_idx):
+        info = f'[{iter_str}][P{prompt_idx}] ' \
+               f'encoder duration: {self.encoder_model_time:.4f}ms; ' \
+               f'decoder duration: {sum(self.decoder_model_time_list):.4f}ms, iter num: {len(self.decoder_model_time_list)}, '
+        if len(self.decoder_model_time_list) > 1:
+            info += f'1st token latency: {self.decoder_model_time_list[0]:.4f}ms, ' \
+                    f'2nd token latency: {statistics.mean(self.decoder_model_time_list[1:]):.4f}ms; '
+        else:
+            info += f'latency: {statistics.mean(self.decoder_model_time_list):.4f}ms; '
+        info += f'postnet duration: {sum(self.postnet_model_time_list):.4f}ms, iter num: {len(self.postnet_model_time_list)}, ' \
+                f'latency: {statistics.mean(self.postnet_model_time_list):.4f}ms; ' \
+                f'vocoder duration: {self.vocoder_model_time:.4f}ms;'
+        return info
