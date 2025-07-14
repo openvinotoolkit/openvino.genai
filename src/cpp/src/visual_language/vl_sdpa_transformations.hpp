@@ -14,12 +14,12 @@ namespace genai {
 
 namespace utils {
 
-/** Applies transformations to the ov::Model to transform SDPA to VLSDPA.
+/** Requests transforming SDPA ov::Model to VLSDPA. It's up to a plugin to apply the transformation.
  * @param model Pointer to the ov::Model representing one of the supported VLM architectures.
  */
-void apply_vl_sdpa_transformations(std::shared_ptr<ov::Model> model);
+void request_vl_sdpa_transformations(std::shared_ptr<ov::Model> model);
 
-bool check_vl_sdpa_transformations(ov::CompiledModel& compiled_model);
+bool check_vl_sdpa_transformations(const ov::CompiledModel& compiled_model);
 
 }  // namespace utils
 }  // namespace genai
