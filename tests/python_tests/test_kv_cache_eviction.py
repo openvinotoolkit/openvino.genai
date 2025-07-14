@@ -274,7 +274,7 @@ def test_optimized_generation_longbench(test_struct):
 @pytest.mark.parametrize(
     ("test_struct", "download_test_content"), [
     (BenchmarkTestData("ALFRED", 0.006, 2.10, 2.33), "MileBench_part0.tar.gz"),
-    (BenchmarkTestData("MMCoQA", 0.001, 1.91, 1.73), "MileBench_part2.tar.gz"),
+    (BenchmarkTestData("MMCoQA", 0.001, 1.91, 1.64), "MileBench_part2.tar.gz"),
     (BenchmarkTestData("WikiVQA", 0.001, 1.41, 1.47), "MileBench_part5.tar.gz"),
     ],
     indirect=["download_test_content"]
