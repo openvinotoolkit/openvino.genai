@@ -111,7 +111,6 @@ def ov_hf_tokenizers(request):
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_encode(ov_hf_tokenizers, prompt):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
 
@@ -172,7 +171,6 @@ conversation = [
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("chat_config", get_chat_templates())
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_hf_tokenizers):
@@ -201,7 +199,6 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("ov_hf_tokenizers", ["CohereLabs/aya-23-8B"], indirect=True)
 def test_non_string_chat_template(ov_hf_tokenizers):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
@@ -219,7 +216,23 @@ def test_non_string_chat_template(ov_hf_tokenizers):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
+@pytest.mark.parametrize("ov_hf_tokenizers", ["CohereLabs/aya-23-8B"], indirect=True)
+def test_non_string_chat_template(ov_hf_tokenizers):
+    ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
+    
+    hf_full_history_str = hf_tokenizer.apply_chat_template(
+        conversation, add_generation_prompt=False, tokenize=False,
+    )
+
+    ov_full_history_str = ov_tokenizer.apply_chat_template(conversation, add_generation_prompt=False)
+
+    if ov_full_history_str != hf_full_history_str:
+        print(f"hf reference: {hf_full_history_str}")
+        print(f"ov_genai out: {ov_full_history_str}")
+    assert ov_full_history_str == hf_full_history_str
+
+
+@pytest.mark.precommit
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 def test_set_chat_template(ov_hf_tokenizers):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
@@ -269,7 +282,6 @@ unicode_prompts = [
     indirect=True,
 )
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
 def test_special_tokens(prompt, ov_hf_tokenizers):
     prompt = prompt.decode("unicode_escape") if isinstance(prompt, bytes) else prompt
@@ -302,7 +314,6 @@ def test_special_tokens(prompt, ov_hf_tokenizers):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_multiple_infer_request_state(tmp_path):
     hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained("llamafactory/tiny-random-Llama-3"))
     ov_tokenizer = convert_tokenizer(hf_tokenizer)
@@ -364,7 +375,6 @@ prompts = [
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("add_special_tokens", [True, False])
 @pytest.mark.parametrize("max_length", [None, 16, 103, 512, 1024])
 @pytest.mark.parametrize("pad_to_max_length", [None, True, False])
@@ -437,7 +447,6 @@ models_with_pair_input =[
 
 @pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("input_pair", [
     [["hi", "sun in yellow"]],
     [["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!"]],
@@ -455,7 +464,6 @@ def test_two_inputs_string_list_of_lists(hf_ov_genai_models, input_pair):
 
 @pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("input_pair", [
     [["Eng... test, string?!" * 100], ["Multiline\nstring!\nWow!"]],
     [["hi" * 20], ["buy" * 90]],
@@ -479,7 +487,6 @@ def test_two_inputs_string(hf_ov_genai_models, input_pair):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_load_special_tokens_from_config_json(model_tmp_path):
     # test when there is an available config.json
     config_json = {
@@ -494,7 +501,6 @@ def test_load_special_tokens_from_config_json(model_tmp_path):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_load_special_tokens_from_special_tokens_map_json(model_tmp_path):
     # test with special_tokens_map
     special_tokens_map_json = {
@@ -509,7 +515,6 @@ def test_load_special_tokens_from_special_tokens_map_json(model_tmp_path):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_load_special_tokens_from_tokenizer_config_json(model_tmp_path):
     # special_tokens_map is not available
     # but tokenize_config.json exists
@@ -536,7 +541,6 @@ def test_load_special_tokens_from_tokenizer_config_json(model_tmp_path):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_load_special_tokens_from_tokenizer_config_and_config_json(model_tmp_path):
     # both config.json is available and tokenizer_config.json available
     # check that it does not read int values from tokenizer_config.json if they are in config.json
@@ -568,7 +572,6 @@ def test_load_special_tokens_from_tokenizer_config_and_config_json(model_tmp_pat
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.xfail(
     raises=AssertionError,
     reason="CVS-143410 ov tokenizer should be aligned with hf",
@@ -652,7 +655,6 @@ PATCHED_SIMPLIFIED_QWEN3 = "{% for message in messages %}{% if loop.first and me
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_set_special_runtime_template(tmp_path):
     tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None, None))
     tokenizer.chat_template = QWEN2_VL_2B
@@ -660,7 +662,6 @@ def test_set_special_runtime_template(tmp_path):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "chat_templates",
     [
