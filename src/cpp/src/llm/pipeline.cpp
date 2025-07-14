@@ -79,6 +79,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    const bool user_specified_backend = user_properties.count("ATTENTION_BACKEND") > 0;
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (utils::explicitly_requires_paged_attention(user_properties)) {
@@ -97,6 +98,9 @@ ov::genai::LLMPipeline::LLMPipeline(
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties);
 #endif
         } catch (ov::Exception&) {
+            if (user_specified_backend) {
+                OPENVINO_THROW("PagedAttention backend failed to initialize.");
+            }
             // ignore exceptions from PA
         }
     }
@@ -116,6 +120,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    const bool user_specified_backend = user_properties.count("ATTENTION_BACKEND") > 0;
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (utils::explicitly_requires_paged_attention(user_properties)) {
@@ -134,7 +139,9 @@ ov::genai::LLMPipeline::LLMPipeline(
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, utils::get_latency_oriented_scheduler_config(), device, properties);
 #endif
         } catch (ov::Exception&) {
-            // ignore exceptions from PA
+            if (user_specified_backend) {
+                OPENVINO_THROW("PagedAttention backend failed to initialize.");
+            }
         }
     }
 
@@ -156,6 +163,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    const bool user_specified_backend = user_properties.count("ATTENTION_BACKEND") > 0;
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (utils::explicitly_requires_paged_attention(user_properties)) {
@@ -185,7 +193,9 @@ ov::genai::LLMPipeline::LLMPipeline(
                                                                   utils::get_latency_oriented_scheduler_config(), device, properties, generation_config);
 #endif
         } catch (ov::Exception&) {
-            // ignore exceptions from PA
+            if (user_specified_backend) {
+                OPENVINO_THROW("PagedAttention backend failed to initialize.");
+            }
         }
     }
 
