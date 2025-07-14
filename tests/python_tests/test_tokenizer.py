@@ -202,6 +202,24 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
 
 @pytest.mark.precommit
 @pytest.mark.nightly
+@pytest.mark.parametrize("ov_hf_tokenizers", ["CohereLabs/aya-23-8B"], indirect=True)
+def test_non_string_chat_template(ov_hf_tokenizers):
+    ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
+    
+    hf_full_history_str = hf_tokenizer.apply_chat_template(
+        conversation, add_generation_prompt=False, tokenize=False,
+    )
+
+    ov_full_history_str = ov_tokenizer.apply_chat_template(conversation, add_generation_prompt=False)
+
+    if ov_full_history_str != hf_full_history_str:
+        print(f"hf reference: {hf_full_history_str}")
+        print(f"ov_genai out: {ov_full_history_str}")
+    assert ov_full_history_str == hf_full_history_str
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 def test_set_chat_template(ov_hf_tokenizers):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
