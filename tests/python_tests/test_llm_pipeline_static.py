@@ -50,7 +50,6 @@ generation_configs = [
     get_greedy_with_penalties()
 ]
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
@@ -68,7 +67,6 @@ def test_generation_compare_with_stateful(generation_config, config, model_id):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("with_weights", blob_with_weights)
 @pytest.mark.parametrize("model_id", get_models_list())
@@ -104,7 +102,6 @@ def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("with_weights", blob_with_weights)
 @pytest.mark.parametrize("model_id", get_models_list())
@@ -149,7 +146,6 @@ generation_configs = [
     get_multinomial_temperature_and_presence_penalty()
 ]
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
@@ -167,7 +163,6 @@ def test_multinomial_sampling(generation_config, config, model_id):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_length_properties_set_no_exception(config, model_id):
@@ -188,7 +183,6 @@ length_configs = [
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_invalid_length_properties_raise_error(length_config, config, model_id):
     _, _, model_path = download_and_convert_model(model_id)
     length_config |= config
@@ -197,7 +191,6 @@ def test_invalid_length_properties_raise_error(length_config, config, model_id):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_batch_one_no_exception(config, model_id):
@@ -210,7 +203,6 @@ def test_batch_one_no_exception(config, model_id):
 
 # TODO: For the further batch support
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_batch_raise_error(config, model_id):
@@ -231,7 +223,6 @@ generation_configs = [
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_unsupported_sampling_raise_error(generation_config, config, model_id):
     _, _, model_path = download_and_convert_model(model_id)
     prompt = 'What is OpenVINO?'
@@ -242,7 +233,6 @@ def test_unsupported_sampling_raise_error(generation_config, config, model_id):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_terminate_by_max_number_of_tokens(config, model_id):
@@ -259,7 +249,6 @@ def test_terminate_by_max_number_of_tokens(config, model_id):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_terminate_by_out_of_memory(config, model_id):
@@ -280,7 +269,6 @@ def test_terminate_by_out_of_memory(config, model_id):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_terminate_by_sampler(config, model_id):
@@ -314,7 +302,6 @@ def test_terminate_by_sampler(config, model_id):
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_chat_generation(config, model_id):
     questions = [
         '1+1=',
