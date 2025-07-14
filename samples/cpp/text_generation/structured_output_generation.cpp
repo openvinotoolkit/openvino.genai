@@ -18,12 +18,46 @@ int main(int argc, char* argv[]) try {
     config.max_new_tokens = 1000;
     config.do_sample = false;
 
-    std::string json_chema = R"({"$defs": {"Step": {"properties": {"explanation": {"title": "Explanation", "type": "string"}, "output": {"title": "Output", "type": "string"}}, "required": ["explanation", "output"], "title": "Step", "type": "object"}}, "properties": {"steps": {"items": {"$ref": "#/$defs/Step"}, "title": "Steps", "type": "array"}, "final_answer": {"title": "Final Answer", "type": "string"}}, "required": ["steps", "final_answer"], "title": "MathReasoning", "type": "object"})";
+    std::string json_schema = R"({
+        "$defs": {
+            "Step": {
+                "properties": {
+                    "explanation": {
+                        "title": "Explanation",
+                        "type": "string"
+                    },
+                    "output": {
+                        "title": "Output",
+                        "type": "string"
+                    }
+                },
+                "required": ["explanation", "output"],
+                "title": "Step",
+                "type": "object"
+            }
+        },
+        "properties": {
+            "steps": {
+                "items": {
+                    "$ref": "#/$defs/Step"
+                },
+                "title": "Steps",
+                "type": "array"
+            },
+            "final_answer": {
+                "title": "Final Answer",
+                "type": "string"
+            }
+        },
+        "required": ["steps", "final_answer"],
+        "title": "MathReasoning",
+        "type": "object"
+    })";
     config.structured_output_config = ov::genai::StructuredOutputConfig(
-        ov::AnyMap{{ov::genai::json_schema(json_chema)}}
+        ov::AnyMap{{ov::genai::json_schema(json_schema)}}
     );
 
-    std::string sys_message = R"VOGON(
+    std::string sys_message = R"(
     Decompose the task and do it step by step and include it in a structured JSON.
     For every mathematical equation use the adequate mathematical method. Do not try to solve linear equations
     as a quadratic/cubic ones and vice versa.
@@ -36,7 +70,7 @@ int main(int argc, char* argv[]) try {
         {"explanation": "Finding the solutions for x.", "output": "x = 5 or x = -3"}
     ], "final_answer": "x = 5 or x = -3"}.
     "output" field should contain only mathematical notations without text.
-    )VOGON";
+    )";
     
     auto streamer = [](std::string word) {
         std::cout << word << std::flush;
