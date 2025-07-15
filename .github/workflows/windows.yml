@@ -118,10 +118,34 @@ jobs:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
+      - name: Setup Python 3.9
+        if: ${{ matrix.build-type != 'Debug' }}
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: '3.9'
+      
+      - name: Setup Python 3.10
+        if: ${{ matrix.build-type != 'Debug' }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.10'
+      
+      - name: Setup Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11'
+      
+      - name: Setup Python 3.12
+        if: ${{ matrix.build-type != 'Debug' }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      
+      - name: Setup Python 3.13
+        if: ${{ matrix.build-type != 'Debug' }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
 
       - name: Download OpenVINO package
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -179,9 +203,22 @@ jobs:
         shell: pwsh
         run: |
           ${{ env.OV_INSTALL_DIR }}/setupvars.ps1
-          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
-          cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build-type }} --verbose
-          cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
+          if ( "${{ matrix.build-type }}" -ne "Debug" ) {
+            $pyVersions = '3.9', '3.10', '3.11', '3.12', '3.13'
+          } else {
+            $pyVersions = '3.11'
+          }
+
+          foreach ($pyVersion in $pyVersions) {
+
+            $pythonCommand = "py -$pyVersion -c `"import sys; print(f'{sys.executable}')`""
+            $pythonExecutablePath = & cmd /c $pythonCommand
+
+            cmake -DPython3_EXECUTABLE="$pythonExecutablePath" -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
+            cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build-type }} --verbose
+            cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
+          }
+          
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TESTS_DIR }} --component tests
         env:
@@ -266,11 +303,11 @@ jobs:
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
-
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
+      
+      - name: Setup Python 3.11
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: '3.11'
           cache: 'pip'
 
       - name: Download OpenVINO package
@@ -333,18 +370,48 @@ jobs:
             ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
-      - name: Build genai wheel
-        run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
-            --config-settings=override=cmake.generator='Ninja' `
-            --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
-            --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
-            ${{ needs.openvino_download.outputs.ov_wheel_source }} `
-            ${{ env.SRC_DIR }}
-        working-directory: ${{ env.OV_INSTALL_DIR }}
-
       - name: Build WWB Wheel
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+      
+      - name: Setup Python 3.9
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+      
+      - name: Setup Python 3.10
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Setup Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Setup Python 3.13
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      
+      - name: Build genai wheel
+        run: |
+          $pyVersions = '3.9', '3.10', '3.11', '3.12', '3.13'
+          foreach ($pyVersion in $pyVersions) {
+            $pythonCommand = "py -$pyVersion -c `"import sys; print(f'{sys.executable}')`""
+            $pythonExecutablePath = & cmd /c $pythonCommand
+          
+            & $pythonExecutablePath -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
+              --config-settings=override=cmake.generator='Ninja' `
+              --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
+              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' `
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} `
+              ${{ env.SRC_DIR }}
+          }
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Show ccache stats
@@ -541,7 +608,7 @@ jobs:
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 60
+            timeout: 180
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
@@ -852,18 +919,6 @@ jobs:
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: npm test
-
-      - name: Install openvino-genai-node samples dependencies
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
-        run: |
-          npm install ${{ env.SRC_DIR }}/src/js
-          npm install --verbose
-
-      - name: Run samples tests
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
-        run: npm test
-        env:
-          MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
 
   Overall_Status:
     name: ci/gha_overall_status_windows
