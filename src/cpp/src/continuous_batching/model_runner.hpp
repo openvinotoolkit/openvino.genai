@@ -231,8 +231,9 @@ public:
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
                         if (have_token_type_ids) {
                             std::vector<int64_t> token_type_ids_vec  = sequence_group->get_token_type_ids();
-                            OPENVINO_ASSERT(token_type_ids_vec.size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
-                            OPENVINO_ASSERT(total_num_tokens >= prompt_len, "total_num_tokens must be >= prompt_len");
+                            // OPENVINO_ASSERT(token_type_ids_vec.size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
+                            // OPENVINO_ASSERT(total_num_tokens >= prompt_len, "total_num_tokens must be >= prompt_len");
+                            // No OPENVINO_ASSERT here because the 1st token inference and subsequent token inferences have different constraints
                             for (size_t i = 0; i < total_num_tokens; ++i) {
                                 token_type_ids_data[i] = (i < prompt_len ? token_type_ids_vec[i] : 0);
                             }
@@ -302,7 +303,8 @@ public:
         else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             m_request.set_tensor("inputs_embeds", inputs_embeds);
             if (have_token_type_ids) {
-                m_request.set_tensor("token_type_ids", token_type_ids); 
+                ov::Tensor reshaped_token_type_ids(token_type_ids.get_element_type(), {1, total_num_tokens}, token_type_ids.data());
+                m_request.set_tensor("token_type_ids", reshaped_token_type_ids); 
             }
         }
 
