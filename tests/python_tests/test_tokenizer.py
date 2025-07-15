@@ -199,7 +199,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("ov_hf_tokenizers", ["CohereLabs/aya-23-8B"], indirect=True)
+@pytest.mark.parametrize("ov_hf_tokenizers", ["hf-internal-testing/tiny-random-CohereForCausalLM"], indirect=True)
 def test_non_string_chat_template(ov_hf_tokenizers):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
     
