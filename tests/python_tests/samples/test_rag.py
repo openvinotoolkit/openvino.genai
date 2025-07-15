@@ -12,7 +12,7 @@ from test_utils import run_sample
 class TestTextEmbeddingPipeline:
     @pytest.mark.rag
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["BAAI_bge-small-en-v1.5"], indirect=True)
     def test_sample_text_embedding_pipeline(self, convert_model):
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "rag/text_embeddings.py")
@@ -37,7 +37,7 @@ class TestTextEmbeddingPipeline:
 class TestTextRerankPipeline:
     @pytest.mark.rag
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["cross-encoder/ms-marco-TinyBERT-L2-v2"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["cross-encoder_ms-marco-TinyBERT-L2-v2"], indirect=True)
     def test_sample_text_rerank_pipeline(self, convert_model):
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "rag/text_rerank.py")
