@@ -3,11 +3,11 @@
 
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 
-#include "debug_utils.hpp"
 #include "openvino/core/except.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/opsets/opset.hpp"
 #include "openvino/opsets/opset1.hpp"
+#include "openvino/opsets/opset8.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -23,14 +23,28 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
 }
 
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model) {
-    PartialShape shape = model->get_output_partial_shape(0);
-    OPENVINO_ASSERT(shape[1] == 1, "Expected model output shape to have 1 class, but got: ", shape.to_string());
+    PartialShape output_shape = model->get_output_partial_shape(0);
 
     ov::preprocess::PrePostProcessor processor(model);
 
-    processor.output().postprocess().custom([](const ov::Output<ov::Node>& node) {
-        return std::make_shared<op::v0::Sigmoid>(node);
-    });
+    processor.output().postprocess().custom(
+        [&output_shape](const ov::Output<ov::Node>& node) -> std::shared_ptr<ov::Node> {
+            if (output_shape[1] == 1) {
+                return std::make_shared<op::v0::Sigmoid>(node);
+            }
+
+            // apply softmax to the axis = 1
+            const auto softmax = std::make_shared<op::v8::Softmax>(node, 1);
+
+            // take first class score only
+            auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+            auto stop = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{2});
+            auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+            auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+
+            auto slice = std::make_shared<op::v8::Slice>(softmax, start, stop, step, axis);
+            return slice;
+        });
 
     return processor.build();
 }
@@ -86,14 +100,13 @@ public:
     std::vector<std::pair<size_t, float>> wait_rerank() {
         m_request.wait();
 
-        // sigmoid postrpocessing is applied to the logits output
+        // postprocessing applied to output, it's the scores tensor
         auto scores_tensor = m_request.get_tensor("logits");
         auto scores_tensor_shape = scores_tensor.get_shape();
         const size_t batch_size = scores_tensor_shape[0];
 
         auto scores_data = scores_tensor.data<float>();
 
-        // copy scores to results
         std::vector<std::pair<size_t, float>> results;
         results.reserve(batch_size);
 
@@ -111,7 +124,6 @@ public:
                               return a.second > b.second;
                           });
 
-        // return only the top_n elements
         if (top_n < results.size()) {
             results.resize(top_n);
         }
