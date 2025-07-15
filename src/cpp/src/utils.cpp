@@ -90,11 +90,11 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
     rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
-    rename_key(config, "TAIL_MM_CONFIG", "NPUW_LLM_TAIL_MM_CONFIG"); 
+    rename_key(config, "TAIL_MM_CONFIG", "NPUW_LLM_SHARED_HEAD_CONFIG"); 
     
     rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
-    rename_key(config, "++TAIL_MM_CONFIG", "++NPUW_LLM_TAIL_MM_CONFIG");
+    rename_key(config, "++TAIL_MM_CONFIG", "++NPUW_LLM_SHARED_HEAD_CONFIG");
 }
 
 inline bool is_paged_attention_available() {

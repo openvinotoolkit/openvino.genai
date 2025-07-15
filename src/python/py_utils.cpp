@@ -77,13 +77,13 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         "TAIL_MM_CONFIG",
         "NPUW_LLM_GENERATE_CONFIG",
         "NPUW_LLM_PREFILL_CONFIG",
-        "NPUW_LLM_TAIL_MM_CONFIG",
+        "NPUW_LLM_SHARED_HEAD_CONFIG",
         "++GENERATE_CONFIG",
         "++PREFILL_CONFIG",
         "++TAIL_MM_CONFIG",
         "++NPUW_LLM_GENERATE_CONFIG",
         "++NPUW_LLM_PREFILL_CONFIG",
-        "++NPUW_LLM_TAIL_MM_CONFIG"
+        "++NPUW_LLM_SHARED_HEAD_CONFIG"
     };
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");
