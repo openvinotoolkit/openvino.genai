@@ -63,6 +63,7 @@ endif()
 
 include(cmake/features.cmake)
 include(cmake/version.cmake)
+include(cmake/vs_version.cmake)
 
 if(ENABLE_PYTHON)
     # the following two calls are required for cross-compilation
