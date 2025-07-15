@@ -447,11 +447,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     GenerationHandle& generation = generations.at(0);
 
     streamer_ptr->start();
-
+    m_sampler->clear_structured_output_compile_times();
     while (has_non_finished_requests()) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
+            
             // During prefill step (or steps if max_batch_size < prompt_len) we don't generate new tokens,
             // but still inference took place, so we need to add this time to the total inference duration.
             raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
@@ -468,6 +469,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             std::rethrow_exception(std::current_exception());
         }
         stream_tokens(streamer_ptr, generation);
+    }
+
+    auto times = m_sampler->get_structured_output_times();
+    perf_metrics.grammar_compiler_init_times = times.first;
+    for (const auto& t: times.second) {
+        raw_perf_counters.m_grammar_compile_times.emplace_back(t);
     }
 
     // waiting for competion of streaming

@@ -134,7 +134,6 @@ def get_image_by_link(link):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_pipeline(model_id, backend):
@@ -171,7 +170,6 @@ configs = [
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", configs)
 def test_vlm_continuous_batching_generate_vs_add_request(config):
     scheduler_config = SchedulerConfig()
@@ -226,7 +224,6 @@ def test_vlm_continuous_batching_generate_vs_add_request(config):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", configs)
 def test_vlm_continuous_batching_vs_stateful(config):
     scheduler_config = SchedulerConfig()
@@ -275,7 +272,6 @@ def test_vlm_continuous_batching_vs_stateful(config):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 @pytest.mark.parametrize(
@@ -347,7 +343,6 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_get_tokenizer(cache, backend):
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
@@ -357,7 +352,6 @@ def test_vlm_get_tokenizer(cache, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "config",
     [
@@ -374,7 +368,6 @@ def test_sampling(config, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("backend", attention_backend)
 def test_perf_metrics(cache, backend):
     import numpy as np
@@ -441,7 +434,6 @@ def test_perf_metrics(cache, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
 @pytest.mark.skipif(
@@ -478,7 +470,6 @@ def test_vlm_npu_no_exception(model_id, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
@@ -555,7 +546,6 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
@@ -681,7 +671,6 @@ def model_and_tag(request):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 class TestImageTags:
     @pytest.mark.parametrize(
         "model_and_tag, model_id",
@@ -850,7 +839,6 @@ class TestImageTags:
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "model_id, image_link, target_size, backend",
     [
