@@ -339,8 +339,6 @@ ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_im
         ptr[n] = cu_seqlens[n];
     }
     return t_cu_seqlens;
-
-    // return ov::Tensor(ov::element::i32, {cu_seqlens.size()}, cu_seqlens.data());
 }
 
 ov::Tensor concatenate_image_embeds(const std::vector<ov::Tensor>& reordered_image_embeds) {
