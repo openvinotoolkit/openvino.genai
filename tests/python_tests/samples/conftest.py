@@ -115,11 +115,11 @@ MODELS = {
         "name": "katuni4ka/tiny-random-llava",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     },
-    "BAAI_bge-small-en-v1.5": {
+    "bge-small-en-v1.5": {
         "name": "BAAI/bge-small-en-v1.5",
         "convert_args": ['--trust-remote-code']
     },
-    "cross-encoder_ms-marco-TinyBERT-L2-v2": {
+    "ms-marco-TinyBERT-L2-v2": {
         "name": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "convert_args": ['--trust-remote-code']
     },

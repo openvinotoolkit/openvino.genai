@@ -18,8 +18,8 @@ EMBEDDINGS_TEST_MODELS = [
 ]
 
 RERANK_TEST_MODELS = [
-    "answerdotai/ModernBERT-base",  # 2 classes output, softmax applied
     "cross-encoder/ms-marco-TinyBERT-L2-v2",  # sigmoid applied
+    # "answerdotai/ModernBERT-base",  # 2 classes output, softmax applied. Skip until llamaindex OpenVINORerank support fixed.
 ]
 
 TEXT_DATASET = f"The commercial PC market is propelled by premium\
