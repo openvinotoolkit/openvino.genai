@@ -3,16 +3,18 @@
 
 #include "openvino/genai/c/whisper_generation_config.h"
 
+#include <filesystem>
+
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "types_c.h"
-#include <filesystem>
 
 ov_status_e ov_genai_whisper_generation_config_create(ov_genai_whisper_generation_config** config) {
     if (!config) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        std::unique_ptr<ov_genai_whisper_generation_config> _config = std::make_unique<ov_genai_whisper_generation_config>();
+        std::unique_ptr<ov_genai_whisper_generation_config> _config =
+            std::make_unique<ov_genai_whisper_generation_config>();
         _config->object = std::make_shared<ov::genai::WhisperGenerationConfig>();
         // Set reasonable defaults for C API to avoid integer underflow
         _config->object->max_length = 448;  // Default from whisper-tiny model
@@ -24,12 +26,13 @@ ov_status_e ov_genai_whisper_generation_config_create(ov_genai_whisper_generatio
 }
 
 ov_status_e ov_genai_whisper_generation_config_create_from_json(const char* json_path,
-                                                               ov_genai_whisper_generation_config** config) {
+                                                                ov_genai_whisper_generation_config** config) {
     if (!config || !json_path) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        std::unique_ptr<ov_genai_whisper_generation_config> _config = std::make_unique<ov_genai_whisper_generation_config>();
+        std::unique_ptr<ov_genai_whisper_generation_config> _config =
+            std::make_unique<ov_genai_whisper_generation_config>();
         _config->object = std::make_shared<ov::genai::WhisperGenerationConfig>(std::filesystem::path(json_path));
         *config = _config.release();
     } catch (...) {
@@ -45,7 +48,7 @@ void ov_genai_whisper_generation_config_free(ov_genai_whisper_generation_config*
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_generation_config(const ov_genai_whisper_generation_config* config,
-                                                                    ov_genai_generation_config** generation_config) {
+                                                                     ov_genai_generation_config** generation_config) {
     if (!config || !(config->object) || !generation_config) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -60,7 +63,7 @@ ov_status_e ov_genai_whisper_generation_config_get_generation_config(const ov_ge
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_decoder_start_token_id(ov_genai_whisper_generation_config* config,
-                                                                         int64_t token_id) {
+                                                                          int64_t token_id) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -72,8 +75,9 @@ ov_status_e ov_genai_whisper_generation_config_set_decoder_start_token_id(ov_gen
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_whisper_generation_config_get_decoder_start_token_id(const ov_genai_whisper_generation_config* config,
-                                                                         int64_t* token_id) {
+ov_status_e ov_genai_whisper_generation_config_get_decoder_start_token_id(
+    const ov_genai_whisper_generation_config* config,
+    int64_t* token_id) {
     if (!config || !(config->object) || !token_id) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -86,7 +90,7 @@ ov_status_e ov_genai_whisper_generation_config_get_decoder_start_token_id(const 
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_pad_token_id(ov_genai_whisper_generation_config* config,
-                                                               int64_t token_id) {
+                                                                int64_t token_id) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -99,7 +103,7 @@ ov_status_e ov_genai_whisper_generation_config_set_pad_token_id(ov_genai_whisper
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_pad_token_id(const ov_genai_whisper_generation_config* config,
-                                                               int64_t* token_id) {
+                                                                int64_t* token_id) {
     if (!config || !(config->object) || !token_id) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -112,7 +116,7 @@ ov_status_e ov_genai_whisper_generation_config_get_pad_token_id(const ov_genai_w
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_translate_token_id(ov_genai_whisper_generation_config* config,
-                                                                     int64_t token_id) {
+                                                                      int64_t token_id) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -125,7 +129,7 @@ ov_status_e ov_genai_whisper_generation_config_set_translate_token_id(ov_genai_w
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_translate_token_id(const ov_genai_whisper_generation_config* config,
-                                                                     int64_t* token_id) {
+                                                                      int64_t* token_id) {
     if (!config || !(config->object) || !token_id) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -138,7 +142,7 @@ ov_status_e ov_genai_whisper_generation_config_get_translate_token_id(const ov_g
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_transcribe_token_id(ov_genai_whisper_generation_config* config,
-                                                                      int64_t token_id) {
+                                                                       int64_t token_id) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -151,7 +155,7 @@ ov_status_e ov_genai_whisper_generation_config_set_transcribe_token_id(ov_genai_
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_transcribe_token_id(const ov_genai_whisper_generation_config* config,
-                                                                      int64_t* token_id) {
+                                                                       int64_t* token_id) {
     if (!config || !(config->object) || !token_id) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -164,7 +168,7 @@ ov_status_e ov_genai_whisper_generation_config_get_transcribe_token_id(const ov_
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_prev_sot_token_id(ov_genai_whisper_generation_config* config,
-                                                                    int64_t token_id) {
+                                                                     int64_t token_id) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -177,7 +181,7 @@ ov_status_e ov_genai_whisper_generation_config_set_prev_sot_token_id(ov_genai_wh
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_prev_sot_token_id(const ov_genai_whisper_generation_config* config,
-                                                                    int64_t* token_id) {
+                                                                     int64_t* token_id) {
     if (!config || !(config->object) || !token_id) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -190,7 +194,7 @@ ov_status_e ov_genai_whisper_generation_config_get_prev_sot_token_id(const ov_ge
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_no_timestamps_token_id(ov_genai_whisper_generation_config* config,
-                                                                         int64_t token_id) {
+                                                                          int64_t token_id) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -202,8 +206,9 @@ ov_status_e ov_genai_whisper_generation_config_set_no_timestamps_token_id(ov_gen
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_whisper_generation_config_get_no_timestamps_token_id(const ov_genai_whisper_generation_config* config,
-                                                                         int64_t* token_id) {
+ov_status_e ov_genai_whisper_generation_config_get_no_timestamps_token_id(
+    const ov_genai_whisper_generation_config* config,
+    int64_t* token_id) {
     if (!config || !(config->object) || !token_id) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -215,8 +220,9 @@ ov_status_e ov_genai_whisper_generation_config_get_no_timestamps_token_id(const 
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_whisper_generation_config_set_max_initial_timestamp_index(ov_genai_whisper_generation_config* config,
-                                                                              size_t index) {
+ov_status_e ov_genai_whisper_generation_config_set_max_initial_timestamp_index(
+    ov_genai_whisper_generation_config* config,
+    size_t index) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -228,8 +234,9 @@ ov_status_e ov_genai_whisper_generation_config_set_max_initial_timestamp_index(o
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_whisper_generation_config_get_max_initial_timestamp_index(const ov_genai_whisper_generation_config* config,
-                                                                              size_t* index) {
+ov_status_e ov_genai_whisper_generation_config_get_max_initial_timestamp_index(
+    const ov_genai_whisper_generation_config* config,
+    size_t* index) {
     if (!config || !(config->object) || !index) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -242,7 +249,7 @@ ov_status_e ov_genai_whisper_generation_config_get_max_initial_timestamp_index(c
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_is_multilingual(ov_genai_whisper_generation_config* config,
-                                                                  bool is_multilingual) {
+                                                                   bool is_multilingual) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -255,7 +262,7 @@ ov_status_e ov_genai_whisper_generation_config_set_is_multilingual(ov_genai_whis
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_is_multilingual(const ov_genai_whisper_generation_config* config,
-                                                                  bool* is_multilingual) {
+                                                                   bool* is_multilingual) {
     if (!config || !(config->object) || !is_multilingual) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -268,7 +275,7 @@ ov_status_e ov_genai_whisper_generation_config_get_is_multilingual(const ov_gena
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_language(ov_genai_whisper_generation_config* config,
-                                                           const char* language) {
+                                                            const char* language) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -285,8 +292,8 @@ ov_status_e ov_genai_whisper_generation_config_set_language(ov_genai_whisper_gen
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_language(const ov_genai_whisper_generation_config* config,
-                                                           char* language,
-                                                           size_t* language_size) {
+                                                            char* language,
+                                                            size_t* language_size) {
     if (!config || !(config->object) || !language_size) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -294,7 +301,7 @@ ov_status_e ov_genai_whisper_generation_config_get_language(const ov_genai_whisp
         if (!config->object->language.has_value()) {
             return ov_status_e::NOT_FOUND;
         }
-        
+
         const std::string& str = config->object->language.value();
         if (!language) {
             *language_size = str.length() + 1;
@@ -312,8 +319,7 @@ ov_status_e ov_genai_whisper_generation_config_get_language(const ov_genai_whisp
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_whisper_generation_config_set_task(ov_genai_whisper_generation_config* config,
-                                                       const char* task) {
+ov_status_e ov_genai_whisper_generation_config_set_task(ov_genai_whisper_generation_config* config, const char* task) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -330,8 +336,8 @@ ov_status_e ov_genai_whisper_generation_config_set_task(ov_genai_whisper_generat
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_task(const ov_genai_whisper_generation_config* config,
-                                                       char* task,
-                                                       size_t* task_size) {
+                                                        char* task,
+                                                        size_t* task_size) {
     if (!config || !(config->object) || !task_size) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -339,7 +345,7 @@ ov_status_e ov_genai_whisper_generation_config_get_task(const ov_genai_whisper_g
         if (!config->object->task.has_value()) {
             return ov_status_e::NOT_FOUND;
         }
-        
+
         const std::string& str = config->object->task.value();
         if (!task) {
             *task_size = str.length() + 1;
@@ -358,7 +364,7 @@ ov_status_e ov_genai_whisper_generation_config_get_task(const ov_genai_whisper_g
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_return_timestamps(ov_genai_whisper_generation_config* config,
-                                                                    bool return_timestamps) {
+                                                                     bool return_timestamps) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -371,7 +377,7 @@ ov_status_e ov_genai_whisper_generation_config_set_return_timestamps(ov_genai_wh
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_return_timestamps(const ov_genai_whisper_generation_config* config,
-                                                                    bool* return_timestamps) {
+                                                                     bool* return_timestamps) {
     if (!config || !(config->object) || !return_timestamps) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -384,7 +390,7 @@ ov_status_e ov_genai_whisper_generation_config_get_return_timestamps(const ov_ge
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_initial_prompt(ov_genai_whisper_generation_config* config,
-                                                                 const char* initial_prompt) {
+                                                                  const char* initial_prompt) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -401,8 +407,8 @@ ov_status_e ov_genai_whisper_generation_config_set_initial_prompt(ov_genai_whisp
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_initial_prompt(const ov_genai_whisper_generation_config* config,
-                                                                 char* initial_prompt,
-                                                                 size_t* prompt_size) {
+                                                                  char* initial_prompt,
+                                                                  size_t* prompt_size) {
     if (!config || !(config->object) || !prompt_size) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -410,7 +416,7 @@ ov_status_e ov_genai_whisper_generation_config_get_initial_prompt(const ov_genai
         if (!config->object->initial_prompt.has_value()) {
             return ov_status_e::NOT_FOUND;
         }
-        
+
         const std::string& str = config->object->initial_prompt.value();
         if (!initial_prompt) {
             *prompt_size = str.length() + 1;
@@ -429,7 +435,7 @@ ov_status_e ov_genai_whisper_generation_config_get_initial_prompt(const ov_genai
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_hotwords(ov_genai_whisper_generation_config* config,
-                                                           const char* hotwords) {
+                                                            const char* hotwords) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -446,8 +452,8 @@ ov_status_e ov_genai_whisper_generation_config_set_hotwords(ov_genai_whisper_gen
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_hotwords(const ov_genai_whisper_generation_config* config,
-                                                           char* hotwords,
-                                                           size_t* hotwords_size) {
+                                                            char* hotwords,
+                                                            size_t* hotwords_size) {
     if (!config || !(config->object) || !hotwords_size) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -455,7 +461,7 @@ ov_status_e ov_genai_whisper_generation_config_get_hotwords(const ov_genai_whisp
         if (!config->object->hotwords.has_value()) {
             return ov_status_e::NOT_FOUND;
         }
-        
+
         const std::string& str = config->object->hotwords.value();
         if (!hotwords) {
             *hotwords_size = str.length() + 1;
@@ -474,8 +480,8 @@ ov_status_e ov_genai_whisper_generation_config_get_hotwords(const ov_genai_whisp
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_begin_suppress_tokens(ov_genai_whisper_generation_config* config,
-                                                                        const int64_t* tokens,
-                                                                        size_t tokens_count) {
+                                                                         const int64_t* tokens,
+                                                                         size_t tokens_count) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -490,8 +496,9 @@ ov_status_e ov_genai_whisper_generation_config_set_begin_suppress_tokens(ov_gena
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens_count(const ov_genai_whisper_generation_config* config,
-                                                                              size_t* tokens_count) {
+ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens_count(
+    const ov_genai_whisper_generation_config* config,
+    size_t* tokens_count) {
     if (!config || !(config->object) || !tokens_count) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -503,9 +510,10 @@ ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens_count(c
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens(const ov_genai_whisper_generation_config* config,
-                                                                        int64_t* tokens,
-                                                                        size_t tokens_count) {
+ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens(
+    const ov_genai_whisper_generation_config* config,
+    int64_t* tokens,
+    size_t tokens_count) {
     if (!config || !(config->object) || !tokens) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -513,9 +521,7 @@ ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens(const o
         if (tokens_count < config->object->begin_suppress_tokens.size()) {
             return ov_status_e::OUT_OF_BOUNDS;
         }
-        std::copy(config->object->begin_suppress_tokens.begin(),
-                  config->object->begin_suppress_tokens.end(),
-                  tokens);
+        std::copy(config->object->begin_suppress_tokens.begin(), config->object->begin_suppress_tokens.end(), tokens);
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -523,8 +529,8 @@ ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens(const o
 }
 
 ov_status_e ov_genai_whisper_generation_config_set_suppress_tokens(ov_genai_whisper_generation_config* config,
-                                                                  const int64_t* tokens,
-                                                                  size_t tokens_count) {
+                                                                   const int64_t* tokens,
+                                                                   size_t tokens_count) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -539,8 +545,9 @@ ov_status_e ov_genai_whisper_generation_config_set_suppress_tokens(ov_genai_whis
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_whisper_generation_config_get_suppress_tokens_count(const ov_genai_whisper_generation_config* config,
-                                                                        size_t* tokens_count) {
+ov_status_e ov_genai_whisper_generation_config_get_suppress_tokens_count(
+    const ov_genai_whisper_generation_config* config,
+    size_t* tokens_count) {
     if (!config || !(config->object) || !tokens_count) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -553,8 +560,8 @@ ov_status_e ov_genai_whisper_generation_config_get_suppress_tokens_count(const o
 }
 
 ov_status_e ov_genai_whisper_generation_config_get_suppress_tokens(const ov_genai_whisper_generation_config* config,
-                                                                  int64_t* tokens,
-                                                                  size_t tokens_count) {
+                                                                   int64_t* tokens,
+                                                                   size_t tokens_count) {
     if (!config || !(config->object) || !tokens) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -562,9 +569,7 @@ ov_status_e ov_genai_whisper_generation_config_get_suppress_tokens(const ov_gena
         if (tokens_count < config->object->suppress_tokens.size()) {
             return ov_status_e::OUT_OF_BOUNDS;
         }
-        std::copy(config->object->suppress_tokens.begin(),
-                  config->object->suppress_tokens.end(),
-                  tokens);
+        std::copy(config->object->suppress_tokens.begin(), config->object->suppress_tokens.end(), tokens);
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }

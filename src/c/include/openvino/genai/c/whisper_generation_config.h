@@ -3,7 +3,8 @@
 //
 
 /**
- * @brief This is a header file for OpenVINO GenAI C API, which is a C wrapper for  ov::genai::WhisperGenerationConfig class.
+ * @brief This is a header file for OpenVINO GenAI C API, which is a C wrapper for  ov::genai::WhisperGenerationConfig
+ * class.
  *
  * @file whisper_generation_config.h
  */
@@ -29,7 +30,8 @@ typedef struct ov_genai_whisper_generation_config_opaque ov_genai_whisper_genera
  * @param config A pointer to the newly created ov_genai_whisper_generation_config.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_create(ov_genai_whisper_generation_config** config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_create(ov_genai_whisper_generation_config** config);
 
 /**
  * @brief Create ov_genai_whisper_generation_config from JSON file.
@@ -37,8 +39,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_create(o
  * @param config A pointer to the newly created ov_genai_whisper_generation_config.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_create_from_json(const char* json_path,
-                                                                                         ov_genai_whisper_generation_config** config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_create_from_json(const char* json_path, ov_genai_whisper_generation_config** config);
 
 /**
  * @brief Release the memory allocated by ov_genai_whisper_generation_config.
@@ -52,8 +54,9 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_whisper_generation_config_free(ov_genai_w
  * @param generation_config A pointer to the newly created ov_genai_generation_config.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_generation_config(const ov_genai_whisper_generation_config* config,
-                                                                                              ov_genai_generation_config** generation_config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_generation_config(const ov_genai_whisper_generation_config* config,
+                                                         ov_genai_generation_config** generation_config);
 
 /**
  * @brief Set the decoder start token id.
@@ -61,8 +64,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_gene
  * @param token_id The decoder start token id (default: 50258).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_decoder_start_token_id(ov_genai_whisper_generation_config* config,
-                                                                                                   int64_t token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_decoder_start_token_id(ov_genai_whisper_generation_config* config,
+                                                              int64_t token_id);
 
 /**
  * @brief Get the decoder start token id.
@@ -70,8 +74,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_deco
  * @param token_id A pointer to the decoder start token id.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_decoder_start_token_id(const ov_genai_whisper_generation_config* config,
-                                                                                                   int64_t* token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_decoder_start_token_id(const ov_genai_whisper_generation_config* config,
+                                                              int64_t* token_id);
 
 /**
  * @brief Set the padding token id.
@@ -79,8 +84,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_deco
  * @param token_id The padding token id (default: 50257).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_pad_token_id(ov_genai_whisper_generation_config* config,
-                                                                                         int64_t token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_pad_token_id(ov_genai_whisper_generation_config* config, int64_t token_id);
 
 /**
  * @brief Get the padding token id.
@@ -88,8 +93,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_pad_
  * @param token_id A pointer to the padding token id.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_pad_token_id(const ov_genai_whisper_generation_config* config,
-                                                                                         int64_t* token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_pad_token_id(const ov_genai_whisper_generation_config* config,
+                                                    int64_t* token_id);
 
 /**
  * @brief Set the translate token id.
@@ -97,8 +103,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_pad_
  * @param token_id The translate token id (default: 50358).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_translate_token_id(ov_genai_whisper_generation_config* config,
-                                                                                               int64_t token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_translate_token_id(ov_genai_whisper_generation_config* config, int64_t token_id);
 
 /**
  * @brief Get the translate token id.
@@ -106,8 +112,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_tran
  * @param token_id A pointer to the translate token id.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_translate_token_id(const ov_genai_whisper_generation_config* config,
-                                                                                               int64_t* token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_translate_token_id(const ov_genai_whisper_generation_config* config,
+                                                          int64_t* token_id);
 
 /**
  * @brief Set the transcribe token id.
@@ -115,8 +122,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_tran
  * @param token_id The transcribe token id (default: 50359).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_transcribe_token_id(ov_genai_whisper_generation_config* config,
-                                                                                                int64_t token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_transcribe_token_id(ov_genai_whisper_generation_config* config,
+                                                           int64_t token_id);
 
 /**
  * @brief Get the transcribe token id.
@@ -124,8 +132,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_tran
  * @param token_id A pointer to the transcribe token id.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_transcribe_token_id(const ov_genai_whisper_generation_config* config,
-                                                                                                int64_t* token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_transcribe_token_id(const ov_genai_whisper_generation_config* config,
+                                                           int64_t* token_id);
 
 /**
  * @brief Set the previous start of transcript token id.
@@ -133,8 +142,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_tran
  * @param token_id The previous start of transcript token id (default: 50361).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_prev_sot_token_id(ov_genai_whisper_generation_config* config,
-                                                                                              int64_t token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_prev_sot_token_id(ov_genai_whisper_generation_config* config, int64_t token_id);
 
 /**
  * @brief Get the previous start of transcript token id.
@@ -142,8 +151,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_prev
  * @param token_id A pointer to the previous start of transcript token id.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_prev_sot_token_id(const ov_genai_whisper_generation_config* config,
-                                                                                              int64_t* token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_prev_sot_token_id(const ov_genai_whisper_generation_config* config,
+                                                         int64_t* token_id);
 
 /**
  * @brief Set the no timestamps token id.
@@ -151,8 +161,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_prev
  * @param token_id The no timestamps token id (default: 50363).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_no_timestamps_token_id(ov_genai_whisper_generation_config* config,
-                                                                                                   int64_t token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_no_timestamps_token_id(ov_genai_whisper_generation_config* config,
+                                                              int64_t token_id);
 
 /**
  * @brief Get the no timestamps token id.
@@ -160,8 +171,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_no_t
  * @param token_id A pointer to the no timestamps token id.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_no_timestamps_token_id(const ov_genai_whisper_generation_config* config,
-                                                                                                   int64_t* token_id);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_no_timestamps_token_id(const ov_genai_whisper_generation_config* config,
+                                                              int64_t* token_id);
 
 /**
  * @brief Set the maximum initial timestamp index.
@@ -169,8 +181,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_no_t
  * @param index The maximum initial timestamp index (default: 50).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_max_initial_timestamp_index(ov_genai_whisper_generation_config* config,
-                                                                                                        size_t index);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_max_initial_timestamp_index(ov_genai_whisper_generation_config* config,
+                                                                   size_t index);
 
 /**
  * @brief Get the maximum initial timestamp index.
@@ -178,8 +191,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_max_
  * @param index A pointer to the maximum initial timestamp index.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_max_initial_timestamp_index(const ov_genai_whisper_generation_config* config,
-                                                                                                        size_t* index);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_max_initial_timestamp_index(const ov_genai_whisper_generation_config* config,
+                                                                   size_t* index);
 
 /**
  * @brief Set whether the model is multilingual.
@@ -187,8 +201,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_max_
  * @param is_multilingual True if the model is multilingual (default: true).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_is_multilingual(ov_genai_whisper_generation_config* config,
-                                                                                            bool is_multilingual);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_is_multilingual(ov_genai_whisper_generation_config* config,
+                                                       bool is_multilingual);
 
 /**
  * @brief Get whether the model is multilingual.
@@ -196,8 +211,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_is_m
  * @param is_multilingual A pointer to the multilingual flag.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_is_multilingual(const ov_genai_whisper_generation_config* config,
-                                                                                            bool* is_multilingual);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_is_multilingual(const ov_genai_whisper_generation_config* config,
+                                                       bool* is_multilingual);
 
 /**
  * @brief Set the language for generation.
@@ -205,8 +221,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_is_m
  * @param language The language token (e.g., "en", "fr", "de"). Can be NULL to unset.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_language(ov_genai_whisper_generation_config* config,
-                                                                                     const char* language);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_language(ov_genai_whisper_generation_config* config, const char* language);
 
 /**
  * @brief Get the language for generation.
@@ -219,9 +235,10 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_lang
  * will return OUT_OF_BOUNDS(-6).
  * @return ov_status_e A status code, return OK(0) if successful. NOT_FOUND(-5) if language is not set.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_language(const ov_genai_whisper_generation_config* config,
-                                                                                     char* language,
-                                                                                     size_t* language_size);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_language(const ov_genai_whisper_generation_config* config,
+                                                char* language,
+                                                size_t* language_size);
 
 /**
  * @brief Set the task for generation.
@@ -229,8 +246,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_lang
  * @param task The task ("translate" or "transcribe"). Can be NULL to unset.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_task(ov_genai_whisper_generation_config* config,
-                                                                                 const char* task);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_task(ov_genai_whisper_generation_config* config, const char* task);
 
 /**
  * @brief Get the task for generation.
@@ -243,9 +260,10 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_task
  * will return OUT_OF_BOUNDS(-6).
  * @return ov_status_e A status code, return OK(0) if successful. NOT_FOUND(-5) if task is not set.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_task(const ov_genai_whisper_generation_config* config,
-                                                                                 char* task,
-                                                                                 size_t* task_size);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_task(const ov_genai_whisper_generation_config* config,
+                                            char* task,
+                                            size_t* task_size);
 
 /**
  * @brief Set whether to return timestamps.
@@ -253,8 +271,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_task
  * @param return_timestamps True to return timestamps for segments (default: false).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_return_timestamps(ov_genai_whisper_generation_config* config,
-                                                                                              bool return_timestamps);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_return_timestamps(ov_genai_whisper_generation_config* config,
+                                                         bool return_timestamps);
 
 /**
  * @brief Get whether to return timestamps.
@@ -262,8 +281,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_retu
  * @param return_timestamps A pointer to the return timestamps flag.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_return_timestamps(const ov_genai_whisper_generation_config* config,
-                                                                                              bool* return_timestamps);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_return_timestamps(const ov_genai_whisper_generation_config* config,
+                                                         bool* return_timestamps);
 
 /**
  * @brief Set the initial prompt for generation.
@@ -271,8 +291,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_retu
  * @param initial_prompt The initial prompt text. Can be NULL to unset.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_initial_prompt(ov_genai_whisper_generation_config* config,
-                                                                                           const char* initial_prompt);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_initial_prompt(ov_genai_whisper_generation_config* config,
+                                                      const char* initial_prompt);
 
 /**
  * @brief Get the initial prompt for generation.
@@ -285,9 +306,10 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_init
  * will return OUT_OF_BOUNDS(-6).
  * @return ov_status_e A status code, return OK(0) if successful. NOT_FOUND(-5) if initial prompt is not set.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_initial_prompt(const ov_genai_whisper_generation_config* config,
-                                                                                           char* initial_prompt,
-                                                                                           size_t* prompt_size);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_initial_prompt(const ov_genai_whisper_generation_config* config,
+                                                      char* initial_prompt,
+                                                      size_t* prompt_size);
 
 /**
  * @brief Set the hotwords for generation.
@@ -295,8 +317,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_init
  * @param hotwords The hotwords text. Can be NULL to unset.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_hotwords(ov_genai_whisper_generation_config* config,
-                                                                                     const char* hotwords);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_hotwords(ov_genai_whisper_generation_config* config, const char* hotwords);
 
 /**
  * @brief Get the hotwords for generation.
@@ -309,9 +331,10 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_hotw
  * will return OUT_OF_BOUNDS(-6).
  * @return ov_status_e A status code, return OK(0) if successful. NOT_FOUND(-5) if hotwords is not set.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_hotwords(const ov_genai_whisper_generation_config* config,
-                                                                                     char* hotwords,
-                                                                                     size_t* hotwords_size);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_hotwords(const ov_genai_whisper_generation_config* config,
+                                                char* hotwords,
+                                                size_t* hotwords_size);
 
 /**
  * @brief Set the begin suppress tokens.
@@ -320,9 +343,10 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_hotw
  * @param tokens_count The number of tokens in the array.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_begin_suppress_tokens(ov_genai_whisper_generation_config* config,
-                                                                                                  const int64_t* tokens,
-                                                                                                  size_t tokens_count);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_begin_suppress_tokens(ov_genai_whisper_generation_config* config,
+                                                             const int64_t* tokens,
+                                                             size_t tokens_count);
 
 /**
  * @brief Get the begin suppress tokens count.
@@ -330,8 +354,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_begi
  * @param tokens_count A pointer to the number of begin suppress tokens.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens_count(const ov_genai_whisper_generation_config* config,
-                                                                                                        size_t* tokens_count);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_begin_suppress_tokens_count(const ov_genai_whisper_generation_config* config,
+                                                                   size_t* tokens_count);
 
 /**
  * @brief Get the begin suppress tokens.
@@ -341,9 +366,10 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_begi
  * @param tokens_count The size of the tokens array.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_begin_suppress_tokens(const ov_genai_whisper_generation_config* config,
-                                                                                                  int64_t* tokens,
-                                                                                                  size_t tokens_count);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_begin_suppress_tokens(const ov_genai_whisper_generation_config* config,
+                                                             int64_t* tokens,
+                                                             size_t tokens_count);
 
 /**
  * @brief Set the suppress tokens.
@@ -352,9 +378,10 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_begi
  * @param tokens_count The number of tokens in the array.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_suppress_tokens(ov_genai_whisper_generation_config* config,
-                                                                                            const int64_t* tokens,
-                                                                                            size_t tokens_count);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_set_suppress_tokens(ov_genai_whisper_generation_config* config,
+                                                       const int64_t* tokens,
+                                                       size_t tokens_count);
 
 /**
  * @brief Get the suppress tokens count.
@@ -362,8 +389,9 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_set_supp
  * @param tokens_count A pointer to the number of suppress tokens.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_suppress_tokens_count(const ov_genai_whisper_generation_config* config,
-                                                                                                  size_t* tokens_count);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_suppress_tokens_count(const ov_genai_whisper_generation_config* config,
+                                                             size_t* tokens_count);
 
 /**
  * @brief Get the suppress tokens.
@@ -373,13 +401,15 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_supp
  * @param tokens_count The size of the tokens array.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_get_suppress_tokens(const ov_genai_whisper_generation_config* config,
-                                                                                            int64_t* tokens,
-                                                                                            size_t tokens_count);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_get_suppress_tokens(const ov_genai_whisper_generation_config* config,
+                                                       int64_t* tokens,
+                                                       size_t tokens_count);
 
 /**
  * @brief Validate the whisper generation configuration.
  * @param config A pointer to the ov_genai_whisper_generation_config instance.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_generation_config_validate(ov_genai_whisper_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_generation_config_validate(ov_genai_whisper_generation_config* config);
