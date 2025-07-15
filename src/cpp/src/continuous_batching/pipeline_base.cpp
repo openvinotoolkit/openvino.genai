@@ -159,7 +159,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(prompts.size() == rgbs_vector.size(), "Number of prompts should be equal to the number of images vectors.");
 
     std::vector<ov::Tensor> input_embeds_list;
-    std::optional<std::vector<ov::Tensor>> token_type_ids_list;
+    std::vector<ov::Tensor> token_type_ids_list;
     
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
     std::vector<EncodedImage> encoded_images = {};
@@ -182,7 +182,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         if (m_inputs_embedder->has_token_type_ids()) {
             auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
             input_embeds_list.push_back(std::move(embeds));
-            token_type_ids_list->emplace_back(std::move(tt_ids));
+            token_type_ids_list.push_back(std::move(tt_ids));
         } else {
             input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids));
         }
@@ -203,7 +203,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             if (m_inputs_embedder->has_token_type_ids()) {
                 auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence);
                 input_embeds_list.push_back(std::move(embeds));
-                token_type_ids_list->emplace_back(std::move(tt_ids));
+                token_type_ids_list.push_back(std::move(tt_ids));
             } else {
                 input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence));
             }
@@ -214,10 +214,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     }
     std::vector<VLMDecodedResults> results;
     std::vector<EncodedGenerationResult> encoded_results;
-    if (!token_type_ids_list) {
+    if (token_type_ids_list.empty()) {
         encoded_results = generate(input_embeds_list, sampling_params, streamer);
     } else {
-        encoded_results = generate(input_embeds_list, sampling_params, streamer, *token_type_ids_list);
+        encoded_results = generate(input_embeds_list, sampling_params, streamer, token_type_ids_list);
     }
     for (size_t i = 0; i < prompts.size(); i++) {
         auto result = encoded_results[i];
