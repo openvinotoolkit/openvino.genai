@@ -22,7 +22,7 @@ BEGIN
       VALUE "FileVersion", "@PROJECT_VERSION@\0"
       VALUE "LegalCopyright", "@PROJECT_COPYRIGHT@\0"
       VALUE "ProductName", "@PROJECT_PRODUCT_NAME@\0"
-      VALUE "ProductVersion", "@OpenVINOTokenizers_FULL_VERSION@\0"
+      VALUE "ProductVersion", "@OpenVINOGenAI_FULL_VERSION@\0"
       VALUE "Comments", "@PROJECT_COMMENTS@\0"
     END
   END
