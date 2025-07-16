@@ -125,7 +125,7 @@ int main(int argc, char* argv[]) {
 
             CHECK_STATUS(ov_genai_whisper_decoded_result_chunk_get_text(chunk, chunk_text, &chunk_text_size));
 
-            printf("timestamps: [%.2f, %.2f] text:%s\n", start_ts, end_ts, chunk_text);
+            printf("timestamps: [%.2f, %.2f] text: %s\n", start_ts, end_ts, chunk_text);
 
             free(chunk_text);
             ov_genai_whisper_decoded_result_chunk_free(chunk);

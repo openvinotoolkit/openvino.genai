@@ -26,7 +26,7 @@ class TestWhisperSpeechRecognition:
 
         # Run C sample
         c_sample = os.path.join(SAMPLES_C_DIR, 'whisper_speech_recognition_c')
-        c_command = [c_sample, '-m', convert_model, '-i', download_test_content]
+        c_command = [c_sample, '-m', convert_model, '-i', download_test_content, '--timestamps']
         c_result = run_sample(c_command)
 
         # Compare results
