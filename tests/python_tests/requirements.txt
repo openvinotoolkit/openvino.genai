@@ -10,8 +10,7 @@ gguf>=0.10.0
 
 # rag requirements
 langchain_community==0.3.27
-llama-index-postprocessor-openvino-rerank # not fixed version due to optimum-intel version convflict
-llama-index-core==0.12.48
+langchain-core==0.3.69
 
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
