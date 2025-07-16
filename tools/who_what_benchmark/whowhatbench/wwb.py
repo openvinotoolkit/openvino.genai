@@ -173,6 +173,12 @@ def parse_args():
         default=42,
         help="Text-to-image specific parameter that defines the seed value.",
     )
+    parser.add_argument(
+        "--from-onnx",
+        type=bool,
+        default=False,
+        help="If True, the model will be loaded from ONNX format. It's converted to OpenVINO format in runtime.",
+    )
 
     return parser.parse_args()
 
@@ -530,6 +536,9 @@ def main():
     kwargs = {}
     if args.cb_config:
         kwargs["cb_config"] = read_cb_config(args.cb_config)
+    if args.from_onnx:
+        kwargs["from_onnx"] = args.from_onnx
+        kwargs["use_cache"] = False
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
