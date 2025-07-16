@@ -93,7 +93,7 @@ void parse_chat_template_from_file(const std::filesystem::path& path, std::strin
             }
         }
     }
-    OPENVINO_THROW("Unsupported chat_template format in file: ", path.string());
+    std::cerr << "[ WARNING ] Unsupported chat_template format in file: " << path.string() << std::endl;
 }
 
 void parse_chat_template_from_tokenizer(std::shared_ptr<ov::Model> ov_tokenizer, std::string& value) {
@@ -114,7 +114,7 @@ void parse_chat_template_from_tokenizer(std::shared_ptr<ov::Model> ov_tokenizer,
             return;
         }
     }
-    OPENVINO_THROW("Unsupported type for 'chat_template' in tokenizer model: ", chat_template_value.type_info().name());
+    std::cerr << "[ WARNING ] Unsupported type for 'chat_template' in ov_tokenizer model: " << chat_template_value.type_info().name() << std::endl;
 }
 
 template <typename T>
