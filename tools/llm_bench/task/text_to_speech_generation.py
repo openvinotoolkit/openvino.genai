@@ -127,8 +127,8 @@ def run_text_to_speech_generation_genai(
         log.info(out_str)
 
     start = time.perf_counter()
-    additinal_args = {"speaker_embeddings": ov.Tensor(args['speaker_embeddings'].numpy())} if args.get('speaker_embeddings') is not None else {}
-    generation_result = model.generate(input_text_list, **additinal_args)
+    additional_args = {"speaker_embeddings": ov.Tensor(args['speaker_embeddings'].numpy())} if args.get('speaker_embeddings') is not None else {}
+    generation_result = model.generate(input_text_list, **additional_args)
     end = time.perf_counter()
 
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
