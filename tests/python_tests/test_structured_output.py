@@ -33,7 +33,6 @@ structured_id_models = [
 ]
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_scheme", [
     ("Generate a json about a person.", Person), 
@@ -57,7 +56,6 @@ def test_structured_output_generation(ov_pipe, prompt_and_scheme):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_regex", [
     ("Generate a json about a person.", r'^\{"city":"(Dublin|Dubai|Munich)"\}$'),
@@ -78,7 +76,6 @@ def test_structured_regex(ov_pipe, prompt_and_regex):
     assert re.match(regex_str, res_str), f"Output {res_str} does not match regex {regex_str}"
    
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_ebnf", [
     # EBNF grammar for generating a date in the format YYYY-MM-DD

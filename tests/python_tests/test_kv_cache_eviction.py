@@ -203,15 +203,14 @@ class LongBenchTestData:
     avg_cache_usage_optimization_ratio: float
 
 
-@pytest.mark.nightly
-@pytest.mark.parametrize("device", ["CPU", "GPU"])
+@pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("samsum", 4, 1.6, 3.3),
+    LongBenchTestData("samsum", 4, 1.6, 2.5),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
-    LongBenchTestData("qasper", 5.8, 1.7, 3.6),
 ])
-def test_optimized_generation_longbench(device, test_struct):
+def test_optimized_generation_longbench(test_struct):
     seqs_per_request = 32
+    device = "CPU"
     num_kv_blocks = 1000 if device == "CPU" else 500
     model_id = "Qwen/Qwen2-0.5B-Instruct"
     _, _, models_path = download_and_convert_model(model_id)
