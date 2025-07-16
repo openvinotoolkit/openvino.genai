@@ -210,7 +210,7 @@ jobs:
   genai_build_wheel:
     name: Build Wheel
     needs: [ openvino_download ]
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
