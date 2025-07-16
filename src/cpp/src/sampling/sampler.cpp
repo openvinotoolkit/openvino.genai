@@ -241,6 +241,21 @@ std::map<size_t, int32_t> Sampler::GroupBeamSearcher::get_beam_idxs() {
     return next_beams;
 }
 
+std::pair<std::map<std::string, float>, std::vector<float>> Sampler::get_structured_output_times() {
+    if (m_structured_output_controller) {
+        return m_structured_output_controller->get_times();
+    } else {
+        // If compiled without structured output support, return empty times
+        return {{}, {}};
+    }
+}
+
+void Sampler::clear_structured_output_compile_times() {
+    if (m_structured_output_controller) {
+        m_structured_output_controller->clear_compile_times();
+    }
+}
+
 void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
     SamplerOutput& sampler_output,
     const std::pair<size_t, std::set<std::string>>& stop_strings) {
@@ -764,13 +779,14 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     const size_t output_seq_len = sequence_group->get_output_seq_len();
     // get number of tokens to be validated
     size_t num_tokens_to_process = sequence_group->get_num_tokens_to_validate();
+    size_t num_generated_tokens_to_validate = num_tokens_to_process;
 
     if (num_tokens_to_process > output_seq_len - 1) {
         auto delta = num_tokens_to_process - (output_seq_len - 1);
         assisting_pipeline_info.updated_validation_len = std::max(assisting_pipeline_info.updated_validation_len, delta);
         num_tokens_to_process -= delta;
     }
-    
+
     if (sampling_params.is_greedy_decoding() || sampling_params.is_multinomial()) {
         std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
         size_t num_running_sequences = sequence_group->num_running_seqs();
@@ -786,27 +802,27 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     break;
                 sg_sampling_info.sampler_output.num_generated_tokens++;
                 // calculate token offset from the end of logit
-                size_t token_offset = num_tokens_to_process - i;
+                size_t logit_token_offset = num_tokens_to_process - i;
+                size_t generated_seq_token_offset = num_generated_tokens_to_validate - i;
                 // max counter of needed to be sampled tokens
-                OPENVINO_ASSERT(running_sequence->get_generated_len() >= token_offset);
-                size_t generated_and_verified_len = running_sequence->get_generated_len() - token_offset;
+                OPENVINO_ASSERT(running_sequence->get_generated_len() >= generated_seq_token_offset);
+                size_t generated_and_verified_len = running_sequence->get_generated_len() - generated_seq_token_offset;
                 OPENVINO_ASSERT(sequence_group->get_max_new_tokens() >= generated_and_verified_len);
                 size_t max_num_sampled_token = sequence_group->get_max_new_tokens() - generated_and_verified_len;
                 if (max_num_sampled_token == 0) {
-                    stop_sample_tokens(running_sequence, token_offset, max_num_sampled_token, assisting_pipeline_info.max_removed_tokens_per_request);
+                    stop_sample_tokens(running_sequence, generated_seq_token_offset, max_num_sampled_token, assisting_pipeline_info.max_removed_tokens_per_request);
                     break;
                 }
-                
                 // do sampling only for token validation/generation.
                 // continue in case of extending draft model sequences by main model generated tokens which
                 // should be taken to KV cache without validation
-                if (!is_validation_mode_enabled && token_offset > 0) {
+                if (!is_validation_mode_enabled && generated_seq_token_offset > 0) {
                     continue;
                 }
 
-                auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, token_offset);
+                auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
                 logit_processor.apply(logit_vector);
-
+                
                 Token sampled_token;
                 bool is_generate_n_tokens = false;
                 if (sampling_params.is_greedy_decoding()) {
@@ -826,8 +842,8 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     sampled_token = sampled_token_ids.front();
                     // make `_speculative_sampling` in case of previous token was not accepted in speculative decoding
                     if (!is_validation_passed) {
-                        float p_prime = get_p_prime(running_sequence, sampled_token, token_offset + 1);
-                        assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, token_offset);
+                        float p_prime = get_p_prime(running_sequence, sampled_token, generated_seq_token_offset + 1);
+                        assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, generated_seq_token_offset);
                         // update prob only in case candidate prob > sampled token prob
                         if (p_prime > 0.f) {
                             auto prob = std::exp(sampled_token.m_log_prob);
@@ -837,12 +853,13 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     }
                 }
                 // flag to add sampled token to generated sequence or extend logit processors only
-                bool is_extend_sequence = token_offset == 0 || is_generate_n_tokens || !is_validation_passed;
+                bool is_extend_sequence = logit_token_offset == 0 || is_generate_n_tokens || !is_validation_passed;
                 if (is_validation_mode_enabled && !is_extend_sequence) {
-                    is_validation_passed = validate_candidate(running_sequences[running_sequence_id], token_offset, sampled_token,
-                                                              is_extend_sequence, assisting_pipeline_info.max_removed_tokens_per_request,
+                    is_validation_passed = validate_candidate(running_sequences[running_sequence_id], generated_seq_token_offset,
+                                                              sampled_token, is_extend_sequence, assisting_pipeline_info.max_removed_tokens_per_request,
                                                               sampling_params.do_sample, !sampling_params.is_prompt_lookup());
-                    // doing resample in case of non accepted tokens in specualtive sampling, if candidates have real logits
+
+                    // doing resample in case of non accepted tokens in speculative sampling
                     if (!is_validation_passed && sampling_params.do_sample && !sampling_params.is_prompt_lookup()) {
                         continue;
                     }
@@ -853,6 +870,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     }
                 }
                 register_new_token(sampled_token, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_validation_mode_enabled);
+                               
                 // to exit from sampling in case of failed token validation
                 if (!is_validation_passed) {
                     break;
@@ -897,7 +915,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     }
     // Notify handle after sampling is done. 
     // For non-streaming this is effective only when the generation is finished.
-    OPENVINO_ASSERT(num_tokens_to_process >= assisting_pipeline_info.max_removed_tokens_per_request);
+    OPENVINO_ASSERT(num_generated_tokens_to_validate >= assisting_pipeline_info.max_removed_tokens_per_request);
     sequence_group->notify_handle();
     return sg_sampling_info;
 }
@@ -923,7 +941,10 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
 
         const auto request_id = sequence_group->get_request_id();
         if (!m_logit_processors.count(request_id)) {
-            m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids())});
+            if (!m_structured_output_controller) {
+                m_structured_output_controller = std::make_shared<StructuredOutputController>(m_tokenizer, vocab_size);
+            }
+            m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids(), m_structured_output_controller)});
         }
         if (!m_stop_strings.count(request_id)) {
             auto processed_stop_string = process_stop_strings(sampling_params.stop_strings, m_tokenizer);
@@ -996,10 +1017,16 @@ LogitProcessor& Sampler::get_logit_processor(uint64_t request_id) {
 
 
 void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_params, const TokenIds& prompt) {
-    m_logit_processors.insert({request_id, LogitProcessor(sampling_params, prompt)});
+    if (!m_structured_output_controller) {
+        // We don't have vocab size (actually logits size) and also we don't have access to the logits.
+        // vocab size will be taken from the tokenizer during LogitProcessor initialization.
+        m_structured_output_controller = std::make_shared<StructuredOutputController>(m_tokenizer);
+    }
+
+    m_logit_processors.insert({request_id, LogitProcessor(sampling_params, prompt, m_structured_output_controller)});
 }
 
-void Sampler::clear_request_info(uint64_t request_id) { 
+void Sampler::clear_request_info(uint64_t request_id) {
     m_beam_search_info.erase(request_id);
     m_logit_processors.erase(request_id);
     m_stop_strings.erase(request_id);

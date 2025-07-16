@@ -81,6 +81,20 @@ pipe = openvino_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
 print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
 ```
 
+### Run generation using LLMPipeline API in JavaScript
+
+```js
+import { LLMPipeline } from 'openvino-genai-node';
+
+main();
+
+async function main() {
+    const pipe = await LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU");
+    const result = await pipe.generate("The Sun is yellow because", { 'max_new_tokens': 100 });
+    console.log(result);
+}
+```
+
 ### Run generation using LLMPipeline in C++
 
 Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2025/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
@@ -469,6 +483,25 @@ embeddings = pipeline.embed_documents(documents)
 
 query = "The Sun is yellow because"
 query_embedding = pipeline.embed_query(query)
+```
+
+### Compute embeddings using TextEmbeddingPipeline API in JavaScript
+
+```js
+import { TextEmbeddingPipeline } from 'openvino-genai-node';
+
+main();
+
+async function main() {
+    const pipeline = await TextEmbeddingPipeline("./BAAI/bge-small-en-v1.5", "CPU")
+
+    const documents = ["Document 1", "Document 2"];
+    const embeddings = await pipeline.embedDocuments(documents);
+
+    const query = "The Sun is yellow because";
+    const query_embedding = await pipeline.embedQuery(query);
+}
+
 ```
 
 ### Compute embeddings using TextEmbeddingPipeline API in C++
