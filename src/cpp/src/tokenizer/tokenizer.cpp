@@ -93,7 +93,9 @@ void parse_chat_template_from_file(const std::filesystem::path& path, std::strin
             }
         }
     }
-    std::cerr << "[ WARNING ] Unsupported chat_template format in file: " << path.string() << std::endl;
+    std::cerr << "[ WARNING ] Unsupported chat_template format in file: " << path.string() << "\n";
+    std::cerr << "Supported formats: string or array of objects with 'name' and 'template' fields.\n";
+    std::cerr << "To avoid this warning, check \"chat_template\" field in the file and update it accordingly.\n";
 }
 
 void parse_chat_template_from_tokenizer(std::shared_ptr<ov::Model> ov_tokenizer, std::string& value) {
