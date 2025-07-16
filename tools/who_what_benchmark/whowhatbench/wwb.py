@@ -174,10 +174,18 @@ def parse_args():
         help="Text-to-image specific parameter that defines the seed value.",
     )
     parser.add_argument(
-        "--adapter",
+        "--adapters",
         type=str,
+        nargs='*',
         default=None,
-        help="LoRA adapter.",
+        help="LoRA adapters.",
+    )
+    parser.add_argument(
+        "--alphas",
+        type=float,
+        nargs='*',
+        default=None,
+        help="Weights for LoRA adapters.",
     )
 
     return parser.parse_args()
@@ -189,6 +197,10 @@ def check_args(args):
     if args.target_model is None and args.gt_data is None and args.target_data:
         raise ValueError(
             "Wether --target-model, --target-data or --gt-data should be provided")
+    if args.adapters is not None and args.alphas is not None and len(args.adapters) != len(args.alphas):
+        raise ValueError(
+            "If --adapters is provided and --alphas is provided, they should have the same length."
+        )
 
 
 def load_prompts(args):
@@ -536,7 +548,12 @@ def main():
     kwargs = {}
     if args.cb_config:
         kwargs["cb_config"] = read_cb_config(args.cb_config)
-    kwargs["adapter"] = args.adapter
+    if args.adapters is not None:
+        kwargs["adapters"] = args.adapters
+        if args.alphas is not None:
+            kwargs["alphas"] = args.alphas
+        else:
+            kwargs["alphas"] = [1.0] * len(args.adapters)
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)

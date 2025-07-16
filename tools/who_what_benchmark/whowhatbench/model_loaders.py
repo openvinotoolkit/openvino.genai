@@ -175,10 +175,10 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None, **kw
         exit(-1)
 
     adapter_config = openvino_genai.AdapterConfig()
-    if "adapter" in kwargs and kwargs["adapter"] is not None:
-        adapter = openvino_genai.Adapter(kwargs["adapter"])
-        alpha = 1.0
-        adapter_config.add(adapter, alpha)
+    if "adapters" in kwargs and kwargs["adapters"] is not None:
+        for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
+            ov_adapter = openvino_genai.Adapter(adapter)
+            adapter_config.add(ov_adapter, alpha)
 
     return GenAIModelWrapper(
         openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
@@ -194,14 +194,16 @@ def load_text2image_model(
         logger.info("Using OpenvINO GenAI API")
         model = load_text2image_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_hf:
-        from diffusers import AutoPipelineForText2Image
+        from diffusers import DiffusionPipeline
         logger.info("Using HF Transformers API")
         try:
-            model = AutoPipelineForText2Image.from_pretrained(model_id)
+            model = DiffusionPipeline.from_pretrained(model_id)
         except Exception:
-            model = AutoPipelineForText2Image.from_pretrained(model_id, trust_remote_code=True)
-        if 'adapter' in kwargs and kwargs['adapter'] is not None:
-            model.load_lora_weights(kwargs['adapter'])
+            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
+        if 'adapters' in kwargs and kwargs['adapters'] is not None:
+            for idx, adapter in enumerate(kwargs['adapters']):
+                model.load_lora_weights(adapter, adapter_name=f"adapter_{idx}")
+            model.set_adapters([f"adapter_{idx}" for idx in range(len(kwargs['adapters']))], adapter_weights=kwargs['alphas'])
     else:
         logger.info("Using Optimum API")
         from optimum.intel import OVPipelineForText2Image
