@@ -3,19 +3,28 @@
 
 #include "continuous_batching/cache_eviction.hpp"
 
+#include <random>
 namespace ov::genai {
-    CacheEvictionAlgorithm::CacheEvictionAlgorithm(const CacheEvictionConfig &eviction_config, size_t block_size,
-                                                   size_t num_decoder_layers, size_t max_pool_window_size) :
-            m_eviction_config(eviction_config), m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), 
-            m_max_pool_window_size(max_pool_window_size), m_cache_counter(num_decoder_layers), m_scores(num_decoder_layers) {
-            OPENVINO_ASSERT(!(m_eviction_config.get_start_size() % m_block_size),
-                            "CacheEvictionConfig.start_size in tokens must be a multiple of block size ", m_block_size);
-            OPENVINO_ASSERT(!(m_eviction_config.get_recent_size() % m_block_size),
-                            "CacheEvictionConfig.recent_size in tokens must be a multiple of block size ", m_block_size);
-            OPENVINO_ASSERT(!(m_eviction_config.get_max_cache_size() % m_block_size),
-                            "CacheEvictionConfig.max_cache_size in tokens must be a multiple of block size ", m_block_size);
-            OPENVINO_ASSERT(m_num_decoder_layers, "num_decoder_layers must be non-zero");
-    }
+CacheEvictionAlgorithm::CacheEvictionAlgorithm(const CacheEvictionConfig& eviction_config,
+                                               size_t block_size,
+                                               size_t num_decoder_layers, size_t max_pool_window_size)
+    : m_eviction_config(eviction_config),
+      m_block_size(block_size),
+      m_num_decoder_layers(num_decoder_layers), 
+      m_max_pool_window_size(max_pool_window_size), m_cache_counter(num_decoder_layers),
+      m_scores(num_decoder_layers),
+      m_kvcrush_algo(eviction_config.get_kvcrush_config(), block_size) {
+    OPENVINO_ASSERT(!(m_eviction_config.get_start_size() % m_block_size),
+                    "CacheEvictionConfig.start_size in tokens must be a multiple of block size ",
+                    m_block_size);
+    OPENVINO_ASSERT(!(m_eviction_config.get_recent_size() % m_block_size),
+                    "CacheEvictionConfig.recent_size in tokens must be a multiple of block size ",
+                    m_block_size);
+    OPENVINO_ASSERT(!(m_eviction_config.get_max_cache_size() % m_block_size),
+                    "CacheEvictionConfig.max_cache_size in tokens must be a multiple of block size ",
+                    m_block_size);
+    OPENVINO_ASSERT(m_num_decoder_layers, "num_decoder_layers must be non-zero");
+}
 
     std::size_t CacheEvictionAlgorithm::get_max_cache_size_after_eviction() const {
         // The cache layout after eviction should have blocks in all 3 areas (start, evictable and recent) fully filled,
@@ -37,7 +46,6 @@ namespace ov::genai {
 
         std::vector<std::set<size_t>> retval(m_num_decoder_layers);
 
-
         for (size_t decoder_layer_idx = 0; decoder_layer_idx < m_scores.size(); decoder_layer_idx++) {
             const auto &accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
             auto scores_length = accumulated_scores_for_current_decoder_layer.size();
@@ -51,6 +59,39 @@ namespace ov::genai {
             size_t num_blocks_to_evict = get_num_blocks_to_evict(decoder_layer_idx);
             auto evicted_block_indices = get_indices_of_blocks_to_evict(scores_for_all_evictable_blocks, num_blocks_to_evict);
 
+            //KVCrush: start
+            bool should_apply_kvcrush = (m_eviction_config.get_kvcrush_budget() > 0) &&
+                                        (evicted_block_indices.size() >= m_eviction_config.get_kvcrush_budget());
+            if (should_apply_kvcrush) {
+                size_t num_tokens_in_evictable_blocks = scores_for_all_evictable_blocks.size() * m_block_size;
+
+                auto kvcrush_retained_block_indices =
+                    m_kvcrush_algo.get_indices_of_blocks_to_retain_using_kvcrush(num_tokens_in_evictable_blocks,
+                                                                                 evicted_block_indices,
+                                                                                 m_scores[decoder_layer_idx]);
+
+                // Remove the indices in kvcrush_retained_block_indices from evicted_block_indices
+                if (!kvcrush_retained_block_indices.empty()) {
+                    // Convert both vectors to sets for efficient operations
+                    std::unordered_set<std::size_t> retained_set(
+                        kvcrush_retained_block_indices.begin(), 
+                        kvcrush_retained_block_indices.end()
+                    );
+                    
+                    // Create a new vector containing only elements not in retained_set
+                    std::vector<std::size_t> filtered_evicted_indices;
+                    filtered_evicted_indices.reserve(evicted_block_indices.size());
+                    
+                    for (const auto& idx : evicted_block_indices) {
+                        if (retained_set.find(idx) == retained_set.end()) {
+                            filtered_evicted_indices.push_back(idx);
+                        }
+                    }
+                    // Replace the original vector with the filtered one
+                    evicted_block_indices = std::move(filtered_evicted_indices);
+                }
+            }
+            //KVCrush: end
             m_num_evicted_tokens += evicted_block_indices.size() * m_block_size;
 
             // No longer need to track the overall "heavy-hitter" attention scores for freshly evicted blocks
@@ -171,6 +212,7 @@ namespace ov::genai {
         if (num_evictable_blocks < num_evictable_blocks_to_keep_after_eviction) {
             return 0;
         }
+        
         return num_evictable_blocks - num_evictable_blocks_to_keep_after_eviction;
     }
 
@@ -200,6 +242,7 @@ namespace ov::genai {
             }
             block_scores[i] = normalized_accumulated_attn_score_for_block;
         }
+
         return block_scores;
     }
 
