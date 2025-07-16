@@ -11,8 +11,10 @@
 #include <jinja2cpp/generic_list_iterator.h>
 
 #include "openvino/pass/manager.hpp"
+#include "openvino/pass/visualize_tree.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "add_second_input_transformation.hpp"
 
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include "tokenizer/chat_template_fallback_map.hpp"
@@ -253,6 +255,16 @@ public:
 
         OPENVINO_ASSERT(models_path.extension() != ".xml", "'models_path' parameter should be a path to a dir not a xml file");
 
+        std::filesystem::path ov_tokenizer_filesystem_path;
+#ifdef _WIN32
+        const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+        ov_tokenizer_filesystem_path = std::filesystem::path(std::wstring(ov_tokenizer_path_w));
+#else
+        const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+        ov_tokenizer_filesystem_path = std::filesystem::path(ov_tokenizer_path);
+#endif
+        m_shared_object_ov_tokenizers = load_shared_object(ov_tokenizer_filesystem_path);
+
         std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
         std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
         auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
@@ -260,15 +272,6 @@ public:
         filtered_properties = {};
         if (is_gguf_model(models_path)) {
             std::map<std::string, GGUFMetaData> tokenizer_config{};
-            std::filesystem::path ov_tokenizer_filesystem_path;
-#ifdef _WIN32
-            const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
-            ov_tokenizer_filesystem_path = std::filesystem::path(std::wstring(ov_tokenizer_path_w));
-#else
-            const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
-            ov_tokenizer_filesystem_path = std::filesystem::path(ov_tokenizer_path);
-#endif
-            m_shared_object_ov_tokenizers = load_shared_object(ov_tokenizer_filesystem_path);
             std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
                 create_tokenizer_from_config(m_shared_object_ov_tokenizers, models_path);
 
@@ -311,6 +314,13 @@ public:
         }
         if (std::filesystem::exists(models_path / "openvino_tokenizer.xml")) {
             ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml", {}, filtered_properties);
+            std::string add_second_input_argname = "ADD_SECOND_INPUT";
+            // if (properties.count(add_second_input_argname) && properties.at(add_second_input_argname).as<bool>()) {
+            // }
+            ov::pass::Manager manager;
+            manager.register_pass<ov::genai::ModifyCombineSegmentsForPairInput>(m_shared_object_ov_tokenizers);
+            // manager.register_pass<ov::pass::VisualizeTree>("after.svg");
+            manager.run_passes(ov_tokenizer);
         }
 
         if (std::filesystem::exists(models_path / "openvino_detokenizer.xml")) {
