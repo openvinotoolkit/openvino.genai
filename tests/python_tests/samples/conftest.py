@@ -117,11 +117,11 @@ MODELS = {
     },
     "bge-small-en-v1.5": {
         "name": "BAAI/bge-small-en-v1.5",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ["--trust-remote-code"]
     },
     "ms-marco-TinyBERT-L2-v2": {
         "name": "cross-encoder/ms-marco-TinyBERT-L2-v2",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ["--trust-remote-code", "--task", "text-classification"]
     },
     "tiny-random-SpeechT5ForTextToSpeech": {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
