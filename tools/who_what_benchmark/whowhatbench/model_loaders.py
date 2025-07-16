@@ -209,6 +209,9 @@ def load_text2image_model(
         from optimum.intel import OVPipelineForText2Image
         TEXT2IMAGEPipeline = OVPipelineForText2Image
 
+        if 'adapters' in kwargs and kwargs['adapters'] is not None:
+            raise ValueError("Adapters are not supported for OVPipelineForText2Image.")
+
         try:
             model = TEXT2IMAGEPipeline.from_pretrained(
                 model_id, device=device, ov_config=ov_config, safety_checker=None,
@@ -222,8 +225,6 @@ def load_text2image_model(
                 ov_config=ov_config,
                 safety_checker=None,
             )
-        if 'adapter' in kwargs and kwargs['adapter'] is not None:
-            raise ValueError(f"Adapters is not supported for  OVPipelineForText2Image")
 
     return model
 
