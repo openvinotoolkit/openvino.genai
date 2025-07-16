@@ -188,17 +188,15 @@ class TestBenchmarkLLM:
     @pytest.mark.samples
     @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "-p", "'Why is the Sun yellow?'"], ["-d", "cpu", "-n", "1", "-p", "'Why is the Sun yellow?'", "--optimum"]])
     @pytest.mark.parametrize("convert_model", ["tiny-random-SpeechT5ForTextToSpeech"], indirect=True)
-    @pytest.mark.parametrize("speaker_embeddings_file", ["cmu_us_awb_arctic-wav-arctic_a0001.bin"])
     @pytest.mark.parametrize("download_test_content", ["cmu_us_awb_arctic-wav-arctic_a0001.bin"], indirect=True)
-    def test_python_tool_llm_benchmark_tts(self, convert_model, download_test_content, speaker_embeddings_file, sample_args):
-        speaker_embeddings_path = os.path.join(download_test_content, speaker_embeddings_file)
+    def test_python_tool_llm_benchmark_tts(self, convert_model, download_test_content, sample_args):
         # Run Python benchmark
         benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
             "-m", convert_model,
-            "--speaker_embeddings", speaker_embeddings_path
+            "--speaker_embeddings", download_test_content
         ] + sample_args
         run_sample(benchmark_py_command)
 

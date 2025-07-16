@@ -216,14 +216,14 @@ class TTSHook:
 
     def print_tts_latency(self, iter_str, prompt_idx):
         info = f'[{iter_str}][P{prompt_idx}] ' \
-               f'encoder duration: {self.encoder_model_time:.4f}ms; ' \
-               f'decoder duration: {sum(self.decoder_model_time_list):.4f}ms, iter num: {len(self.decoder_model_time_list)}, '
+               f'encoder duration: {self.encoder_model_time * 1000:.4f}ms; ' \
+               f'decoder duration: {sum(self.decoder_model_time_list) * 1000:.4f}ms, iter num: {len(self.decoder_model_time_list)}, '
         if len(self.decoder_model_time_list) > 1:
-            info += f'1st token latency: {self.decoder_model_time_list[0]:.4f}ms, ' \
-                    f'2nd token latency: {statistics.mean(self.decoder_model_time_list[1:]):.4f}ms; '
+            info += f'1st token latency: {self.decoder_model_time_list[0] * 1000:.4f}ms, ' \
+                    f'2nd token latency: {statistics.mean(self.decoder_model_time_list[1:]) * 1000:.4f}ms; '
         else:
-            info += f'latency: {statistics.mean(self.decoder_model_time_list):.4f}ms; '
-        info += f'postnet duration: {sum(self.postnet_model_time_list):.4f}ms, iter num: {len(self.postnet_model_time_list)}, ' \
-                f'latency: {statistics.mean(self.postnet_model_time_list):.4f}ms; ' \
-                f'vocoder duration: {self.vocoder_model_time:.4f}ms;'
+            info += f'latency: {statistics.mean(self.decoder_model_time_list) * 1000:.4f}ms; '
+        info += f'postnet duration: {sum(self.postnet_model_time_list) * 1000:.4f}ms, iter num: {len(self.postnet_model_time_list)}, ' \
+                f'latency: {statistics.mean(self.postnet_model_time_list) * 1000:.4f}ms; ' \
+                f'vocoder duration: {self.vocoder_model_time * 1000:.4f}ms;'
         return info

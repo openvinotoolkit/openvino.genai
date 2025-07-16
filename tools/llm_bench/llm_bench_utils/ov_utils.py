@@ -800,7 +800,7 @@ def create_genai_text_2_speech_model(model_path, device, ov_config, memory_monit
     log.info("Selected OpenVINO GenAI for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
     return pipe, processor, None, end - start, True
@@ -851,7 +851,7 @@ def create_text_2_speech_model(model_path, device, memory_monitor, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_monitor.stop_and_collect_data('compilation_phase')
-            memory_monitor.log_data('for copmpilation phase')
+            memory_monitor.log_data('for compilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     processor = tokenizer_class.from_pretrained(model_path)

@@ -16,7 +16,6 @@ import llm_bench_utils.metrics_print as metrics_print
 from transformers import set_seed
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
-import statistics
 from llm_bench_utils.prompt_utils import get_text_prompt
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
@@ -127,8 +126,8 @@ def run_text_to_speech_generation_genai(
         log.info(out_str)
 
     start = time.perf_counter()
-    additinal_args = {"speaker_embeddings": ov.Tensor(args['speaker_embeddings'].numpy())} if args.get('speaker_embeddings') is not None else {}
-    generation_result = model.generate(input_text_list, **additinal_args)
+    additional_args = {"speaker_embeddings": ov.Tensor(args['speaker_embeddings'].numpy())} if args.get('speaker_embeddings') is not None else {}
+    generation_result = model.generate(input_text_list, **additional_args)
     end = time.perf_counter()
 
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
@@ -138,9 +137,7 @@ def run_text_to_speech_generation_genai(
     generation_time = end - start
 
     perf_metrics = generation_result.perf_metrics
-    tokenization_time = [0]
-    if len(perf_metrics.raw_metrics.tokenization_durations) > 0:
-        tokenization_time = [statistics.mean(perf_metrics.raw_metrics.tokenization_durations[-args['batch_size']:])]
+    tokenization_time = [perf_metrics.get_tokenization_duration().mean]
 
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
@@ -173,7 +170,7 @@ def run_text_to_speech_generation_genai(
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
     )
-    log.info(f'[{num}] Throughput: {perf_metrics.throughput.mean:.4f}')
+    log.debug(f'[{num}]Throughput: {perf_metrics.throughput.mean:.4f}')
     if num > 0:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:

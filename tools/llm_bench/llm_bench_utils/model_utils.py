@@ -376,20 +376,23 @@ def get_version_in_format_to_pars(version):
     return processed_version
 
 
-def get_speaker_embeddings(speaker_embeddings_file):
+def get_speaker_embeddings(speaker_embeddings_file, expected_shape=(1, 512)):
     speaker_embeddings = None
     if Path(speaker_embeddings_file).is_file():
         if ('.pt' in speaker_embeddings_file):
             try:
-                speaker_embeddings = torch.load(speaker_embeddings_file).reshape(1, 512)
+                speaker_embeddings = torch.load(speaker_embeddings_file)
             except Exception:
                 raise RuntimeError(f'==Parse file with torch: {speaker_embeddings_file} failure, format is incorrect ==')
         else:
             try:
-                speaker_embeddings = np.fromfile(speaker_embeddings_file, dtype=np.float32).reshape(1, 512)
+                speaker_embeddings = np.fromfile(speaker_embeddings_file, dtype=np.float32)
                 speaker_embeddings = torch.from_numpy(speaker_embeddings)
             except Exception:
                 raise RuntimeError(f'==Parse config: {speaker_embeddings_file} failure, format is incorrect ==')
+        if speaker_embeddings.numel() != np.prod(expected_shape):
+            raise RuntimeError(f"==Expected {np.prod(expected_shape)} elements, but got {speaker_embeddings.numel()} in {speaker_embeddings_file}==")
+        speaker_embeddings = speaker_embeddings.reshape(expected_shape)
     else:
         raise RuntimeError(f'==Failure FOUND==: Incorrect speaker embeddings file path:{speaker_embeddings_file}')
 
