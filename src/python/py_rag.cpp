@@ -178,8 +178,7 @@ kwargs: Plugin and/or config properties
                 },
                 py::arg("query"),
                 py::arg("texts"),
-                "Query and list of texts to rerank",
-                "reranks a vector of texts based on the query.")
+                "Reranks a vector of texts based on the query.")
             .def(
                 "start_rerank_async",
                 [](ov::genai::TextRerankPipeline& pipe,
@@ -190,7 +189,6 @@ kwargs: Plugin and/or config properties
                 },
                 py::arg("query"),
                 py::arg("texts"),
-                "Query and list of texts to rerank",
                 "Asynchronously reranks a vector of texts based on the query.")
             .def(
                 "wait_rerank",

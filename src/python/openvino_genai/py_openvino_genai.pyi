@@ -2393,7 +2393,7 @@ class TextRerankPipeline:
         """
     def rerank(self, query: str, texts: list[str]) -> list[tuple[int, float]]:
         """
-        reranks a vector of texts based on the query.
+        Reranks a vector of texts based on the query.
         """
     def start_rerank_async(self, query: str, texts: list[str]) -> None:
         """
