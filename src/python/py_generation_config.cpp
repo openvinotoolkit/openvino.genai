@@ -44,13 +44,23 @@ auto structured_output_config_docstring = R"(
 )";
 
 auto structured_tags_config_docstring = R"(
-    Structure to keep generation config parameters for structured tags in structured output generation.
-    It is used to store the configuration for structural tags, which includes a list of structural tag items
-    and a list of trigger strings that will switch the generation to structured output mode.
+    Configures structured output generation by combining regular sampling with structural tags.
+
+    When the model generates a trigger string, it switches to structured output mode and produces output
+    based on the defined structural tags. Afterward, regular sampling resumes.
+
+    Example:
+      - Trigger "<func=" activates tags with begin "<func=sum>" or "<func=multiply>".
+
+    Note:
+      - Simple triggers like "<" may activate structured output unexpectedly if present in regular text.
+      - Very specific or long triggers may be difficult for the model to generate,
+      so structured output may not be triggered.
 
     Parameters:
-    structural_tags: a list of StructuralTagItem objects that define the structured tags for structured output generation.
-    triggers: a list of strings that will trigger the generation of structured output.
+    structural_tags: List of StructuralTagItem objects defining structural tags.
+    triggers:        List of strings that trigger structured output generation.
+                     Triggers may match the beginning or part of a tag's begin string.
 )";
 
 auto structured_tags_item_docstring = R"(
