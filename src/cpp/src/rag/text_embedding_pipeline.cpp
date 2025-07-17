@@ -152,7 +152,7 @@ public:
 
         // all dimension requested to be fixed, reshape model to a fixed shape
         if (m_config.batch_size.has_value() && m_config.max_length.has_value() &&
-            m_config.pad_to_max_length.has_value()) {
+            m_config.pad_to_max_length.has_value() && *m_config.pad_to_max_length) {
             ov::PartialShape fixed_shape{ov::Dimension(*m_config.batch_size), ov::Dimension(*m_config.max_length)};
             reshape_model(model, fixed_shape);
         }
