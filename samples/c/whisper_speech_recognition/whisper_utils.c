@@ -4,7 +4,6 @@
 #include "whisper_utils.h"
 
 #include <errno.h>
-#include <math.h>
 #include <string.h>
 
 void print_usage(const char* program_name) {
@@ -12,7 +11,7 @@ void print_usage(const char* program_name) {
     printf("\nRequired:\n");
     printf("  -m, --model            Path to Whisper model directory\n");
     printf("\nOptional:\n");
-    printf("  -i, --input            Path to audio file (WAV format). If not specified, uses synthetic audio\n");
+    printf("  -i, --input            Path to audio file (WAV format)\n");
     printf("  -d, --device           Device to run inference on (default: %s)\n", DEFAULT_DEVICE);
     printf("  -l, --language         Language code (e.g., 'en', 'fr', 'de'). Empty for auto-detect (default: "
            "auto-detect)\n");
@@ -20,15 +19,11 @@ void print_usage(const char* program_name) {
     printf("  --initial_prompt       Initial prompt to guide transcription\n");
     printf("  --timestamps           Return timestamps for each segment\n");
     printf("  -h, --help             Print this help message\n");
-    printf("\nSynthetic audio options (when no input file specified):\n");
-    printf("  --duration             Duration of synthetic audio in seconds (default: %.1f)\n", DEFAULT_DURATION);
     printf("\nExamples:\n");
     printf("  # Transcribe an audio file\n");
     printf("  %s -m /path/to/whisper/model -i audio.wav\n", program_name);
     printf("\n  # Translate French audio to English\n");
     printf("  %s -m /path/to/whisper/model -i french_audio.wav -l fr -t translate\n", program_name);
-    printf("\n  # Use synthetic audio\n");
-    printf("  %s -m /path/to/whisper/model\n", program_name);
 }
 
 int parse_arguments(int argc, char* argv[], Options* options) {
@@ -40,9 +35,7 @@ int parse_arguments(int argc, char* argv[], Options* options) {
     options->task = DEFAULT_TASK;
     options->initial_prompt = NULL;
     options->return_timestamps = false;
-    options->use_synthetic_audio = true;
     options->sample_rate = DEFAULT_SAMPLE_RATE;
-    options->duration = DEFAULT_DURATION;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--model") == 0) {
@@ -55,7 +48,6 @@ int parse_arguments(int argc, char* argv[], Options* options) {
         } else if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--input") == 0) {
             if (i + 1 < argc) {
                 options->audio_path = argv[++i];
-                options->use_synthetic_audio = false;
             } else {
                 fprintf(stderr, "Error: --input requires an argument\n");
                 return -1;
@@ -94,13 +86,6 @@ int parse_arguments(int argc, char* argv[], Options* options) {
             }
         } else if (strcmp(argv[i], "--timestamps") == 0) {
             options->return_timestamps = true;
-        } else if (strcmp(argv[i], "--duration") == 0) {
-            if (i + 1 < argc) {
-                options->duration = (float)atof(argv[++i]);
-            } else {
-                fprintf(stderr, "Error: --duration requires an argument\n");
-                return -1;
-            }
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
             return 0;
@@ -114,6 +99,12 @@ int parse_arguments(int argc, char* argv[], Options* options) {
     // Validate required arguments
     if (options->model_path == NULL) {
         fprintf(stderr, "Error: Model path is required. Use -m or --model option\n");
+        fprintf(stderr, "Use -h or --help for usage information\n");
+        return -1;
+    }
+
+    if (options->audio_path == NULL) {
+        fprintf(stderr, "Error: Audio file path is required. Use -i or --input option\n");
         fprintf(stderr, "Use -h or --help for usage information\n");
         return -1;
     }
@@ -215,11 +206,6 @@ int load_wav_file(const char* filename, float** audio_data, size_t* audio_length
     return 0;
 }
 
-void generate_synthetic_audio(float* audio, size_t length, float frequency, float sample_rate) {
-    for (size_t i = 0; i < length; i++) {
-        audio[i] = 0.5f * sinf(2.0f * M_PI * frequency * (float)i / sample_rate);
-    }
-}
 
 float* resample_audio(const float* input,
                       size_t input_length,

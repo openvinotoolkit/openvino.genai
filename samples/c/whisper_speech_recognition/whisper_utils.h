@@ -11,9 +11,6 @@
 
 #include "openvino/genai/c/whisper_pipeline.h"
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 #define MAX_PATH_LENGTH 1024
 
@@ -51,7 +48,6 @@
 #define DEFAULT_LANGUAGE    ""
 #define DEFAULT_TASK        "transcribe"
 #define DEFAULT_SAMPLE_RATE 16000.0f
-#define DEFAULT_DURATION    2.0f
 
 // Options structure
 typedef struct {
@@ -62,9 +58,7 @@ typedef struct {
     const char* task;
     const char* initial_prompt;
     bool return_timestamps;
-    bool use_synthetic_audio;
     float sample_rate;
-    float duration;
 } Options;
 
 // WAV file header structure
@@ -88,7 +82,6 @@ typedef struct {
 void print_usage(const char* program_name);
 int parse_arguments(int argc, char* argv[], Options* options);
 int load_wav_file(const char* filename, float** audio_data, size_t* audio_length, float* sample_rate);
-void generate_synthetic_audio(float* audio, size_t length, float frequency, float sample_rate);
 float* resample_audio(const float* input,
                       size_t input_length,
                       float input_rate,

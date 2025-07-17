@@ -29,35 +29,24 @@ int main(int argc, char* argv[]) {
     char* output = NULL;
     size_t output_size = 0;
 
-    if (options.audio_path) {
-        float file_sample_rate;
-        if (load_wav_file(options.audio_path, &audio_data, &audio_length, &file_sample_rate) != 0) {
-            exit_code = EXIT_FAILURE;
-            goto err;
-        }
+    float file_sample_rate;
+    if (load_wav_file(options.audio_path, &audio_data, &audio_length, &file_sample_rate) != 0) {
+        exit_code = EXIT_FAILURE;
+        goto err;
+    }
 
-        if (file_sample_rate != 16000.0f) {
-            size_t resampled_length;
-            resampled_audio = resample_audio(audio_data, audio_length, file_sample_rate, 16000.0f, &resampled_length);
-            if (!resampled_audio) {
-                fprintf(stderr, "Error: Failed to resample audio\n");
-                exit_code = EXIT_FAILURE;
-                goto err;
-            }
-            free(audio_data);
-            audio_data = resampled_audio;
-            audio_length = resampled_length;
-            resampled_audio = NULL;
-        }
-    } else {
-        audio_length = (size_t)(options.sample_rate * options.duration);
-        audio_data = (float*)malloc(audio_length * sizeof(float));
-        if (!audio_data) {
-            fprintf(stderr, "Error: Failed to allocate memory for audio data\n");
+    if (file_sample_rate != 16000.0f) {
+        size_t resampled_length;
+        resampled_audio = resample_audio(audio_data, audio_length, file_sample_rate, 16000.0f, &resampled_length);
+        if (!resampled_audio) {
+            fprintf(stderr, "Error: Failed to resample audio\n");
             exit_code = EXIT_FAILURE;
             goto err;
         }
-        generate_synthetic_audio(audio_data, audio_length, 440.0f, options.sample_rate);
+        free(audio_data);
+        audio_data = resampled_audio;
+        audio_length = resampled_length;
+        resampled_audio = NULL;
     }
 
     ov_status_e status = ov_genai_whisper_pipeline_create(options.model_path, options.device, 0, &pipeline);
