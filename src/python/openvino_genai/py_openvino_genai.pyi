@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -441,7 +441,7 @@ class EncodedGenerationResult:
     
         GenerationResult stores resulting batched tokens and scores.
     
-        Parameters: 
+        Parameters:
         request_id:         obsolete when handle API is approved as handle will connect results with prompts.
         generation_ids:     in a generic case we have multiple generation results per initial prompt
             depending on sampling parameters (e.g. beam search or parallel sampling).
@@ -801,7 +801,7 @@ class GenerationResult:
     
         GenerationResult stores resulting batched tokens and scores.
     
-        Parameters: 
+        Parameters:
         request_id:         obsolete when handle API is approved as handle will connect results with prompts.
         generation_ids:     in a generic case we have multiple generation results per initial prompt
             depending on sampling parameters (e.g. beam search or parallel sampling).
@@ -1777,7 +1777,7 @@ class SchedulerConfig:
     
         SchedulerConfig to construct ContinuousBatchingPipeline
     
-        Parameters: 
+        Parameters:
         max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
             independent sequences, we consider total amount of tokens in a batch).
         num_kv_blocks:              total number of KV blocks available to scheduler logic.
@@ -1793,6 +1793,10 @@ class SchedulerConfig:
             This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
             When turned off only KV-cache required for batch calculation is kept in memory and
             when a sequence has finished generation its cache is released.
+        use_cache_eviction:         Whether to use cache eviction during generation.
+        cache_eviction_config       Cache eviction configuration struct.
+        use_sparse_attention        Whether to use sparse attention during prefill.
+        sparse_attention_config     Sparse attention configuration struct.
     """
     cache_eviction_config: CacheEvictionConfig
     cache_size: int
@@ -1801,8 +1805,67 @@ class SchedulerConfig:
     max_num_batched_tokens: int
     max_num_seqs: int
     num_kv_blocks: int
+    sparse_attention_config: SparseAttentionConfig
     use_cache_eviction: bool
+    use_sparse_attention: bool
     def __init__(self) -> None:
+        ...
+class SparseAttentionConfig:
+    """
+    
+        Configuration struct for the sparse attention functionality.
+        :param mode: Sparse attention mode to be applied.
+        :type mode: openvino_genai.SparseAttentionMode
+    
+        :param num_last_dense_tokens_in_prefill: Number of tokens from the end of the prompt for which full attention across previous KV cache contents
+          will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention (encompassing first
+          and currently latest blocks) will be computed. Due to the block-wise nature of continuous batching cache management,
+          the actual number of prompt tokens for which the dense attention will be computed may be up to block-size larger than
+          this value (depending on the prompt length and block size).*/
+        :type num_last_dense_tokens_in_prefill: int
+    """
+    mode: SparseAttentionMode
+    num_last_dense_tokens_in_prefill: int
+    num_retained_recent_tokens_in_cache: int
+    num_retained_start_tokens_in_cache: int
+    def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: int = 100, num_retained_start_tokens_in_cache: int = 128, num_retained_recent_tokens_in_cache: int = 1920) -> None:
+        ...
+class SparseAttentionMode:
+    """
+    Represents the mode of sparse attention applied during generation.
+                                   :param SparseAttentionMode.TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.
+    
+    Members:
+    
+      TRISHAPE
+    """
+    TRISHAPE: typing.ClassVar[SparseAttentionMode]  # value = <SparseAttentionMode.TRISHAPE: 0>
+    __members__: typing.ClassVar[dict[str, SparseAttentionMode]]  # value = {'TRISHAPE': <SparseAttentionMode.TRISHAPE: 0>}
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: int) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: int) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
         ...
 class SpeechGenerationConfig(GenerationConfig):
     """
@@ -2013,13 +2076,23 @@ class StructuralTagItem:
 class StructuralTagsConfig:
     """
     
-        Structure to keep generation config parameters for structured tags in structured output generation.
-        It is used to store the configuration for structural tags, which includes a list of structural tag items
-        and a list of trigger strings that will switch the generation to structured output mode.
+        Configures structured output generation by combining regular sampling with structural tags.
+    
+        When the model generates a trigger string, it switches to structured output mode and produces output
+        based on the defined structural tags. Afterward, regular sampling resumes.
+    
+        Example:
+          - Trigger "<func=" activates tags with begin "<func=sum>" or "<func=multiply>".
+    
+        Note:
+          - Simple triggers like "<" may activate structured output unexpectedly if present in regular text.
+          - Very specific or long triggers may be difficult for the model to generate,
+          so structured output may not be triggered.
     
         Parameters:
-        structural_tags: a list of StructuralTagItem objects that define the structured tags for structured output generation.
-        triggers: a list of strings that will trigger the generation of structured output.
+        structural_tags: List of StructuralTagItem objects defining structural tags.
+        triggers:        List of strings that trigger structured output generation.
+                         Triggers may match the beginning or part of a tag's begin string.
     """
     @typing.overload
     def __init__(self) -> None:
