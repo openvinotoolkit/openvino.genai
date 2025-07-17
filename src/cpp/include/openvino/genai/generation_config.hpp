@@ -44,11 +44,20 @@ struct OPENVINO_GENAI_EXPORTS StructuralTagItem {
 };
 
 /**
- * @brief StructuralTagsConfig is used to define a set of structural tags and trigger strings.
- * @param structural_tags a vector of StructuralTagItem that defines the structural tags.
- * @param triggers a vector of strings that a model should generate to trigger the structured output generation of structural tags.
- *                 A trigger might be equal to the begin of some tags or a part of the begin of some tags.
- *                 Different tags can have different begins and will require different trigger strings.
+ * @brief Configures structured output generation by combining regular sampling with structural tags.
+ *
+ * When the model generates a trigger string, it switches to structured output mode and produces output
+ * based on the defined structural tags. Afterward, regular sampling resumes.
+ *
+ * Example:
+ *   - Trigger "<func=" activates tags with begin "<func=sum>" or "<func=multiply>".
+ *
+ * Note:
+ *   - Simple triggers like "<" may activate structured output unexpectedly if present in regular text.
+ *   - Very specific or long triggers may be difficult for the model to generate, so structured output may not be triggered.
+ *
+ * @param structural_tags List of StructuralTagItem objects defining structural tags.
+ * @param triggers List of strings that trigger structured output generation. Triggers may match the beginning or part of a tag's begin string.
  */
 struct OPENVINO_GENAI_EXPORTS StructuralTagsConfig {
 public:
