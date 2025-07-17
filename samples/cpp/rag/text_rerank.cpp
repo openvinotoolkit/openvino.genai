@@ -23,10 +23,12 @@ int main(int argc, char* argv[]) try {
     std::vector<std::pair<size_t, float>> rerank_result = pipeline.rerank(query, documents);
 
     // print reranked documents
+    std::cout << std::fixed << std::setprecision(4);
     std::cout << "Reranked documents:\n";
     for (const auto& [index, score] : rerank_result) {
         std::cout << "Document " << index << " (score: " << score << "): " << documents[index] << '\n';
     }
+    std::cout << std::defaultfloat;
 
 } catch (const std::exception& error) {
     try {

@@ -24,7 +24,7 @@ def main():
 
     print("Reranked documents:")
     for index, score in rerank_result:
-        print(f"Document {index} (score: {score}): {args.texts[index]}")
+        print(f"Document {index} (score: {score:.4f}): {args.texts[index]}")
 
 
 if __name__ == "__main__":

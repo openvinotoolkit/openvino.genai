@@ -41,12 +41,19 @@ class TestTextRerankPipeline:
     def test_sample_text_rerank_pipeline(self, convert_model):
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "rag/text_rerank.py")
-        py_command = [sys.executable, py_script, convert_model, "Query", "Document 1", "Document 2"]
+        document_1 = "Intel Core Ultra processors incorporate an AI-optimized\
+architecture that supports new user experiences and the\
+next wave of commercial applications."
+        document_2 = "Intel Core Ultra processors are designed to\
+provide enhanced performance and efficiency for a wide\
+range of computing tasks."
+        py_command = [sys.executable, py_script, convert_model, "What are the main features of Intel Core Ultra processors?", document_1, document_2]
         py_result = run_sample(py_command)
 
         # Run C++ sample
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, "text_rerank")
-        cpp_command = [cpp_sample, convert_model, "Query", "Document 1", "Document 2"]
+
+        cpp_command = [cpp_sample, convert_model, "What are the main features of Intel Core Ultra processors?", document_1, document_2]
         cpp_result = run_sample(cpp_command)
 
         # Compare results
