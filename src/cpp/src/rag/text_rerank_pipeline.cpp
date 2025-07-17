@@ -141,24 +141,23 @@ private:
 TextRerankPipeline::TextRerankPipeline(const std::filesystem::path& models_path,
                                        const std::string& device,
                                        const Config& config,
-                                       const ov::AnyMap& properties) {
-    m_impl = std::make_unique<TextRerankPipelineImpl>(models_path, device, config, properties);
-};
+                                       const ov::AnyMap& properties)
+    : m_impl{std::make_unique<TextRerankPipelineImpl>(models_path, device, config, properties)} {};
 
 TextRerankPipeline::TextRerankPipeline(const std::filesystem::path& models_path,
                                        const std::string& device,
-                                       const ov::AnyMap& properties) {
-    const auto& plugin_properties = remove_config_properties(properties);
+                                       const ov::AnyMap& properties)
+    : m_impl{std::make_unique<TextRerankPipelineImpl>(models_path,
+                                                      device,
+                                                      Config(properties),
+                                                      remove_config_properties(properties))} {};
 
-    m_impl = std::make_unique<TextRerankPipelineImpl>(models_path, device, Config(properties), plugin_properties);
-};
-
-std::vector<std::pair<size_t, float>> TextRerankPipeline::rerank(const std::string query,
+std::vector<std::pair<size_t, float>> TextRerankPipeline::rerank(const std::string& query,
                                                                  const std::vector<std::string>& texts) {
     return m_impl->rerank(query, texts);
 }
 
-void TextRerankPipeline::start_rerank_async(const std::string query, const std::vector<std::string>& texts) {
+void TextRerankPipeline::start_rerank_async(const std::string& query, const std::vector<std::string>& texts) {
     m_impl->start_rerank_async(query, texts);
 }
 
