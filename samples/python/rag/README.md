@@ -45,7 +45,7 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
   ```sh
   python text_embeddings.py <MODEL_DIR> "Document 1" "Document 2"
   ```
-- See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-embeddings-models) for the list of supported models.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#text-embeddings-models) for more details.
 
 ### 2. Text Rerank Sample (`text_rerank.py`)
 - **Description:**
@@ -54,7 +54,7 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
   ```sh
   python text_rerank.py <MODEL_DIR> "<QUERY>" "<TEXT 1>" ["<TEXT 2>" ...]
   ```
-- See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-rerank-models) for the list of supported models.
+
 
 # Text Embedding Pipeline Usage
 

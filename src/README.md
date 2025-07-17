@@ -543,7 +543,7 @@ For information on how OpenVINO™ GenAI works, refer to the [How It Works Secti
 
 ## Supported Models
 
-For a list of supported models, refer to the [Supported Models Section](../SUPPORTED_MODELS.md).
+For a list of supported models, refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/) page.
 
 ## Debug Log
 

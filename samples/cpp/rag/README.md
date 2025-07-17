@@ -30,7 +30,7 @@ Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/lear
   ```sh
   text_embeddings <MODEL_DIR> "Document 1" "Document 2"
   ```
-- See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-embeddings-models) for the list of supported models.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#text-embeddings-models) for more details.
 
 ### 2. Text Rerank Sample (`text_rerank.cpp`)
 - **Description:**
@@ -39,7 +39,7 @@ Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/lear
   ```sh
   text_rerank <MODEL_DIR> '<QUERY>' '<TEXT 1>' ['<TEXT 2>' ...]
   ```
-- See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-rerank-models) for the list of supported models.
+
 
 # Text Embedding Pipeline Usage
 
