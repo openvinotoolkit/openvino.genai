@@ -93,7 +93,7 @@
 - 'tests/python_tests/samples/test_text2image.py'
 - 'tests/python_tests/samples/test_image2image.py'
 - 'tests/python_tests/samples/test_inpainting.py'
-# - 'tests/python_tests/samples/test_lora_text2image.py' # Ticket 170878
+- 'tests/python_tests/samples/test_lora_text2image.py'
 
 'category: VLM samples':
 - 'samples/cpp/visual_language_chat/**/*'
