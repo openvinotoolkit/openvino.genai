@@ -18,6 +18,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     auto properties_copy = properties;
 
     properties_copy.erase(top_n.name());
+    properties_copy.erase(max_length.name());
 
     return properties_copy;
 }
@@ -57,6 +58,7 @@ using utils::read_anymap_param;
 
 TextRerankPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::top_n.name(), top_n);
+    read_anymap_param(properties, ov::genai::max_length.name(), max_length);
 };
 
 class TextRerankPipeline::TextRerankPipelineImpl {
@@ -73,6 +75,10 @@ public:
 
         model = apply_postprocessing(model);
 
+        if (m_config.max_length) {
+            m_tokenization_params.insert({max_length.name(), *m_config.max_length});
+        }
+
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
 
         utils::print_compiled_model_properties(compiled_model, "text rerank model");
@@ -85,7 +91,7 @@ public:
     }
 
     void start_rerank_async(const std::string& query, const std::vector<std::string>& texts) {
-        const auto encoded = m_tokenizer.encode({query}, texts);
+        const auto encoded = m_tokenizer.encode({query}, texts, m_tokenization_params);
 
         m_request.set_tensor("input_ids", encoded.input_ids);
         m_request.set_tensor("attention_mask", encoded.attention_mask);

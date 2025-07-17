@@ -17,6 +17,11 @@ public:
         size_t top_n = 3;
 
         /**
+         * @brief Maximum length of tokens passed to the rerank model
+         */
+        std::optional<size_t> max_length;
+
+        /**
          * @brief Constructs text rerank pipeline configuration
          */
         Config() = default;

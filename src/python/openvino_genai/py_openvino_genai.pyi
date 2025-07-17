@@ -2438,7 +2438,10 @@ class TextRerankPipeline:
         Attributes:
             top_n (int, optional):
                 Number of documents to return sorted by score.
+            max_length (int, optional):
+                Maximum length of tokens passed to the embedding model.
         """
+        max_length: int | None
         top_n: int
         @typing.overload
         def __init__(self) -> None:
