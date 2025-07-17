@@ -36,9 +36,10 @@ def main():
     print("Generating image with LoRA adapters applied, resulting image will be in lora.bmp")
     image = pipe.generate(prompt,
                           width=512,
-                          height=896,
+                          height=512,
                           num_inference_steps=20,
-                          rng_seed=42)
+                        #   rng_seed=42
+                          )
 
     image_write("lora.bmp", image)
     print("Generating image without LoRA adapters applied, resulting image will be in baseline.bmp")
@@ -46,9 +47,10 @@ def main():
                           # passing adapters in generate overrides adapters set in the constructor; openvino_genai.AdapterConfig() means no adapters
                           adapters=openvino_genai.AdapterConfig(),
                           width=512,
-                          height=896,
+                          height=512,
                           num_inference_steps=20,
-                          rng_seed=42)
+                        #   rng_seed=42
+                        )
     image_write("baseline.bmp", image)
 
 

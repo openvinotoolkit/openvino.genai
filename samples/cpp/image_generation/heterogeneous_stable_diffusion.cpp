@@ -35,10 +35,18 @@ int32_t main(int32_t argc, char* argv[]) try {
     // (so that the 'compile' method run much faster 2nd+ time)
     std::string ov_cache_dir = "./cache";
 
+    std::string adapter_path = "../../../sd_models/readme_LoRA/soulcard.safetensors";
+
+    ov::genai::AdapterConfig adapter_config;
+    ov::genai::Adapter adapter(adapter_path);
+    // adapter_config.add(adapter, 1.0);
+
     //
     // Step 1: Create the initial Text2ImagePipeline, given the model path
     //
+    // ov::genai::Text2ImagePipeline pipe(models_path, ov::genai::adapters(adapter_config));
     ov::genai::Text2ImagePipeline pipe(models_path);
+
 
     //
     // Step 2: Reshape the pipeline given number of images, height, width and guidance scale.
@@ -48,7 +56,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     //
     // Step 3: Compile the pipeline with the specified devices, and properties (like cache dir)
     //
-    ov::AnyMap properties = {ov::cache_dir(ov_cache_dir)};
+    // ov::AnyMap properties = {ov::cache_dir(ov_cache_dir), ov::genai::adapters(adapter, 1.0)};
 
     // Note that if there are device-specific properties that are needed, they can
     // be added using ov::device::properties groups, like this:
@@ -56,7 +64,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     //                         ov::device::properties("GPU", ov::cache_dir("gpu_cache")),
     //                         ov::device::properties("NPU", ov::cache_dir("npu_cache"))};
 
-    pipe.compile(text_encoder_device, unet_device, vae_decoder_device, properties);
+    pipe.compile(text_encoder_device, unet_device, vae_decoder_device, {ov::cache_dir(ov_cache_dir), ov::genai::adapters(adapter, 1.0)});
 
 
     //

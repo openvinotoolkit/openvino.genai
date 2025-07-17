@@ -645,6 +645,7 @@ protected:
     }
 };
 
+// TODO: fix scaling
 std::shared_ptr<ov::Node> set_scale(const std::shared_ptr<ov::Node>& A,
                                     const std::shared_ptr<ov::Node>& alpha,
                                     const ov::element::Type& element_type) {
@@ -693,6 +694,7 @@ NodePtr tensors_multiplication(NodePtr input,
                 // TODO: Apply alpha multiplication separately
 
                 // scale alpha to align with Peft: self.scaling[adapter] = scale * self.lora_alpha[adapter] / self.r[adapter]
+                // TODO: fix scaling
                 normalized = set_scale(multipliers[A_pos], normalized, target_type);
                 input = std::make_shared<v1::Multiply>(input, normalized);
             } else {  // MatMul for A and B

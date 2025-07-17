@@ -21,10 +21,12 @@ int32_t main(int32_t argc, char* argv[]) try {
     }
 
     // LoRA adapters passed to the constructor will be activated by default in next generates
-    ov::genai::Text2ImagePipeline pipe(models_path, device, ov::genai::adapters(adapter_config));
+    // ov::genai::Text2ImagePipeline pipe(models_path, device, ov::genai::adapters(adapter_config));
+    ov::genai::Text2ImagePipeline pipe(models_path, device);
 
     std::cout << "Generating image with LoRA adapters applied, resulting image will be in lora.bmp\n";
     ov::Tensor image = pipe.generate(prompt,
+       ov::genai::adapters(adapter_config),
         ov::genai::width(512),
         ov::genai::height(896),
         ov::genai::num_inference_steps(20),
