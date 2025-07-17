@@ -283,7 +283,7 @@ jobs:
   genai_build_wheel:
     name: genai wheel
     needs: [ openvino_download ]
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
