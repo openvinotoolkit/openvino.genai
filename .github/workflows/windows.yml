@@ -223,6 +223,7 @@ jobs:
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TESTS_DIR }} --component tests
         env:
           CMAKE_TLS_VERIFY: 0
+          CMAKE_MSVC_DEPLOYMENT_TOOLSET: ""
 
       - name: Show ccache stats
         run: ccache --show-stats
