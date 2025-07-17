@@ -30,7 +30,7 @@ Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples
 
 GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
 
-See https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md for the list of supported models.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/) for more details.
 
 Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples
 ```sh
