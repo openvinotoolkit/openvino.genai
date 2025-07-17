@@ -98,6 +98,7 @@ public:
         auto embedder_properties = device_propertes.empty()
             ? properties_copy
             : utils::pop_or_default<ov::AnyMap>(device_propertes, embedder_device, {});
+
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
@@ -365,30 +366,34 @@ VLMPipeline::VLMPipeline(
     const ov::AnyMap& user_properties
 ) {
     auto start_time = std::chrono::steady_clock::now();
+
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
-
-    // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (utils::explicitly_requires_paged_attention(properties)) {
-        auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
-    } else if (device == "NPU") {
+    if (device == "NPU") {
+        auto it = properties.find("scheduler_config");
+        OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
-    } else if (attention_backend == PA_BACKEND) {
-        // try to call CB adapter one more time, but with safe guard to silent exception
-        try {
+    } else {
+        // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
+        if (utils::explicitly_requires_paged_attention(properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-            // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
-            // but cannot perform its inference later
-#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
             m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
-#endif
-        } catch (ov::Exception&) {
-            // ignore exceptions from PA
+        } else if (attention_backend == PA_BACKEND) {
+            // try to call CB adapter one more time, but with safe guard to silent exception
+            try {
+                auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+                // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
+                // but cannot perform its inference later
+    #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
+    #endif
+            } catch (ov::Exception&) {
+                // ignore exceptions from PA
+            }
         }
-    }
 
-    if (m_pimpl == nullptr) {
-        m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
+        if (m_pimpl == nullptr) {
+            m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
+        }
     }
 
     auto stop_time = std::chrono::steady_clock::now();
@@ -404,31 +409,37 @@ VLMPipeline::VLMPipeline(
     const GenerationConfig& generation_config
 ) {
     auto start_time = std::chrono::steady_clock::now();
+
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
-
-    // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (utils::explicitly_requires_paged_attention(properties)) {
-        auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
-    } else if (device == "NPU") {
+    if (device == "NPU") {
+        auto it = properties.find("scheduler_config");
+        OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
-    } else if (attention_backend == PA_BACKEND) {
-        // try to call CB adapter one more time, but with safe guard to silent exception
-        try {
+    } else {
+        // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
+        if (utils::explicitly_requires_paged_attention(properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-            // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
-            // but cannot perform its inference later
-#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
             m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
-#endif
-        } catch (ov::Exception&) {
-            // ignore exceptions from PA
+        } else if (attention_backend == PA_BACKEND) {
+            // try to call CB adapter one more time, but with safe guard to silent exception
+            try {
+                auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+                // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
+                // but cannot perform its inference later
+    #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
+    #endif
+            } catch (ov::Exception&) {
+                // ignore exceptions from PA
+            }
         }
+
+        if (m_pimpl == nullptr) {
+            m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
+        }
+
     }
 
-    if (m_pimpl == nullptr) {
-        m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
-    }
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
 }
