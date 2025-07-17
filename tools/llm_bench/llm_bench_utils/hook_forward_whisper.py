@@ -63,12 +63,12 @@ class WhisperHook:
                     f"encoder infers latency: {data['enc_infer_time']:.2f} ms/infer"
             if 'dec_1st_token_time' and 'dec_2nd_tokens_time' in data:
                 str += \
-                    f"\n{title} decoder first token latency: {data['dec_1st_token_time']} ms/token, " \
+                    f"\n{title} decoder first token latency: {data['dec_1st_token_time']} ms, " \
                     f"decoder other tokens latency: {data['dec_2nd_tokens_time']} ms/token, " \
                     f"decoder tokens count: {data['dec_token_count']}\n"
             if 'dec_1st_infer_time' and 'dec_2nd_infers_time' in data:
                 str += \
-                    f"{title} decoder first infer latency: {data['dec_1st_infer_time']} ms/infer, " \
+                    f"{title} decoder first infer latency: {data['dec_1st_infer_time']} ms, " \
                     f"decoder other infers latency: {data['dec_2nd_infers_time']} ms/infer, " \
                     f"decoder infers count: {data['dec_infer_count']}"
             if idx < len(self.latency_list) - 1:
