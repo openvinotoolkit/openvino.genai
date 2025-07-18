@@ -11,7 +11,7 @@ transformers[sentencepiece]>=4.40.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
 git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel
-git+https://github.com/openvinotoolkit/nncf.git@develop#egg=nncf
+git+https://github.com/openvinotoolkit/nncf.git@0fa0fdb0fbaa15682c723a0c1d0e2fb8ef6335e0#egg=nncf
 packaging
 psutil
 timm
