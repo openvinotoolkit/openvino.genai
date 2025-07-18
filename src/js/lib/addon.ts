@@ -29,7 +29,7 @@ export type TextEmbeddingConfig = {
 };
 
 export interface TextEmbeddingPipelineWrapper {
-  new (): TextEmbeddingPipelineWrapper;
+  new(): TextEmbeddingPipelineWrapper;
   init(
     modelPath: string,
     device: string,
