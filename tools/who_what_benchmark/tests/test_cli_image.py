@@ -94,6 +94,7 @@ def test_image_model_types(model_id, model_type, backend):
     similarity = get_similarity(str(result.stderr))
     assert similarity >= 0.98
 
+
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     list(itertools.product(OV_IMAGE_MODELS,
