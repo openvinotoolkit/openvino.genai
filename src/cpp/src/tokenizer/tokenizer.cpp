@@ -566,7 +566,6 @@ public:
     TokenizedInputs encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params = {}) {
         OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                                 "Tokenizer::encode is not available");
-        size_t batch_size = prompts_1.size();
         OPENVINO_ASSERT(prompts_1.size() == prompts_2.size() || prompts_1.size() == 1 || prompts_2.size() == 1,
                         "prompts_1 and prompts_2 should be of the same size or one of them should be of size 1");
 
@@ -574,8 +573,8 @@ public:
         {
             CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
             set_state_if_necessary(infer_request_guard, tokenization_params);
-            infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(prompts_1.data())});
-            infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(prompts_2.data())});
+            infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {prompts_1.size()}, const_cast<std::string*>(prompts_1.data())});
+            infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {prompts_2.size()}, const_cast<std::string*>(prompts_2.data())});
 
             infer_request_guard.get().infer();
 
@@ -583,8 +582,19 @@ public:
                 infer_request_guard.get().get_tensor("input_ids"),
                 infer_request_guard.get().get_tensor("attention_mask")
             );
+
+            // If the model has a token_type_ids output, copy it to the result
+            for (const auto& output : infer_request_guard.get().get_compiled_model().outputs()) {
+                if (output.get_any_name() != "token_type_ids") {
+                    continue;
+                }
+                ov::Tensor token_type_ids = infer_request_guard.get().get_tensor(output);
+                ov::Tensor token_type_ids_copy = ov::Tensor(token_type_ids.get_element_type(), token_type_ids.get_shape());
+                token_type_ids.copy_to(token_type_ids_copy);
+                result.token_type_ids = token_type_ids_copy;
+            }
         }
-        return {result.input_ids, result.attention_mask};
+        return {result.input_ids, result.attention_mask, result.token_type_ids};
     }
 
     TokenizedInputs encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params = {}) {

@@ -107,7 +107,7 @@
 'category: RAG samples':
 - 'samples/cpp/rag/**/*'
 - 'samples/python/rag/**/*'
-- 'tests/python_tests/samples/test_text_embedding_pipeline.py'
+- 'tests/python_tests/samples/test_rag.py'
 
 'category: structured output generation':
 - 'src/cpp/src/sampling/structured_output/*'

@@ -9,7 +9,7 @@ from functools import lru_cache
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 
-from optimum.intel import OVModelForCausalLM, OVModelForFeatureExtraction
+from optimum.intel import OVModelForCausalLM, OVModelForFeatureExtraction, OVModelForSequenceClassification
 from optimum.intel.openvino.modeling import OVModel
 
 from huggingface_hub import hf_hub_download
@@ -202,6 +202,15 @@ def download_and_convert_model(model_id: str, **tokenizer_kwargs):
 def download_and_convert_embeddings_models(request):
     model_id = request.param
     return _download_and_convert_model(model_id, OVModelForFeatureExtraction)
+
+
+@pytest.fixture()
+def download_and_convert_rerank_model(request):
+    model_id = request.param
+    opt_model, hf_tokenizer, models_path = _download_and_convert_model(model_id, OVModelForSequenceClassification)
+    ov_tokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=False, number_of_inputs=2)
+    save_model(ov_tokenizer, models_path / "openvino_tokenizer.xml")
+    return opt_model, hf_tokenizer, models_path
 
 
 def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):

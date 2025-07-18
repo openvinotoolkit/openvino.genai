@@ -433,7 +433,7 @@ def test_two_inputs_string_list_of_lists(hf_ov_genai_models, input_pair):
 @pytest.mark.parametrize("input_pair", [
     [["Eng... test, string?!" * 100], ["Multiline\nstring!\nWow!"]],
     [["hi" * 20], ["buy" * 90]],
-    # [["What is the capital of Great Britain"] * 4, ["London is capital of Great Britain"]],  # TODO: broadcast of [4, 1] to [4, 4] fails
+    [["What is the capital of Great Britain"] * 4, ["London is capital of Great Britain"]],
     [["What is the capital of Great Britain"], ["London is capital of Great Britain"] * 4],
 ])
 def test_two_inputs_string(hf_ov_genai_models, input_pair):

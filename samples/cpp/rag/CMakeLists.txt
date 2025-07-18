@@ -21,7 +21,7 @@ function(add_sample_executable target_name)
             EXCLUDE_FROM_ALL)
 endfunction()
 
-set(SAMPLE_LIST text_embeddings)
+set(SAMPLE_LIST text_embeddings text_rerank)
 
 foreach(sample ${SAMPLE_LIST})
     add_sample_executable(${sample})
