@@ -318,8 +318,9 @@ public:
             // if (properties.count(add_second_input_argname) && properties.at(add_second_input_argname).as<bool>()) {
             // }
             ov::pass::Manager manager;
+            manager.register_pass<ov::pass::VisualizeTree>("before.svg");
             manager.register_pass<ov::genai::ModifyCombineSegmentsForPairInput>(m_shared_object_ov_tokenizers);
-            // manager.register_pass<ov::pass::VisualizeTree>("after.svg");
+            manager.register_pass<ov::pass::VisualizeTree>("after.svg");
             manager.run_passes(ov_tokenizer);
         }
 
