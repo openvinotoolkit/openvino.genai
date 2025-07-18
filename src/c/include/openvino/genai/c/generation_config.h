@@ -152,7 +152,7 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_stop_token_i
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_num_beam_groups(ov_genai_generation_config* config,
-                                                                                   const size_t value);
+                                                                                    const size_t value);
 
 /**
  * @brief Set the number of beams for beam search. 1 disables beam search.
