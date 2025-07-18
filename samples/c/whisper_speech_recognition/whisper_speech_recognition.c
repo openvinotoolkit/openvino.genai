@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) {
                 fprintf(stderr, "Warning: Failed to allocate memory for chunk text %zu\n", i);
                 ov_genai_whisper_decoded_result_chunk_free(chunk);
                 exit_code = EXIT_FAILURE;
-                continue;
+                goto err;
             }
 
             CHECK_STATUS(ov_genai_whisper_decoded_result_chunk_get_text(chunk, chunk_text, &chunk_text_size));
