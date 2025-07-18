@@ -91,7 +91,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
-        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
+        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
     // Extract sampler_num_threads property if exists and remove it from properties
