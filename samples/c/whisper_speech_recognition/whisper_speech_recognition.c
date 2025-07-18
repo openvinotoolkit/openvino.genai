@@ -10,7 +10,7 @@
 #include "whisper_utils.h"
 
 int main(int argc, char* argv[]) {
-    if (argc != 3) {
+    if (argc != 3 && argc != 4) {
         fprintf(stderr, "Usage: %s <MODEL_DIR> <WAV_FILE_PATH> [DEVICE]\n", argv[0]);
         return EXIT_FAILURE;
     }
