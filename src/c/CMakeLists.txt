@@ -10,6 +10,9 @@ file(GLOB SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_
 
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 add_library(openvino::genai::c ALIAS ${TARGET_NAME})
+if(WIN32)
+  add_vs_version_resource(${TARGET_NAME})
+endif()
 
 target_include_directories(${TARGET_NAME} PUBLIC "$<INSTALL_INTERFACE:runtime/include>"
                                                  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"

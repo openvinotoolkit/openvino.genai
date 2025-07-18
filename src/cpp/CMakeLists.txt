@@ -170,6 +170,10 @@ set_target_properties(${TARGET_NAME_OBJ} PROPERTIES POSITION_INDEPENDENT_CODE ON
 add_library(${TARGET_NAME} SHARED $<TARGET_OBJECTS:${TARGET_NAME_OBJ}>)
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
+if(WIN32)
+  add_vs_version_resource(${TARGET_NAME})
+endif()
+
 target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime/include>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
