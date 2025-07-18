@@ -44,22 +44,7 @@
     }
 
 // Default values
-#define DEFAULT_DEVICE      "CPU"
-#define DEFAULT_LANGUAGE    ""
-#define DEFAULT_TASK        "transcribe"
 #define DEFAULT_SAMPLE_RATE 16000.0f
-
-// Options structure
-typedef struct {
-    const char* model_path;
-    const char* audio_path;
-    const char* device;
-    const char* language;
-    const char* task;
-    const char* initial_prompt;
-    bool return_timestamps;
-    float sample_rate;
-} Options;
 
 // WAV file header structure
 typedef struct {
@@ -79,8 +64,6 @@ typedef struct {
 } WAVHeader;
 
 // Function declarations
-void print_usage(const char* program_name);
-int parse_arguments(int argc, char* argv[], Options* options);
 int load_wav_file(const char* filename, float** audio_data, size_t* audio_length, float* sample_rate);
 float* resample_audio(const float* input,
                       size_t input_length,

@@ -10,13 +10,14 @@
 #include "whisper_utils.h"
 
 int main(int argc, char* argv[]) {
-    Options options;
-    int result = parse_arguments(argc, argv, &options);
-    if (result == 0) {
-        return EXIT_SUCCESS;
-    } else if (result == -1) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <MODEL_DIR> <WAV_FILE_PATH> [DEVICE]\n", argv[0]);
         return EXIT_FAILURE;
     }
+
+    const char* model_path = argv[1];
+    const char* wav_file_path = argv[2];
+    const char* device = (argc == 4) ? argv[3] : "CPU";  // Default to CPU if no device is provided
 
     int exit_code = EXIT_SUCCESS;
 
@@ -30,7 +31,7 @@ int main(int argc, char* argv[]) {
     size_t output_size = 0;
 
     float file_sample_rate;
-    if (load_wav_file(options.audio_path, &audio_data, &audio_length, &file_sample_rate) != 0) {
+    if (load_wav_file(wav_file_path, &audio_data, &audio_length, &file_sample_rate) != 0) {
         exit_code = EXIT_FAILURE;
         goto err;
     }
@@ -49,29 +50,21 @@ int main(int argc, char* argv[]) {
         resampled_audio = NULL;
     }
 
-    ov_status_e status = ov_genai_whisper_pipeline_create(options.model_path, options.device, 0, &pipeline);
+    ov_status_e status = ov_genai_whisper_pipeline_create(model_path, device, 0, &pipeline);
     if (status != OK) {
         if (status == UNKNOW_EXCEPTION) {
             fprintf(stderr, "Error: Failed to create Whisper pipeline. Please check:\n");
             fprintf(stderr, "  - Model path exists and contains valid Whisper model files\n");
-            fprintf(stderr, "  - Device '%s' is available and supported\n", options.device);
+            fprintf(stderr, "  - Device '%s' is available and supported\n", device);
             fprintf(stderr, "  - Model is compatible with OpenVINO GenAI\n");
         }
         CHECK_STATUS(status);
     }
 
     CHECK_STATUS(ov_genai_whisper_generation_config_create(&config));
-
-    if (strlen(options.language) > 0) {
-        CHECK_STATUS(ov_genai_whisper_generation_config_set_language(config, options.language));
-    }
-
-    CHECK_STATUS(ov_genai_whisper_generation_config_set_task(config, options.task));
-    CHECK_STATUS(ov_genai_whisper_generation_config_set_return_timestamps(config, options.return_timestamps));
-
-    if (options.initial_prompt) {
-        CHECK_STATUS(ov_genai_whisper_generation_config_set_initial_prompt(config, options.initial_prompt));
-    }
+    CHECK_STATUS(ov_genai_whisper_generation_config_set_language(config, "<|en|>"));  
+    CHECK_STATUS(ov_genai_whisper_generation_config_set_task(config, "transcribe"));
+    CHECK_STATUS(ov_genai_whisper_generation_config_set_return_timestamps(config, true));
 
     CHECK_STATUS(ov_genai_whisper_pipeline_generate(pipeline, audio_data, audio_length, config, &results));
 
