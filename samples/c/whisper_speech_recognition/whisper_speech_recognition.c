@@ -11,7 +11,7 @@
 
 int main(int argc, char* argv[]) {
     if (argc != 3 && argc != 4) {
-        fprintf(stderr, "Usage: %s <MODEL_DIR> <WAV_FILE_PATH> [DEVICE]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <MODEL_DIR> \"<WAV_FILE_PATH>\" [DEVICE]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -62,10 +62,8 @@ int main(int argc, char* argv[]) {
     }
 
     CHECK_STATUS(ov_genai_whisper_generation_config_create(&config));
-    CHECK_STATUS(ov_genai_whisper_generation_config_set_language(config, "<|en|>"));  
     CHECK_STATUS(ov_genai_whisper_generation_config_set_task(config, "transcribe"));
     CHECK_STATUS(ov_genai_whisper_generation_config_set_return_timestamps(config, true));
-
     CHECK_STATUS(ov_genai_whisper_pipeline_generate(pipeline, audio_data, audio_length, config, &results));
 
     CHECK_STATUS(ov_genai_whisper_decoded_results_get_string(results, NULL, &output_size));

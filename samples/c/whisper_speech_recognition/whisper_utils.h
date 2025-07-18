@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "openvino/c/ov_common.h"
 #include "openvino/genai/c/whisper_pipeline.h"
 
 
