@@ -132,8 +132,6 @@ std::shared_ptr<ov::Model> create_language_model(
         model->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     }
     model->set_rt_info(8.0f, {"runtime_options", ov::hint::activations_scale_factor.name()});
-    // Dummy GGUF models in CI are sensitive to dynamic quantization, set default group size 64 for dynamic quantization as default value
-    model->set_rt_info(64, {"runtime_options", ov::hint::dynamic_quantization_group_size.name()});
 
     return model;
 }

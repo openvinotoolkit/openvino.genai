@@ -826,6 +826,7 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
+    dynamic_quantization_group_size = model_ids["dynamic_quantization_group_size"]
     prompt = 'Why is the Sun yellow?'
 
     opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
@@ -850,7 +851,7 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     res_string_input_1 = all_text_batch[0]
 
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
+    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
     encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
     del ov_pipe_gguf
     gc.collect()
@@ -868,6 +869,7 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
+    dynamic_quantization_group_size = model_ids["dynamic_quantization_group_size"]
     prompt = 'Why is the Sun yellow?'
 
     opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
@@ -895,14 +897,14 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     res_string_input_1 = all_text_batch[0]
 
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model)
+    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
     del ov_pipe_gguf
     gc.collect()
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
-        ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type)
+        ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
         del ov_pipe_native
         gc.collect()
