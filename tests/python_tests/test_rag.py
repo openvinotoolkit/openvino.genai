@@ -49,6 +49,9 @@ def run_genai(
 
     pipeline = TextEmbeddingPipeline(models_path, "CPU", config)
 
+    if config.batch_size:
+        documents = documents[: config.batch_size]
+
     if task == "embed_documents":
         return pipeline.embed_documents(documents)
     else:
@@ -81,6 +84,9 @@ def run_langchain(
     # align instructions
     ov_embeddings.embed_instruction = config.embed_instruction or ""
     ov_embeddings.query_instruction = config.query_instruction or ""
+
+    if config.batch_size:
+        documents = documents[: config.batch_size]
 
     if task == "embed_documents":
         return ov_embeddings.embed_documents(documents)
@@ -155,6 +161,7 @@ def test_constructors(download_and_convert_embeddings_models):
             normalize=False,
             embed_instruction="Represent this document for searching relevant passages: ",
         ),
+        TextEmbeddingPipeline.Config(max_length=256, pad_to_max_length=True, batch_size=4),
     ],
     ids=[
         "cls_pooling",
@@ -162,6 +169,7 @@ def test_constructors(download_and_convert_embeddings_models):
         "cls_pooling + normalize",
         "mean_pooling + normalize",
         "embed_instruction",
+        "max_length + pad_to_max_length + batch_size",
     ],
 )
 @pytest.mark.precommit
