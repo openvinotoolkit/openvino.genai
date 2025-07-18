@@ -69,19 +69,23 @@ int main(int argc, char* argv[]) try {
 
     std::cout << ov::get_openvino_version() << std::endl;
 
-    ov::genai::VLMPipeline pipe(models_path, device, ov::genai::scheduler_config(scheduler_config));
+    std::unique_ptr<ov::genai::VLMPipeline> pipe;
+    if (device == "NPU")
+        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
+    else
+        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
 
-    auto input_data = pipe.get_tokenizer().encode(prompt);
+    auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
     std::cout << "Number of images:" << images.size() << ", prompt token size:" << prompt_token_size << std::endl;
 
     for (size_t i = 0; i < num_warmup; i++)
-        pipe.generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
+        pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
     
-    auto res = pipe.generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
+    auto res = pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
     auto metrics = res.perf_metrics;
     for (size_t i = 0; i < num_iter - 1; i++) {
-        res = pipe.generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
+        res = pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
         metrics = metrics + res.perf_metrics;
     }
 
