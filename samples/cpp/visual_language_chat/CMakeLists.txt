@@ -55,3 +55,16 @@ install(TARGETS benchmark_vlm
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
+
+# create vlm continuous batching executable
+add_executable(vlm_continuous_batching vlm_continuous_batching.cpp load_image.cpp ../text_generation/read_prompt_from_file.cpp)
+target_include_directories(vlm_continuous_batching PRIVATE "${CMAKE_BINARY_DIR}")
+target_link_libraries(vlm_continuous_batching PRIVATE openvino::genai cxxopts::cxxopts)
+set_target_properties(vlm_continuous_batching PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS vlm_continuous_batching
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
