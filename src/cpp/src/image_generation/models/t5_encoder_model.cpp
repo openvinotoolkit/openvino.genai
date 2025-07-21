@@ -81,13 +81,13 @@ T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::Any
     return *this;
 }
 
-ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length) {
+ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length, const ov::AnyMap& tokenization_params) {
     OPENVINO_ASSERT(m_request, "T5 encoder model must be compiled first. Cannot infer non-compiled model");
 
     const int32_t pad_token_id = m_tokenizer.get_pad_token_id();
 
     auto perform_tokenization = [&](const std::string& prompt, ov::Tensor input_ids) {
-        ov::Tensor input_ids_token = m_tokenizer.encode(prompt).input_ids;
+        ov::Tensor input_ids_token = m_tokenizer.encode(prompt, tokenization_params).input_ids;
         size_t min_length = std::min(input_ids.get_size(), input_ids_token.get_size());
 
         if (input_ids.get_element_type() == ov::element::i32) {
