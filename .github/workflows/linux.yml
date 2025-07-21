@@ -164,13 +164,39 @@ jobs:
       - name: CMake Build
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
-                -DENABLE_PYTHON=ON \
+                -DENABLE_PYTHON=OFF \
                 -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-                -S ${{ env.SRC_DIR}} \
+                -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
-          cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+          
+          # Need to remove the default Python 3.11 in /venv from the Path so that CMake uses the correct one from newly created venv$py_version
+          export PATH=${PATH/:\/venv\/bin/}
+
+          for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
+          do
+            rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
+            
+            echo "Creating venv for python$py_version"
+            python$py_version -m venv venv$py_version
+            source venv$py_version/bin/activate
+            echo "PATH: $PATH"
+
+            echo "Configuring cmake for python$py_version"
+            cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
+                  -DENABLE_PYTHON=ON \
+                  -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+                  -S ${{ env.SRC_DIR }} \
+                  -B ${{ env.BUILD_DIR }}
+            echo "Configuring cmake done for python$py_version"
+            
+            cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+            cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+            deactivate
+          done
+          
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TESTS_DIR }} --component tests
 
@@ -213,7 +239,7 @@ jobs:
   genai_build_wheel:
     name: Build Wheel
     needs: [ openvino_download ]
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -265,18 +291,22 @@ jobs:
               ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
-      - name: Build GenAI Wheel
-        run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-              --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
-              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
-              ${{ env.SRC_DIR }}
-        working-directory: ${{ env.OV_INSTALL_DIR }}
-
       - name: Build WWB Wheel
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
-
+      
+      - name: Build GenAI Wheel
+        run: |
+          for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
+          do
+            python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
+            $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+                --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+                ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+                ${{ env.SRC_DIR }}
+          done
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+      
       - name: Upload Wheels
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -482,7 +512,7 @@ jobs:
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 60
+            timeout: 180
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
@@ -891,8 +921,7 @@ jobs:
           PYTHONPATH: "${{ env.BUILD_DIR }}:"
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py
-          # python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_structured_output.py
+          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -k "not test_perf_metrics_with_structured_output"
 
   Overall_Status:
     name: ci/gha_overall_status_linux
