@@ -3,7 +3,7 @@ import CodeBlock from '@theme/CodeBlock';
 <CodeBlock language="python" showLineNumbers>
 {`import openvino_genai
 
-pipeline = openvino_genai.TextRerankPipeline(model_path, "CPU", top_n=3)
+pipeline = openvino_genai.TextRerankPipeline(model_path, "${props.device || 'CPU'}", top_n=3)
 
 rerank_result = pipeline.rerank(query, documents)
 

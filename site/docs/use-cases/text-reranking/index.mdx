@@ -1,0 +1,18 @@
+---
+sidebar_position: 2
+---
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import ConvertModelSection from '../_shared/_convert_model.mdx';
+import RunModelSection from './_sections/_run_model/index.mdx';
+
+# Text Reranking for RAG
+
+<ConvertModelSection>
+    Download and convert a reranker model (e.g. [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)) to OpenVINO format from Hugging Face:
+
+    <OptimumCLI model='BAAI/bge-small-en-v1.5' outputDir='BAAI/bge-small-en-v1.5' trustRemoteCode />
+
+    See all supported [Reranker Models](/docs/supported-models/#text-reranker-models).
+</ConvertModelSection>
+
+<RunModelSection />

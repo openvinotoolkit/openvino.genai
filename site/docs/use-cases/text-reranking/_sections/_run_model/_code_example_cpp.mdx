@@ -7,7 +7,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> documents(argv + 3, argv + argc);
     std::string models_path = argv[1], query = argv[2];
     
-    ov::genai::TextRerankPipeline pipeline(models_path, "CPU", ov::genai::top_n(3));
+    ov::genai::TextRerankPipeline pipeline(models_path, "${props.device || 'CPU'}", ov::genai::top_n(3));
     
     auto rerank_result = pipeline.rerank(query, documents);
     
