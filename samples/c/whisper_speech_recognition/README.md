@@ -50,6 +50,8 @@ optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whis
 
 If a converted model in OpenVINO IR format is available in the [OpenVINO optimized models](https://huggingface.co/OpenVINO) collection on Hugging Face, you can download it directly via huggingface-cli.
 
+For example:
+
 ```sh
 pip install huggingface-hub
 huggingface-cli download OpenVINO/whisper-tiny-int8-ov --local-dir whisper-tiny-int8-ov
