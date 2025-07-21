@@ -695,7 +695,7 @@ NodePtr tensors_multiplication(NodePtr input,
 
                 // scale alpha to align with Peft: self.scaling[adapter] = scale * self.lora_alpha[adapter] / self.r[adapter]
                 // TODO: fix scaling
-                normalized = set_scale(multipliers[A_pos], normalized, target_type);
+                // normalized = set_scale(multipliers[A_pos], normalized, target_type);
                 input = std::make_shared<v1::Multiply>(input, normalized);
             } else {  // MatMul for A and B
                 input = std::make_shared<v0::MatMul>(input,
