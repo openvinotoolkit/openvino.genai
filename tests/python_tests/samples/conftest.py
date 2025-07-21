@@ -6,7 +6,6 @@ import shutil
 import logging
 import gc
 import requests
-from huggingface_hub import hf_hub_download
 
 from utils.network import retry_request
 from utils.constants import get_ov_cache_dir
@@ -199,18 +198,16 @@ def convert_model(request):
     model_args = MODELS[model_id]["convert_args"]
     logger.info(f"Preparing model: {model_name}")
     if not os.path.exists(model_path):
+        sub_env=os.environ.copy()
         # Dowload the GGUF model if not already downloaded
         if model_gguf_filename:
             logger.info(f"Downloading the model: {model_name} {model_gguf_filename}")
-            retry_request(lambda: hf_hub_download(
-                repo_id=model_name,
-                filename=model_gguf_filename,
-                local_dir=model_path
-            ))
+            command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", model_path]
+            logger.info(f"Downloading command: {' '.join(command)}")
+            retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
         # Convert the model if not already converted
         else:
             logger.info(f"Converting model: {model_name}")
-            sub_env=os.environ.copy()
             command = [
                 "optimum-cli", "export", "openvino",
                 "--model", model_name, 

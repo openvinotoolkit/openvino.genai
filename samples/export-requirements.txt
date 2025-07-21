@@ -11,5 +11,4 @@ timm==1.0.17  # For exporting InternVL2
 torchvision  # For visual language models
 transformers>=4.43 # For Whisper
 hf_transfer # for faster models download, should used with env var HF_HUB_ENABLE_HF_TRANSFER=1
-gguf>=0.10.0 # to load a GGUF checkpoint in PyTorch
 backoff # for microsoft/Phi-3.5-vision-instruct
