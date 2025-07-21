@@ -36,10 +36,28 @@
 // TODO: LoRA?
 namespace ov::genai {
 struct LTXVideoTransformer3DModel {
+    struct OPENVINO_GENAI_EXPORTS Config {  // TODO: video fields instead
+        size_t in_channels = 64;
+        bool guidance_embeds = false;
+        size_t m_default_sample_size = 128;
+    };
     LTXVideoTransformer3DModel(const std::filesystem::path& dir, const std::string& device, const ov::AnyMap& properties) {}
+    Config get_config() const {return Config{};}
 };
 struct AutoencoderKLLTXVideo {
+    struct OPENVINO_GENAI_EXPORTS Config {
+        size_t in_channels = 3;
+        size_t latent_channels = 4;
+        size_t out_channels = 3;
+        float scaling_factor = 1.0f;
+        float shift_factor = 0.0f;
+        std::vector<size_t> block_out_channels = { 64 };
+    };
+    Config m_config;
     AutoencoderKLLTXVideo(const std::filesystem::path& dir, const std::string& device, const ov::AnyMap& properties) {}
+    size_t get_vae_scale_factor() const {  // TODO: verify
+        return std::pow(2, m_config.block_out_channels.size() - 1);
+    }
 };
 struct LTXPipeline {
     std::chrono::steady_clock::duration m_load_time_ms{0};
@@ -47,6 +65,7 @@ struct LTXPipeline {
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<LTXVideoTransformer3DModel> m_transformer;
     std::shared_ptr<AutoencoderKLLTXVideo> m_vae;
+    ImageGenerationConfig m_generation_config;
     LTXPipeline(const std::filesystem::path& models_dir, const std::string& device, const ov::AnyMap& properties) {
         // TODO: move to common
         const std::filesystem::path model_index_path = models_dir / "model_index.json";
@@ -59,6 +78,7 @@ struct LTXPipeline {
         const std::string class_name = data["_class_name"].get<std::string>();
         OPENVINO_ASSERT(class_name == "LTXPipeline");
 
+        // TODO: initializer list
         set_scheduler(Scheduler::from_config(models_dir / "scheduler/scheduler_config.json"));
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
@@ -91,6 +111,20 @@ struct LTXPipeline {
     }
     void initialize_generation_config(const std::string& class_name) {
         // TODO: move to common
+        OPENVINO_ASSERT(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
+
+        const auto& transformer_config = m_transformer->get_config();
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+
+        m_generation_config = ImageGenerationConfig();  // TODO: Would video generation be config different?
+
+        m_generation_config.height = transformer_config.m_default_sample_size * vae_scale_factor;
+        m_generation_config.width = transformer_config.m_default_sample_size * vae_scale_factor;
+
+        m_generation_config.guidance_scale = 3.5f;
+        m_generation_config.num_inference_steps = 28;
+        m_generation_config.strength = 1.0f;
     }
     void save_load_time(std::chrono::steady_clock::time_point start_time) {
         // TODO: move to common
@@ -149,7 +183,7 @@ int main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
 
     const std::string models_dir = argv[1], prompt = argv[2];
-    // TODO: Test GPU, NPU, HETERO, MULTI, AUTO
+    // TODO: Test GPU, NPU, HETERO, MULTI, AUTO, different steps on different devices
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::Text2VideoPipeline pipe(models_dir, device);
