@@ -15,6 +15,7 @@ class TestBeamSearchCausalLM:
         "convert_model, sample_args",
         [
             pytest.param("Qwen2-0.5B-Instruct", "你好！", marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows")),
+            pytest.param("Qwen2-0.5B-Instruct-GGUF", "你好！", marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows")),
             pytest.param("phi-1_5", "69", marks=pytest.mark.skipif(sys.platform == "win32", reason="Subprocess returned non-zero exit status 3221225477 on Windows")),
         ],
         indirect=["convert_model"],
@@ -42,7 +43,7 @@ class TestBeamSearchCausalLM:
 
     @pytest.mark.llm
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["SmolLM2-135M"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["SmolLM2-135M", "SmolLM2-135M-GGUF"], indirect=True)
     @pytest.mark.parametrize("sample_args",
         [
             ["Why is the Sun yellow?"],
@@ -80,13 +81,13 @@ class TestBeamSearchCausalLM:
         model = MODELS[model_name]
         
         import transformers
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'], local_files_only=True)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'], local_files_only=True, gguf_file=model.get("gguf_filename", None))
         for prompt in sample_args:
             if tokenizer.chat_template:
                 prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': f'"{prompt}"'}], tokenize=False, add_generation_prompt=True)
             tokenized = tokenizer(f'"{prompt}"', return_tensors='pt', add_special_tokens=False)
         
-            for beam in transformers.LlamaForCausalLM.from_pretrained(model['name'], local_files_only=True).generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+            for beam in transformers.LlamaForCausalLM.from_pretrained(model['name'], local_files_only=True, gguf_file=model.get("gguf_filename", None)).generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
                 ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
                 logger.info(f'Checking for "{ref=}"')
                 

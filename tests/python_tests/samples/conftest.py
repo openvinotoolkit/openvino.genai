@@ -6,6 +6,7 @@ import shutil
 import logging
 import gc
 import requests
+from huggingface_hub import hf_hub_download
 
 from utils.network import retry_request
 from utils.constants import get_ov_cache_dir
@@ -31,6 +32,11 @@ MODELS = {
         "name": "HuggingFaceTB/SmolLM2-135M",
         "convert_args": ['--trust-remote-code']
     },
+    "SmolLM2-135M-GGUF": {
+        "name": "prithivMLmods/SmolLM2-135M-GGUF",
+        "gguf_filename": "SmolLM2-135M.F16.gguf",
+        "convert_args": ['--trust-remote-code']
+    },
     "SmolLM2-360M": {
         "name": "HuggingFaceTB/SmolLM2-360M",
         "convert_args": ['--trust-remote-code']
@@ -43,8 +49,18 @@ MODELS = {
         "name": "Qwen/Qwen2.5-0.5B-Instruct",
         "convert_args": ['--trust-remote-code']
     },
+    "Qwen2.5-0.5B-Instruct-GGUF": {
+        "name": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+        "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
+        "convert_args": ['--trust-remote-code']
+    },
     "Qwen2-0.5B-Instruct": {
         "name": "Qwen/Qwen2-0.5B-Instruct",
+        "convert_args": ['--trust-remote-code']
+    },
+    "Qwen2-0.5B-Instruct-GGUF": {
+        "name": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+        "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
         "convert_args": ['--trust-remote-code']
     },
     "phi-1_5": {
@@ -177,25 +193,35 @@ def convert_model(request):
     models_cache = request.config.cache.get("MODELS_DIR", None)
     model_id = request.param
     model_name = MODELS[model_id]["name"]
+    model_gguf_filename = MODELS[model_id].get("gguf_filename", "")
     model_cache = os.path.join(models_cache, model_id)
     model_path = os.path.join(model_cache, model_name)
     model_args = MODELS[model_id]["convert_args"]
     logger.info(f"Preparing model: {model_name}")
-    # Convert the model if not already converted
     if not os.path.exists(model_path):
-        logger.info(f"Converting model: {model_name}")
-        sub_env=os.environ.copy()
-        command = [
-            "optimum-cli", "export", "openvino",
-            "--model", model_name, 
-            model_path
-        ]
-        if model_args:
-            command.extend(model_args)
-        logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
-            
-    yield model_path
+        # Dowload the GGUF model if not already downloaded
+        if model_gguf_filename:
+            logger.info(f"Downloading the model: {model_name} {model_gguf_filename}")
+            hf_hub_download(
+                repo_id=model_name,
+                filename=model_gguf_filename,
+                local_dir=model_path
+            )
+        # Convert the model if not already converted
+        else:
+            logger.info(f"Converting model: {model_name}")
+            sub_env=os.environ.copy()
+            command = [
+                "optimum-cli", "export", "openvino",
+                "--model", model_name, 
+                model_path
+            ]
+            if model_args:
+                command.extend(model_args)
+            logger.info(f"Conversion command: {' '.join(command)}")
+            retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
+    
+    yield os.path.join(model_path, model_gguf_filename)
     
     # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
