@@ -11,9 +11,7 @@
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "utils.hpp"
 
-namespace {
-
-ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
+inline ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
     size_t h_half = height / 2, w_half = width / 2;
 
     // Reshape to (batch_size, (height // 2) * (width // 2), num_channels_latents * 4)
@@ -45,7 +43,7 @@ ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_
     return permuted_latents;
 }
 
-ov::Tensor unpack_latents(const ov::Tensor& latents, size_t height, size_t width, size_t vae_scale_factor) {
+inline ov::Tensor unpack_latents(const ov::Tensor& latents, size_t height, size_t width, size_t vae_scale_factor) {
     ov::Shape latents_shape = latents.get_shape();
     size_t batch_size = latents_shape[0], channels = latents_shape[2];
 
@@ -86,7 +84,7 @@ ov::Tensor unpack_latents(const ov::Tensor& latents, size_t height, size_t width
     return permuted_latents;
 }
 
-ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t width) {
+inline ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t width) {
     ov::Tensor latent_image_ids(ov::element::f32, {height * width, 3});
     auto* data = latent_image_ids.data<float>();
 
@@ -101,8 +99,6 @@ ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t wid
 
     return latent_image_ids;
 }
-
-}  // namespace
 
 namespace ov {
 namespace genai {
