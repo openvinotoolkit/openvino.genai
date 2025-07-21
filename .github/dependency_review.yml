@@ -1,17 +1,19 @@
-fail-on-severity: 'low'
+fail-on-severity: "low"
 allow-licenses:
-  - 'BSD-2-Clause'
-  - 'BSD-3-Clause'
-  - 'MIT'
-  - 'Apache-2.0'
-  - 'ISC'
-  - 'BlueOak-1.0.0'
-  - '0BSD'
-  - 'Python-2.0'
-  - 'MIT-CMU' # Pillow's license
+  - "BSD-2-Clause"
+  - "BSD-3-Clause"
+  - "MIT"
+  - "Apache-2.0"
+  - "ISC"
+  - "BlueOak-1.0.0"
+  - "0BSD"
+  - "Python-2.0"
+  - "MIT-CMU" # Pillow's license
 fail-on-scopes:
-  - 'runtime'
-  - 'development'
-  - 'unknown'
+  - "runtime"
+  - "development"
+  - "unknown"
 license-check: true
 vulnerability-check: true
+allow-dependencies-licenses:
+  - "pkg:npm/thingies" # Docs site (dependency of dependency)
