@@ -26,7 +26,7 @@ FetchContent_MakeAvailable(indicators)
 
 add_executable(text2video text2video.cpp)
 
-target_include_directories(text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src")
+target_include_directories(text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
 target_link_libraries(text2video PRIVATE openvino::genai indicators::indicators)
 
 set_target_properties(text2video PROPERTIES
