@@ -33,6 +33,7 @@
 // TODO: support video2video, inpainting?
 // TODO: decode, perf metrics, set_scheduler, set/get_generation_config, reshape, compile, clone()
 // TODO: image->video
+// TODO: LoRA?
 namespace ov::genai {
 struct LTXVideoTransformer3DModel {
     LTXVideoTransformer3DModel(const std::filesystem::path& dir, const std::string& device, const ov::AnyMap& properties) {}
@@ -135,9 +136,11 @@ struct Text2VideoPipeline {
 
     template <typename... Properties>
     ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
-            const std::string& positive_prompt,
-            Properties&&... properties) {
-        return generate(positive_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
+        const std::string& positive_prompt,
+        const std::string& negative_prompt,
+        Properties&&... properties
+    ) {
+        return generate(positive_prompt, negative_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 };
 }  // namespace ov::genai
