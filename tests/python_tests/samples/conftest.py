@@ -202,11 +202,11 @@ def convert_model(request):
         # Dowload the GGUF model if not already downloaded
         if model_gguf_filename:
             logger.info(f"Downloading the model: {model_name} {model_gguf_filename}")
-            hf_hub_download(
+            retry_request(lambda: hf_hub_download(
                 repo_id=model_name,
                 filename=model_gguf_filename,
                 local_dir=model_path
-            )
+            ))
         # Convert the model if not already converted
         else:
             logger.info(f"Converting model: {model_name}")
