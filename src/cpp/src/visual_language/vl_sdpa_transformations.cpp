@@ -3,6 +3,8 @@
 
 #include "visual_language/vl_sdpa_transformations.hpp"
 
+#include "utils.hpp"
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -21,6 +23,10 @@ bool check_vl_sdpa_transformations(const ov::CompiledModel& compiled_model) {
         for (const auto& target : target_names) {
             exists |= (names.find(target) != names.end());
         }
+    }
+
+    if (env_setup_for_print_debug_info()) {
+        std::cout << "[vl_sdpa_transformations] ENABLED? [" << exists << "]" << std::endl;
     }
 
     return exists;
