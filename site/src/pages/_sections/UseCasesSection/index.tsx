@@ -7,7 +7,7 @@ import { ImageGeneration } from './components/image-generation';
 import { ImageProcessing } from './components/image-processing';
 import { SpeechRecognition } from './components/speech-recognition';
 import { TextGeneration } from './components/text-generation';
-import { TextReranking } from './components/text-reranking';
+import { TextRerank } from './components/text-rerank';
 
 export const UseCasesSection = () => (
   <section className={styles.useCasesSection}>
@@ -19,7 +19,7 @@ export const UseCasesSection = () => (
       <ImageGeneration />
       <SpeechRecognition />
       <ImageProcessing />
-      <TextReranking />
+      <TextRerank />
     </div>
     <div className={styles.useCasesFooter}>
       <strong>Looking for more?</strong>&nbsp;See all{' '}
