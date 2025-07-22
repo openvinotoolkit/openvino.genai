@@ -46,16 +46,6 @@ def test_e2e_precommit(model_id):
                          pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 
-@pytest.mark.nightly
-@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
-def test_e2e_nightly(model_id):
-    prompts, generation_config = get_test_dataset()
-    generate_and_compare(prompts=prompts,
-                         generation_config=generation_config,
-                         model=model_id, 
-                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
-
-
 @pytest.mark.real_models
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
 def test_e2e_real_models(model_id):

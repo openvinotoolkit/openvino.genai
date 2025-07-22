@@ -13,6 +13,7 @@
 
 namespace py = pybind11;
 
+using ov::genai::SummaryStats;
 using ov::genai::MeanStdPair;
 using ov::genai::PerfMetrics;
 using ov::genai::RawPerfMetrics;
@@ -53,6 +54,9 @@ auto raw_perf_metrics_docstring = R"(
 
     :param inference_durations : Total inference duration for each generate call in milliseconds.
     :type batch_sizes: list[float]
+
+    :param grammar_compile_times: Time to compile the grammar in milliseconds.
+    :type grammar_compile_times: list[float]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -100,6 +104,12 @@ auto perf_metrics_docstring = R"(
 
     :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
     :type get_detokenization_duration: MeanStdPair
+
+    :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
+    :type get_grammar_compiler_init_times: dict[str, float]
+
+    :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
+    :type get_grammar_compile_time: SummaryStats
 
     :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
     :type raw_metrics: RawPerfMetrics
@@ -188,6 +198,19 @@ void init_perf_metrics(py::module_& m) {
         })
         .def_property_readonly("inference_durations", [](const RawPerfMetrics &rw) {
             return pyutils::get_ms(rw, &RawPerfMetrics::m_inference_durations);
+        })
+        .def_property_readonly("grammar_compile_times", [](const RawPerfMetrics &rw) {
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_grammar_compile_times);
+        });
+
+    py::class_<SummaryStats>(m, "SummaryStats")
+        .def(py::init<>())
+        .def_readonly("mean", &SummaryStats::mean)
+        .def_readonly("std", &SummaryStats::std)
+        .def_readonly("min", &SummaryStats::min)
+        .def_readonly("max", &SummaryStats::max)
+        .def("as_tuple", [](const SummaryStats& self) {
+            return py::make_tuple(self.mean, self.std, self.min, self.max);
         });
 
     py::class_<MeanStdPair>(m, "MeanStdPair")
@@ -201,6 +224,8 @@ void init_perf_metrics(py::module_& m) {
     py::class_<PerfMetrics>(m, "PerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_load_time", &PerfMetrics::get_load_time)
+        .def("get_grammar_compiler_init_times", &PerfMetrics::get_grammar_compiler_init_times)
+        .def("get_grammar_compile_time", &PerfMetrics::get_grammar_compile_time)
         .def("get_num_generated_tokens", &PerfMetrics::get_num_generated_tokens)
         .def("get_num_input_tokens", &PerfMetrics::get_num_input_tokens)
         .def("get_ttft", &PerfMetrics::get_ttft)

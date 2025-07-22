@@ -63,6 +63,5 @@ build-backend = "py_build_cmake.build"
 
 [tool.pytest.ini_options]
 markers = [
-    "nightly",
     "precommit: (deselect with '-m \"precommit\"')",
 ]

@@ -73,6 +73,7 @@ export class LLMPipeline {
     if (typeof generationConfig !== 'object')
       throw new Error('Options must be an object');
 
+    let streamingStatus: StreamingStatus = StreamingStatus.RUNNING;
     const queue: { isDone: boolean; subword: string; }[] = [];
     let resolvePromise: ResolveFunction | null;
 
@@ -86,6 +87,8 @@ export class LLMPipeline {
         // Add data to queue if no pending promise
         queue.push({ isDone, subword });
       }
+
+      return streamingStatus;
     }
 
     this.pipeline.generate(prompt, chunkOutput, generationConfig);
@@ -106,6 +109,11 @@ export class LLMPipeline {
           (resolve: ResolveFunction) => (resolvePromise = resolve),
         );
       },
+      async return() {
+        streamingStatus = StreamingStatus.CANCEL;
+
+        return { done: true };
+      },
       [Symbol.asyncIterator]() { return this; },
     };
   }
@@ -113,18 +121,18 @@ export class LLMPipeline {
   async generate(
     prompt: string | string[],
     generationConfig: GenerationConfig = {},
-    callback: (chunk: string)=>void | undefined,
+    callback: (chunk: string) => void | undefined,
   ) {
     if (typeof prompt !== 'string'
       && !(Array.isArray(prompt)
-      && prompt.every(item => typeof item === 'string')))
+        && prompt.every(item => typeof item === 'string')))
       throw new Error('Prompt must be a string or string[]');
     if (typeof generationConfig !== 'object')
       throw new Error('Options must be an object');
     if (callback !== undefined && typeof callback !== 'function')
       throw new Error('Callback must be a function');
 
-    const options: {'disableStreamer'?: boolean} = {};
+    const options: { 'disableStreamer'?: boolean } = {};
     if (!callback) {
       options['disableStreamer'] = true;
     }

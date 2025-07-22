@@ -44,6 +44,8 @@ from .py_openvino_genai import (
 # Generation config
 from .py_openvino_genai import (
     GenerationConfig,
+    StructuralTagItem,
+    StructuralTagsConfig,
     StructuredOutputConfig,
     StopCriteria
 )

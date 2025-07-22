@@ -10,7 +10,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc >= 3 && (argc - 3) % 2 == 0, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [<LORA_SAFETENSORS> <ALPHA> ...]]");
 
     const std::string models_path = argv[1], prompt = argv[2];
-    const std::string device = "CPU";  // GPU, NPU can be used as well
+    const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::AdapterConfig adapter_config;
     // Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:

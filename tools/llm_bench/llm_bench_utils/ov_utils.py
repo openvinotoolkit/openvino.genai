@@ -155,7 +155,7 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_monitor.stop_and_collect_data('compilation_phase')
-            memory_monitor.log_data('for copmpilation phase')
+            memory_monitor.log_data('for compilation phase')
     bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -225,7 +225,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, *
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
 
     class TokenStreamer(openvino_genai.StreamerBase):
         def __init__(self, tokenizer):
@@ -306,7 +306,7 @@ def create_image_gen_model(model_path, device, memory_monitor, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_monitor.stop_and_collect_data('compilation_phase')
-            memory_monitor.log_data('for copmpilation phase')
+            memory_monitor.log_data('for compilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time, False, None
@@ -472,7 +472,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     return image_gen_pipe, end - start, True, callback
 
@@ -492,7 +492,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_monitor, **kwar
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time
@@ -511,7 +511,7 @@ def create_genai_speech_2_txt_model(model_path, device, memory_monitor, **kwargs
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
@@ -552,7 +552,7 @@ def create_speech_2_txt_model(model_path, device, memory_monitor, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_monitor.stop_and_collect_data('compilation_phase')
-            memory_monitor.log_data('for copmpilation phase')
+            memory_monitor.log_data('for compilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     if is_transformers_version(">=", "4.51.0"):
@@ -609,7 +609,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
     log.info("Selected OpenVINO GenAI for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
     return llm_pipe, processor_config, end - start, None, True
@@ -645,7 +645,7 @@ def create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs):
     log.info("Selected OpenVINO GenAI for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -724,7 +724,7 @@ def create_text_embeddings_model(model_path, device, memory_monitor, **kwargs):
 
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     bench_hook = get_bench_hook(1, ov_model, embed=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -776,7 +776,7 @@ def create_image_text_gen_model(model_path, device, memory_monitor, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_monitor.stop_and_collect_data('compilation_phase')
-            memory_monitor.log_data('for copmpilation phase')
+            memory_monitor.log_data('for compilation phase')
     bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
