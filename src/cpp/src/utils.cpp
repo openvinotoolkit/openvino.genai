@@ -502,6 +502,14 @@ void print_gguf_debug_info(const std::string &debug_info) {
     std::cout << "[GGUF Reader]: " << debug_info << std::endl;
 }
 
+void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+
+    scheduler_config.print();
+}
+
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                         const ov::AnyMap& config,

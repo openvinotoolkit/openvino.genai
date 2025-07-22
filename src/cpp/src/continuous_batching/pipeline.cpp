@@ -66,6 +66,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_encoder_properties);
     }
 
+    utils::print_scheduler_config_info(scheduler_config);
+
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
@@ -104,6 +106,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_without_draft_model_without_gguf);
     }
+
+    utils::print_scheduler_config_info(scheduler_config);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
@@ -147,6 +151,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
             embedder = std::make_shared<InputsEmbedder>(directory, device, properties_without_draft_model);
         }
     }
+
+    utils::print_scheduler_config_info(scheduler_config);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
@@ -195,6 +201,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
             embedder = std::make_shared<InputsEmbedder>(directory, device, properties_without_draft_model);
         }
     }
+
+    utils::print_scheduler_config_info(scheduler_config);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
