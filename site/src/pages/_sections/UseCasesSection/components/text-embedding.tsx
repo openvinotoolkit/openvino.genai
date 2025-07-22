@@ -7,7 +7,7 @@ import CodeExamplePython from '@site/docs/use-cases/text-embedding/_sections/_ru
 
 export const TextEmbedding = () => (
   <UseCaseCard>
-    <UseCaseCard.Title>Text Embedding Pipeline</UseCaseCard.Title>
+    <UseCaseCard.Title>Semantic Search using Text Embedding</UseCaseCard.Title>
     <UseCaseCard.Description>
       Generate vector representations for text using embedding models. Useful for semantic search,
       retrieval augmented generation (RAG).
