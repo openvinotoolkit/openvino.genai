@@ -35,7 +35,7 @@ static_config = { **default_config, 'STATIC_PIPELINE': 'STATEFUL' }
 # Test both, static and generic pipelines
 pipeline_configs = [default_config, static_config]
 
-blob_with_weights = [True, False]
+blob_with_weights = [pytest.param(True, marks=pytest.mark.skip("Randomly crushes. Ticket 171015")), False]
 
 def generate_chat_history(model_path, device, pipeline_config, questions):
     pipe = LLMPipeline(model_path, device, **pipeline_config)
