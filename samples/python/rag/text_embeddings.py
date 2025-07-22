@@ -12,14 +12,15 @@ def main():
     parser.add_argument("texts", nargs="+")
     args = parser.parse_args()
 
-    device = "CPU"  # GPU can be used as well
+    pipeline = openvino_genai.TextEmbeddingPipeline(
+        models_path,
+        "${props.device || 'CPU'}",
+        pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN,
+        normalize = True
+    )
 
-    config = openvino_genai.TextEmbeddingPipeline.Config()
-    config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN
-
-    pipeline = openvino_genai.TextEmbeddingPipeline(args.model_dir, device, config)
-
-    embeddings = pipeline.embed_documents(args.texts)
+    documents_embeddings = pipeline.embed_documents(documents)
+    query_embeddings = pipeline.embed_query("What is the capital of France?")
 
 
 if "__main__" == __name__:
