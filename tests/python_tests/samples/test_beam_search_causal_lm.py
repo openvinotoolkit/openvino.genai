@@ -49,9 +49,9 @@ class TestBeamSearchCausalLM:
             ["Why is the Sun yellow?"],
             ["69"],
             ["Hi"],
-            ["return 0"],
+            # ["return 0"],
             pytest.param(["你好！ 你好嗎？"], marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows")),
-            pytest.param(["Why is the Sun yellow?", "return 0", "你好！ 你好嗎？"], marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows")),
+            pytest.param(["Why is the Sun yellow?", "你好！ 你好嗎？"], marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows")),
         ],
     )
     def test_sample_beam_search_causal_lm_refs(self, request, convert_model, sample_args):

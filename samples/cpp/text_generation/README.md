@@ -123,7 +123,7 @@ This approach reduces the need for multiple infer requests to the main model, en
 
 Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/speculative-sampling) that provides an example of LLM-powered text generation in Python.
 
-Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model, etc
+Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model, etc. The GGUF model is not supported as a draft model.
 - **Main Feature:** Reduces latency while generating high-quality text.
 - **Run Command:**
   ```bash
