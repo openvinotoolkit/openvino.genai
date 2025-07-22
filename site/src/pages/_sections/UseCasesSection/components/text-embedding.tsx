@@ -13,8 +13,9 @@ export const TextEmbedding = () => (
       retrieval augmented generation (RAG).
     </UseCaseCard.Description>
     <UseCaseCard.Features>
-      <li>Supports CLS, MEAN pooling strategies</li>
-      <li>Supports embed and query instructions</li>
+      <li>Select pooling strategies (CLS, MEAN)</li>
+      <li>Improve retrieval performance with L2 normalization</li>
+      <li>Provide embed and query instructions</li>
       <li>Batch embedding for multiple documents</li>
     </UseCaseCard.Features>
     <UseCaseCard.Code>
