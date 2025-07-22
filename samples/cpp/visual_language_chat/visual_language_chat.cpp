@@ -32,7 +32,11 @@ int main(int argc, char* argv[]) try {
 
     std::string prompt;
 
-    pipe.start_chat();
+    if (device != "NPU") {
+        // Start the chat session only for CPU and GPU.
+        // NPU does not support chat mode.
+        pipe.start_chat();
+    }
     std::cout << "question:\n";
 
     std::getline(std::cin, prompt);

@@ -69,7 +69,10 @@ def main():
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
 
-    pipe.start_chat()
+    if args.device != "NPU":
+        # Start the chat session only for CPU and GPU.
+        # NPU does not support chat mode.
+        pipe.start_chat()
     prompt = input('question:\n')
     pipe.generate(prompt, images=rgbs, generation_config=config, streamer=streamer)
 
