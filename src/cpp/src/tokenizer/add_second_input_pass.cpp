@@ -34,6 +34,10 @@ bool AddSecondInputPass::parse_inputs(std::shared_ptr<ov::Node>& combine_seg) {
     std::vector<int> input_signature(num_segments, 0);
     std::vector<ov::Output<ov::Node>> inputs;
 
+    // We go through the inputs of the CombineSegments node and check if they are
+    // either Constant or Sequence. If begin is Constant, we check if the corresponding
+    // end input is also Constant.
+    // If begin is Sequence, we check if input has truncation operation.
     for (size_t i = 0; i < num_segments; ++i) {
         auto begin_input = combine_seg->input_value(3 * i);
         auto end_input = combine_seg->input_value(3 * i + 1);
@@ -71,10 +75,10 @@ bool AddSecondInputPass::parse_inputs(std::shared_ptr<ov::Node>& combine_seg) {
     return true;
 }
 
-bool AddSecondInputPass::assert_and_get_postprocessor(const std::shared_ptr<ov::Model>& model) {
+bool AddSecondInputPass::parse_and_assert_postprocessor(const std::shared_ptr<ov::Model>& model) {
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
     if (model->get_rt_info().count(PROCESSED_POST_PROCESSOR_NAME) == 0) {
-        std::cout << "Could not add second input. Post processor is not present in the model." << std::endl;
+        m_pass_errors << "Could not add second input. Post processor is not present in the model." << std::endl;
         return false;
     }
     auto rt_info_value = model->get_rt_info().at(PROCESSED_POST_PROCESSOR_NAME);
@@ -83,30 +87,30 @@ bool AddSecondInputPass::assert_and_get_postprocessor(const std::shared_ptr<ov::
     nlohmann::json post_processor = nlohmann::json::parse(json_str);
 
     if (!post_processor.contains("pair")) {
-        std::cout << "Could not add second input. post_processor does not contain input signature for paired input" << std::endl;
+        m_pass_errors << "Could not add second input. post_processor does not contain input signature for paired input" << std::endl;
         return false;
     }
 
     if (post_processor["single"]["ids"].get<std::vector<int>>() != input_signature) {
-        std::cout << "Could not add second input. Input signature from rt_info does not match to the CombineSegments node inputs." << std::endl;
+        m_pass_errors << "Could not add second input. Input signature from rt_info does not match to the CombineSegments node inputs." << std::endl;
     }
 
     auto pair_ids = post_processor["pair"]["ids"].get<std::vector<int>>();
     if (std::vector<int>(pair_ids.begin(), pair_ids.begin() + input_signature.size()) != input_signature) {
-        std::cout << "Could not add second input. Paried inputs are allowed only when it's widening the single input." << std::endl;
+        m_pass_errors << "Could not add second input. Paried inputs are allowed only when it's widening the single input." << std::endl;
         return false;
     }
 
     int num_main_inputs = std::count_if(pair_ids.begin(), pair_ids.end(), [](int v) { return v <= -1; });
     if (num_main_inputs != 2) {
-        std::cout << "Could not add second input. Only 2 inputs are allowed for the paired input" << std::endl;
+        m_pass_errors << "Could not add second input. Only 2 inputs are allowed for the paired input" << std::endl;
         return false;
     }
 
     auto single_ids = post_processor["single"]["ids"].get<std::vector<int>>();
     int single_neg_count = std::count_if(single_ids.begin(), single_ids.end(), [](int v) { return v <= -1; });
     if (single_neg_count != 1) {
-        std::cout << "Could not add second input. There should be exactly one sequence input in the single signature." << std::endl;
+        m_pass_errors << "Could not add second input. There should be exactly one sequence input in the single signature." << std::endl;
         return false;
     }
 
@@ -120,7 +124,7 @@ void AddSecondInputPass::insert_splits() {
     
     auto it = std::find(input_signature.begin(), input_signature.end(), -1);
     if (it == input_signature.end()) {
-        throw std::runtime_error("No sequence input found in input_signature");
+        m_pass_errors << "No sequence input found in input_signature" << std::endl;
     }
     size_t first_input_idx = std::distance(input_signature.begin(), it);
 
@@ -159,10 +163,11 @@ void AddSecondInputPass::insert_splits() {
     std::shared_ptr<ov::Node> ends_2 = std::make_shared<Slice>(end, second_start, total_size, make_constant({1}));
 
     // If inputs_2 is empty, we need to zero the second dimension of the broadcasted begins and ends tensors.
-    // TODO: indeed for ends it should've been 1 but for thix bug CSV-160624 we set to zero for the moment.
     auto zero_const = make_constant({0});
     this->equal_node = std::make_shared<Equal>(param_2_shape, zero_const);
     begins_2 = std::make_shared<Select>(equal_node, zero_const, begins_2);
+    // TODO: indeed for ends it should've been 1 but for thix bug CSV-160624 we set to zero for the moment.
+    // auto one_const = make_constant({1});
     ends_2 = std::make_shared<Select>(equal_node, zero_const, ends_2);
 
     // Broadcast shapes
@@ -183,8 +188,7 @@ void AddSecondInputPass::insert_splits() {
     auto pair_ids = post_processor["pair"]["ids"].get<std::vector<int>>();
     std::vector<int> signature_to_extend(pair_ids.begin() + input_signature.size(), pair_ids.end());
 
-    // Adjust truncation value
-
+    // Adjust truncation values
     auto& trunc_values = this->trunc_values;
     if (!trunc_values.empty()) {
         auto trunc_const_max_len = std::dynamic_pointer_cast<Constant>(trunc_values[0].get_node_shared_ptr());
@@ -220,7 +224,7 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
     // Replace original input with first_input
     auto it = std::find(input_signature.begin(), input_signature.end(), -1);
     if (it == input_signature.end()) {
-        throw std::runtime_error("No sequence input found in input_signature");
+        m_pass_errors << "No sequence input found in input_signature" << std::endl;
     }
     size_t first_input_idx = std::distance(input_signature.begin(), it);
     std::copy(first_input.begin(), first_input.end(), new_inputs.begin() + 3 * first_input_idx);
@@ -255,8 +259,10 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
         };
         new_inputs.insert(new_inputs.end(), new_spec_tokens.begin(), new_spec_tokens.end());
     }
-
-    // For the added inputs segment ids should be 1.
+    if (!post_processor["pair"].contains("type_ids")) {
+        m_pass_errors << "Could not add second input. post_processor does not contain 'type_ids' for paired input" << std::endl;
+        return {};
+    }
     auto type_ids = post_processor["pair"]["type_ids"].get<std::vector<int>>();
     auto new_segment_ids = make_constant(type_ids);
     new_inputs.push_back(new_segment_ids);
@@ -264,9 +270,7 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
     return new_inputs;
 }
 
-// bool ModifyCombineSegmentsForPairInput::run_on_model(const std::shared_ptr<ov::Model>& model) {
 bool AddSecondInputPass::run_on_model(const std::shared_ptr<ov::Model>& model) {
-
     auto parameters = model->get_parameters();
     if (parameters.size() != 1) {
         std::cerr << "Model must have only one input.\n";
@@ -290,15 +294,14 @@ bool AddSecondInputPass::run_on_model(const std::shared_ptr<ov::Model>& model) {
         return false;
     }
 
-    if (!assert_and_get_postprocessor(model)) {
+    if (!parse_and_assert_postprocessor(model)) {
         return false;
     }
+
     // Insert splits for begins, ends before the CombineSegments node and return pair of new inputs.
     // Also adds a modified Truncate
     insert_splits();
 
-    // Get new inputs for the CombineSegments node, which combine
-    // the first and second input, and add special tokens for the second input.
     // Get new inputs for the CombineSegments node, which combine
     // the first and second input, and add special tokens for the second input.
     auto new_inputs = get_new_inputs();
@@ -313,7 +316,7 @@ bool AddSecondInputPass::run_on_model(const std::shared_ptr<ov::Model>& model) {
     // Find StringTensorUnpack node connected to the model input
     auto target_inputs = parameters[0]->output(0).get_target_inputs();
     if (target_inputs.empty()) {
-        std::cerr << "No target inputs found for model parameter.\n";
+        m_pass_errors << "No target inputs found for model parameter." << std::endl;
         return false;
     }
     auto str_unpack = target_inputs.begin()->get_node();
@@ -322,8 +325,7 @@ bool AddSecondInputPass::run_on_model(const std::shared_ptr<ov::Model>& model) {
     }
 
     // Concatenate new parameters for input
-    auto new_input = std::make_shared<Concat>(
-        ov::OutputVector{new_parameters[0], new_parameters[1]}, 0);
+    auto new_input = std::make_shared<Concat>(ov::OutputVector{new_parameters[0], new_parameters[1]}, 0);
 
     str_unpack->input(0).replace_source_output(new_input->output(0));
 

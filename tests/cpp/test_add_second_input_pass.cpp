@@ -42,30 +42,20 @@ FactoryCreateType create_func = reinterpret_cast<FactoryCreateType>(get_symbol(s
 
 TEST(AddSecondInputTest, add_second_input_test_1) {
     std::shared_ptr<Model> model;
-    
     auto parameter_1 = std::make_shared<v0::Parameter>(element::string, Shape{2});
     OutputVector outputs = create_func("StringTensorUnpack", {parameter_1}, {});
     
     // Prepare all necessary BPETokenizer inputs according to evaluate() logic
 
-    // 0: ragged_begins
     auto ragged_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
-    // 1: ragged_ends
     auto ragged_ends = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{3});
-    // 2: begins
     
-    // 5: vocab_begins
     auto vocab_begins = std::make_shared<v0::Constant>(element::i32, Shape{2}, std::vector<int32_t>{0, 1});
-    // 6: vocab_ends
     auto vocab_ends = std::make_shared<v0::Constant>(element::i32, Shape{2}, std::vector<int32_t>{1, 2});
-    // 7: vocab_chars
     auto vocab_chars = std::make_shared<v0::Constant>(element::u8, Shape{2}, std::vector<uint8_t>{'a', 'b'});
     
-    // 8: merges_begins
     auto merges_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
-    // 9: merges_ends
     auto merges_ends = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{3});
-    // 10: merges_chars
     auto merges_chars = std::make_shared<v0::Constant>(element::u8, Shape{3}, std::vector<uint8_t>{'a', 'b', 'c'});
 
     // Compose the input vector for BPETokenizer (11 inputs for minimal case)
@@ -84,16 +74,17 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
     );
     auto truncate = create_func("Truncate", {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], max_length, trunc_side}, {});
 
+    int32_t eos_token_id = 42;
     auto eos_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
     auto eos_ends = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{1});
-    auto eos_token = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{2}); // Example EOS token id
+    auto eos_token = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{eos_token_id});
 
     // IDs tensor (required as the last input for CombineSegment)
     auto ids = std::make_shared<v0::Constant>(element::i32, Shape{2}, std::vector<int32_t>{0, 1});
 
     // Prepare CombineSegment inputs: [begins1, ends1, data1, begins2, ends2, data2, ..., ids]
     ov::OutputVector combine_inputs = {
-        // Main BPETokenizer output (assume it outputs 3 tensors: begins, ends, data)
+        // Main BPETokenizer outputs which went through Truncate
         truncate[0], truncate[1], truncate[2],
         // EOS token tensors
         eos_begins, eos_ends, eos_token,
@@ -103,12 +94,13 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
 
     auto CombineSegments = create_func("CombineSegments", {combine_inputs}, {});
     model = std::make_shared<ov::Model>(OutputVector{CombineSegments}, ParameterVector{parameter_1});
+    
     // Add a valid post_processor to model's rt_info
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
-    // The input signature for single: 3 main tensors (begins, ends, data), then EOS (begins, ends, data), then ids
-    std::vector<int> input_signature = {-1, 2};
-    // For pair: two sets of main tensors, then EOS, then ids
-    std::vector<int> pair_signature = {-1, 2, -1, 2};
+    // Signature for single input [first_seq, eos]
+    std::vector<int> input_signature = {-1, eos_token_id};
+    // Signature for pair [first_seq, eos_seq, second_seq, eos]
+    std::vector<int> pair_signature = {-1, eos_token_id, -1, eos_token_id};
     
     nlohmann::json post_processor = {
         {"single", {{"ids", input_signature}}},
@@ -116,9 +108,12 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
     };
 
     model->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
+
+    std::ostringstream pass_errors;
+    
     ov::pass::Manager manager;
     manager.register_pass<ov::pass::VisualizeTree>("graph_before.svg");
-    manager.register_pass<ov::genai::AddSecondInputPass>(shared_object_ov_tokenizers);
+    manager.register_pass<ov::genai::AddSecondInputPass>(shared_object_ov_tokenizers, pass_errors);
     manager.register_pass<ov::pass::VisualizeTree>("graph_after.svg");
     manager.run_passes(model);
 

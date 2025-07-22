@@ -163,6 +163,11 @@ public:
     // handle to shared_object with openvino tokenizers
     std::shared_ptr<void> m_shared_object_ov_tokenizers = nullptr;
 
+    // buffer to store the error messages from the pass
+    std::ostringstream m_pass_errors;
+
+    bool is_paired_input = false;
+
     bool m_older_than_24_5 = false;
 
     int64_t m_pad_token_id = -1;
@@ -314,14 +319,6 @@ public:
         }
         if (std::filesystem::exists(models_path / "openvino_tokenizer.xml")) {
             ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml", {}, filtered_properties);
-            std::string add_second_input_argname = "ADD_SECOND_INPUT";
-            // if (properties.count(add_second_input_argname) && properties.at(add_second_input_argname).as<bool>()) {
-            // }
-            ov::pass::Manager manager;
-            manager.register_pass<ov::pass::VisualizeTree>("before.svg");
-            manager.register_pass<ov::genai::AddSecondInputPass>(m_shared_object_ov_tokenizers);
-            manager.register_pass<ov::pass::VisualizeTree>("after.svg");
-            manager.run_passes(ov_tokenizer);
         }
 
         if (std::filesystem::exists(models_path / "openvino_detokenizer.xml")) {
@@ -340,6 +337,28 @@ public:
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
+        std::string add_second_input_argname = "ADD_SECOND_INPUT";
+        bool two_input_requested = properties.count(add_second_input_argname) && properties.at(add_second_input_argname).as<bool>();
+        
+        if (ov_tokenizer->get_parameters().size() == 2) {
+            is_paired_input = true;
+        }
+        
+        // If model is already converted with 2 inputs, then skip the pass
+        if (ov_tokenizer && two_input_requested && !is_paired_input) {
+            ov::pass::Manager manager;
+            manager.register_pass<ov::pass::VisualizeTree>("before.svg");
+            manager.register_pass<ov::genai::AddSecondInputPass>(m_shared_object_ov_tokenizers, m_pass_errors);
+            manager.register_pass<ov::pass::VisualizeTree>("after.svg");
+            manager.run_passes(ov_tokenizer);
+            is_paired_input = true;
+        }
+
+
+        if (two_input_requested && !is_paired_input) {
+            OPENVINO_THROW("Two input requested but AddSecondInputPass failed with " + m_pass_errors.str());
+        }
+
 
         // temporary allow absense both tokenizer and detokenizer for GGUF support
         // TODO: remove this code once Tokenizers can be created from GGUF file
@@ -889,6 +908,10 @@ Vocab Tokenizer::get_vocab() const {
 const std::vector<std::string>& Tokenizer::get_vocab_vector() const {
     OPENVINO_ASSERT(!m_pimpl->m_vocab.empty(), "Tokenizer vocab is empty. Please check if the detokenizer model was provided and loaded correctly.");
     return m_pimpl->m_vocab;
+}
+
+bool Tokenizer::is_paired_input() const {
+    return m_pimpl->is_paired_input;
 }
 
 Tokenizer::~Tokenizer() {
