@@ -14,12 +14,12 @@
 #include "openvino/pass/visualize_tree.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "add_second_input_transformation.hpp"
 
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include "tokenizer/chat_template_fallback_map.hpp"
 #include "tokenizer/make_tokenizer_stateful.hpp"
 #include "tokenizer/tokenizers_path.hpp"
+#include "add_second_input_pass.hpp"
 #include "circular_buffer_queue.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"
@@ -319,7 +319,7 @@ public:
             // }
             ov::pass::Manager manager;
             manager.register_pass<ov::pass::VisualizeTree>("before.svg");
-            manager.register_pass<ov::genai::ModifyCombineSegmentsForPairInput>(m_shared_object_ov_tokenizers);
+            manager.register_pass<ov::genai::AddSecondInputPass>(m_shared_object_ov_tokenizers);
             manager.register_pass<ov::pass::VisualizeTree>("after.svg");
             manager.run_passes(ov_tokenizer);
         }

@@ -1,3 +1,4 @@
+#include "add_second_input_pass.hpp"
 #include <openvino/pass/manager.hpp>
 #include <openvino/opsets/opset15.hpp>
 #include <openvino/op/util/op_types.hpp>
@@ -13,7 +14,6 @@
 #include <openvino/op/maximum.hpp>
 #include <openvino/op/broadcast.hpp>
 #include <openvino/op/multiply.hpp>
-#include "add_second_input_transformation.hpp"
 
 #include <iostream>
 #include <memory>
@@ -28,7 +28,7 @@ std::shared_ptr<Constant> make_constant(std::vector<int> vals, element::Type_t t
 }
 
 
-bool ModifyCombineSegmentsForPairInput::parse_inputs(std::shared_ptr<ov::Node>& combine_seg) {
+bool AddSecondInputPass::parse_inputs(std::shared_ptr<ov::Node>& combine_seg) {
     size_t num_segments = combine_seg->get_input_size() / 3;
 
     std::vector<int> input_signature(num_segments, 0);
@@ -71,7 +71,7 @@ bool ModifyCombineSegmentsForPairInput::parse_inputs(std::shared_ptr<ov::Node>& 
     return true;
 }
 
-bool ModifyCombineSegmentsForPairInput::assert_and_get_postprocessor(const std::shared_ptr<ov::Model>& model) {
+bool AddSecondInputPass::assert_and_get_postprocessor(const std::shared_ptr<ov::Model>& model) {
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
     if (model->get_rt_info().count(PROCESSED_POST_PROCESSOR_NAME) == 0) {
         std::cout << "Could not add second input. Post processor is not present in the model." << std::endl;
@@ -114,7 +114,7 @@ bool ModifyCombineSegmentsForPairInput::assert_and_get_postprocessor(const std::
     return true;
 }
 
-void ModifyCombineSegmentsForPairInput::insert_splits() {
+void AddSecondInputPass::insert_splits() {
     // Find the index of the first sequence input (-1)
     auto input_signature = this->input_signature;
     
@@ -207,7 +207,7 @@ void ModifyCombineSegmentsForPairInput::insert_splits() {
     this->second_input = {trunc[3], trunc[4], trunc[5]};
 }
 
-std::vector<ov::Output<ov::Node>> ModifyCombineSegmentsForPairInput::get_new_inputs() {
+std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
     // This part of the code is responsible for creating new inputs for the CombineSegments node.
     // It combines inputs for the first and second input, and adds special tokens for the second input.
     // The new inputs are then returned as a vector.
@@ -265,7 +265,7 @@ std::vector<ov::Output<ov::Node>> ModifyCombineSegmentsForPairInput::get_new_inp
 }
 
 // bool ModifyCombineSegmentsForPairInput::run_on_model(const std::shared_ptr<ov::Model>& model) {
-bool ModifyCombineSegmentsForPairInput::run_on_model(const std::shared_ptr<ov::Model>& model) {
+bool AddSecondInputPass::run_on_model(const std::shared_ptr<ov::Model>& model) {
 
     auto parameters = model->get_parameters();
     if (parameters.size() != 1) {

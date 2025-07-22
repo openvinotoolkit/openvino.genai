@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "tokenizer/add_second_input_transformation.hpp"
+#include "tokenizer/add_second_input_pass.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include <gtest/gtest.h>
@@ -118,7 +118,7 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
     model->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
     ov::pass::Manager manager;
     manager.register_pass<ov::pass::VisualizeTree>("graph_before.svg");
-    manager.register_pass<ov::genai::ModifyCombineSegmentsForPairInput>(shared_object_ov_tokenizers);
+    manager.register_pass<ov::genai::AddSecondInputPass>(shared_object_ov_tokenizers);
     manager.register_pass<ov::pass::VisualizeTree>("graph_after.svg");
     manager.run_passes(model);
 

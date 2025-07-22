@@ -5,9 +5,9 @@
 
 namespace ov::genai {
 
-class ModifyCombineSegmentsForPairInput : public ov::pass::ModelPass {
+class AddSecondInputPass : public ov::pass::ModelPass {
 public:
-    ModifyCombineSegmentsForPairInput(const std::shared_ptr<void>& openvino_tokenizers_shared_object) {
+    AddSecondInputPass(const std::shared_ptr<void>& openvino_tokenizers_shared_object) {
         node_factory = reinterpret_cast<FactoryCreateType>(get_symbol(openvino_tokenizers_shared_object, "create_tokenizer_node"));
     }
 
