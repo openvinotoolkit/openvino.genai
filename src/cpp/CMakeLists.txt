@@ -67,11 +67,6 @@ if(ENABLE_GGUF)
     target_include_directories(gguflib PUBLIC "${gguflib_SOURCE_DIR}")
 endif()
 
-# Check if it's Debug and Windows set ENABLE_XGRAMMAR=OFF forcefully
-if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND WIN32)
-    set(ENABLE_XGRAMMAR OFF CACHE BOOL "Enable XGrammar" FORCE)
-endif()
-
 # Disable XGrammar for Android platform, causes issues in CI
 if(ANDROID)
     set(ENABLE_XGRAMMAR OFF CACHE BOOL "Enable XGrammar" FORCE)
@@ -100,6 +95,10 @@ if(ENABLE_XGRAMMAR)
             string(REGEX REPLACE "XGRAMMAR_BUILD_PYTHON_BINDINGS ON"
                                 "XGRAMMAR_BUILD_PYTHON_BINDINGS OFF"
                                 MODIFIED_CONFIG "${CONFIG_CONTENT}")
+            
+            string(REGEX REPLACE "^set\\(CMAKE_BUILD_TYPE .*$"
+                                "set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE})"
+                                MODIFIED_CONFIG "${MODIFIED_CONFIG}")
             file(WRITE "${CONFIG_FILE}" "${MODIFIED_CONFIG}")
         endif()
 
