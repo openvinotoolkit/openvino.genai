@@ -645,7 +645,8 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_p
         m_vlm_config.im_start
         + m_vlm_config.im_end
         + m_vlm_config.slice_start
-        + m_vlm_config.slice_end
+        + m_vlm_config.slice_end,
+        ov::genai::add_special_tokens(false)
     ).input_ids;
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);

@@ -12,10 +12,31 @@ Install [../../export-requirements.txt](../../export-requirements.txt) to conver
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts
 ```
 
-**Note:** Currently, text-to-speech in OpenVINO GenAI supports the `SpeechT5 TTS` model.
+Alternatively, you can do it in Python code:
+
+```python
+from optimum.exporters.openvino.convert import export_tokenizer
+from optimum.intel import OVModelForTextToSpeechSeq2Seq
+from transformers import AutoTokenizer
+
+output_dir = "speecht5_tts"
+
+model = OVModelForTextToSpeechSeq2Seq.from_pretrained("microsoft/speecht5_tts", vocoder="microsoft/speecht5_hifigan", export=True)
+model.save_pretrained(output_dir)
+
+tokenizer = AutoTokenizer.from_pretrained("microsoft/speecht5_tts")
+export_tokenizer(tokenizer, output_dir)
+```
+
+**Note:** Currently, text-to-speech in OpenVINO GenAI supports the `SpeechT5 TTS` model. 
 When exporting the model, you must specify a vocoder using the `--model-kwargs` option in JSON format.
 
 ## Prepare speaker embedding file
@@ -44,7 +65,7 @@ via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
 It generates `output_audio.wav` file containing the phrase `Hello OpenVINO GenAI` spoken in the target voice.
 
-See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for more details.
 
 # Text-to-speech pipeline usage
 

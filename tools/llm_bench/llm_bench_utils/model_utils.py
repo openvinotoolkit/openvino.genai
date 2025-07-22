@@ -10,7 +10,8 @@ from llm_bench_utils.config_class import (
     USE_CASES,
     OV_MODEL_CLASSES_MAPPING,
     PT_MODEL_CLASSES_MAPPING,
-    PA_ATTENTION_BACKEND
+    PA_ATTENTION_BACKEND,
+    SDPA_ATTENTION_BACKEND
 )
 import librosa
 
@@ -183,8 +184,11 @@ def analyze_args(args):
             model_args['config'] = config
     if model_framework == 'ov':
         set_default_param_for_ov_config(model_args['config'])
-        if 'ATTENTION_BACKEND' not in model_args['config'] and use_case in ['text_gen', 'vlm'] and args.device != "NPU" and not optimum:
-            model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
+        if 'ATTENTION_BACKEND' not in model_args['config'] and not optimum and args.device != "NPU":
+            if use_case in ['text_gen']:
+                model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
+            elif use_case in ['vlm']:
+                model_args['config']['ATTENTION_BACKEND'] = SDPA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
@@ -218,7 +222,8 @@ def get_use_case(model_name_or_path):
     if (Path(model_name_or_path) / "model_index.json").exists():
         diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
         pipe_type = diffusers_config.get("_class_name")
-        if pipe_type in ["StableDiffusionPipeline", "StableDiffusionXLPipeline", "StableDiffusion3Pipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
+        if pipe_type in ["StableDiffusionPipeline", "StableDiffusionXLPipeline", "StableDiffusion3Pipeline", "StableDiffusionInpaintPipeline",
+                         "StableDiffusionXLInpaintPipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
             return "image_gen", pipe_type.replace("Pipeline", "")
 
     if config is not None:
@@ -255,7 +260,7 @@ def resolve_complex_model_types(config):
 
 def get_model_name(model_name_or_path):
     # try to get use_case from model name
-    path = os.path.normpath(model_name_or_path)
+    path = os.path.abspath(model_name_or_path)
     model_names = path.split(os.sep)
     for model_name in reversed(model_names):
         for case, model_ids in USE_CASES.items():

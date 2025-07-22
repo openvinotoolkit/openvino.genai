@@ -13,10 +13,35 @@ There are also Jupyter notebooks for some samples. You can find links to them in
 ## Download and convert the model and tokenizers
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
+
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model <model> <output_folder>
 ```
+
+Alternatively, do it in Python code (e.g. TinyLlama_v1.1). If NNCF is installed, the model will be compressed to INT8 automatically.
+
+```python
+from optimum.exporters.openvino.convert import export_tokenizer
+from optimum.intel import OVModelForCausalLM
+from transformers import AutoTokenizer
+
+output_dir = "chat_model"
+
+model = OVModelForCausalLM.from_pretrained("TinyLlama/TinyLlama_v1.1", export=True)
+model.save_pretrained(output_dir)
+
+tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama_v1.1")
+tokenizer.save_pretrained(output_dir)
+export_tokenizer(tokenizer, output_dir)
+```
+[//]: # "tokenizer.save_pretrained(output_dir) is required above to mitigate runtime errors"
+
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
 ```sh
 pip install huggingface-hub
@@ -30,7 +55,7 @@ Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples
 
 GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
 
-See https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md for the list of supported models.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#large-language-models-llms) for more details.
 
 Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples
 ```sh
@@ -153,7 +178,8 @@ For more information how performance metrics are calculated please follow [perfo
   ```
   #### Options
 - `-m, --model`: Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
+- `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p` and `-pf`, the default prompt is `"The Sky is blue because"`
+- `-pf, --prompt_file` Read prompt from file.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
@@ -169,6 +195,71 @@ Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
   ```bash
   python react_sample.py model_dir
   ```
+
+
+### 11. Structured Output Sample (`structured_output_sample`)
+- **Description:**
+This sample demonstrates how to use OpenVINO GenAI to generate structured outputs such as JSON from text prompts. This sample implementation is split into multiple "generate" calls to mitigate generating complex, variadic JSON structures in a single pass. This is done because not all models are able to generate a complex JSON, with a variadic number of elements in one shot, especially if the model is small and not fine-tuned for this task. By separating the task into two stages, it becomes possible to use smaller models and still achieve generated JSON good quality.
+
+Recommended models: meta-llama/Llama-3.2-1B-Instruct, meta-llama/Llama-3.2-8B-Instruct
+- **Run Command:**
+  ```bash
+  python structured_output_generation.py model_dir
+  ```
+  After running the command, an interactive dialog starts. You can enter a prompt and receive a structured output in response. The process is divided into two stages:
+
+1. **Stage One:** The model generates a JSON schema indicating the number of items of each type the user requests. For example, if you prompt:  
+   `Generate a JSON for 2 cars and 1 person with an Irish surname`  
+   The model might output:  
+   `{"person": 1, "car": 2, "transaction": 0}`  
+   This internal JSON is used to determine how many items of each type to generate in the next stage. It is not shown to the user.
+
+2. **Stage Two:** For each item type and count specified in the schema, the model is prompted to generate a JSON object. The original prompt is reused, but the schema guides the model to produce the correct structure. For the example above, the output might look like:
+   ```
+   > Generate a JSON for 2 cars and 1 person with an Irish surname
+   output:
+   {"name": "John Doe", "surname": "O'Reilly", "age": 30, "city": "Dublin"}
+   {"model": "Toyota", "year": 2020, "engine": "hybrid"}
+   {"model": "Ford", "year": 2019, "color": "red"}
+   ```
+
+**Note:**  
+Structured output enforcement guarantees correct JSON formatting, but does not ensure the factual correctness or sensibility of the content. The model may generate implausible or nonsensical data, such as `{"name": "John", "age": 200000}` or `{"model": "AbrakaKadabra9999######4242"}`. These are valid JSONs but may not make sense. For best results, use the latest or fine-tuned models for this task to improve the quality and relevance of the generated output.
+
+
+### 12. Tool Calling with Structural Tags Sample (`structural_tags_generation`)
+- **Description:**
+  Structural tags is a technique that allows to switch from regular sampling to structural output generation and back during the text generation.
+  If during the sampling process the model produces a trigger string, it switches to structured mode and generates output according to a JSON schema defined by the tag. After that the model switches back to regular sampling mode.
+  This is useful for generating function calls or other structured outputs that need to follow a specific format.
+
+  This sample demonstrates how to use OpenVINO GenAI to generate structured tool calls from natural language prompts using structural tags. 
+  The model is guided to output function calls in a specific format, enabling integration with external tools: 
+  - Weather API 
+  - Currency exchange APIs
+
+  The system message instructs the model to call tools using a strict format:
+  ```
+  <function="function_name">
+  {"argument1": "value1", ...}
+  </function>
+  ```
+  The sample includes schemas for each tool, and the model is prompted to use them for tool calling. There are two model calls - with and without structural tags. 
+  You can compare the results to see how the model generates structured outputs when using structural tags.
+  If there is no prompt provided, the sample will use the default prompt: `"What is the weather in London today and in Paris yesterday, and how many pounds can I get for 100 euros?"`
+
+- **Main Feature:** Structured tool call generation with LLM using schema enforcement with structural tags.
+- **Run Command:**
+  ```bash
+  python structural_tags_generation.py model_dir [--prompt "Your prompt here"]
+  ```
+  After running, the script will print the generated text output with and without structural tags, and display the parsed tool calls.
+
+**Note:**  
+This approach is useful for building LLM-powered agents that interact with external APIs or services in a controlled, structured way. 
+For best results, use models fine-tuned for function calling and adapt structural tags according to the model function call template.
+If the model does not generate trigger strings there will be no structural constraints during the generation. 
+The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 
 ## Troubleshooting

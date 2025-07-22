@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -417,10 +417,15 @@ class DecodedResults:
         texts:      vector of resulting sequences.
         scores:     scores for each sequence.
         metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+        extended_perf_metrics: performance pipeline specifics metrics,
+                               applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
     """
     def __init__(self) -> None:
         ...
     def __str__(self) -> str:
+        ...
+    @property
+    def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
     def perf_metrics(self) -> PerfMetrics:
@@ -436,7 +441,7 @@ class EncodedGenerationResult:
     
         GenerationResult stores resulting batched tokens and scores.
     
-        Parameters: 
+        Parameters:
         request_id:         obsolete when handle API is approved as handle will connect results with prompts.
         generation_ids:     in a generic case we have multiple generation results per initial prompt
             depending on sampling parameters (e.g. beam search or parallel sampling).
@@ -448,13 +453,16 @@ class EncodedGenerationResult:
             CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
             STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
             DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
-        perf_metrics:
-                            Performance metrics for each generation result.
-    
+        perf_metrics: Performance metrics for each generation result.
+        extended_perf_metrics: performance pipeline specifics metrics,
+                               applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
     """
     m_generation_ids: list[list[int]]
     m_scores: list[float]
     def __init__(self) -> None:
+        ...
+    @property
+    def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
     def m_request_id(self) -> int:
@@ -475,7 +483,12 @@ class EncodedResults:
         tokens: sequence of resulting tokens.
         scores: sum of logarithmic probabilities of all tokens in the sequence.
         metrics: performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+        extended_perf_metrics: performance pipeline specifics metrics,
+                               applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
     """
+    @property
+    def extended_perf_metrics(self) -> ExtendedPerfMetrics:
+        ...
     @property
     def perf_metrics(self) -> PerfMetrics:
         ...
@@ -484,6 +497,94 @@ class EncodedResults:
         ...
     @property
     def tokens(self) -> list[list[int]]:
+        ...
+class ExtendedPerfMetrics:
+    """
+    
+        Holds performance metrics for each generate call.
+    
+        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        - Time To the First Token (TTFT), ms
+        - Time per Output Token (TPOT), ms/token
+        - Generate total duration, ms
+        - Tokenization duration, ms
+        - Detokenization duration, ms
+        - Throughput, tokens/s
+    
+        Additional fields include:
+        - Load time, ms
+        - Number of generated tokens
+        - Number of tokens in the input prompt
+    
+        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        If mean and std were already calculated, getters return cached values.
+    
+        :param get_load_time: Returns the load time in milliseconds.
+        :type get_load_time: float
+    
+        :param get_num_generated_tokens: Returns the number of generated tokens.
+        :type get_num_generated_tokens: int
+    
+        :param get_num_input_tokens: Returns the number of tokens in the input prompt.
+        :type get_num_input_tokens: int
+    
+        :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
+        :type get_ttft: MeanStdPair
+    
+        :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
+        :type get_tpot: MeanStdPair
+    
+        :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
+        :type get_throughput: MeanStdPair
+    
+        :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
+        :type get_generate_duration: MeanStdPair
+    
+        :param get_tokenization_duration: Returns the mean and standard deviation of tokenization durations in milliseconds.
+        :type get_tokenization_duration: MeanStdPair
+    
+        :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
+        :type get_detokenization_duration: MeanStdPair
+    
+        :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
+        :type get_grammar_compiler_init_times: dict[str, float]
+    
+        :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
+        :type get_grammar_compile_time: SummaryStats
+    
+        :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
+        :type raw_metrics: RawPerfMetrics
+    """
+    def __add__(self, metrics: PerfMetrics) -> PerfMetrics:
+        ...
+    def __iadd__(self, right: PerfMetrics) -> PerfMetrics:
+        ...
+    def __init__(self) -> None:
+        ...
+    def get_detokenization_duration(self) -> MeanStdPair:
+        ...
+    def get_generate_duration(self) -> MeanStdPair:
+        ...
+    def get_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_ipot(self) -> MeanStdPair:
+        ...
+    def get_load_time(self) -> float:
+        ...
+    def get_num_generated_tokens(self) -> int:
+        ...
+    def get_num_input_tokens(self) -> int:
+        ...
+    def get_throughput(self) -> MeanStdPair:
+        ...
+    def get_tokenization_duration(self) -> MeanStdPair:
+        ...
+    def get_tpot(self) -> MeanStdPair:
+        ...
+    def get_ttft(self) -> MeanStdPair:
+        ...
+    @property
+    def raw_metrics(self) -> RawPerfMetrics:
         ...
 class FluxTransformer2DModel:
     """
@@ -607,6 +708,7 @@ class GenerationConfig:
     stop_criteria: StopCriteria
     stop_strings: set[str]
     stop_token_ids: set[int]
+    structured_output_config: StructuredOutputConfig | None
     temperature: float
     top_k: int
     top_p: float
@@ -699,7 +801,7 @@ class GenerationResult:
     
         GenerationResult stores resulting batched tokens and scores.
     
-        Parameters: 
+        Parameters:
         request_id:         obsolete when handle API is approved as handle will connect results with prompts.
         generation_ids:     in a generic case we have multiple generation results per initial prompt
             depending on sampling parameters (e.g. beam search or parallel sampling).
@@ -711,9 +813,9 @@ class GenerationResult:
             CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
             STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
             DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
-        perf_metrics:
-                            Performance metrics for each generation result.
-    
+        perf_metrics: Performance metrics for each generation result.
+        extended_perf_metrics: performance pipeline specifics metrics,
+                               applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
     """
     m_generation_ids: list[str]
     m_scores: list[float]
@@ -723,6 +825,9 @@ class GenerationResult:
     def __repr__(self) -> str:
         ...
     def get_generation_ids(self) -> list[str]:
+        ...
+    @property
+    def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
     def m_request_id(self) -> int:
@@ -1329,6 +1434,12 @@ class PerfMetrics:
         :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
         :type get_detokenization_duration: MeanStdPair
     
+        :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
+        :type get_grammar_compiler_init_times: dict[str, float]
+    
+        :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
+        :type get_grammar_compile_time: SummaryStats
+    
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
     """
@@ -1341,6 +1452,10 @@ class PerfMetrics:
     def get_detokenization_duration(self) -> MeanStdPair:
         ...
     def get_generate_duration(self) -> MeanStdPair:
+        ...
+    def get_grammar_compile_time(self) -> SummaryStats:
+        ...
+    def get_grammar_compiler_init_times(self) -> dict[str, float]:
         ...
     def get_inference_duration(self) -> MeanStdPair:
         ...
@@ -1458,6 +1573,9 @@ class RawPerfMetrics:
     
         :param inference_durations : Total inference duration for each generate call in milliseconds.
         :type batch_sizes: list[float]
+    
+        :param grammar_compile_times: Time to compile the grammar in milliseconds.
+        :type grammar_compile_times: list[float]
     """
     def __init__(self) -> None:
         ...
@@ -1466,6 +1584,9 @@ class RawPerfMetrics:
         ...
     @property
     def generate_durations(self) -> list[float]:
+        ...
+    @property
+    def grammar_compile_times(self) -> list[float]:
         ...
     @property
     def inference_durations(self) -> list[float]:
@@ -1537,6 +1658,58 @@ class SD3Transformer2DModel:
         ...
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
+class SDPerModelsPerfMetrics(SDPerfMetrics):
+    """
+    
+        Holds performance metrics for each generate call.
+    
+        :param main_model_metrics: performance metrics for main model
+        :type main_model_metrics: SDPerfMetrics
+    
+        :param draft_model_metrics: performance metrics for draft model
+        :type draft_model_metrics: SDPerfMetrics
+    
+        :param get_num_accepted_tokens: total number of tokens, which was generated by draft model and accepted by main model
+        :type get_num_accepted_tokens: int
+    """
+    def get_num_accepted_tokens(self) -> int:
+        ...
+    @property
+    def draft_model_metrics(self) -> SDPerfMetrics:
+        ...
+    @property
+    def main_model_metrics(self) -> SDPerfMetrics:
+        ...
+class SDPerfMetrics(ExtendedPerfMetrics):
+    """
+    
+        Holds performance metrics for draft and main models of SpeculativeDecoding Pipeline.
+    
+        SDPerfMetrics holds fields with mean and standard deviations for the all PerfMetrics fields and following metrics:
+        - Time to the Second Token (TTFT), ms
+        - avg_latency, ms/inference
+    
+        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        If mean and std were already calculated, getters return cached values.
+    
+        :param get_ttst: Returns the mean and standard deviation of TTST in milliseconds.
+                         The second token is presented separately as for some plugins this can be expected to take longer than next tokens.
+                         In case of GPU plugin: Async compilation of some opt kernels can be completed after second token.
+                         Also, additional memory manipulation can happen at second token time.
+        :type get_ttst: MeanStdPair
+    
+        :param get_latency: Returns the mean and standard deviation of the latency from the third token in milliseconds per inference,
+                            which includes also prev and post processing. First and second token time is presented separately as ttft and ttst.
+        :type get_latency: MeanStdPair
+    
+        Additional points:
+          - TPOT is calculated from the third token. The reasons for this, please, see in the description for avg_latency.
+          - `total number of iterations` of the model can be taken from raw performance metrics raw_metrics.m_durations.size().
+    """
+    def get_latency(self) -> MeanStdPair:
+        ...
+    def get_ttst(self) -> MeanStdPair:
+        ...
 class Scheduler:
     """
     Scheduler for image generation pipelines.
@@ -1604,7 +1777,7 @@ class SchedulerConfig:
     
         SchedulerConfig to construct ContinuousBatchingPipeline
     
-        Parameters: 
+        Parameters:
         max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
             independent sequences, we consider total amount of tokens in a batch).
         num_kv_blocks:              total number of KV blocks available to scheduler logic.
@@ -1620,6 +1793,10 @@ class SchedulerConfig:
             This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
             When turned off only KV-cache required for batch calculation is kept in memory and
             when a sequence has finished generation its cache is released.
+        use_cache_eviction:         Whether to use cache eviction during generation.
+        cache_eviction_config       Cache eviction configuration struct.
+        use_sparse_attention        Whether to use sparse attention during prefill.
+        sparse_attention_config     Sparse attention configuration struct.
     """
     cache_eviction_config: CacheEvictionConfig
     cache_size: int
@@ -1628,8 +1805,67 @@ class SchedulerConfig:
     max_num_batched_tokens: int
     max_num_seqs: int
     num_kv_blocks: int
+    sparse_attention_config: SparseAttentionConfig
     use_cache_eviction: bool
+    use_sparse_attention: bool
     def __init__(self) -> None:
+        ...
+class SparseAttentionConfig:
+    """
+    
+        Configuration struct for the sparse attention functionality.
+        :param mode: Sparse attention mode to be applied.
+        :type mode: openvino_genai.SparseAttentionMode
+    
+        :param num_last_dense_tokens_in_prefill: Number of tokens from the end of the prompt for which full attention across previous KV cache contents
+          will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention (encompassing first
+          and currently latest blocks) will be computed. Due to the block-wise nature of continuous batching cache management,
+          the actual number of prompt tokens for which the dense attention will be computed may be up to block-size larger than
+          this value (depending on the prompt length and block size).*/
+        :type num_last_dense_tokens_in_prefill: int
+    """
+    mode: SparseAttentionMode
+    num_last_dense_tokens_in_prefill: int
+    num_retained_recent_tokens_in_cache: int
+    num_retained_start_tokens_in_cache: int
+    def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: int = 100, num_retained_start_tokens_in_cache: int = 128, num_retained_recent_tokens_in_cache: int = 1920) -> None:
+        ...
+class SparseAttentionMode:
+    """
+    Represents the mode of sparse attention applied during generation.
+                                   :param SparseAttentionMode.TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.
+    
+    Members:
+    
+      TRISHAPE
+    """
+    TRISHAPE: typing.ClassVar[SparseAttentionMode]  # value = <SparseAttentionMode.TRISHAPE: 0>
+    __members__: typing.ClassVar[dict[str, SparseAttentionMode]]  # value = {'TRISHAPE': <SparseAttentionMode.TRISHAPE: 0>}
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: int) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: int) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
         ...
 class SpeechGenerationConfig(GenerationConfig):
     """
@@ -1788,6 +2024,178 @@ class StreamingStatus:
         ...
     @property
     def value(self) -> int:
+        ...
+class StructuralTagItem:
+    """
+    
+        Structure to keep generation config parameters for structural tags in structured output generation.
+        It is used to store the configuration for a single structural tag item, which includes the begin string,
+        schema, and end string.
+    
+        Parameters:
+        begin:  the string that marks the beginning of the structural tag.
+        schema: the JSON schema that defines the structure of the tag.
+        end:    the string that marks the end of the structural tag.
+    """
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Default constructor for StructuralTagItem
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        """
+        Constructor that initializes the structured tags configuration with kwargs.
+        """
+    def __repr__(self) -> str:
+        ...
+    @property
+    def begin(self) -> str:
+        """
+        Begin string for Structural Tag Item
+        """
+    @begin.setter
+    def begin(self, arg0: str) -> None:
+        ...
+    @property
+    def end(self) -> str:
+        """
+        End string for Structural Tag Item
+        """
+    @end.setter
+    def end(self, arg0: str) -> None:
+        ...
+    @property
+    def schema(self) -> str:
+        """
+        Json schema for Structural Tag Item
+        """
+    @schema.setter
+    def schema(self, arg0: str) -> None:
+        ...
+class StructuralTagsConfig:
+    """
+    
+        Configures structured output generation by combining regular sampling with structural tags.
+    
+        When the model generates a trigger string, it switches to structured output mode and produces output
+        based on the defined structural tags. Afterward, regular sampling resumes.
+    
+        Example:
+          - Trigger "<func=" activates tags with begin "<func=sum>" or "<func=multiply>".
+    
+        Note:
+          - Simple triggers like "<" may activate structured output unexpectedly if present in regular text.
+          - Very specific or long triggers may be difficult for the model to generate,
+          so structured output may not be triggered.
+    
+        Parameters:
+        structural_tags: List of StructuralTagItem objects defining structural tags.
+        triggers:        List of strings that trigger structured output generation.
+                         Triggers may match the beginning or part of a tag's begin string.
+    """
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Default constructor for StructuralTagsConfig
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        """
+        Constructor that initializes the structured tags configuration with kwargs.
+        """
+    def __repr__(self) -> str:
+        ...
+    @property
+    def structural_tags(self) -> list[StructuralTagItem]:
+        """
+        List of structural tag items for structured output generation
+        """
+    @structural_tags.setter
+    def structural_tags(self, arg0: list[StructuralTagItem]) -> None:
+        ...
+    @property
+    def triggers(self) -> list[str]:
+        """
+        List of strings that will trigger generation of structured output
+        """
+    @triggers.setter
+    def triggers(self, arg0: list[str]) -> None:
+        ...
+class StructuredOutputConfig:
+    """
+    
+        Structure to keep generation config parameters for structured output generation.
+        It is used to store the configuration for structured generation, which includes
+        the JSON schema and other related parameters.
+    
+        Structured output parameters:
+        json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
+        regex:          if set, the output will be constraint by specified regex.
+        grammar:        if set, the output will be constraint by specified grammar.
+        structural_tags_config: if set, the output will be constraint by specified structural tags configuration.
+    
+    """
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Default constructor for StructuredOutputConfig
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        """
+        Constructor that initializes the structured output configuration with kwargs.
+        """
+    def __repr__(self) -> str:
+        ...
+    @property
+    def grammar(self) -> str | None:
+        """
+        Grammar for structured output generation
+        """
+    @grammar.setter
+    def grammar(self, arg0: str | None) -> None:
+        ...
+    @property
+    def json_schema(self) -> str | None:
+        """
+        JSON schema for structured output generation
+        """
+    @json_schema.setter
+    def json_schema(self, arg0: str | None) -> None:
+        ...
+    @property
+    def regex(self) -> str | None:
+        """
+        Regular expression for structured output generation
+        """
+    @regex.setter
+    def regex(self, arg0: str | None) -> None:
+        ...
+    @property
+    def structural_tags_config(self) -> StructuralTagsConfig | None:
+        """
+        Configuration for structural tags in structured output generation
+        """
+    @structural_tags_config.setter
+    def structural_tags_config(self, arg0: StructuralTagsConfig | None) -> None:
+        ...
+class SummaryStats:
+    def __init__(self) -> None:
+        ...
+    def as_tuple(self) -> tuple:
+        ...
+    @property
+    def max(self) -> float:
+        ...
+    @property
+    def mean(self) -> float:
+        ...
+    @property
+    def min(self) -> float:
+        ...
+    @property
+    def std(self) -> float:
         ...
 class T5EncoderModel:
     """
@@ -2226,9 +2634,12 @@ class Tokenizer:
         ...
     def get_vocab(self) -> dict:
         """
-        Returns the vocabulary as a Python dictionary with bytes keys and integer values.
-        
-        Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        Returns the vocabulary as a Python dictionary with bytes keys and integer values. 
+                     Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
+        """
+    def get_vocab_vector(self) -> list[str]:
+        """
+        Returns the vocabulary as list of strings, where position of a string represents token ID.
         """
     def set_chat_template(self, chat_template: str) -> None:
         """
@@ -2382,6 +2793,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
@@ -2419,6 +2831,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are
@@ -2455,6 +2868,7 @@ class VLMPipeline:
             LLaVA-NeXT: <image>
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             If the prompt doesn't contain image tags, but images are

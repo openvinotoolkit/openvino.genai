@@ -36,13 +36,18 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 *
 * @param tokens sequence of resulting tokens
 * @param scores sum of logarithmic probabilities of all tokens in the sequence
-* @param metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
+* @param perf_metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
+* @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics.
+*        Applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
+*        To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline.
+*        Cast to SDPerModelsPerfMetrics for SpeculativeDecoding.
 */
 class EncodedResults {
 public:
     std::vector<std::vector<int64_t>> tokens;
     std::vector<float> scores;
     PerfMetrics perf_metrics;
+    std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 };
 
 /**
@@ -51,13 +56,18 @@ public:
 *
 * @param texts vector of resulting sequences
 * @param scores scores for each sequence
-* @param metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
+* @param perf_metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
+* @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics
+*        Applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
+*        To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline.
+*        Cast to SDPerModelsPerfMetrics for SpeculativeDecoding.
 */
 class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
     PerfMetrics perf_metrics;
+    std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 
     // @brief Convert DecodedResults to a string.
     operator std::string() const {
@@ -327,6 +337,14 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 * And create LLMPipeline instance with this config.
 */
 static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
+
+/**
+* @brief enable enable_save_ov_model property serves to serialize ov model (xml/bin) generated from gguf model on disk for re-use.
+* Set `true` to activate this mode.
+* And create LLMPipeline instance with this config.
+*/
+static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
+
 
 }  // namespace genai
 }  // namespace ov
