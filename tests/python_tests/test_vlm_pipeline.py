@@ -105,7 +105,7 @@ model_ids = [
 
 attention_backend = ["PA", "SDPA"]
 
-
+@functools.lru_cache()
 def get_pil_image_by_link(link, target_size=None):
     """
     Get PIL image by link.

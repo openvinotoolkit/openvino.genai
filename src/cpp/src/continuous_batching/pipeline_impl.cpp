@@ -91,7 +91,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
-        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
+        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
     // Extract sampler_num_threads property if exists and remove it from properties
@@ -312,7 +312,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     // evict unimportant blocks from KV cache, if requested
     const auto& sched_config = m_scheduler->get_config();
     if (sched_config.use_cache_eviction) {
-        _maybe_evict_cache_blocks(sched_config);
+        _maybe_evict_cache_blocks(sched_config, scheduler_output);
     }
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -628,7 +628,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
 }
 
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config) {
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output) {
     std::unordered_map<SequenceGroup::Ptr, size_t> seq_group_to_num_blocks_evicted_map;
     auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
 
@@ -646,7 +646,19 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
             m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_block_size, num_decoder_layers, MAX_POOL_WINDOW_SIZE);
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
-        cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
+        std::set<size_t> skip_set;
+        if (scheduler_output.m_apply_sparse_attention_mask) {
+            const auto& skip_map = scheduler_output.m_sparse_attention_skipped_logical_blocks;
+            auto it = skip_map.find(seq_id);
+            if (it != skip_map.end()) {
+                skip_set = it->second;
+            }
+        }
+
+        if (skip_set.empty()) {
+            // For now, will only register token scores from the dense attention stages
+            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set);
+        }
 
         auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
         OPENVINO_ASSERT(seq_group_ptr_it != m_requests.end(), "could not find sequence group with sequence ", seq_id);
