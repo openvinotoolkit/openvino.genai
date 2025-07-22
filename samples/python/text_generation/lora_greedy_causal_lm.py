@@ -13,7 +13,7 @@ def main():
     parser.add_argument('prompt')
     args = parser.parse_args()
 
-    device = 'CPU'  # GPU can be used as well
+    device = 'NPU'  # GPU can be used as well
     adapter = openvino_genai.Adapter(args.adapter_path)
     adapter_config = openvino_genai.AdapterConfig(adapter)
     pipe = openvino_genai.LLMPipeline(args.models_path, device, adapters=adapter_config)  # register all required adapters here
