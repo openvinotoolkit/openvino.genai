@@ -30,7 +30,7 @@ Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples
 
 GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
 
-See https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md for the list of supported models.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/) for more details.
 
 Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples
 ```sh
@@ -168,6 +168,57 @@ For more information how performance metrics are calculated please follow [perfo
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 
+### 11. Structured Output Sample (`structured_output_sample`)
+- **Description:**  
+This sample demonstrates how to use OpenVINO GenAI to generate structured outputs, such as JSON, from text prompts. It showcases step-by-step reasoning, allowing a language model to break down tasks (e.g., solving equations) and present each step in a structured format.
+
+The sample uses the following JSON schema for structured output:
+```json
+{
+  "steps": [
+    ...
+    {"explanation": "Moving the -30 term to the right", "output": "2*x = -30"},
+    {"explanation": "Finding the value of x.", "output": "x = -30/2"}
+    ...
+  ],
+  "final_answer": "x = -15"
+}
+```
+**Schema Details:**
+- Each reasoning step is an object with `explanation` and `output` fields.
+- The `steps` array lists all steps in order.
+- The `final_answer` field provides the final solution.
+- The schema is defined in the sample source code and can be customized as needed.
+ - JSON schema for such format is defined in the source code of the sample, and can be modified to fit your needs.
+
+Recommended models: `meta-llama/Llama-3.2-1B-Instruct`, `meta-llama/Llama-3.2-8B-Instruct`
+
+- **Run Command:**
+  ```bash
+  structured_output_generation <MODEL_DIR>
+  ```
+  After running the command, an interactive dialog starts. You can prompt the model to solve equations step by step. For example:
+
+1. **Step-by-step reasoning:**  
+   If you prompt:  
+   `Solve the equation 8x + 7 = -23 step by step`  
+   The model might output:
+   ```json
+   {
+     "steps": [
+       {"explanation": "Rearranging the equation to isolate x.", "output": "8x + 7 = -23"},
+       {"explanation": "Subtracting 7 from both sides.", "output": "8x + 7 - 7 = -23 - 7"},
+       {"explanation": "Simplifying the left side.", "output": "8x = -30"},
+       {"explanation": "Dividing both sides by 8.", "output": "8x / 8 = -30 / 8"},
+       {"explanation": "Simplifying the right side.", "output": "x = -30 / 8"},
+       {"explanation": "Finding the value of x.", "output": "x = -15/4"}
+     ],
+     "final_answer": "x = -15/4"
+   }
+   ```
+
+**Note:**  
+Structured output enforcement ensures valid JSON formatting, but does not guarantee factual accuracy or meaningfulness. The model may generate plausible-looking JSON with incorrect or nonsensical data (e.g., `{"explanation": "John", "output": 200000}` or `{"final_answer": "AbrakaKadabra9999######4242"}`). For best results, use the latest or fine-tuned models to improve output quality and relevance.
 
 ## Troubleshooting
 

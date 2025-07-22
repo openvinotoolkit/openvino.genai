@@ -524,7 +524,7 @@ int main(int argc, char* argv[]) {
 
 ## Additional materials
 
-- [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
+- [List of supported models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/)
 - [OpenVINO Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html)
 - [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 
