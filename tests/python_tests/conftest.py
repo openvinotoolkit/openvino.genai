@@ -40,7 +40,8 @@ def setup_and_teardown(request, tmp_path_factory):
 
     ov_cache = get_ov_cache_dir(tmp_path_factory.mktemp("ov_cache"))
     models_dir = os.path.join(ov_cache, "test_models")
-    test_data = os.path.join(os.environ.get("HF_HOME", ov_cache), "test_data")
+    hf_home = os.environ.get("HF_HOME", ov_cache)
+    test_data = os.path.normpath(os.path.join(hf_home, "test_data"))
 
     logger.info(f"Creating directories: {models_dir} and {test_data}")
     os.makedirs(models_dir, exist_ok=True)
