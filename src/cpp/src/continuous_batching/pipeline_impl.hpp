@@ -88,12 +88,13 @@ protected:
     /**
      * Performs KV cache eviction is enabled / requireed
      */
-    void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
+    void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
 
     void _register_step_cache_usage(float step_cache_usage);
     void _reset_cache_usage_statistics();
     float _get_current_running_average_cache_usage() const;
     void _compute_cache_rotation_data(const std::vector<SequenceGroup::Ptr>& sequence_groups, const Scheduler::Output& scheduler_output);
+    void _prepare_rotation_data_storage(const SchedulerConfig& normalized_config, size_t embedding_size);
 
     virtual void drop_requests();
 

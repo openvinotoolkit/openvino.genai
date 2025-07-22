@@ -23,6 +23,7 @@ OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run f
  - Image generation using Diffuser models, for example, generation using Stable Diffusion models
  - Speech recognition using Whisper family models
  - Text generation using Large Visual Models, for instance, Image analysis using LLaVa or miniCPM models family
+ - Text-to-speech generation using SpeechT5 TTS models
  - Text embedding for Retrieval-Augmented Generation (RAG). For example, compute embeddings for documents and queries to enable efficient retrieval in RAG workflows.
 
 Library efficiently supports LoRA adapters for Text and Image generation scenarios:
@@ -78,6 +79,20 @@ import openvino_genai
 #Will run model on CPU, GPU or NPU are possible options
 pipe = openvino_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
 print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
+```
+
+### Run generation using LLMPipeline API in JavaScript
+
+```js
+import { LLMPipeline } from 'openvino-genai-node';
+
+main();
+
+async function main() {
+    const pipe = await LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU");
+    const result = await pipe.generate("The Sun is yellow because", { 'max_new_tokens': 100 });
+    console.log(result);
+}
 ```
 
 ### Run generation using LLMPipeline in C++
@@ -391,6 +406,61 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automati
 
 </details>
 
+## Performing text-to-speech generation
+<details>
+
+For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html)
+
+NOTE: Currently, text-to-speech in OpenVINO GenAI supports the SpeechT5 TTS model. The generated audio signal is a single-channel (mono) waveform with a sampling rate of 16 kHz.
+ 
+### Converting text-to-speech model from Hugging Face library
+```sh
+# Download and convert to OpenVINO
+optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" ov_speecht5_tts
+```
+
+### Run generation using Text-to-speech API in Python
+
+NOTE: This sample is a simplified version of the full sample that is available [here](./samples/python/speech_generation/text2speech.py)
+
+```python
+import openvino_genai
+import soundfile as sf
+
+pipe = openvino_genai.Text2SpeechPipeline("ov_speecht5_tts", "CPU")
+
+# additionally, a speaker embedding can be specified as the target voice input to the generate method
+result = pipe.generate("Hello OpenVINO GenAI")
+speech = result.speeches[0]
+sf.write("output_audio.wav", speech.data[0], samplerate=16000)
+```
+
+ 
+### Run generation using Text-to-speech API in C++
+
+NOTE: This sample is a simplified version of the full sample that is available [here](./samples/cpp/speech_generation/text2speech.cpp)
+
+```cpp
+#include "audio_utils.hpp"
+#include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
+
+int main(int argc, char* argv[]) {
+    ov::genai::Text2SpeechPipeline pipe("ov_speecht5_tts", "CPU");
+
+    // additionally, a speaker embedding can be specified as the target voice input to the generate method
+    auto gen_speech = pipe.generate("Hello OpenVINO GenAI");
+
+    auto waveform_size = gen_speech.speeches[0].get_size();
+    auto waveform_ptr = gen_speech.speeches[0].data<const float>();
+    auto bits_per_sample = gen_speech.speeches[0].get_element_type().bitwidth();
+    utils::audio::save_to_wav(waveform_ptr, waveform_size, "output_audio.wav", bits_per_sample);
+
+    return 0;
+}
+```
+
+</details>
+
 ## Text Embeddings
 <details>
 
@@ -415,6 +485,25 @@ query = "The Sun is yellow because"
 query_embedding = pipeline.embed_query(query)
 ```
 
+### Compute embeddings using TextEmbeddingPipeline API in JavaScript
+
+```js
+import { TextEmbeddingPipeline } from 'openvino-genai-node';
+
+main();
+
+async function main() {
+    const pipeline = await TextEmbeddingPipeline("./BAAI/bge-small-en-v1.5", "CPU")
+
+    const documents = ["Document 1", "Document 2"];
+    const embeddings = await pipeline.embedDocuments(documents);
+
+    const query = "The Sun is yellow because";
+    const query_embedding = await pipeline.embedQuery(query);
+}
+
+```
+
 ### Compute embeddings using TextEmbeddingPipeline API in C++
 
 ```cpp
@@ -435,7 +524,7 @@ int main(int argc, char* argv[]) {
 
 ## Additional materials
 
-- [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
+- [List of supported models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/)
 - [OpenVINO Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html)
 - [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 

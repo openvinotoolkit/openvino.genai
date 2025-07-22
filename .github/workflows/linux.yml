@@ -28,6 +28,10 @@ env:
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
+  ARTIFACTS_SHARE: '/mount/build-artifacts'
+  BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
+  GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
+  GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
 
 jobs:
   smart_ci:
@@ -52,7 +56,7 @@ jobs:
           pr: ${{ github.event.number }}
           commit_sha: ${{ github.sha }}
           ref_name: ${{ github.ref_name }}
-          component_pattern: "category: ((?!Python API|CPP API).*)"
+          component_pattern: "category: ((?!Python API|CPP API).*)|Structured Output"
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           skip_when_only_listed_labels_set: 'GH Pages Docs'
           skip_when_only_listed_files_changed: '*.md,*.rst,*.png,*.jpg,*.svg,*.gif'
@@ -131,6 +135,7 @@ jobs:
       INSTALL_TESTS_DIR: ${{ github.workspace }}/tests
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
+      MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
 
     steps:
       - name: Clone openvino.genai
@@ -146,16 +151,52 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
+      - name: Generate product manifest
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          target_arch: 'x86_64'
+          build_type: ${{ matrix.build-type }}
+          save_to: ${{ env.MANIFEST_PATH }}
+
       - name: CMake Build
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
-                -DENABLE_PYTHON=ON \
+                -DENABLE_PYTHON=OFF \
                 -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-                -S ${{ env.SRC_DIR}} \
+                -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
-          cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+          
+          # Need to remove the default Python 3.11 in /venv from the Path so that CMake uses the correct one from newly created venv$py_version
+          export PATH=${PATH/:\/venv\/bin/}
+
+          for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
+          do
+            rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
+            
+            echo "Creating venv for python$py_version"
+            python$py_version -m venv venv$py_version
+            source venv$py_version/bin/activate
+            echo "PATH: $PATH"
+
+            echo "Configuring cmake for python$py_version"
+            cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
+                  -DENABLE_PYTHON=ON \
+                  -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+                  -S ${{ env.SRC_DIR }} \
+                  -B ${{ env.BUILD_DIR }}
+            echo "Configuring cmake done for python$py_version"
+            
+            cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+            cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+            deactivate
+          done
+          
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TESTS_DIR }} --component tests
 
@@ -187,10 +228,18 @@ jobs:
           path: ${{ env.INSTALL_TESTS_DIR }}
           if-no-files-found: 'error'
 
+      - name: Upload manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: manifest_${{ matrix.build-type }}
+          path: ${{ env.MANIFEST_PATH }}
+          if-no-files-found: 'error'
+
   genai_build_wheel:
     name: Build Wheel
     needs: [ openvino_download ]
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -223,33 +272,101 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
+      - name: Set CI environment
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
+          target_arch: 'x86_64'
+          build_type: Release
+          save_to: ${{ github.workspace }}
+
       - name: Build Tokenizers Wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
-      - name: Build GenAI Wheel
-        run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-              --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
-              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
-              ${{ env.SRC_DIR }}
-        working-directory: ${{ env.OV_INSTALL_DIR }}
-
       - name: Build WWB Wheel
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
-
+      
+      - name: Build GenAI Wheel
+        run: |
+          for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
+          do
+            python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
+            $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+                --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+                ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+                ${{ env.SRC_DIR }}
+          done
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+      
       - name: Upload Wheels
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: genai_wheels
+          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
+
+  store_artifacts:
+    name: Store build artifacts
+    strategy:
+      matrix:
+        build-type: [Release]
+    needs: [openvino_download, genai_build_wheel, genai_build_cmake]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-medium
+    container:
+      image: openvinogithubactions.azurecr.io/library/python:3.12-slim
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+    env:
+      CPACK_PATH: ${{ github.workspace }}/ov_genai
+      CPACK_PACKAGE: ${{ github.workspace }}/ov_genai.tar.gz
+      WHEEL_PACKAGE: ${{ github.workspace }}/wheels
+      MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
+
+    steps:
+      - name: Download genai package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
+          path: ${{ env.CPACK_PATH }}
+
+      - name: Pack Artifacts
+        run: tar -czvf ${{ env.CPACK_PACKAGE }} *
+        working-directory: ${{ env.CPACK_PATH }}
+
+      - name: Download manifest and wheels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: '{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},manifest_${{ matrix.build-type }}}'
+          path: ${{ github.workspace }}
+          merge-multiple: true
+
+      - name: Store ${{ matrix.build_type }} artifacts to a shared drive
+        id: store_artifacts
+        if: ${{ always() }}
+        uses: openvinotoolkit/openvino/.github/actions/store_artifacts@master
+        with:
+          artifacts: |
+            ${{ env.CPACK_PACKAGE }}
+            ${{ env.WHEEL_PACKAGE }}
+            ${{ env.MANIFEST_PATH }}
+          storage_dir: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          storage_root: ${{ env.ARTIFACTS_SHARE }}
+          product_name: ${{ github.event.repository.name }}
 
   genai_build_samples:
     name: Build Samples - ${{ matrix.build-type }}
@@ -388,17 +505,18 @@ jobs:
       matrix:
         test:
           - name: 'Whisper'
-            cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
+            # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
+            cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 45
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 60
+            timeout: 180
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
+            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
+            timeout: 120
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -418,7 +536,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-8-cores-64gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -499,6 +617,11 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-linux-4-cores-16gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
+          - name: 'Speech generation'
+            marker: 'speech_generation'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-4-cores-16gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
     timeout-minutes: 120
     defaults:
@@ -533,7 +656,7 @@ jobs:
           merge-multiple: true
 
       - name: Download GenAI JS Bildings Artifacts
-        if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
+        if: ${{ matrix.test.run_condition }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: genai_nodejs_bindings
@@ -562,13 +685,13 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Setup Node
-        if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
+        if: ${{ matrix.test.run_condition }}
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 21
 
       - name: Install GenAI NPM package
-        if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
+        if: ${{ matrix.test.run_condition }}
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
@@ -576,7 +699,7 @@ jobs:
           npm install --verbose
 
       - name: Install NPM dependencies for samples
-        if: ${{ matrix.test.run_condition && 'LLM' == matrix.test.name }}
+        if: ${{ matrix.test.run_condition }}
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
           npm install ${{ env.SRC_DIR }}/src/js
@@ -741,17 +864,64 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: npm test
 
-      - name: Install openvino-genai-node samples dependencies
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
-        run: |
-          npm install ${{ env.SRC_DIR }}/src/js
-          npm install --verbose
+  genai_xgrammar_tests:
+    name: Build & Test XGrammar
+    needs: [ openvino_download ]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash    
+    runs-on: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+    env:
+      CMAKE_GENERATOR: Unix Makefiles
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      SRC_DIR: ${{ github.workspace }}/src
+      BUILD_DIR: ${{ github.workspace }}/build_xgrammar
 
-      - name: Run samples tests
-        run: npm test
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: CMake Build without XGrammar
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
+                -DENABLE_PYTHON=ON \
+                -DENABLE_XGRAMMAR=OFF \
+                -DCMAKE_BUILD_TYPE=Release \
+                -S ${{ env.SRC_DIR}} \
+                -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR}} --config Release --parallel $(nproc) --verbose
+
+      - name: Install Python dependencies for tests
+        run: |
+          python3 -m pip install -r ${{ env.SRC_DIR }}/tests/python_tests/requirements.txt
+          python3 -m pip install -r ${{ env.SRC_DIR }}/samples/export-requirements.txt
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          python3 -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+
+      - name: Run test_llm_pipeline.py when -DENABLE_XGRAMMAR=OFF
         env:
-          MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+          PYTHONPATH: "${{ env.BUILD_DIR }}:"
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -k "not test_perf_metrics_with_structured_output"
 
   Overall_Status:
     name: ci/gha_overall_status_linux

@@ -3,8 +3,9 @@
 
 """openvino genai module namespace, exposing pipelines and configs to create these pipelines."""
 
-import openvino  # add_dll_directory for openvino lib
 import os
+
+import openvino  # add_dll_directory for openvino lib
 
 if hasattr(os, "add_dll_directory"):
     os.add_dll_directory(os.path.dirname(__file__))
@@ -30,7 +31,7 @@ from .py_openvino_genai import (
 
 # LLM pipeline
 from .py_openvino_genai import (
-    LLMPipeline, 
+    LLMPipeline,
     draft_model,
 )
 
@@ -43,6 +44,9 @@ from .py_openvino_genai import (
 # Generation config
 from .py_openvino_genai import (
     GenerationConfig,
+    StructuralTagItem,
+    StructuralTagsConfig,
+    StructuredOutputConfig,
     StopCriteria
 )
 
@@ -96,4 +100,12 @@ from .py_openvino_genai import (
 # RAG
 from .py_openvino_genai import (
     TextEmbeddingPipeline
+)
+
+# Speech generation
+from .py_openvino_genai import (
+    SpeechGenerationConfig,
+    SpeechGenerationPerfMetrics,
+    Text2SpeechDecodedResults,
+    Text2SpeechPipeline
 )

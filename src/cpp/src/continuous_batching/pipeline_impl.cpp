@@ -65,6 +65,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
+    // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
+    if (m_model_runner) {
+        m_model_runner->get_infer_request().get_compiled_model().release_memory();
+    }
+
     if (m_scheduler) {
         m_scheduler->release();
     }
@@ -82,10 +87,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& properties) {
+    m_device = device;
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
-        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
+        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
     // Extract sampler_num_threads property if exists and remove it from properties
@@ -98,7 +104,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
     std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
-    OPENVINO_ASSERT(execution_devices.size() == 1, "Contituous batching: execution device is expected to be CPU or GPU, but got ", execution_devices.size(), " devices");
+    const bool all_gpu_device =
+        std::all_of(execution_devices.begin(), execution_devices.end(), [&](const std::string& device) {
+            return device.find("GPU") != std::string::npos;
+        });
+    OPENVINO_ASSERT(all_gpu_device || execution_devices.size() == 1,
+                    "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
     const std::string execution_device = execution_devices[0];
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
@@ -109,7 +120,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     m_num_decoder_layers = cache_manager->get_num_decoder_layers();
     m_block_size = cache_manager->get_block_size();
 
-    // Scheduler
+
+    // Scheduler configuration
     SchedulerConfig normalized_config = scheduler_config;
     if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
         size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
@@ -123,52 +135,25 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         can_use_partial_preemption = false;
     }
 
-    m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
-
-    // Model Runner
-    bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
+    // Scheduler and Model Runner instantiation
+    bool is_use_cache_eviction = scheduler_config.use_cache_eviction;
     if (is_use_cache_eviction) {
-        const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
+        const auto& eviction_config = scheduler_config.cache_eviction_config;
+        m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption, eviction_config.snapkv_window_size);
+
         bool is_apply_rotation = eviction_config.apply_rotation;
         m_model_runner = std::make_shared<ModelRunner>(infer_request,
                                                        m_block_size,
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
                                                        /* is_use_per_layer_cache_control = */ true,
-                                                       /* is_use_rotation_inputs = */ is_apply_rotation);
+                                                       /* is_use_rotation_inputs = */ is_apply_rotation,
+                                                       /* is_aggregate_attention_scores = */ true);
         if (eviction_config.apply_rotation) {
-            m_rotation_deltas_stores.reserve(m_num_decoder_layers);
-            ov::Shape rotation_deltas_store_shape{normalized_config.num_kv_blocks, 1}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
-            for (size_t i = 0; i < m_num_decoder_layers; i++) {
-                ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
-                std::memset(store.data(), 0, store.get_byte_size());
-                m_rotation_deltas_stores.push_back(store);
-            }
-
-            size_t max_sequence_cache_occupation_length_in_blocks = normalized_config.max_num_batched_tokens / m_block_size  + 1;
-            size_t embedding_size = cache_manager->get_v_head_size(0);
-            m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
-                m_block_size,
-                max_sequence_cache_occupation_length_in_blocks,
-                embedding_size);
-            auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length_in_blocks, embedding_size});
-            float* rotation_trig_lut_data = rotation_trig_lut.data<float>();
-            std::memset(rotation_trig_lut_data, 0, rotation_trig_lut.get_byte_size());
-
-            const auto& cos_lut = m_cache_rotation_calculator->get_cos_lut();
-            const auto& sin_lut = m_cache_rotation_calculator->get_sin_lut();
-
-
-            for (size_t pos_idx = 0; pos_idx < max_sequence_cache_occupation_length_in_blocks; pos_idx++) {
-                for (size_t embedding_pair_idx = 0; embedding_pair_idx < cos_lut[0].size(); embedding_pair_idx++) {
-                    rotation_trig_lut_data[pos_idx * embedding_size + embedding_pair_idx] = cos_lut[pos_idx][embedding_pair_idx];
-                    rotation_trig_lut_data[pos_idx * embedding_size + embedding_size / 2 + embedding_pair_idx] = sin_lut[pos_idx][embedding_pair_idx];
-                }
-            }
-
-            m_model_runner->set_cache_rotation_trig_lut(std::move(rotation_trig_lut));
+            _prepare_rotation_data_storage(normalized_config, cache_manager->get_v_head_size(0));
         }
     } else {
+        m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
     }
@@ -181,6 +166,38 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
 };
 
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_prepare_rotation_data_storage(const SchedulerConfig& normalized_config, size_t embedding_size) {
+    m_rotation_deltas_stores.reserve(m_num_decoder_layers);
+    ov::Shape rotation_deltas_store_shape{normalized_config.num_kv_blocks, 1}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
+    for (size_t i = 0; i < m_num_decoder_layers; i++) {
+        ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
+        std::memset(store.data(), 0, store.get_byte_size());
+        m_rotation_deltas_stores.push_back(store);
+    }
+
+    size_t max_sequence_cache_occupation_length_in_blocks = normalized_config.max_num_batched_tokens / m_block_size  + 1;
+    m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
+        m_block_size,
+        max_sequence_cache_occupation_length_in_blocks,
+        embedding_size);
+    auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length_in_blocks, embedding_size});
+    float* rotation_trig_lut_data = rotation_trig_lut.data<float>();
+    std::memset(rotation_trig_lut_data, 0, rotation_trig_lut.get_byte_size());
+
+    const auto& cos_lut = m_cache_rotation_calculator->get_cos_lut();
+    const auto& sin_lut = m_cache_rotation_calculator->get_sin_lut();
+
+
+    for (size_t pos_idx = 0; pos_idx < max_sequence_cache_occupation_length_in_blocks; pos_idx++) {
+        for (size_t embedding_pair_idx = 0; embedding_pair_idx < cos_lut[0].size(); embedding_pair_idx++) {
+            rotation_trig_lut_data[pos_idx * embedding_size + embedding_pair_idx] = cos_lut[pos_idx][embedding_pair_idx];
+            rotation_trig_lut_data[pos_idx * embedding_size + embedding_size / 2 + embedding_pair_idx] = sin_lut[pos_idx][embedding_pair_idx];
+        }
+    }
+
+    m_model_runner->set_cache_rotation_trig_lut(std::move(rotation_trig_lut));
+}
 
 GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
@@ -295,7 +312,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     // evict unimportant blocks from KV cache, if requested
     const auto& sched_config = m_scheduler->get_config();
     if (sched_config.use_cache_eviction) {
-        _maybe_evict_cache_blocks(sched_config);
+        _maybe_evict_cache_blocks(sched_config, scheduler_output);
     }
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -404,11 +421,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     GenerationHandle& generation = generations.at(0);
 
     streamer_ptr->start();
-
+    m_sampler->clear_structured_output_compile_times();
     while (has_non_finished_requests()) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
+            
             // During prefill step (or steps if max_batch_size < prompt_len) we don't generate new tokens,
             // but still inference took place, so we need to add this time to the total inference duration.
             raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
@@ -425,6 +443,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             std::rethrow_exception(std::current_exception());
         }
         stream_tokens(streamer_ptr, generation);
+    }
+
+    auto times = m_sampler->get_structured_output_times();
+    perf_metrics.grammar_compiler_init_times = times.first;
+    for (const auto& t: times.second) {
+        raw_perf_counters.m_grammar_compile_times.emplace_back(t);
     }
 
     // waiting for competion of streaming
@@ -604,7 +628,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
 }
 
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config) {
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output) {
     std::unordered_map<SequenceGroup::Ptr, size_t> seq_group_to_num_blocks_evicted_map;
     auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
 
@@ -618,10 +642,23 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         auto seq_id = seq_id_and_attention_scores.first;
         const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
         if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
-            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_block_size, num_decoder_layers);
+            constexpr size_t MAX_POOL_WINDOW_SIZE = 7;
+            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_block_size, num_decoder_layers, MAX_POOL_WINDOW_SIZE);
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
-        cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
+        std::set<size_t> skip_set;
+        if (scheduler_output.m_apply_sparse_attention_mask) {
+            const auto& skip_map = scheduler_output.m_sparse_attention_skipped_logical_blocks;
+            auto it = skip_map.find(seq_id);
+            if (it != skip_map.end()) {
+                skip_set = it->second;
+            }
+        }
+
+        if (skip_set.empty()) {
+            // For now, will only register token scores from the dense attention stages
+            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set);
+        }
 
         auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
         OPENVINO_ASSERT(seq_group_ptr_it != m_requests.end(), "could not find sequence group with sequence ", seq_id);

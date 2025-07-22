@@ -13,10 +13,6 @@
 // https://github.com/antirez/gguf-tools/blob/af7d88d808a7608a33723fba067036202910acb3/gguflib.h#L102-L108
 constexpr int gguf_array_header_size = 12;
 
-using GGUFLoad = std::tuple<std::unordered_map<std::string, GGUFMetaData>,
-                            std::unordered_map<std::string, ov::Tensor>,
-                            std::unordered_map<std::string, gguf_tensor_type>>;
-
 template <typename... Args>
 std::string format(std::string fmt, Args... args) {
     size_t bufferSize = 1000;
@@ -165,34 +161,62 @@ void set_value_from_gguf(gguf_ctx* ctx, uint32_t type, gguf_value* val, GGUFMeta
                         "[load_gguf] Only supports loading 1-layer of nested arrays.");
         switch (val->array.type) {
         case GGUF_VALUE_TYPE_UINT8:
-            value = ov::Tensor(ov::element::u8, {size}, reinterpret_cast<uint8_t*>(data));
+            value = ov::Tensor(ov::element::u8, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<uint8_t>(),
+                        reinterpret_cast<uint8_t*>(data),
+                        size * sizeof(uint8_t));
             break;
         case GGUF_VALUE_TYPE_INT8:
-            value = ov::Tensor(ov::element::i8, {size}, reinterpret_cast<uint8_t*>(data));
+            value = ov::Tensor(ov::element::i8, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<int8_t>(),
+                        reinterpret_cast<int8_t*>(data),
+                        size * sizeof(int8_t));
             break;
         case GGUF_VALUE_TYPE_UINT16:
-            value = ov::Tensor(ov::element::u16, {size}, reinterpret_cast<uint16_t*>(data));
+            value = ov::Tensor(ov::element::u16, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<uint16_t>(),
+                        reinterpret_cast<uint16_t*>(data),
+                        size * sizeof(uint16_t));
             break;
         case GGUF_VALUE_TYPE_INT16:
-            value = ov::Tensor(ov::element::i16, {size}, reinterpret_cast<int16_t*>(data));
+            value = ov::Tensor(ov::element::i16, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<int16_t>(),
+                        reinterpret_cast<int16_t*>(data),
+                        size * sizeof(int16_t));
             break;
         case GGUF_VALUE_TYPE_UINT32:
-            value = ov::Tensor(ov::element::u32, {size}, reinterpret_cast<uint32_t*>(data));
+            value = ov::Tensor(ov::element::u32, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<uint32_t>(),
+                        reinterpret_cast<uint32_t*>(data),
+                        size * sizeof(uint32_t));
             break;
         case GGUF_VALUE_TYPE_INT32:
-            value = ov::Tensor(ov::element::i32, {size}, reinterpret_cast<int32_t*>(data));
+            value = ov::Tensor(ov::element::i32, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<int32_t>(),
+                        reinterpret_cast<int32_t*>(data),
+                        size * sizeof(int32_t));
             break;
         case GGUF_VALUE_TYPE_UINT64:
-            value = ov::Tensor(ov::element::u64, {size}, reinterpret_cast<uint64_t*>(data));
+            value = ov::Tensor(ov::element::u64, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<uint64_t>(),
+                        reinterpret_cast<uint64_t*>(data),
+                        size * sizeof(uint64_t));
             break;
         case GGUF_VALUE_TYPE_INT64:
-            value = ov::Tensor(ov::element::i64, {size}, reinterpret_cast<int64_t*>(data));
+            value = ov::Tensor(ov::element::i64, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<int64_t>(),
+                        reinterpret_cast<int64_t*>(data),
+                        size * sizeof(int64_t));
             break;
         case GGUF_VALUE_TYPE_FLOAT32:
-            value = ov::Tensor(ov::element::f32, {size}, reinterpret_cast<float*>(data));
+            value = ov::Tensor(ov::element::f32, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<float>(),
+                        reinterpret_cast<float*>(data),
+                        size * sizeof(float));
             break;
         case GGUF_VALUE_TYPE_BOOL:
-            value = ov::Tensor(ov::element::boolean, {size}, reinterpret_cast<bool*>(data));
+            value = ov::Tensor(ov::element::boolean, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<bool>(), reinterpret_cast<bool*>(data), size * sizeof(bool));
             break;
         case GGUF_VALUE_TYPE_STRING: {
             std::vector<std::string> strs(size);
@@ -206,7 +230,10 @@ void set_value_from_gguf(gguf_ctx* ctx, uint32_t type, gguf_value* val, GGUFMeta
             break;
         }
         case GGUF_VALUE_TYPE_FLOAT64:
-            value = ov::Tensor(ov::element::f64, {size}, reinterpret_cast<double*>(data));
+            value = ov::Tensor(ov::element::f64, ov::Shape{size});
+            std::memcpy(std::get<ov::Tensor>(value).data<double>(),
+                        reinterpret_cast<double*>(data),
+                        size * sizeof(double));
             break;
         default:
             OPENVINO_THROW("[load_gguf] Multiple levels of nested arrays are not supported.");
@@ -351,8 +378,10 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     config["architecture"] = arch;
     config["layer_num"] = metadata_to_int(metadata, arch + ".block_count");
     config["head_num"] = metadata_to_int(metadata, arch + ".attention.head_count");
-    config["head_size"] = metadata_to_int(metadata, arch + ".embedding_length") / 
-                     metadata_to_int(metadata, arch + ".attention.head_count");
+    config["head_size"] = metadata.count(arch + ".attention.key_length") ?
+                     metadata_to_int(metadata, arch + ".attention.key_length") :
+                     (metadata_to_int(metadata, arch + ".embedding_length") / 
+                     metadata_to_int(metadata, arch + ".attention.head_count"));
     config["head_num_kv"] = metadata.count(arch + ".attention.head_count_kv") ?
             metadata_to_int(metadata, arch + ".attention.head_count_kv") :
             metadata_to_int(metadata, arch + ".attention.head_count");
@@ -411,6 +440,14 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
         consts[format("model.layers[%d].self_attn.o_proj.weight", i)] = weights.at(format("blk.%d.attn_output.weight", i));
         if (weights.count(format("blk.%d.attn_output.bias", i))) {
             consts[format("model.layers[%d].self_attn.o_proj.bias", i)] = weights.at(format("blk.%d.attn_output.bias", i));
+        }
+
+        //Qwen3
+        if (weights.count(format("blk.%d.attn_k_norm.weight", i))) {
+            consts[format("model.layers[%d].self_attn.k_norm.weight", i)] = weights.at(format("blk.%d.attn_k_norm.weight", i));
+        }
+        if (weights.count(format("blk.%d.attn_q_norm.weight", i))) {
+            consts[format("model.layers[%d].self_attn.q_norm.weight", i)] = weights.at(format("blk.%d.attn_q_norm.weight", i));
         }
 
         // MLP weights

@@ -5,7 +5,7 @@ import { describe, it, before, after } from 'node:test';
 import { models } from './models.js';
 
 const MODEL_PATH = process.env.MODEL_PATH
-  || `./tests/models/${models[0].split('/')[1]}`;
+  || `./tests/models/${models.LLM.split('/')[1]}`;
 
 describe('module', async () => {
   let pipeline = null;
@@ -25,7 +25,7 @@ describe('module', async () => {
       'Type something in English',
       // eslint-disable-next-line camelcase
       { temperature: '0', max_new_tokens: '4' },
-      () => {},
+      () => { },
     );
 
     assert.ok(result.length > 0);
@@ -115,7 +115,7 @@ describe('generation parameters validation', () => {
     'should throw an error if options specified but not an object',
     async () => {
       await assert.rejects(
-        async () => await pipeline.generate('prompt', 'options', () => {}),
+        async () => await pipeline.generate('prompt', 'options', () => { }),
         {
           name: 'Error',
           message: 'Options must be an object',
@@ -146,5 +146,64 @@ describe('generation parameters validation', () => {
     await pipeline.generate('prompt', { max_new_tokens: 1 }, (chunk) => {
       assert.strictEqual(typeof chunk, 'string');
     });
+  });
+
+  it('should convert Set', async () => {
+    const generationConfig = {
+      'max_new_tokens': 100,
+      'stop_strings': new Set(['1', '2', '3', '4', '5']),
+      'include_stop_str_in_output': true,
+    };
+    const result = await pipeline.generate('continue: 1 2 3', generationConfig);
+    assert.strictEqual(typeof result, 'string');
+  });
+});
+
+describe('stream()', () => {
+  let pipeline = null;
+
+  before(async () => {
+    pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
+  });
+
+  it('stream() with max_new_tokens', async () => {
+    const streamer = pipeline.stream(
+      'Print hello world',
+      {
+        'max_new_tokens': 5,
+      },
+    );
+    const chunks = [];
+    for await (const chunk of streamer) {
+      chunks.push(chunk);
+    }
+    assert.ok(chunks.length < 5);
+  });
+
+  it('stream() with stop_strings', async () => {
+    const streamer = pipeline.stream(
+      'Print hello world',
+      {
+        'stop_strings': new Set(['world']),
+        'include_stop_str_in_output': true,
+      },
+    );
+    const chunks = [];
+    for await (const chunk of streamer) {
+      chunks.push(chunk);
+    }
+    assert.ok(chunks[chunks.length - 1].includes('world'));
+  });
+
+  it('early break of stream', async () => {
+    const streamer = pipeline.stream('Print hello world');
+    const chunks = [];
+    for await (const chunk of streamer) {
+      chunks.push(chunk);
+      if (chunks.length >= 5) {
+        break;
+      }
+    }
+    assert.equal(chunks.length, 5);
   });
 });

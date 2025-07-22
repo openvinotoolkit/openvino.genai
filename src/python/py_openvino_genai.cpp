@@ -41,6 +41,7 @@ void init_image_generation_pipelines(py::module_& m);
 void init_vlm_pipeline(py::module_& m);
 void init_whisper_pipeline(py::module_& m);
 void init_rag_pipelines(py::module_& m);
+void init_speech_generation_pipeline(py::module_& m);
 
 namespace {
 
@@ -52,6 +53,8 @@ auto decoded_results_docstring = R"(
     texts:      vector of resulting sequences.
     scores:     scores for each sequence.
     metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+    extended_perf_metrics: performance pipeline specifics metrics,
+                           applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
 )";
 
 auto encoded_results_docstring = R"(
@@ -65,6 +68,8 @@ auto encoded_results_docstring = R"(
     tokens: sequence of resulting tokens.
     scores: sum of logarithmic probabilities of all tokens in the sequence.
     metrics: performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+    extended_perf_metrics: performance pipeline specifics metrics,
+                           applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
 )";
 
 } // namespace
@@ -84,6 +89,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
         .def_readonly("scores", &DecodedResults::scores)
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
+        .def_readonly("extended_perf_metrics", &DecodedResults::extended_perf_metrics)
         .def("__str__", [](const DecodedResults &dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
             py::str res;
@@ -100,7 +106,8 @@ PYBIND11_MODULE(py_openvino_genai, m) {
     py::class_<EncodedResults>(m, "EncodedResults", encoded_results_docstring)
         .def_readonly("tokens", &EncodedResults::tokens)
         .def_readonly("scores", &EncodedResults::scores)
-        .def_readonly("perf_metrics", &EncodedResults::perf_metrics);
+        .def_readonly("perf_metrics", &EncodedResults::perf_metrics)
+        .def_readonly("extended_perf_metrics", &EncodedResults::extended_perf_metrics);
 
     init_lora_adapter(m);
     init_generation_config(m);
@@ -113,4 +120,5 @@ PYBIND11_MODULE(py_openvino_genai, m) {
     init_vlm_pipeline(m);
     init_whisper_pipeline(m);
     init_rag_pipelines(m);
+    init_speech_generation_pipeline(m);
 }

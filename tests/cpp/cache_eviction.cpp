@@ -9,16 +9,481 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "openvino/genai/cache_eviction.hpp"
+
 
 const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG = {32, 32, 192, ov::genai::AggregationMode::NORM_SUM};
 const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG = {32, 32, 72, ov::genai::AggregationMode::NORM_SUM};
 constexpr size_t DEFAULT_BLOCK_SIZE = 4;
 constexpr size_t DEFAULT_NUM_DECODER_LAYERS = 2;
+constexpr size_t DEFAULT_MAX_POOL_WINDOW_SIZE = 8;
+constexpr ov::genai::AggregationMode DEFAULT_AGGREGATION_MODE = ov::genai::AggregationMode::NORM_SUM;
+
+AttentionScoresForEachDecoderLayer get_layer_scores_from_2d_vector(const std::vector<std::vector<float>>& src) {
+    AttentionScoresForEachDecoderLayer retval;
+    retval.reserve(src.size());
+    for (const auto& val_vec : src) {
+        retval.push_back(ov::Tensor(ov::element::f32, {val_vec.size()}));
+        ov::Tensor& created_tensor = retval.back();
+        std::copy(val_vec.begin(), val_vec.end(), created_tensor.data<float>());
+    }
+    return retval;
+}
+
+
+
+TEST(EvictionScoreManager, CanRegisterNewScores) {
+    ov::genai::EvictionScoreManager mgr(DEFAULT_BLOCK_SIZE, DEFAULT_NUM_DECODER_LAYERS, DEFAULT_MAX_POOL_WINDOW_SIZE, DEFAULT_AGGREGATION_MODE, 0);
+    auto mock_scores = get_layer_scores_from_2d_vector( { {0.0, 1.0}, {-2.0, -42.0} } );
+    EXPECT_NO_THROW(mgr.register_new_token_scores(mock_scores, {}));
+}
+
+
+struct EvictionScoreManagerAddWithSkipsTestStruct {
+    size_t block_size;
+    std::vector<double> src;
+    std::set<size_t> skipped_logical_block_ids;
+    std::vector<double> dst_before;
+    std::vector<double> ref_dst_after;
+};
+
+using EvictionScoreManagerAddWithSkipsParameterizedTest = ::testing::TestWithParam<EvictionScoreManagerAddWithSkipsTestStruct>;
+
+const std::vector<EvictionScoreManagerAddWithSkipsTestStruct> ADD_WITH_SKIPS_TEST_CASES = {
+    // basic case
+    {
+      2,
+      {0.0, 1.0,
+       2.0, 3.0}, {1},
+      {0.0, 0.0,
+       0.0, 0.0,
+       0.0, 0.0},
+      {0.0, 1.0,
+       0.0, 0.0,
+       2.0, 3.0}
+    },
+
+    // another block size
+    {
+      3,
+      {-1.0, 1.5, 12.8,
+        3.0, -9.4, 0.1}, {1},
+      {1.0, 1.0, 1.0,
+       2.0, 2.0, 2.0,
+       -3.0, -3.0, -3.0},
+      {0.0, 2.5, 13.8,
+       2.0, 2.0, 2.0,
+       0.0, -12.4, -2.9}
+    },
+
+    // corner case skipped blocks
+    {
+      3,
+      {-1.0, 1.5, 12.8,
+        3.0, -9.4, 0.1}, {0, 3},
+      {1.0, 1.0, 1.0,
+       2.0, 2.0, 2.0,
+       -3.0, -3.0, -3.0,
+       12.5, -7.2, 9.6},
+      {1.0, 1.0, 1.0,
+       1.0, 3.5, 14.8,
+       0.0, -12.4, -2.9,
+       12.5, -7.2, 9.6}
+    },
+
+    // non-contiguous skipped blocks
+    {
+      2,
+      {-1.0, 1.5,
+        12.8, 3.0,
+        -13.0, -87.0 }, {1, 2, 4},
+      {1.0, 1.0,
+       1.0, 2.0,
+       2.0, 2.0,
+       -3.0, -3.0,
+       -3.0, 12.5,
+       42.0, -1337.0},
+      {0.0, 2.5,
+       1.0, 2.0,
+       2.0, 2.0,
+       9.8, 0.0,
+       -3.0, 12.5,
+       29.0, -1424.0}
+    },
+
+    // no blocks skipped
+    {
+      2,
+      { 5.9, 0.3,
+        -1.0, 1.5,
+        12.8, 3.0,
+        -13.0, -87.0 }, {},
+      {1.0, 1.0,
+       1.0, 2.0,
+       2.0, 2.0,
+       -3.0, -3.0},
+      {6.9, 1.3,
+       0.0, 3.5,
+       14.8, 5.0,
+       -16.0, -90.0}
+    },
+
+    // all blocks skipped
+    {
+      2,
+      {}, {0, 1, 2, 3},
+      {1.0, 1.0,
+       1.0, 2.0,
+       2.0, 2.0,
+       -3.0, -3.0},
+      {1.0, 1.0,
+       1.0, 2.0,
+       2.0, 2.0,
+       -3.0, -3.0},
+    },
+
+    // non-block aligned values
+    {
+      2,
+      { 5.9, 0.3,
+        12.8, 3.0,
+        -13.0 }, {1},
+      {1.0, 1.0,
+       1.0, 2.0,
+       2.0, 2.0,
+       -3.0},
+      {6.9, 1.3,
+       1.0, 2.0,
+       14.8, 5.0,
+       -16.0}
+    },
+};
+
+TEST_P(EvictionScoreManagerAddWithSkipsParameterizedTest, CanAddWithSkips) {
+    const auto& test_struct = GetParam();
+    ov::genai::EvictionScoreManager mgr(test_struct.block_size, DEFAULT_NUM_DECODER_LAYERS, DEFAULT_MAX_POOL_WINDOW_SIZE, DEFAULT_AGGREGATION_MODE, 0);
+    auto dst = test_struct.dst_before;
+    mgr.add_with_skips(dst, test_struct.src, test_struct.skipped_logical_block_ids);
+    EXPECT_EQ(dst.size(), test_struct.dst_before.size());
+    EXPECT_EQ(dst, test_struct.ref_dst_after);
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerAddWithSkipsParameterizedTest, ::testing::ValuesIn(ADD_WITH_SKIPS_TEST_CASES));
+
+
+struct EvictionScoreManagerRegisterScoresTestStruct {
+    std::string test_id;
+    size_t block_size;
+    ov::genai::AggregationMode aggregation_mode;
+    size_t max_pool_window_size;
+    size_t ignore_first_n_blocks;
+
+    std::vector<std::pair<std::vector<std::vector<float>>, std::set<size_t>>> scores_and_skips;
+    std::vector<std::vector<float>> ref_scores;
+    std::vector<std::vector<size_t>> ref_counters;
+};
+
+using EvictionScoreManagerRegisterScoresParameterizedTest = ::testing::TestWithParam<EvictionScoreManagerRegisterScoresTestStruct>;
+
+const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_TEST_CASES = {
+    { "basic_case_sum",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} }
+      },
+
+      { {1.5, -0.8, 4.1, 7.7},
+        {-0.9, 1.4, 6.4, -9.0} },
+      { {},
+        {} }
+    },
+    { "basic_case_norm_sum",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} }
+      },
+
+      { {1.5, -0.8, 4.1, 7.7},
+        {-0.9, 1.4, 6.4, -9.0} },
+      { {4, 3, 2, 1},
+        {4, 3, 2, 1} }
+    },
+    { "two_scores_sum",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} },
+          { {{-7.4, 2.6, 8.9, -0.1},
+             {-3.1, -8.2, 5.9, 7.6}}, {} }
+      },
+
+      { {-5.9, 1.8, 13.0, 7.6},
+        {-4.0, -6.8, 12.3, -1.4} },
+      { {},
+        {} }
+    },
+    { "two_scores_norm_sum",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} },
+          { {{-7.4, 2.6, 8.9, -0.1},
+             {-3.1, -8.2, 5.9, 7.6}}, {} }
+      },
+
+      { {-5.9, 1.8, 13.0, 7.6},
+        {-4.0, -6.8, 12.3, -1.4} },
+      { {4, 3, 2, 1},
+        {4, 3, 2, 1} }
+    },
+
+    { "more_scores_second_time",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} },
+          { {{-7.4, 2.6, 8.9, -0.1, 3.5},
+             {-3.1, -8.2, 5.9, 7.6, -1.0}}, {} }
+      },
+
+      { {-5.9, 1.8, 13.0, 7.6, 3.5},
+        {-4.0, -6.8, 12.3, -1.4, -1.0} },
+      { {5, 4, 3, 2, 1},
+        {5, 4, 3, 2, 1} }
+    },
+    { "less_scores_second_time_with_skips",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9},
+             {-3.1, -8.2, 5.9}}, {1, 2} }
+      },
+
+      { {-5.9, 1.8, 4.1, 7.7, 3.6, -7.4, 8.9},
+        {-4.0, -6.8, 6.4, -9.0, 8.1, 2.6, 5.9} },
+      { {7, 6, 5, 4, 3, 2, 1},
+        {7, 6, 5, 4, 3, 2, 1} }
+    },
+    { "with_ignore_first_n_blocks_base",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9, 3.5, 7.4, -3.8},
+             {-3.1, -8.2, 5.9, -7.9, -5.8, 1.7}}, {} }
+      },
+
+      { {13.0, 11.2, 11.0, -11.2},
+        {12.3, -16.9, 2.3, 4.3} },
+      { {4, 3, 2, 1},
+        {4, 3, 2, 1} }
+    },
+    { "with_ignore_first_n_blocks_more_scores_second_time",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9, 3.5, 7.4, -3.8, 0.1},
+             {-3.1, -8.2, 5.9, -7.9, -5.8, 1.7, -0.2}}, {} }
+      },
+
+      { {13.0, 11.2, 11.0, -11.2, 0.1},
+        {12.3, -16.9, 2.3, 4.3, -0.2} },
+      { {5, 4, 3, 2, 1},
+        {5, 4, 3, 2, 1} }
+    },
+    { "with_ignore_first_n_blocks_less_second_time_with_skips",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9},
+             {-3.1, -8.2, 5.9}}, {1, 2} }
+      },
+
+      { {4.1, 7.7, 3.6, -7.4, 8.9},
+        {6.4, -9.0, 8.1, 2.6, 5.9} },
+      { {5, 4, 3, 2, 1},
+        {5, 4, 3, 2, 1} }
+    },
+    { "with_max_pool_base",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+      },
+
+      { {4.1, 7.7, 7.7, 7.7, 3.6, -7.4},
+        {6.4, 6.4, 8.1, 8.1, 8.1, 2.6} },
+      { {6, 5, 4, 3, 2, 1},
+        {6, 5, 4, 3, 2, 1} }
+    },
+    { "with_max_pool_two_score",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9, 3.5, 7.4, -3.8, 0.1},
+             {-3.1, -8.2, 5.9, -7.9, -5.8, 1.7, -0.2}}, {} }
+      },
+
+      { {13.0, 16.6, 16.6, 15.1, 11.0, -7.3, 0.1},
+        {12.3, 12.3, 14.0, 9.8, 9.8, 4.3, -0.2} },
+      { {7, 6, 5, 4, 3, 2, 1},
+        {7, 6, 5, 4, 3, 2, 1} }
+    },
+    { "with_max_pool_ignore_and_skips",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 1,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9},
+             {-3.1, -8.2, 5.9}}, {1, 2} }
+      },
+
+      { {7.7, 7.7, 3.6, -7.4, 8.9},
+        {8.1, 8.1, 8.1, 2.6, 5.9} },
+      { {5, 4, 3, 2, 1},
+        {5, 4, 3, 2, 1} }
+    },
+};
+
+TEST_P(EvictionScoreManagerRegisterScoresParameterizedTest, ScoresAndCountersAfterRegistrationAreCorrect) {
+    const auto& test_struct = GetParam();
+    ov::genai::EvictionScoreManager mgr(test_struct.block_size, DEFAULT_NUM_DECODER_LAYERS, test_struct.max_pool_window_size, test_struct.aggregation_mode, test_struct.ignore_first_n_blocks);
+    for (const auto& score_and_skip : test_struct.scores_and_skips) {
+        mgr.register_new_token_scores(get_layer_scores_from_2d_vector(score_and_skip.first), score_and_skip.second);
+    }
+    const auto& test_scores = mgr.get_scores();
+    const auto& test_counters = mgr.get_counters();
+    ASSERT_EQ(test_scores.size(), DEFAULT_NUM_DECODER_LAYERS);
+    ASSERT_EQ(test_counters.size(), DEFAULT_NUM_DECODER_LAYERS);
+
+    float abs_tol = 1e-6;
+    for (size_t layer_idx = 0; layer_idx < DEFAULT_NUM_DECODER_LAYERS; layer_idx++) {
+        EXPECT_THAT(test_scores[layer_idx], ::testing::Pointwise(::testing::DoubleNear(abs_tol), test_struct.ref_scores[layer_idx]));
+        EXPECT_EQ(mgr.get_counters(), test_struct.ref_counters);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerRegisterScoresParameterizedTest, ::testing::ValuesIn(REGISTER_SCORES_TEST_CASES),
+                         [](const testing::TestParamInfo<EvictionScoreManagerRegisterScoresParameterizedTest::ParamType>& info) {
+                             return info.param.test_id;
+                         });
+
+struct EvictionScoreManagerRemoveScoresTestStruct {
+    std::string test_id;
+    size_t block_size;
+    ov::genai::AggregationMode aggregation_mode;
+    size_t max_pool_window_size;
+    size_t ignore_first_n_blocks;
+
+    std::vector<std::pair<std::vector<std::vector<float>>, std::set<size_t>>> scores_and_skips;
+
+    std::vector<std::vector<size_t>> removed_block_ids;
+
+    std::vector<std::vector<float>> ref_scores;
+    std::vector<std::vector<size_t>> ref_counters;
+};
+
+using EvictionScoreManagerRemoveScoresParameterizedTest = ::testing::TestWithParam<EvictionScoreManagerRemoveScoresTestStruct>;
+
+const std::vector<EvictionScoreManagerRemoveScoresTestStruct> REMOVE_SCORES_TEST_CASES = {
+    { "nothing_to_remove",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} }
+      },
+
+      { {},
+        {} },
+      { {1.5, -0.8, 4.1, 7.7},
+        {-0.9, 1.4, 6.4, -9.0} },
+      { {4, 3, 2, 1},
+        {4, 3, 2, 1} }
+    },
+    { "basic_case_sum",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} }
+      },
+
+      { {0},
+        {1} },
+      { {4.1, 7.7},
+        {-0.9, 1.4} },
+      { {},
+        {} }
+    },
+    { "basic_case_norm_sum",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7},
+             {-0.9, 1.4, 6.4, -9.0}}, {} }
+      },
+
+      { {0},
+        {1} },
+      { {4.1, 7.7},
+        {-0.9, 1.4} },
+      { {2, 1},
+        {4, 3} }
+    },
+    { "two_adds_then_remove",
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9},
+             {-3.1, -8.2, 5.9}}, {1, 2} }
+      },
+
+      { {0, 2 },
+        {0, 1, 3} },
+      { {4.1, 7.7, 8.9},
+        {8.1, 2.6} },
+      { {5, 4, 1},
+        {3, 2} }
+    },
+};
+
+TEST_P(EvictionScoreManagerRemoveScoresParameterizedTest, ScoresAndCountersAfterRemovalAreCorrect) {
+    const auto& test_struct = GetParam();
+    ov::genai::EvictionScoreManager mgr(test_struct.block_size, DEFAULT_NUM_DECODER_LAYERS, test_struct.max_pool_window_size, test_struct.aggregation_mode, test_struct.ignore_first_n_blocks);
+    for (const auto& score_and_skip : test_struct.scores_and_skips) {
+        mgr.register_new_token_scores(get_layer_scores_from_2d_vector(score_and_skip.first), score_and_skip.second);
+    }
+
+    for (size_t decoder_layer_idx = 0; decoder_layer_idx < DEFAULT_NUM_DECODER_LAYERS; decoder_layer_idx++) {
+        mgr.remove_scores(test_struct.removed_block_ids[decoder_layer_idx], decoder_layer_idx);
+    }
+
+    const auto& test_scores = mgr.get_scores();
+    const auto& test_counters = mgr.get_counters();
+    ASSERT_EQ(test_scores.size(), DEFAULT_NUM_DECODER_LAYERS);
+    ASSERT_EQ(test_counters.size(), DEFAULT_NUM_DECODER_LAYERS);
+
+    float abs_tol = 1e-6;
+    for (size_t layer_idx = 0; layer_idx < DEFAULT_NUM_DECODER_LAYERS; layer_idx++) {
+        EXPECT_THAT(test_scores[layer_idx], ::testing::Pointwise(::testing::DoubleNear(abs_tol), test_struct.ref_scores[layer_idx]));
+        EXPECT_EQ(mgr.get_counters(), test_struct.ref_counters);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerRemoveScoresParameterizedTest, ::testing::ValuesIn(REMOVE_SCORES_TEST_CASES),
+                         [](const testing::TestParamInfo<EvictionScoreManagerRemoveScoresParameterizedTest::ParamType>& info) {
+                             return info.param.test_id;
+                         });
 
 class DefaultCacheEvictionAlgoTest : public testing::Test {
 protected:
     DefaultCacheEvictionAlgoTest() {
-        algo = ov::genai::CacheEvictionAlgorithm(eviction_config, block_size, num_decoder_layers);
+        algo = ov::genai::CacheEvictionAlgorithm(eviction_config, block_size, num_decoder_layers, /* max_pool_window_size = */ 1);
     }
     size_t block_size = DEFAULT_BLOCK_SIZE;
     size_t num_decoder_layers = DEFAULT_NUM_DECODER_LAYERS;
@@ -123,7 +588,7 @@ using CacheEvictionAlgoConfigurationTest = ::testing::TestWithParam<size_t>;
 
 TEST_P(CacheEvictionAlgoConfigurationTest, EvictedBlocksAreLayeredAsConfigured) {
     size_t ref_num_layers = GetParam();
-    auto algo = ov::genai::CacheEvictionAlgorithm(DEFAULT_CACHE_EVICTION_CONFIG, DEFAULT_BLOCK_SIZE, ref_num_layers);
+    auto algo = ov::genai::CacheEvictionAlgorithm(DEFAULT_CACHE_EVICTION_CONFIG, DEFAULT_BLOCK_SIZE, ref_num_layers, /* max_pool_window_size = */ 1);
     auto blocks_to_evict = algo.evict_logical_blocks();
     ASSERT_EQ(blocks_to_evict.size(), ref_num_layers);
 }
@@ -208,7 +673,7 @@ const std::vector<LowScoreBlocksTestStruct> LOW_SCORE_BLOCK_EVICTION_TEST_CASES 
 TEST_P(CacheEvictionLowScoreBlocksParameterizedTest, EvictsLowestScoredBlocks) {
     auto test_struct = GetParam();
     size_t num_decoder_layers = DEFAULT_NUM_DECODER_LAYERS;
-    auto algo = ov::genai::CacheEvictionAlgorithm(test_struct.eviction_config, DEFAULT_BLOCK_SIZE, num_decoder_layers);
+    auto algo = ov::genai::CacheEvictionAlgorithm(test_struct.eviction_config, DEFAULT_BLOCK_SIZE, num_decoder_layers, /* max_pool_window_size = */ 1);
     std::vector<std::set<size_t>> ref_lowest_scored_block_indices = test_struct.zero_filled_blocks;
     ASSERT_EQ(ref_lowest_scored_block_indices.size(), num_decoder_layers);
 
@@ -277,7 +742,7 @@ TEST_P(CacheEvictionNormalizationSettingTest, TokenLifetimeNormalizationHasEffec
     config.aggregation_mode = test_struct.normalization_mode;
 
     const size_t NUM_DECODER_LAYERS = 1;
-    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS);
+    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS, /* max_pool_window_size = */ 1);
     auto scores = get_mock_scores(NUM_DECODER_LAYERS, algo.get_max_cache_size_after_eviction() + BLOCKS_TO_EVICT * DEFAULT_BLOCK_SIZE);
     for (auto& scores_per_layer : scores) {
         const size_t SCORES_SIZE = scores_per_layer.get_size();
@@ -339,7 +804,7 @@ TEST_P(CacheEvictionConfigModeCommonBehaviour, ScoresAreAccumulated) {
     auto config = DEFAULT_CACHE_EVICTION_CONFIG;
     config.aggregation_mode = aggregation_mode;
     const size_t NUM_DECODER_LAYERS = 1;
-    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS);
+    auto algo = ov::genai::CacheEvictionAlgorithm(config, DEFAULT_BLOCK_SIZE, NUM_DECODER_LAYERS, /* max_pool_window_size = */ 1);
 
     auto scores_phase_1 = get_mock_scores(NUM_DECODER_LAYERS, algo.get_max_cache_size_after_eviction() + BLOCKS_TO_EVICT * DEFAULT_BLOCK_SIZE);
     for (auto& scores_per_layer : scores_phase_1) {
@@ -384,23 +849,27 @@ struct CacheEvictionConfigInitParamsForTest {
     size_t start_size;
     size_t recent_size;
     size_t max_cache_size;
+    size_t snapkv_window_size;
 };
 
 using CacheEvictionConfigInitializationTest = ::testing::TestWithParam<CacheEvictionConfigInitParamsForTest>;
 
 const std::vector<CacheEvictionConfigInitParamsForTest> INVALID_CONFIG_INIT_PARAMS_CASES = {
         // zero area sizes
-        {32, 32, 64},
-        {0, 13, 39},
-        {128, 0, 384},
+        {32, 32, 64, 8},
+        {0, 13, 39, 1},
+        {128, 0, 384, 7},
 
         // max_cache_size less than start_size + recent_size
         {32, 64, 32},
+
+        // zero snapkv window
+        {32, 32, 256, 0},
 };
 
 TEST_P(CacheEvictionConfigInitializationTest, ThrowsForInvalidConfigParams) {
     auto params = GetParam();
-    EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size, params.recent_size, params.max_cache_size, ov::genai::AggregationMode::NORM_SUM), ov::Exception);
+    EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size, params.recent_size, params.max_cache_size, ov::genai::AggregationMode::NORM_SUM, /* apply_rotation = */ false, params.snapkv_window_size), ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionConfigInitializationTest,
@@ -425,7 +894,7 @@ const std::vector<CacheEvictionAlgoInitParamsForTest> INVALID_ALGO_INIT_PARAMS_C
 };
 TEST_P(CacheEvictionAlgoInitializationTest, ThrowsForInvalidConfigs) {
     auto params = GetParam();
-    EXPECT_THROW(ov::genai::CacheEvictionAlgorithm(params.config, params.block_size, params.num_decoder_layers), ov::Exception);
+    EXPECT_THROW(ov::genai::CacheEvictionAlgorithm(params.config, params.block_size, params.num_decoder_layers, /* max_pool_window_size = */ 1), ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionAlgoInitializationTest,

@@ -124,6 +124,18 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             };
             ov::EncryptionCallbacks encryption_callbacks{encrypt_func, decrypt_func};
             return encryption_callbacks;
+        } else if (property_name == "structural_tags") {
+            // this impl is based on OpenVINO python bindings impl.
+            auto property_list = py_obj.cast<py::list>();
+            std::vector<ov::genai::StructuralTagItem> structural_tags;
+            for (const auto& item : property_list) {
+                if (py::isinstance<ov::genai::StructuralTagItem>(item)) {
+                    structural_tags.push_back(item.cast<ov::genai::StructuralTagItem>());
+                } else {
+                    OPENVINO_THROW("Incorrect value in \"", property_name, "\". Expected StructuralTagItem.");
+                }
+            }
+            return structural_tags;
         } else {
             auto _list = py_obj.cast<py::list>();
             enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR};
@@ -284,6 +296,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::SchedulerConfig>(py_obj);
     } else if (py::isinstance<ov::genai::AdapterConfig>(py_obj)) {
         return py::cast<ov::genai::AdapterConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuralTagItem>(py_obj)) {
+        return py::cast<ov::genai::StructuralTagItem>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuralTagsConfig>(py_obj)) {
+        return py::cast<ov::genai::StructuralTagsConfig>(py_obj);
     } else if (py::isinstance<ov::genai::GenerationConfig>(py_obj)) {
         return py::cast<ov::genai::GenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::ImageGenerationConfig>(py_obj)) {
@@ -334,6 +350,8 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
         if (utils::py_object_is_any_map(value) && key == "config") {
             auto map = utils::py_object_to_any_map(value);
             params.insert(map.begin(), map.end());
+        } else if (py::isinstance<ov::genai::StructuredOutputConfig>(value)) {
+            params[key] = py::cast<ov::genai::StructuredOutputConfig>(value);
         } else {
             if (py::isinstance<py::none>(value)) {
                 OPENVINO_ASSERT(!py::isinstance<py::none>(value), "Property \"", key, "\" can't be None.");

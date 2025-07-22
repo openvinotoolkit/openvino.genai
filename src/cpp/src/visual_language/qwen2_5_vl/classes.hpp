@@ -37,8 +37,7 @@ public:
 protected:
     ov::Tensor run_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
-        const std::vector<size_t>& images_sequence, 
-        const size_t image_id) override;
+        const std::vector<size_t>& images_sequence) override;
 };
 
 } // namespace ov::genai

@@ -30,7 +30,7 @@ if(UNIX AND NOT (APPLE OR ANDROID OR CYGWIN))
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2025.2.0.0
+        VERSION 2025.3.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
@@ -52,11 +52,12 @@ if(NOT CMAKE_CROSSCOMPILING)
 endif()
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
-find_package(OpenVINODeveloperPackage ${OpenVINOGenAI_VERSION} QUIET
+set(OV_COMPATIBILITY_VERSION ${OpenVINOGenAI_VERSION_MAJOR}.${OpenVINOGenAI_VERSION_MINOR}.${OpenVINOGenAI_VERSION_PATCH})
+find_package(OpenVINODeveloperPackage ${OV_COMPATIBILITY_VERSION} QUIET
              COMPONENTS Runtime Threading
              PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
-    find_package(OpenVINO ${OpenVINOGenAI_VERSION} REQUIRED
+    find_package(OpenVINO ${OV_COMPATIBILITY_VERSION} REQUIRED
                  COMPONENTS Runtime Threading
                  PATHS "${OpenVINO_DIR_PY}")
 endif()

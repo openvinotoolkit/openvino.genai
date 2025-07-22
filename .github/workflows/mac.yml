@@ -19,6 +19,7 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '11.0'
   PYTHON_VERSION: '3.10'
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+  BASE_PRODUCT_TYPE: public_darwin
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: ~/.cache/hf
   OV_CACHE: ~/.cache/ov_cache
@@ -105,6 +106,7 @@ jobs:
       INSTALL_TESTS_DIR: ${{ github.workspace }}/tests
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
+      MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
 
     steps:
       - name: Clone openvino.genai
@@ -137,9 +139,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack
           path: ${{ env.CCACHE_DIR }}
+        
+      - name: Generate product manifest
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
+          target_arch: 'x86_64'
+          build_type: ${{ matrix.build-type }}
+          save_to: ${{ env.MANIFEST_PATH }}
+
       - name: Clean ccache stats
         run: ccache --zero-stats --show-config
-
+          
       - name: CMake Build
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
@@ -185,11 +198,19 @@ jobs:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
           if-no-files-found: 'error'
+          
+      - name: Upload manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: manifest_${{ matrix.build-type }}
+          path: ${{ env.MANIFEST_PATH }}
+          if-no-files-found: 'error'
 
   genai_build_wheel:
     name: Build Wheel
     needs: [ openvino_download ]
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -234,7 +255,17 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel
-          path: ${{ env.CCACHE_DIR }}
+          path: ${{ env.CCACHE_DIR }}\
+          
+      - name: Set CI environment
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
+          target_arch: 'x86_64'
+          build_type: Release
+          save_to: ${{ github.workspace }}
 
       - name: Clean ccache stats
         run: ccache --zero-stats --show-config
@@ -242,6 +273,7 @@ jobs:
       - name: Build Tokenizers Wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
@@ -391,17 +423,18 @@ jobs:
       matrix:
         test:
           - name: 'Whisper'
-            cmd: 'tests/python_tests/test_whisper_pipeline.py'
+            # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
+            cmd: 'tests/python_tests/test_whisper_pipeline.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
-            timeout: 45
+            timeout: 120
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 60
+            timeout: 180
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
+            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
+            timeout: 120
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -484,9 +517,13 @@ jobs:
             marker: 'rag'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
+          - name: 'Speech generation'
+            marker: 'speech_generation'
+            cmd: 'tests/python_tests/samples'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
     needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
-    timeout-minutes: 45
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
@@ -687,18 +724,6 @@ jobs:
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: npm test
-
-      - name: Install openvino-genai-node samples dependencies
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
-        run: |
-          npm install ${{ env.SRC_DIR }}/src/js
-          npm install --verbose
-
-      - name: Run samples tests
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
-        run: npm test
-        env:
-          MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
 
   Overall_Status:
     name: ci/gha_overall_status_macos

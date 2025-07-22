@@ -1,0 +1,15 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2.5rem 2rem;
+}
+
+.sectionTitle {
+  margin-bottom: 2rem;
+}
+
+.sectionContent {
+  max-width: 1200px;
+  margin: 0 auto;
+}
