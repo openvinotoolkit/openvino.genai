@@ -33,7 +33,7 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
 
     // Default constructor for xgrammar::Grammar is not enabled,
     // create explicitly an empty grammar.
-    xgrammar::Grammar grammar = xgrammar::Grammar::FromEBNF(""); 
+    xgrammar::Grammar grammar = xgrammar::Grammar::FromEBNF("root ::= root");
 
     if (structured_output_config.json_schema.has_value()) {
         grammar = xgrammar::Grammar::FromJSONSchema(*structured_output_config.json_schema);
