@@ -25,14 +25,10 @@ huggingface-cli download <model> --local-dir <output_folder>
 
 ### Using GGUF models
 
-Some language models are distributed in the GGUF (GGML Unified Format). A GGUF model is encapsulated in a single binary file that contains 
-all necessary components, including metadata and model weights, to represent the entire LLM pipeline. Once downloaded, these GGUF models 
-can be used directly with OpenVINO GenAI (for supported architectures) without additional conversion steps.
+To run any samples with a GGUF model, simply provide the path to the .gguf file in the `<MODEL_DIR>` parameter.
 
 This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM, Qwen2.5. For other models 
 and architectures, we still recommend converting the model to the IR format, using the optimum-intel tool.
-
-To run any samples with a GGUF model, simply provide the path to the .gguf file in the `<MODEL_DIR>` parameter.
 
 ## Sample Descriptions
 ### Common information

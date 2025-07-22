@@ -57,12 +57,13 @@ class TestGreedyCausalLM:
         
         import transformers
         tokenizer = transformers.AutoTokenizer.from_pretrained(model['name'], local_files_only=True, gguf_file=model.get("gguf_filename", None))
+        llmModel = transformers.AutoModelForCausalLM.from_pretrained(model['name'], local_files_only=True, gguf_file=model.get("gguf_filename", None))
                 
         if tokenizer.chat_template:
             prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
     
-        for output in transformers.AutoModelForCausalLM.from_pretrained(model['name'], local_files_only=True, gguf_file=model.get("gguf_filename", None)).generate(**tokenized, max_length=100, do_sample=False):
+        for output in llmModel.generate(**tokenized, max_length=100, do_sample=False):
             ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
             logger.info(f'Checking for "{ref=}"')
 
