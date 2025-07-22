@@ -461,6 +461,7 @@ VLMDecodedResults VLMPipeline::generate(
 }
 
 void VLMPipeline::start_chat(const std::string& system_message) {
+    m_pimpl->finish_chat();
     m_pimpl->start_chat(system_message);
 }
 
