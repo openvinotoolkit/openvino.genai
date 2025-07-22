@@ -19,9 +19,8 @@ env:
   PYTHON_VERSION: '3.11'
   TARGET_BRANCH: 'master'
   PYTHONIOENCODING: utf8
-  CMAKE_CXX_COMPILER_LAUNCHER: ccache
-  CMAKE_C_COMPILER_LAUNCHER: ccache
-  CMAKE_RC_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ""
+  CMAKE_C_COMPILER_LAUNCHER: ""
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win
