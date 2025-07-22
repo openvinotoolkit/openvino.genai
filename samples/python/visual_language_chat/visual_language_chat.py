@@ -79,7 +79,10 @@ def main():
                 "question:\n")
         except EOFError:
             break
-        pipe.generate(prompt, generation_config=config, streamer=streamer)
+        if args.device == "NPU":
+            pipe.generate(prompt, images=rgbs, generation_config=config, streamer=streamer)
+        else:
+            pipe.generate(prompt, generation_config=config, streamer=streamer)
     pipe.finish_chat()
 
 
