@@ -50,7 +50,6 @@ public:
         std::map<uint64_t, float> m_xattention_thresholds;
         size_t m_xattention_block_size = 0;
         size_t m_xattention_stride = 0;
-        size_t m_xattention_num_heads = 0;
 
 
         // total number of scheduled tokens
@@ -326,7 +325,8 @@ private:
                             scheduler_output.m_sparse_attention_skipped_logical_blocks[seq_id] = skipper.get_skipped_blocks(sequence_group);
                         }
                         scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
-                        scheduler_output.m_xattention_num_heads = m_cache_manager->get_num_k_heads(0);
+                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
+                        scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
                     }
                 }
 
@@ -398,6 +398,8 @@ private:
                             // full prompt or its remaining tail part fit completely into the next inference
                             scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                         }
+                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
+                        scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
                     }
 
 
@@ -486,7 +488,8 @@ private:
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                         scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
-                        scheduler_output.m_xattention_num_heads = m_cache_manager->get_num_k_heads(0);
+                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
+                        scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
                     }
 
                     // update "is_prompt" flag
@@ -606,9 +609,9 @@ private:
         }
         if (sequence_group->can_generate_tokens() && sequence_group->get_num_scheduled_tokens() == 1) {
             // generation phase, excluding last prompt chunk
-            return m_config.sparse_attention_config.xattention_threshold;
+            return 0.0;
         }
-        return 0.0;
+        return m_config.sparse_attention_config.xattention_threshold;
     }
 
 };

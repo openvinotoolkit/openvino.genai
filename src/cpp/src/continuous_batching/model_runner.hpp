@@ -327,7 +327,7 @@ public:
         }
 
         if (m_is_use_xattention_inputs) {
-            _set_xattention_tensors(sequence_groups, scheduler_output, batch_size_in_sequences, scheduler_output.m_xattention_num_heads);
+            _set_xattention_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
         if (matmul_gathering_is_available) {
@@ -673,8 +673,7 @@ private:
 
     void _set_xattention_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                                  const Scheduler::Output& scheduler_output,
-                                 size_t batch_size_in_sequences,
-                                 size_t num_heads) {
+                                 size_t batch_size_in_sequences) {
         ov::Tensor xattention_block_size(ov::element::i32, {});
         ov::Tensor xattention_stride(ov::element::i32, {});
         xattention_block_size.data<int32_t>()[0] = scheduler_output.m_xattention_block_size;
@@ -682,7 +681,7 @@ private:
         m_request.set_tensor("xattention_block_size", xattention_block_size);
         m_request.set_tensor("xattention_stride", xattention_stride);
 
-        ov::Tensor xattention_thresholds(ov::element::f32, {batch_size_in_sequences, num_heads});
+        ov::Tensor xattention_thresholds(ov::element::f32, {batch_size_in_sequences});
         float* xattention_threshold_data = xattention_thresholds.data<float>();
         for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); i++) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
@@ -692,9 +691,13 @@ private:
             for (size_t k = 0; k < num_running_sequences; ++k) {
                 Sequence::CPtr sequence = running_sequences[k];
                 size_t seq_id = sequence->get_id();
-                float threshold = scheduler_output.m_xattention_thresholds.at(seq_id);
-                std::fill(xattention_threshold_data, xattention_threshold_data + num_heads, threshold);
-                xattention_threshold_data += num_heads;
+                float threshold = 0.0;
+
+                if (scheduler_output.m_xattention_thresholds.find(seq_id) != scheduler_output.m_xattention_thresholds.end()) {
+                    threshold = scheduler_output.m_xattention_thresholds.at(seq_id);
+                }
+                *xattention_threshold_data = threshold;
+                xattention_threshold_data += 1;
             }
         }
 

@@ -215,10 +215,6 @@ public:
         return m_value_cache[decoder_layer_id];
     }
 
-    size_t get_num_k_heads(size_t layer_id) {
-        return m_key_shapes[layer_id][2].get_length();
-    }
-
     size_t get_v_head_size(size_t layer_id) const {
         return m_value_shapes[layer_id][3].get_length();
     }
