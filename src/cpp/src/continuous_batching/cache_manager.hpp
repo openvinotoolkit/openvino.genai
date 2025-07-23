@@ -19,7 +19,6 @@ class CacheManager {
     std::vector<ov::Tensor> m_key_cache, m_value_cache;
     size_t m_num_allocated_kv_blocks = 0, m_block_size_in_bytes = 0;
     ov::InferRequest m_request;
-    size_t m_k_head_size = 0;
     ov::RemoteContext m_context;
 
     static ov::Shape set_kv_blocks(ov::PartialShape pshape, size_t num_kv_blocks) {
@@ -216,6 +215,10 @@ public:
         return m_value_cache[decoder_layer_id];
     }
 
+    size_t get_num_k_heads(size_t layer_id) {
+        return m_key_shapes[layer_id][2].get_length();
+    }
+
     size_t get_v_head_size(size_t layer_id) const {
         return m_value_shapes[layer_id][3].get_length();
     }
@@ -232,7 +235,7 @@ public:
                     ov::Coordinate key_src_end_roi = key_shape;
                     ov::Coordinate key_dst_start_roi(key_shape.size(), 0);
                     ov::Coordinate key_dst_end_roi = key_shape;
-            
+
                     ov::Coordinate value_src_start_roi(value_shape.size(), 0);
                     ov::Coordinate value_src_end_roi = value_shape;
                     ov::Coordinate value_dst_start_roi(value_shape.size(), 0);
