@@ -172,6 +172,9 @@ if(pybind11_stubgen_AVAILABLE)
         COMMAND "${CMAKE_COMMAND}"
                 -D init_pyi_file=${init_pyi_file}
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/clean_version.cmake"
+        COMMAND "${CMAKE_COMMAND}"
+                -D init_pyi_file=${init_pyi_file}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/remove_abi_specific_info.cmake"
         ${validation_command}
         ${copy_to_source_command}
         COMMAND "${CMAKE_COMMAND}" -E copy ${generated_files} "${CMAKE_BINARY_DIR}/openvino_genai/"
@@ -181,6 +184,7 @@ if(pybind11_stubgen_AVAILABLE)
             ${validation_dependencies}
             "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/clean_version.cmake"
+            "${CMAKE_CURRENT_SOURCE_DIR}/remove_abi_specific_info.cmake"
             "${CMAKE_CURRENT_SOURCE_DIR}/compare_pyi.cmake"
         COMMENT "[${pybind11_stubgen_dep}] Generate .pyi files"
         VERBATIM)
