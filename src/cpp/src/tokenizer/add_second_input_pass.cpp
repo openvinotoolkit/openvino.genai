@@ -273,7 +273,7 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
 bool AddSecondInputPass::run_on_model(const std::shared_ptr<ov::Model>& model) {
     auto parameters = model->get_parameters();
     if (parameters.size() != 1) {
-        std::cerr << "Model must have only one input.\n";
+        m_pass_errors << "Model must have only one input.\n";
         return false;
     }
 
@@ -286,7 +286,7 @@ bool AddSecondInputPass::run_on_model(const std::shared_ptr<ov::Model>& model) {
     }
 
     if (!combine_seg) {
-        std::cerr << "CombineSegments node not found.\n";
+        m_pass_errors << "CombineSegments node not found.\n";
         return false;
     }
 
