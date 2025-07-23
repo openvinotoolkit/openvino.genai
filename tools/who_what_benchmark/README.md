@@ -79,14 +79,14 @@ wwb --target-model llava-int8 --gt-data llava_test/gt.csv --model-type visual-te
 ### Compare Visual Language Models with LoRA (VLMs)
 ```sh
 # Export FP16 model to OpenVINO
-optimum-cli export openvino -m black-forest-labs/FLUX.1-dev  --weight-format int8 FLUX.1-dev-int8
+optimum-cli export openvino -m black-forest-labs/FLUX.1-dev FLUX.1-dev-fp
 
 # Collect the references and save the mappling in the .csv file.
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model black-forest-labs/FLUX.1-dev --gt-data flux.1-dev/gt.csv --model-type visual-text --adapters Octree/flux-schnell-lora Shakker-Labs/FLUX.1-dev-LoRA-add-details --alphas 0.1 0.9 --hf
+wwb --base-model black-forest-labs/FLUX.1-dev --gt-data flux.1-dev/gt.csv --model-type text-to-image --adapters Octree/flux-schnell-lora Shakker-Labs/FLUX.1-dev-LoRA-add-details --alphas 0.1 0.9 --hf
 # Compute the metric
 # Target images will be stored in the "target" subfolder under the same path with .csv.
-wwb --target-model FLUX.1-dev-int8 --gt-data flux.1-dev/gt.csv --model-type visual-text --adapters flux-schnell-lora.safetensors FLUX-dev-lora-add_details.safetensors --alphas 0.1 0.9 --genai
+wwb --target-model FLUX.1-dev-fp --gt-data flux.1-dev/gt.csv --model-type text-to-image --adapters flux-schnell-lora.safetensors FLUX-dev-lora-add_details.safetensors --alphas 0.1 0.9 --genai
 ```
 
 ### API
