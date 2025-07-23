@@ -668,6 +668,3 @@ def test_template_priorities(tmp_path, chat_templates):
     tokenizer = generate_tokenizer(tmp_path, chat_templates)
     assert tokenizer.chat_template == chat_templates.reference
 
-
-# if user didn't request 2d input transformation but feed encode with 2 inputs
-# check if Tokenizer supports 2 inputs
