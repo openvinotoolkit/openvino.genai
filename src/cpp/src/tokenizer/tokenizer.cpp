@@ -337,9 +337,8 @@ public:
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
-        std::string add_second_input_argname = "ADD_SECOND_INPUT";
-        bool two_input_requested = properties.count(add_second_input_argname) && properties.at(add_second_input_argname).as<bool>();
-        
+        bool two_input_requested = properties.count(add_second_input.name()) && properties.at(add_second_input.name()).as<bool>();
+
         if (ov_tokenizer->get_parameters().size() == 2) {
             is_paired_input = true;
         }
