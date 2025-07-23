@@ -106,16 +106,11 @@ if(ENABLE_XGRAMMAR)
         set(XGRAMMAR_ENABLE_CPPTRACE OFF CACHE BOOL "Enable CPPTrace" FORCE)
         set(XGRAMMAR_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA" FORCE)
 
-        # Suppress C4146 warning for MSVC compiler
-        set(ORIGINAL_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
-        set(ORIGINAL_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
-        if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4146")
-            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /wd4146")
-        endif()
         add_subdirectory("${xgrammar_SOURCE_DIR}" "${xgrammar_BINARY_DIR}" EXCLUDE_FROM_ALL)
-        set(CMAKE_CXX_FLAGS ${ORIGINAL_CMAKE_CXX_FLAGS})
-        set(CMAKE_C_FLAGS ${ORIGINAL_CMAKE_C_FLAGS})
+        if(MSVC)
+            # Suppress C4146 warning for MSVC compiler
+            target_compile_options(xgrammar PRIVATE "/wd4146")
+        endif()
     endif()
 endif()
 # generate version files
