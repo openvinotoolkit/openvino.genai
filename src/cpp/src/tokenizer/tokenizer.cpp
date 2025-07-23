@@ -273,8 +273,6 @@ public:
         std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
         std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
         auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-        // Pass no addtional properties to tokenizer/detokenizer models since it was not used by default
-        filtered_properties = {};
         if (is_gguf_model(models_path)) {
             std::map<std::string, GGUFMetaData> tokenizer_config{};
             std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
@@ -337,12 +335,16 @@ public:
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
-        bool two_input_requested = properties.count(add_second_input.name()) && properties.at(add_second_input.name()).as<bool>();
+        auto [filtered_properties, two_input_requested] = utils::extract_paired_input_props(properties);
 
-        if (ov_tokenizer->get_parameters().size() == 2) {
+        if (ov_tokenizer && ov_tokenizer->get_parameters().size() == 2) {
             is_paired_input = true;
         }
         
+        ov::pass::Manager manager;
+        manager.register_pass<ov::pass::VisualizeTree>("origin.svg");
+        manager.run_passes(ov_tokenizer);
+
         // If model is already converted with 2 inputs, then skip the pass
         if (ov_tokenizer && two_input_requested && !is_paired_input) {
             ov::pass::Manager manager;
@@ -378,7 +380,7 @@ public:
             manager.register_pass<MakeAddSpecialTokensSatateful>();
             manager.register_pass<MakePaddingSatateful>();
             manager.run_passes(ov_tokenizer);
-            ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, properties);
+            ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, filtered_properties);
             ov::genai::utils::print_compiled_model_properties(tokenizer, "OV Tokenizer");
 
             m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -409,7 +411,7 @@ public:
             ov::pass::Manager manager_detok;
             manager_detok.register_pass<MakeVocabDecoderSatateful>();
             manager_detok.run_passes(ov_detokenizer);
-            ov::CompiledModel detokenizer = core.compile_model(ov_detokenizer, device, properties);
+            ov::CompiledModel detokenizer = core.compile_model(ov_detokenizer, device, filtered_properties);
             ov::genai::utils::print_compiled_model_properties(detokenizer, "OV Detokenizer");
 
             m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(

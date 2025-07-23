@@ -320,6 +320,19 @@ std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_p
     return {properties, enable_save_ov_model};
 }
 
+std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties) {
+    bool add_second_input = false;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find(ov::genai::add_second_input.name());
+    if (it != properties.end()) {
+        add_second_input = it->second.as<bool>();
+        properties.erase(it);
+    }
+
+    return {properties, add_second_input};
+}
+
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
     try {
         auto serialize_start_time = std::chrono::high_resolution_clock::now();
