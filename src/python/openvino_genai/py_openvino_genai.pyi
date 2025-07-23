@@ -2872,7 +2872,19 @@ class TextRerankPipeline:
         @typing.overload
         def __init__(self, **kwargs) -> None:
             ...
-    def __init__(self, models_path: os.PathLike, device: str, config: TextRerankPipeline.Config | None = None, **kwargs) -> None:
+        @property
+        def max_length(self) -> int | None:
+            ...
+        @max_length.setter
+        def max_length(self, arg0: typing.SupportsInt | None) -> None:
+            ...
+        @property
+        def top_n(self) -> int:
+            ...
+        @top_n.setter
+        def top_n(self, arg0: typing.SupportsInt) -> None:
+            ...
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, config: openvino_genai.py_openvino_genai.TextRerankPipeline.Config | None = None, **kwargs) -> None:
         """
         Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
         models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
