@@ -22,7 +22,11 @@ foreach(pyi_file IN LISTS pyi_files)
                         RESULT_VARIABLE exit_code
                         OUTPUT_STRIP_TRAILING_WHITESPACE)
         if(NOT exit_code EQUAL 0)
-            message(FATAL_ERROR "File ${commited_pyi_file} is outdated and need to be regenerated with pybind11-stubgen")
+            execute_process(COMMAND diff -u "${commited_pyi_file}" "${pyi_file}"
+                            OUTPUT_VARIABLE diff_output
+                            ERROR_VARIABLE diff_error
+                            RESULT_VARIABLE diff_exit_code)
+            message(FATAL_ERROR "File ${commited_pyi_file} is outdated and needs to be regenerated with pybind11-stubgen\nDifferences:\n${diff_output}")
         endif()
     endif()
 endforeach()
