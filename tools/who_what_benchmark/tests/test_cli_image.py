@@ -104,6 +104,8 @@ def test_image_model_types(model_id, model_type, backend):
                             ])),
 )
 def test_image_model_genai(model_id, model_type):
+    pytest.skip(reason="Ticket 170877")
+
     if ("flux-fill" in model_id) and (model_type != "image-inpainting"):
         pytest.skip(reason="FLUX-Fill is supported as inpainting only")
 

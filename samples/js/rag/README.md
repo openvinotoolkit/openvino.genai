@@ -20,7 +20,7 @@ Compile GenAI JavaScript bindings archive first using [the instructions](../../.
 
 Run `npm install` and the example will be ready to run.
 
-See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-embeddings-models) for the list of supported models.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#text-embeddings-models) for more details.
 
 ### Text embedding (`text_embeddings`)
 - **Description:** This is basic text embedding using a causal embedding model.

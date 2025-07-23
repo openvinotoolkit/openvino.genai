@@ -634,6 +634,14 @@ public:
     }
 
     /**
+     * @return The number of tokens for which KV cache has been filled already (i.e. not including scheduled tokens).
+     */
+    size_t get_num_cached_tokens() const {
+        OPENVINO_ASSERT(get_num_processed_tokens() >= get_num_evicted_tokens());
+        return (get_num_processed_tokens() - get_num_evicted_tokens());
+    }
+
+    /**
      * @return The number of logical KV cache blocks required to host all the tokens in this sequence group, taking into account previous token evictions.
      */
     size_t get_num_logical_blocks() const {

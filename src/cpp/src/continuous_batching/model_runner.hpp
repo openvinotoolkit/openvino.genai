@@ -5,6 +5,7 @@
 
 #include <vector>
 #include <cstdlib>
+#include <set>
 
 #include <openvino/runtime/infer_request.hpp>
 
@@ -124,6 +125,7 @@ public:
      */
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+
         size_t batch_size_in_sequences = 0;
         size_t total_num_tokens = 0, total_num_blocks = 0;
         size_t max_context_len_val = 0;
@@ -199,6 +201,7 @@ public:
             matmul_gathering_is_available = true;
         } catch (const ov::Exception&) {}
 
+        std::map<size_t, std::set<size_t>> seq_id_to_skipped_blocks_map;
 
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
@@ -259,13 +262,26 @@ public:
                     }
                 }
 
+                size_t num_blocks = sequence_group->get_num_logical_blocks();
                 size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
-                past_lens_data[0] = expected_kv_cache_size;
+                size_t num_past_blocks_to_ignore = 0;
+
+                if (scheduler_output.m_apply_sparse_attention_mask) {
+                    auto it = scheduler_output.m_sparse_attention_skipped_logical_blocks.find(sequence->get_id());
+                    if (it != scheduler_output.m_sparse_attention_skipped_logical_blocks.end()) {
+                        seq_id_to_skipped_blocks_map[sequence->get_id()] = it->second;
+                        num_past_blocks_to_ignore = seq_id_to_skipped_blocks_map[sequence->get_id()].size();
+                    }
+                }
+
+                OPENVINO_ASSERT(num_blocks >= num_past_blocks_to_ignore);
+                size_t num_blocks_utilized = num_blocks - num_past_blocks_to_ignore;
+
+                past_lens_data[0] = expected_kv_cache_size - num_past_blocks_to_ignore * m_block_size;
 
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
 
-                size_t num_blocks = (sequence_group->get_context_len()  - sequence_group->get_num_evicted_tokens() +  m_block_size - 1) / m_block_size;
-                block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks;
+                block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks_utilized;
 
                 // apply strides to shift to a next sequence
                 if (sequence_group_type == SequenceGroupType::TOKENS) {
@@ -315,7 +331,7 @@ public:
         m_request.set_tensor("past_lens", past_lens);
         m_request.set_tensor("subsequence_begins", subsequence_begins);
 
-        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks);
+        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_skipped_blocks_map);
         m_request.set_tensor("block_indices_begins", block_indices_begins);
         m_request.set_tensor("max_context_len", max_context_len);
 
@@ -408,12 +424,14 @@ public:
     }
 
 private:
+    // Fills indices for sequences in the order defined by scheduler_output
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
         const std::vector<SequenceGroup::Ptr>& sequence_groups,
         const Scheduler::Output& scheduler_output,
         const std::vector<std::map<size_t, std::vector<size_t>>>& seq_id_to_select_logical_idx_maps) {
         OPENVINO_ASSERT(seq_id_to_select_logical_idx_maps.size() == dst_tensor_names.size() ||
+                        (dst_tensor_names.size() == 1 && !m_is_use_per_layer_cache_control) ||
                         seq_id_to_select_logical_idx_maps.empty());
         bool is_fill_all = seq_id_to_select_logical_idx_maps.empty();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
@@ -423,20 +441,20 @@ private:
         for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
             auto input_tensor = m_request.get_tensor(dst_tensor_names[layer_idx]);
             auto block_indices_data = input_tensor.data<int32_t>();
-            if (is_fill_all) {
-                for (size_t i = 0; i < num_sequence_groups; ++i) {
-                    size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-                    SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
-                    std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
-                    size_t num_running_sequences = running_sequences.size();
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+                std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+                size_t num_running_sequences = running_sequences.size();
 
-                    for (size_t i = 0; i < num_running_sequences; ++i) {
-                        Sequence::CPtr sequence = running_sequences[i];
+                for (size_t i = 0; i < num_running_sequences; ++i) {
+                    Sequence::CPtr sequence = running_sequences[i];
+                    size_t seq_id = sequence->get_id();
 
+                    const auto& kv_blocks = scheduler_output.m_block_tables.at(seq_id);
+
+                    if (is_fill_all) {
                         size_t num_blocks = sequence_group->get_num_logical_blocks();
-                        const auto& kv_blocks = scheduler_output.m_block_tables.at(sequence->get_id());
-
-
                         for (size_t block_id = 0; block_id < num_blocks; ++block_id) {
                             // In case no cache eviction is requested, all per-layer block tables are expected to be
                             // identical at all times
@@ -444,28 +462,62 @@ private:
                         }
                         block_indices_data += num_blocks;
                         filled_blocks_per_layer[layer_idx] += num_blocks;
-                    }
-                }
-            } else {
-                    // This branch will fill the block indices in the seq_id order defined by the seq_id_to_select_logical_idx_maps argument
-                    auto seq_id_to_select_logical_idx_map = seq_id_to_select_logical_idx_maps[layer_idx];
-                    for (const auto& kv : seq_id_to_select_logical_idx_map) {
-                        size_t seq_id = kv.first;
-                        auto block_table_it = scheduler_output.m_block_tables.find(seq_id);
-                        OPENVINO_ASSERT(block_table_it != scheduler_output.m_block_tables.end());
-                        const auto& select_logical_idxs = kv.second;
-                        const auto& kv_blocks = block_table_it->second;
-                        size_t block_table_size = kv_blocks[layer_idx].size();
+                    } else {
+                        auto seq_id_to_select_logical_idx_map = seq_id_to_select_logical_idx_maps[layer_idx];
+                        if (seq_id_to_select_logical_idx_map.find(seq_id) == seq_id_to_select_logical_idx_map.end()) {
+                            continue;  // sequence not being present in layer-specific map means it should be skipped entirely
+                        }
 
+                        const auto& select_logical_idxs = seq_id_to_select_logical_idx_maps[layer_idx].at(seq_id);
+                        const auto& block_table = kv_blocks[layer_idx];
+                        size_t block_table_size = block_table.size();
                         for (size_t block_id = 0; block_id < select_logical_idxs.size(); ++block_id) {
                             size_t logical_block_idx = select_logical_idxs[block_id];
                             OPENVINO_ASSERT(logical_block_idx < block_table_size);
-
-                            block_indices_data[block_id] = kv_blocks[layer_idx][logical_block_idx]->get_index();
+                            block_indices_data[block_id] = block_table[logical_block_idx]->get_index();
                         }
-                    block_indices_data += select_logical_idxs.size();
-                    filled_blocks_per_layer[layer_idx] += select_logical_idxs.size();
+                        block_indices_data += select_logical_idxs.size();
+                        filled_blocks_per_layer[layer_idx] += select_logical_idxs.size();
+                    }
                 }
+            }
+        }
+        for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
+            const auto& target_tensor_name = dst_tensor_names[layer_idx];
+            size_t tensor_size = m_request.get_tensor(target_tensor_name).get_size();
+            size_t last_filled_element_idx = filled_blocks_per_layer[layer_idx];
+            OPENVINO_ASSERT(tensor_size == last_filled_element_idx, "did not fill tensor ", target_tensor_name, " completely, tensor size in elements ", tensor_size, ", last filled idx ", last_filled_element_idx);
+        }
+    }
+
+    // Fills indices for sequences in the order defined by seq_id_to_select_logical_idx_maps
+    // (i.e. ascending for an ordered map)
+    void _fill_select_indices_from_block_tables(
+        const std::vector<std::string>& dst_tensor_names,
+        const Scheduler::Output& scheduler_output,
+        const std::vector<std::map<size_t, std::vector<size_t>>>& seq_id_to_select_logical_idx_maps) {
+        OPENVINO_ASSERT(seq_id_to_select_logical_idx_maps.size() == dst_tensor_names.size() ||
+                        (dst_tensor_names.size() == 1 && !m_is_use_per_layer_cache_control) ||
+                        seq_id_to_select_logical_idx_maps.empty());
+        std::vector<size_t> filled_blocks_per_layer(dst_tensor_names.size(), 0);
+
+        for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
+            auto input_tensor = m_request.get_tensor(dst_tensor_names[layer_idx]);
+            auto block_indices_data = input_tensor.data<int32_t>();
+            for (const auto& kv : seq_id_to_select_logical_idx_maps[layer_idx]) {
+                size_t seq_id = kv.first;
+                const auto& select_logical_idxs = kv.second;
+
+                const auto& kv_blocks = scheduler_output.m_block_tables.at(seq_id);
+                const auto& block_table = kv_blocks[layer_idx];
+                size_t block_table_size = block_table.size();
+                for (size_t block_id = 0; block_id < select_logical_idxs.size(); ++block_id) {
+                    size_t logical_block_idx = select_logical_idxs[block_id];
+                    OPENVINO_ASSERT(logical_block_idx < block_table_size);
+                    block_indices_data[block_id] = block_table[logical_block_idx]->get_index();
+                }
+                block_indices_data += select_logical_idxs.size();
+                filled_blocks_per_layer[layer_idx] += select_logical_idxs.size();
             }
         }
         for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
@@ -478,21 +530,64 @@ private:
 
     void _set_block_indices(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                             const Scheduler::Output& scheduler_output,
-                            size_t total_num_blocks) {
+                            size_t total_num_blocks,
+                            const std::map<size_t, std::set<size_t>>& seq_id_to_skipped_blocks_map) {
         std::vector<std::string> tensor_names = {"block_indices"};
 
+        size_t num_layers = 1;
         if (m_is_use_per_layer_cache_control) {
+            num_layers = m_num_decoder_layers;
             tensor_names.resize(m_num_decoder_layers);
             for (size_t i = 0; i < tensor_names.size(); i++) {
                 tensor_names[i] = std::string("block_indices.") + std::to_string(i);
             }
         }
 
-        for (auto& name : tensor_names) {
-            m_request.get_tensor(name).set_shape({total_num_blocks});
+
+        std::vector<size_t> num_blocks_per_layer(num_layers);
+
+        std::vector<std::map<size_t, std::vector<size_t>>> seq_id_to_select_logical_idx_map(m_num_decoder_layers);
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+        for (size_t layer_idx = 0; layer_idx < num_layers; layer_idx++) {
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+                std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+                size_t num_running_sequences = running_sequences.size();
+                for (size_t k = 0; k < num_running_sequences; ++k) {
+                    Sequence::CPtr sequence = running_sequences[k];
+                    size_t num_blocks = sequence_group->get_num_logical_blocks();
+                    size_t seq_id = sequence->get_id();
+                    std::vector<size_t> remaining_logical_block_ids;
+                    if (seq_id_to_skipped_blocks_map.find(seq_id) != seq_id_to_skipped_blocks_map.end()) {
+                        const auto& skip_set = seq_id_to_skipped_blocks_map.at(seq_id);
+                        OPENVINO_ASSERT(num_blocks >= skip_set.size());
+                        remaining_logical_block_ids.reserve(num_blocks - skip_set.size());
+                        for (size_t j = 0; j < num_blocks; j++) {
+                            if (skip_set.find(j) == skip_set.end()) {
+                                remaining_logical_block_ids.push_back(j);
+                            }
+                        }
+                        seq_id_to_select_logical_idx_map[layer_idx][seq_id] = remaining_logical_block_ids;
+                        num_blocks_per_layer[layer_idx] += remaining_logical_block_ids.size();
+                    }
+                    else
+                    {
+                        auto& vec = seq_id_to_select_logical_idx_map[layer_idx][seq_id];
+                        vec.resize(num_blocks);
+                        std::iota(vec.begin(), vec.end(), 0);
+                        num_blocks_per_layer[layer_idx] += num_blocks;
+                    }
+                }
+
+            }
         }
 
-        _fill_indices_from_block_tables(tensor_names, sequence_groups, scheduler_output, {});
+        for (size_t i = 0; i < num_layers; i++) {
+            m_request.get_tensor(tensor_names[i]).set_shape({num_blocks_per_layer[i]});
+        }
+
+        _fill_indices_from_block_tables(tensor_names, sequence_groups, scheduler_output, seq_id_to_select_logical_idx_map);
     }
 
     void _set_cache_rotation_coefficients(const std::vector<SequenceGroup::Ptr>& sequence_groups,
@@ -517,10 +612,10 @@ private:
 
         // NB: the order of per-sequence index filling in the function below must be the same
         // as the order of `seq_id`s in which the "rotation_coefficients.N" inputs are filled
-        _fill_indices_from_block_tables(rotation_indices_tensor_names,
-                                        sequence_groups,
-                                        scheduler_output,
-                                        m_rotated_block_logical_indices_per_sequence_for_each_layer);
+        // (i.e. ascending by seq_id values)
+        _fill_select_indices_from_block_tables(rotation_indices_tensor_names,
+                                               scheduler_output,
+                                               m_rotated_block_logical_indices_per_sequence_for_each_layer);
     }
 
     void _reset_cache_rotation_coefficients() {
@@ -540,11 +635,21 @@ private:
 
             for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                 Sequence::CPtr sequence = running_sequences[seq_idx];
+                size_t global_sequence_id = sequence->get_id();
                 size_t subsequence_length = sequence_group->get_context_len() - sequence_group->get_num_evicted_tokens();
+                if (scheduler_output.m_apply_sparse_attention_mask) {
+                    size_t num_past_blocks_to_discard = 0;
+                    const auto& skip_map = scheduler_output.m_sparse_attention_skipped_logical_blocks;
+                    auto it = skip_map.find(global_sequence_id);
+                    if (it != skip_map.end()) {
+                        num_past_blocks_to_discard = it->second.size();
+                    }
+                    subsequence_length -= num_past_blocks_to_discard * m_block_size;
+                }
+
                 IndexSpan span = {offset, offset + subsequence_length};
                 offset += subsequence_length;
 
-                size_t global_sequence_id = sequence->get_id();
 
                 bool is_prefill_finished = sequence_group->can_generate_tokens();
                 bool has_snapkv_scores = (scheduler_output.m_score_aggregation_windows.find(global_sequence_id) != scheduler_output.m_score_aggregation_windows.end());

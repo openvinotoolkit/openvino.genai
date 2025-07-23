@@ -19,7 +19,7 @@ Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/lear
 
 `text_embeddings BAAI/bge-small-en-v1.5 "Document 1" "Document 2"`
 
-See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#text-embeddings-models) for the list of supported models.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#text-embeddings-models) for more details.
 
 # Text Embedding Pipeline Usage
 
