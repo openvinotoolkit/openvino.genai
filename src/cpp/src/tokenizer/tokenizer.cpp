@@ -11,7 +11,6 @@
 #include <jinja2cpp/generic_list_iterator.h>
 
 #include "openvino/pass/manager.hpp"
-#include "openvino/pass/visualize_tree.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
@@ -340,17 +339,11 @@ public:
         if (ov_tokenizer && ov_tokenizer->get_parameters().size() == 2) {
             is_paired_input = true;
         }
-        
-        ov::pass::Manager manager;
-        manager.register_pass<ov::pass::VisualizeTree>("origin.svg");
-        manager.run_passes(ov_tokenizer);
 
         // If model is already converted with 2 inputs, then skip the pass
         if (ov_tokenizer && two_input_requested && !is_paired_input) {
             ov::pass::Manager manager;
-            manager.register_pass<ov::pass::VisualizeTree>("before.svg");
             manager.register_pass<ov::genai::AddSecondInputPass>(m_shared_object_ov_tokenizers, m_pass_errors);
-            manager.register_pass<ov::pass::VisualizeTree>("after.svg");
             manager.run_passes(ov_tokenizer);
             is_paired_input = true;
         }
