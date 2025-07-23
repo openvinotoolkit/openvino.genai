@@ -110,7 +110,14 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
             encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
         } else {
-            encoded_input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
+            // gemma3 add special tokens(like bos) in transformers, so need to skip it here. 
+            // but llava will fail in pytest::test_representation, because of add_special_tokens(false).
+            // TODO: remove this condition when find a WA in classes.cpp or handle this on tokenizer side.
+            if (m_vlm_config.model_type == VLMModelType::GEMMA3){
+                encoded_input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
+            } else {
+                encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+            }
         }
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
