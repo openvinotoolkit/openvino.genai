@@ -368,7 +368,7 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
 
 
 def is_model_with_automatic_crop(config):
-    return "internvl" in config.model_type or "minicpmv" in config.model_type
+    return "internvl" in config.model_type or "minicpmv" in config.model_type or "minicpmo" in config.model_type
 
 
 def create_evaluator(base_model, args):
