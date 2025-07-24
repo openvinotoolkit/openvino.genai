@@ -2864,8 +2864,6 @@ class TextRerankPipeline:
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
         """
-        max_length: int | None
-        top_n: int
         @typing.overload
         def __init__(self) -> None:
             ...
@@ -2892,11 +2890,11 @@ class TextRerankPipeline:
         config: (TextRerankPipeline.Config): Optional pipeline configuration
         kwargs: Plugin and/or config properties
         """
-    def rerank(self, query: str, texts: list[str]) -> list[tuple[int, float]]:
+    def rerank(self, query: str, texts: collections.abc.Sequence[str]) -> list[tuple[int, float]]:
         """
         Reranks a vector of texts based on the query.
         """
-    def start_rerank_async(self, query: str, texts: list[str]) -> None:
+    def start_rerank_async(self, query: str, texts: collections.abc.Sequence[str]) -> None:
         """
         Asynchronously reranks a vector of texts based on the query.
         """
