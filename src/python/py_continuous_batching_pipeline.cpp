@@ -273,7 +273,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
     py::class_<SparseAttentionConfig>(m, "SparseAttentionConfig", sparse_attention_config_docstring)
             .def(py::init<>([](SparseAttentionMode mode, size_t num_last_dense_tokens_in_prefill, size_t num_retained_start_tokens_in_cache, size_t num_retained_recent_tokens_in_cache) {
                 return SparseAttentionConfig{mode, num_last_dense_tokens_in_prefill, num_retained_start_tokens_in_cache, num_retained_recent_tokens_in_cache}; }),
-                 py::arg("mode") = SparseAttentionMode::TRISHAPE,
+                 // somehow pybind cannot associate enum arg with a default value with its python counterpart,
+                 // hence need to use arg_v instead of arg like everywhere else
+                 py::arg_v("mode", SparseAttentionMode::TRISHAPE, "SparseAttentionMode.TRISHAPE"),
                  py::arg("num_last_dense_tokens_in_prefill") = 100,
                  py::arg("num_retained_start_tokens_in_cache") = 128,
                  py::arg("num_retained_recent_tokens_in_cache") = 1920)
