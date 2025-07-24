@@ -14,11 +14,15 @@ if(NOT TARGET nlohmann_json)
 endif()
 
 function(ov_genai_build_jinja2cpp)
+    # Pretend ccache is not found
+    set(CCACHE_FOUND FALSE CACHE INTERNAL "Prevent third-party from enabling ccache automatically")
+    
     FetchContent_Declare(jinja2cpp
         URL https://github.com/jinja2cpp/Jinja2Cpp/archive/86dfb939b5c2beb7fabddae2df386be4e7fb9507.tar.gz
         URL_HASH SHA256=c222e2407316a573561bd74dfd1cd7b34b359f5481ac59529b3de355162ef9f7)
 
     FetchContent_GetProperties(jinja2cpp)
+    
     if(NOT jinja2cpp_POPULATED)
         FetchContent_Populate(jinja2cpp)
 
