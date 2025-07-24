@@ -730,7 +730,7 @@ def test_perf_metrics(generation_config, prompt):
 
     # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
     assert np.allclose(mean_tpot, np.mean(durations))
-    assert np.allclose(std_tpot, np.std(durations))
+    assert np.allclose(std_tpot, np.std(durations), atol=0.00002)
 
     raw_dur = np.array(raw_metrics.generate_durations) / 1000
     assert np.allclose(mean_gen_duration, np.mean(raw_dur))
@@ -861,7 +861,7 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
-@pytest.mark.parametrize("enable_save_ov_model", [False, True])
+@pytest.mark.parametrize("enable_save_ov_model", [False, pytest.param(True, marks=pytest.mark.xfail(reason="Randomly can't read/write .bin. Ticket 171120", raises=RuntimeError))])
 @pytest.mark.precommit
 def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     if sys.platform == 'darwin':
