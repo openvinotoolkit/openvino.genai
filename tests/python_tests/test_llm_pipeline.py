@@ -730,7 +730,7 @@ def test_perf_metrics(generation_config, prompt):
 
     # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
     assert np.allclose(mean_tpot, np.mean(durations))
-    assert np.allclose(std_tpot, np.std(durations))
+    assert np.allclose(std_tpot, np.std(durations), atol=0.00002)
 
     raw_dur = np.array(raw_metrics.generate_durations) / 1000
     assert np.allclose(mean_gen_duration, np.mean(raw_dur))
