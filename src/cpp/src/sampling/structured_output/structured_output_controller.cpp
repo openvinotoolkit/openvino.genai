@@ -70,6 +70,7 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
 }
 
 std::pair<std::map<std::string, float>, std::vector<float>> StructuredOutputController::get_times() const {
+    std::unique_lock<std::mutex> lock(m_mutex);
     return {m_init_grammar_compiler_times, m_grammar_compile_times};
 }
 
