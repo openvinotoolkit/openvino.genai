@@ -210,7 +210,7 @@ jobs:
           }
 
           foreach ($pyVersion in $pyVersions) {
-
+            Remove-Item -Path "${{ env.BUILD_DIR }}/CMakeCache.txt" -Force -ErrorAction SilentlyContinue
             $pythonCommand = "py -$pyVersion -c `"import sys; print(f'{sys.executable}')`""
             $pythonExecutablePath = & cmd /c $pythonCommand
 
