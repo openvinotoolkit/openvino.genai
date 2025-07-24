@@ -861,9 +861,8 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
-@pytest.mark.parametrize("enable_save_ov_model", [False, True])
+@pytest.mark.parametrize("enable_save_ov_model", [False, pytest.param(True, marks=pytest.mark.xfail(reason="Randomly can't read/write .bin. Ticket 171120", raises=RuntimeError))])
 @pytest.mark.precommit
-@pytest.mark.xfail(reason="Randomly can't open .bin. Ticket 171120", raises=RuntimeError)
 def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
@@ -910,6 +909,7 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
         assert res_string_input_2 == res_string_input_3
 
     assert res_string_input_1 == res_string_input_2
+
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", [{"gguf_model_id": "Qwen/Qwen3-0.6B-GGUF", "gguf_filename": "Qwen3-0.6B-Q8_0.gguf"}])
