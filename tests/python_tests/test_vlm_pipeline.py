@@ -666,7 +666,11 @@ models_to_tag = image_id_ignorant + [
 def model_and_tag(request):
     model_id, tag = request.param
     model = get_ov_model(model_id)
-    vlm = VLMPipeline(model, "CPU")
+    backend = "PA"
+    # TODO Remove when PA will be enabled for gemma3
+    if model_id == "katuni4ka/tiny-random-gemma3":
+        backend = "SDPA"
+    vlm = VLMPipeline(model, "CPU", ATTENTION_BACKEND=backend)
     return vlm, tag
 
 
