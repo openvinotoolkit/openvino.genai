@@ -25,6 +25,7 @@ set (SAMPLE_LIST
     encrypted_model_causal_lm
     beam_search_causal_lm
     chat_sample
+    structured_output_generation
     lora_greedy_causal_lm
     multinomial_causal_lm
     prompt_lookup_decoding_lm

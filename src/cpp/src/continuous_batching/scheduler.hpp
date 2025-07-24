@@ -13,6 +13,7 @@
 #include "sequence_group.hpp"
 #include "continuous_batching/cache_manager.hpp"
 #include "continuous_batching/timer.hpp"
+#include "continuous_batching/sparse_attention.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -40,6 +41,10 @@ public:
         std::map<uint64_t, std::vector<BlocksPerLayer>> m_block_tables;
         // how many previous token scores to aggregate in the paged attention score output, per sequence
         std::map<uint64_t, size_t> m_score_aggregation_windows;
+
+        bool m_apply_sparse_attention_mask = false;
+        std::map<uint64_t, std::set<size_t>> m_sparse_attention_skipped_logical_blocks;
+
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
         // dedicated prompt phase
@@ -304,6 +309,19 @@ private:
 
 
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+                        scheduler_output.m_apply_sparse_attention_mask = m_config.use_sparse_attention;
+                        if (scheduler_output.m_apply_sparse_attention_mask) {
+                            if (m_config.sparse_attention_config.mode == SparseAttentionMode::TRISHAPE) {
+                                TriShapeSparseAttentionTokenSkipper skipper(block_size,
+                                        m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
+                                        m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
+                                        m_config.sparse_attention_config.num_retained_recent_tokens_in_cache);
+                                scheduler_output.m_sparse_attention_skipped_logical_blocks[seq_id] = skipper.get_skipped_blocks(sequence_group);
+                            }
+                            else {
+                                OPENVINO_THROW("Unsupported sparse attention mode");
+                            }
+                        }
                     }
                 }
 

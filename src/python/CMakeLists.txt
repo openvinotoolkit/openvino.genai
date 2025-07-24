@@ -6,8 +6,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     pybind11
-    URL https://github.com/pybind/pybind11/archive/refs/tags/v2.13.5.tar.gz
-    URL_HASH SHA256=b1e209c42b3a9ed74da3e0b25a4f4cd478d89d5efbb48f04b277df427faf6252
+    URL https://github.com/pybind/pybind11/archive/refs/tags/v3.0.0.tar.gz
+    URL_HASH SHA256=453b1a3e2b266c3ae9da872411cadb6d693ac18063bd73226d96cfb7015a200c
 )
 FetchContent_GetProperties(pybind11)
 # search for FindPython3.cmake instead of legacy modules
@@ -172,6 +172,9 @@ if(pybind11_stubgen_AVAILABLE)
         COMMAND "${CMAKE_COMMAND}"
                 -D init_pyi_file=${init_pyi_file}
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/clean_version.cmake"
+        COMMAND "${CMAKE_COMMAND}"
+                -D init_pyi_file=${init_pyi_file}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/remove_abi_specific_info.cmake"
         ${validation_command}
         ${copy_to_source_command}
         COMMAND "${CMAKE_COMMAND}" -E copy ${generated_files} "${CMAKE_BINARY_DIR}/openvino_genai/"
@@ -181,6 +184,7 @@ if(pybind11_stubgen_AVAILABLE)
             ${validation_dependencies}
             "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/clean_version.cmake"
+            "${CMAKE_CURRENT_SOURCE_DIR}/remove_abi_specific_info.cmake"
             "${CMAKE_CURRENT_SOURCE_DIR}/compare_pyi.cmake"
         COMMENT "[${pybind11_stubgen_dep}] Generate .pyi files"
         VERBATIM)
