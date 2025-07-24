@@ -863,6 +863,7 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
 @pytest.mark.parametrize("enable_save_ov_model", [False, True])
 @pytest.mark.precommit
+@pytest.mark.xfail(reason="Randomly can't open .bin. Ticket 171120", raises=RuntimeError)
 def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
