@@ -1,3 +1,0 @@
--r ../../../samples/requirements.txt
-accelerate  # is required when loading a GGUF file from transformers
-GGUF        # to load a GGUF checkpoint in PyTorch from transformers

@@ -569,7 +569,7 @@ jobs:
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
-          requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/samples/requirements.txt"
+          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Fix C++ samples permissions
