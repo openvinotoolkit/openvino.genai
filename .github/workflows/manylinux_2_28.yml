@@ -35,6 +35,7 @@ env:
 
 jobs:
   smart_ci:
+    if: github.event_name != 'merge_group'
     name: Smart CI
     runs-on: ubuntu-latest
     outputs:
@@ -66,6 +67,7 @@ jobs:
         shell: bash
 
   openvino_download:
+    if: github.event_name != 'merge_group'
     needs: smart_ci
     if: "!needs.smart_ci.outputs.skip_workflow"
     name: Download OpenVINO
@@ -110,6 +112,7 @@ jobs:
         echo "docker_tag=$docker_tag" >> $GITHUB_OUTPUT
 
   genai_build_cmake:
+    if: github.event_name != 'merge_group'
     name: Build Archive - ${{ matrix.build-type }}
     strategy:
       fail-fast: false
@@ -231,6 +234,7 @@ jobs:
           if-no-files-found: 'error'
 
   genai_build_wheel:
+    if: github.event_name != 'merge_group'
     name: Build Wheel
     needs: [ openvino_download ]
     timeout-minutes: 90
@@ -308,6 +312,7 @@ jobs:
           if-no-files-found: 'error'
 
   store_artifacts:
+    if: github.event_name != 'merge_group'
     name: Store build artifacts
     strategy:
       matrix:
@@ -361,6 +366,7 @@ jobs:
           product_name: ${{ github.event.repository.name }}
   
   genai_tests_wheel:
+    if: github.event_name != 'merge_group'
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ smart_ci, openvino_download, genai_build_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}

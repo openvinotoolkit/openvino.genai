@@ -26,6 +26,7 @@ env:
 
 jobs:
   smart_ci:
+    if: github.event_name != 'merge_group'
     name: Smart CI
     runs-on: ubuntu-latest
     outputs:
@@ -57,6 +58,7 @@ jobs:
         shell: bash
 
   openvino_download:
+    if: github.event_name != 'merge_group'
     needs: smart_ci
     name: Download OpenVINO
     outputs:
@@ -84,6 +86,7 @@ jobs:
         revision: latest_available_commit
 
   genai_build_cmake:
+    if: github.event_name != 'merge_group'
     name: Build cpack - ${{ matrix.build-type }}
     strategy:
       fail-fast: false
@@ -208,6 +211,7 @@ jobs:
           if-no-files-found: 'error'
 
   genai_build_wheel:
+    if: github.event_name != 'merge_group'
     name: Build Wheel
     needs: [ openvino_download ]
     timeout-minutes: 90
@@ -305,6 +309,7 @@ jobs:
           if-no-files-found: 'error'
 
   genai_build_samples:
+    if: github.event_name != 'merge_group'
     name: Build Samples - ${{ matrix.build-type }}
     strategy:
       fail-fast: false
@@ -361,6 +366,7 @@ jobs:
           if-no-files-found: 'error'
 
   genai_build_nodejs:
+    if: github.event_name != 'merge_group'
     name: Build Node.js bindings
     strategy:
       fail-fast: false
@@ -415,6 +421,7 @@ jobs:
           if-no-files-found: 'error'
 
   genai_tests_wheel:
+    if: github.event_name != 'merge_group'
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ smart_ci, openvino_download, genai_build_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
@@ -499,6 +506,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
 
   genai_samples_tests:
+    if: github.event_name != 'merge_group'
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
     strategy:
       fail-fast: false
@@ -609,6 +617,7 @@ jobs:
           SAMPLES_C_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
   genai_tools_tests:
+    if: github.event_name != 'merge_group'
     name: Tools ${{ matrix.build-type }}
     strategy:
       fail-fast: false
@@ -670,6 +679,7 @@ jobs:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
   genai_nodejs_tests:
+    if: github.event_name != 'merge_group'
     name: Node.js bindings tests
     needs: [ smart_ci, openvino_download, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
