@@ -58,6 +58,7 @@ jobs:
 
   openvino_download:
     needs: smart_ci
+    if: ${{ github.event_name != 'merge_group' && needs.smart_ci.outputs.skip_workflow != 'True' }}
     name: Download OpenVINO
     outputs:
       status: ${{ steps.openvino_download.outcome }}
