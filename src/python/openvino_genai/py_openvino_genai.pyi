@@ -2,7 +2,8 @@
 Pybind11 binding for Text-to-speech Pipeline
 """
 from __future__ import annotations
-import os
+import collections.abc
+import openvino._pyopenvino
 import typing
 __all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
@@ -15,13 +16,13 @@ class Adapter:
     def __init__(self) -> None:
         ...
     @typing.overload
-    def __init__(self, path: os.PathLike) -> None:
+    def __init__(self, path: os.PathLike | str | bytes) -> None:
         """
                     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
                     path (os.PathLike): Path to adapter file in safetensors format.
         """
     @typing.overload
-    def __init__(self, safetensor: ...) -> None:
+    def __init__(self, safetensor: openvino._pyopenvino.Tensor) -> None:
         """
                     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
                     safetensor (ov.Tensor): Pre-read LoRA Adapter safetensor.
@@ -58,7 +59,7 @@ class AdapterConfig:
             ...
         def __index__(self) -> int:
             ...
-        def __init__(self, value: int) -> None:
+        def __init__(self, value: typing.SupportsInt) -> None:
             ...
         def __int__(self) -> int:
             ...
@@ -66,7 +67,7 @@ class AdapterConfig:
             ...
         def __repr__(self) -> str:
             ...
-        def __setstate__(self, state: int) -> None:
+        def __setstate__(self, state: typing.SupportsInt) -> None:
             ...
         def __str__(self) -> str:
             ...
@@ -82,19 +83,19 @@ class AdapterConfig:
     def __init__(self, mode: AdapterConfig.Mode = ...) -> None:
         ...
     @typing.overload
-    def __init__(self, adapter: Adapter, alpha: float, mode: AdapterConfig.Mode = ...) -> None:
+    def __init__(self, adapter: Adapter, alpha: typing.SupportsFloat, mode: AdapterConfig.Mode = ...) -> None:
         ...
     @typing.overload
     def __init__(self, adapter: Adapter, mode: AdapterConfig.Mode = ...) -> None:
         ...
     @typing.overload
-    def __init__(self, adapters: list[Adapter], mode: AdapterConfig.Mode = ...) -> None:
+    def __init__(self, adapters: collections.abc.Sequence[Adapter], mode: AdapterConfig.Mode = ...) -> None:
         ...
     @typing.overload
-    def __init__(self, adapters: list[tuple[Adapter, float]], mode: AdapterConfig.Mode = ...) -> None:
+    def __init__(self, adapters: collections.abc.Sequence[tuple[Adapter, typing.SupportsFloat]], mode: AdapterConfig.Mode = ...) -> None:
         ...
     @typing.overload
-    def add(self, adapter: Adapter, alpha: float) -> AdapterConfig:
+    def add(self, adapter: Adapter, alpha: typing.SupportsFloat) -> AdapterConfig:
         ...
     @typing.overload
     def add(self, adapter: Adapter) -> AdapterConfig:
@@ -107,9 +108,9 @@ class AdapterConfig:
         ...
     def remove(self, adapter: Adapter) -> AdapterConfig:
         ...
-    def set_adapters_and_alphas(self, adapters: list[tuple[Adapter, float]]) -> None:
+    def set_adapters_and_alphas(self, adapters: collections.abc.Sequence[tuple[Adapter, typing.SupportsFloat]]) -> None:
         ...
-    def set_alpha(self, adapter: Adapter, alpha: float) -> AdapterConfig:
+    def set_alpha(self, adapter: Adapter, alpha: typing.SupportsFloat) -> AdapterConfig:
         ...
 class AggregationMode:
     """
@@ -134,7 +135,7 @@ class AggregationMode:
         ...
     def __index__(self) -> int:
         ...
-    def __init__(self, value: int) -> None:
+    def __init__(self, value: typing.SupportsInt) -> None:
         ...
     def __int__(self) -> int:
         ...
@@ -142,7 +143,7 @@ class AggregationMode:
         ...
     def __repr__(self) -> str:
         ...
-    def __setstate__(self, state: int) -> None:
+    def __setstate__(self, state: typing.SupportsInt) -> None:
         ...
     def __str__(self) -> str:
         ...
@@ -160,28 +161,53 @@ class AutoencoderKL:
         """
         This class is used for storing AutoencoderKL config.
         """
-        block_out_channels: list[int]
-        in_channels: int
-        latent_channels: int
-        out_channels: int
-        scaling_factor: float
-        def __init__(self, config_path: os.PathLike) -> None:
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def block_out_channels(self) -> list[int]:
+            ...
+        @block_out_channels.setter
+        def block_out_channels(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+            ...
+        @property
+        def in_channels(self) -> int:
+            ...
+        @in_channels.setter
+        def in_channels(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def latent_channels(self) -> int:
+            ...
+        @latent_channels.setter
+        def latent_channels(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def out_channels(self) -> int:
+            ...
+        @out_channels.setter
+        def out_channels(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def scaling_factor(self) -> float:
+            ...
+        @scaling_factor.setter
+        def scaling_factor(self, arg0: typing.SupportsFloat) -> None:
             ...
     @typing.overload
-    def __init__(self, vae_decoder_path: os.PathLike) -> None:
+    def __init__(self, vae_decoder_path: os.PathLike | str | bytes) -> None:
         """
                     AutoencoderKL class initialized only with decoder model.
                     vae_decoder_path (os.PathLike): VAE decoder directory.
         """
     @typing.overload
-    def __init__(self, vae_encoder_path: os.PathLike, vae_decoder_path: os.PathLike) -> None:
+    def __init__(self, vae_encoder_path: os.PathLike | str | bytes, vae_decoder_path: os.PathLike | str | bytes) -> None:
         """
                     AutoencoderKL class initialized with both encoder and decoder models.
                     vae_encoder_path (os.PathLike): VAE encoder directory.
                     vae_decoder_path (os.PathLike): VAE decoder directory.
         """
     @typing.overload
-    def __init__(self, vae_decoder_path: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, vae_decoder_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     AutoencoderKL class initialized only with decoder model.
                     vae_decoder_path (os.PathLike): VAE decoder directory.
@@ -189,7 +215,7 @@ class AutoencoderKL:
                     kwargs: Device properties.
         """
     @typing.overload
-    def __init__(self, vae_encoder_path: os.PathLike, vae_decoder_path: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, vae_encoder_path: os.PathLike | str | bytes, vae_decoder_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     AutoencoderKL class initialized only with both encoder and decoder models.
                     vae_encoder_path (os.PathLike): VAE encoder directory.
@@ -211,15 +237,15 @@ class AutoencoderKL:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def decode(self, latent: ...) -> ...:
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
-    def encode(self, image: ..., generator: Generator) -> ...:
+    def encode(self, image: openvino._pyopenvino.Tensor, generator: Generator) -> openvino._pyopenvino.Tensor:
         ...
     def get_config(self) -> AutoencoderKL.Config:
         ...
     def get_vae_scale_factor(self) -> int:
         ...
-    def reshape(self, batch_size: int, height: int, width: int) -> AutoencoderKL:
+    def reshape(self, batch_size: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt) -> AutoencoderKL:
         ...
 class CLIPTextModel:
     """
@@ -229,18 +255,28 @@ class CLIPTextModel:
         """
         This class is used for storing CLIPTextModel config.
         """
-        max_position_embeddings: int
-        num_hidden_layers: int
-        def __init__(self, config_path: os.PathLike) -> None:
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def max_position_embeddings(self) -> int:
+            ...
+        @max_position_embeddings.setter
+        def max_position_embeddings(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def num_hidden_layers(self) -> int:
+            ...
+        @num_hidden_layers.setter
+        def num_hidden_layers(self, arg0: typing.SupportsInt) -> None:
             ...
     @typing.overload
-    def __init__(self, root_dir: os.PathLike) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
         """
                     CLIPTextModel class
                     root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
-    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     CLIPTextModel class
                     root_dir (os.PathLike): Model root directory.
@@ -262,26 +298,26 @@ class CLIPTextModel:
         """
     def get_config(self) -> CLIPTextModel.Config:
         ...
-    def get_output_tensor(self, idx: int) -> ...:
+    def get_output_tensor(self, idx: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
-    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool) -> ...:
+    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool) -> openvino._pyopenvino.Tensor:
         ...
-    def reshape(self, batch_size: int) -> CLIPTextModel:
+    def reshape(self, batch_size: typing.SupportsInt) -> CLIPTextModel:
         ...
-    def set_adapters(self, adapters: AdapterConfig | None) -> None:
+    def set_adapters(self, adapters: openvino_genai.py_openvino_genai.AdapterConfig | None) -> None:
         ...
 class CLIPTextModelWithProjection(CLIPTextModel):
     """
     CLIPTextModelWithProjection class.
     """
     @typing.overload
-    def __init__(self, root_dir: os.PathLike) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
         """
                     CLIPTextModelWithProjection class
                     root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
-    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     CLIPTextModelWithProjection class
                     root_dir (os.PathLike): Model root directory.
@@ -323,8 +359,7 @@ class CacheEvictionConfig:
     """
     aggregation_mode: AggregationMode
     apply_rotation: bool
-    snapkv_window_size: int
-    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode, apply_rotation: bool = False, snapkv_window_size: int = 8) -> None:
+    def __init__(self, start_size: typing.SupportsInt, recent_size: typing.SupportsInt, max_cache_size: typing.SupportsInt, aggregation_mode: AggregationMode, apply_rotation: bool = False, snapkv_window_size: typing.SupportsInt = 8) -> None:
         ...
     def get_evictable_size(self) -> int:
         ...
@@ -333,6 +368,12 @@ class CacheEvictionConfig:
     def get_recent_size(self) -> int:
         ...
     def get_start_size(self) -> int:
+        ...
+    @property
+    def snapkv_window_size(self) -> int:
+        ...
+    @snapkv_window_size.setter
+    def snapkv_window_size(self, arg0: typing.SupportsInt) -> None:
         ...
 class ChunkStreamerBase(StreamerBase):
     """
@@ -345,11 +386,11 @@ class ChunkStreamerBase(StreamerBase):
         """
         End is called at the end of generation. It can be used to flush cache if your own streamer has one
         """
-    def put(self, token: int) -> bool:
+    def put(self, token: typing.SupportsInt) -> bool:
         """
         Put is called every time new token is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def put_chunk(self, tokens: list[int]) -> bool:
+    def put_chunk(self, tokens: collections.abc.Sequence[typing.SupportsInt]) -> bool:
         """
         put_chunk is called every time new token chunk is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
@@ -358,31 +399,31 @@ class ContinuousBatchingPipeline:
     This class is used for generation with LLMs with continuous batchig
     """
     @typing.overload
-    def __init__(self, models_path: os.PathLike, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}, vision_encoder_properties: dict[str, typing.Any] = {}) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, scheduler_config: SchedulerConfig, device: str, properties: collections.abc.Mapping[str, typing.Any] = {}, tokenizer_properties: collections.abc.Mapping[str, typing.Any] = {}, vision_encoder_properties: collections.abc.Mapping[str, typing.Any] = {}) -> None:
         ...
     @typing.overload
-    def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
         ...
     @typing.overload
-    def add_request(self, request_id: int, input_ids: ..., generation_config: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: typing.SupportsInt, input_ids: openvino._pyopenvino.Tensor, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def add_request(self, request_id: int, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def add_request(self, request_id: int, prompt: str, images: list[...], generation_config: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def generate(self, input_ids: list[...], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
+    def generate(self, input_ids: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[EncodedGenerationResult]:
         ...
     @typing.overload
-    def generate(self, prompts: list[str], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, prompts: collections.abc.Sequence[str], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
-    def generate(self, prompt: str, generation_config: GenerationConfig, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
-    def generate(self, prompts: list[str], images: list[list[...]], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -398,13 +439,13 @@ class CppStdGenerator(Generator):
     """
     This class wraps std::mt19937 pseudo-random generator.
     """
-    def __init__(self, seed: int) -> None:
+    def __init__(self, seed: typing.SupportsInt) -> None:
         ...
     def next(self) -> float:
         ...
-    def randn_tensor(self, shape: ...) -> ...:
+    def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
         ...
-    def seed(self, new_seed: int) -> None:
+    def seed(self, new_seed: typing.SupportsInt) -> None:
         ...
 class DecodedResults:
     """
@@ -456,15 +497,25 @@ class EncodedGenerationResult:
         extended_perf_metrics: performance pipeline specifics metrics,
                                applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
     """
-    m_generation_ids: list[list[int]]
-    m_scores: list[float]
     def __init__(self) -> None:
         ...
     @property
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
+    def m_generation_ids(self) -> list[list[int]]:
+        ...
+    @m_generation_ids.setter
+    def m_generation_ids(self, arg0: collections.abc.Sequence[collections.abc.Sequence[typing.SupportsInt]]) -> None:
+        ...
+    @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def m_scores(self) -> list[float]:
+        ...
+    @m_scores.setter
+    def m_scores(self, arg0: collections.abc.Sequence[typing.SupportsFloat]) -> None:
         ...
     @property
     def perf_metrics(self) -> PerfMetrics:
@@ -593,18 +644,28 @@ class FluxTransformer2DModel:
         """
         This class is used for storing FluxTransformer2DModel config.
         """
-        default_sample_size: int
-        in_channels: int
-        def __init__(self, config_path: os.PathLike) -> None:
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def default_sample_size(self) -> int:
+            ...
+        @default_sample_size.setter
+        def default_sample_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def in_channels(self) -> int:
+            ...
+        @in_channels.setter
+        def in_channels(self, arg0: typing.SupportsInt) -> None:
             ...
     @typing.overload
-    def __init__(self, root_dir: os.PathLike) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
         """
                     FluxTransformer2DModel class
                     root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
-    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     UNet2DConditionModel class
                     root_dir (os.PathLike): Model root directory.
@@ -626,11 +687,11 @@ class FluxTransformer2DModel:
         """
     def get_config(self) -> FluxTransformer2DModel.Config:
         ...
-    def infer(self, latent: ..., timestep: ...) -> ...:
+    def infer(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
-    def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> FluxTransformer2DModel:
+    def reshape(self, batch_size: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, tokenizer_model_max_length: typing.SupportsInt) -> FluxTransformer2DModel:
         ...
-    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: ...) -> None:
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
 class GenerationConfig:
     """
@@ -680,39 +741,16 @@ class GenerationConfig:
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
         num_return_sequences: the number of sequences to generate from a single prompt.
     """
-    adapters: AdapterConfig | None
+    adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
     apply_chat_template: bool
-    assistant_confidence_threshold: float
-    diversity_penalty: float
     do_sample: bool
     echo: bool
-    eos_token_id: int
-    frequency_penalty: float
     ignore_eos: bool
     include_stop_str_in_output: bool
-    length_penalty: float
-    logprobs: int
-    max_length: int
-    max_new_tokens: int
-    max_ngram_size: int
-    min_new_tokens: int
-    no_repeat_ngram_size: int
-    num_assistant_tokens: int
-    num_beam_groups: int
-    num_beams: int
-    num_return_sequences: int
-    presence_penalty: float
-    repetition_penalty: float
-    rng_seed: int
     stop_criteria: StopCriteria
-    stop_strings: set[str]
-    stop_token_ids: set[int]
-    structured_output_config: StructuredOutputConfig | None
-    temperature: float
-    top_k: int
-    top_p: float
+    structured_output_config: openvino_genai.py_openvino_genai.StructuredOutputConfig | None
     @typing.overload
-    def __init__(self, json_path: os.PathLike) -> None:
+    def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
         path where generation_config.json is stored
         """
@@ -729,11 +767,149 @@ class GenerationConfig:
         ...
     def is_prompt_lookup(self) -> bool:
         ...
-    def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
+    def set_eos_token_id(self, tokenizer_eos_token_id: typing.SupportsInt) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
         ...
     def validate(self) -> None:
+        ...
+    @property
+    def assistant_confidence_threshold(self) -> float:
+        ...
+    @assistant_confidence_threshold.setter
+    def assistant_confidence_threshold(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def diversity_penalty(self) -> float:
+        ...
+    @diversity_penalty.setter
+    def diversity_penalty(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def eos_token_id(self) -> int:
+        ...
+    @eos_token_id.setter
+    def eos_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def frequency_penalty(self) -> float:
+        ...
+    @frequency_penalty.setter
+    def frequency_penalty(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def length_penalty(self) -> float:
+        ...
+    @length_penalty.setter
+    def length_penalty(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def logprobs(self) -> int:
+        ...
+    @logprobs.setter
+    def logprobs(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def max_length(self) -> int:
+        ...
+    @max_length.setter
+    def max_length(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def max_new_tokens(self) -> int:
+        ...
+    @max_new_tokens.setter
+    def max_new_tokens(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def max_ngram_size(self) -> int:
+        ...
+    @max_ngram_size.setter
+    def max_ngram_size(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def min_new_tokens(self) -> int:
+        ...
+    @min_new_tokens.setter
+    def min_new_tokens(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def no_repeat_ngram_size(self) -> int:
+        ...
+    @no_repeat_ngram_size.setter
+    def no_repeat_ngram_size(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_assistant_tokens(self) -> int:
+        ...
+    @num_assistant_tokens.setter
+    def num_assistant_tokens(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_beam_groups(self) -> int:
+        ...
+    @num_beam_groups.setter
+    def num_beam_groups(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_beams(self) -> int:
+        ...
+    @num_beams.setter
+    def num_beams(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_return_sequences(self) -> int:
+        ...
+    @num_return_sequences.setter
+    def num_return_sequences(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def presence_penalty(self) -> float:
+        ...
+    @presence_penalty.setter
+    def presence_penalty(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def repetition_penalty(self) -> float:
+        ...
+    @repetition_penalty.setter
+    def repetition_penalty(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def rng_seed(self) -> int:
+        ...
+    @rng_seed.setter
+    def rng_seed(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def stop_strings(self) -> set[str]:
+        ...
+    @stop_strings.setter
+    def stop_strings(self, arg0: collections.abc.Set[str]) -> None:
+        ...
+    @property
+    def stop_token_ids(self) -> set[int]:
+        ...
+    @stop_token_ids.setter
+    def stop_token_ids(self, arg0: collections.abc.Set[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def temperature(self) -> float:
+        ...
+    @temperature.setter
+    def temperature(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def top_k(self) -> int:
+        ...
+    @top_k.setter
+    def top_k(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def top_p(self) -> float:
+        ...
+    @top_p.setter
+    def top_p(self, arg0: typing.SupportsFloat) -> None:
         ...
 class GenerationFinishReason:
     """
@@ -757,7 +933,7 @@ class GenerationFinishReason:
         ...
     def __index__(self) -> int:
         ...
-    def __init__(self, value: int) -> None:
+    def __init__(self, value: typing.SupportsInt) -> None:
         ...
     def __int__(self) -> int:
         ...
@@ -765,7 +941,7 @@ class GenerationFinishReason:
         ...
     def __repr__(self) -> str:
         ...
-    def __setstate__(self, state: int) -> None:
+    def __setstate__(self, state: typing.SupportsInt) -> None:
         ...
     def __str__(self) -> str:
         ...
@@ -792,9 +968,24 @@ class GenerationHandle:
         ...
 class GenerationOutput:
     finish_reason: GenerationFinishReason
-    generated_ids: list[int]
-    generated_log_probs: list[float]
-    score: float
+    @property
+    def generated_ids(self) -> list[int]:
+        ...
+    @generated_ids.setter
+    def generated_ids(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def generated_log_probs(self) -> list[float]:
+        ...
+    @generated_log_probs.setter
+    def generated_log_probs(self, arg0: collections.abc.Sequence[typing.SupportsFloat]) -> None:
+        ...
+    @property
+    def score(self) -> float:
+        ...
+    @score.setter
+    def score(self, arg0: typing.SupportsFloat) -> None:
+        ...
 class GenerationResult:
     """
     
@@ -816,8 +1007,6 @@ class GenerationResult:
         extended_perf_metrics: performance pipeline specifics metrics,
                                applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
     """
-    m_generation_ids: list[str]
-    m_scores: list[float]
     m_status: GenerationStatus
     def __init__(self) -> None:
         ...
@@ -829,7 +1018,19 @@ class GenerationResult:
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
+    def m_generation_ids(self) -> list[str]:
+        ...
+    @m_generation_ids.setter
+    def m_generation_ids(self, arg1: collections.abc.Sequence[str]) -> None:
+        ...
+    @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def m_scores(self) -> list[float]:
+        ...
+    @m_scores.setter
+    def m_scores(self, arg0: collections.abc.Sequence[typing.SupportsFloat]) -> None:
         ...
     @property
     def perf_metrics(self) -> PerfMetrics:
@@ -862,7 +1063,7 @@ class GenerationStatus:
         ...
     def __index__(self) -> int:
         ...
-    def __init__(self, value: int) -> None:
+    def __init__(self, value: typing.SupportsInt) -> None:
         ...
     def __int__(self) -> int:
         ...
@@ -870,7 +1071,7 @@ class GenerationStatus:
         ...
     def __repr__(self) -> str:
         ...
-    def __setstate__(self, state: int) -> None:
+    def __setstate__(self, state: typing.SupportsInt) -> None:
         ...
     def __str__(self) -> str:
         ...
@@ -911,13 +1112,13 @@ class Image2ImagePipeline:
     def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Image2ImagePipeline:
         ...
     @typing.overload
-    def __init__(self, models_path: os.PathLike) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes) -> None:
         """
                     Image2ImagePipeline class constructor.
                     models_path (os.PathLike): Path to the folder with exported model files.
         """
     @typing.overload
-    def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     Image2ImagePipeline class constructor.
                     models_path (os.PathLike): Path with exported model files.
@@ -943,9 +1144,9 @@ class Image2ImagePipeline:
                         vae_device (str): Device to run vae encoder / decoder on.
                         kwargs: Device properties.
         """
-    def decode(self, latent: ...) -> ...:
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
-    def generate(self, prompt: str, image: ..., **kwargs) -> ...:
+    def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
         
@@ -979,7 +1180,7 @@ class Image2ImagePipeline:
         ...
     def get_performance_metrics(self) -> ImageGenerationPerfMetrics:
         ...
-    def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
+    def reshape(self, num_images_per_prompt: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, guidance_scale: typing.SupportsFloat) -> None:
         ...
     def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
@@ -989,26 +1190,66 @@ class ImageGenerationConfig:
     """
     This class is used for storing generation config for image generation pipeline.
     """
-    adapters: AdapterConfig | None
+    adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
     generator: Generator
-    guidance_scale: float
-    height: int
-    max_sequence_length: int
     negative_prompt: str | None
     negative_prompt_2: str | None
     negative_prompt_3: str | None
-    num_images_per_prompt: int
-    num_inference_steps: int
     prompt_2: str | None
     prompt_3: str | None
-    rng_seed: int
-    strength: float
-    width: int
     def __init__(self) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
         ...
     def validate(self) -> None:
+        ...
+    @property
+    def guidance_scale(self) -> float:
+        ...
+    @guidance_scale.setter
+    def guidance_scale(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def height(self) -> int:
+        ...
+    @height.setter
+    def height(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def max_sequence_length(self) -> int:
+        ...
+    @max_sequence_length.setter
+    def max_sequence_length(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_images_per_prompt(self) -> int:
+        ...
+    @num_images_per_prompt.setter
+    def num_images_per_prompt(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_inference_steps(self) -> int:
+        ...
+    @num_inference_steps.setter
+    def num_inference_steps(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def rng_seed(self) -> int:
+        ...
+    @rng_seed.setter
+    def rng_seed(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def strength(self) -> float:
+        ...
+    @strength.setter
+    def strength(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def width(self) -> int:
+        ...
+    @width.setter
+    def width(self, arg0: typing.SupportsInt) -> None:
         ...
 class ImageGenerationPerfMetrics:
     """
@@ -1126,13 +1367,13 @@ class InpaintingPipeline:
     def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
         ...
     @typing.overload
-    def __init__(self, models_path: os.PathLike) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes) -> None:
         """
                     InpaintingPipeline class constructor.
                     models_path (os.PathLike): Path to the folder with exported model files.
         """
     @typing.overload
-    def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     InpaintingPipeline class constructor.
                     models_path (os.PathLike): Path with exported model files.
@@ -1158,9 +1399,9 @@ class InpaintingPipeline:
                         vae_device (str): Device to run vae encoder / decoder on.
                         kwargs: Device properties.
         """
-    def decode(self, latent: ...) -> ...:
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
-    def generate(self, prompt: str, image: ..., mask_image: ..., **kwargs) -> ...:
+    def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, mask_image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
         
@@ -1194,7 +1435,7 @@ class InpaintingPipeline:
         ...
     def get_performance_metrics(self) -> ImageGenerationPerfMetrics:
         ...
-    def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
+    def reshape(self, num_images_per_prompt: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, guidance_scale: typing.SupportsFloat) -> None:
         ...
     def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
@@ -1204,7 +1445,7 @@ class LLMPipeline:
     """
     This class is used for generation with LLMs
     """
-    def __call__(self, inputs: ... | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
+    def __call__(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str], generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
@@ -1270,7 +1511,7 @@ class LLMPipeline:
             num_return_sequences: the number of sequences to generate from a single prompt.
         """
     @typing.overload
-    def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, device: str, config: dict[str, typing.Any] = {}, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, device: str, config: collections.abc.Mapping[str, typing.Any] = {}, **kwargs) -> None:
         """
                     LLMPipeline class constructor for manually created openvino_genai.Tokenizer.
                     models_path (os.PathLike): Path to the model file.
@@ -1280,7 +1521,7 @@ class LLMPipeline:
                     kwargs: Device properties.
         """
     @typing.overload
-    def __init__(self, models_path: os.PathLike, device: str, config: dict[str, typing.Any] = {}, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, config: collections.abc.Mapping[str, typing.Any] = {}, **kwargs) -> None:
         """
                     LLMPipeline class constructor.
                     models_path (os.PathLike): Path to the model file.
@@ -1289,7 +1530,7 @@ class LLMPipeline:
                     kwargs: Device properties.
         """
     @typing.overload
-    def __init__(self, model: str, weights: ..., tokenizer: Tokenizer, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer, device: str, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, **kwargs) -> None:
         """
                     LLMPipeline class constructor.
                     model (str): Pre-read model.
@@ -1301,7 +1542,7 @@ class LLMPipeline:
         """
     def finish_chat(self) -> None:
         ...
-    def generate(self, inputs: ... | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
+    def generate(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str], generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
@@ -1377,7 +1618,7 @@ class LLMPipeline:
 class MeanStdPair:
     def __init__(self) -> None:
         ...
-    def __iter__(self) -> typing.Iterator[float]:
+    def __iter__(self) -> collections.abc.Iterator[float]:
         ...
     @property
     def mean(self) -> float:
@@ -1616,20 +1857,40 @@ class SD3Transformer2DModel:
         """
         This class is used for storing SD3Transformer2DModel config.
         """
-        in_channels: int
-        joint_attention_dim: int
-        patch_size: int
-        sample_size: int
-        def __init__(self, config_path: os.PathLike) -> None:
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def in_channels(self) -> int:
+            ...
+        @in_channels.setter
+        def in_channels(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def joint_attention_dim(self) -> int:
+            ...
+        @joint_attention_dim.setter
+        def joint_attention_dim(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def patch_size(self) -> int:
+            ...
+        @patch_size.setter
+        def patch_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def sample_size(self) -> int:
+            ...
+        @sample_size.setter
+        def sample_size(self, arg0: typing.SupportsInt) -> None:
             ...
     @typing.overload
-    def __init__(self, root_dir: os.PathLike) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
         """
                     SD3Transformer2DModel class
                     root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
-    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     SD3Transformer2DModel class
                     root_dir (os.PathLike): Model root directory.
@@ -1651,11 +1912,11 @@ class SD3Transformer2DModel:
         """
     def get_config(self) -> SD3Transformer2DModel.Config:
         ...
-    def infer(self, latent: ..., timestep: ...) -> ...:
+    def infer(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
-    def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> SD3Transformer2DModel:
+    def reshape(self, batch_size: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, tokenizer_model_max_length: typing.SupportsInt) -> SD3Transformer2DModel:
         ...
-    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: ...) -> None:
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
 class SDPerModelsPerfMetrics(SDPerfMetrics):
     """
@@ -1750,7 +2011,7 @@ class Scheduler:
             ...
         def __index__(self) -> int:
             ...
-        def __init__(self, value: int) -> None:
+        def __init__(self, value: typing.SupportsInt) -> None:
             ...
         def __int__(self) -> int:
             ...
@@ -1758,7 +2019,7 @@ class Scheduler:
             ...
         def __repr__(self) -> str:
             ...
-        def __setstate__(self, state: int) -> None:
+        def __setstate__(self, state: typing.SupportsInt) -> None:
             ...
         def __str__(self) -> str:
             ...
@@ -1769,7 +2030,7 @@ class Scheduler:
         def value(self) -> int:
             ...
     @staticmethod
-    def from_config(scheduler_config_path: os.PathLike, scheduler_type: Scheduler.Type = ...) -> Scheduler:
+    def from_config(scheduler_config_path: os.PathLike | str | bytes, scheduler_type: Scheduler.Type = ...) -> Scheduler:
         ...
 class SchedulerConfig:
     """
@@ -1798,16 +2059,36 @@ class SchedulerConfig:
         sparse_attention_config     Sparse attention configuration struct.
     """
     cache_eviction_config: CacheEvictionConfig
-    cache_size: int
     dynamic_split_fuse: bool
     enable_prefix_caching: bool
-    max_num_batched_tokens: int
-    max_num_seqs: int
-    num_kv_blocks: int
     sparse_attention_config: SparseAttentionConfig
     use_cache_eviction: bool
     use_sparse_attention: bool
     def __init__(self) -> None:
+        ...
+    @property
+    def cache_size(self) -> int:
+        ...
+    @cache_size.setter
+    def cache_size(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def max_num_batched_tokens(self) -> int:
+        ...
+    @max_num_batched_tokens.setter
+    def max_num_batched_tokens(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def max_num_seqs(self) -> int:
+        ...
+    @max_num_seqs.setter
+    def max_num_seqs(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_kv_blocks(self) -> int:
+        ...
+    @num_kv_blocks.setter
+    def num_kv_blocks(self, arg0: typing.SupportsInt) -> None:
         ...
 class SparseAttentionConfig:
     """
@@ -1824,10 +2105,25 @@ class SparseAttentionConfig:
         :type num_last_dense_tokens_in_prefill: int
     """
     mode: SparseAttentionMode
-    num_last_dense_tokens_in_prefill: int
-    num_retained_recent_tokens_in_cache: int
-    num_retained_start_tokens_in_cache: int
-    def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: int = 100, num_retained_start_tokens_in_cache: int = 128, num_retained_recent_tokens_in_cache: int = 1920) -> None:
+    def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: typing.SupportsInt = 100, num_retained_start_tokens_in_cache: typing.SupportsInt = 128, num_retained_recent_tokens_in_cache: typing.SupportsInt = 1920) -> None:
+        ...
+    @property
+    def num_last_dense_tokens_in_prefill(self) -> int:
+        ...
+    @num_last_dense_tokens_in_prefill.setter
+    def num_last_dense_tokens_in_prefill(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_retained_recent_tokens_in_cache(self) -> int:
+        ...
+    @num_retained_recent_tokens_in_cache.setter
+    def num_retained_recent_tokens_in_cache(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_retained_start_tokens_in_cache(self) -> int:
+        ...
+    @num_retained_start_tokens_in_cache.setter
+    def num_retained_start_tokens_in_cache(self, arg0: typing.SupportsInt) -> None:
         ...
 class SparseAttentionMode:
     """
@@ -1848,7 +2144,7 @@ class SparseAttentionMode:
         ...
     def __index__(self) -> int:
         ...
-    def __init__(self, value: int) -> None:
+    def __init__(self, value: typing.SupportsInt) -> None:
         ...
     def __int__(self) -> int:
         ...
@@ -1856,7 +2152,7 @@ class SparseAttentionMode:
         ...
     def __repr__(self) -> str:
         ...
-    def __setstate__(self, state: int) -> None:
+    def __setstate__(self, state: typing.SupportsInt) -> None:
         ...
     def __str__(self) -> str:
         ...
@@ -1881,11 +2177,8 @@ class SpeechGenerationConfig(GenerationConfig):
         :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
         :type threshold: float
     """
-    maxlenratio: float
-    minlenratio: float
-    threshold: float
     @typing.overload
-    def __init__(self, json_path: os.PathLike) -> None:
+    def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
         path where generation_config.json is stored
         """
@@ -1893,6 +2186,24 @@ class SpeechGenerationConfig(GenerationConfig):
     def __init__(self, **kwargs) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
+        ...
+    @property
+    def maxlenratio(self) -> float:
+        ...
+    @maxlenratio.setter
+    def maxlenratio(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def minlenratio(self) -> float:
+        ...
+    @minlenratio.setter
+    def minlenratio(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def threshold(self) -> float:
+        ...
+    @threshold.setter
+    def threshold(self, arg0: typing.SupportsFloat) -> None:
         ...
 class SpeechGenerationPerfMetrics(PerfMetrics):
     """
@@ -1947,7 +2258,7 @@ class StopCriteria:
         ...
     def __index__(self) -> int:
         ...
-    def __init__(self, value: int) -> None:
+    def __init__(self, value: typing.SupportsInt) -> None:
         ...
     def __int__(self) -> int:
         ...
@@ -1955,7 +2266,7 @@ class StopCriteria:
         ...
     def __repr__(self) -> str:
         ...
-    def __setstate__(self, state: int) -> None:
+    def __setstate__(self, state: typing.SupportsInt) -> None:
         ...
     def __str__(self) -> str:
         ...
@@ -1976,11 +2287,11 @@ class StreamerBase:
         """
         End is called at the end of generation. It can be used to flush cache if your own streamer has one
         """
-    def put(self, token: int) -> bool:
+    def put(self, token: typing.SupportsInt) -> bool:
         """
         Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def write(self, token: int | list[int]) -> StreamingStatus:
+    def write(self, token: typing.SupportsInt | collections.abc.Sequence[typing.SupportsInt]) -> StreamingStatus:
         """
         Write is called every time new token or vector of tokens is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
         """
@@ -2006,7 +2317,7 @@ class StreamingStatus:
         ...
     def __index__(self) -> int:
         ...
-    def __init__(self, value: int) -> None:
+    def __init__(self, value: typing.SupportsInt) -> None:
         ...
     def __int__(self) -> int:
         ...
@@ -2014,7 +2325,7 @@ class StreamingStatus:
         ...
     def __repr__(self) -> str:
         ...
-    def __setstate__(self, state: int) -> None:
+    def __setstate__(self, state: typing.SupportsInt) -> None:
         ...
     def __str__(self) -> str:
         ...
@@ -2111,7 +2422,7 @@ class StructuralTagsConfig:
         List of structural tag items for structured output generation
         """
     @structural_tags.setter
-    def structural_tags(self, arg0: list[StructuralTagItem]) -> None:
+    def structural_tags(self, arg0: collections.abc.Sequence[StructuralTagItem]) -> None:
         ...
     @property
     def triggers(self) -> list[str]:
@@ -2119,7 +2430,7 @@ class StructuralTagsConfig:
         List of strings that will trigger generation of structured output
         """
     @triggers.setter
-    def triggers(self, arg0: list[str]) -> None:
+    def triggers(self, arg0: collections.abc.Sequence[str]) -> None:
         ...
 class StructuredOutputConfig:
     """
@@ -2172,12 +2483,12 @@ class StructuredOutputConfig:
     def regex(self, arg0: str | None) -> None:
         ...
     @property
-    def structural_tags_config(self) -> StructuralTagsConfig | None:
+    def structural_tags_config(self) -> openvino_genai.py_openvino_genai.StructuralTagsConfig | None:
         """
         Configuration for structural tags in structured output generation
         """
     @structural_tags_config.setter
-    def structural_tags_config(self, arg0: StructuralTagsConfig | None) -> None:
+    def structural_tags_config(self, arg0: openvino_genai.py_openvino_genai.StructuralTagsConfig | None) -> None:
         ...
 class SummaryStats:
     def __init__(self) -> None:
@@ -2201,13 +2512,13 @@ class T5EncoderModel:
     T5EncoderModel class.
     """
     @typing.overload
-    def __init__(self, root_dir: os.PathLike) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
         """
                     T5EncoderModel class
                     root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
-    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     T5EncoderModel class
                     root_dir (os.PathLike): Model root directory.
@@ -2227,11 +2538,11 @@ class T5EncoderModel:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def get_output_tensor(self, idx: int) -> ...:
+    def get_output_tensor(self, idx: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
-    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: int) -> ...:
+    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
-    def reshape(self, batch_size: int, max_sequence_length: int) -> T5EncoderModel:
+    def reshape(self, batch_size: typing.SupportsInt, max_sequence_length: typing.SupportsInt) -> T5EncoderModel:
         ...
 class Text2ImagePipeline:
     """
@@ -2258,13 +2569,13 @@ class Text2ImagePipeline:
     def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Text2ImagePipeline:
         ...
     @typing.overload
-    def __init__(self, models_path: os.PathLike) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes) -> None:
         """
                     Text2ImagePipeline class constructor.
                     models_path (os.PathLike): Path to the folder with exported model files.
         """
     @typing.overload
-    def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     Text2ImagePipeline class constructor.
                     models_path (os.PathLike): Path with exported model files.
@@ -2293,9 +2604,9 @@ class Text2ImagePipeline:
                         vae_device (str): Device to run vae decoder on.
                         kwargs: Device properties.
         """
-    def decode(self, latent: ...) -> ...:
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
-    def generate(self, prompt: str, **kwargs) -> ...:
+    def generate(self, prompt: str, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
         
@@ -2329,7 +2640,7 @@ class Text2ImagePipeline:
         ...
     def get_performance_metrics(self) -> ImageGenerationPerfMetrics:
         ...
-    def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
+    def reshape(self, num_images_per_prompt: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, guidance_scale: typing.SupportsFloat) -> None:
         ...
     def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
@@ -2353,13 +2664,13 @@ class Text2SpeechDecodedResults:
     def perf_metrics(self) -> SpeechGenerationPerfMetrics:
         ...
     @property
-    def speeches(self) -> list[...]:
+    def speeches(self) -> list[openvino._pyopenvino.Tensor]:
         ...
 class Text2SpeechPipeline:
     """
     Text-to-speech pipeline
     """
-    def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     Text2SpeechPipeline class constructor.
                     models_path (os.PathLike): Path to the model file.
@@ -2398,7 +2709,7 @@ class Text2SpeechPipeline:
             :type threshold: float
         """
     @typing.overload
-    def generate(self, texts: list[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+    def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
@@ -2455,7 +2766,6 @@ class TextEmbeddingPipeline:
                 Instruction to use for embedding a document.
         """
         embed_instruction: str | None
-        max_length: int | None
         normalize: bool
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
@@ -2464,6 +2774,12 @@ class TextEmbeddingPipeline:
             ...
         @typing.overload
         def __init__(self, **kwargs) -> None:
+            ...
+        @property
+        def max_length(self) -> int | None:
+            ...
+        @max_length.setter
+        def max_length(self, arg0: typing.SupportsInt | None) -> None:
             ...
     class PoolingType:
         """
@@ -2484,7 +2800,7 @@ class TextEmbeddingPipeline:
             ...
         def __index__(self) -> int:
             ...
-        def __init__(self, value: int) -> None:
+        def __init__(self, value: typing.SupportsInt) -> None:
             ...
         def __int__(self) -> int:
             ...
@@ -2492,7 +2808,7 @@ class TextEmbeddingPipeline:
             ...
         def __repr__(self) -> str:
             ...
-        def __setstate__(self, state: int) -> None:
+        def __setstate__(self, state: typing.SupportsInt) -> None:
             ...
         def __str__(self) -> str:
             ...
@@ -2502,7 +2818,7 @@ class TextEmbeddingPipeline:
         @property
         def value(self) -> int:
             ...
-    def __init__(self, models_path: os.PathLike, device: str, config: TextEmbeddingPipeline.Config | None = None, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, config: openvino_genai.py_openvino_genai.TextEmbeddingPipeline.Config | None = None, **kwargs) -> None:
         """
         Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
         models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
@@ -2510,7 +2826,7 @@ class TextEmbeddingPipeline:
         config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
         kwargs: Plugin and/or config properties
         """
-    def embed_documents(self, texts: list[str]) -> list[list[float]] | list[list[int]] | list[list[int]]:
+    def embed_documents(self, texts: collections.abc.Sequence[str]) -> list[list[float]] | list[list[int]] | list[list[int]]:
         """
         Computes embeddings for a vector of texts
         """
@@ -2518,7 +2834,7 @@ class TextEmbeddingPipeline:
         """
         Computes embeddings for a query
         """
-    def start_embed_documents_async(self, texts: list[str]) -> None:
+    def start_embed_documents_async(self, texts: collections.abc.Sequence[str]) -> None:
         """
         Asynchronously computes embeddings for a vector of texts
         """
@@ -2543,16 +2859,16 @@ class TextStreamer(StreamerBase):
     callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
     
     """
-    def __init__(self, tokenizer: Tokenizer, callback: typing.Callable[[str], bool | StreamingStatus]) -> None:
+    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus]) -> None:
         ...
     def end(self) -> None:
         ...
-    def write(self, token: int | list[int]) -> StreamingStatus:
+    def write(self, token: typing.SupportsInt | collections.abc.Sequence[typing.SupportsInt]) -> StreamingStatus:
         ...
 class TokenizedInputs:
-    attention_mask: ...
-    input_ids: ...
-    def __init__(self, input_ids: ..., attention_mask: ...) -> None:
+    attention_mask: openvino._pyopenvino.Tensor
+    input_ids: openvino._pyopenvino.Tensor
+    def __init__(self, input_ids: openvino._pyopenvino.Tensor, attention_mask: openvino._pyopenvino.Tensor) -> None:
         ...
 class Tokenizer:
     """
@@ -2574,48 +2890,48 @@ class Tokenizer:
     """
     chat_template: str
     @typing.overload
-    def __init__(self, tokenizer_path: os.PathLike, properties: dict[str, typing.Any] = {}, **kwargs) -> None:
+    def __init__(self, tokenizer_path: os.PathLike | str | bytes, properties: collections.abc.Mapping[str, typing.Any] = {}, **kwargs) -> None:
         ...
     @typing.overload
-    def __init__(self, tokenizer_model: str, tokenizer_weights: ..., detokenizer_model: str, detokenizer_weights: ..., **kwargs) -> None:
+    def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
-    def apply_chat_template(self, history: list[dict[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
+    def apply_chat_template(self, history: collections.abc.Sequence[collections.abc.Mapping[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
         """
         Embeds input prompts with special tags for a chat scenario.
         """
     @typing.overload
-    def decode(self, tokens: list[int], skip_special_tokens: bool = True) -> str:
+    def decode(self, tokens: collections.abc.Sequence[typing.SupportsInt], skip_special_tokens: bool = True) -> str:
         """
         Decode a sequence into a string prompt.
         """
     @typing.overload
-    def decode(self, tokens: ..., skip_special_tokens: bool = True) -> list[str]:
+    def decode(self, tokens: openvino._pyopenvino.Tensor, skip_special_tokens: bool = True) -> list[str]:
         """
         Decode tensor into a list of string prompts.
         """
     @typing.overload
-    def decode(self, tokens: list[list[int]], skip_special_tokens: bool = True) -> list[str]:
+    def decode(self, tokens: collections.abc.Sequence[collections.abc.Sequence[typing.SupportsInt]], skip_special_tokens: bool = True) -> list[str]:
         """
         Decode a batch of tokens into a list of string prompt.
         """
     @typing.overload
-    def encode(self, prompts: list[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
+    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs.
         """
     @typing.overload
-    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
+    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
         """
         Encodes a single prompt into tokenized input.
         """
     @typing.overload
-    def encode(self, prompts_1: list[str], prompts_2: list[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
+    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs. The number of strings must be the same, or one of the inputs can contain one string.
                     In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.
         """
     @typing.overload
-    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
+    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
         """
         Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
         """
@@ -2648,13 +2964,13 @@ class TorchGenerator(CppStdGenerator):
     """
     This class provides OpenVINO GenAI Generator wrapper for torch.Generator
     """
-    def __init__(self, seed: int) -> None:
+    def __init__(self, seed: typing.SupportsInt) -> None:
         ...
     def next(self) -> float:
         ...
-    def randn_tensor(self, shape: ...) -> ...:
+    def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
         ...
-    def seed(self, new_seed: int) -> None:
+    def seed(self, new_seed: typing.SupportsInt) -> None:
         ...
 class UNet2DConditionModel:
     """
@@ -2664,19 +2980,34 @@ class UNet2DConditionModel:
         """
         This class is used for storing UNet2DConditionModel config.
         """
-        in_channels: int
-        sample_size: int
-        time_cond_proj_dim: int
-        def __init__(self, config_path: os.PathLike) -> None:
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def in_channels(self) -> int:
+            ...
+        @in_channels.setter
+        def in_channels(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def sample_size(self) -> int:
+            ...
+        @sample_size.setter
+        def sample_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def time_cond_proj_dim(self) -> int:
+            ...
+        @time_cond_proj_dim.setter
+        def time_cond_proj_dim(self, arg0: typing.SupportsInt) -> None:
             ...
     @typing.overload
-    def __init__(self, root_dir: os.PathLike) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
         """
                     UNet2DConditionModel class
                     root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
-    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     UNet2DConditionModel class
                     root_dir (os.PathLike): Model root directory.
@@ -2696,17 +3027,17 @@ class UNet2DConditionModel:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def do_classifier_free_guidance(self, guidance_scale: float) -> bool:
+    def do_classifier_free_guidance(self, guidance_scale: typing.SupportsFloat) -> bool:
         ...
     def get_config(self) -> UNet2DConditionModel.Config:
         ...
-    def infer(self, sample: ..., timestep: ...) -> ...:
+    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
-    def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> UNet2DConditionModel:
+    def reshape(self, batch_size: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, tokenizer_model_max_length: typing.SupportsInt) -> UNet2DConditionModel:
         ...
-    def set_adapters(self, adapters: AdapterConfig | None) -> None:
+    def set_adapters(self, adapters: openvino_genai.py_openvino_genai.AdapterConfig | None) -> None:
         ...
-    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: ...) -> None:
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
 class VLMDecodedResults(DecodedResults):
     """
@@ -2755,7 +3086,7 @@ class VLMPipeline:
     This class is used for generation with VLMs
     """
     @typing.overload
-    def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     VLMPipeline class constructor.
                     models_path (os.PathLike): Path to the folder with exported model files.
@@ -2763,7 +3094,7 @@ class VLMPipeline:
                     kwargs: Device properties
         """
     @typing.overload
-    def __init__(self, models: dict[str, tuple[str, ...]], tokenizer: Tokenizer, config_dir_path: os.PathLike, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
+    def __init__(self, models: collections.abc.Mapping[str, tuple[str, openvino._pyopenvino.Tensor]], tokenizer: Tokenizer, config_dir_path: os.PathLike | str | bytes, device: str, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, **kwargs) -> None:
         """
                     VLMPipeline class constructor.
                     models (dict[str, tuple[str, openvino.Tensor]]): A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
@@ -2776,7 +3107,7 @@ class VLMPipeline:
     def finish_chat(self) -> None:
         ...
     @typing.overload
-    def generate(self, prompt: str, images: list[...], generation_config: GenerationConfig, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -2814,7 +3145,7 @@ class VLMPipeline:
             :rtype: VLMDecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, images: ..., generation_config: GenerationConfig, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -3069,24 +3400,14 @@ class WhisperGenerationConfig(GenerationConfig):
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
         num_return_sequences: the number of sequences to generate from a single prompt.
     """
-    begin_suppress_tokens: list[int]
-    decoder_start_token_id: int
     hotwords: str | None
     initial_prompt: str | None
     is_multilingual: bool
-    lang_to_id: dict[str, int]
     language: str | None
-    max_initial_timestamp_index: int
-    no_timestamps_token_id: int
-    pad_token_id: int
-    prev_sot_token_id: int
     return_timestamps: bool
-    suppress_tokens: list[int]
     task: str | None
-    transcribe_token_id: int
-    translate_token_id: int
     @typing.overload
-    def __init__(self, json_path: os.PathLike) -> None:
+    def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
         path where generation_config.json is stored
         """
@@ -3094,6 +3415,66 @@ class WhisperGenerationConfig(GenerationConfig):
     def __init__(self, **kwargs) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
+        ...
+    @property
+    def begin_suppress_tokens(self) -> list[int]:
+        ...
+    @begin_suppress_tokens.setter
+    def begin_suppress_tokens(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def decoder_start_token_id(self) -> int:
+        ...
+    @decoder_start_token_id.setter
+    def decoder_start_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def lang_to_id(self) -> dict[str, int]:
+        ...
+    @lang_to_id.setter
+    def lang_to_id(self, arg0: collections.abc.Mapping[str, typing.SupportsInt]) -> None:
+        ...
+    @property
+    def max_initial_timestamp_index(self) -> int:
+        ...
+    @max_initial_timestamp_index.setter
+    def max_initial_timestamp_index(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def no_timestamps_token_id(self) -> int:
+        ...
+    @no_timestamps_token_id.setter
+    def no_timestamps_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def pad_token_id(self) -> int:
+        ...
+    @pad_token_id.setter
+    def pad_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def prev_sot_token_id(self) -> int:
+        ...
+    @prev_sot_token_id.setter
+    def prev_sot_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def suppress_tokens(self) -> list[int]:
+        ...
+    @suppress_tokens.setter
+    def suppress_tokens(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def transcribe_token_id(self) -> int:
+        ...
+    @transcribe_token_id.setter
+    def transcribe_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def translate_token_id(self) -> int:
+        ...
+    @translate_token_id.setter
+    def translate_token_id(self, arg0: typing.SupportsInt) -> None:
         ...
 class WhisperPerfMetrics(PerfMetrics):
     """
@@ -3117,13 +3498,13 @@ class WhisperPipeline:
     """
     Automatic speech recognition pipeline
     """
-    def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                     WhisperPipeline class constructor.
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
+    def generate(self, raw_speech_input: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.WhisperGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         
@@ -3275,7 +3656,7 @@ class WhisperRawPerfMetrics:
     @property
     def features_extraction_durations(self) -> list[float]:
         ...
-def draft_model(models_path: os.PathLike, device: str = '', **kwargs) -> ...:
+def draft_model(models_path: os.PathLike | str | bytes, device: str = '', **kwargs) -> openvino._pyopenvino.OVAny:
     """
     device on which inference will be performed
     """
