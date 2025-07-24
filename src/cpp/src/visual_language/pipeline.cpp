@@ -104,7 +104,8 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
         // NPU is not supported history, so in chat scenarios let's use full chat history on each iteration
-        m_inputs_embedder->set_use_full_chat_history_mode(m_is_npu);
+        m_inputs_embedder->set_use_full_chat_history_mode(true);
+        // m_inputs_embedder->set_use_full_chat_history_mode(m_is_npu);
 
         utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         kv_cache_state.seq_length_axis = kv_pos.seq_len;
@@ -189,6 +190,8 @@ public:
 
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
+        for (auto encoded_image : encoded_images)
+            m_encoded_images.push_back(encoded_image);
 
         bool use_full_chat_history = m_inputs_embedder->is_use_full_chat_history();
         if (m_is_chat_conversation) {
@@ -198,7 +201,6 @@ public:
             if (use_full_chat_history) {
                 for (auto encoded_image : encoded_images)
                     m_encoded_images.push_back(encoded_image);
-
                 image_sequence.resize(m_encoded_images.size());
                 std::iota(image_sequence.begin(), image_sequence.end(), 0);
             } else {
@@ -297,9 +299,11 @@ public:
                 m_history.pop_back();
                 m_encoded_images.resize(m_encoded_images.size() - encoded_images.size());
             }
-        }
-        else
+        } else
             kv_cache_state.reset_state();
+
+        if (!(m_is_chat_conversation && use_full_chat_history))
+            m_encoded_images.clear();
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = encoded_result.perf_metrics;
@@ -340,6 +344,7 @@ public:
         // clear all chat history
         m_inputs_embedder->finish_chat();
         m_history.clear();
+        m_encoded_images.clear();
     }
 
     Tokenizer get_tokenizer() const override {

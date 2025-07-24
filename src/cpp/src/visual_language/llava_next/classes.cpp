@@ -374,8 +374,6 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVANext::normalize_p
     return {std::move(unified_prompt), std::move(images_sequence)};
 }
 
-#include "debug_utils.hpp"
-
 ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
     
     ov::Tensor image_newline;
@@ -398,8 +396,6 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
-
-    print_tensor("text_embeds_lava_next", text_embeds);
 
     if (images.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
