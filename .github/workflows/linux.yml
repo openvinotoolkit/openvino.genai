@@ -321,7 +321,6 @@ jobs:
 
   store_artifacts:
     if: github.event_name != 'merge_group'
-    if: github.event_name != 'merge_group'
     name: Store build artifacts
     strategy:
       matrix:
