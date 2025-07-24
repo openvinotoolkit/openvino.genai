@@ -33,6 +33,11 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
+    if args["apply_chat_template"]:
+        input_text_hist = [{'role': 'user', 'content': input_text}]
+        templated_input_text = tokenizer.apply_chat_template(input_text_hist, tokenize=False, add_generation_prompt=True)
+        input_text_list = [templated_input_text] * args['batch_size']
+
     tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt')
     tok_encode_end = time.perf_counter()
@@ -209,6 +214,16 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
 
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     tokenizer = model.get_tokenizer()
+    if args['apply_chat_template']:
+        input_text_hist = [{'role': 'user', 'content': input_text}]
+        templated_input_text = tokenizer.apply_chat_template(input_text_hist, add_generation_prompt=True)
+        input_text_list = [templated_input_text] * args['batch_size']
+        if not args["disable_prompt_permutation"]:
+            log.warning(
+                "Enabled chat template applying and permutation of input prompt. "
+                "It means that after applying the chat template prompt will be tokenized and mixed, so the structure of chat template will not be kept. "
+                "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
+            )
 
     tokenization_start = time.perf_counter()
     input_data = tokenizer.encode(input_text_list)
@@ -392,6 +407,16 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         for bs_index, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
     pipe_tokenizer = model.get_tokenizer()
+    if args['apply_chat_template']:
+        input_text_hist = [{'role': 'user', 'content': input_text}]
+        templated_input_text = pipe_tokenizer.apply_chat_template(input_text_hist, add_generation_prompt=True)
+        input_text_list = [templated_input_text] * args['batch_size']
+        if not args["disable_prompt_permutation"]:
+            log.warning(
+                "Enabled chat template applying and permutation of input prompt. "
+                "It means that after applying the chat template prompt will be tokenized and mixed, so the structure of chat template will not be kept. "
+                "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
+            )
     tok_encode_start = time.perf_counter()
     input_data = pipe_tokenizer.encode(input_text_list)
     tok_encode_end = time.perf_counter()
