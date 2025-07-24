@@ -95,7 +95,7 @@ if(ENABLE_XGRAMMAR)
             string(REGEX REPLACE "XGRAMMAR_BUILD_PYTHON_BINDINGS ON"
                                 "XGRAMMAR_BUILD_PYTHON_BINDINGS OFF"
                                 MODIFIED_CONFIG "${CONFIG_CONTENT}")
-            
+
             string(REGEX REPLACE "^set\\(CMAKE_BUILD_TYPE .*$"
                                 "set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE})"
                                 MODIFIED_CONFIG "${MODIFIED_CONFIG}")
@@ -107,6 +107,10 @@ if(ENABLE_XGRAMMAR)
         set(XGRAMMAR_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA" FORCE)
 
         add_subdirectory("${xgrammar_SOURCE_DIR}" "${xgrammar_BINARY_DIR}" EXCLUDE_FROM_ALL)
+        if(MSVC)
+            # Suppress C4146 warning for MSVC compiler
+            target_compile_options(xgrammar PRIVATE "/wd4146")
+        endif()
     endif()
 endif()
 # generate version files
