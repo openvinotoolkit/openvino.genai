@@ -580,7 +580,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Tests
-        ${{ matrix.test.run_condition }}
+        if: ${{ matrix.test.run_condition }}
         run: python -m pytest -v ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
