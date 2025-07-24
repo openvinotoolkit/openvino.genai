@@ -195,7 +195,7 @@ public:
                 image_sequence[idx] -= m_image_id;
             }
         }
-        else if (generation_config.apply_chat_template) {
+        else {
             m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
         }
         ov::Tensor inputs_embeds;
