@@ -35,7 +35,6 @@ env:
 
 jobs:
   smart_ci:
-    if: github.event_name != 'merge_group'
     name: Smart CI
     runs-on: ubuntu-latest
     outputs:
@@ -67,7 +66,6 @@ jobs:
         shell: bash
 
   openvino_download:
-    if: github.event_name != 'merge_group'
     needs: smart_ci
     if: "!needs.smart_ci.outputs.skip_workflow"
     name: Download OpenVINO
@@ -112,7 +110,6 @@ jobs:
         echo "docker_tag=$docker_tag" >> $GITHUB_OUTPUT
 
   genai_build_cmake:
-    if: github.event_name != 'merge_group'
     name: Build Archive - ${{ matrix.build-type }}
     strategy:
       fail-fast: false
@@ -234,7 +231,6 @@ jobs:
           if-no-files-found: 'error'
 
   genai_build_wheel:
-    if: github.event_name != 'merge_group'
     name: Build Wheel
     needs: [ openvino_download ]
     timeout-minutes: 90
@@ -312,7 +308,6 @@ jobs:
           if-no-files-found: 'error'
 
   store_artifacts:
-    if: github.event_name != 'merge_group'
     name: Store build artifacts
     strategy:
       matrix:
@@ -366,7 +361,6 @@ jobs:
           product_name: ${{ github.event.repository.name }}
   
   genai_tests_wheel:
-    if: github.event_name != 'merge_group'
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ smart_ci, openvino_download, genai_build_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
@@ -377,31 +371,31 @@ jobs:
           - name: 'Whisper'
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test && github.event_name == 'pull_request' }}
             timeout: 120
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test && github.event_name == 'pull_request' }}
             timeout: 180
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
+            run_condition: ${{ (fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test) && github.event_name == 'pull_request' }}
             timeout: 120
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test && github.event_name == 'pull_request' }}
             timeout: 60
           - name: 'API tests'
             cmd: 'tests/python_tests/test_continuous_batching.py tests/python_tests/test_generation_config.py tests/python_tests/test_sampling.py tests/python_tests/test_text_streamer.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
+            run_condition: ${{ (fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test) && github.event_name == 'pull_request' }}
             timeout: 60
           - name: 'Rag tests'
             cmd: 'tests/python_tests/test_rag.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test && github.event_name == 'pull_request' }}
             timeout: 30
           - name: 'WWB tests'
             cmd: '/tools/who_what_benchmark/tests'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test && github.event_name == 'pull_request' }}
             timeout: 90
     defaults:
       run:
