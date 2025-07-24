@@ -445,8 +445,8 @@ protected:
     }
 
     void initialize_generation_config(const std::string& class_name) override {
-        assert(m_unet != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_unet != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
