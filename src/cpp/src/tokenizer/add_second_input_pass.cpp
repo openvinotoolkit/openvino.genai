@@ -23,8 +23,14 @@ using namespace ov;
 using namespace ov::opset15;
 using namespace ov::genai;
 
-std::shared_ptr<Constant> make_constant(std::vector<int> vals, element::Type_t type = element::i32) {
-    return std::make_shared<Constant>(type, Shape{vals.size()}, vals);
+template <typename T = int>
+std::shared_ptr<Constant> make_constant(const std::vector<T>& vals, element::Type_t type = element::i32) {
+    return std::make_shared<Constant>(element::from<T>(), Shape{vals.size()}, vals);
+}
+
+template <typename T>
+std::shared_ptr<Constant> make_constant(T val, element::Type_t type = element::i32) {
+    return std::make_shared<Constant>(element::from<T>(), Shape{}, std::vector<T>{val});
 }
 
 
@@ -239,10 +245,9 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
             continue;
         }
 
-        std::vector<int> value_vec = {value};
-        auto added_spec_begins = make_constant({0});
-        auto added_spec_ends = make_constant({static_cast<int>(value_vec.size())});
-        auto added_spec_data = make_constant(value_vec);
+        auto added_spec_begins = make_constant(0);
+        auto added_spec_ends = make_constant(1);
+        auto added_spec_data = make_constant({value});
 
         // Nullify special tokens constant if ends for sequence_2 is nullified
         auto select_node = std::make_shared<Select>(
@@ -252,12 +257,11 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
         );
         auto multiplied_ends = std::make_shared<Multiply>(added_spec_ends, select_node);
 
-        std::vector<ov::Output<ov::Node>> new_spec_tokens = {
+        new_inputs.insert(new_inputs.end(), {
             added_spec_begins,
             multiplied_ends,
             added_spec_data
-        };
-        new_inputs.insert(new_inputs.end(), new_spec_tokens.begin(), new_spec_tokens.end());
+        });
     }
     if (!post_processor["pair"].contains("type_ids")) {
         m_pass_errors << "Could not add second input. post_processor does not contain 'type_ids' for paired input" << std::endl;

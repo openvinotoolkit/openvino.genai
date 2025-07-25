@@ -430,6 +430,7 @@ def make_model_params():
 
 models_with_pair_input = make_model_params()
 
+# TODO: add cases for batched inputs
 @pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
 @pytest.mark.precommit
 @pytest.mark.parametrize("input_pair", [
