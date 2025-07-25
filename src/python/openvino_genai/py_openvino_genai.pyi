@@ -2760,6 +2760,12 @@ class TextEmbeddingPipeline:
         Attributes:
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
+            pad_to_max_length (bool, optional):
+                If True, input tokens are padded to the maximum length.
+            batch_size (int, optional):
+                Batch size for the embedding model.
+                If batch_size, max_length and pad_to_max_length are set, the pipeline will fix model shape
+                for inference optimization. Number of documents passed to pipeline should be equal to batch_size.
             pooling_type (TextEmbeddingPipeline.PoolingType, optional):
                 Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
             normalize (bool, optional):
@@ -2769,8 +2775,10 @@ class TextEmbeddingPipeline:
             embed_instruction (str, optional):
                 Instruction to use for embedding a document.
         """
+        batch_size: int | None
         embed_instruction: str | None
         normalize: bool
+        pad_to_max_length: bool | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload

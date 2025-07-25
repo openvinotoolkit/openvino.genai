@@ -25,6 +25,12 @@ Structure to keep TextEmbeddingPipeline configuration parameters.
 Attributes:
     max_length (int, optional):
         Maximum length of tokens passed to the embedding model.
+    pad_to_max_length (bool, optional):
+        If True, input tokens are padded to the maximum length.
+    batch_size (int, optional):
+        Batch size for the embedding model.
+        If batch_size, max_length and pad_to_max_length are set, the pipeline will fix model shape
+        for inference optimization. Number of documents passed to pipeline should be equal to batch_size.
     pooling_type (TextEmbeddingPipeline.PoolingType, optional):
         Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
     normalize (bool, optional):
@@ -117,6 +123,8 @@ void init_rag_pipelines(py::module_& m) {
             return TextEmbeddingPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
         }))
         .def_readwrite("max_length", &TextEmbeddingPipeline::Config::max_length)
+        .def_readwrite("pad_to_max_length", &TextEmbeddingPipeline::Config::pad_to_max_length)
+        .def_readwrite("batch_size", &TextEmbeddingPipeline::Config::batch_size)
         .def_readwrite("pooling_type", &TextEmbeddingPipeline::Config::pooling_type)
         .def_readwrite("normalize", &TextEmbeddingPipeline::Config::normalize)
         .def_readwrite("query_instruction", &TextEmbeddingPipeline::Config::query_instruction)
