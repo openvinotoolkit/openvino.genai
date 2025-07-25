@@ -8,6 +8,7 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include "openvino/op/transpose.hpp"
 
 #include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
@@ -67,46 +68,54 @@ ov::Tensor repeat(const ov::Tensor input, const size_t n_times) {
     return tensor_repeated;
 }
 }  // namespace numpy_utils
+
+namespace ov::genai {
+struct VideoGenerationConfig : public ImageGenerationConfig {
+    double guidance_rescale = 0.0;
+    size_t num_frames = 161;
+};
+}  // namespace ov::genai
 namespace {
-ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
-    size_t h_half = height / 2, w_half = width / 2;
+ov::Tensor pack_latents(ov::Tensor& latents, size_t patch_size, size_t patch_size_t) {
+    // Unpacked latents of shape are [B, C, F, H, W] are patched into tokens of shape [B, C, F // p_t, p_t, H // p, p, W // p, p].
+    // The patch dimensions are then permuted and collapsed into the channel dimension of shape:
+    // [B, F // p_t * H // p * W // p, C * p_t * p * p] (an ndim=3 tensor).
+    // dim=0 is the batch size, dim=1 is the effective video sequence length, dim=2 is the effective number of input features
+    ov::Shape latents_shape = latents.get_shape();
+    size_t batch_size = latents_shape.at(0), num_channels = latents_shape.at(1), num_frames = latents_shape.at(2), height = latents_shape.at(3), width = latents_shape.at(4);
+    size_t post_patch_num_frames = num_frames / patch_size_t;
+    size_t post_patch_height = height / patch_size;
+    size_t post_patch_width = width / patch_size;
+    latents.set_shape({batch_size, num_channels, post_patch_num_frames, patch_size_t, post_patch_height, patch_size, post_patch_width, patch_size});
+    // latents = latents.permute(0, 2, 4, 6, 1, 3, 5, 7)
+    std::vector<int64_t> order = {0, 2, 4, 6, 1, 3, 5, 7};  // Permutation order
+    std::vector<ov::Tensor> outputs{ov::Tensor(ov::element::f32, {})};
+    ov::op::v1::Transpose{}.evaluate(outputs, {latents, ov::Tensor(ov::element::i64, ov::Shape{order.size()}, order.data())});
+    ov::Shape permuted_shape = outputs.at(0).get_shape();
+    outputs.at(0).set_shape({permuted_shape.at(0), permuted_shape.at(1) * permuted_shape.at(2) * permuted_shape.at(3), permuted_shape.at(4) * permuted_shape.at(5) * permuted_shape.at(6)});
+    return outputs.at(0);
+}
 
-    // Reshape to (batch_size, (height // 2) * (width // 2), num_channels_latents * 4)
-    ov::Shape final_shape = {batch_size, h_half * w_half, num_channels_latents * 4};
-    ov::Tensor permuted_latents = ov::Tensor(latents.get_element_type(), final_shape);
-
-    OPENVINO_ASSERT(latents.get_size() == permuted_latents.get_size(), "Incorrect target shape, tensors must have the same sizes");
-
-    auto src_data = latents.data<float>();
-    float* dst_data = permuted_latents.data<float>();
-
-    // Permute to (0, 2, 4, 1, 3, 5)
-    //             0, 2, 4, 6, 1, 3, 5
-    for (size_t b = 0; b < batch_size; ++b) {
-        for (size_t c = 0; c < num_channels_latents; ++c) {
-            for (size_t h2 = 0; h2 < h_half; ++h2) {
-                for (size_t w2 = 0; w2 < w_half; ++w2) {
-                    size_t base_src_index = (b * num_channels_latents + c) * height * width + (h2 * 2 * width + w2 * 2);
-                    size_t base_dst_index = (b * h_half * w_half + h2 * w_half + w2) * num_channels_latents * 4 + c * 4;
-
-                    dst_data[base_dst_index] = src_data[base_src_index];
-                    dst_data[base_dst_index + 1] = src_data[base_src_index + 1];
-                    dst_data[base_dst_index + 2] = src_data[base_src_index + width];
-                    dst_data[base_dst_index + 3] = src_data[base_src_index + width + 1];
-                }
-            }
-        }
-    }
-
-    return permuted_latents;
+ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config, size_t num_channels_latents, size_t spatial_compression_ratio, size_t temporal_compression_ratio, size_t transformer_spatial_patch_size, size_t transformer_temporal_patch_size) {
+    size_t height = generation_config.height / spatial_compression_ratio;
+    size_t width = generation_config.width / spatial_compression_ratio;
+    size_t num_frames = (generation_config.num_frames - 1) / temporal_compression_ratio + 1;
+    ov::Shape shape{generation_config.num_images_per_prompt, num_channels_latents, num_frames, height, width};
+    ov::Tensor noise = generation_config.generator->randn_tensor(shape);
+    ov::Tensor ref_noise = from_npy("noise.npy");
+    OPENVINO_ASSERT(noise.get_shape() == ref_noise.get_shape());
+    noise = ref_noise;
+    return pack_latents(noise, transformer_spatial_patch_size, transformer_temporal_patch_size);
 }
 }  // anonymous namespace
 namespace ov::genai {
 struct LTXVideoTransformer3DModel {
     struct OPENVINO_GENAI_EXPORTS Config {  // TODO: video fields instead
-        size_t in_channels = in_channels;  // Comes from transformer/config.json  // TODO: Could I just use model shape?
+        size_t in_channels = 128;  // Comes from transformer/config.json  // TODO: Could I just use model shape?
         bool guidance_embeds = false;
         size_t m_default_sample_size = 128;
+        size_t patch_size = 1;  // TODO: read from transformer/config.json
+        size_t patch_size_t = 1;  // TODO: read from transformer/config.json
     };
     LTXVideoTransformer3DModel(const std::filesystem::path& dir, const std::string& device, const ov::AnyMap& properties) {}
     Config get_config() const {return Config{};}
@@ -119,15 +128,16 @@ struct AutoencoderKLLTXVideo {
         float scaling_factor = 1.0f;
         float shift_factor = 0.0f;
         std::vector<size_t> block_out_channels = { 64 };
+        size_t patch_size = 4;  // TODO: read from vae_decoder/config.json
+        std::vector<bool> spatio_temporal_scaling{true, true, true, false};  // TODO: read from vae_decoder/config.json. I use it only to compute sum over it so far
+        size_t patch_size_t = 1;  // TODO: read from vae_decoder/config.json
     };
     Config m_config;
     AutoencoderKLLTXVideo(const std::filesystem::path& dir, const std::string& device, const ov::AnyMap& properties) {}
-    size_t get_vae_scale_factor() const {  // TODO: verify
+    size_t get_vae_scale_factor() const {  // TODO: verify. Drop?
         return std::pow(2, m_config.block_out_channels.size() - 1);
     }
-};
-struct VedeoGenerationConfig : public ImageGenerationConfig {
-    double guidance_rescale = 0.0;
+    const Config& get_config() const {return m_config;}  // TODO: are getters needed?
 };
 struct LTXPipeline {
     std::chrono::steady_clock::duration m_load_time_ms{0};
@@ -135,7 +145,7 @@ struct LTXPipeline {
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<LTXVideoTransformer3DModel> m_transformer;
     std::shared_ptr<AutoencoderKLLTXVideo> m_vae;
-    ImageGenerationConfig m_generation_config;
+    VideoGenerationConfig m_generation_config;
     ImageGenerationPerfMetrics m_perf_metrics;  // TODO: can it be resused for video?
     double m_latent_timestep = -1.0;  // TODO: float?
     LTXPipeline(const std::filesystem::path& models_dir, const std::string& device, const ov::AnyMap& properties) {
@@ -209,8 +219,7 @@ struct LTXPipeline {
 
         prompt_embeds = ::numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
         ov::Tensor ref_prompt_embeds = from_npy("prompt_embeds.npy");
-        print_tensor("Prompt embeds", prompt_embeds);
-        print_tensor("Reference prompt embeds", ref_prompt_embeds);
+        OPENVINO_ASSERT(max_diff(prompt_embeds, ref_prompt_embeds) == 0.0f);
 
         // text_ids = torch.zeros(prompt_embeds.shape[1], 3)
         ov::Shape text_ids_shape = {prompt_embeds.get_shape()[1], 3};
@@ -247,8 +256,11 @@ struct LTXPipeline {
         // TODO: OVLTXPipeline allows batched generation with multiple prompts
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
-        ImageGenerationConfig custom_generation_config = m_generation_config;
-        custom_generation_config.update_generation_config(properties);
+        VideoGenerationConfig merged_generation_config = m_generation_config;
+        merged_generation_config.update_generation_config(properties);
+        OPENVINO_ASSERT(merged_generation_config.height > 0, "Height must be positive");
+        OPENVINO_ASSERT(merged_generation_config.width > 0, "Width must be positive");
+        OPENVINO_ASSERT(1.0f == merged_generation_config.strength, "Strength isn't applicable. Must be set to the default 1.0");
 
         // Use callback if defined
         std::function<bool(size_t, size_t, ov::Tensor&)> callback;
@@ -260,45 +272,36 @@ struct LTXPipeline {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
 
-        // if (custom_generation_config.height < 0)
-        //     compute_dim(custom_generation_config.height, initial_image, 1 /* assume NHWC */);
-        // if (custom_generation_config.width < 0)
-        //     compute_dim(custom_generation_config.width, initial_image, 2 /* assume NHWC */);
+        check_inputs(merged_generation_config);
 
-        check_inputs(custom_generation_config);
+        // set_lora_adapters(merged_generation_config.adapters);
 
-        // set_lora_adapters(custom_generation_config.adapters);
-
-        compute_hidden_states(positive_prompt, negative_prompt, custom_generation_config);
-
-        size_t image_seq_len = (custom_generation_config.height / vae_scale_factor / 2) *
-                               (custom_generation_config.width / vae_scale_factor / 2);
-        m_scheduler->set_timesteps(image_seq_len, custom_generation_config.num_inference_steps, custom_generation_config.strength);
-
-        // // Prepare timesteps
-        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
-        m_latent_timestep = timesteps[0];
+        compute_hidden_states(positive_prompt, negative_prompt, merged_generation_config);
 
         size_t num_channels_latents = m_transformer->get_config().in_channels;
-        // latents = self.prepare_latents(
-        //     batch_size * num_videos_per_prompt,
-        //     num_channels_latents,
-        //     height,
-        //     width,
-        //     num_frames,
-        //     torch.float32,
-        //     device,
-        //     generator,
-        //     latents,
-        // )
+        size_t spatial_compression_ratio = m_vae->get_config().patch_size * std::pow(2, std::reduce(m_vae->get_config().spatio_temporal_scaling.begin(), m_vae->get_config().spatio_temporal_scaling.end(), 0));
+        size_t temporal_compression_ratio = m_vae->get_config().patch_size_t * std::pow(2, std::reduce(m_vae->get_config().spatio_temporal_scaling.begin(), m_vae->get_config().spatio_temporal_scaling.end(), 0));
+        size_t transformer_spatial_patch_size = m_transformer->get_config().patch_size;
+        size_t transformer_temporal_patch_size = m_transformer->get_config().patch_size_t;
+        ov::Tensor latents = prepare_latents(
+            merged_generation_config,
+            num_channels_latents,
+            spatial_compression_ratio,
+            temporal_compression_ratio,
+            transformer_spatial_patch_size,
+            transformer_temporal_patch_size
+        );
+        OPENVINO_ASSERT(max_diff(latents, from_npy("latents.npy")) == 0.0f);
 
-        // auto [latents, processed_image, image_latent, noise] = prepare_latents(initial_image, custom_generation_config);
-
-        // // Prepare mask latents
-        // ov::Tensor mask, masked_image_latent;
-        // if (m_pipeline_type == PipelineType::INPAINTING) {
-        //     std::tie(mask, masked_image_latent) = prepare_mask_latents(mask_image, processed_image, custom_generation_config);
-        // }
+        // Prepare timesteps
+        size_t latent_num_frames = (merged_generation_config.num_frames - 1) / temporal_compression_ratio + 1;
+        size_t latent_height = merged_generation_config.height / spatial_compression_ratio;  // TODO: prepare_latents() does the same
+        size_t latent_width = merged_generation_config.width / spatial_compression_ratio;
+        size_t video_sequence_length = latent_num_frames * latent_height * latent_width;
+        m_scheduler->set_timesteps(video_sequence_length, merged_generation_config.num_inference_steps, merged_generation_config.strength);
+        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        ov::Tensor ref_timesteps = from_npy("timesteps.npy");
+        OPENVINO_ASSERT(max_diff(ov::Tensor{ov::element::f32, {timesteps.size()}, timesteps.data()}, ref_timesteps) < 0.0002f);
 
         // // Denoising loop
         // ov::Tensor timestep(ov::element::f32, {1});
@@ -362,13 +365,13 @@ struct LTXPipeline {
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
-        m_generation_config = ImageGenerationConfig();  // TODO: Would video generation be config different?
+        m_generation_config = VideoGenerationConfig();  // TODO: Would video generation be config different?
 
-        m_generation_config.height = transformer_config.m_default_sample_size * vae_scale_factor;
-        m_generation_config.width = transformer_config.m_default_sample_size * vae_scale_factor;
+        m_generation_config.height = 512;
+        m_generation_config.width = 704;
 
         m_generation_config.guidance_scale = 3.0f;
-        m_generation_config.num_inference_steps = 28;
+        m_generation_config.num_inference_steps = 50;
         m_generation_config.strength = 1.0f;
         m_generation_config.max_sequence_length = 128;
     }
@@ -434,16 +437,16 @@ int main(int32_t argc, char* argv[]) {
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::Text2VideoPipeline pipe(models_dir, device);
+    pipe.m_impl->m_generation_config.num_frames = 1;
     ov::Tensor image = pipe.generate(
         prompt,
         "worst quality, inconsistent motion, blurry, jittery, distorted",
-        ov::genai::width(512),
         ov::genai::height(512),
-        ov::genai::num_inference_steps(20),
+        ov::genai::width(704),
+        ov::genai::num_inference_steps(50),
         ov::genai::num_images_per_prompt(1),
         ov::genai::callback(progress_bar)
     );
-
     return EXIT_SUCCESS;
 // } catch (const std::exception& error) {
 //     try {
