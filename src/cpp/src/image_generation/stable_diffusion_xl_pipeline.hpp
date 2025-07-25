@@ -408,7 +408,7 @@ private:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         const bool is_classifier_free_guidance = m_unet->do_classifier_free_guidance(generation_config.guidance_scale);
         const char * const pipeline_name = "Stable Diffusion XL";

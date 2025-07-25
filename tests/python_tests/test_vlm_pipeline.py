@@ -546,6 +546,64 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
 
 
 @pytest.mark.precommit
+@pytest.mark.parametrize("backend", attention_backend)
+def test_start_chat_clears_history(backend):
+    callback_questions = [
+        "Why is the Sun yellow?"
+    ]
+    models_path = get_ov_model(model_ids[0])
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+
+    images = []
+    for link in image_links_for_testing[1]:
+        images.append(get_image_by_link(link))
+
+    results_first_generate = ""
+    ov_pipe.start_chat()
+    results_first_generate += ov_pipe.generate(
+        callback_questions[0], images=images, generation_config=generation_config
+    ).texts[0]
+
+    results_second_generate = ""
+    ov_pipe.start_chat()
+    results_second_generate += ov_pipe.generate(
+        callback_questions[0], images=images, generation_config=generation_config
+    ).texts[0]
+
+    assert results_first_generate == results_second_generate
+
+@pytest.mark.precommit
+def test_start_chat_clears_history_cb_api():
+    callback_questions = [
+        "Why is the Sun yellow?"
+    ]
+    models_path = get_ov_model(model_ids[0])
+    ov_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+
+    images = []
+    for link in image_links_for_testing[1]:
+        images.append(get_image_by_link(link))
+
+    results_first_generate = ""
+    ov_pipe.start_chat("You are helpful assistant.")
+    results_first_generate = ov_pipe.generate(
+        [callback_questions[0]], images=[images], generation_config=[generation_config]
+    )[0].texts[0]
+
+    results_second_generate = ""
+    ov_pipe.start_chat("You are helpful assistant.")
+    results_second_generate += ov_pipe.generate(
+        [callback_questions[0]], images=[images], generation_config=[generation_config]
+    )[0].texts[0]
+
+    assert results_first_generate == results_second_generate
+
+
+@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
