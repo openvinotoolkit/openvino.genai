@@ -156,15 +156,16 @@ class EmbedForwardHook:
 class TTSHook:
     def __init__(self):
         self.encoder_model_time = 0
-        self.decoder_model_time_list = []
         self.postnet_model_time_list = []
         self.vocoder_model_time = 0
+        self.new_decoder_model = None
 
     def clear_statistics(self):
         self.encoder_model_time = 0
-        self.decoder_model_time_list = []
         self.postnet_model_time_list = []
         self.vocoder_model_time = 0
+        if self.new_decoder_model:
+            self.new_decoder_model.decoder_model_time_list = []
 
     def new_encoder(self, pipe):
         old_encoder = pipe.encoder.request
@@ -181,14 +182,24 @@ class TTSHook:
     def new_decoder(self, pipe):
         old_decoder = pipe.decoder.request
 
-        def new_decoder_model(*args, **kwargs):
-            t1 = time.time()
-            r = old_decoder(*args, **kwargs)
-            t2 = time.time()
-            decoder_time = t2 - t1
-            self.decoder_model_time_list.append(decoder_time)
-            return r
-        pipe.decoder.request = new_decoder_model
+        class new_decoder_model():
+            def __init__(self, old_decoder):
+                self.decoder = old_decoder
+                self.decoder_model_time_list = []
+
+            def __call__(self, *args, **kwargs):
+                t1 = time.time()
+                r = self.decoder(*args, **kwargs)
+                t2 = time.time()
+                decoder_time = t2 - t1
+                self.decoder_model_time_list.append(decoder_time)
+                return r
+
+            def reset_state(self):
+                self.decoder.reset_state()
+
+        pipe.decoder.request = new_decoder_model(old_decoder)
+        self.new_decoder_model = pipe.decoder.request
 
     def new_postnet(self, pipe):
         old_postnet = pipe.postnet.request
@@ -215,15 +226,20 @@ class TTSHook:
         pipe.vocoder.request = new_vocoder_model
 
     def print_tts_latency(self, iter_str, prompt_idx):
+        decoder_model_time_list = []
+        if self.new_decoder_model:
+            decoder_model_time_list = self.new_decoder_model.decoder_model_time_list
+        self.decoder_model_time_list = self.new_decoder_model.decoder_model_time_list
         info = f'[{iter_str}][P{prompt_idx}] ' \
                f'encoder duration: {self.encoder_model_time * 1000:.4f}ms; ' \
-               f'decoder duration: {sum(self.decoder_model_time_list) * 1000:.4f}ms, iter num: {len(self.decoder_model_time_list)}, '
-        if len(self.decoder_model_time_list) > 1:
-            info += f'1st token latency: {self.decoder_model_time_list[0] * 1000:.4f}ms, ' \
-                    f'2nd token latency: {statistics.mean(self.decoder_model_time_list[1:]) * 1000:.4f}ms; '
-        else:
-            info += f'latency: {statistics.mean(self.decoder_model_time_list) * 1000:.4f}ms; '
-        info += f'postnet duration: {sum(self.postnet_model_time_list) * 1000:.4f}ms, iter num: {len(self.postnet_model_time_list)}, ' \
-                f'latency: {statistics.mean(self.postnet_model_time_list) * 1000:.4f}ms; ' \
-                f'vocoder duration: {self.vocoder_model_time * 1000:.4f}ms;'
+               f'decoder duration: {sum(decoder_model_time_list) * 1000:.4f}ms, iter num: {len(decoder_model_time_list)}, '
+        if len(decoder_model_time_list) > 1:
+            info += f'1st decoder token latency: {self.decoder_model_time_list[0] * 1000:.4f}ms, ' \
+                    f'2nd decoder token latency: {statistics.mean(self.decoder_model_time_list[1:]) * 1000:.4f}ms; '
+        elif len(decoder_model_time_list) > 0:
+            info += f'decoder latency: {self.decoder_model_time_list[0] * 1000:.4f}ms; '
+        info += f'postnet duration: {sum(self.postnet_model_time_list) * 1000:.4f}ms, iter num: {len(self.postnet_model_time_list)}, '
+        if len(self.postnet_model_time_list) > 0:
+            info += f'postnet latency: {statistics.mean(self.postnet_model_time_list) * 1000:.4f}ms; '
+        info += f'vocoder duration: {self.vocoder_model_time * 1000:.4f}ms;'
         return info
