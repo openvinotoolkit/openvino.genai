@@ -864,8 +864,8 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: npm test
 
-  genai_xgrammar_tests:
-    name: Build & Test XGrammar
+  genai_xgrammar_off_tests:
+    name: Build & Test when ENABLE_XGRAMMAR=OFF
     needs: [ openvino_download ]
     timeout-minutes: 45
     defaults:

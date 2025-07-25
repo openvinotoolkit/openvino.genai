@@ -26,7 +26,7 @@ namespace LogitTransformers {
  */
 class XGrammarLogitsTransformer : public IStatefulLogitTransformer {
 public:                            
-    XGrammarLogitsTransformer(
+    explicit XGrammarLogitsTransformer(
         const xgrammar::CompiledGrammar& compiled_grammar,
         std::optional<std::vector<int>> override_stop_tokens = std::nullopt,
         bool terminate_without_stop_token = false,
