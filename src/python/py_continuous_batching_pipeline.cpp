@@ -337,6 +337,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
 
+        .def("start_chat", &ContinuousBatchingPipeline::start_chat, py::arg("system_message") = "")
+        .def("finish_chat", &ContinuousBatchingPipeline::finish_chat)
 
         .def(
             "generate",
