@@ -14,6 +14,7 @@
 #include "openvino/op/assign.hpp"
 #include "openvino/op/constant.hpp"
 #include <openvino/pass/manager.hpp>
+#include <openvino/core/graph_util.hpp>
 
 using namespace ov;
 using namespace ov::op;
@@ -246,15 +247,28 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     model->add_sinks({std::make_shared<v6::Assign>(pad_to_max_length_rv, pad_to_max_length_var)});
     model->add_variables({pad_to_max_length_var});
     
+    // Add padding side variable.
+    auto pad_right_var = std::make_shared<op::util::Variable>(op::util::VariableInfo{ov::Shape{1}, ov::element::boolean, ov::genai::PAD_RIGHT_VAR_ID});
+    auto pad_right_const = std::make_shared<v0::Constant>(ov::element::boolean, ov::Shape{1}, std::vector{true});
+    auto pad_right_rv = std::make_shared<v6::ReadValue>(pad_right_const, pad_right_var);
+    model->add_sinks({std::make_shared<v6::Assign>(pad_right_rv, pad_right_var)});
+    model->add_variables({pad_right_var});
+
     auto select_node = std::make_shared<v1::Select>(pad_to_max_length_rv, max_length_rv, zero_constant);
 
     for (auto ragged_to_dense_node : ragged_to_dense_nodes) {
         if (!ragged_to_dense_node) {
-            return true;  // true since at this point we already have modified the graph.s
+            return true;  // true since at this point we already have modified the graph.
         }
+
+        auto new_inputs = ragged_to_dense_node->input_values();
+        new_inputs.emplace_back(pad_right_rv->output(0));
+        auto new_ragged_to_dense = ragged_to_dense_node->clone_with_new_inputs(new_inputs);
         
-        auto max_op = std::make_shared<v1::Maximum>(ragged_to_dense_node->input_value(3), select_node);
-        ragged_to_dense_node->input(3).replace_source_output(max_op->output(0));
+        auto max_op = std::make_shared<v1::Maximum>(new_ragged_to_dense->input_value(3), select_node);
+        new_ragged_to_dense->input(3).replace_source_output(max_op->output(0));
+
+        ov::replace_node(ragged_to_dense_node, new_ragged_to_dense);
     }
 
     return true;
