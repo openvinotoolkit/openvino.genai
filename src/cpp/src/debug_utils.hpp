@@ -169,7 +169,7 @@ inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {
         OPENVINO_SUPPRESS_DEPRECATED_START
         max_diff = std::max(
             max_diff,
-            (std::abs(lhs.data<const float>()[idx] - rhs.data<const float>()[idx]))
+            std::abs(lhs.data<const float>()[idx] - rhs.data<const float>()[idx])
         );
         OPENVINO_SUPPRESS_DEPRECATED_END
     }
