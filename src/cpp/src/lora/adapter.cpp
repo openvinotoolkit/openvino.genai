@@ -150,6 +150,8 @@ std::vector<RegexParser> default_lora_constant_patterns () {
 
 // Group tensors loaded from LoRA adapter file into triads A, B and alpha grouped by layer names.
 LoRATensors group_lora_tensors(const ConstantMap& tensors, const LoRAPartsParser& parts_parser) {
+    std::cout << "OV FROM BUILD" << std::endl;
+    std::cout << "group_lora_tensors tensors size " << tensors.size() << std::endl;
     LoRATensors result;
     for(const auto& named_tensor: tensors) {
         if(auto parsed = parts_parser.A(named_tensor.first)) {
@@ -167,6 +169,7 @@ LoRATensors group_lora_tensors(const ConstantMap& tensors, const LoRAPartsParser
     for(const auto& lora_tensor: result) {
         OPENVINO_ASSERT(lora_tensor.second.A && lora_tensor.second.B, "Either A, B or both matrices are missing in LoRA tensors for layer: ", lora_tensor.first);
     }
+    std::cout << "group_lora_tensors result size " << result.size() << std::endl;
     return result;
 }
 
@@ -1032,11 +1035,16 @@ class SafetensorsAdapterImpl : public AdapterImpl {
 public:
 
     SafetensorsAdapterImpl(const std::filesystem::path& path) {
+        std::cout << "SafetensorsAdapterImpl" << std::endl;
         auto safetensor_content = read_safetensors(path);
+        std::cout << "SafetensorsAdapterImpl safetensor_content size " << safetensor_content.size() << std::endl;
         constant_tensors = group_lora_constant_tensors(safetensor_content, default_lora_constant_patterns());
+        std::cout << "constant_tensors size " << constant_tensors.size() << std::endl;
         for (const auto& constant_tensor : constant_tensors) {
+            std::cout << "!! " << constant_tensor.first << std::endl;
             safetensor_content.erase(constant_tensor.first);
         }
+        std::cout << "SafetensorsAdapterImpl safetensor_content size " << safetensor_content.size() << std::endl;
         tensors = group_lora_tensors(safetensor_content, default_lora_patterns());
     }
 
@@ -1083,7 +1091,7 @@ public:
     }
 
     const LoRAConstantTensors& get_constant_tensors() const override {
-        return *constant_tensors;
+        return origin->get_constant_tensors();
     }
 
     bool eq(const AdapterImpl* other) const override {
@@ -1160,6 +1168,7 @@ struct AdapterControllerImpl {
 
         for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
+            std::cout << "adapter_impl->get_constant_tensors() " << adapter_impl->get_constant_tensors().size() << std::endl;
             if (!adapter_impl->get_constant_tensors().empty()) {
                 OPENVINO_ASSERT(!const_getter, "OpenVINO.GenAI does not support several LoRA adapters with constants!");
                 const_getter_impl = std::make_shared<LoRAWeightGetterDefault<NodePtr, NodePtr>>(
