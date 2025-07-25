@@ -6,7 +6,7 @@ import logging as log
 
 def print_metrics(
         iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
-        stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None, text_emb=None, latency_unit=None
+        stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None, text_emb=None, latency_unit=None, tts=None
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -69,6 +69,8 @@ def print_metrics(
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx)
     if whisper is not None:
         print_whisper_infer_latency(iter_str, whisper, prompt_idx)
+    if tts is not None:
+        print_tts_latency(iter_str, tts, prompt_idx)
     output_str = ''
     if iter_data['max_rss_mem_consumption'] != '' and iter_data['max_rss_mem_consumption'] > -1:
         output_str += f"Max rss memory cost: {iter_data['max_rss_mem_consumption']:.2f}MBytes, "
@@ -246,3 +248,7 @@ def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False
 
 def print_whisper_infer_latency(iter_str, whisper, prompt_idx=-1):
     log.debug(f'{whisper.print_whisper_latency(iter_str, prompt_idx)}')
+
+
+def print_tts_latency(iter_str, tts_hook, prompt_idx=-1):
+    log.debug(tts_hook.print_tts_latency(iter_str, prompt_idx))
