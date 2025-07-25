@@ -168,7 +168,7 @@ For more information how performance metrics are calculated please follow [perfo
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 
-### 11. Structured Output Sample (`structured_output_sample`)
+### 10. Structured Output Sample (`structured_output_sample`)
 - **Description:**  
 This sample demonstrates how to use OpenVINO GenAI to generate structured outputs, such as JSON, from text prompts. It showcases step-by-step reasoning, allowing a language model to break down tasks (e.g., solving equations) and present each step in a structured format.
 
