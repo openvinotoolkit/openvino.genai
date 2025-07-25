@@ -18,20 +18,20 @@ namespace {
 /// Reference: https://github.com/Lightricks/LTX-Video/blob/a01a171f8fe3d99dce2728d60a73fecf4d4238ae/ltx_video/schedulers/rf.py#L51
 /// @param sigmas
 /// @param shift_terminal
-void stretch_shift_to_terminal(std::vector<float>& sigmas, double shift_terminal) {
-    // TODO: use floats?
-    std::vector<double> one_minus_z(sigmas.size());
-    std::transform(sigmas.begin(), sigmas.end(), one_minus_z.begin(), [](float val) {
-        return 1.0 - val;
+void stretch_shift_to_terminal(std::vector<float>& sigmas, float shift_terminal) {
+    ov::Tensor ref_t = from_npy("t.npy");
+    OPENVINO_ASSERT(max_diff(ref_t, ov::Tensor{ov::element::f32, {sigmas.size()}, sigmas.data()}) < 1e-6f);
+    std::transform(sigmas.begin(), sigmas.end(), sigmas.begin(), [](float val) {
+        return 1.0f - val;
     });
-    OPENVINO_ASSERT(!one_minus_z.empty());
-    double scale_factor = one_minus_z.back() / (1.0 - shift_terminal);
-    std::transform(one_minus_z.begin(), one_minus_z.end(), sigmas.begin(), [scale_factor](float val) {
-        return 1.0 - (val / scale_factor);
+    OPENVINO_ASSERT(!sigmas.empty());
+    double scale_factor = sigmas.back() / (1.0 - shift_terminal);
+    std::transform(sigmas.begin(), sigmas.end(), sigmas.begin(), [scale_factor](float val) {
+        return 1.0f - (val / scale_factor);
     });
 }
 
-}
+}  // anonymous namespace
 
 namespace ov {
 namespace genai {
@@ -51,6 +51,7 @@ FlowMatchEulerDiscreteScheduler::Config::Config(const std::filesystem::path& sch
     read_json_param(data, "base_image_seq_len", base_image_seq_len);
     read_json_param(data, "max_image_seq_len", max_image_seq_len);
     nlohmann::json::iterator iter = data.find("shift_terminal");
+    // TODO: verify other pipelines don't set it because they don't use it
     if (iter != data.end()) {
         shift_terminal = *iter;
     }
