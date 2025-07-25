@@ -517,6 +517,10 @@ jobs:
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 120
+          - name: 'GGUF Reader tests'
+            cmd: 'tests/python_tests/test_gguf_reader.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
+            timeout: 60
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
