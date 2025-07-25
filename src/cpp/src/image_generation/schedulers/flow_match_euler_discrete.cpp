@@ -13,6 +13,7 @@
 #include "debug_utils.hpp"
 
 namespace {
+
 /// @brief Stretches and shifts the timestep schedule to ensure it terminates at the configured `shift_terminal` config value.
 /// Reference: https://github.com/Lightricks/LTX-Video/blob/a01a171f8fe3d99dce2728d60a73fecf4d4238ae/ltx_video/schedulers/rf.py#L51
 /// @param sigmas
