@@ -13,6 +13,7 @@
 #include "debug_utils.hpp"
 
 namespace {
+
 /// @brief Stretches and shifts the timestep schedule to ensure it terminates at the configured `shift_terminal` config value.
 /// Reference: https://github.com/Lightricks/LTX-Video/blob/a01a171f8fe3d99dce2728d60a73fecf4d4238ae/ltx_video/schedulers/rf.py#L51
 /// @param sigmas
@@ -20,10 +21,16 @@ namespace {
 void stretch_shift_to_terminal(std::vector<float>& sigmas, double shift_terminal) {
     // TODO: use floats?
     std::vector<double> one_minus_z(sigmas.size());
-    std::transform(sigmas.begin(), sigmas.end(), one_minus_z.begin(), [](float val){return 1.0 - val;});
+    std::transform(sigmas.begin(), sigmas.end(), one_minus_z.begin(), [](float val) {
+        return 1.0 - val;
+    });
+    OPENVINO_ASSERT(!one_minus_z.empty());
     double scale_factor = one_minus_z.back() / (1.0 - shift_terminal);
-    std::transform(one_minus_z.begin(), one_minus_z.end(), sigmas.begin(), [scale_factor](float val){return 1.0 - (val / scale_factor);});
+    std::transform(one_minus_z.begin(), one_minus_z.end(), sigmas.begin(), [scale_factor](float val) {
+        return 1.0 - (val / scale_factor);
+    });
 }
+
 }
 
 namespace ov {
