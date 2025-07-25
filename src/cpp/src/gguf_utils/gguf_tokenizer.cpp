@@ -27,9 +27,6 @@
 
 using namespace ov::op;
 
-using FactoryCreateType = ov::OutputVector (*)(const std::string& op_type,
-                                               const ov::OutputVector& inputs,
-                                               const ov::AnyMap& attributes);
 
 constexpr int32_t MAX_LENGTH = 8192;
 constexpr float VOCAB_SIZE_CACHE_PROPORTION = 0.2f;
