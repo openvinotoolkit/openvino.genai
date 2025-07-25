@@ -166,12 +166,12 @@ inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {
     OPENVINO_ASSERT(lhs.get_shape() == rhs.get_shape());
     float max_diff = 0.0f;
     for (size_t idx = 0; idx < lhs.get_size(); ++idx) {
-        // OPENVINO_SUPPRESS_DEPRECATED_START
+        OPENVINO_SUPPRESS_DEPRECATED_START
         max_diff = std::max(
             max_diff,
             (std::abs(lhs.data<const float>()[idx] - rhs.data<const float>()[idx]))
         );
-        // OPENVINO_SUPPRESS_DEPRECATED_END
+        OPENVINO_SUPPRESS_DEPRECATED_END
     }
     return max_diff;
 }
