@@ -86,6 +86,8 @@ void update_npu_config(ov::AnyMap& config,
     update_config(config, {"NPUW_LLM_MAX_PROMPT_LEN", kv_desc.max_prompt_len});
     update_config(config, {"NPUW_LLM_MIN_RESPONSE_LEN", kv_desc.min_response_len});
 
+    update_config(config, {"NPUW_LLM_MAX_LORA_RANK", 64});
+
     rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
