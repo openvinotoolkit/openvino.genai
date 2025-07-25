@@ -163,7 +163,7 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
 }
 
 std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer) {
-    std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
+    return std::visit(overloaded{
         [](std::monostate) -> std::shared_ptr<StreamerBase> {
             return nullptr;
         },
@@ -177,8 +177,6 @@ std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenize
             return std::make_unique<TextStreamer>(tokenizer, streamer);
         }
     }, streamer);
-
-    return streamer_ptr;
 }
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
