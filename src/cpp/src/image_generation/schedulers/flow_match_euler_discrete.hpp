@@ -20,7 +20,7 @@ public:
         bool use_dynamic_shifting = false;
         float base_shift = 0.5f, max_shift = 1.15f;
         int32_t base_image_seq_len = 256, max_image_seq_len = 4096;
-        std::optional<double> shift_terminal;  /// Stretches and shifts the timestep schedule to ensure it terminates at shift_terminal
+        std::optional<float> shift_terminal;  /// Stretches and shifts the timestep schedule to ensure it terminates at shift_terminal. Used by Lightricks/LTX-Video
 
         Config() = default;
         explicit Config(const std::filesystem::path& scheduler_config_path);

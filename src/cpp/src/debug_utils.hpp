@@ -80,7 +80,7 @@ inline void read_tensor(const std::string& file_name, ov::Tensor tensor, bool as
 
 /// @brief Read an npy file created in Python:
 /// with open('ndarray.npy', 'wb') as file:
-///     np.save(file, ndarray.copy(order='C'))
+///     np.save(file, ndarray.ascontiguousarray())
 inline ov::Tensor from_npy(const std::filesystem::path& npy) {
     std::ifstream fstream{npy, std::ios::binary};
     fstream.seekg(0, std::ios_base::end);
@@ -162,13 +162,15 @@ inline ov::Tensor from_npy(const std::filesystem::path& npy) {
 }
 
 inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {
-    if (lhs.get_shape() != rhs.get_shape() || lhs.get_element_type() != rhs.get_element_type()) {
-        return std::numeric_limits<float>::infinity();
-    }
+    OPENVINO_ASSERT(lhs.get_element_type() == rhs.get_element_type());
+    OPENVINO_ASSERT(lhs.get_shape() == rhs.get_shape());
     float max_diff = 0.0f;
     for (size_t idx = 0; idx < lhs.get_size(); ++idx) {
         OPENVINO_SUPPRESS_DEPRECATED_START
-        max_diff = std::max(max_diff, (std::abs(lhs.data<float>()[idx] - rhs.data<float>()[idx])));
+        max_diff = std::max(
+            max_diff,
+            (std::abs(lhs.data<float>()[idx] - rhs.data<float>()[idx]))
+        );
         OPENVINO_SUPPRESS_DEPRECATED_END
     }
     return max_diff;
