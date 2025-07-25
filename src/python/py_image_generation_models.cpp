@@ -170,8 +170,25 @@ void init_t5_encoder_model(py::module_& m) {
             model (T5EncoderModel): T5EncoderModel model
         )")
         .def("reshape", &ov::genai::T5EncoderModel::reshape, py::arg("batch_size"), py::arg("max_sequence_length"))
-        .def("infer", 
-            &ov::genai::T5EncoderModel::infer, 
+        .def("infer",
+            [](
+                ov::genai::T5EncoderModel& self,
+                const std::string& pos_prompt,
+                const std::string& neg_prompt,
+                bool do_classifier_free_guidance,
+                int max_sequence_length,
+                const py::kwargs& kwargs
+            ) {
+                ov::AnyMap tokenization_params = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                return self.infer(
+                    pos_prompt,
+                    neg_prompt,
+                    do_classifier_free_guidance,
+                    max_sequence_length,
+                    tokenization_params
+                );
+            },
             py::call_guard<py::gil_scoped_release>(), 
             py::arg("pos_prompt"), 
             py::arg("neg_prompt"), 

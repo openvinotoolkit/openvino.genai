@@ -10,6 +10,21 @@
 
 #include "image_generation/numpy_utils.hpp"
 #include "utils.hpp"
+#include "debug_utils.hpp"
+
+namespace {
+/// @brief Stretches and shifts the timestep schedule to ensure it terminates at the configured `shift_terminal` config value.
+/// Reference: https://github.com/Lightricks/LTX-Video/blob/a01a171f8fe3d99dce2728d60a73fecf4d4238ae/ltx_video/schedulers/rf.py#L51
+/// @param sigmas
+/// @param shift_terminal
+void stretch_shift_to_terminal(std::vector<float>& sigmas, double shift_terminal) {
+    // TODO: use floats?
+    std::vector<double> one_minus_z(sigmas.size());
+    std::transform(sigmas.begin(), sigmas.end(), one_minus_z.begin(), [](float val){return 1.0 - val;});
+    double scale_factor = one_minus_z.back() / (1.0 - shift_terminal);
+    std::transform(one_minus_z.begin(), one_minus_z.end(), sigmas.begin(), [scale_factor](float val){return 1.0 - (val / scale_factor);});
+}
+}
 
 namespace ov {
 namespace genai {
@@ -28,6 +43,10 @@ FlowMatchEulerDiscreteScheduler::Config::Config(const std::filesystem::path& sch
     read_json_param(data, "max_shift", max_shift);
     read_json_param(data, "base_image_seq_len", base_image_seq_len);
     read_json_param(data, "max_image_seq_len", max_image_seq_len);
+    nlohmann::json::iterator iter = data.find("shift_terminal");
+    if (iter != data.end()) {
+        shift_terminal = *iter;
+    }
 }
 
 FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
@@ -203,6 +222,17 @@ void FlowMatchEulerDiscreteScheduler::scale_noise(ov::Tensor sample, float times
     }
 }
 
+template <typename T>
+inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& value) {
+    os << "vector[" << value.size() << "]: ";
+    if (value.empty()) {
+        return os << "empty";
+    }
+    for (size_t idx = 0; idx < value.size() - 1; ++idx) {
+        os << value[idx] << " ";
+    }
+    return os << value.back();
+}
 void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength) {
     m_timesteps.clear();
     m_sigmas.clear();
@@ -226,6 +256,9 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t
         for (size_t i = 0; i < m_sigmas.size(); ++i) {
             m_sigmas[i] = shift * m_sigmas[i] / (1 + (shift - 1) * m_sigmas[i]);
         }
+    }
+    if (m_config.shift_terminal.has_value()) {
+        stretch_shift_to_terminal(m_sigmas, *m_config.shift_terminal);
     }
 
     // fill timesteps
