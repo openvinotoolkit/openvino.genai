@@ -123,7 +123,11 @@ inline void read_tensor(const std::string& file_name, ov::Tensor tensor, bool as
 
 /// @brief Read an npy file created in Python:
 /// with open('ndarray.npy', 'wb') as file:
+<<<<<<< HEAD
 ///     np.save(file, ndarray.ascontiguousarray())
+=======
+///     np.save(file, ndarray.copy(order='C'))
+>>>>>>> bebbb084 (timesteps)
 inline ov::Tensor from_npy(const std::filesystem::path& npy) {
     std::ifstream fstream{npy, std::ios::binary};
     fstream.seekg(0, std::ios_base::end);

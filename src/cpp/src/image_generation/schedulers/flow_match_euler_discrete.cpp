@@ -13,7 +13,6 @@
 #include "debug_utils.hpp"
 
 namespace {
-
 /// @brief Stretches and shifts the timestep schedule to ensure it terminates at the configured `shift_terminal` config value.
 /// Reference: https://github.com/Lightricks/LTX-Video/blob/a01a171f8fe3d99dce2728d60a73fecf4d4238ae/ltx_video/schedulers/rf.py#L51
 /// @param sigmas
@@ -228,6 +227,17 @@ void FlowMatchEulerDiscreteScheduler::scale_noise(ov::Tensor sample, float times
     }
 }
 
+template <typename T>
+inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& value) {
+    os << "vector[" << value.size() << "]: ";
+    if (value.empty()) {
+        return os << "empty";
+    }
+    for (size_t idx = 0; idx < value.size() - 1; ++idx) {
+        os << value[idx] << " ";
+    }
+    return os << value.back();
+}
 void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength) {
     m_timesteps.clear();
     m_sigmas.clear();
