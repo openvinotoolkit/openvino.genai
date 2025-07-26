@@ -164,7 +164,7 @@ ov_status_e ov_genai_generation_config_set_num_beam_groups(ov_genai_generation_c
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_generation_config_set_num_beams(ov_genai_generation_config* config, const size_t value) {
+ov_status_e ov_genai_generation_config_set_num_beams(ov_genai_generation_config* config, const size_t value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
