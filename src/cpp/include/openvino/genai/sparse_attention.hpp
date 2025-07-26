@@ -9,6 +9,10 @@ namespace ov::genai {
 
 enum class SparseAttentionMode { TRISHAPE };
 
+const std::unordered_map<SparseAttentionMode, std::string> SparseAttentionModeToString = {
+    {SparseAttentionMode::TRISHAPE, "TRISHAPE"},
+};
+
 /**
  * @brief Configuration struct for the sparse attention prefill functionality.
  */
@@ -43,6 +47,16 @@ public:
     /** @param num_retained_recent_tokens_in_cache The number of most recent tokens in cache to be retained when
      * applying sparse attention. Must be a multiple of block size. */
     size_t num_retained_recent_tokens_in_cache = 1920;
-};
 
+    void print() const {
+        std::cout << "SparseAttentionConfig { " << std::endl;
+        if (SparseAttentionModeToString.count(mode) > 0) {
+            std::cout << "  sparseAttentionMode: " << SparseAttentionModeToString.at(mode) << std::endl;
+        }
+        std::cout << "  num_last_dense_tokens_in_prefill: " << num_last_dense_tokens_in_prefill << std::endl;
+        std::cout << "  num_retained_start_tokens_in_cache: " << num_retained_start_tokens_in_cache << std::endl;
+        std::cout << "  num_retained_recent_tokens_in_cache: " << num_retained_recent_tokens_in_cache << std::endl;
+        std::cout << " }" << std::endl;
+    }
+};
 }  // namespace ov::genai
