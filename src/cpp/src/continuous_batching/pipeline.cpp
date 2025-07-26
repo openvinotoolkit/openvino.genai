@@ -287,6 +287,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
 
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
+    m_impl->finish_chat();
     m_impl->start_chat(system_message);
 }
 
