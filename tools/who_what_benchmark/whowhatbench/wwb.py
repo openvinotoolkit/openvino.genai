@@ -44,7 +44,8 @@ def parse_args():
     parser.add_argument(
         "--omit-chat-template",
         action="store_true",
-        help="Do not apply the default chat template if it's present for LLMs. The flag is ignored for VLMs because they depend on the chat template to merge images and text.",
+        help="Do not apply the default chat template if it's present for LLMs."
+        " The flag is ignored for VLMs because they depend on the chat template to merge images and text.",
     )
     parser.add_argument(
         "--gt-data",
