@@ -246,14 +246,6 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
-ov::Tensor ContinuousBatchingPipeline::ContinuousBatchingImpl::get_hidden_states() {
-    if (m_model_input_type == ModelInputType::TOKENS) {
-        return m_model_runner->get_hidden_states();
-    } else {
-        OPENVINO_THROW("Unknown model input type.");
-    }
-}
-
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     static ManualTimer step_timer("step()");
     step_timer.start();

@@ -354,8 +354,8 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::SpeculativeDecodingI
 }
 // end of speculative_decoding_impl
 
-ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc, 
-                                                                             const ov::genai::ModelDesc& draft_model_desc) {
+ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
+                                                                 const ov::genai::ModelDesc& draft_model_desc) {
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
 
@@ -372,11 +372,13 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
     bool is_draft_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
 
     ov::genai::SchedulerConfig main_scheduler_config_updated = main_scheduler_config,
-                               draft_scheduler_config = is_draft_scheduler_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
+                               draft_scheduler_config = is_draft_scheduler_undefined
+                                                            ? main_scheduler_config
+                                                            : draft_model_desc.scheduler_config;
 
     if (is_draft_scheduler_undefined) {
         // split KV cache to 2 caches for main and draft models
-        auto compute_total_hidden_size = [] (const std::shared_ptr<ov::Model>& model) -> size_t {
+        auto compute_total_hidden_size = [](const std::shared_ptr<ov::Model>& model) -> size_t {
             size_t total_hidden_size = 0;
             for (const auto& param_ptr : model->get_parameters()) {
                 const auto& name = param_ptr->get_friendly_name();
@@ -405,7 +407,8 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
         draft_scheduler_config.cache_size = draft_cache_size;
     }
 
-    ov::AnyMap draft_properties = draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
+    ov::AnyMap draft_properties =
+        draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
 
     // main and draft model can have different tokenizers
     // to do: support retokenization: 154103
@@ -413,60 +416,93 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
     Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
 
     // todo: remove this condition after support of CVS-154103
-    OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
+    OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer),
+                    "Tokenizers for draft and main models are different!");
 
     m_tokenizer = main_model_tokenizer;
     std::shared_ptr<ov::Model> new_main_model = main_model;
     // for eagle model, we need to obtain hidden layer state as extra output
     if (1) {
-        std::string last_hidden_node_name = "__module.model.layers.31/aten::add/Add_1";  // more customizable method is required here, currently for MiniCPM4
+        std::string last_hidden_node_name =
+            "aten::div/Divide";  // more customizable method is required here, currently for MiniCPM4
         std::shared_ptr<ov::Node> last_hidden_node = nullptr;
 
         for (const auto& node : main_model->get_ops()) {
             if (node->get_friendly_name() == last_hidden_node_name) {
                 std::cout << "matching node found: " << node->get_friendly_name() << std::endl;
                 last_hidden_node = node;
-                last_hidden_node->set_friendly_name(node->get_friendly_name() + "_last_hidden_state");
                 break;
             }
         }
+        auto hidden = std::make_shared<ov::op::v0::Result>(last_hidden_node);
+        hidden->output(0).set_names({"last_hidden_state"});
+        hidden->set_friendly_name("last_hidden_state");
         ov::OutputVector new_outputs = main_model->outputs();
-        new_outputs.push_back(last_hidden_node->output(0));
+        new_outputs.push_back(hidden->output(0));
 
-        new_main_model =
-            std::make_shared<ov::Model>(new_outputs, main_model->get_parameters());
+        new_main_model = std::make_shared<ov::Model>(new_outputs, main_model->get_parameters());
+    }
+    std::shared_ptr<ov::Model> new_draft_model = draft_model;
+    if (1) {
+        std::string last_hidden_node_name =
+            "aten::div/Divide";  // more customizable method is required here, currently for MiniCPM4
+        std::shared_ptr<ov::Node> last_hidden_node = nullptr;
+
+        for (const auto& node : draft_model->get_ops()) {
+            std::cout << node->get_friendly_name() << std::endl;
+            if (node->get_friendly_name() == last_hidden_node_name) {
+                std::cout << "matching node found: " << node->get_friendly_name() << std::endl;
+                last_hidden_node = node;
+                break;
+            }
+        }
+        auto hidden = std::make_shared<ov::op::v0::Result>(last_hidden_node);
+        hidden->output(0).set_names({"last_hidden_state"});
+        hidden->set_friendly_name("last_hidden_state");
+        ov::OutputVector new_outputs = draft_model->outputs();
+        new_outputs.push_back(hidden->output(0));
+
+        new_draft_model = std::make_shared<ov::Model>(new_outputs, draft_model->get_parameters());
     }
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
-    m_main_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(
-        new_main_model, main_model_tokenizer, main_model_desc.generation_config,
-        main_scheduler_config_updated, main_device, main_model_desc.properties, true);
-    m_draft_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(
-        draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
-        draft_scheduler_config, draft_device, draft_properties, false);
+    m_main_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(new_main_model,
+                                                                               main_model_tokenizer,
+                                                                               main_model_desc.generation_config,
+                                                                               main_scheduler_config_updated,
+                                                                               main_device,
+                                                                               main_model_desc.properties,
+                                                                               true);
+    m_draft_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(new_draft_model,
+                                                                                draft_model_tokenizer,
+                                                                                draft_model_desc.generation_config,
+                                                                                draft_scheduler_config,
+                                                                                draft_device,
+                                                                                draft_properties,
+                                                                                false);
 
     m_perf_metrics = PerfMetrics();
-    m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
-
+    m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 }
 
-GenerationHandle
-ContinuousBatchingPipeline::EagleDecodingImpl::add_request(uint64_t request_id,
-                                                                 const ov::Tensor& input_ids,
-                                                                 ov::genai::GenerationConfig sampling_params) {
+GenerationHandle ContinuousBatchingPipeline::EagleDecodingImpl::add_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    ov::genai::GenerationConfig sampling_params) {
     m_sd_metrics.set_generated_len(request_id, sampling_params.get_max_new_tokens(input_ids.get_size()));
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params)});
+    m_draft_generations.insert(
+        {request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 };
 
-GenerationHandle
-ContinuousBatchingPipeline::EagleDecodingImpl::add_request(uint64_t request_id,
-                                                                 const std::string& prompt,
-                                                                 ov::genai::GenerationConfig sampling_params) {
+GenerationHandle ContinuousBatchingPipeline::EagleDecodingImpl::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    ov::genai::GenerationConfig sampling_params) {
     m_sd_metrics.set_generated_len(request_id, sampling_params.get_max_new_tokens(prompt.length()));
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
@@ -483,7 +519,6 @@ bool ContinuousBatchingPipeline::EagleDecodingImpl::has_non_finished_requests() 
 void ContinuousBatchingPipeline::EagleDecodingImpl::step() {
     // this blocks adding new requests during step as it may break coherence between main and draft models
     std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
-
     auto& raw_perf_counters = m_perf_metrics.raw_metrics;
 
     ManualTimer step_timer("speculative_decoding: step()");
@@ -505,7 +540,7 @@ void ContinuousBatchingPipeline::EagleDecodingImpl::step() {
     // put candidates to model KV cache
     auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
     for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
-        auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
+        auto update_result = m_main_pipeline->update_main_request(candidate.first, candidate.second);
         update_sequence_info.insert({{candidate.first, update_result}});
     }
 
@@ -516,10 +551,10 @@ void ContinuousBatchingPipeline::EagleDecodingImpl::step() {
     m_sd_metrics.main_duration += main_timer.get_duration();
     m_pipeline_metrics = m_main_pipeline->get_metrics();
     // get logits and last hidden layer
-    auto main_generated_requests = m_main_pipeline->get_generated_requests();
+    auto main_generated_requests =
+        m_main_pipeline->get_generated_requests();  // feature extraction is enabled in main pipeline
     for (const auto& checked_sequence : main_generated_requests) {
-        // update hidden state for eagle model
-        auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
+        auto update_result = m_draft_pipeline->update_draft_request(checked_sequence.first, checked_sequence.second);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
     }
 
@@ -536,16 +571,19 @@ void ContinuousBatchingPipeline::EagleDecodingImpl::step() {
         if (updated_seq_info.inserted_tokens_cnt == 0) {
             continue;
         }
-        float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
+        float acceptance_rate =
+            1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
-        m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
+        m_sd_metrics.update_draft_accepted_tokens(
+            request_id,
+            (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
     }
 
     // update perf metrics
     const auto num_generated_tokens = m_main_pipeline->get_processed_tokens_per_iteration();
     if (num_generated_tokens > 0) {
         auto infer_duration = step_timer.get_duration_microsec();
-    
+
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_duration);
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_duration);
         raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());
@@ -561,14 +599,54 @@ void ContinuousBatchingPipeline::EagleDecodingImpl::step() {
     step_timer.end();
 }
 
-std::vector<EncodedGenerationResult>
-ContinuousBatchingPipeline::EagleDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
-                                                              const std::vector<GenerationConfig>& sampling_params,
-                                                              const StreamerVariant& streamer) {
-    m_perf_metrics = PerfMetrics();
-    m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+ov::Tensor ContinuousBatchingPipeline::EagleDecodingImpl::update_main_input_ids(const ov::Tensor& original_input_ids) {
+    auto shape = original_input_ids.get_shape();
+    if (shape.size() == 0 || shape.back() <= 1) {
+        return ov::Tensor(original_input_ids);
+    }
 
-    OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
+    size_t original_length = shape.back();
+    size_t new_length = original_length + 1;
+
+    ov::Tensor draft_input_ids(ov::element::i64, {1, new_length});
+
+    const int64_t* src_data = original_input_ids.data<int64_t>();
+    int64_t* dst_data = draft_input_ids.data<int64_t>();
+    dst_data[0] = m_tokenizer.get_bos_token_id();  // add BOS token at the beginning
+    std::copy(src_data, src_data + original_length, dst_data + 1);
+
+    return draft_input_ids;
+}
+
+ov::Tensor ContinuousBatchingPipeline::EagleDecodingImpl::create_draft_input_ids(const ov::Tensor& original_input_ids) {
+    auto shape = original_input_ids.get_shape();
+    if (shape.size() == 0 || shape.back() <= 1) {
+        return ov::Tensor(original_input_ids);
+    }
+
+    size_t original_length = shape.back();
+    size_t new_length = original_length - 1;
+
+    ov::Tensor draft_input_ids(ov::element::i64, {1, new_length});
+
+    const int64_t* src_data = original_input_ids.data<int64_t>();
+    int64_t* dst_data = draft_input_ids.data<int64_t>();
+
+    std::copy(src_data + 1, src_data + original_length, dst_data);
+
+    return draft_input_ids;
+}
+
+std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingImpl::generate(
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    m_perf_metrics = PerfMetrics();
+    m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+
+    OPENVINO_ASSERT(!has_non_finished_requests(),
+                    "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use "
+                    "ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
 
     ManualTimer generate_timer("speculative_decoding: generate()");
@@ -577,21 +655,34 @@ ContinuousBatchingPipeline::EagleDecodingImpl::generate(const std::vector<ov::Te
     // checks that all requests has the same LoRA adapters property value
     for (size_t i = 1; i < sampling_params.size(); ++i) {
         OPENVINO_ASSERT(sampling_params[i - 1].adapters == sampling_params[i].adapters,
-            "LoRA adapters value must be the same for all requests");
+                        "LoRA adapters value must be the same for all requests");
     }
     m_main_pipeline->set_adapters(sampling_params[0].adapters);
+    m_main_pipeline->set_hidden_state_export_needed(true);
     m_draft_pipeline->set_adapters(sampling_params[0].adapters);
+    m_draft_pipeline->set_hidden_state_export_needed(true);
+    m_draft_pipeline->set_hidden_state_import_needed(true);
+    m_draft_pipeline->set_hidden_state_internal_needed(true);
 
     const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
 
-    OPENVINO_ASSERT(!streamer_ptr->has_callback() || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial() || sampling_params[0].is_eagle_tree()),
-        "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
+    OPENVINO_ASSERT(
+        !streamer_ptr->has_callback() || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() ||
+                                                                   (sampling_params[0].is_multinomial() &&
+                                                                    sampling_params[0].num_return_sequences == 1) ||
+                                                                   sampling_params[0].is_eagle_tree()),
+        "Currently eagle streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
     std::vector<GenerationHandle> main_generations;
+    ov::Tensor new_input_ids;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        m_sd_metrics.set_generated_len(request_id, sampling_params[request_id].get_max_new_tokens(input_ids[request_id].get_size()));
+        auto new_input_ids = input_ids[request_id]; //update_main_input_ids(input_ids[request_id]);
+        m_sd_metrics.set_generated_len(
+            request_id,
+            sampling_params[request_id].get_max_new_tokens(input_ids[request_id].get_size()));
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
+        main_generations.push_back(
+            m_main_pipeline->add_request(request_id, new_input_ids, sampling_params[request_id]));
 
         auto draft_sampling_params = sampling_params[request_id];
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
@@ -599,11 +690,17 @@ ContinuousBatchingPipeline::EagleDecodingImpl::generate(const std::vector<ov::Te
         draft_sampling_params.stop_strings = {};
         draft_sampling_params.eagle_total_tokens = 5;
         draft_sampling_params.eagle_branching_factor = 3;
-        draft_sampling_params.eagle_depth = 2; // hard code to test now
-        draft_sampling_params.eagle_tree_width = 10; // for eagle model, draft model use beam search for multiple tokens generation for now, will be updated to top-k later
-        draft_sampling_params.eagle_final_candidates = 8; // hard code to test now
+        draft_sampling_params.eagle_depth = 2;             // hard code to test now
+        draft_sampling_params.eagle_tree_width = 10;       // for eagle model, draft model use beam search for multiple
+                                                           // tokens generation for now, will be updated to top-k later
+        draft_sampling_params.eagle_final_candidates = 8;  // hard code to test now
+
+        // remove first token from input_ids to create draft_input_ids
+        ov::Tensor draft_input_ids = create_draft_input_ids(new_input_ids);
+
         std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params)});
+        m_draft_generations.insert(
+            {request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
     }
     auto all_requests = get_awaiting_requests();
 
@@ -615,7 +712,7 @@ ContinuousBatchingPipeline::EagleDecodingImpl::generate(const std::vector<ov::Te
         try {
             step();
         } catch (...) {
-            drop_requests(); // remove all requests from pipeline state in case of exception
+            drop_requests();  // remove all requests from pipeline state in case of exception
             streamer_ptr->end();
             std::rethrow_exception(std::current_exception());
         }
@@ -625,7 +722,8 @@ ContinuousBatchingPipeline::EagleDecodingImpl::generate(const std::vector<ov::Te
     // waiting for competion of streaming
     streamer_ptr->end();
 
-    OPENVINO_ASSERT(is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
+    OPENVINO_ASSERT(is_requests_empty(),
+                    "Internal error: current request is supposed to be dropped within step() function as completed");
 
     std::vector<EncodedGenerationResult> results;
     results.reserve(all_requests.size());
@@ -645,9 +743,10 @@ ContinuousBatchingPipeline::EagleDecodingImpl::generate(const std::vector<ov::Te
         result.m_status = request->get_generation_stream()->get_status();
 
         for (size_t i = 0; i < num_outputs; ++i) {
-            const auto & sequence = sequences[i];
-            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
-            const auto & generated_ids = sequence->get_generated_ids();
+            const auto& sequence = sequences[i];
+            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params)
+                                                                 : sequence->get_cumulative_log_prob();
+            const auto& generated_ids = sequence->get_generated_ids();
 
             if (sampling_params.echo) {
                 result.m_generation_ids[i] = request->get_prompt_ids();
@@ -673,8 +772,7 @@ ContinuousBatchingPipeline::EagleDecodingImpl::generate(const std::vector<ov::Te
     return results;
 }
 
-SpeculativeDecodingMetrics
-ContinuousBatchingPipeline::EagleDecodingImpl::get_speculative_decoding_metrics() {
+SpeculativeDecodingMetrics ContinuousBatchingPipeline::EagleDecodingImpl::get_speculative_decoding_metrics() {
     return m_sd_metrics;
 };
 
@@ -682,7 +780,6 @@ void ContinuousBatchingPipeline::EagleDecodingImpl::drop_requests() {
     m_draft_pipeline->finish_request();
     m_main_pipeline->finish_request();
 }
-
 
 bool ContinuousBatchingPipeline::EagleDecodingImpl::is_requests_empty() {
     return m_main_pipeline->is_requests_empty() && m_draft_pipeline->is_requests_empty();
@@ -694,4 +791,4 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::EagleDecodingImpl::g
     OPENVINO_ASSERT(main_awaiting_requests.size() == draft_awaiting_requests.size());
     return main_awaiting_requests;
 }
-}
+}  // namespace ov::genai

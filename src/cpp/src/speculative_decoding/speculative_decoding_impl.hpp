@@ -85,6 +85,8 @@ protected:
     void initialize_tree();
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
+    ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
+    ov::Tensor update_main_input_ids(const ov::Tensor& original_input_ids);
     
 public:
     EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);

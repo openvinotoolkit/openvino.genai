@@ -28,6 +28,8 @@ size_t Sequence::_make_hash(size_t content_length) {
         // get tokens corresponding to current block
         if (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS) {
             const auto prompt_ids = sequence_group->get_prompt_ids();
+            if (content_length > prompt_ids.size() + m_generated_ids.size())
+                std::cout << "break" << std::endl;
             OPENVINO_ASSERT(content_length <= prompt_ids.size() + m_generated_ids.size());
             if (block_start_idx < prompt_ids.size()) {
                 content.insert(content.end(), prompt_ids.begin() + block_start_idx, prompt_ids.begin() + std::min(prompt_ids.size(), content_length));

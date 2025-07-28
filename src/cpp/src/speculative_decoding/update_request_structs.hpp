@@ -38,13 +38,15 @@ using GeneratedSequences = std::map<uint64_t, GeneratedSequence>;
 using GeneratedRequests = std::map<uint64_t, GeneratedSequences>;
 class EagleGeneratedSequence : public GeneratedSequence {
 public:
-    std::vector<std::vector<float>> hidden_states;
-    std::vector<std::vector<int>> retrive_indices;
+    ov::Tensor feature_vector;
 
     EagleGeneratedSequence(const std::vector<int64_t>& generated_token_ids,
                            const std::vector<float>& generated_log_probs,
-                           const std::vector<std::vector<float>>& generated_hidden_states) :
+                           const ov::Tensor& generated_hidden_states) :
         GeneratedSequence(generated_token_ids, generated_log_probs),
-        hidden_states(generated_hidden_states) {};
+        feature_vector(generated_hidden_states) {};
 };
+
+using EagleGeneratedSequences = std::map<uint64_t, EagleGeneratedSequence>;
+using EagleGeneratedRequests = std::map<uint64_t, EagleGeneratedSequences>;
 }

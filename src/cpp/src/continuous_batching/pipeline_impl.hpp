@@ -37,8 +37,6 @@ protected:
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
 
-    // flag to enable hidden layer retrieval
-    bool m_is_hidden_layer_retrieval_enabled = false;
     size_t m_num_decoder_layers = 0;
     size_t m_block_size = 0;
 
@@ -131,7 +129,6 @@ public:
     bool has_non_finished_requests() override;
 
     void step() override;
-    ov::Tensor get_hidden_states();
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
@@ -142,7 +139,6 @@ public:
      * Updates LoRA adapters for current generation call
      */
     void set_adapters(const std::optional<AdapterConfig>& adapters);
-
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 };
 } // namespace ov::genai

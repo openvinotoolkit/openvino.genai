@@ -19,11 +19,12 @@ int main(int argc, char* argv[]) try {
     std::string main_device = "GPU", eagle_device = "GPU"; // currently only GPU is used during developing
 
     // Eagle Speculative settings
-    ov::genai::GenerationConfig config;
+    ov::genai::GenerationConfig config = ov::genai::greedy();
     config.max_new_tokens = 100;
-    config.num_assistant_tokens = 5;
     // Eagle specific parameters
     config.eagle_model = true;
+    config.num_return_sequences = 1; // only support 1
+
     //config.eagle_tree_width = 3;    // Number of candidate tokens to consider at each level
     //config.eagle_tree_depth = 4;    // How deep to explore the token tree
 

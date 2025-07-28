@@ -37,10 +37,10 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
     }
 
     return {
-        //generation_config_greedy_constant,
+        generation_config_greedy_constant,
         generation_config_multinomial_constant,
-        //generation_config_greedy_dynamic,
-        //generation_config_multinomial_dynamic,
+        generation_config_greedy_dynamic,
+        generation_config_multinomial_dynamic,
     };
 }
 

@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) try {
     const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
     const std::string models_path = result["model"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
-    const bool use_prefix = result["use_prefix"].as<bool>();
+    bool use_prefix = result["use_prefix"].as<bool>();
 
     std::string prefix_str =
         "You are an advanced language model designed to assist users by providing accurate, "
@@ -53,7 +53,7 @@ int main(int argc, char* argv[]) try {
     // create dataset
 
     std::vector<std::string> prompt_examples = {
-        "What is OpenVINO?",
+        "what is openvino",
         "How are you?",
         "What is your name?",
         "Tell me something about Canada",
@@ -62,17 +62,18 @@ int main(int argc, char* argv[]) try {
 
     std::vector<ov::genai::GenerationConfig> sampling_params_examples {
         //ov::genai::beam_search(),
-        ov::genai::greedy(),
+        //ov::genai::greedy(),
         ov::genai::multinomial(),
     };
 
     std::vector<std::string> prompts(num_prompts);
     std::vector<ov::genai::GenerationConfig> sampling_params(num_prompts);
-
+    use_prefix = false;
     for (size_t request_id = 0; request_id < num_prompts; ++request_id) {
         prompts[request_id] = use_prefix ? prefix_str + prompt_examples[request_id % prompt_examples.size()]
                                          : prompt_examples[request_id % prompt_examples.size()];
         sampling_params[request_id] = sampling_params_examples[request_id % sampling_params_examples.size()];
+        sampling_params[request_id].num_return_sequences = 1; // only support 1
     }
 
     ov::genai::SchedulerConfig scheduler_config;

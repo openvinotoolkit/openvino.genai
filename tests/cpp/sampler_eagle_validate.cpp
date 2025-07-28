@@ -64,16 +64,13 @@ TEST(SamplerValidationMode, eagle2_mode_initial) {
     const auto num_scheduled_tokens = sequence_groups.front()->get_num_available_tokens_for_batching();
     ASSERT_EQ(num_scheduled_tokens, num_validated_tokens + 1);
     sequence_groups.front()->schedule_tokens(num_scheduled_tokens);
+    */
+    //create ref tensor : to generate candidates + next token
+    /*std::vector<float> logits = {{0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f},
+                                 {0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f, 0},
+                                 {0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f}};
 
-    // create ref tensor : to generate candidates + next token
-    std::vector<float> logits = {
-        0, 1.f, 0, 0, 0,
-        0, 0, 1.f, 0, 0,
-        0, 0, 0, 1.f, 0,
-        0, 0, 0, 0, 1.f,
-    };
-
-    // shape 4 tokens + 1 batch + 5 vocab
+    // shape 4 tokens + 3 batch + 5 vocab
     ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
 
     Sampler sampler;

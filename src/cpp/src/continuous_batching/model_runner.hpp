@@ -23,13 +23,6 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
     return ss.str();
 }
 
-/*struct ModelOutput {
-    ov::Tensor logits;
-    ov::Tensor hidden_states;
-
-    ModelOutput(ov::Tensor _logits, ov::Tensor _hidden_states = ov::Tensor()) 
-        : logits(std::move(_logits)), hidden_states(std::move(_hidden_states)) {}
-};*/
 /**
  * @brief Runs the LLM infer request, parsing the continuous batching scheduler output into proper inputs in terms of OV API (e.g. token input IDs,
  * KV cache block indices etc.) and returning the logit scores for the next token to be generated for each of the currently scheduled sequences.
@@ -41,7 +34,6 @@ class ModelRunner {
     size_t m_num_decoder_layers;
     bool m_collect_attention_scores;
     bool m_is_use_per_layer_cache_control;
-    ov::Tensor m_hidden_states;
     bool m_is_use_rotation_inputs;
     std::vector<std::map<size_t, std::vector<size_t>>> m_rotated_block_logical_indices_per_sequence_for_each_layer;
     std::vector<ov::Tensor> m_cache_rotation_deltas_for_each_layer;
@@ -53,7 +45,12 @@ class ModelRunner {
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
-
+    bool m_is_hidden_state_export_needed = false; // need to export hidden state after inference
+    bool m_is_hidden_state_import_needed = false; // need to import hidden state from another model runner
+    bool m_is_hidden_state_internal_needed = false; // need to use internal hidden state, e.g, eagle2
+    std::map<std::pair<size_t, size_t>, std::pair<size_t, size_t>> m_sequence_hidden_state_mapping; // pre-requisite: main/draft have same seq group and running seq grouped id
+    // a container which use sequence group id and request id as key to store hidden states
+    std::map<std::pair<size_t, size_t>, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
 public:
     /**
      * Constructs the ModelRunner.
@@ -96,9 +93,16 @@ public:
         return m_request;
     }
 
-    // hidden states for a single step
-    ov::Tensor get_hidden_states() const {
-        return m_hidden_states;
+    void set_hidden_state_export_needed(bool is_needed) {
+        m_is_hidden_state_export_needed = is_needed;
+    }
+
+    void set_hidden_state_import_needed(bool is_needed) {
+        m_is_hidden_state_import_needed = is_needed;
+    }
+
+    void set_hidden_state_internal_needed(bool is_needed) {
+        m_is_hidden_state_internal_needed = is_needed;
     }
 
     void set_embedding_model(const EmbeddingsModel::Ptr& embedder) {
@@ -127,6 +131,47 @@ public:
         m_cache_rotation_deltas_for_each_layer = std::move(rotation_deltas_for_each_layer);
     }
 
+    ov::Tensor get_hidden_state(size_t request_id, size_t seq_grouped_id) const {
+        if (m_hidden_states.get_size() == 0) {
+            return ov::Tensor();
+        }
+
+        auto key = std::make_pair(request_id, seq_grouped_id);
+        auto it = m_sequence_hidden_state_mapping.find(key);
+        if (it == m_sequence_hidden_state_mapping.end()) {
+            return ov::Tensor();
+        }
+
+        size_t start_idx = it->second.first;
+        size_t length = it->second.second;
+
+        auto shape = m_hidden_states.get_shape();
+        if (shape.size() < 2) {
+            return ov::Tensor();
+        }
+
+        size_t hidden_size = shape[shape.size() - 1];
+
+        ov::Coordinate start_coord(shape.size(), 0);
+        ov::Coordinate end_coord(shape.size(), 0);
+
+        start_coord[0] = start_idx;
+        end_coord[0] = start_idx + length;
+
+        for (size_t i = 1; i < shape.size(); ++i) {
+            start_coord[i] = 0;
+            end_coord[i] = shape[i];
+        }
+
+        return ov::Tensor(m_hidden_states, start_coord, end_coord);
+    }
+
+    void set_initial_hidden_state(size_t request_id, size_t seq_grouped_id, const ov::Tensor& hidden_state) {
+        // m_initial_hidden_states.clear();
+        auto key = std::make_pair(request_id, seq_grouped_id);
+        m_initial_hidden_states[key] = hidden_state;
+    }
+
     /**
      * Runs the forward inference call on the underlying LLM's ov::InferRequest, scheduling for inferencing tokens for given sequences
      * taking into account the supplied scheduler output struct.
@@ -135,6 +180,8 @@ public:
      * @return An ov::Tensor with next-token logit scores for each sequence processed during this `forward` call.
      */
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+        m_sequence_hidden_state_mapping.clear();
+
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
         size_t batch_size_in_sequences = 0;
         size_t total_num_tokens = 0, total_num_blocks = 0;
@@ -167,6 +214,27 @@ public:
             // block_indices are handled in a special fashion below
             block_indices_begins(ov::element::i32, {batch_size_in_sequences + 1}),
             max_context_len(ov::element::i32, {});
+        ov::Tensor hidden_state_input;
+        float* hidden_state_data = nullptr;
+        if (m_is_hidden_state_import_needed || m_is_hidden_state_internal_needed) {
+            if (hidden_size == 0) {
+                for (const auto& entry : m_initial_hidden_states) {
+                    const auto& stored_hidden_state = entry.second;
+                    if (stored_hidden_state.get_size() > 0) {
+                        auto shape = stored_hidden_state.get_shape();
+                        if (shape.size() >= 2) {
+                            hidden_size = shape[shape.size() - 1];
+                            break;
+                        }
+                    }
+                }
+            }
+            if (hidden_size > 0) {
+                hidden_state_input = ov::Tensor(ov::element::f32, {total_num_tokens, 1, hidden_size});
+                hidden_state_data = hidden_state_input.data<float>();
+                std::memset(hidden_state_data, 0, total_num_tokens * hidden_size * sizeof(float));
+            }
+        }
 
         ov::Tensor score_aggregation_window(ov::element::i32, {batch_size_in_sequences});
 
@@ -206,6 +274,7 @@ public:
             matmul_gathering_is_available = true;
         } catch (const ov::Exception&) {}
 
+        size_t current_token_idx = 0;
 
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
@@ -225,6 +294,75 @@ public:
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
                 output_seq_len = 0;
                 Sequence::CPtr sequence = running_sequences[seq_idx];
+                if (m_is_hidden_state_export_needed) {
+                    size_t start_token_idx = current_token_idx;
+                    size_t sequence_length = num_scheduled_tokens;
+
+                    auto key = std::make_pair(seq_group_id, sequence->get_grouped_id());
+                    m_sequence_hidden_state_mapping[key] = std::make_pair(start_token_idx, sequence_length);
+                }
+                if (m_is_hidden_state_import_needed && hidden_state_data && hidden_size > 0) {
+                    auto key = std::make_pair(seq_group_id, sequence->get_grouped_id());
+                    auto it = m_initial_hidden_states.find(key);
+
+                    if (it != m_initial_hidden_states.end()) {
+                        const auto& stored_hidden_state = it->second;
+
+                        if (stored_hidden_state.get_size() > 0) {
+                            auto stored_shape = stored_hidden_state.get_shape();
+
+                            if (stored_shape.size() >= 2) {
+                                size_t stored_seq_len = stored_shape[0];
+                                size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
+
+                                if (stored_hidden_size == hidden_size) {
+                                    if (stored_seq_len == num_scheduled_tokens) {
+                                        hidden_state_input = stored_hidden_state;  // all tokens from eagle is accepted
+                                    } else {
+                                        size_t copy_length = std::min(stored_seq_len, num_scheduled_tokens);
+
+                                        size_t source_start_idx =
+                                            stored_seq_len >= copy_length ? stored_seq_len - copy_length : 0;
+
+                                        const float* source_data = stored_hidden_state.data<float>();
+                                        float* target_data = hidden_state_data + current_token_idx * hidden_size;
+
+                                        for (size_t token_offset = 0; token_offset < copy_length; ++token_offset) {
+                                            size_t source_offset = (source_start_idx + token_offset) * hidden_size;
+                                            size_t target_offset = token_offset * hidden_size;
+
+                                            std::copy_n(source_data + source_offset,
+                                                        hidden_size,
+                                                        target_data + target_offset);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // fill hidden_state_data with m_hidden_states
+                    if (hidden_state_data) {
+                        std::memset(hidden_state_data + current_token_idx * hidden_size,
+                                    0,
+                                    num_scheduled_tokens * hidden_size * sizeof(float));
+                        auto hidden_state = running_sequences[seq_idx]->get_hidden_state();
+                        if (hidden_state.get_size() > 0) {
+                            auto shape = hidden_state.get_shape();
+                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size) {
+                                size_t seq_len = shape[0];
+                                size_t copy_length = std::min(seq_len, num_scheduled_tokens);
+                                const float* source_data = hidden_state.data<float>();
+                                float* target_data = hidden_state_data + current_token_idx * hidden_size;
+                                for (size_t token_offset = 0; token_offset < copy_length; ++token_offset) {
+                                    size_t source_offset = (seq_len - token_offset - 1) * hidden_size;
+                                    size_t target_offset = token_offset * hidden_size;
+                                    std::copy_n(source_data + source_offset, hidden_size, target_data + target_offset);
+                                }
+                            }
+                        }
+                    }
+                }
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
                     if (sequence_group_type == SequenceGroupType::TOKENS) {
@@ -284,7 +422,7 @@ public:
                         *score_aggregation_window_data = 1;
                     }
                 }
-
+                current_token_idx += num_scheduled_tokens;;
                 position_ids_data += num_scheduled_tokens;
                 past_lens_data += 1;
                 subsequence_begins_data += 1;
@@ -300,7 +438,12 @@ public:
         else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             m_request.set_tensor("inputs_embeds", inputs_embeds);
         }
-
+        if (hidden_state_input && hidden_state_input.get_size() > 0) {
+            try {
+                m_request.set_tensor("target_hidden_state_input", hidden_state_input);
+            } catch (const ov::Exception& e) {
+            }
+        }
         // typical LLM parameters
         m_request.set_tensor("position_ids", position_ids);
 
@@ -337,14 +480,23 @@ public:
         if (m_collect_attention_scores) {
             _collect_attention_scores(sequence_groups, scheduler_output);
         }
-
         _reset_cache_rotation_coefficients();
-
-        try {
-            m_hidden_states = m_request.get_tensor("last_hidden_state");
-        } catch (const ov::Exception&) {
-            // If the model does not produce hidden states, we will not return them.
-            m_hidden_states = ov::Tensor();
+        if (m_is_hidden_state_export_needed) {
+            try {
+                m_hidden_states = m_request.get_tensor("last_hidden_state");
+                for (size_t i = 0; i < num_sequence_groups; ++i) {
+                    size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                    SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
+                    std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+                    for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                        Sequence::Ptr sequence = running_sequences[seq_idx];
+                        sequence->update_hidden_state(
+                            get_hidden_state(seq_group_id, sequence->get_grouped_id()));
+                    }
+                }
+            } catch (const ov::Exception&) {
+                m_hidden_states = ov::Tensor();
+            }
         }
 
         // return logits
@@ -408,6 +560,8 @@ public:
     }
 
 private:
+    ov::Tensor m_hidden_states;
+
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
         const std::vector<SequenceGroup::Ptr>& sequence_groups,
