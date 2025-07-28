@@ -364,7 +364,14 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    // [WA] Set default attention backend to SDPA_BACKEND for Gemma3 ("CVS-171180")
+    bool default_SDPA_BACKEND = false;
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    if ( vlm_config.model_type == VLMModelType::GEMMA3) {
+        default_SDPA_BACKEND = true;
+    }
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, default_SDPA_BACKEND);
+ 
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
@@ -407,7 +414,13 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    // [WA] Set default attention backend to SDPA_BACKEND for Gemma3 ("CVS-171180")
+    bool default_SDPA_BACKEND = false;
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
+    if ( vlm_config.model_type == VLMModelType::GEMMA3) {
+        default_SDPA_BACKEND = true;
+    }
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, default_SDPA_BACKEND);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
