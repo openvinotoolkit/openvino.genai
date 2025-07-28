@@ -25,7 +25,7 @@ env:
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/manylinux_2_28
   HF_HOME: /mount/caches/huggingface/lin
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/0ace7e754bfab535d8e249000338a10dc70b88b1
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
   ARTIFACTS_SHARE: '/mount/build-artifacts'
