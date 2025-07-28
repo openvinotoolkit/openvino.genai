@@ -230,17 +230,6 @@ void FlowMatchEulerDiscreteScheduler::scale_noise(ov::Tensor sample, float times
     }
 }
 
-template <typename T>
-inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& value) {
-    os << "vector[" << value.size() << "]: ";
-    if (value.empty()) {
-        return os << "empty";
-    }
-    for (size_t idx = 0; idx < value.size() - 1; ++idx) {
-        os << value[idx] << " ";
-    }
-    return os << value.back();
-}
 void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength) {
     m_timesteps.clear();
     m_sigmas.clear();
