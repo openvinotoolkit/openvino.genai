@@ -60,7 +60,6 @@ public:
             )
         } {
         m_is_npu = device.find("NPU") != std::string::npos;
-        // Trigger
         auto properties_copy = properties;
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
