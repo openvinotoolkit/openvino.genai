@@ -4,6 +4,8 @@
 #pragma once
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
+#include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/visibility.hpp"
 
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
@@ -76,4 +78,36 @@ struct ov_genai_perf_metrics_opaque {
  */
 struct ov_genai_decoded_results_opaque {
     std::shared_ptr<ov::genai::DecodedResults> object;
+};
+
+/**
+ * @struct ov_genai_whisper_decoded_result_chunk_opaque
+ * @brief This is an interface of ov::genai::WhisperDecodedResultChunk
+ */
+struct ov_genai_whisper_decoded_result_chunk_opaque {
+    std::shared_ptr<ov::genai::WhisperDecodedResultChunk> object;
+};
+
+/**
+ * @struct ov_genai_whisper_decoded_results_opaque
+ * @brief This is an interface of ov::genai::WhisperDecodedResults
+ */
+struct ov_genai_whisper_decoded_results_opaque {
+    std::shared_ptr<ov::genai::WhisperDecodedResults> object;
+};
+
+/**
+ * @struct ov_genai_whisper_generation_config_opaque
+ * @brief This is an interface of ov::genai::WhisperGenerationConfig
+ */
+struct ov_genai_whisper_generation_config_opaque {
+    std::shared_ptr<ov::genai::WhisperGenerationConfig> object;
+};
+
+/**
+ * @struct ov_genai_whisper_pipeline_opaque
+ * @brief This is an interface of ov::genai::WhisperPipeline
+ */
+struct ov_genai_whisper_pipeline_opaque {
+    std::shared_ptr<ov::genai::WhisperPipeline> object;
 };
