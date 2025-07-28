@@ -4,7 +4,7 @@
 import os
 import pytest
 import sys
-import subprocess
+import subprocess # nosec B404
 
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
