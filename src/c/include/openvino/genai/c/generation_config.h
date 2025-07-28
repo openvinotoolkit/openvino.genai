@@ -160,8 +160,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_num_beam_gro
  * @param value The number of beams for beam search.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_num_beam_groups(ov_genai_generation_config* config,
-                                                                                    const size_t value);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_num_beams(ov_genai_generation_config* config,
+                                                                              const size_t value);
 
 /**
  * @brief Set the diversity penalty, this value is subtracted from a beam's score if it generates the same token as
