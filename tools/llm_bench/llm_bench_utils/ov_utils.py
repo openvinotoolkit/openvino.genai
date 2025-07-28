@@ -595,8 +595,6 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
         convert_ov_tokenizer(model_path)
 
-    processor_config = get_vlm_processor(model_path)
-
     cb_config = kwargs.get("cb_config")
     if cb_config is not None:
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
@@ -612,7 +610,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
         memory_monitor.log_data('for compilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
-    return llm_pipe, processor_config, end - start, None, True
+    return llm_pipe, None, end - start, None, True
 
 
 def create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs):

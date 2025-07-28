@@ -194,6 +194,9 @@ def get_argprser():
     parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
     parser.add_argument("--embedding_max_length", type=int, default=None,
                         help="Max length for text embeddings. Input text will be padded or truncated to specified value")
+    parser.add_argument("--apply_chat_template", action="store_true",
+                        help="Apply chat template for LLM. By default chat template is not applied. It's better to use with --disable_prompt_permutation, \
+                              otherwise the prompt will be modified after applying the chat template, so the structure of chat template will not be kept.")
     return parser.parse_args()
 
 
