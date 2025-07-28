@@ -9,6 +9,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "openvino/genai/sparse_attention.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 
 #include "py_utils.hpp"
@@ -17,7 +18,9 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::AggregationMode;
+using ov::genai::SparseAttentionMode;
 using ov::genai::CacheEvictionConfig;
+using ov::genai::SparseAttentionConfig;
 using ov::genai::ContinuousBatchingPipeline;
 using ov::genai::GenerationResult;
 using ov::genai::EncodedGenerationResult;
@@ -55,10 +58,22 @@ auto cache_eviction_config_docstring = R"(
     :type snapkv_window_size int
 )";
 
+auto sparse_attention_config_docstring = R"(
+    Configuration struct for the sparse attention functionality.
+    :param mode: Sparse attention mode to be applied.
+    :type mode: openvino_genai.SparseAttentionMode
+
+    :param num_last_dense_tokens_in_prefill: Number of tokens from the end of the prompt for which full attention across previous KV cache contents
+      will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention (encompassing first
+      and currently latest blocks) will be computed. Due to the block-wise nature of continuous batching cache management,
+      the actual number of prompt tokens for which the dense attention will be computed may be up to block-size larger than
+      this value (depending on the prompt length and block size).*/
+    :type num_last_dense_tokens_in_prefill: int
+)";
 auto scheduler_config_docstring = R"(
     SchedulerConfig to construct ContinuousBatchingPipeline
 
-    Parameters: 
+    Parameters:
     max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
         independent sequences, we consider total amount of tokens in a batch).
     num_kv_blocks:              total number of KV blocks available to scheduler logic.
@@ -74,12 +89,16 @@ auto scheduler_config_docstring = R"(
         This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
         When turned off only KV-cache required for batch calculation is kept in memory and
         when a sequence has finished generation its cache is released.
+    use_cache_eviction:         Whether to use cache eviction during generation.
+    cache_eviction_config       Cache eviction configuration struct.
+    use_sparse_attention        Whether to use sparse attention during prefill.
+    sparse_attention_config     Sparse attention configuration struct.
 )";
 
 auto generation_result_docstring = R"(
     GenerationResult stores resulting batched tokens and scores.
 
-    Parameters: 
+    Parameters:
     request_id:         obsolete when handle API is approved as handle will connect results with prompts.
     generation_ids:     in a generic case we have multiple generation results per initial prompt
         depending on sampling parameters (e.g. beam search or parallel sampling).
@@ -224,13 +243,13 @@ void init_continuous_batching_pipeline(py::module_& m) {
     generation_handle.def("drop", &GenerationHandleImpl::drop);
     OPENVINO_SUPPRESS_DEPRECATED_END
 
-    // Binding for StopCriteria
     py::enum_<AggregationMode>(m, "AggregationMode",
                             R"(Represents the mode of per-token score aggregation when determining least important tokens for eviction from cache
                                :param AggregationMode.SUM: In this mode the importance scores of each token will be summed after each step of generation
                                :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache)")
             .value("SUM", AggregationMode::SUM)
             .value("NORM_SUM", AggregationMode::NORM_SUM);
+
 
     py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
             .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode, bool apply_rotation,
@@ -246,6 +265,25 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
             .def("get_evictable_size", &CacheEvictionConfig::get_evictable_size);
 
+    py::enum_<SparseAttentionMode>(m, "SparseAttentionMode",
+                            R"(Represents the mode of sparse attention applied during generation.
+                               :param SparseAttentionMode.TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.)")
+            .value("TRISHAPE", SparseAttentionMode::TRISHAPE);
+
+    py::class_<SparseAttentionConfig>(m, "SparseAttentionConfig", sparse_attention_config_docstring)
+            .def(py::init<>([](SparseAttentionMode mode, size_t num_last_dense_tokens_in_prefill, size_t num_retained_start_tokens_in_cache, size_t num_retained_recent_tokens_in_cache) {
+                return SparseAttentionConfig{mode, num_last_dense_tokens_in_prefill, num_retained_start_tokens_in_cache, num_retained_recent_tokens_in_cache}; }),
+                 // somehow pybind cannot associate enum arg with a default value with its python counterpart,
+                 // hence need to use arg_v instead of arg like everywhere else
+                 py::arg_v("mode", SparseAttentionMode::TRISHAPE, "SparseAttentionMode.TRISHAPE"),
+                 py::arg("num_last_dense_tokens_in_prefill") = 100,
+                 py::arg("num_retained_start_tokens_in_cache") = 128,
+                 py::arg("num_retained_recent_tokens_in_cache") = 1920)
+            .def_readwrite("mode", &SparseAttentionConfig::mode)
+            .def_readwrite("num_last_dense_tokens_in_prefill", &SparseAttentionConfig::num_last_dense_tokens_in_prefill)
+            .def_readwrite("num_retained_start_tokens_in_cache", &SparseAttentionConfig::num_retained_start_tokens_in_cache)
+            .def_readwrite("num_retained_recent_tokens_in_cache", &SparseAttentionConfig::num_retained_recent_tokens_in_cache);
+
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
         .def(py::init<>())
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
@@ -255,7 +293,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
         .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)
         .def_readwrite("use_cache_eviction", &SchedulerConfig::use_cache_eviction)
-        .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config);
+        .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config)
+        .def_readwrite("use_sparse_attention", &SchedulerConfig::use_sparse_attention)
+        .def_readwrite("sparse_attention_config", &SchedulerConfig::sparse_attention_config);
 
     py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)
             .def(py::init<>())
@@ -297,6 +337,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
 
+        .def("start_chat", &ContinuousBatchingPipeline::start_chat, py::arg("system_message") = "")
+        .def("finish_chat", &ContinuousBatchingPipeline::finish_chat)
 
         .def(
             "generate",

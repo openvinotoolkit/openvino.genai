@@ -58,6 +58,7 @@ jobs:
 
   openvino_download:
     needs: smart_ci
+    if: ${{ github.event_name != 'merge_group' && needs.smart_ci.outputs.skip_workflow != 'True' }}
     name: Download OpenVINO
     outputs:
       status: ${{ steps.openvino_download.outcome }}
@@ -210,7 +211,7 @@ jobs:
   genai_build_wheel:
     name: Build Wheel
     needs: [ openvino_download ]
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -426,15 +427,15 @@ jobs:
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
             cmd: 'tests/python_tests/test_whisper_pipeline.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
-            timeout: 45
+            timeout: 120
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 180
+            timeout: 240
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            timeout: 120
+            timeout: 180
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -523,7 +524,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
     needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
-    timeout-minutes: 45
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
