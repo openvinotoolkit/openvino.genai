@@ -4,6 +4,7 @@
 import os
 import pytest
 import sys
+import subprocess
 
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
@@ -19,6 +20,7 @@ class TestImage2Image:
         indirect=["download_model"],
     )
     @pytest.mark.parametrize("download_test_content", ["images/image.png"], indirect=True)
+    @pytest.mark.xfail(reason="Failed to open model_index.json. Ticket 171245", raises=subprocess.CalledProcessError)
     def test_sample_image2image(self, download_model, prompt, download_test_content):
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "image_generation/image2image.py")
@@ -44,6 +46,7 @@ class TestImage2Image:
         indirect=["download_model"],
     )
     @pytest.mark.parametrize("download_test_content", ["images/image.png"], indirect=True)
+    @pytest.mark.xfail(reason="Failed to open model_index.json. Ticket 171245", raises=subprocess.CalledProcessError)
     def test_sample_image2image_concurrency(self, download_model, prompts, download_test_content):
         # Run C++ sample
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'image2image_concurrency')
