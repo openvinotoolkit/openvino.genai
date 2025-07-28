@@ -67,10 +67,57 @@ std::optional<std::string> remap_template(const std::string& chat_template) {
     return std::nullopt;
 }
 
-void parse_if_exists(const std::filesystem::path& path, std::string& value) {
-    if (std::filesystem::exists(path)) {
-        ov::genai::utils::read_json_param(nlohmann::json::parse(std::ifstream{path}), "chat_template", value);
+void parse_chat_template_from_file(const std::filesystem::path& path, std::string& value) {
+    if (!std::filesystem::exists(path)) {
+        return;
     }
+    auto json_data = nlohmann::json::parse(std::ifstream{path});
+    if (!json_data.contains("chat_template")) {
+        return;
+    }
+    auto chat_template_field = json_data["chat_template"];
+
+    if (chat_template_field.is_string()) {
+        value = chat_template_field.get<std::string>();
+        return;
+    }
+    // Handle chat template format: [{ "name": "default", "template": "..." }]
+    // e.g. for CohereLabs/aya-23-8B & CohereLabs/c4ai-command-r-v01 models
+    if (chat_template_field.is_array()) {
+        for (const auto& item : chat_template_field) {
+            if (
+                item.is_object() && item.contains("name") && item["name"] == "default" &&
+                item.contains("template") && item["template"].is_string()
+            ) {
+                value = item["template"].get<std::string>();
+                return;
+            }
+        }
+    }
+    std::cerr << "[ WARNING ] Unsupported chat_template format in file: " << path.string() << "\n";
+    std::cerr << "Supported formats: string or array of objects with 'name' and 'template' fields.\n";
+    std::cerr << "To avoid this warning, check \"chat_template\" field in the file and update it accordingly.\n";
+}
+
+void parse_chat_template_from_tokenizer(std::shared_ptr<ov::Model> ov_tokenizer, std::string& value) {
+    if (!ov_tokenizer->has_rt_info("chat_template")) {
+        return;
+    }
+    ov::Any chat_template_value = ov_tokenizer->get_rt_info<ov::Any>("chat_template");
+    if (chat_template_value.is<std::string>()) {
+        value = chat_template_value.as<std::string>();
+        return;
+    }
+    // Handle rt_info chat template format: <chat_template><default value="..." /></chat_template>
+    if (chat_template_value.is<ov::AnyMap>()) {
+        ov::AnyMap chat_template_map = chat_template_value.as<ov::AnyMap>();
+        auto default_iter = chat_template_map.find("default");
+        if (default_iter != chat_template_map.end() && default_iter->second.is<std::string>()) {
+            value = default_iter->second.as<std::string>();
+            return;
+        }
+    }
+    std::cerr << "[ WARNING ] Unsupported type for 'chat_template' in ov_tokenizer model: " << chat_template_value.type_info().name() << std::endl;
 }
 
 template <typename T>
@@ -326,9 +373,9 @@ public:
         read_special_tokens_map(models_path);
         // Try to read tokenizer_config if some token ids or token str are not defined.
         read_tokenizer_config_if_necessary(models_path);
-        parse_if_exists(models_path / "tokenizer_config.json", m_chat_template);
-        parse_if_exists(models_path / "processor_config.json", m_chat_template);
-        parse_if_exists(models_path / "chat_template.json", m_chat_template);
+        parse_chat_template_from_file(models_path / "tokenizer_config.json", m_chat_template);
+        parse_chat_template_from_file(models_path / "processor_config.json", m_chat_template);
+        parse_chat_template_from_file(models_path / "chat_template.json", m_chat_template);
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
     }
 
@@ -390,7 +437,8 @@ public:
             m_bos_token_id = find_or_fallback(rt_info, "bos_token_id", m_bos_token_id);
             m_eos_token_id = find_or_fallback(rt_info, "eos_token_id", m_eos_token_id);
 
-            m_chat_template = find_or_fallback(rt_info, "chat_template", m_chat_template);
+            parse_chat_template_from_tokenizer(ov_tokenizer, m_chat_template);
+
             std::optional<std::string> fallback = remap_template(m_chat_template);
             if (fallback.has_value()) {
                 m_chat_template = std::move(fallback).value();
