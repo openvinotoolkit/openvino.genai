@@ -47,7 +47,27 @@ void reshape_model(std::shared_ptr<Model>& model, ov::PartialShape& shape) {
         name_to_shape["token_type_ids"] = shape;
     }
 
+    // print current model input shapes
+    std::cout << "Current model input shapes:" << std::endl;
+    for (const auto& input : model->inputs()) {
+        std::cout << "  " << input.get_any_name() << ": " << input.get_partial_shape().to_string() << std::endl;
+    }
+
+    // print name_to_shape for debugging
+    std::cout << "Reshaping model with the following shapes:" << std::endl;
+    for (const auto& [name, shape] : name_to_shape) {
+        std::cout << "  " << name << ": " << shape.to_string() << std::endl;
+    }
+
     model->reshape(name_to_shape);
+
+    std::cout << "Model reshaped to the following shapes:" << std::endl;
+    for (const auto& input : model->inputs()) {
+        std::cout << "  " << input.get_any_name() << ": " << input.get_partial_shape().to_string() << std::endl;
+    }
+    for (const auto& output : model->outputs()) {
+        std::cout << "  " << output.get_any_name() << ": " << output.get_partial_shape().to_string() << std::endl;
+    }
 }
 
 /**
@@ -218,6 +238,14 @@ private:
 
     void start_embed_async(std::vector<std::string>& texts) {
         const auto encoded = m_tokenizer.encode(texts, m_tokenization_params);
+
+        // print model input shapes for debugging
+        for (const auto& input : m_request.get_compiled_model().inputs()) {
+            std::cout << "Input: " << input.get_any_name() << ", shape: " << input.get_partial_shape().to_string()
+                      << std::endl;
+        }
+
+        std::cout << "encoded Input_ids shape: " << encoded.input_ids.get_shape().to_string() << std::endl;
 
         m_request.set_tensor("input_ids", encoded.input_ids);
         m_request.set_tensor("attention_mask", encoded.attention_mask);
