@@ -162,7 +162,6 @@ inline ov::Tensor from_npy(const std::filesystem::path& npy) {
 }
 
 inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {
-    OPENVINO_ASSERT(lhs.get_element_type() == rhs.get_element_type());
     OPENVINO_ASSERT(lhs.get_shape() == rhs.get_shape());
     float max_diff = 0.0f;
     for (size_t idx = 0; idx < lhs.get_size(); ++idx) {
@@ -176,8 +175,16 @@ inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {
     return max_diff;
 }
 
-inline std::ostream& operator<<(std::ostream& os, const std::vector<float>& floats) {
-    os << "vec<float>[" << floats.size() << "]: ";
-    std::copy(floats.begin(), floats.end(), std::ostream_iterator<float>(os, " "));
+#define print(x) std::cerr << #x << x << '\n';
+
+namespace std {
+inline ostream& operator<<(ostream& os, const vector<float>& floats) {
+    os << "<float>[" << floats.size();
+    if (floats.empty()) {
+        return os << ']';
+    }
+    os << "]: ";
+    copy(floats.begin(), floats.end(), ostream_iterator<float>(os, " "));
     return os;
+}
 }

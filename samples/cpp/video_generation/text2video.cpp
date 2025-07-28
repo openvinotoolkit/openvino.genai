@@ -403,7 +403,7 @@ std::unique_ptr<ov::genai::LTXPipeline> create_LTXPipeline(const std::filesystem
 
 namespace ov::genai {
 struct Text2VideoPipeline {
-    std::unique_ptr<LTXPipeline> m_impl;
+    std::unique_ptr<LTXPipeline> m_impl;  // TODO: better pimpl
     Text2VideoPipeline(const std::filesystem::path& models_dir, const std::string& device, const ov::AnyMap& properties = {}) :
         m_impl{create_LTXPipeline(models_dir, device, properties)} {}
     /**
