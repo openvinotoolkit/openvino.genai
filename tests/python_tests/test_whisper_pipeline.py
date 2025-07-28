@@ -537,7 +537,7 @@ def test_longform_audio_with_past(model_descr, sample_from_dataset):
 def test_shortform(model_descr):
     samples = []
     ds = datasets.load_dataset(
-        "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation"
+        "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation", trust_remote_code=True
     )
 
     for ds_row in ds:
