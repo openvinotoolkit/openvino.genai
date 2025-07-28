@@ -25,10 +25,6 @@ bool check_vl_sdpa_transformations(const ov::CompiledModel& compiled_model) {
         }
     }
 
-    if (env_setup_for_print_debug_info()) {
-        std::cout << "[vl_sdpa_transformations] ENABLED? [" << exists << "]" << std::endl;
-    }
-
     return exists;
 }
 
