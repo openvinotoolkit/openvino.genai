@@ -107,6 +107,12 @@ ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_co
     noise = ref_noise;
     return pack_latents(noise, transformer_spatial_patch_size, transformer_temporal_patch_size);
 }
+namespace utils {
+ov::Core singleton_core() {
+    static ov::Core core;
+    return core;
+}
+}
 }  // anonymous namespace
 namespace ov::genai {
 struct LTXVideoTransformer3DModel {
@@ -117,8 +123,50 @@ struct LTXVideoTransformer3DModel {
         size_t patch_size = 1;  // TODO: read from transformer/config.json
         size_t patch_size_t = 1;  // TODO: read from transformer/config.json
     };
-    LTXVideoTransformer3DModel(const std::filesystem::path& dir, const std::string& device, const ov::AnyMap& properties) {}
+    ov::InferRequest m_ireq;
+    LTXVideoTransformer3DModel(const std::filesystem::path& dir, const std::string& device, const ov::AnyMap& properties)
+    : m_ireq{::utils::singleton_core().compile_model(dir / "openvino_model.xml", device, properties).create_infer_request()} {}
+// inputs[
+// <ConstOutput: names[hidden_states] shape[?,?,128] type: f32>,
+// <ConstOutput: names[encoder_hidden_states] shape[?,?,4096] type: f32>,
+// <ConstOutput: names[timestep] shape[?] type: f32>,
+// <ConstOutput: names[encoder_attention_mask] shape[?,?] type: i64>,
+// <ConstOutput: names[num_frames] shape[] type: i64>,
+// <ConstOutput: names[height] shape[] type: i64>,
+// <ConstOutput: names[width] shape[] type: i64>,
+// <ConstOutput: names[rope_interpolation_scale] shape[3] type: f32>
+// ]
+// outputs[
+// <ConstOutput: names[out_sample] shape[?,?,128] type: f32>
+// ]>
+
+// Flux:
+// inputs[
+// <ConstOutput: names[hidden_states] shape[?,?,64] type: f32>,
+// <ConstOutput: names[encoder_hidden_states] shape[?,?,4096] type: f32>,
+// <ConstOutput: names[pooled_projections] shape[?,768] type: f32>,
+// <ConstOutput: names[timestep] shape[?] type: f32>,
+// <ConstOutput: names[img_ids] shape[?,3] type: f32>,
+// <ConstOutput: names[txt_ids] shape[?,3] type: f32>,
+// <ConstOutput: names[guidance] shape[?] type: f32>
+// ]
+// outputs[
+// <ConstOutput: names[out_sample] shape[?,?,64] type: f32>
+// ]>
     Config get_config() const {return Config{};}
+    void set_hidden_states(const std::string& tensor_name, const ov::Tensor& encoder_hidden_states) {
+        OPENVINO_ASSERT(m_ireq, "Transformer model must be compiled first");
+        m_ireq.set_tensor(tensor_name, encoder_hidden_states);
+    }
+    ov::Tensor infer(const ov::Tensor& latent_model_input, const ov::Tensor& timestep) {
+        OPENVINO_ASSERT(m_ireq, "Transformer model must be compiled first. Cannot infer non-compiled model");
+
+        m_ireq.set_tensor("hidden_states", latent_model_input);
+        m_ireq.set_tensor("timestep", timestep);
+        m_ireq.infer();
+
+        return m_ireq.get_output_tensor();
+    }
 };
 struct AutoencoderKLLTXVideo {
     struct OPENVINO_GENAI_EXPORTS Config {
@@ -303,15 +351,15 @@ struct LTXPipeline {
         ov::Tensor ref_timesteps = from_npy("timesteps.npy");
         OPENVINO_ASSERT(max_diff(ov::Tensor{ov::element::f32, {timesteps.size()}, timesteps.data()}, ref_timesteps) < 0.0002f);
 
-        // // Denoising loop
+        // Denoising loop
         // ov::Tensor timestep(ov::element::f32, {1});
         // float* timestep_data = timestep.data<float>();
 
-        // for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
-        //     auto step_start = std::chrono::steady_clock::now();
+        for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
+            auto step_start = std::chrono::steady_clock::now();
         //     timestep_data[0] = timesteps[inference_step] / 1000.0f;
 
-        //     auto infer_start = std::chrono::steady_clock::now();
+            auto infer_start = std::chrono::steady_clock::now();
         //     ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep);
         //     auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
         //     m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
@@ -336,7 +384,7 @@ struct LTXPipeline {
 
         //     auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
         //     m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
-        // }
+        }
 
         // latents = unpack_latents(latents, custom_generation_config.height, custom_generation_config.width, vae_scale_factor);
         // const auto decode_start = std::chrono::steady_clock::now();
