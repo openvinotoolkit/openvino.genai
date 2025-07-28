@@ -8,6 +8,7 @@ import sys
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
 
+
 class TestImage2Image:
     @pytest.mark.samples
     @pytest.mark.image_generation
