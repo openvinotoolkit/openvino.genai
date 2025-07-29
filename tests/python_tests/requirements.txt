@@ -8,6 +8,7 @@ pytest-html
 hf_transfer
 langchain_community
 gguf>=0.10.0
+torch>=2.6.0 # Because older version do not have get_default_device() and because of ValueError: Due to a serious vulnerability issue in `torch.load`, even with `weights_only=True`, we now require users to upgrade torch to at least v2.6 in order to use the function. 
 
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
