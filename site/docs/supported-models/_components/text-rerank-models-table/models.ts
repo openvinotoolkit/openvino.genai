@@ -11,9 +11,9 @@ export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
     models: [
       {
         links: [
-          'https://huggingface.co/cross-encoder/ms-marco-MiniLM-L6-v2',
           'https://huggingface.co/cross-encoder/ms-marco-MiniLM-L2-v2',
           'https://huggingface.co/cross-encoder/ms-marco-MiniLM-L4-v2',
+          'https://huggingface.co/cross-encoder/ms-marco-MiniLM-L6-v2',
           'https://huggingface.co/cross-encoder/ms-marco-MiniLM-L12-v2',
           'https://huggingface.co/cross-encoder/ms-marco-TinyBERT-L2-v2',
           'https://huggingface.co/tomaarsen/reranker-MiniLM-L12-gooaq-bce',
