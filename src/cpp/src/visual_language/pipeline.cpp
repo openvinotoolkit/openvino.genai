@@ -45,8 +45,6 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
-    size_t m_image_id = 0;
-    ChatHistory m_history;
 
 public:
     VLMPipelineImpl(
@@ -199,7 +197,7 @@ public:
         }
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
         if (m_is_npu) {
@@ -262,16 +260,6 @@ public:
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
-
-            if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
-                m_image_id += encoded_images.size();
-                // Tail of chat template is missing in KV cache.
-                // Find the tail to concatenate it with the next input prompt.
-                m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
-            }
-            else {
-                m_history.pop_back();
-            }
         }
         else
             kv_cache_state.reset_state();
@@ -310,7 +298,6 @@ public:
     void finish_chat() override {
         OPENVINO_ASSERT(!m_is_npu, "finish_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = false;
-        m_image_id = 0;
         // Resetting state may be slow.
         m_language.reset_state();
         m_language.get_tensor("attention_mask").set_shape({0, 0});

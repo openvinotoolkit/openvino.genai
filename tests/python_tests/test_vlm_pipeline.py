@@ -177,6 +177,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config):
         models_path,
         "CPU",
         scheduler_config=scheduler_config,
+        ATTENTION_BACKEND="PA",
         **get_default_llm_properties(),
     )
     generation_config = config

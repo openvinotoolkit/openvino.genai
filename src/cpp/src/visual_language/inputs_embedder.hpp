@@ -35,9 +35,9 @@ public:
                    const ov::AnyMap device_config);
 
     // compute input embedding for prompt and multiple images
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence);
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true);
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -65,11 +65,7 @@ public:
     // finishes chat and clears a chat history 
     void finish_chat();
 
-    virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
-        const std::string& prompt,
-        size_t base_id,
-        const std::vector<EncodedImage>& images
-    ) const;
+    bool prompt_has_image_tag(const std::string& prompt) const;
 
 private:
     class IInputsEmbedder {
@@ -88,6 +84,7 @@ private:
         // history between generate() calls.
         bool m_is_chat_conversation = false;
         // Chat history
+        ChatHistory m_history;
         // True if chat template should be applied for non-chat scenario
         bool m_apply_chat_template = true;
         // Finish reason of last generation for chat scenario
@@ -96,11 +93,14 @@ private:
         utils::KVCacheState m_kv_cache_state;
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
+        // Verifies no previous image is referenced.
+        // InputsEmbedderMiniCPM Uses to insert <image_id>i</image_id> per image (not a slice).
+        size_t m_image_id = 0;
 
     public:
-        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
+        virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) = 0;
 
-        ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence);
+        ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
     
@@ -128,11 +128,7 @@ private:
     
         virtual void finish_chat();
 
-        virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
-            const std::string& prompt,
-            size_t base_id,
-            const std::vector<EncodedImage>& images
-        ) const = 0;
+        virtual bool prompt_has_image_tag(const std::string& prompt) const;
     
     protected:
         IInputsEmbedder(
@@ -154,14 +150,6 @@ private:
         ov::Tensor update_history(const ov::Tensor& new_chat_tokens);
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
-
-        std::pair<std::string, std::vector<size_t>> normalize(
-            const std::string& prompt,
-            const std::string& native_tag,
-            const std::string& automatic_tag,
-            size_t base_id,
-            size_t n_images
-        ) const;
 
         /**
         * @brief Converts a vector of batched images ([NHWC]) into a vector of individual image tensors ([1HWC]).

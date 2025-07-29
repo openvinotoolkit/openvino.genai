@@ -816,4 +816,3 @@ def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
         assert it_cnt == 0
     else:
         assert it_cnt > 0
-

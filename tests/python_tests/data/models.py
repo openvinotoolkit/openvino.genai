@@ -41,4 +41,8 @@ def get_gguf_model_list():
             # Dummy gguf model accuracy is sensitive for dynamic quantization w/ small group size 32 (default), set group size as 64 explicitly instead
             "dynamic_quantization_group_size": "64",
         },
+        {
+            "gguf_model_id": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+            "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf"
+        },
     ]
