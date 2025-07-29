@@ -20,8 +20,8 @@ export const UseCasesSection = () => (
       <ImageGeneration />
       <SpeechRecognition />
       <ImageProcessing />
-      <TextRerank />
       <TextEmbedding />
+      <TextRerank />
     </div>
     <div className={styles.useCasesFooter}>
       <strong>Looking for more?</strong>&nbsp;See all{' '}

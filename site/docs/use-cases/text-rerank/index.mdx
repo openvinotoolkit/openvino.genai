@@ -5,12 +5,12 @@ import OptimumCLI from '@site/src/components/OptimumCLI';
 import ConvertModelSection from '../_shared/_convert_model.mdx';
 import RunModelSection from './_sections/_run_model/index.mdx';
 
-# Text Rerank for RAG
+# Text Reranking
 
 <ConvertModelSection>
-    Download and convert a reranker model (e.g. [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)) to OpenVINO format from Hugging Face:
+    Download and convert a reranker model (e.g. [cross-encoder/ms-marco-MiniLM-L6-v2](https://huggingface.co/cross-encoder/ms-marco-MiniLM-L6-v2)) to OpenVINO format from Hugging Face:
 
-    <OptimumCLI model='BAAI/bge-small-en-v1.5' outputDir='BAAI/bge-small-en-v1.5' trustRemoteCode />
+    <OptimumCLI model='cross-encoder/ms-marco-MiniLM-L6-v2' outputDir='cross-encoder/ms-marco-MiniLM-L6-v2' trustRemoteCode />
 
     See all supported [Reranker Models](/docs/supported-models/#text-rerank-models).
 </ConvertModelSection>
