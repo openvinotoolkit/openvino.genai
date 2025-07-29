@@ -63,6 +63,7 @@ jobs:
 
   openvino_download:
     needs: smart_ci
+    if: ${{ github.event_name != 'merge_group' && needs.smart_ci.outputs.skip_workflow != 'True' }}
     name: Download prebuilt OpenVINO
     outputs:
       status: ${{ steps.openvino_download.outcome }}
@@ -210,15 +211,19 @@ jobs:
           }
 
           foreach ($pyVersion in $pyVersions) {
-
+            Remove-Item -Path "${{ env.BUILD_DIR }}/CMakeCache.txt" -Force -ErrorAction SilentlyContinue
             $pythonCommand = "py -$pyVersion -c `"import sys; print(f'{sys.executable}')`""
             $pythonExecutablePath = & cmd /c $pythonCommand
 
-            cmake -DPython3_EXECUTABLE="$pythonExecutablePath" -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
-            cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build-type }} --verbose
+            cmake -DPython3_EXECUTABLE="$pythonExecutablePath" -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }} &&
+            cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build-type }} --verbose &&
             cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.GENAI_INSTALL_DIR }}
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "Failed to build bindings for Python $pyVersion"
+              exit 1
+            }
           }
-          
+
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
           cmake --install ${{ env.BUILD_DIR }} --config=${{ matrix.build-type }} --prefix=${{ env.INSTALL_TESTS_DIR }} --component tests
         env:
@@ -283,7 +288,7 @@ jobs:
   genai_build_wheel:
     name: genai wheel
     needs: [ openvino_download ]
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
@@ -604,15 +609,19 @@ jobs:
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
-            timeout: 45
+            timeout: 120
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 180
+            timeout: 240
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            timeout: 120
+            timeout: 180
+          - name: 'GGUF Reader tests'
+            cmd: 'tests/python_tests/test_gguf_reader.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
+            timeout: 60
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}

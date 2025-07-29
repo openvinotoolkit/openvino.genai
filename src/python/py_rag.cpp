@@ -42,6 +42,8 @@ Structure to keep TextRerankPipeline configuration parameters.
 Attributes:
     top_n (int, optional):
         Number of documents to return sorted by score.
+    max_length (int, optional):
+        Maximum length of tokens passed to the embedding model.
 )";
 
 }  // namespace
@@ -207,7 +209,8 @@ kwargs: Plugin and/or config properties
         .def(py::init([](py::kwargs kwargs) {
             return ov::genai::TextRerankPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
         }))
-        .def_readwrite("top_n", &ov::genai::TextRerankPipeline::Config::top_n);
+        .def_readwrite("top_n", &ov::genai::TextRerankPipeline::Config::top_n)
+        .def_readwrite("max_length", &ov::genai::TextRerankPipeline::Config::max_length);
 
     text_rerank_pipeline.def(
         py::init([](const std::filesystem::path& models_path,

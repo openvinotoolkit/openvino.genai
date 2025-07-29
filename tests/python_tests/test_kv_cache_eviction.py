@@ -84,10 +84,9 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
                        avg_cache_usage_optimization_ratio=1.1),
 
     ], ids=lambda x: x.test_id)
-@pytest.mark.parametrize("enable_prefix_caching", [True, False],
-                                                  ids=["with_prefix_caching", "no_prefix_caching"])  # prefix caching shouldn't impact similarity
 @pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
-def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, enable_prefix_caching, apply_rotation):
+@pytest.mark.parametrize("use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]) # sparse attn should not degrade similarity too much
+def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention):
     import whowhatbench
 
     seqs_per_request = 32
@@ -103,7 +102,9 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, enabl
     if scheduler_config_opt.use_cache_eviction:
         scheduler_config_opt.cache_eviction_config = test_struct.cache_eviction_config
         scheduler_config_opt.cache_eviction_config.apply_rotation = apply_rotation
-    scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
+    scheduler_config_opt.use_sparse_attention = use_sparse_attention
+    if use_sparse_attention:
+        scheduler_config_opt.sparse_attention_config.num_last_dense_tokens_in_prefill = 10
 
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     _, tokenizer, models_path = download_and_convert_model(model_id)
@@ -193,7 +194,7 @@ class LongBenchTestData:
 @pytest.mark.parametrize("test_struct", [
     LongBenchTestData("samsum", 4, 1.6, 2.5),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
-])
+], ids=["samsum", "trec"])
 def test_optimized_generation_longbench(test_struct):
     seqs_per_request = 32
     device = "CPU"
@@ -204,8 +205,9 @@ def test_optimized_generation_longbench(test_struct):
 
     scheduler_config_opt = get_scheduler_config(num_kv_blocks)
     scheduler_config_opt.use_cache_eviction = True
-    if scheduler_config_opt.use_cache_eviction:
-        scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+    scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+
+    scheduler_config_opt.use_sparse_attention = True
 
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
@@ -218,7 +220,7 @@ def test_optimized_generation_longbench(test_struct):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]')
+    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]', trust_remote_code=True)
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []

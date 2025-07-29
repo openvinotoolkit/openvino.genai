@@ -17,6 +17,11 @@ public:
         size_t top_n = 3;
 
         /**
+         * @brief Maximum length of tokens passed to the rerank model
+         */
+        std::optional<size_t> max_length;
+
+        /**
          * @brief Constructs text rerank pipeline configuration
          */
         Config() = default;
@@ -73,13 +78,13 @@ public:
     /**
      * @brief Reranks a vector of texts based on the query.
      */
-    std::vector<std::pair<size_t, float>> rerank(const std::string query, const std::vector<std::string>& texts);
+    std::vector<std::pair<size_t, float>> rerank(const std::string& query, const std::vector<std::string>& texts);
 
     /**
      * @brief Asynchronously reranks a vector of texts based on the query. Only one method of async family can be
      * active.
      */
-    void start_rerank_async(const std::string query, const std::vector<std::string>& texts);
+    void start_rerank_async(const std::string& query, const std::vector<std::string>& texts);
 
     /**
      * @brief Waits for reranked texts.

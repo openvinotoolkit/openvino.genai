@@ -22,7 +22,7 @@ using Vocab = std::unordered_map<std::string, int64_t>;  // similar to huggingfa
 struct TokenizedInputs {
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
-    std::optional<ov::Tensor> token_type_ids;  // optional tensor for token type ids, used in some models
+    std::optional<ov::Tensor> token_type_ids;
 };
 
 /**
