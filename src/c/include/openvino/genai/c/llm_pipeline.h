@@ -78,7 +78,7 @@ typedef struct ov_genai_llm_pipeline_opaque ov_genai_llm_pipeline;
  * @param device Name of a device to load a model to.
  * @param property_args_size How many properties args will be passed, each property contains 2 args: key and value.
  * @param ov_genai_llm_pipeline A pointer to the newly created ov_genai_llm_pipeline.
- * @param ... property paramater: Optional pack of pairs: <char* property_key, char* property_value> relevant only
+ * @param ... property parameter: Optional pack of pairs: <char* property_key, char* property_value> relevant only
  * @return ov_status_e A status code, return OK(0) if successful.
  *
  * @example

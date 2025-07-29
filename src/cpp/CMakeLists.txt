@@ -14,11 +14,15 @@ if(NOT TARGET nlohmann_json)
 endif()
 
 function(ov_genai_build_jinja2cpp)
+    # Pretend ccache is not found
+    set(CCACHE_FOUND FALSE CACHE INTERNAL "Prevent third-party from enabling ccache automatically")
+    
     FetchContent_Declare(jinja2cpp
         URL https://github.com/jinja2cpp/Jinja2Cpp/archive/86dfb939b5c2beb7fabddae2df386be4e7fb9507.tar.gz
         URL_HASH SHA256=c222e2407316a573561bd74dfd1cd7b34b359f5481ac59529b3de355162ef9f7)
 
     FetchContent_GetProperties(jinja2cpp)
+    
     if(NOT jinja2cpp_POPULATED)
         FetchContent_Populate(jinja2cpp)
 
@@ -95,7 +99,7 @@ if(ENABLE_XGRAMMAR)
             string(REGEX REPLACE "XGRAMMAR_BUILD_PYTHON_BINDINGS ON"
                                 "XGRAMMAR_BUILD_PYTHON_BINDINGS OFF"
                                 MODIFIED_CONFIG "${CONFIG_CONTENT}")
-            
+
             string(REGEX REPLACE "^set\\(CMAKE_BUILD_TYPE .*$"
                                 "set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE})"
                                 MODIFIED_CONFIG "${MODIFIED_CONFIG}")
@@ -107,6 +111,10 @@ if(ENABLE_XGRAMMAR)
         set(XGRAMMAR_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA" FORCE)
 
         add_subdirectory("${xgrammar_SOURCE_DIR}" "${xgrammar_BINARY_DIR}" EXCLUDE_FROM_ALL)
+        if(MSVC)
+            # Suppress C4146 warning for MSVC compiler
+            target_compile_options(xgrammar PRIVATE "/wd4146")
+        endif()
     endif()
 endif()
 # generate version files
@@ -169,6 +177,10 @@ set_target_properties(${TARGET_NAME_OBJ} PROPERTIES POSITION_INDEPENDENT_CODE ON
 
 add_library(${TARGET_NAME} SHARED $<TARGET_OBJECTS:${TARGET_NAME_OBJ}>)
 add_library(openvino::genai ALIAS ${TARGET_NAME})
+
+if(WIN32)
+  add_vs_version_resource(${TARGET_NAME})
+endif()
 
 target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime/include>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"

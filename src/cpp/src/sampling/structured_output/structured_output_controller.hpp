@@ -84,7 +84,7 @@ private:
     std::unordered_map<std::string, std::unique_ptr<IStructuredOutputImpl>> m_impls;
     const ov::genai::Tokenizer& m_tokenizer;
     std::optional<int> m_vocab_size;
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
 };
 
 } // namespace genai
