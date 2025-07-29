@@ -39,7 +39,7 @@ sacremoses
 # - openai/whisper-base
 librosa
 soundfile
-datasets==3.6.0
+datasets==4.0.0
 rouge
 # - microsoft/Phi-4-multimodal-instruct
 peft
