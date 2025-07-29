@@ -203,7 +203,7 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["bge-small-en-v1.5"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
         ["-d", "cpu", "-n", "2"], 
         ["-d", "cpu", "-n", "2", "--embedding_max_length", "128", "--embedding_normalize", "--embedding_pooling", "mean"], 
