@@ -219,7 +219,7 @@ private:
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "FluxFillPipeline supports inpainting mode only");
 
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
         OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by FluxFillPipeline");

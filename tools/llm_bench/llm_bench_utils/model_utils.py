@@ -135,6 +135,7 @@ def analyze_args(args):
     model_args['emb_pooling_type'] = args.embedding_pooling
     model_args['emb_normalize'] = args.embedding_normalize
     model_args["emb_max_length"] = args.embedding_max_length
+    model_args["apply_chat_template"] = args.apply_chat_template
 
     optimum = args.optimum
 

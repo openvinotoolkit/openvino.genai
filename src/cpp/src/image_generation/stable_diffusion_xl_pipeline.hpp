@@ -375,8 +375,8 @@ public:
 
 private:
     void initialize_generation_config(const std::string& class_name) override {
-        assert(m_unet != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_unet != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
@@ -408,7 +408,7 @@ private:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         const bool is_classifier_free_guidance = m_unet->do_classifier_free_guidance(generation_config.guidance_scale);
         const char * const pipeline_name = "Stable Diffusion XL";

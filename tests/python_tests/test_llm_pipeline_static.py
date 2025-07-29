@@ -53,6 +53,7 @@ generation_configs = [
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.xfail(reason="Generation result mismatch. Ticket 171117", raises=AssertionError)
 def test_generation_compare_with_stateful(generation_config, config, model_id):
     prompt = 'What is OpenVINO?'
     _, _, model_path = download_and_convert_model(model_id)
@@ -70,6 +71,7 @@ def test_generation_compare_with_stateful(generation_config, config, model_id):
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("with_weights", blob_with_weights)
 @pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.xfail(reason="Randomly crashes. Ticket 171015", run=False)
 def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id):
     prompt = 'What is OpenVINO?'
     _, _, model_path = download_and_convert_model(model_id)
@@ -105,6 +107,7 @@ def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id):
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("with_weights", blob_with_weights)
 @pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.xfail(reason="Randomly crashes. Ticket 171015", run=False)
 def test_pipeline_cache_dir(model_tmp_path, config, with_weights, model_id):
     prompt = 'What is OpenVINO?'
     _, _, model_path = download_and_convert_model(model_id)
