@@ -177,6 +177,10 @@ class OverwritableBlocksHashStore {
         }
         return retval;
     }
+
+    void clear() {
+        m_blocks.clear();
+    }
 };
 
 class CacheStateDumper;
@@ -489,6 +493,15 @@ public:
      */
     size_t get_total_number_of_kv_blocks() const {
         return m_total_num_blocks;
+    }
+
+    void clear() {
+        m_total_num_blocks = 0;
+        m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
+        for (auto& per_layer_block_list : m_free_blocks) {
+            per_layer_block_list.clear();
+        }
+        m_overwriteable_blocks.clear();
     }
 };
 
@@ -1137,6 +1150,17 @@ public:
                 break;
             }
         }
+    }
+
+    void clear() {
+        // KV-cache should not be cleared in prefix caching is enabled
+        OPENVINO_ASSERT(m_enable_prefix_caching == false);
+
+        m_allocator.clear();
+        m_prefix_hash_to_occupied_block_map.clear();
+
+        // Block tables should be cleared when generation is finished
+        OPENVINO_ASSERT(m_block_table.empty());
     }
 };
 

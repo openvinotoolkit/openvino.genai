@@ -63,15 +63,17 @@ def main():
         # Cache compiled models on disk for GPU to save time on the next run.
         # It's not beneficial for CPU.
         enable_compile_cache["CACHE_DIR"] = "vlm_cache"
-
-    pipe = openvino_genai.VLMPipeline(args.model_dir, args.device, **enable_compile_cache)
+    s_config = openvino_genai.SchedulerConfig()
+    s_config.enable_prefix_caching = False
+    pipe = openvino_genai.VLMPipeline(args.model_dir, args.device, scheduler_config=s_config, **enable_compile_cache)
 
     config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = 100
+    config.max_new_tokens = 10000
 
-    pipe.start_chat()
+    #pipe.start_chat()
     prompt = input('question:\n')
-    pipe.generate(prompt, images=rgbs, generation_config=config, streamer=streamer)
+    out = pipe.generate(prompt, images=rgbs, generation_config=config)#, streamer=streamer)
+    print(out.texts[0])
 
     while True:
         try:
@@ -79,8 +81,9 @@ def main():
                 "question:\n")
         except EOFError:
             break
-        pipe.generate(prompt, generation_config=config, streamer=streamer)
-    pipe.finish_chat()
+        out = pipe.generate(prompt, generation_config=config)#, streamer=streamer)
+        print(out.texts[0])
+    #pipe.finish_chat()
 
 
 if '__main__' == __name__:

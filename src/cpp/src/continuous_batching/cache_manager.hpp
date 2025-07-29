@@ -116,7 +116,8 @@ public:
         if (m_num_allocated_kv_blocks >= num_kv_blocks) {
             return;
         }
-
+        std::cout << "Allocate kv-cache: " << num_kv_blocks <<std::endl;
+        size_t prev_blocks_num = m_num_allocated_kv_blocks;
         m_num_allocated_kv_blocks = num_kv_blocks;
 
         ov::Coordinate start_key{0,0,0,0};
@@ -131,14 +132,16 @@ public:
                 ov::Tensor value_cache = m_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_cache_shape);
 
                 if (m_key_cache.size() > decoder_layer_id) {
-                    ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
-                    ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
+                    if (prev_blocks_num > 0) {
+                        ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
+                        ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
 
-                    // copy current cache data
-                    ov::RemoteTensor dst_key_roi(key_cache, start_key, end_key);
-                    ov::RemoteTensor dst_value_roi(value_cache, start_value, end_value);
-                    dst_key_roi.copy_from(m_key_cache[decoder_layer_id]);
-                    dst_value_roi.copy_from(m_value_cache[decoder_layer_id]);
+                        // copy current cache data
+                        ov::RemoteTensor dst_key_roi(key_cache, start_key, end_key);
+                        ov::RemoteTensor dst_value_roi(value_cache, start_value, end_value);
+                        dst_key_roi.copy_from(m_key_cache[decoder_layer_id]);
+                        dst_value_roi.copy_from(m_value_cache[decoder_layer_id]);
+                    }
 
                     m_key_cache[decoder_layer_id] = key_cache;
                     m_value_cache[decoder_layer_id] = value_cache;
@@ -165,7 +168,7 @@ public:
                 size_t key_roi_size_byte = 0;
                 size_t value_roi_size_byte = 0;
 
-                if (m_key_cache.size() > decoder_layer_id) {
+                if (m_key_cache.size() > decoder_layer_id && prev_blocks_num > 0) {
                     ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
                     ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
                     // copy current cache data
@@ -277,6 +280,15 @@ public:
                 }
             }
         }
+    }
+
+    void clear() {
+        for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
+            m_key_cache[decoder_layer_id] = ov::Tensor();
+            m_value_cache[decoder_layer_id] = ov::Tensor();
+        }
+        m_num_allocated_kv_blocks = 0;
+
     }
 };
 

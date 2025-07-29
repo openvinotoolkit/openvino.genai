@@ -490,6 +490,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     OPENVINO_ASSERT(results.size() == input_ids.size());
 
     generate_timer.end();
+    
+    if (!m_scheduler->get_config().enable_prefix_caching) {
+        m_scheduler->clear_kv_cache();
+    }
     return results;
 }
 

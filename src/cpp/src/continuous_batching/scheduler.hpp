@@ -101,6 +101,7 @@ public:
         m_cache_manager->copy_blocks(block_copy_map);
         copy_blocks_timer.end();
 
+        std::cout << "blocks: " <<m_block_manager->num_free_blocks() << "/" << m_block_manager->get_total_number_of_kv_blocks() << ", " << m_block_manager->get_used_percentage() <<std::endl;
         return scheduler_output;
     }
 
@@ -147,6 +148,12 @@ public:
 
     void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free) {
         m_block_manager->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
+    }
+
+    void clear_kv_cache() {
+        OPENVINO_ASSERT(m_config.enable_prefix_caching == false, "KV-cache should not be cleared if prefix caching is enabled.");
+        m_cache_manager->clear();
+        m_block_manager->clear();
     }
 
 private:
