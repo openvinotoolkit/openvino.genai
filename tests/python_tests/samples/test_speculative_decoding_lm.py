@@ -17,6 +17,7 @@ class TestSpeculativeDecodingLM:
         "convert_model, convert_draft_model, sample_args",
         [
             pytest.param("SmolLM2-360M", "SmolLM2-135M", "Alan Turing was a"),
+            pytest.param("SmolLM2-135M-GGUF", "SmolLM2-135M", "Alan Turing was a"),
         ],
         indirect=["convert_model", "convert_draft_model"],
     )
