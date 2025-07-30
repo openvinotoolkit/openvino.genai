@@ -553,6 +553,7 @@ void ContinuousBatchingPipeline::EagleDecodingImpl::step() {
     // get logits and last hidden layer
     auto main_generated_requests =
         m_main_pipeline->get_generated_requests();  // feature extraction is enabled in main pipeline
+
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_draft_request(checked_sequence.first, checked_sequence.second);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
@@ -647,6 +648,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
     OPENVINO_ASSERT(!has_non_finished_requests(),
                     "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use "
                     "ContinuousBatchingPipeline::add_request");
+
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
 
     ManualTimer generate_timer("speculative_decoding: generate()");

@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) try {
     // mode - vLLM or dynamic_split_fuse
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     // vLLM specific params
-    scheduler_config.max_num_seqs = 2;
+    scheduler_config.max_num_seqs = 3;
     scheduler_config.enable_prefix_caching = use_prefix;
 
     // It's possible to construct a Tokenizer from a different path.

@@ -152,7 +152,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
     }
-
+    m_scheduler->set_validation_mode(m_is_validation_mode_enabled);
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
     m_sampler->set_seed(m_generation_config.rng_seed);
 

@@ -32,6 +32,7 @@ class Scheduler {
     std::shared_ptr<CacheManager> m_cache_manager;
 
     size_t m_snapkv_window_size = 1;
+    bool m_validation_mode_enabled = false;
 public:
     struct Output {
         // IDs of scheduled groups
@@ -60,6 +61,10 @@ public:
     void release() {
         m_cache_manager.reset();
         m_block_manager.reset();
+    }
+
+    void set_validation_mode(bool is_validation_mode_enabled) {
+        m_validation_mode_enabled = is_validation_mode_enabled;
     }
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
@@ -338,8 +343,11 @@ private:
                 // Note: current function can return more than 1 token even for generation phase in case of some tokens
                 // of current sequence group were evicted before
                 size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
-
+                // if validation mode, we want to make sure the batch validation is done in one go
+                if (m_validation_mode_enabled && available_tokens_per_seq_in_megabatch < num_available_tokens_per_seq)
+                    break;
                 size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
+                
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
                 while (!m_block_manager->can_append_slots(sequence_group)){

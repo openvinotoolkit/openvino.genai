@@ -298,11 +298,11 @@ public:
                     size_t start_token_idx = current_token_idx;
                     size_t sequence_length = num_scheduled_tokens;
 
-                    auto key = std::make_pair(seq_group_id, sequence->get_grouped_id());
+                    auto key = std::make_pair(sequence_group->get_request_id(), sequence->get_grouped_id());
                     m_sequence_hidden_state_mapping[key] = std::make_pair(start_token_idx, sequence_length);
                 }
                 if (m_is_hidden_state_import_needed && hidden_state_data && hidden_size > 0) {
-                    auto key = std::make_pair(seq_group_id, sequence->get_grouped_id());
+                    auto key = std::make_pair(sequence_group->get_request_id(), sequence->get_grouped_id());
                     auto it = m_initial_hidden_states.find(key);
 
                     if (it != m_initial_hidden_states.end()) {
@@ -316,7 +316,7 @@ public:
                                 size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
                                 if (stored_hidden_size == hidden_size) {
-                                    if (stored_seq_len == num_scheduled_tokens) {
+                                    if (stored_seq_len == total_num_tokens) {
                                         hidden_state_input = stored_hidden_state;  // all tokens from eagle is accepted
                                     } else {
                                         size_t copy_length = std::min(stored_seq_len, num_scheduled_tokens);
@@ -491,7 +491,7 @@ public:
                     for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                         Sequence::Ptr sequence = running_sequences[seq_idx];
                         sequence->update_hidden_state(
-                            get_hidden_state(seq_group_id, sequence->get_grouped_id()));
+                            get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
                     }
                 }
             } catch (const ov::Exception&) {

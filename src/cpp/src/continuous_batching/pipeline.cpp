@@ -67,7 +67,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     auto model = utils::read_model(models_path, properties);
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(models_path);
-
+    auto eagle_mode = true; //extact_eagle_mode_from_config(properties_without_draft_model);
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_encoder_properties);
@@ -77,6 +77,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
+    } else if (draft_model_desr.model != nullptr && eagle_mode) {
+        OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        m_impl = std::make_shared<EagleDecodingImpl>(main_model_descr, draft_model_desr);
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
@@ -105,7 +109,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
 
     auto model = utils::read_model(models_path, properties_without_draft_model);
     auto generation_config = utils::from_config_json_if_exists(models_path);
-    auto eagle_mode = false; //extact_eagle_mode_from_config(properties_without_draft_model);
+    auto eagle_mode = true; //extact_eagle_mode_from_config(properties_without_draft_model);
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_without_draft_model);
