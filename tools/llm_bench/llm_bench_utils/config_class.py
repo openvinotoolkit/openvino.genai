@@ -100,6 +100,7 @@ USE_CASES = {
         'opt-',
         'pythia-',
         'stablelm-',
+        'stablelm',
         'stable-zephyr-',
         'rocket-',
         'blenderbot',
