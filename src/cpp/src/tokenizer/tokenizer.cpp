@@ -851,27 +851,42 @@ Tokenizer::Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, c
 }
 
 TokenizedInputs Tokenizer::encode(const std::string& prompt, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(std::move(prompt), tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::pair<std::string, std::string>>& prompts, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(prompts_1, prompts_2, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::initializer_list<std::string>& text, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return encode(std::vector<std::string>(text.begin(), text.end()), tokenization_params);
 }
 
