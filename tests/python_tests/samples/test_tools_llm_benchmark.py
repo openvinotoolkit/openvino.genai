@@ -183,8 +183,24 @@ class TestBenchmarkLLM:
             "-pf", generate_image_generation_jsonl,
         ] + sample_args
         run_sample(benchmark_py_command)
-        
-        
+
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "-p", "'Why is the Sun yellow?'"], ["-d", "cpu", "-n", "1", "-p", "'Why is the Sun yellow?'", "--optimum"]])
+    @pytest.mark.parametrize("convert_model", ["tiny-random-SpeechT5ForTextToSpeech"], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["cmu_us_awb_arctic-wav-arctic_a0001.bin"], indirect=True)
+    def test_python_tool_llm_benchmark_tts(self, convert_model, download_test_content, sample_args):
+        # Run Python benchmark
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_py_command = [
+            sys.executable, 
+            benchmark_script, 
+            "-m", convert_model,
+            "--speaker_embeddings", download_test_content
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+
     @pytest.mark.samples
     @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1"], ["-d", "cpu", "-n", "1", "--optimum"]])
     @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])
@@ -203,7 +219,7 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["bge-small-en-v1.5"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
         ["-d", "cpu", "-n", "2"], 
         ["-d", "cpu", "-n", "2", "--embedding_max_length", "128", "--embedding_normalize", "--embedding_pooling", "mean"], 
