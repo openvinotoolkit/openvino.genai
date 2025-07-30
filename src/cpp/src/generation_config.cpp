@@ -230,7 +230,7 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
         return max_new_tokens;
     } else {
         if(prompt_length > max_length){
-            return 0;
+            return prompt_length;
         }
         return max_length - prompt_length;
     }
