@@ -113,6 +113,7 @@ public:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
+        std::cout << "Constructed stateful VLMPipelineImpl\n";
     }
 
 
@@ -148,6 +149,7 @@ public:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
+        std::cout << "Constructed stateful VLMPipelineImpl\n";
     }
 
     VLMDecodedResults generate(
