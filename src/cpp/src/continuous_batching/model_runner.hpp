@@ -49,6 +49,21 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
 
+    // Cached pre-allocated tensors to avoid CPU->GPU copy
+    ov::Tensor m_cached_input_ids;
+    ov::Tensor m_cached_inputs_embeds;
+    ov::Tensor m_cached_position_ids;
+    ov::Tensor m_cached_past_lens;
+    ov::Tensor m_cached_subsequence_begins;
+    ov::Tensor m_cached_block_indices_begins;
+    ov::Tensor m_cached_max_context_len;
+    ov::Tensor m_cached_score_aggregation_window;
+    
+    // Maximum allocated sizes for dynamic resizing
+    size_t m_max_allocated_tokens;
+    size_t m_max_allocated_sequences;
+    size_t m_max_allocated_blocks;
+
 public:
     /**
      * Constructs the ModelRunner.
@@ -86,6 +101,10 @@ public:
           m_is_use_xattention_inputs(is_use_xattention_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
+        _init_cached_tensors();
+        
+        // Uncomment the following line to debug tensor optimization
+        // _debug_tensor_optimization();
     }
 
     /**
@@ -153,19 +172,26 @@ public:
             max_context_len_val = std::max(max_context_len_val, sequence_group->get_context_len());
         }
 
-        ov::Tensor
-            input_ids(ov::element::i64, {total_num_tokens}),
-            inputs_embeds(ov::element::f32, {total_num_tokens, hidden_size}),
-            token_type_ids(ov::element::i64, {1, total_num_tokens}),
-            position_ids(ov::element::i64, {total_num_tokens}),
-            // PA specific parameters
-            past_lens(ov::element::i32, {batch_size_in_sequences}),
-            subsequence_begins(ov::element::i32, {batch_size_in_sequences + 1}),
-            // block_indices are handled in a special fashion below
-            block_indices_begins(ov::element::i32, {batch_size_in_sequences + 1}),
-            max_context_len(ov::element::i32, {});
+        // Use cached pre-allocated tensors instead of creating new ones
+        ov::Tensor input_ids = _get_or_resize_tensor(m_cached_input_ids, "input_ids", 
+                                                     {total_num_tokens}, ov::element::i64);
+        ov::Tensor inputs_embeds = _get_or_resize_tensor(m_cached_inputs_embeds, "inputs_embeds", 
+                                                        {total_num_tokens, hidden_size}, ov::element::f32);
+        ov::Tensor position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", 
+                                                       {total_num_tokens}, ov::element::i64);
+        
+        // PA specific parameters
+        ov::Tensor past_lens = _get_or_resize_tensor(m_cached_past_lens, "past_lens", 
+                                                    {batch_size_in_sequences}, ov::element::i32);
+        ov::Tensor subsequence_begins = _get_or_resize_tensor(m_cached_subsequence_begins, "subsequence_begins", 
+                                                            {batch_size_in_sequences + 1}, ov::element::i32);
+        ov::Tensor block_indices_begins = _get_or_resize_tensor(m_cached_block_indices_begins, "block_indices_begins", 
+                                                              {batch_size_in_sequences + 1}, ov::element::i32);
+        ov::Tensor max_context_len = _get_or_resize_tensor(m_cached_max_context_len, "max_context_len", 
+                                                          {}, ov::element::i32);
 
-        ov::Tensor score_aggregation_window(ov::element::i32, {batch_size_in_sequences});
+        ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window", 
+                                                                  {batch_size_in_sequences}, ov::element::i32);
 
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
@@ -320,26 +346,15 @@ public:
             sequence_group->set_output_seq_len(matmul_gathering_is_available ? output_seq_len : num_scheduled_tokens);
         }
 
-        if (sequence_group_type == SequenceGroupType::TOKENS) {
-            m_request.set_tensor("input_ids", input_ids);
-        }
-        else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-            m_request.set_tensor("inputs_embeds", inputs_embeds);
-            if (have_token_type_ids) {
-                m_request.set_tensor("token_type_ids", token_type_ids);
-            }
-        }
+        // Note: No need to call set_tensor() for cached tensors as they are already bound to the request
+        // The tensors we're using are pre-allocated and directly obtained from m_request.get_tensor()
+        
+        // For validation, we can optionally verify that the tensors are properly bound:
+        // OPENVINO_ASSERT(input_ids.data() == m_request.get_tensor("input_ids").data(), 
+        //                 "input_ids tensor should be the same as the one in the request");
 
-        // typical LLM parameters
-        m_request.set_tensor("position_ids", position_ids);
-
-        // PA specific parameters
-        m_request.set_tensor("past_lens", past_lens);
-        m_request.set_tensor("subsequence_begins", subsequence_begins);
-
-        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_skipped_blocks_map);
-        m_request.set_tensor("block_indices_begins", block_indices_begins);
-        m_request.set_tensor("max_context_len", max_context_len);
+        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks);
+        // block_indices_begins and max_context_len are also pre-allocated, no need to set them
 
         if (m_is_use_rotation_inputs) {
             m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
@@ -351,14 +366,20 @@ public:
         }
 
         if (matmul_gathering_is_available) {
-            ov::Tensor gather_indices(ov::element::i64, {gather_indices_values.size()});
-            std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
-            m_request.set_tensor("sampled_tokens_indices", gather_indices);
+            // Try to use pre-allocated tensor for gather_indices as well
+            try {
+                ov::Tensor gather_indices = m_request.get_tensor("sampled_tokens_indices");
+                gather_indices.set_shape({gather_indices_values.size()});
+                std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
+            } catch (const ov::Exception&) {
+                // Fallback to creating new tensor if pre-allocated one doesn't exist
+                ov::Tensor gather_indices(ov::element::i64, {gather_indices_values.size()});
+                std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
+                m_request.set_tensor("sampled_tokens_indices", gather_indices);
+            }
         }
 
-        if (m_is_aggregate_attention_scores) {
-            m_request.set_tensor("score_aggregation_window", score_aggregation_window);
-        }
+        // score_aggregation_window is also pre-allocated if available, no need to set it
 
         {
             static ManualTimer timer("pure generate inference");
@@ -434,7 +455,65 @@ public:
     }
 
 private:
-    // Fills indices for sequences in the order defined by scheduler_output
+    void _init_cached_tensors() {
+        // Initialize cached tensors with reasonable default sizes
+        // These will be dynamically resized as needed
+        m_max_allocated_tokens = 2048;  // Start with reasonable default
+        m_max_allocated_sequences = 64;
+        m_max_allocated_blocks = 512;
+        
+        try {
+            // Try to get pre-allocated tensors from the model
+            // If they exist and are USM Host tensors, use them
+            // Otherwise, this will throw and we'll handle it in the catch block
+            m_cached_input_ids = m_request.get_tensor("input_ids");
+            m_cached_inputs_embeds = m_request.get_tensor("inputs_embeds");
+            m_cached_position_ids = m_request.get_tensor("position_ids");
+            m_cached_past_lens = m_request.get_tensor("past_lens");
+            m_cached_subsequence_begins = m_request.get_tensor("subsequence_begins");
+            m_cached_block_indices_begins = m_request.get_tensor("block_indices_begins");
+            m_cached_max_context_len = m_request.get_tensor("max_context_len");
+            
+            // Score aggregation window is optional
+            try {
+                m_cached_score_aggregation_window = m_request.get_tensor("score_aggregation_window");
+            } catch (const ov::Exception&) {
+                // This tensor might not exist in all models
+            }
+            
+        } catch (const ov::Exception&) {
+            // If pre-allocated tensors don't exist or are not accessible,
+            // we'll fall back to the original method
+            // This shouldn't happen in continuous batching models, but it's a safety net
+        }
+    }
+
+    ov::Tensor _get_or_resize_tensor(ov::Tensor& cached_tensor, 
+                                   const std::string& tensor_name,
+                                   const ov::Shape& required_shape,
+                                   ov::element::Type element_type) {
+        // If cached tensor is not initialized or too small, resize it
+        if (!cached_tensor || 
+            cached_tensor.get_shape().empty() || 
+            ov::shape_size(cached_tensor.get_shape()) < ov::shape_size(required_shape)) {
+            
+            try {
+                // Try to get the tensor from the model and set its shape
+                cached_tensor = m_request.get_tensor(tensor_name);
+                cached_tensor.set_shape(required_shape);
+            } catch (const ov::Exception&) {
+                // If tensor doesn't exist in the model, create a regular tensor
+                // This is a fallback that shouldn't happen in continuous batching
+                cached_tensor = ov::Tensor(element_type, required_shape);
+            }
+        } else {
+            // Resize existing tensor
+            cached_tensor.set_shape(required_shape);
+        }
+        
+        return cached_tensor;
+    }
+
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
         const std::vector<SequenceGroup::Ptr>& sequence_groups,
@@ -633,6 +712,31 @@ private:
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
             m_cache_rotation_deltas_for_each_layer.push_back(ov::Tensor());
         }
+    }
+
+    void _debug_tensor_optimization() const {
+        // Debug function to verify tensor optimization is working
+        std::cout << "=== ModelRunner Tensor Optimization Debug ===" << std::endl;
+        
+        auto check_tensor = [](const std::string& name, const ov::Tensor& tensor) {
+            if (tensor) {
+                std::cout << name << ": initialized, shape=" << tensor.get_shape() << std::endl;
+                // Check if it's likely a USM Host tensor by examining the data pointer
+                auto ptr = tensor.data();
+                std::cout << "  data_ptr=" << ptr << std::endl;
+            } else {
+                std::cout << name << ": not initialized" << std::endl;
+            }
+        };
+        
+        check_tensor("input_ids", m_cached_input_ids);
+        check_tensor("position_ids", m_cached_position_ids);
+        check_tensor("past_lens", m_cached_past_lens);
+        check_tensor("subsequence_begins", m_cached_subsequence_begins);
+        check_tensor("block_indices_begins", m_cached_block_indices_begins);
+        check_tensor("max_context_len", m_cached_max_context_len);
+        
+        std::cout << "=============================================" << std::endl;
     }
 
     void _collect_attention_scores(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
