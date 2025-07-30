@@ -35,7 +35,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
 
     bool prompt_has_image_tag(const std::string& prompt) const override;
 };

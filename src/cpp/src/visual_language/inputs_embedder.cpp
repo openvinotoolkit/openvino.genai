@@ -190,8 +190,8 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_ima
     return embeds;
 }
 
-ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
-    return get_inputs_embeds(prompt, encode_images(images), metrics);
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence) {
+    return get_inputs_embeds(prompt, encode_images(images), metrics, true, image_sequence);
 }
 
 /// Public InputsEmbedder class
