@@ -99,6 +99,10 @@ public:
     /// @return Resulting embeddings for the resized source image and
     /// its slices.
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
+    virtual std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map = {}) {
+        std::cout << "Not implemented." << std::endl;
+        return {};
+    }
 
     /// @brief Gets processor config
     /// @return Processor config

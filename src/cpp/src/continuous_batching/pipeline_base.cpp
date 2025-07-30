@@ -167,7 +167,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         const auto& rgbs = rgbs_vector[0];
         const auto& prompt = prompts[0];
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        encoded_images = m_inputs_embedder->encode_images(rgbs);
+        encoded_images = m_inputs_embedder->encode_images(rgbs, sampling_params[0].type == "video");
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
@@ -185,7 +185,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
             const auto& rgbs = rgbs_vector[i];
-            const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+            const auto encoded_images = m_inputs_embedder->encode_images(rgbs, sampling_params[i].type == "video");
             auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
@@ -248,7 +248,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs, sampling_params.type == "video");
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
