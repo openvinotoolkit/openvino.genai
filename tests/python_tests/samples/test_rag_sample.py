@@ -10,7 +10,7 @@ from test_utils import run_sample
 
 
 class TestTextEmbeddingPipeline:
-    @pytest.mark.rag
+    #@pytest.mark.rag
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["bge-small-en-v1.5"], indirect=True)
     def test_sample_text_embedding_pipeline(self, convert_model):
@@ -35,7 +35,7 @@ class TestTextEmbeddingPipeline:
 
 
 class TestTextRerankPipeline:
-    @pytest.mark.rag
+    #@pytest.mark.rag
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["ms-marco-TinyBERT-L2-v2"], indirect=True)
     def test_sample_text_rerank_pipeline(self, convert_model):
