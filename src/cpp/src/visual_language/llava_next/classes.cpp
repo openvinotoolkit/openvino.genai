@@ -333,7 +333,11 @@ ov::Tensor pack_image_features_llava_next(
 
 } // namespace
 
-std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(const std::vector<ov::Tensor>& images) {
+std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(const std::vector<ov::Tensor>& images, const bool& is_video) {
+    if (is_video) {
+        std::cout << "== Warning: LLaVANext doesn't support video process. " << std::endl;
+    }
+
     std::vector<EncodedImage> embeds;
     ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);

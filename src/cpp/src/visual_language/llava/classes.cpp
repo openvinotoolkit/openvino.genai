@@ -92,7 +92,10 @@ InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const std::vector<ov::Tensor>& images) {
+std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const std::vector<ov::Tensor>& images, const bool& is_video) {
+    if (is_video) {
+        std::cout << "== Warning: LLaVA doesn't support video process. " << std::endl;
+    }
     std::vector<EncodedImage> embeds;
     ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);

@@ -212,6 +212,8 @@ public:
     // set to true if chat template should be applied for non-chat scenarios, set to false otherwise
     bool apply_chat_template = true;
 
+    // Vidoe or image
+    std::string type = "image";
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.

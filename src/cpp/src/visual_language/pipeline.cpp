@@ -183,7 +183,7 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs, generation_config.type == std::string("video"));
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
         if (m_is_chat_conversation) {
