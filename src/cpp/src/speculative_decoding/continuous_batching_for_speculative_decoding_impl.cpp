@@ -587,7 +587,7 @@ UpdateRequestResult ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodi
             auto candidate = candidates.begin();
             auto sequence = running_sequences.front();
             m_model_runner->set_initial_hidden_state(request_id,
-                                                     sequence->get_grouped_id(),
+                                                     //sequence->get_grouped_id(),
                                                      candidate->second.feature_vector);
 
             auto token_ids = candidate->second.token_ids;
@@ -656,7 +656,7 @@ UpdateRequestResult ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodi
                         truncate_hidden_state_from_end(hidden_state, result.removed_tokens_cnt);
 
                     m_model_runner->set_initial_hidden_state(request_id,
-                                                            running_sequence->get_grouped_id(),
+                                                            //running_sequence->get_grouped_id(),
                                                             updated_hidden_state);
                     validate_length = updated_hidden_state.get_shape().size() > 0 ? updated_hidden_state.get_shape()[0] : 0;
                     auto candidate_sequence = candidates.at(running_sequence->get_grouped_id());

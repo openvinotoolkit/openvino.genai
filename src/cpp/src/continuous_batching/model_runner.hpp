@@ -50,7 +50,7 @@ class ModelRunner {
     bool m_is_hidden_state_internal_needed = false; // need to use internal hidden state, e.g, eagle2
     std::map<std::pair<size_t, size_t>, std::pair<size_t, size_t>> m_sequence_hidden_state_mapping; // pre-requisite: main/draft have same seq group and running seq grouped id
     // a container which use sequence group id and request id as key to store hidden states
-    std::map<std::pair<size_t, size_t>, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
+    std::map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
 public:
     /**
      * Constructs the ModelRunner.
@@ -166,10 +166,10 @@ public:
         return ov::Tensor(m_hidden_states, start_coord, end_coord);
     }
 
-    void set_initial_hidden_state(size_t request_id, size_t seq_grouped_id, const ov::Tensor& hidden_state) {
+    void set_initial_hidden_state(size_t request_id, const ov::Tensor& hidden_state) {
         // m_initial_hidden_states.clear();
-        auto key = std::make_pair(request_id, seq_grouped_id);
-        m_initial_hidden_states[key] = hidden_state;
+        //auto key = std::make_pair(request_id, seq_grouped_id);
+        m_initial_hidden_states[request_id] = hidden_state;
     }
 
     /**
@@ -302,8 +302,8 @@ public:
                     m_sequence_hidden_state_mapping[key] = std::make_pair(start_token_idx, sequence_length);
                 }
                 if (m_is_hidden_state_import_needed && hidden_state_data && hidden_size > 0) {
-                    auto key = std::make_pair(sequence_group->get_request_id(), sequence->get_grouped_id());
-                    auto it = m_initial_hidden_states.find(key);
+                    //auto key = std::make_pair(sequence_group->get_request_id(), sequence->get_grouped_id());
+                    auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
 
                     if (it != m_initial_hidden_states.end()) {
                         const auto& stored_hidden_state = it->second;

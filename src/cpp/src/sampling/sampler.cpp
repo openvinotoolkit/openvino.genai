@@ -1607,7 +1607,6 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             // Call sample_from_sequence_group asynchronously
             sg_sampling_future_map[request_id] = m_thread_pool.submit(&Sampler::sample_from_sequence_group, this, sequence_group, sequence_group_logits,
                                                                       logit_processor, stop_strings, is_validation_mode_enabled);
-            sg_sampling_future_map[request_id].wait();  // wait for the future to complete
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }
