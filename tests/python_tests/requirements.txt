@@ -6,11 +6,14 @@ onnx==1.18.0
 pytest
 pytest-html
 hf_transfer
-langchain_community
 gguf>=0.10.0
 
-# Because x86_64 macOS does not support torch > 2.2 which are used in the newer transformers versions
-transformers<4.32.0; platform_system == "Darwin" and platform_machine == "x86_64"
+# x86_64 macOS does not (and will not) support newer versions of torch > 2.2 which are used in the newer transformers versions
+transformers<4.52.0; platform_system == "Darwin" and platform_machine == "x86_64"
+
+# rag requirements
+langchain_community==0.3.27
+langchain-core==0.3.69
 
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
