@@ -230,7 +230,7 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
         return max_new_tokens;
     } else {
         if(prompt_length > max_length){
-            return 0;
+            OPENVINO_THROW("Number of prompt tokens is bigger that max_length in generation config");
         }
         return max_length - prompt_length;
     }
