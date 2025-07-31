@@ -213,7 +213,7 @@ public:
     bool apply_chat_template = true;
 
     // Vidoe or image
-    std::string type = "image";
+    bool is_video = false;
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
