@@ -60,3 +60,86 @@ It can be enabled by setting the `CacheEvictionConfig.apply_rotation` field to `
 * Cache rotation is only targeted for the regular, linear LLaMa-like RoPE application and may degrade accuracy on models that use other RoPE schemes.
 
 * Cache rotation is currently only supported for the models with uniform V embedding sizes across the layers.
+
+## (Optional) KVCrush
+
+KVCrush enhances the standard H2O/SnapKV eviction by selecting the most representative blocks from the evictable area using clustering analysis, rather than simply evicting the low score blocks.
+
+### Algorithm Overview
+
+1. **Indicator Creation**: Generate binary indicators for tokens based on importance scores
+2. **Anchor Point Generation**: Create reference patterns using configurable modes
+3. **Distance Calculation**: Measure Hamming distance between block patterns and the anchor point
+4. **Representative Selection**: Select blocks to best represent context diversity
+
+### Configuration
+Setup KVCrush config parameters and pass it  to ```CacheEvictionConfig```. Sample code to allocate KVCrush a budget of 2 blocks and use MEAN anchor mode is following.
+```cpp
+const ov::genai::CacheEvictionConfig EXAMPLE_CACHE_EVICTION_CONFIG =
+    {32, 32, 192, ov::genai::AggregationMode::NORM_SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)};
+```
+```python
+CacheEvictionConfig(
+        start_size=32, 
+        recent_size=128, 
+        max_cache_size=448, 
+        aggregation_mode=AggregationMode.NORM_SUM,
+        apply_rotation=False,
+        snapkv_window_size=8,
+        kvcrush_config=KVCrushConfig(budget=2, anchor_point_mode=KVCrushAnchorPointMode.MEAN)
+    )
+```
+
+**Anchor Point Modes:**
+- `RANDOM`: Random binary pattern
+- `ZEROS`: All zeros pattern  
+- `ONES`: All ones pattern
+- `MEAN`: Mean of indicators across blocks
+- `ALTERNATE`: Alternating 0-1 pattern
+
+### Performance Comparison on LongBench
+
+**Note:** Values in **`this style`** indicate performance equal to or better than the "512, 0" configuration.
+
+#### H2O
+The following table shows accuracy results comparing standard H2O eviction with KVCrush. 
+
+Configuration format: H2O budget (tokens), KVCrush budget (blocks), Anchor Point
+
+| Configuration | qasper | samsum | trec |
+|---------------|--------|--------|------|
+| **FP16 (baseline)** | 21.43 | 34.83 | 1.00 |
+| **512, 0** | 12.40 | 34.39 | 0.50 |
+| **384, 128/32, MEAN** | **`12.91`** | 34.15 | **`0.50`** |
+| **384, 128/32, ALTERNATE** | **`12.55`** | **`34.39`** | **`0.50`** |
+| **384, 128/32, RANDOM** | 12.25 | 34.16 | **`0.50`** |
+| **480, 32/32, MEAN** | **`12.54`** | 33.79 | **`1.00`** |
+| **480, 32/32, ALTERNATE** | **`12.49`** | **`34.59`** | **`1.00`** |
+| **480, 32/32, RANDOM** | 12.37 | **`34.83`** | **`0.50`** |
+| **448, 64/32, MEAN** | **`12.85`** | **`34.61`** | **`1.00`** |
+| **448, 64/32, ALTERNATE** | **`12.61`** | **`34.41`** | **`1.00`** |
+| **448, 64/32, RANDOM** | **`12.43`** | 34.38 | **`1.00`** |
+| **KVCrush - Best** | **`12.91`** | **`34.83`** | **`1.00`** |
+
+#### SnapKV
+The following table shows accuracy results comparing standard SnapKV eviction with KVCrush.
+
+Configuration format: SnapKV budget (tokens), KVCrush budget (blocks), Anchor Point
+
+| Configuration | qasper | samsum | trec |
+|---------------|--------|--------|------|
+| **FP16 (baseline)** | 21.43 | 34.83 | 0.50 |
+| **512, 0** | 12.33 | 34.21 | 1.00 |
+| **384, 128/32, MEAN** | **`12.78`** | **`34.32`** | **`1.00`** |
+| **384, 128/32, ALTERNATE** | 11.87 | **`34.42`** | **`1.00`** |
+| **384, 128/32, RANDOM** | **`12.66`** | 34.05 | 0.50 |
+| **480, 32/32, MEAN** | **`12.97`** | 34.12 | 0.50 |
+| **480, 32/32, ALTERNATE** | **`13.14`** | **`34.22`** | 0.50 |
+| **480, 32/32, RANDOM** | **`13.01`** | **`34.40`** | 0.50 |
+| **448, 64/32, MEAN** | **`12.83`** | **`34.69`** | 0.50 |
+| **448, 64/32, ALTERNATE** | **`13.57`** | **`34.55`** | **`1.00`** |
+| **448, 64/32, RANDOM** | **`13.38`** | **`34.26`** | **`1.00`** |
+| **KVCrush - Best** | **`13.57`** | **`34.69`** | **`1.00`** |
+
+
+
