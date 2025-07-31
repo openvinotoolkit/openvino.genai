@@ -59,8 +59,11 @@ public:
     EagleGeneratedRequests get_generated_requests();
     UpdateRequestResult update_main_request(uint64_t request_id, const EagleGeneratedSequences& candidates);
     UpdateRequestResult update_draft_request(uint64_t request_id, const EagleGeneratedSequences& candidates);
-    // UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool
-    // is_update_logit_processor);
+    void clear_sampler_top_k_selector(uint64_t&& request_id) {
+        if (m_sampler) {
+            m_sampler->clear_top_k_selector(request_id);
+        }
+    }
     bool is_requests_empty();
     void set_hidden_state_export_needed(bool is_needed) {
         if (m_model_runner) {

@@ -743,6 +743,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
         const auto& request = all_requests[request_id];
         auto sampling_params = request->get_sampling_parameters();
         const auto& sequences = request->get_finished_sequences();
+        m_draft_pipeline->clear_sampler_top_k_selector(request->get_request_id());
         size_t num_outputs = std::min(sampling_params.num_return_sequences, sequences.size());
 
         EncodedGenerationResult result;

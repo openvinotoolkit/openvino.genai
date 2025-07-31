@@ -759,10 +759,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::multist
             if (0) {  //! sampling_params.is_assisting_generation()) {
                 // generate only one token in case of non speculative decoding
                 // request->pause_generation(true);
-            } else if (request->get_num_processed_tokens() >= request->get_prompt_len() &&
-                       (request->get_num_processed_tokens() - request->get_prompt_len() + 1) >=
-                           request->get_max_new_tokens() - 1) {
-                request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == 0 && sampling_params.num_return_sequences > 1) {
                 request->pause_generation(true);
             } else if (request->get_max_new_tokens() == 0) {

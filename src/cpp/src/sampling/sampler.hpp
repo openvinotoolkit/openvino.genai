@@ -166,7 +166,7 @@ public:
         size_t& max_removed_tokens,
         size_t& num_tokens_to_process,
         bool do_sample = false);
-
+    void clear_top_k_selector(uint64_t& request_id);
     std::map<size_t, int32_t> get_beam_idxs(SequenceGroup::CPtr sequence_group);
     // pair with map with backend name and corresponding compiler init time, and vector of compile times for each concrete grammar
     std::pair<std::map<std::string, float>, std::vector<float>> get_structured_output_times();
