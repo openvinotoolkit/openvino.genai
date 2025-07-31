@@ -1404,12 +1404,15 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             auto sampling_params = sequence_group->get_sampling_parameters();
             auto running_sequence = sequence_group->get_running_sequences()[0];
             auto sampled_token = running_sequence->get_generated_ids().back();
-            if (is_stop_token_id_hit(sampled_token, sampling_params.stop_token_ids) &&
+            for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
+                sg_sampling_info.sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
+            }
+            /*if (is_stop_token_id_hit(sampled_token, sampling_params.stop_token_ids) &&
                 !sampling_params.ignore_eos) {
                 running_sequence->set_status(SequenceStatus::FINISHED);
                 running_sequence->set_finish_reason(GenerationFinishReason::STOP);
                 sg_sampling_info.sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
-            }
+            }*/
         } else {
             for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
                 auto& running_sequence = running_sequences[running_sequence_id];
