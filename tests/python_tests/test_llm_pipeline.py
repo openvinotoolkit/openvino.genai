@@ -804,10 +804,14 @@ def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
     generation_config = ov_genai.GenerationConfig()
     generation_config.max_new_tokens = 10
     if stop_str:    
-        generation_config.stop_strings = {"Prom"}
+        generation_config.stop_strings = {" the"}
         generation_config.include_stop_str_in_output = False
 
-    _ = generate_and_compare(model=model_id,prompts=prompt,generation_config=generation_config,pipeline_type=pipeline_type,streamer=py_streamer)
+    _ = generate_and_compare(model=model_id,
+                             prompts=prompt,
+                             generation_config=generation_config,
+                             pipeline_type=pipeline_type,
+                             streamer=py_streamer)
     if stop_str:
         assert it_cnt == 0
     else:
