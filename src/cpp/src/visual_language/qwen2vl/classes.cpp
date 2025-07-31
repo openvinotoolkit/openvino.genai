@@ -428,7 +428,6 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     }
 
     auto patches_shape = patches.get_shape();
-    std::cout << "patches_shape = " << patches_shape << std::endl;
     size_t channel = patches_shape.at(1);
     
     size_t grid_t = patches_shape.at(0) / config.temporal_patch_size;
