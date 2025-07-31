@@ -341,11 +341,24 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_a
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::multistep() {
     bool to_generate = true;
     size_t generated_tokens_cnt = 0;
+
     // cycle to generate several tokens per one iteration for speculative decoding case
     while (to_generate) {
         generated_tokens_cnt++;
 
+        ManualTimer multistep_timer("speculative_decoding: multistep()");
+        multistep_timer.start();
         step();
+        multistep_timer.end();
+
+        const auto num_generated_tokens = get_processed_tokens_per_iteration();
+        auto pipeline_metrics = get_metrics();
+        if (num_generated_tokens > 0) {
+            auto generation_duration = multistep_timer.get_duration_microsec();
+            raw_perf_metrics.m_durations.emplace_back(generation_duration);
+            raw_perf_metrics.m_inference_durations[0] = MicroSeconds(pipeline_metrics.inference_duration);
+            raw_perf_metrics.m_batch_sizes.emplace_back(num_generated_tokens);
+        }
 
         to_generate = false;
         for (auto& request : m_requests) {

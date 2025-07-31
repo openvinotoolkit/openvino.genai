@@ -59,15 +59,15 @@ float SpeculativeDecodingMetrics::get_draft_accepted_tokens_percentage(int64_t r
         size_t total_iteration_cnt = 0;
         for (const auto& accepten_token_cnt : m_draft_accepted_tokens) {
             avg_acceptance_rate += accepten_token_cnt.second;
-            total_iteration_cnt += m_generated_len[request_id];
+            total_iteration_cnt += m_draft_generated_len[request_id];
         }
         OPENVINO_ASSERT(total_iteration_cnt > 0);
         avg_acceptance_rate /= total_iteration_cnt;
     } else {
         OPENVINO_ASSERT(m_draft_accepted_tokens.count(request_id));
         avg_acceptance_rate = m_draft_accepted_tokens[request_id];
-        OPENVINO_ASSERT(m_generated_len[request_id] > 0);
-        avg_acceptance_rate /= m_generated_len[request_id];
+        OPENVINO_ASSERT(m_draft_generated_len[request_id] > 0);
+        avg_acceptance_rate /= m_draft_generated_len[request_id];
     }
     return avg_acceptance_rate * 100;
 }
@@ -88,24 +88,24 @@ size_t SpeculativeDecodingMetrics::get_draft_accepted_tokens_counter(int64_t req
 }
 
 void SpeculativeDecodingMetrics::update_draft_accepted_tokens(int64_t request_id, size_t num_matches) {
-    if (m_draft_accepted_tokens.count(request_id)) {
-        m_draft_accepted_tokens[request_id] += num_matches;
-    } else {
-        m_draft_accepted_tokens.insert({request_id, num_matches});
-    }
+    m_draft_accepted_tokens[request_id] += num_matches;
 }
 
-void SpeculativeDecodingMetrics::set_generated_len(int64_t request_id, size_t generated_len) {
-    m_generated_len.insert({ request_id, generated_len });
+void SpeculativeDecodingMetrics::update_draft_generated_len(int64_t request_id, size_t generated_len) {
+    m_draft_generated_len[request_id] += generated_len;
 }
 
-size_t SpeculativeDecodingMetrics::get_generated_len(int64_t request_id) {
-    return m_generated_len.at(request_id);
+size_t SpeculativeDecodingMetrics::get_draft_generated_len(int64_t request_id) {
+    return m_draft_generated_len.at(request_id);
+}
+
+void SpeculativeDecodingMetrics::update_generated_len(size_t generated_len) {
+    m_generated_len += generated_len;
 }
 
 std::vector<int64_t> SpeculativeDecodingMetrics::get_requests_id() {
     std::vector<int64_t> result;
-    for (const auto& req : m_generated_len) {
+    for (const auto& req : m_draft_generated_len) {
         result.push_back(req.first);
     }
     return result;
@@ -126,21 +126,21 @@ void SpeculativeDecodingMetrics::print(bool is_printing_per_request) {
         total_duration = draft_duration + main_duration;
     }
     std::cout << "\n=============================== " << std::endl;
+    std::cout << "Generated tokens: " << m_generated_len << std::endl;
     std::cout << "Total duration, sec: " << total_duration << std::endl;
     std::cout << "Draft model duration, sec: " << draft_duration << std::endl;
     std::cout << "Main model duration, sec: " << main_duration << std::endl;
     std::cout << "Draft model duration, %: " << get_draft_duration_percentage() << std::endl;
     std::cout << "Main model duration, %: " << get_main_duration_percentage() << std::endl;
+    std::cout << "Token per sec: " << float(m_generated_len) / total_duration << std::endl;
     std::cout << "AVG acceptance rate, %: " << get_avg_acceptance_rate(-1) << std::endl;
     std::cout << "=============================== " << std::endl;
     if (is_printing_per_request) {
         for (const auto& i : get_requests_id()) {
             std::cout << "REQUEST_ID: " << i << std::endl;
             std::cout << "Main model iterations: " << get_iteration_number(i) << std::endl;
-            std::cout << "Token per sec: " << float(get_generated_len(i)) / total_duration << std::endl;
             std::cout << "AVG acceptance rate, %: " << get_avg_acceptance_rate(i) << std::endl;
-            std::cout << "Accepted tokens by draft model: " << get_draft_accepted_tokens_counter(i) << std::endl;
-            std::cout << "Generated tokens: " << get_generated_len(i) << std::endl;
+            std::cout << "Generated tokens by draft model: " << get_draft_generated_len(i) << std::endl;
             std::cout << "Accepted token rate, %: " << get_draft_accepted_tokens_percentage(i) << std::endl;
             std::cout << "=============================== " << std::endl;
         }
@@ -152,7 +152,8 @@ void SpeculativeDecodingMetrics::print(bool is_printing_per_request) {
 void SpeculativeDecodingMetrics::clean_up() {
     m_acceptance_rate.clear();
     m_draft_accepted_tokens.clear();
-    m_generated_len.clear();
+    m_draft_generated_len.clear();
+    m_generated_len = 0;
     draft_duration = 0;
     main_duration = 0;
     total_duration = 0;

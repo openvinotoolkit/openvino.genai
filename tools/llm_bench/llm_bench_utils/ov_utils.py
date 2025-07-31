@@ -6,7 +6,6 @@ from transformers import AutoConfig, AutoProcessor, AutoTokenizer
 from openvino import Core
 import openvino as ov
 import logging as log
-import sys
 import time
 import json
 import types
@@ -20,7 +19,7 @@ from llm_bench_utils.config_class import (
     IMAGE_GEN_CLS,
     INPAINTING_IMAGE_GEN_CLS,
     IMAGE_TO_IMAGE_GEN_CLS,
-    PA_ATTENTION_BACKEND
+    TEXT_TO_SPEECH_VOCODER_CLS
 )
 from transformers import pipeline
 import queue
@@ -132,7 +131,9 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, **kwargs)
+
         log.info("Selected Optimum Intel for benchmarking")
+        ov_config.pop("ATTENTION_BACKEND", None)
         remote_code = False
         try:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
@@ -155,7 +156,7 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_monitor.stop_and_collect_data('compilation_phase')
-            memory_monitor.log_data('for copmpilation phase')
+            memory_monitor.log_data('for compilation phase')
     bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -169,13 +170,11 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
 def get_scheduler_config_genai(user_config, config_name="CB config"):
     import openvino_genai
 
-    default_cb_config = {"cache_size": 1, "max_num_batched_tokens": sys.maxsize}
     scheduler_config = openvino_genai.SchedulerConfig()
-    scheduler_params = user_config or default_cb_config
-    if scheduler_params:
-        log.info(f"Scheduler parameters for {config_name}:\n{scheduler_params}")
+    if user_config:
+        log.info(f"Scheduler parameters for {config_name}:\n{user_config}")
 
-        for param, value in scheduler_params.items():
+        for param, value in user_config.items():
             setattr(scheduler_config, param, value)
 
     return scheduler_config
@@ -193,11 +192,9 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, *
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     draft_model_path = kwargs.get("draft_model", '')
-    cb = ov_config.get('ATTENTION_BACKEND', '') == PA_ATTENTION_BACKEND
     cb_config = kwargs.get("cb_config")
     use_streamer_metrics = False
-    if cb or cb_config is not None or draft_model_path:
-        log.info("Continuous Batching mode activated")
+    if cb_config is not None:
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
         version = get_version_in_format_to_pars(openvino_genai.get_version())
@@ -229,7 +226,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, *
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
 
     class TokenStreamer(openvino_genai.StreamerBase):
         def __init__(self, tokenizer):
@@ -310,7 +307,7 @@ def create_image_gen_model(model_path, device, memory_monitor, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_monitor.stop_and_collect_data('compilation_phase')
-            memory_monitor.log_data('for copmpilation phase')
+            memory_monitor.log_data('for compilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time, False, None
@@ -476,7 +473,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     return image_gen_pipe, end - start, True, callback
 
@@ -496,7 +493,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_monitor, **kwar
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time
@@ -515,7 +512,7 @@ def create_genai_speech_2_txt_model(model_path, device, memory_monitor, **kwargs
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
@@ -541,7 +538,7 @@ def create_speech_2_txt_model(model_path, device, memory_monitor, **kwargs):
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type]]:
-                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
+                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default benchmarking")
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_speech_2_txt_model(model_path, device, memory_monitor, **kwargs)
@@ -556,7 +553,7 @@ def create_speech_2_txt_model(model_path, device, memory_monitor, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_monitor.stop_and_collect_data('compilation_phase')
-            memory_monitor.log_data('for copmpilation phase')
+            memory_monitor.log_data('for compilation phase')
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     if is_transformers_version(">=", "4.51.0"):
@@ -599,12 +596,8 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
         convert_ov_tokenizer(model_path)
 
-    processor_config = get_vlm_processor(model_path)
-
-    cb = ov_config.get('ATTENTION_BACKEND', '') == PA_ATTENTION_BACKEND
     cb_config = kwargs.get("cb_config")
-    if cb or cb_config is not None:
-        log.info("Continuous Batching mode activated")
+    if cb_config is not None:
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
 
     if kwargs.get("mem_consumption"):
@@ -615,10 +608,10 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_moni
     log.info("Selected OpenVINO GenAI for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
-    return llm_pipe, processor_config, end - start, None, True
+    return llm_pipe, None, end - start, None, True
 
 
 def create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs):
@@ -651,7 +644,7 @@ def create_genai_text_embed_model(model_path, device, memory_monitor, **kwargs):
     log.info("Selected OpenVINO GenAI for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -730,7 +723,7 @@ def create_text_embeddings_model(model_path, device, memory_monitor, **kwargs):
 
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for copmpilation phase')
+        memory_monitor.log_data('for compilation phase')
     bench_hook = get_bench_hook(1, ov_model, embed=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -767,6 +760,7 @@ def create_image_text_gen_model(model_path, device, memory_monitor, **kwargs):
                 )
 
         log.info("Selected Optimum Intel for benchmarking")
+        ov_config.pop("ATTENTION_BACKEND", None)
         model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
         if kwargs.get("mem_consumption"):
             memory_monitor.start()
@@ -781,12 +775,90 @@ def create_image_text_gen_model(model_path, device, memory_monitor, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_monitor.stop_and_collect_data('compilation_phase')
-            memory_monitor.log_data('for copmpilation phase')
+            memory_monitor.log_data('for compilation phase')
     bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     processor_config = get_vlm_processor(model_path)
     return ov_model, processor_config, from_pretrained_time, bench_hook, False
+
+
+def create_genai_text_2_speech_model(model_path, device, ov_config, memory_monitor, **kwargs):
+    import openvino_genai
+
+    if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
+        convert_ov_tokenizer(model_path)
+
+    tokenizer_class = TOKENIZE_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
+    processor = tokenizer_class.from_pretrained(model_path)
+
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
+    start = time.perf_counter()
+    pipe = openvino_genai.Text2SpeechPipeline(model_path, device.upper(), **ov_config)
+    end = time.perf_counter()
+    log.info("Selected OpenVINO GenAI for benchmarking")
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for compilation phase')
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+
+    return pipe, processor, None, end - start, True
+
+
+def create_text_2_speech_model(model_path, device, memory_monitor, **kwargs):
+    model_path = Path(model_path)
+    # specify the model path
+    if model_path.name.endswith('xml'):
+        model_path = model_path.parents[2]
+
+    ov_config = kwargs['config']
+
+    model_path_existed = Path(model_path).exists()
+    # load model
+    if not model_path_existed:
+        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+    else:
+        remote_code = False
+        try:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+        except Exception:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+            remote_code = True
+        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+            try:
+                return create_genai_text_2_speech_model(model_path, device, ov_config, memory_monitor, **kwargs)
+            except Exception as exp:
+                log.warning(
+                    f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
+                    f"GenAI pipeline loading failed with following error: {exp}"
+                    "Benchmark will be switched to Optimum Intel pipeline realization"
+                )
+
+        log.info("Selected Optimum Intel for benchmarking")
+        model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
+        tokenizer_class = TOKENIZE_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
+        if kwargs.get("mem_consumption"):
+            memory_monitor.start()
+        start = time.perf_counter()
+        ov_model = model_class.from_pretrained(
+            model_path,
+            device=device,
+            ov_config=ov_config,
+            config=model_config,
+            trust_remote_code=remote_code
+        )
+        end = time.perf_counter()
+        if kwargs.get("mem_consumption"):
+            memory_monitor.stop_and_collect_data('compilation_phase')
+            memory_monitor.log_data('for compilation phase')
+    from_pretrained_time = end - start
+    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    processor = tokenizer_class.from_pretrained(model_path)
+    vocoder = None
+    if kwargs.get('vocoder_path') is not None:
+        vocoder = TEXT_TO_SPEECH_VOCODER_CLS.from_pretrained(kwargs.get('vocoder_path'))
+    return ov_model, processor, vocoder, from_pretrained_time, False
 
 
 def is_genai_available(log_msg=False):

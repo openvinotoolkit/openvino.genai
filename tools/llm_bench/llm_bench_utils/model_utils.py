@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import json
+import torch
+import numpy as np
 import logging as log
 from pathlib import Path
 from llm_bench_utils.config_class import (
@@ -38,7 +40,7 @@ def get_param_from_file(args, input_key):
     if args['prompt_file'] is None:
         if not isinstance(input_key, (list, tuple)):
             if args[input_key] is None:
-                if args['use_case'] in ['text_gen', 'text_embed']:
+                if args['use_case'] in ['text_gen', 'text_embed', 'text2speech']:
                     data_list.append('What is OpenVINO?')
                 elif args['use_case'] == 'code_gen':
                     data_list.append('def print_hello_world():')
@@ -135,6 +137,7 @@ def analyze_args(args):
     model_args['emb_pooling_type'] = args.embedding_pooling
     model_args['emb_normalize'] = args.embedding_normalize
     model_args["emb_max_length"] = args.embedding_max_length
+    model_args["apply_chat_template"] = args.apply_chat_template
 
     optimum = args.optimum
 
@@ -184,8 +187,8 @@ def analyze_args(args):
             model_args['config'] = config
     if model_framework == 'ov':
         set_default_param_for_ov_config(model_args['config'])
-        if 'ATTENTION_BACKEND' not in model_args['config'] and not optimum:
-            if use_case in ['text_gen'] and args.device != "NPU":
+        if 'ATTENTION_BACKEND' not in model_args['config'] and not optimum and args.device != "NPU":
+            if use_case in ['text_gen']:
                 model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
             elif use_case in ['vlm']:
                 model_args['config']['ATTENTION_BACKEND'] = SDPA_ATTENTION_BACKEND
@@ -211,6 +214,14 @@ def analyze_args(args):
     model_args['num_assistant_tokens'] = args.num_assistant_tokens
     model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
     model_args['max_ngram_size'] = args.max_ngram_size
+
+    model_args['speaker_embeddings'] = None
+    if args.speaker_embeddings:
+        model_args['speaker_embeddings'] = get_speaker_embeddings(args.speaker_embeddings)
+    model_args['vocoder_path'] = args.vocoder_path
+    if model_args['vocoder_path'] and not Path(model_args['vocoder_path']).exists():
+        raise RuntimeError(f'==Failure FOUND==: Incorrect vocoder path:{model_args["vocoder_path"]}')
+
     return model_path, model_framework, model_args, model_name
 
 
@@ -222,7 +233,8 @@ def get_use_case(model_name_or_path):
     if (Path(model_name_or_path) / "model_index.json").exists():
         diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
         pipe_type = diffusers_config.get("_class_name")
-        if pipe_type in ["StableDiffusionPipeline", "StableDiffusionXLPipeline", "StableDiffusion3Pipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
+        if pipe_type in ["StableDiffusionPipeline", "StableDiffusionXLPipeline", "StableDiffusion3Pipeline", "StableDiffusionInpaintPipeline",
+                         "StableDiffusionXLInpaintPipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
             return "image_gen", pipe_type.replace("Pipeline", "")
 
     if config is not None:
@@ -259,7 +271,7 @@ def resolve_complex_model_types(config):
 
 def get_model_name(model_name_or_path):
     # try to get use_case from model name
-    path = os.path.normpath(model_name_or_path)
+    path = os.path.abspath(model_name_or_path)
     model_names = path.split(os.sep)
     for model_name in reversed(model_names):
         for case, model_ids in USE_CASES.items():
@@ -362,3 +374,26 @@ def get_version_in_format_to_pars(version):
         commit_id = dev_info.split("-")[0]
         processed_version = f"{ov_major_version}-{commit_id}"
     return processed_version
+
+
+def get_speaker_embeddings(speaker_embeddings_file, expected_shape=(1, 512)):
+    speaker_embeddings = None
+    if Path(speaker_embeddings_file).is_file():
+        if ('.pt' in speaker_embeddings_file):
+            try:
+                speaker_embeddings = torch.load(speaker_embeddings_file)
+            except Exception:
+                raise RuntimeError(f'==Parse file with torch: {speaker_embeddings_file} failure, format is incorrect ==')
+        else:
+            try:
+                speaker_embeddings = np.fromfile(speaker_embeddings_file, dtype=np.float32)
+                speaker_embeddings = torch.from_numpy(speaker_embeddings)
+            except Exception:
+                raise RuntimeError(f'==Parse config: {speaker_embeddings_file} failure, format is incorrect ==')
+        if speaker_embeddings.numel() != np.prod(expected_shape):
+            raise RuntimeError(f"==Expected {np.prod(expected_shape)} elements, but got {speaker_embeddings.numel()} in {speaker_embeddings_file}==")
+        speaker_embeddings = speaker_embeddings.reshape(expected_shape)
+    else:
+        raise RuntimeError(f'==Failure FOUND==: Incorrect speaker embeddings file path:{speaker_embeddings_file}')
+
+    return speaker_embeddings

@@ -58,7 +58,7 @@ public:
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): LLMPipelineImplBase{Tokenizer(models_path), GenerationConfig()} {
+    ): LLMPipelineImplBase{Tokenizer(models_path, plugin_config), GenerationConfig()} {
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, m_tokenizer, scheduler_config, device, mutable_plugin_config);
@@ -122,7 +122,7 @@ public:
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
-        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics)};
+        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
     }
 
     EncodedResults generate(
@@ -201,7 +201,7 @@ public:
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
-        return {std::move(plain_tokens), std::move(plain_scores), std::move(perf_metrics)};
+        return {std::move(plain_tokens), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
     }
 
     void start_chat(const std::string& system_message) override {

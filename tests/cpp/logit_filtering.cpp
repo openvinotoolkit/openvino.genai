@@ -6,7 +6,8 @@
 
 #include "sampling/logit_processor.hpp"
 
-using namespace LogitTransformers;
+using namespace ov::genai;
+using namespace ov::genai::LogitTransformers;
 
 struct TemperatureTransformTestStruct {
     static inline const size_t size = 3;

@@ -3,14 +3,13 @@
 
 #pragma once
 
-#include <string>
-#include <iostream>
 #include <fstream>
-
+#include <iostream>
 #include <openvino/runtime/tensor.hpp>
+#include <string>
 
 template <typename T>
-void print_array(T * array, size_t size) {
+void print_array(T* array, size_t size) {
     std::cout << " => [ ";
     for (size_t i = 0; i < std::min(size, size_t(10)); ++i) {
         std::cout << array[i] << " ";
@@ -18,19 +17,45 @@ void print_array(T * array, size_t size) {
     std::cout << " ] " << std::endl;
 }
 
+template <typename T>
+void print_tensor(ov::Tensor tensor) {
+    const auto shape = tensor.get_shape();
+    const size_t rank = shape.size();
+    const auto* data = tensor.data<T>();
+
+    if (rank > 2) {
+        print_array(data, tensor.get_size());
+        return;
+    }
+
+    const size_t batch_size = shape[0];
+    const size_t seq_length = shape[1];
+
+    std::cout << " => [ \n";
+    for (size_t batch = 0; batch < batch_size; ++batch) {
+        std::cout << "  [ ";
+        const size_t batch_offset = batch * seq_length;
+        for (size_t j = 0; j < seq_length; ++j) {
+            std::cout << data[batch_offset + j] << " ";
+        }
+        std::cout << "]\n";
+    }
+    std::cout << " ]" << std::endl;
+}
+
 inline void print_tensor(std::string name, ov::Tensor tensor) {
     std::cout << name;
     std::cout << " " << tensor.get_shape().to_string();
     if (tensor.get_element_type() == ov::element::i32) {
-        print_array(tensor.data<int>(), tensor.get_size());
+        print_tensor<int>(tensor);
     } else if (tensor.get_element_type() == ov::element::i64) {
-        print_array(tensor.data<int64_t>(), tensor.get_size());
+        print_tensor<int64_t>(tensor);
     } else if (tensor.get_element_type() == ov::element::f32) {
-        print_array(tensor.data<float>(), tensor.get_size());
+        print_tensor<float>(tensor);
     } else if (tensor.get_element_type() == ov::element::boolean) {
-        print_array(tensor.data<bool>(), tensor.get_size());
+        print_tensor<bool>(tensor);
     } else if (tensor.get_element_type() == ov::element::f16) {
-        print_array(tensor.data<ov::float16>(), tensor.get_size());
+        print_tensor<ov::float16>(tensor);
     }
 }
 
@@ -144,6 +169,8 @@ inline ov::Tensor from_npy(const std::filesystem::path& npy) {
         tensor_type = ov::element::f32;
     } else if ("|u1" == type) {
         tensor_type = ov::element::u8;
+    } else if ("<i8" == type) {
+        tensor_type = ov::element::i64;
     } else {
         OPENVINO_THROW("Not implemented dtype");
     }

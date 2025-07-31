@@ -68,7 +68,7 @@ def get_ov_model(model_id):
             ov_config=get_default_llm_properties(),
         )
     )
-    if tokenizer.chat_template is not None:
+    if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
         processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
@@ -95,6 +95,7 @@ image_links_for_testing = [
 model_ids = [
     "katuni4ka/tiny-random-minicpmv-2_6",
     "katuni4ka/tiny-random-phi3-vision",
+    "katuni4ka/tiny-random-phi-4-multimodal",
     "katuni4ka/tiny-random-llava",
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-internvl2",
@@ -104,7 +105,7 @@ model_ids = [
 
 attention_backend = ["PA", "SDPA"]
 
-
+@functools.lru_cache()
 def get_pil_image_by_link(link, target_size=None):
     """
     Get PIL image by link.
@@ -132,7 +133,6 @@ def get_image_by_link(link):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_pipeline(model_id, backend):
@@ -169,7 +169,6 @@ configs = [
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", configs)
 def test_vlm_continuous_batching_generate_vs_add_request(config):
     scheduler_config = SchedulerConfig()
@@ -224,7 +223,6 @@ def test_vlm_continuous_batching_generate_vs_add_request(config):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", configs)
 def test_vlm_continuous_batching_vs_stateful(config):
     scheduler_config = SchedulerConfig()
@@ -273,7 +271,6 @@ def test_vlm_continuous_batching_vs_stateful(config):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 @pytest.mark.parametrize(
@@ -345,7 +342,6 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_get_tokenizer(cache, backend):
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
@@ -355,7 +351,6 @@ def test_vlm_get_tokenizer(cache, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "config",
     [
@@ -372,7 +367,6 @@ def test_sampling(config, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("backend", attention_backend)
 def test_perf_metrics(cache, backend):
     import numpy as np
@@ -386,7 +380,6 @@ def test_perf_metrics(cache, backend):
 
     start_time = perf_counter_ns()
     pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
-    
     start_generate = perf_counter_ns()
     result = pipe.generate(
         prompts[0],
@@ -440,19 +433,24 @@ def test_perf_metrics(cache, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
-# FIXME: katuni4ka/tiny-random-qwen2vl and katuni4ka/tiny-random-qwen2.5-vl - fails on NPU
-@pytest.mark.parametrize("model_id", model_ids[:-2])
+@pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_exception(model_id, backend):
-    models_path = get_ov_model(model_ids[0])
+    unsupported_models = {
+        "katuni4ka/tiny-random-internvl2",
+    }
+
+    if model_id in unsupported_models:
+        pytest.skip(f"{model_id} is not supported")
+
+    models_path = get_ov_model(model_id)
     properties = {
         "DEVICE_PROPERTIES": {
-            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
         }
     }
 
@@ -470,7 +468,6 @@ def test_vlm_npu_no_exception(model_id, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
@@ -547,7 +544,64 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
+@pytest.mark.parametrize("backend", attention_backend)
+def test_start_chat_clears_history(backend):
+    callback_questions = [
+        "Why is the Sun yellow?"
+    ]
+    models_path = get_ov_model(model_ids[0])
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+
+    images = []
+    for link in image_links_for_testing[1]:
+        images.append(get_image_by_link(link))
+
+    results_first_generate = ""
+    ov_pipe.start_chat()
+    results_first_generate += ov_pipe.generate(
+        callback_questions[0], images=images, generation_config=generation_config
+    ).texts[0]
+
+    results_second_generate = ""
+    ov_pipe.start_chat()
+    results_second_generate += ov_pipe.generate(
+        callback_questions[0], images=images, generation_config=generation_config
+    ).texts[0]
+
+    assert results_first_generate == results_second_generate
+
+@pytest.mark.precommit
+def test_start_chat_clears_history_cb_api():
+    callback_questions = [
+        "Why is the Sun yellow?"
+    ]
+    models_path = get_ov_model(model_ids[0])
+    ov_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+
+    images = []
+    for link in image_links_for_testing[1]:
+        images.append(get_image_by_link(link))
+
+    results_first_generate = ""
+    ov_pipe.start_chat("You are helpful assistant.")
+    results_first_generate = ov_pipe.generate(
+        [callback_questions[0]], images=[images], generation_config=[generation_config]
+    )[0].texts[0]
+
+    results_second_generate = ""
+    ov_pipe.start_chat("You are helpful assistant.")
+    results_second_generate += ov_pipe.generate(
+        [callback_questions[0]], images=[images], generation_config=[generation_config]
+    )[0].texts[0]
+
+    assert results_first_generate == results_second_generate
+
+
+@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
@@ -672,7 +726,6 @@ def model_and_tag(request):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 class TestImageTags:
     @pytest.mark.parametrize(
         "model_and_tag, model_id",
@@ -841,7 +894,6 @@ class TestImageTags:
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "model_id, image_link, target_size, backend",
     [

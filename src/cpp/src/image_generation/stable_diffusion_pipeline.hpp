@@ -180,6 +180,7 @@ public:
 
         pipeline->m_root_dir = m_root_dir;
         pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
+        pipeline->set_generation_config(m_generation_config);
         return pipeline;
     }
 
@@ -444,8 +445,8 @@ protected:
     }
 
     void initialize_generation_config(const std::string& class_name) override {
-        assert(m_unet != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_unet != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
@@ -479,7 +480,7 @@ protected:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         const bool is_classifier_free_guidance = m_unet->do_classifier_free_guidance(generation_config.guidance_scale);
         const bool is_lcm = m_unet->get_config().time_cond_proj_dim > 0;

@@ -14,7 +14,7 @@
 
 #include "gguf_utils/building_blocks.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
-
+#include "utils.hpp"
 
 using namespace ov;
 using namespace ov::op::v13;
@@ -27,20 +27,10 @@ auto set_name = [](auto node, const std::string& name) {
     node->set_friendly_name(name);
 };
 
-// Also valid for other models, e.g. SmolLMs
-// CVS-166108: Adding shared_embedding as true by default based on following two reason:
-// 1. For optimum-cli converted LLM OpenVINO IR, original input embedding weight will be reused for last make_lm_head layer
-//    Which can reduce both model size on disk and runtime memory usage via storing only single embeddding consts
-//    (e.g. Qwen2.5-7B-Instruct-Q4_0 token_embd.weight & output.weight shape [3584, 152064]
-// 2. For some GGUF model that contains both token_embd.weight & output.weight, e.g. Qwen2.5-3B-Instruct Q4_0
-//    meet accuracy issue on MTL/LNL GPU due to use both token_embd.weight & output.weight in OpenVINO IR.
-// WA Known issue: Qwen2.5-3B-Instruct-Q4_K_M meet accuracy issue on MTL/LNL CPU if only re-used token_embd.weight
-
 std::shared_ptr<ov::Model> create_language_model(
     const std::map<std::string, GGUFMetaData>& configs,
     std::unordered_map<std::string, ov::Tensor>& consts,
-    std::unordered_map<std::string, gguf_tensor_type>& qtypes,
-    bool shared_embedding = false) {
+    std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
     // Create input parameters
     auto input_ids = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
@@ -127,8 +117,7 @@ std::shared_ptr<ov::Model> create_language_model(
         final_norm,
         consts,
         embeddings,
-        qtypes.at("lm_head.qtype"),
-        shared_embedding);
+        qtypes.at("lm_head.qtype"));
 
     // Create results
     auto logits = std::make_shared<ov::op::v0::Result>(embed_out);
@@ -143,33 +132,44 @@ std::shared_ptr<ov::Model> create_language_model(
         model->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     }
     model->set_rt_info(8.0f, {"runtime_options", ov::hint::activations_scale_factor.name()});
-    // CVS-166554: Dynamic quatnization enabled by default with gourp size 32 on MTL platfrom cause the runtime issue
-    // Apply WA to disable dynamic quantization with rt_info to fix GPU plugin issue on MTL
-    model->set_rt_info(0, {"runtime_options", ov::hint::dynamic_quantization_group_size.name()});
 
     return model;
 }
 
 } // namespace
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path) {
+std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const bool enable_save_ov_model) {
     auto start_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Loading and unpacking model from: " << model_path << std::endl;
+    std::stringstream ss;
+    ss << "Loading and unpacking model from: " << model_path;
+    ov::genai::utils::print_gguf_debug_info(ss.str());
     auto [config, consts, qtypes] = load_gguf(model_path);
     auto load_finish_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Loading and unpacking model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms" << std::endl;
-    std::cout << "Start generating OV model..." << std::endl;
-    
-    std::shared_ptr<ov::Model> model;
 
+    ss.str("");
+    ss << "Loading and unpacking model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms";
+    ov::genai::utils::print_gguf_debug_info(ss.str());
+
+    std::shared_ptr<ov::Model> model;
     const std::string model_arch = std::get<std::string>(config.at("architecture"));
+    ss.str("");
+    ss << "Start generating OpenVINO model...";
+    ov::genai::utils::print_gguf_debug_info(ss.str());
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2") || !model_arch.compare("qwen3")) {
         model = create_language_model(config, consts, qtypes);
+        if (enable_save_ov_model){
+            std::filesystem::path gguf_model_path(model_path);
+            std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";
+            ov::genai::utils::save_openvino_model(model, save_path.string(), true);
+        }
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - load_finish_time).count();
-    std::cout << "Model generation done. Time: " << duration << "ms" << std::endl;
+    ss.str("");
+    ss << "Model generation done. Time: " << duration << "ms";
+    ov::genai::utils::print_gguf_debug_info(ss.str());
+
     return model;
 }

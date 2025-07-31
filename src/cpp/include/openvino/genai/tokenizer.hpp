@@ -7,6 +7,7 @@
 #include <vector>
 #include <initializer_list>
 #include <filesystem>
+#include <optional>
 
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/genai/visibility.hpp"
@@ -21,6 +22,7 @@ using Vocab = std::unordered_map<std::string, int64_t>;  // similar to huggingfa
 struct TokenizedInputs {
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
+    std::optional<ov::Tensor> token_type_ids;
 };
 
 /**
@@ -286,6 +288,20 @@ public:
      * @throws Exception if the detokenizer is not available.
      */
     Vocab get_vocab() const;
+
+    /**
+     * @brief Get the vocabulary vector of the tokenizer.
+     *
+     * This function retrieves the vocabulary from the detokenizer, which maps
+     * token indices to their corresponding string. Note that some token strings
+     * may not be valid UTF-8 encoded. The resulting vocabulary may differ from the
+     * original tokenizer's vocabulary due to optimizations during conversion (space symbol
+     * swaps, byte fallback reverse, and other preprocessing changes).
+     *
+     * @return A vector of string tokens.
+     * @throws Exception if the detokenizer is not available.
+     */
+    const std::vector<std::string>& get_vocab_vector() const;
 
     Tokenizer() = default;
     ~Tokenizer();

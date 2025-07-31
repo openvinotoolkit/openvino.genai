@@ -292,6 +292,7 @@ public:
 
         pipeline->m_root_dir = m_root_dir;
         pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
+        pipeline->set_generation_config(m_generation_config);
         return pipeline;
     }
 
@@ -689,8 +690,8 @@ private:
     }
 
     void initialize_generation_config(const std::string& class_name) override {
-        assert(m_transformer != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
 
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
@@ -711,8 +712,8 @@ private:
     }
 
     void check_image_size(const int height, const int width) const override {
-        assert(m_transformer != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const size_t patch_size = m_transformer->get_config().patch_size;
@@ -724,7 +725,7 @@ private:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
 

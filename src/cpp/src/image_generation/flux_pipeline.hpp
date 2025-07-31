@@ -286,6 +286,7 @@ public:
 
         pipeline->m_root_dir = m_root_dir;
         pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
+        pipeline->set_generation_config(m_generation_config);
         return pipeline;
     }
 
@@ -567,8 +568,8 @@ protected:
     }
 
     void initialize_generation_config(const std::string& class_name) override {
-        assert(m_transformer != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
 
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
@@ -599,7 +600,7 @@ protected:
     }
 
     void check_image_size(const int height, const int width) const override {
-        assert(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) && (width % vae_scale_factor == 0 || width < 0),
                         "Both 'width' and 'height' must be divisible by ",
@@ -607,7 +608,7 @@ protected:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
 
@@ -626,7 +627,7 @@ protected:
     }
 
     size_t get_config_in_channels() const override {
-        assert(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
         return m_transformer->get_config().in_channels;
     }
 

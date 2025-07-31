@@ -44,7 +44,8 @@ def parse_args():
     parser.add_argument(
         "--omit-chat-template",
         action="store_true",
-        help="Do not apply the default chat template if it's present.",
+        help="Do not apply the default chat template if it's present for LLMs."
+        " The flag is ignored for VLMs because they depend on the chat template to merge images and text.",
     )
     parser.add_argument(
         "--gt-data",
@@ -173,6 +174,20 @@ def parse_args():
         default=42,
         help="Text-to-image specific parameter that defines the seed value.",
     )
+    parser.add_argument(
+        "--adapters",
+        type=str,
+        nargs='*',
+        default=None,
+        help="LoRA adapters.",
+    )
+    parser.add_argument(
+        "--alphas",
+        type=float,
+        nargs='*',
+        default=None,
+        help="Weights for LoRA adapters.",
+    )
 
     return parser.parse_args()
 
@@ -182,7 +197,11 @@ def check_args(args):
         raise ValueError("Wether --base-model or --gt-data should be provided")
     if args.target_model is None and args.gt_data is None and args.target_data:
         raise ValueError(
-            "Wether --target-model, --target-data or --gt-data should be provided")
+            "Whether --target-model, --target-data or --gt-data should be provided")
+    if args.adapters is not None and args.alphas is not None and len(args.adapters) != len(args.alphas):
+        raise ValueError(
+            "If --adapters is provided and --alphas is provided, they should have the same length."
+        )
 
 
 def load_prompts(args):
@@ -247,18 +266,19 @@ def load_processor(args):
     if model_id is None:
         return None, None
 
-    trust_remote_code = False
     try:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
     except Exception:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        trust_remote_code = True
     if "llava-qwen" in config.model_type:
         preprocessor_id = config.mm_vision_tower
     else:
         preprocessor_id = model_id
 
-    preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=trust_remote_code)
+    try:
+        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
+    except Exception:
+        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
 
 
@@ -417,8 +437,8 @@ def create_evaluator(base_model, args):
                 seed=args.seed,
             )
         elif task == "visual-text":
-            tokenizer = load_tokenizer(args)
             processor, config = load_processor(args)
+            tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
                 crop_question = False
             else:
@@ -461,8 +481,8 @@ def create_evaluator(base_model, args):
 
     except KeyError as e:
         raise ValueError(
-            f"Attempted to load evaluator for '{task}', but no evaluator for this model type found!"
-            "Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}. Details:\n",
+            f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! "
+            f"Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}. Details:\n",
             e
         )
 
@@ -529,6 +549,12 @@ def main():
     kwargs = {}
     if args.cb_config:
         kwargs["cb_config"] = read_cb_config(args.cb_config)
+    if args.adapters is not None:
+        kwargs["adapters"] = args.adapters
+        if args.alphas is not None:
+            kwargs["alphas"] = args.alphas
+        else:
+            kwargs["alphas"] = [1.0] * len(args.adapters)
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)

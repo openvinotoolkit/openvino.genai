@@ -16,10 +16,12 @@
 
 #include "openvino/runtime/tensor.hpp"
 
+#include "sampling/logit_transformers.hpp"
 #include "sampling/logit_processor.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "sequence_group.hpp"
 #include "threadpool.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov::genai {
 // Handle stop_token_ids
@@ -87,7 +89,7 @@ class Sampler {
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
-                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample);
+                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probolities);
     // EAGLE2 tree validation functions
     Eagle2ValidationResult validate_eagle2_tree(
         const std::vector<std::vector<int64_t>>& candidate_paths,
@@ -133,7 +135,7 @@ class Sampler {
     Tokenizer m_tokenizer;
 
     ThreadPool m_thread_pool;
-
+    std::shared_ptr<ov::genai::StructuredOutputController> m_structured_output_controller;
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -166,6 +168,9 @@ public:
         bool do_sample = false);
 
     std::map<size_t, int32_t> get_beam_idxs(SequenceGroup::CPtr sequence_group);
+    // pair with map with backend name and corresponding compiler init time, and vector of compile times for each concrete grammar
+    std::pair<std::map<std::string, float>, std::vector<float>> get_structured_output_times();
+    void clear_structured_output_compile_times();
 };
 
 class Sampler::GroupBeamSearcher {

@@ -28,7 +28,6 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::start_chat(const s
     if (!system_message.empty()) {
         m_history.push_back({{"role", "system"}, {"content", system_message}});
     }
-    m_image_id = 0;
     m_is_chat_conversation = true;
 };
 
@@ -64,7 +63,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         return resutls;
     }
     std::vector<ov::Tensor> input_ids;
-    auto start_time =  std::chrono::steady_clock::now();
+    auto start_time = std::chrono::steady_clock::now();
 
     std::vector<MicroSeconds> tokenization_durations;
     static ManualTimer timer("tokenize");
@@ -136,6 +135,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             std::move(res.m_scores),
             res.m_status,
             perf_metrics,
+            res.extended_perf_metrics
         });
     }
 

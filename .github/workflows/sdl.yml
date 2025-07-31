@@ -2,7 +2,6 @@ name: SDL tests
 on:
   workflow_dispatch:
   pull_request:
-  merge_group:
   push:
     branches:
       - master
@@ -61,7 +60,7 @@ jobs:
         run: python -m bandit --recursive --configfile bandit.yml .
 
       - name: Run Trivy vulnerability scanner in fs mode
-        uses: aquasecurity/trivy-action@76071ef0d7ec797419534a183b498b4d6366cf37 # v0.31.0
+        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
         with:
           scan-type: 'fs'
           scan-ref: '.'

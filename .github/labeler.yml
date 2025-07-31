@@ -107,7 +107,10 @@
 'category: RAG samples':
 - 'samples/cpp/rag/**/*'
 - 'samples/python/rag/**/*'
-- 'tests/python_tests/samples/test_text_embedding_pipeline.py'
+- 'tests/python_tests/samples/test_rag.py'
+
+'category: structured output generation':
+- 'src/cpp/src/sampling/structured_output/*'
 
 'category: whisper':
 - 'src/cpp/include/openvino/genai/whisper_generation_config.hpp'
@@ -165,6 +168,11 @@
 
 'category: GGUF':
 - 'src/cpp/src/gguf_utils/**/*'
+
+'category: Structured Output samples':
+- 'samples/cpp/text_generation/structured_output_generation'
+- 'samples/python/text_generation/structured_output_generation.py'
+- 'tests/python_tests/samples/test_structured_output_sample.py'
 
 'category: cmake / build':
 - 'cmake/**/*'
