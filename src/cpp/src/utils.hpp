@@ -12,9 +12,10 @@
 #include "openvino/runtime/core.hpp"
 
 #include "openvino/genai/generation_handle.hpp"
+#include "openvino/genai/scheduler_config.hpp"
+#include "openvino/genai/generation_config.hpp"
 #include "visual_language/processor_config.hpp"
 
-#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/streamer_base.hpp"
 
 namespace ov {
@@ -23,6 +24,29 @@ namespace genai {
 extern const std::string PA_BACKEND;
 extern const std::string SDPA_BACKEND;
 
+struct ModelDesc {
+    std::string device;
+    ov::genai::SchedulerConfig scheduler_config;
+    ov::AnyMap properties;
+    ov::genai::GenerationConfig generation_config;
+    std::shared_ptr<ov::Model> model = nullptr;
+    ov::genai::Tokenizer tokenizer;
+
+    ModelDesc(const std::shared_ptr<ov::Model>& model,
+              const ov::genai::Tokenizer& tokenizer,
+              const std::string& device = {},
+              const ov::AnyMap& properties = {},
+              const ov::genai::SchedulerConfig& scheduler_config = {},
+              const ov::genai::GenerationConfig& generation_config = {}) :
+        model(model),
+        tokenizer(tokenizer),
+        device(device),
+        properties(properties),
+        scheduler_config(scheduler_config),
+        generation_config(generation_config) {}
+    
+    ModelDesc() = default;
+};
 }  // namespace genai
 }  // namespace ov
 

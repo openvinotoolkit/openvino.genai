@@ -9,10 +9,10 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 
-#include "llm/pipeline_static.hpp"
 #include "llm/pipeline_stateful.hpp"
 #include "llm/pipeline_continuous_batching_adapter.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "llm/pipeline_stateful_npu.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -85,9 +85,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
     } else if (device == "NPU") {
-        m_pimpl = properties.count("STATIC_PIPELINE")
-            ? static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties)
-            : std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
+        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(models_path, tokenizer, properties);
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
@@ -122,9 +120,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
     } else if (device == "NPU") {
-        m_pimpl = properties.count("STATIC_PIPELINE")
-            ? static_llm::LLMPipelineFactory::create(models_path, properties)
-            : std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
+        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(models_path, properties);
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
@@ -163,16 +159,9 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
                                                               tokenizer, scheduler_config, device, device_properties, generation_config);
     } else if (device == "NPU") {
-        m_pimpl = properties.count("STATIC_PIPELINE")
-            ? static_llm::LLMPipelineFactory::create(
-                  utils::singleton_core().read_model(model_str, weights_tensor),
-                  tokenizer,
-                  properties,
-                  generation_config)
-            : std::make_unique<StatefulLLMPipeline>(
+        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(
                 utils::singleton_core().read_model(model_str, weights_tensor),
                 tokenizer,
-                device,
                 properties,
                 generation_config);
     } else if (attention_backend == PA_BACKEND) {
