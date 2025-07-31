@@ -45,6 +45,11 @@ def get_ov_cache_dir(temp_dir=TemporaryDirectory()):
             ov_cache = os.path.join(ov_cache, optimum_intel_version)
         except metadata.PackageNotFoundError:
             pass
+        try:
+            optimum_intel_version = metadata.version("transformers")
+            ov_cache = os.path.join(ov_cache, optimum_intel_version)
+        except metadata.PackageNotFoundError:
+            pass
     else:
         ov_cache = temp_dir.name
     return Path(ov_cache)
