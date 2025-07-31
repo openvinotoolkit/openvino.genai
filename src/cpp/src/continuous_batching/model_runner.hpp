@@ -353,8 +353,13 @@ public:
         // OPENVINO_ASSERT(input_ids.data() == m_request.get_tensor("input_ids").data(), 
         //                 "input_ids tensor should be the same as the one in the request");
 
-        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks);
-        // block_indices_begins and max_context_len are also pre-allocated, no need to set them
+        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_skipped_blocks_map);
+        // Note: For tensor optimization, these tensors are pre-allocated, but we still need to set them
+        // when they're not managed through the cached tensor system (fallback mode)
+        if (!m_cached_block_indices_begins || !m_cached_max_context_len) {
+            m_request.set_tensor("block_indices_begins", block_indices_begins);
+            m_request.set_tensor("max_context_len", max_context_len);
+        }
 
         if (m_is_use_rotation_inputs) {
             m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
@@ -514,6 +519,7 @@ private:
         return cached_tensor;
     }
 
+    // Fills indices for sequences in the order defined by scheduler_output
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
         const std::vector<SequenceGroup::Ptr>& sequence_groups,
