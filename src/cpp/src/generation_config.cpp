@@ -229,9 +229,7 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     if (max_new_tokens != SIZE_MAX) {
         return max_new_tokens;
     } else {
-        if(prompt_length > max_length){
-            return prompt_length;
-        }
+        OPENVINO_ASSERT(max_length > prompt_length, "Internal error: generation_config.max_length should be bigger than number of prompt tokens");
         return max_length - prompt_length;
     }
 }
@@ -264,7 +262,7 @@ bool GenerationConfig::is_prompt_lookup() const {
     return max_ngram_size > 0 && num_assistant_tokens > 0;
 }
 
-void GenerationConfig::validate() const {
+void GenerationConfig::validate(size_t prompt_length) const {
     OPENVINO_ASSERT(num_return_sequences > 0, "num_return_sequences must be greater than 0");
 
     // Stop conditions
@@ -285,6 +283,7 @@ void GenerationConfig::validate() const {
 
     OPENVINO_ASSERT(max_new_tokens > 0 || (max_new_tokens == 0 && echo), "'max_new_tokens' must be greater than 0, if `echo` is set, 0 is also accepted");
     OPENVINO_ASSERT(min_new_tokens <= max_new_tokens, "min_new_tokens must be less or equal max_new_tokens");
+    OPENVINO_ASSERT(max_length > prompt_length, "'max_length' must be greater number o prompt tokens");
 
     // Sampling strategies
 

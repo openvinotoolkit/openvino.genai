@@ -238,7 +238,7 @@ public:
 
     /// @brief checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.
     /// @throws Exception if config is invalid.
-    void validate() const;
+    void validate(size_t prompt_length = 0) const;
 };
 
 /*
