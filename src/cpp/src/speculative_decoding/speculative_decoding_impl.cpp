@@ -501,7 +501,6 @@ GenerationHandle ContinuousBatchingPipeline::EagleDecodingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     ov::genai::GenerationConfig sampling_params) {
-    m_sd_metrics.set_generated_len(request_id, sampling_params.get_max_new_tokens(input_ids.get_size()));
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
@@ -515,7 +514,6 @@ GenerationHandle ContinuousBatchingPipeline::EagleDecodingImpl::add_request(
     uint64_t request_id,
     const std::string& prompt,
     ov::genai::GenerationConfig sampling_params) {
-    m_sd_metrics.set_generated_len(request_id, sampling_params.get_max_new_tokens(prompt.length()));
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
@@ -654,7 +652,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer) {
-    m_perf_metrics = PerfMetrics();
+    m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();;
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
     OPENVINO_ASSERT(!has_non_finished_requests(),
@@ -691,9 +689,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
     ov::Tensor new_input_ids;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         auto new_input_ids = input_ids[request_id]; //update_main_input_ids(input_ids[request_id]);
-        m_sd_metrics.set_generated_len(
-            request_id,
-            sampling_params[request_id].get_max_new_tokens(input_ids[request_id].get_size()));
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         main_generations.push_back(
             m_main_pipeline->add_request(request_id, new_input_ids, sampling_params[request_id]));
@@ -741,7 +736,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
 
     std::vector<EncodedGenerationResult> results;
     results.reserve(all_requests.size());
-
+    //m_perf_metrics.draft_model_metrics.raw_metrics = m_draft_pipeline->raw_perf_metrics;
     generate_timer.end();
 
     for (size_t request_id = 0; request_id < all_requests.size(); ++request_id) {

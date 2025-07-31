@@ -1509,7 +1509,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                                                sampled_token,
                                                is_extend_sequence,
                                                assisting_pipeline_info.max_removed_tokens_per_request,
-                                               sampling_params.do_sample);
+                                               sampling_params.do_sample, !sampling_params.is_prompt_lookup());
                         // doing resample in case of non accepted tokens in specualtive sampling
                         if (!is_validation_passed && sampling_params.do_sample) {
                             continue;
