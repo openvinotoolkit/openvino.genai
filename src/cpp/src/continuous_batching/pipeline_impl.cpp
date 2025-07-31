@@ -217,7 +217,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     // If eos_token_id was not provided, take value from default m_generation_config
     if (sampling_params.eos_token_id == -1)
         sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
-    sampling_params.validate();
+    size_t prompt_len;
+    if (input_ids.get_shape().size() > 1) {
+        prompt_len = input_ids.get_shape()[1];
+    } else {
+        prompt_len = input_ids.get_size();
+    }
+    sampling_params.validate(prompt_len);
 
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
 
