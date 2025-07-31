@@ -57,12 +57,6 @@ class ModelRunner {
     ov::Tensor m_cached_subsequence_begins;
     ov::Tensor m_cached_block_indices_begins;
     ov::Tensor m_cached_max_context_len;
-    ov::Tensor m_cached_score_aggregation_window;
-    
-    // Maximum allocated sizes for dynamic resizing
-    size_t m_max_allocated_tokens;
-    size_t m_max_allocated_sequences;
-    size_t m_max_allocated_blocks;
 
 public:
     /**
@@ -102,9 +96,6 @@ public:
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
         _init_cached_tensors();
-        
-        // Uncomment the following line to debug tensor optimization
-        // _debug_tensor_optimization();
     }
 
     /**
@@ -190,8 +181,7 @@ public:
         ov::Tensor max_context_len = _get_or_resize_tensor(m_cached_max_context_len, "max_context_len", 
                                                           {}, ov::element::i32);
 
-        ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window", 
-                                                                  {batch_size_in_sequences}, ov::element::i32);
+        ov::Tensor score_aggregation_window(ov::element::i32, {batch_size_in_sequences});
 
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
@@ -384,7 +374,9 @@ public:
             }
         }
 
-        // score_aggregation_window is also pre-allocated if available, no need to set it
+        if (m_is_aggregate_attention_scores) {
+            m_request.set_tensor("score_aggregation_window", score_aggregation_window);
+        }
 
         {
             static ManualTimer timer("pure generate inference");
@@ -461,12 +453,6 @@ public:
 
 private:
     void _init_cached_tensors() {
-        // Initialize cached tensors with reasonable default sizes
-        // These will be dynamically resized as needed
-        m_max_allocated_tokens = 2048;  // Start with reasonable default
-        m_max_allocated_sequences = 64;
-        m_max_allocated_blocks = 512;
-        
         try {
             // Try to get pre-allocated tensors from the model
             // If they exist and are USM Host tensors, use them
@@ -478,14 +464,6 @@ private:
             m_cached_subsequence_begins = m_request.get_tensor("subsequence_begins");
             m_cached_block_indices_begins = m_request.get_tensor("block_indices_begins");
             m_cached_max_context_len = m_request.get_tensor("max_context_len");
-            
-            // Score aggregation window is optional
-            try {
-                m_cached_score_aggregation_window = m_request.get_tensor("score_aggregation_window");
-            } catch (const ov::Exception&) {
-                // This tensor might not exist in all models
-            }
-            
         } catch (const ov::Exception&) {
             // If pre-allocated tensors don't exist or are not accessible,
             // we'll fall back to the original method
@@ -718,31 +696,6 @@ private:
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
             m_cache_rotation_deltas_for_each_layer.push_back(ov::Tensor());
         }
-    }
-
-    void _debug_tensor_optimization() const {
-        // Debug function to verify tensor optimization is working
-        std::cout << "=== ModelRunner Tensor Optimization Debug ===" << std::endl;
-        
-        auto check_tensor = [](const std::string& name, const ov::Tensor& tensor) {
-            if (tensor) {
-                std::cout << name << ": initialized, shape=" << tensor.get_shape() << std::endl;
-                // Check if it's likely a USM Host tensor by examining the data pointer
-                auto ptr = tensor.data();
-                std::cout << "  data_ptr=" << ptr << std::endl;
-            } else {
-                std::cout << name << ": not initialized" << std::endl;
-            }
-        };
-        
-        check_tensor("input_ids", m_cached_input_ids);
-        check_tensor("position_ids", m_cached_position_ids);
-        check_tensor("past_lens", m_cached_past_lens);
-        check_tensor("subsequence_begins", m_cached_subsequence_begins);
-        check_tensor("block_indices_begins", m_cached_block_indices_begins);
-        check_tensor("max_context_len", m_cached_max_context_len);
-        
-        std::cout << "=============================================" << std::endl;
     }
 
     void _collect_attention_scores(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
