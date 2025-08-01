@@ -28,7 +28,7 @@ Attributes:
     max_length (int, optional):
         Maximum length of tokens passed to the embedding model.
     pad_to_max_length (bool, optional):
-        If True, input tokens are padded to the maximum length.
+        If 'True', model input tensors are padded to the maximum length.
     batch_size (int, optional):
         Batch size for the embedding model.
         Useful for database population. If set, the pipeline will fix model shape for inference optimization. Number

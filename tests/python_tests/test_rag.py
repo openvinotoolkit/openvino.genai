@@ -11,6 +11,8 @@ from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
 from typing import Literal
+import sys
+import platform
 
 EMBEDDINGS_TEST_MODELS = [
     "BAAI/bge-small-en-v1.5",
@@ -352,6 +354,10 @@ def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, data
     ],
 )
 @pytest.mark.precommit
+@pytest.mark.skipif(
+    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
+    reason="NPU plugin is available only on Linux and Windows x86_64",
+)
 def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
     _, _, models_path = download_and_convert_embeddings_models
 

@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include "json_utils.hpp"
+#include "logger.hpp"
 #include "openvino/core/except.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/opsets/opset.hpp"
@@ -256,12 +257,13 @@ private:
         }
 
         if (m_config.max_length.has_value()) {
-            if (m_model_config.max_position_embeddings.has_value()) {
-                const auto max_position_embeddings = m_model_config.max_position_embeddings.value();
-                OPENVINO_ASSERT(*m_config.max_length <= max_position_embeddings,
-                                "max_length should be less than or equal to max_position_embeddings(",
-                                max_position_embeddings,
-                                ")");
+            const auto max_position_embeddings = m_model_config.max_position_embeddings;
+            if (max_position_embeddings.has_value() && *m_config.max_length > *max_position_embeddings) {
+                std::stringstream message;
+                message << "max_length is set to " << *m_config.max_length
+                        << " which is greater than models max_position_embeddings (" << *max_position_embeddings << ")."
+                        << "Some models may fail with such configuration.";
+                Logger::warn(message.str());
             }
 
             if (m_config.pad_to_max_length.has_value() && *m_config.pad_to_max_length) {

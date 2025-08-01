@@ -36,7 +36,7 @@ public:
         std::optional<size_t> max_length;
 
         /**
-         * @brief If 'true', input tokens are padded to the maximum length
+         * @brief If 'true', model input tensors are padded to the maximum length
          */
         std::optional<bool> pad_to_max_length;
 
