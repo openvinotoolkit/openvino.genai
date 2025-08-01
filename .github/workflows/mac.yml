@@ -503,7 +503,7 @@ jobs:
       # See the vulnerability report here https://nvd.nist.gov/vuln/detail/CVE-2025-32434
 
       # x86_64 macOS does not (and will not) support newer versions of torch > 2.2 which are used in the newer transformers versions. It's not possible to lower transformer version in requirements.txt because that triggers vulnerability alert: https://github.com/openvinotoolkit/openvino_tokenizers/security/dependabot/11
-      - run: python -m pip install transformers<4.52.0
+      - run: python -m pip install "transformers<4.52"
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
@@ -589,7 +589,7 @@ jobs:
       # See the vulnerability report here https://nvd.nist.gov/vuln/detail/CVE-2025-32434
 
       # x86_64 macOS does not (and will not) support newer versions of torch > 2.2 which are used in the newer transformers versions. It's not possible to lower transformer version in requirements.txt because that triggers vulnerability alert: https://github.com/openvinotoolkit/openvino_tokenizers/security/dependabot/11
-      - run: python -m pip install transformers<4.52.0
+      - run: python -m pip install "transformers<4.52"
 
       - name: Fix C++ samples permissions
         if: ${{ matrix.test.run_condition }}
