@@ -9,6 +9,7 @@ import openvino_genai
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir")
+    parser.add_argument("texts", nargs="+")
     args = parser.parse_args()
 
     device = "CPU"  # GPU can be used as well
