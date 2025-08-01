@@ -127,10 +127,10 @@ def run_text_embedding_langchain(
         return ov_embeddings.embed_query(documents[0])
 
 
-EmbeddigResult = list[list[float]] | list[list[int]] | list[float] | list[int]
+EmbeddingResult = list[list[float]] | list[list[int]] | list[float] | list[int]
 
 
-def assert_embedding_results(result_1: EmbeddigResult, result_2: EmbeddigResult):
+def assert_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):
     np_result_1 = np.array(result_1)
     np_result_2 = np.array(result_2)
 
