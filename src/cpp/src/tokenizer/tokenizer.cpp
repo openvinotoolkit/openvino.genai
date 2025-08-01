@@ -18,6 +18,7 @@
 #include "tokenizer/chat_template_fallback_map.hpp"
 #include "tokenizer/make_tokenizer_stateful.hpp"
 #include "tokenizer/tokenizers_path.hpp"
+#include "add_second_input_pass.hpp"
 #include "circular_buffer_queue.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"
@@ -208,6 +209,11 @@ public:
     // handle to shared_object with openvino tokenizers
     std::shared_ptr<void> m_shared_object_ov_tokenizers = nullptr;
 
+    // buffer to store the error messages from the pass
+    std::ostringstream m_pass_errors;
+
+    bool is_paired_input = false;
+
     bool m_older_than_24_5 = false;
 
     int64_t m_pad_token_id = -1;
@@ -300,22 +306,21 @@ public:
 
         OPENVINO_ASSERT(models_path.extension() != ".xml", "'models_path' parameter should be a path to a dir not a xml file");
 
+        std::filesystem::path ov_tokenizer_filesystem_path;
+#ifdef _WIN32
+        const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+        ov_tokenizer_filesystem_path = std::filesystem::path(std::wstring(ov_tokenizer_path_w));
+#else
+        const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+        ov_tokenizer_filesystem_path = std::filesystem::path(ov_tokenizer_path);
+#endif
+        m_shared_object_ov_tokenizers = load_shared_object(ov_tokenizer_filesystem_path);
+
         std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
         std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
         auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-        // Pass no addtional properties to tokenizer/detokenizer models since it was not used by default
-        filtered_properties = {};
         if (is_gguf_model(models_path)) {
             std::map<std::string, GGUFMetaData> tokenizer_config{};
-            std::filesystem::path ov_tokenizer_filesystem_path;
-#ifdef _WIN32
-            const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
-            ov_tokenizer_filesystem_path = std::filesystem::path(std::wstring(ov_tokenizer_path_w));
-#else
-            const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
-            ov_tokenizer_filesystem_path = std::filesystem::path(ov_tokenizer_path);
-#endif
-            m_shared_object_ov_tokenizers = load_shared_object(ov_tokenizer_filesystem_path);
             std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
                 create_tokenizer_from_config(m_shared_object_ov_tokenizers, models_path);
 
@@ -376,6 +381,28 @@ public:
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
+        auto [filtered_properties, two_input_requested] = utils::extract_paired_input_props(properties);
+
+        if (ov_tokenizer && ov_tokenizer->get_parameters().size() == 2) {
+            is_paired_input = true;
+        }
+        
+        // TODO: make this flag permanent while we validate that pass does not break IRs with one input
+        two_input_requested = true;
+
+        // If model is already converted with 2 inputs, then skip the pass
+        if (ov_tokenizer && two_input_requested && !is_paired_input) {
+            ov::pass::Manager manager;
+            manager.register_pass<ov::genai::AddSecondInputPass>(m_shared_object_ov_tokenizers, m_pass_errors);
+            manager.run_passes(ov_tokenizer);
+            is_paired_input = true;
+        }
+
+
+        if (two_input_requested && !is_paired_input) {
+            OPENVINO_THROW("Two input requested but AddSecondInputPass failed with " + m_pass_errors.str());
+        }
+
 
         // temporary allow absense both tokenizer and detokenizer for GGUF support
         // TODO: remove this code once Tokenizers can be created from GGUF file
@@ -396,7 +423,7 @@ public:
             manager.register_pass<MakeAddSpecialTokensSatateful>();
             manager.register_pass<MakePaddingSatateful>();
             manager.run_passes(ov_tokenizer);
-            ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, properties);
+            ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, filtered_properties);
             ov::genai::utils::print_compiled_model_properties(tokenizer, "OV Tokenizer");
 
             m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -428,7 +455,7 @@ public:
             ov::pass::Manager manager_detok;
             manager_detok.register_pass<MakeVocabDecoderSatateful>();
             manager_detok.run_passes(ov_detokenizer);
-            ov::CompiledModel detokenizer = core.compile_model(ov_detokenizer, device, properties);
+            ov::CompiledModel detokenizer = core.compile_model(ov_detokenizer, device, filtered_properties);
             ov::genai::utils::print_compiled_model_properties(detokenizer, "OV Detokenizer");
 
             m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -936,6 +963,10 @@ Vocab Tokenizer::get_vocab() const {
 const std::vector<std::string>& Tokenizer::get_vocab_vector() const {
     OPENVINO_ASSERT(!m_pimpl->m_vocab.empty(), "Tokenizer vocab is empty. Please check if the detokenizer model was provided and loaded correctly.");
     return m_pimpl->m_vocab;
+}
+
+bool Tokenizer::is_paired_input() const {
+    return m_pimpl->is_paired_input;
 }
 
 Tokenizer::~Tokenizer() {

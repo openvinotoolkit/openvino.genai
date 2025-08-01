@@ -302,6 +302,9 @@ public:
      * @throws Exception if the detokenizer is not available.
      */
     const std::vector<std::string>& get_vocab_vector() const;
+    
+     /// @brief Check if the tokenizer supports paired input.
+    bool is_paired_input() const;
 
     Tokenizer() = default;
     ~Tokenizer();
@@ -313,6 +316,7 @@ private:
 static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
 static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};
 static constexpr ov::Property<bool> pad_to_max_length{"pad_to_max_length"};
+static constexpr ov::Property<bool> add_second_input{"add_second_input"};
 
 }  // namespace genai
 }  // namespace ov
