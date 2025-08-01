@@ -15,11 +15,23 @@ from utils.hugging_face import generation_config_to_hf, download_gguf_model, loa
 from utils.ov_genai_pipelines import create_ov_pipeline, get_gguf_pipeline_types
 from data.models import get_gguf_model_list
 
+import faulthandler
+import sys
 
+from memory_profiler import profile
+
+def trace(frame, event, arg):
+    print("%s, %s:%d" % (event, frame.f_code.co_filename, frame.f_lineno))
+    return trace
+
+
+@profile
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
 @pytest.mark.precommit
 def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
+    faulthandler.enable()
+    #sys.settrace(trace)
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
     dynamic_quantization_group_size = model_ids["dynamic_quantization_group_size"]
@@ -56,11 +68,14 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     assert res_string_input_1 == res_string_input_2
 
 
+@profile
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
 @pytest.mark.parametrize("enable_save_ov_model", [False, True])
 @pytest.mark.precommit
 def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
+    faulthandler.enable()
+    #sys.settrace(trace)
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
     dynamic_quantization_group_size = model_ids["dynamic_quantization_group_size"]
@@ -106,10 +121,14 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
 
     assert res_string_input_1 == res_string_input_2
 
+
+@profile
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", [{"gguf_model_id": "Qwen/Qwen3-0.6B-GGUF", "gguf_filename": "Qwen3-0.6B-Q8_0.gguf"}])
 @pytest.mark.precommit
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
+    faulthandler.enable()
+    #sys.settrace(trace)
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
     # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063
     gguf_model_id = model_ids["gguf_model_id"]

@@ -40,3 +40,5 @@ datasets==3.6.0
 rouge
 # - microsoft/Phi-4-multimodal-instruct
 peft
+
+memory_profiler # check memory usage debug
