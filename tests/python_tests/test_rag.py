@@ -345,6 +345,28 @@ def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, data
     assert_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
 
 
+@pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextEmbeddingPipeline.Config(max_length=64, pad_to_max_length=True, batch_size=1),
+        TextEmbeddingPipeline.Config(max_length=50, pad_to_max_length=True, batch_size=4),
+    ],
+)
+@pytest.mark.precommit
+def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
+    _, _, models_path = download_and_convert_embeddings_models
+
+    result = run_text_embedding_genai(models_path, dataset_documents[: config.batch_size], config, "embed_documents")
+
+    NPU_FALLBACK_PROPERTIES = {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
+
+    pipeline = TextEmbeddingPipeline(models_path, "NPU", config, **NPU_FALLBACK_PROPERTIES)
+    result = pipeline.embed_documents(dataset_documents[: config.batch_size])
+
+    assert_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
+
+
 @pytest.mark.parametrize("download_and_convert_rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
 @pytest.mark.precommit
 def test_rerank_constructors(download_and_convert_rerank_model):
