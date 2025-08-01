@@ -198,7 +198,7 @@ def convert_models(opt_model : OVModelForCausalLM,
 def download_and_convert_model(model_id: str, **tokenizer_kwargs):
     return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def download_and_convert_embeddings_models(request):
     model_id = request.param
     return _download_and_convert_model(model_id, OVModelForFeatureExtraction)
