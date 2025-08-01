@@ -8,6 +8,13 @@ pytest-html
 hf_transfer
 gguf>=0.10.0
 
+# transformers>=4.52 require torch >=2.6 and raise an error otherwise:
+# ValueError: Due to a serious vulnerability issue in `torch.load`, even with `weights_only=True`, we now require users to upgrade torch to at least v2.6 in order to use the function. This version restriction does not apply when loading files with safetensors.
+# See the vulnerability report here https://nvd.nist.gov/vuln/detail/CVE-2025-32434
+
+# x86_64 macOS does not (and will not) support newer versions of torch > 2.2 which are used in the newer transformers versions
+transformers<4.52.0; platform_system == "Darwin" and platform_machine == "x86_64"
+
 # rag requirements
 langchain_community==0.3.27
 langchain-core==0.3.72
