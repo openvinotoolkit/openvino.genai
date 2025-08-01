@@ -1,0 +1,29 @@
+import CodeExampleCPP from './_code_example_cpp.mdx';
+import CodeExamplePython from './_code_example_python.mdx';
+
+## Run Model Using OpenVINO GenAI
+
+The `TextRerankPipeline` enables you to reorder candidate documents or passages by semantic relevance to a query using a cross-encoder or reranker model. You can control how many top results are returned using the `top_n` parameter.
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExamplePython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExamplePython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExampleCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExampleCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>
