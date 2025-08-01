@@ -355,8 +355,6 @@ def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, data
 def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
     _, _, models_path = download_and_convert_embeddings_models
 
-    result = run_text_embedding_genai(models_path, dataset_documents[: config.batch_size], config, "embed_documents")
-
     NPU_FALLBACK_PROPERTIES = {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
 
     pipeline = TextEmbeddingPipeline(models_path, "NPU", config, **NPU_FALLBACK_PROPERTIES)
