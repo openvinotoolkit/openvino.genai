@@ -14,12 +14,15 @@ namespace ov::genai {
 
 class VisionEncoderQwen2VL : public VisionEncoder {
 public:
-    using VisionEncoder::VisionEncoder;
+    explicit VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
+    explicit VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir_path, const std::string& device, const ov::AnyMap device_config);
+ 
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
     std::vector<EncodedImage> encode_video(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map) override;
 
 private:
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_ireq(ov::CompiledModel& compiled_model);    
     ov::Tensor preproces_single_image(const ov::Tensor& image, const ProcessorConfig& config, ImageSize& target_image_size);
 };
 
