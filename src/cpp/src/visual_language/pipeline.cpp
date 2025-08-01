@@ -113,6 +113,7 @@ public:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
+        std::cout << "Constructed stateful VLMPipelineImpl\n";
     }
 
 
@@ -148,6 +149,7 @@ public:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
+        std::cout << "Constructed stateful VLMPipelineImpl\n";
     }
 
     VLMDecodedResults generate(
@@ -355,7 +357,7 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, SDPA_BACKEND);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
@@ -398,7 +400,7 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, SDPA_BACKEND);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
