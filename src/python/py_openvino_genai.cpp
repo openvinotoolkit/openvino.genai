@@ -75,7 +75,11 @@ auto encoded_results_docstring = R"(
 } // namespace
 
 
+#ifdef Py_GIL_DISABLED
+PYBIND11_MODULE(py_openvino_genai, m, py::mod_gil_not_used()) {
+#else
 PYBIND11_MODULE(py_openvino_genai, m) {
+#endif
     m.doc() = "Pybind11 binding for OpenVINO GenAI library";
 
     m.def("get_version", [] () -> py::str {
