@@ -162,12 +162,18 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
     std::vector<EncodedImage> encoded_images = {};
 
+    // CDPruner configuration - this will be passed from VLMContinuousBatchingAdapter
+    ov::AnyMap vision_config;
+    if (m_vision_config.has_value()) {
+        vision_config = m_vision_config.value();
+    }
+
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
         const auto& rgbs = rgbs_vector[0];
         const auto& prompt = prompts[0];
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        encoded_images = m_inputs_embedder->encode_images(rgbs);
+        encoded_images = m_inputs_embedder->encode_images(rgbs, vision_config);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
@@ -185,7 +191,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
             const auto& rgbs = rgbs_vector[i];
-            const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+            const auto encoded_images = m_inputs_embedder->encode_images(rgbs, vision_config);
             auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
@@ -248,7 +254,14 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        
+        // Use vision config if available
+        ov::AnyMap vision_config;
+        if (m_vision_config.has_value()) {
+            vision_config = m_vision_config.value();
+        }
+        
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs, vision_config);
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);

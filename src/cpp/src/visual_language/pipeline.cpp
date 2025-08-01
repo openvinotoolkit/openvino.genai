@@ -48,6 +48,9 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     size_t m_image_id = 0;
     ChatHistory m_history;
 
+    // CDPruner configuration
+    ov::AnyMap m_cdpruner_config;
+
 public:
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -113,6 +116,13 @@ public:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
+
+        // Initialize CDPruner configuration with default values
+        m_cdpruner_config = {
+            {"num_visual_tokens", static_cast<size_t>(64)},
+            {"relevance_weight", 0.5f},
+            {"enable_pruning", true}
+        };
     }
 
 
@@ -148,6 +158,13 @@ public:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
+
+        // Initialize CDPruner configuration with default values
+        m_cdpruner_config = {
+            {"num_visual_tokens", static_cast<size_t>(64)},
+            {"relevance_weight", 0.5f},
+            {"enable_pruning", true}
+        };
     }
 
     VLMDecodedResults generate(
@@ -183,7 +200,13 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        // Create config map that includes CDPruner configuration
+        ov::AnyMap vision_config = m_cdpruner_config;
+        
+        // Add text prompt to vision config for CDPruner
+        vision_config["text_prompt"] = prompt;
+        
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs, vision_config);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
         if (m_is_chat_conversation) {
@@ -346,6 +369,43 @@ public:
 
         m_generation_config.validate();
     }
+
+    void set_visual_token_pruning_config(
+        size_t num_visual_tokens,
+        float relevance_weight,
+        bool enable_pruning
+    ) override {
+        // Validate input parameters
+        OPENVINO_ASSERT(num_visual_tokens > 0 && num_visual_tokens <= 1024,
+            "num_visual_tokens must be between 1 and 1024, got: ", num_visual_tokens);
+        OPENVINO_ASSERT(relevance_weight >= 0.0f && relevance_weight <= 1.0f,
+            "relevance_weight must be between 0.0 and 1.0, got: ", relevance_weight);
+
+        // Update configuration
+        m_cdpruner_config["num_visual_tokens"] = num_visual_tokens;
+        m_cdpruner_config["relevance_weight"] = relevance_weight;
+        m_cdpruner_config["enable_pruning"] = enable_pruning;
+    }
+
+    ov::AnyMap get_visual_token_pruning_config() const override {
+        return m_cdpruner_config;
+    }
+
+    void set_visual_token_pruning_enabled(bool enable) override {
+        m_cdpruner_config["enable_pruning"] = enable;
+    }
+
+    bool is_visual_token_pruning_enabled() const override {
+        auto it = m_cdpruner_config.find("enable_pruning");
+        if (it != m_cdpruner_config.end()) {
+            try {
+                return it->second.as<bool>();
+            } catch (const std::exception&) {
+                return true; // default value
+            }
+        }
+        return true; // default value
+    }
 };
 
 VLMPipeline::VLMPipeline(
@@ -482,4 +542,24 @@ GenerationConfig VLMPipeline::get_generation_config() const {
 
 void VLMPipeline::set_generation_config(const GenerationConfig& new_config) {
     m_pimpl->set_generation_config(new_config);
+}
+
+void VLMPipeline::set_visual_token_pruning_config(
+    size_t num_visual_tokens,
+    float relevance_weight,
+    bool enable_pruning
+) {
+    m_pimpl->set_visual_token_pruning_config(num_visual_tokens, relevance_weight, enable_pruning);
+}
+
+ov::AnyMap VLMPipeline::get_visual_token_pruning_config() const {
+    return m_pimpl->get_visual_token_pruning_config();
+}
+
+void VLMPipeline::set_visual_token_pruning_enabled(bool enable) {
+    m_pimpl->set_visual_token_pruning_enabled(enable);
+}
+
+bool VLMPipeline::is_visual_token_pruning_enabled() const {
+    return m_pimpl->is_visual_token_pruning_enabled();
 }
