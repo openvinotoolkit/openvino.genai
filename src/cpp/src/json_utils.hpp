@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <set>
+#include <optional>
 
 #include <nlohmann/json.hpp>
 
@@ -49,6 +50,15 @@ void read_json_param(const nlohmann::json& data, const std::string& name, std::s
         for (const auto elem : data[name]) {
             param.insert(elem.get<V>());
         }
+    }
+}
+
+template <typename T>
+void read_json_param(const nlohmann::json& data, const std::string& name, std::optional<T>& param) {
+    if (data.contains(name) && !data[name].is_null()) {
+        T value;
+        read_json_param(data, name, value);
+        param = value;
     }
 }
 

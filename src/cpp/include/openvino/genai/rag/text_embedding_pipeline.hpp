@@ -41,9 +41,10 @@ public:
         std::optional<bool> pad_to_max_length;
 
         /**
-         * @brief Batch size for embedding model.
-         * If batch_size, max_length and pad_to_max_length are set, the pipeline will fix model shape
-         * for inference optimization. Number of documents passed to pipeline should be equal to batch_size.
+         * @brief Batch size of embedding model.
+         * Useful for database population. If set, the pipeline will fix model shape for inference optimization. Number
+         * of documents passed to pipeline should be equal to batch_size
+         * For query embeddings, batch_size should be set to 1 or not set
          */
         std::optional<size_t> batch_size;
 
@@ -83,6 +84,12 @@ public:
          * ov::genai::TextEmbeddingPipeline::Config config({{"normalize", false}});
          */
         explicit Config(const ov::AnyMap& properties);
+
+        /**
+         * @brief checks that are no conflicting parameters
+         * @throws Exception if config is invalid.
+         */
+        void validate() const;
     };
 
     /**

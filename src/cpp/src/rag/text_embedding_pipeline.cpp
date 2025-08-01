@@ -3,6 +3,11 @@
 
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 
+#include <fstream>
+#include <nlohmann/json.hpp>
+
+#include "json_utils.hpp"
+#include "openvino/core/except.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/opsets/opset.hpp"
 #include "openvino/opsets/opset1.hpp"
@@ -36,38 +41,6 @@ bool has_token_type_ids_input(const T& inputs) {
         }
     }
     return false;
-}
-
-void reshape_model(std::shared_ptr<Model>& model, ov::PartialShape& shape) {
-    std::map<std::string, ov::PartialShape> name_to_shape;
-    name_to_shape["input_ids"] = shape;
-    name_to_shape["attention_mask"] = shape;
-
-    if (has_token_type_ids_input(model->inputs())) {
-        name_to_shape["token_type_ids"] = shape;
-    }
-
-    // print current model input shapes
-    std::cout << "Current model input shapes:" << std::endl;
-    for (const auto& input : model->inputs()) {
-        std::cout << "  " << input.get_any_name() << ": " << input.get_partial_shape().to_string() << std::endl;
-    }
-
-    // print name_to_shape for debugging
-    std::cout << "Reshaping model with the following shapes:" << std::endl;
-    for (const auto& [name, shape] : name_to_shape) {
-        std::cout << "  " << name << ": " << shape.to_string() << std::endl;
-    }
-
-    model->reshape(name_to_shape);
-
-    std::cout << "Model reshaped to the following shapes:" << std::endl;
-    for (const auto& input : model->inputs()) {
-        std::cout << "  " << input.get_any_name() << ": " << input.get_partial_shape().to_string() << std::endl;
-    }
-    for (const auto& output : model->outputs()) {
-        std::cout << "  " << output.get_any_name() << ": " << output.get_partial_shape().to_string() << std::endl;
-    }
 }
 
 /**
@@ -142,6 +115,28 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const 
 
     return processor.build();
 }
+
+class ModelConfig {
+public:
+    explicit ModelConfig(const std::filesystem::path& models_path) {
+        // config.json not found. Skip parameters initialization from file, use defaults.
+        const std::filesystem::path& json_path = models_path / "config.json";
+        if (!std::filesystem::exists(json_path)) {
+            return;
+        }
+
+        using ov::genai::utils::read_json_param;
+
+        std::ifstream f(json_path);
+        OPENVINO_ASSERT(f.is_open(), "Failed to open '", json_path);
+
+        nlohmann::json data = nlohmann::json::parse(f);
+
+        read_json_param(data, "max_position_embeddings", max_position_embeddings);
+    };
+
+    std::optional<size_t> max_position_embeddings;
+};
 }  // namespace
 
 namespace ov {
@@ -158,6 +153,16 @@ TextEmbeddingPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::query_instruction.name(), query_instruction);
 };
 
+void TextEmbeddingPipeline::Config::validate() const {
+    if (max_length.has_value()) {
+        OPENVINO_ASSERT(max_length.value() > 0, "max_length should be greater than 0");
+    }
+
+    if (batch_size.has_value()) {
+        OPENVINO_ASSERT(batch_size.value() > 0, "batch_size should be greater than 0");
+    }
+}
+
 class TextEmbeddingPipeline::TextEmbeddingPipelineImpl {
 public:
     TextEmbeddingPipelineImpl(const std::filesystem::path& models_path,
@@ -165,16 +170,23 @@ public:
                               const Config& config,
                               const ov::AnyMap& properties = {})
         : m_config{config},
-          m_tokenizer{models_path} {
+          m_tokenizer{models_path},
+          m_model_config{models_path} {
+        m_config.validate();
+
         ov::Core core = utils::singleton_core();
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
-        // all dimension requested to be fixed, reshape model to a fixed shape
-        if (m_config.batch_size.has_value() && m_config.max_length.has_value() &&
-            m_config.pad_to_max_length.has_value() && *m_config.pad_to_max_length) {
-            ov::PartialShape fixed_shape{ov::Dimension(*m_config.batch_size), ov::Dimension(*m_config.max_length)};
-            reshape_model(model, fixed_shape);
+        const bool should_reshape = m_config.batch_size.has_value() || m_config.max_length.has_value();
+        if (should_reshape) {
+            reshape_model(model);
+        }
+
+        if (device == "NPU") {
+            OPENVINO_ASSERT(!model->is_dynamic(),
+                            "NPU device does not support dynamic shapes. In order to fix model shape, set batch_size, "
+                            "max_length and pad_to_max_length in the configuration.");
         }
 
         model = apply_postprocessing(model, m_config);
@@ -213,7 +225,6 @@ public:
     };
 
     void start_embed_query_async(const std::string& text) {
-        // todo: handle embed_query for fixed shapes pipeline
         std::vector<std::string> formatted_query{format_query(text)};
         start_embed_async(formatted_query);
     };
@@ -234,18 +245,54 @@ private:
     Tokenizer m_tokenizer;
     InferRequest m_request;
     Config m_config;
+    ModelConfig m_model_config;
     AnyMap m_tokenization_params;
 
-    void start_embed_async(std::vector<std::string>& texts) {
-        const auto encoded = m_tokenizer.encode(texts, m_tokenization_params);
+    void reshape_model(std::shared_ptr<Model>& model) {
+        ov::PartialShape target_shape{ov::Dimension::dynamic(), ov::Dimension::dynamic()};
 
-        // print model input shapes for debugging
-        for (const auto& input : m_request.get_compiled_model().inputs()) {
-            std::cout << "Input: " << input.get_any_name() << ", shape: " << input.get_partial_shape().to_string()
-                      << std::endl;
+        if (m_config.batch_size.has_value()) {
+            target_shape[0] = ov::Dimension(*m_config.batch_size);
         }
 
-        std::cout << "encoded Input_ids shape: " << encoded.input_ids.get_shape().to_string() << std::endl;
+        if (m_config.max_length.has_value()) {
+            if (m_model_config.max_position_embeddings.has_value()) {
+                const auto max_position_embeddings = m_model_config.max_position_embeddings.value();
+                OPENVINO_ASSERT(*m_config.max_length <= max_position_embeddings,
+                                "max_length should be less than or equal to max_position_embeddings(",
+                                max_position_embeddings,
+                                ")");
+            }
+
+            if (m_config.pad_to_max_length.has_value() && *m_config.pad_to_max_length) {
+                target_shape[1] = ov::Dimension(*m_config.max_length);
+            } else {
+                target_shape[1] = ov::Dimension{0, static_cast<int64_t>(*m_config.max_length)};
+            }
+        }
+
+        std::map<std::string, ov::PartialShape> input_name_to_shape;
+        input_name_to_shape["input_ids"] = target_shape;
+        input_name_to_shape["attention_mask"] = target_shape;
+
+        if (has_token_type_ids_input(model->inputs())) {
+            input_name_to_shape["token_type_ids"] = target_shape;
+        }
+
+        model->reshape(input_name_to_shape);
+    }
+
+    void start_embed_async(std::vector<std::string>& texts) {
+        if (m_config.batch_size.has_value()) {
+            // if batch_size is set, model shape is fixed
+            // provide user friendly error message if number of texts is not equal to batch_size
+            OPENVINO_ASSERT(texts.size() == *m_config.batch_size,
+                            "Number of texts passed to pipeline should be equal to batch_size(",
+                            *m_config.batch_size,
+                            ")");
+        }
+
+        const auto encoded = m_tokenizer.encode(texts, m_tokenization_params);
 
         m_request.set_tensor("input_ids", encoded.input_ids);
         m_request.set_tensor("attention_mask", encoded.attention_mask);
