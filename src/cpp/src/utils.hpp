@@ -248,7 +248,7 @@ SchedulerConfig get_latency_oriented_scheduler_config();
 
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties);
 
-std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties);
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, const std::optional<bool> use_sdpa_backend = std::nullopt);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
