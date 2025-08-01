@@ -100,6 +100,7 @@ public:
         // Since we return here only one perf_metrics, we should accumulate all tokenization and detokenization times.
         if (generated.size() > 0) {
             perf_metrics = generated[0].perf_metrics;
+            perf_metrics.load_time = m_load_time_ms;
         }
 
         // Tokenizations and detokenization times are dispersed across GenerationResult vector.
@@ -193,6 +194,7 @@ public:
         // For EncodedGenerationResults, all perf_metrics are the same.
         if (generated.size() > 0) {
             perf_metrics = generated[0].perf_metrics;
+            perf_metrics.load_time = m_load_time_ms;
         }
         auto& raw_counters = perf_metrics.raw_metrics;
         raw_counters.generate_durations.clear();
