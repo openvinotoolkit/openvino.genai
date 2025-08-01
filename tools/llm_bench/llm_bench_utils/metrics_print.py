@@ -122,7 +122,8 @@ def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion=N
 
     prefix = f'[{iter_str}][P{prompt_idx}]'
     log.info(f"{prefix} First step of {main_model_name} latency: {iter_data['first_token_latency']:.2f} ms, "
-             f"other steps of {main_model_name} latency: {iter_data['other_tokens_avg_latency']:.2f} ms/step",)
+             f"other steps of {main_model_name} latency: {iter_data['other_tokens_avg_latency']:.2f} ms/step, "
+             f"{main_model_name} step count: {len(stable_diffusion.raw_metrics.unet_inference_durations)}")
 
     log_str = f"{prefix} "
     if (len(stable_diffusion.get_text_encoder_infer_duration().keys())):
@@ -132,14 +133,10 @@ def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion=N
     else:
         log_str += "Text encoder latency: N/A "
 
-    log_str += (
-        f"{main_model_name} latency: {stable_diffusion.get_unet_infer_duration().mean:.2f} ms/step, "
-        f"vae decoder latency: {stable_diffusion.get_vae_decoder_infer_duration():.2f} ms/step, ")
+    log_str += (f"vae decoder latency: {stable_diffusion.get_vae_decoder_infer_duration():.2f} ms/step, ")
 
     if hasattr(stable_diffusion, 'get_text_encoder_step_count'):
         log_str += f"text encoder step count: {stable_diffusion.get_text_encoder_step_count()}, "
-
-    log_str += f"{main_model_name} step count: {len(stable_diffusion.raw_metrics.unet_inference_durations)} , "
 
     if hasattr(stable_diffusion, 'get_vae_decoder_step_count'):
         log_str += f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}, "
@@ -217,10 +214,9 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
                 prompt_dict[p_idx] = '\n{}{} 1st iteration latency: {}, ' \
                     '2nd iteration latency: {}, 2nd iteration throughput: {}' \
                     .format(prefix, output_info, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
-
             else:
-                prompt_dict[p_idx] = '\n{} 1st step of unet latency: {}, ' \
-                    '2nd steps of unet latency: {}, 2nd steps throughput: {}' \
+                prompt_dict[p_idx] = '\n{} 1st step of unet/transformer latency: {}, ' \
+                    '2nd steps of unet/transformer latency: {}, 2nd steps throughput: {}' \
                     .format(prefix, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
 
 
