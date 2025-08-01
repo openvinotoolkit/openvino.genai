@@ -18,8 +18,7 @@ class WhisperHook:
             if 'enc_token_time' in data:
                 first_token_latency += data['enc_token_time']
             if 'dec_token_time' in data:
-                first_token_latency += data['dec_token_time']
-                self.tm_list.extend(copy.deepcopy(data['dec_token_time'][1:]))
+                assert not data['dec_token_time']
         self.tm_list.insert(0, first_token_latency)
         return self.tm_list
 
