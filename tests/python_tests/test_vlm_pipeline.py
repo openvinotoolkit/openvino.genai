@@ -51,6 +51,8 @@ def get_ov_model(model_id):
         )
     else:
         tokenizer = processor.tokenizer
+        if tokenizer.chat_template is None:
+            tokenizer.chat_template = processor.chat_template
     tokenizer.save_pretrained(model_dir)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
         tokenizer, with_detokenizer=True
