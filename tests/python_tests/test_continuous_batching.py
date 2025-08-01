@@ -152,7 +152,8 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: dict, pip
 generation_configs = [
     dict(do_sample=False, max_new_tokens=20),
     dict(do_sample=True, max_new_tokens=20, temperature=0.7),
-    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0, repetition_penalty=1.0)
+    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0, repetition_penalty=1.0),
+    dict(max_length=1, ignore_eos=True) # max_length smaller than number of prompt tokens, generation should stop right away
 ]
 questions = [
     '1+1=',
