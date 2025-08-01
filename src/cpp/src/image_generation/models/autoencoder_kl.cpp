@@ -238,8 +238,8 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
 
-    std::optional<AdapterConfig> adapters;
-    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+    std::optional<AdapterConfig> unused;
+    auto filtered_properties = extract_adapters_from_properties(properties, &unused);
 
     if (m_encoder_model) {
         ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, *filtered_properties));

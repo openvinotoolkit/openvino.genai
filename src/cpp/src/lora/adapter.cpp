@@ -645,7 +645,7 @@ protected:
     }
 };
 
-// TODO: LoRA should support two separate parameters: alpha (defined in the config or .safetensors), weight (set by the user)
+// TODO [CVS-171466]: LoRA should support two separate parameters: alpha (defined in the config or .safetensors), weight (set by the user)
 // Currently, the implementation merges them into a single effective scaling factor: alpha = (alpha_from_file / rank) * weight
 // Check whether `weight` should be supported for text generation
 
@@ -677,9 +677,6 @@ NodePtr tensors_multiplication(NodePtr input,
         if (input) {
             if (i == alpha_pos) {  // Multiply for alpha
                 // TODO: Apply alpha multiplication separately
-
-                // TODO: fix scaling factor
-                // scale alpha to align with Peft: self.scaling[adapter] = scale * self.lora_alpha[adapter] / self.r[adapter]
                 input = std::make_shared<v1::Multiply>(input, normalized);
             } else {  // MatMul for A and B
                 input = std::make_shared<v0::MatMul>(input,

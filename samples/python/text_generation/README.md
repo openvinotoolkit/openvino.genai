@@ -157,14 +157,15 @@ This sample demonstrates greedy decoding using Low-Rank Adaptation (LoRA) fine-t
   python lora_greedy_causal_lm.py model_dir adapter_safetensors_file prompt
   ```
 
-#### ⚠️ NOTE: LoRA `alpha` interpretation in OpenVINO GenAI
-The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.
-
-In this context, the `alpha` value already includes:
-- normalization by LoRA rank (`alpha / rank`)
-- any user-defined scaling factor (`weight`)
-
-This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
+> [!NOTE]
+> ### LoRA `alpha` interpretation in OpenVINO GenAI
+> The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.
+>
+> In this context, the `alpha` value already includes:
+> - normalization by LoRA rank (`alpha / rank`)
+> - any user-defined scaling factor (`weight`)
+>
+> This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
 
 ### 8. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
 - **Description:** 
