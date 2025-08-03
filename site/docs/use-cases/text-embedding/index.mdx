@@ -1,0 +1,21 @@
+---
+sidebar_position: 4
+---
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import ConvertModelSection from '../_shared/_convert_model.mdx';
+import RunModelSection from './_sections/_run_model/index.mdx';
+import UsageOptionsSection from './_sections/_usage_options/index.mdx';
+
+# Semantic Search using Text Embedding
+
+<ConvertModelSection>
+    Download and convert a text embedding model (e.g. [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)) to OpenVINO format from Hugging Face:
+
+    <OptimumCLI model='BAAI/bge-small-en-v1.5' outputDir='bge-small-en-v1_5_ov' trustRemoteCode />
+
+    See all supported [Text Embedding Models](/docs/supported-models/#text-embeddings-models).
+</ConvertModelSection>
+
+<RunModelSection />
+
+<UsageOptionsSection />
