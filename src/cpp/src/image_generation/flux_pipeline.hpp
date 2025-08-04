@@ -243,14 +243,6 @@ public:
             pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
 
         m_root_dir = pipe.m_root_dir;
-        const std::filesystem::path model_index_path = m_root_dir / "model_index.json";
-        std::ifstream file(model_index_path);
-        OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
-
-        nlohmann::json data = nlohmann::json::parse(file);
-        using utils::read_json_param;
-
-        set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
 
         m_clip_text_encoder = std::make_shared<CLIPTextModel>(*pipe.m_clip_text_encoder);
         m_t5_text_encoder = std::make_shared<T5EncoderModel>(*pipe.m_t5_text_encoder);
