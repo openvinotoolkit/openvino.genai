@@ -68,6 +68,9 @@ public:
 
     std::vector<StructuralTagItem> structural_tags;
     std::vector<std::string> triggers;
+    std::vector<std::vector<int64_t>> triggers_tokens;
+    // If set to true, the trigger will be injected at the end of the prompt, effectively enforcing the model to generate structured output.
+    bool inject_trigger = false;
 };
 
 
