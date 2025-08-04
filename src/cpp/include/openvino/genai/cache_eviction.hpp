@@ -19,10 +19,12 @@ enum class AggregationMode {
                 * of a given token in cache */
 };
 
+namespace {
 const std::unordered_map<AggregationMode, std::string> AggregationModeToString = {
-    {AggregationMode::SUM,   "SUM"},
+    {AggregationMode::SUM, "SUM"},
     {AggregationMode::NORM_SUM, "NORM_SUM"},
 };
+} // anonymous namespace
 
 /**
 * @brief Configuration struct for the cache eviction algorithm.
@@ -67,18 +69,18 @@ public:
         return m_evictable_size;
     }
 
-    void print() const {
-        std::cout << "CacheEvictionConfig { " << std::endl;
-        std::cout << "  start_size: " << get_start_size() << std::endl;
-        std::cout << "  recent_size: " << get_recent_size() << std::endl;
-        std::cout << "  max_cache_size: " << get_max_cache_size() << std::endl;
-        std::cout << "  evictable_size: " << get_evictable_size() << std::endl;
-        if (AggregationModeToString.count(aggregation_mode) > 0) {
-            std::cout << "  aggregation_mode: " << AggregationModeToString.at(aggregation_mode) << std::endl;
-        }
-        std::cout << "  apply_rotation: " << apply_rotation << std::endl;
-        std::cout << "  snapkv_window_size: " << snapkv_window_size << std::endl;
-        std::cout << " }" << std::endl;
+    std::string to_string() const {
+        std::ostringstream oss;
+        oss << "CacheEvictionConfig { " << "\n";
+        oss << "  start_size: " << m_start_size << "\n";
+        oss << "  recent_size: " << m_recent_size << "\n";
+        oss << "  max_cache_size: " << m_max_cache_size << "\n";
+        oss << "  evictable_size: " << m_evictable_size << "\n";
+        oss << "  aggregation_mode: " << AggregationModeToString.at(aggregation_mode) << "\n";
+        oss << "  apply_rotation: " << std::boolalpha << apply_rotation << "\n";
+        oss << "  snapkv_window_size: " << snapkv_window_size << "\n";
+        oss << " }";
+        return oss.str();
     }
 
     /** The mode used to compute the importance of tokens for eviction */

@@ -9,9 +9,11 @@ namespace ov::genai {
 
 enum class SparseAttentionMode { TRISHAPE };
 
+namespace {
 const std::unordered_map<SparseAttentionMode, std::string> SparseAttentionModeToString = {
     {SparseAttentionMode::TRISHAPE, "TRISHAPE"},
 };
+} // anonymous namespace
 
 /**
  * @brief Configuration struct for the sparse attention prefill functionality.
@@ -48,15 +50,17 @@ public:
      * applying sparse attention. Must be a multiple of block size. */
     size_t num_retained_recent_tokens_in_cache = 1920;
 
-    void print() const {
-        std::cout << "SparseAttentionConfig { " << std::endl;
+    std::string to_string() const {
+        std::ostringstream oss;
+        oss << "SparseAttentionConfig { " << "\n";
         if (SparseAttentionModeToString.count(mode) > 0) {
-            std::cout << "  sparseAttentionMode: " << SparseAttentionModeToString.at(mode) << std::endl;
+            oss << "  sparseAttentionMode: " << SparseAttentionModeToString.at(mode) << "\n";
         }
-        std::cout << "  num_last_dense_tokens_in_prefill: " << num_last_dense_tokens_in_prefill << std::endl;
-        std::cout << "  num_retained_start_tokens_in_cache: " << num_retained_start_tokens_in_cache << std::endl;
-        std::cout << "  num_retained_recent_tokens_in_cache: " << num_retained_recent_tokens_in_cache << std::endl;
-        std::cout << " }" << std::endl;
+        oss << "  num_last_dense_tokens_in_prefill: " << num_last_dense_tokens_in_prefill << "\n";
+        oss << "  num_retained_start_tokens_in_cache: " << num_retained_start_tokens_in_cache << "\n";
+        oss << "  num_retained_recent_tokens_in_cache: " << num_retained_recent_tokens_in_cache << "\n";
+        oss << " }";
+        return oss.str();
     }
 };
 }  // namespace ov::genai

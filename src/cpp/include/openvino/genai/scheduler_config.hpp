@@ -74,23 +74,25 @@ struct SchedulerConfig {
                max_num_seqs == other.max_num_seqs && enable_prefix_caching == other.enable_prefix_caching;
     }
 
-    void print() const {
-        std::cout << "SchedulerConfig { " << std::endl; 
-        std::cout << "  max_num_batched_tokens: " << max_num_batched_tokens << std::endl;
-        std::cout << "  num_kv_blocks: " << num_kv_blocks << std::endl;
-        std::cout << "  cache_size: " << cache_size << std::endl;
-        std::cout << "  dynamic_split_fuse: " << dynamic_split_fuse << std::endl;
-        std::cout << "  use_cache_eviction: " << use_cache_eviction << std::endl;
+    std::string to_string() const {
+        std::ostringstream oss;
+        oss << "SchedulerConfig { " << std::endl; 
+        oss << "  max_num_batched_tokens: " << max_num_batched_tokens << "\n";
+        oss << "  num_kv_blocks: " << num_kv_blocks << "\n";
+        oss << "  cache_size: " << cache_size << "\n";
+        oss << "  dynamic_split_fuse: " << std::boolalpha << dynamic_split_fuse << "\n";
+        oss << "  use_cache_eviction: " << std::boolalpha << use_cache_eviction << "\n";
         if (use_cache_eviction) {
-            cache_eviction_config.print();
+            oss << cache_eviction_config.to_string() << "\n";
         }
-        std::cout << "  max_num_seqs: " << max_num_seqs << std::endl;
-        std::cout << "  enable_prefix_caching: " << enable_prefix_caching << std::endl;
-        std::cout << "  use_sparse_attention: " << use_sparse_attention << std::endl;
+        oss << "  max_num_seqs: " << max_num_seqs << "\n";
+        oss << "  enable_prefix_caching: " << std::boolalpha << enable_prefix_caching << "\n";
+        oss << "  use_sparse_attention: " << std::boolalpha << use_sparse_attention << "\n";
         if (use_sparse_attention) {
-            sparse_attention_config.print();
+            oss << sparse_attention_config.to_string() << "\n";
         }
-        std::cout << "}" << std::endl;
+        oss << " }";
+        return oss.str();
     }
 };
 }

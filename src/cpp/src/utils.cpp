@@ -505,7 +505,7 @@ void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
         return;
     }
 
-    scheduler_config.print();
+    std::cout << scheduler_config.to_string() << std::endl;
 }
 
 std::pair<ov::CompiledModel, KVDesc>
