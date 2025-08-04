@@ -238,9 +238,7 @@ def run_pipeline_with_ref(
 
         compare_results(hf_result, genai_result)
 
-        genai_with_past_result = run_genai(
-            genai_with_past_pipe, _sample, generation_config, streamer
-        )
+        genai_with_past_result = run_genai(genai_with_past_pipe, _sample, generation_config, streamer)
 
         compare_results(hf_result, genai_with_past_result)
 
