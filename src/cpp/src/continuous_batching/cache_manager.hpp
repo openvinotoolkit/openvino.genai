@@ -224,8 +224,9 @@ public:
         for (const auto & blocks_pair : block_copy_map) {
             size_t src_block_id = blocks_pair.first;
             const std::list<size_t>& dst_block_ids = blocks_pair.second;
+            size_t decoder_layer_id = 0;
             for (size_t dst_block_id : dst_block_ids) {
-                for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
+                //for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
                     ov::Shape key_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], m_num_allocated_kv_blocks);
                     ov::Shape value_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], m_num_allocated_kv_blocks);
                     ov::Coordinate key_src_start_roi(key_shape.size(), 0);
@@ -274,7 +275,9 @@ public:
                         ov::Tensor value_dst_cache_roi(m_value_cache[decoder_layer_id], value_dst_start_roi, value_dst_end_roi);
                         value_src_cache_roi.copy_to(value_dst_cache_roi);
                     }
-                }
+                    if (decoder_layer_id++ == m_num_decoder_layers - 1)
+                        decoder_layer_id = 0; // reset to 0 if we have more blocks than layers
+                //}
             }
         }
     }
