@@ -378,7 +378,7 @@ VLMPipeline::VLMPipeline(
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     } else {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        if (utils::explicitly_requires_paged_attention(properties)) {
+        if (!default_SDPA_BACKEND && utils::explicitly_requires_paged_attention(properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
         } else if (attention_backend == PA_BACKEND) {
@@ -396,7 +396,9 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
-            m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
+            // [WA] add extract_scheduler_config for gemma3 with default SDPA_BACKEND in samples/cpp/visual_language_chat/benchmark_vlm.cpp
+            auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+            m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, plugin_properties);
         }
     }
 
@@ -428,9 +430,13 @@ VLMPipeline::VLMPipeline(
     } else {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(properties)) {
+            std::cout << "explicitly_requires_paged_attention: " <<  properties.find("ATTENTION_BACKEND")->second.as<std::string>() << std::endl;
+
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
         } else if (attention_backend == PA_BACKEND) {
+            std::cout << "attention_backend == PA_BACKEND" << std::endl;
+
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
                 auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -445,6 +451,8 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
+            std::cout << "attention_backend == SDPA_BACKEND" << std::endl;
+
             m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
         }
 
