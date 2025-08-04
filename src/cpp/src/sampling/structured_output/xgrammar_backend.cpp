@@ -23,6 +23,32 @@ XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, s
     m_grammar_compiler = std::make_unique<xgrammar::GrammarCompiler>(std::move(tokenizer_info));
 }
 
+
+xgrammar::Grammar XGrammarStructuredOutput::parse_compound_grammar(const StructuredOutputConfig::CompoundGrammar& compound_grammar) {
+    return std::visit([this](const auto& grammar) -> xgrammar::Grammar {
+        using T = std::decay_t<decltype(grammar)>;
+        if constexpr (std::is_same_v<T, StructuredOutputConfig::Regex>) {
+            return xgrammar::Grammar::FromRegex(grammar.value);
+        } else if constexpr (std::is_same_v<T, StructuredOutputConfig::JSONSchema>) {
+            return xgrammar::Grammar::FromJSONSchema(grammar.value);
+        } else if constexpr (std::is_same_v<T, StructuredOutputConfig::EBNF>) {
+            return xgrammar::Grammar::FromEBNF(grammar.value);
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<StructuredOutputConfig::Concat>>) {
+            return xgrammar::Grammar::Concat({
+                this->parse_compound_grammar(grammar->left),
+                this->parse_compound_grammar(grammar->right)
+            });
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<StructuredOutputConfig::Union>>) {
+            return xgrammar::Grammar::Union({
+                this->parse_compound_grammar(grammar->left),
+                this->parse_compound_grammar(grammar->right)
+            });
+        } else {
+            OPENVINO_THROW("Cannot compile the compound grammar. Unsupported compound grammar type.");
+        }
+    }, compound_grammar);
+}
+
 std::shared_ptr<LogitTransformers::ILogitTransformer>
 XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& sampling_parameters) {
     OPENVINO_ASSERT(sampling_parameters.is_structured_output_generation(),
@@ -47,6 +73,8 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
         grammar = xgrammar::Grammar::FromStructuralTag(
             xgrammar_structural_tags, structured_output_config.structural_tags_config->triggers
         );
+    } else if (structured_output_config.compound_grammar.has_value()) {
+        grammar = parse_compound_grammar(*structured_output_config.compound_grammar);
     } else {
         OPENVINO_THROW("No grammar definition provided for structured output generation.");
     }

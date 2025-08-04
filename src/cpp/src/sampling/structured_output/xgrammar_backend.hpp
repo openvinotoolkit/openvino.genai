@@ -80,6 +80,8 @@ public:
     std::shared_ptr<LogitTransformers::ILogitTransformer> get_logits_transformer(const GenerationConfig& sampling_parameters) override;
 private:
     std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
+
+    xgrammar::Grammar parse_compound_grammar(const StructuredOutputConfig::CompoundGrammar& compound_grammar);
 };
 
 

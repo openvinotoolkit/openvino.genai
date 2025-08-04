@@ -3,6 +3,8 @@
 
 #include "py_utils.hpp"
 
+#include <memory>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
@@ -300,6 +302,13 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::StructuralTagItem>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagsConfig>(py_obj)) {
         return py::cast<ov::genai::StructuralTagsConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::Regex>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::EBNF>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::JSONSchema>(py_obj)
+               // python does not use std::shared_ptr to obj
+               || py::isinstance<ov::genai::StructuredOutputConfig::Union>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::Concat>(py_obj)) {
+        return py_obj_to_compound_grammar(py_obj);
     } else if (py::isinstance<ov::genai::GenerationConfig>(py_obj)) {
         return py::cast<ov::genai::GenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::ImageGenerationConfig>(py_obj)) {
@@ -402,6 +411,22 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
         [](std::monostate none){ /*streamer is already a monostate */ }
     }, py_streamer);
     return streamer;
+}
+
+StructuredOutputConfig::CompoundGrammar py_obj_to_compound_grammar(const py::object& py_obj) {
+    if (py::isinstance<ov::genai::StructuredOutputConfig::Regex>(py_obj)) {
+        return py::cast<ov::genai::StructuredOutputConfig::Regex>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::JSONSchema>(py_obj)) {
+        return py::cast<ov::genai::StructuredOutputConfig::JSONSchema>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::EBNF>(py_obj)) {
+        return py::cast<ov::genai::StructuredOutputConfig::EBNF>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::Concat>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::Union>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::Union>>(py_obj);
+    } else {
+        OPENVINO_THROW("Unsupported type for StructuredOutputConfig compound grammar: ", py::str(py_obj));
+    }
 }
 
 ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs) {
