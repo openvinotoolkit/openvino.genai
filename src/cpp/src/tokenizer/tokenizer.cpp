@@ -703,7 +703,6 @@ public:
         minja::chat_template_inputs minja_inputs;
         minja_inputs.messages = messages;
         minja_inputs.add_generation_prompt = add_generation_prompt;
-        minja_inputs.tools = nlohmann::ordered_json::array();
         minja_inputs.extra_context = nlohmann::ordered_json::object();
         minja_inputs.extra_context["bos_token"] = m_bos_token;
         minja_inputs.extra_context["eos_token"] = m_eos_token;
