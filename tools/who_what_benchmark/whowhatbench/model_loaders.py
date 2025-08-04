@@ -191,7 +191,7 @@ def load_text2image_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_genai:
-        logger.info("Using OpenvINO GenAI API")
+        logger.info("Using OpenVINO GenAI API")
         model = load_text2image_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_hf:
         from diffusers import DiffusionPipeline
