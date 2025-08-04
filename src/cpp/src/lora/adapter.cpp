@@ -645,7 +645,7 @@ protected:
     }
 };
 
-// TODO [CVS-171466]: LoRA should support two separate parameters: alpha (defined in the config or .safetensors), weight (set by the user)
+// TODO [ticket 171466]: LoRA should support two separate parameters: alpha (defined in the config or .safetensors), weight (set by the user)
 // Currently, the implementation merges them into a single effective scaling factor: alpha = (alpha_from_file / rank) * weight
 // Check whether `weight` should be supported for text generation
 
