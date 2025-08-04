@@ -430,12 +430,10 @@ VLMPipeline::VLMPipeline(
     } else {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(properties)) {
-            std::cout << "explicitly_requires_paged_attention: " <<  properties.find("ATTENTION_BACKEND")->second.as<std::string>() << std::endl;
 
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
         } else if (attention_backend == PA_BACKEND) {
-            std::cout << "attention_backend == PA_BACKEND" << std::endl;
 
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
@@ -451,7 +449,6 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
-            std::cout << "attention_backend == SDPA_BACKEND" << std::endl;
 
             m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
         }
