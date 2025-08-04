@@ -10,11 +10,12 @@ torch
 transformers[sentencepiece]>=4.40.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
-git+https://github.com/huggingface/optimum-intel.git@55bc71281c4e6317cfbaee46c6fb600d871273dd#egg=optimum-intel
+git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel
 git+https://github.com/openvinotoolkit/nncf.git@develop#egg=nncf
 packaging
 psutil
 timm
 tiktoken
+transformers==4.52
 librosa # For Whisper
 matplotlib
