@@ -367,8 +367,6 @@ public:
             std::optional<std::string> fallback = remap_template(m_chat_template);
             if (fallback.has_value()) {
                 m_chat_template = std::move(fallback).value();
-            } else {
-                m_chat_template = find_or_fallback(rt_info, "simplified_chat_template", m_chat_template);
             }
             m_chat_template = patch_template(std::move(m_chat_template));
 
