@@ -28,7 +28,6 @@ class TestInpainting:
         ],
         indirect=["download_test_content", "download_mask_image"],
     )
-    @pytest.mark.xfail(reason="Failed to open model_index.json. Ticket 171245", raises=subprocess.CalledProcessError)
     def test_sample_inpainting(self, download_model, prompt, download_test_content, download_mask_image):
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "image_generation/inpainting.py")

@@ -27,7 +27,6 @@ class TestBenchmarkImageGen:
             pytest.param("images/image.png", "mask_image.png"),
         ], indirect=["download_test_content", "download_mask_image"],
     )
-    @pytest.mark.xfail(reason="Failed to open model_index.json. Ticket 171245", raises=subprocess.CalledProcessError)
     def test_sample_benchmark_image_gen(self, download_model, pipeline_type, prompt, download_test_content, download_mask_image):
         inference_steps = "3"
         # Run C++ benchmark sample

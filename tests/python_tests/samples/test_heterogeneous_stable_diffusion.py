@@ -19,7 +19,6 @@ class TestHeterogeneousStableDiffusion:
         ],
         indirect=["download_model"],
     )
-    @pytest.mark.xfail(reason="Failed to open model_index.json. Ticket 171245", raises=subprocess.CalledProcessError)
     def test_sample_heterogeneous_stable_diffusion(self, download_model, prompt):
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "image_generation/heterogeneous_stable_diffusion.py")
