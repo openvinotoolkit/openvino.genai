@@ -16,6 +16,18 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::set_config(const G
     m_generation_config = config;
 }
 
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::set_visual_token_pruning_config(size_t num_visual_tokens,
+                                                                                              float relevance_weight,
+                                                                                              bool enable_pruning,
+                                                                                              bool debug_mode) {
+    if (m_inputs_embedder) {
+        return m_inputs_embedder->set_visual_token_pruning_config(num_visual_tokens,
+                                                                  relevance_weight,
+                                                                  enable_pruning,
+                                                                  debug_mode);
+    }
+}
+
 PipelineMetrics ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_metrics() const {
     return m_pipeline_metrics;
 }

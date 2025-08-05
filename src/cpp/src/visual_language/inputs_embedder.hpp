@@ -17,6 +17,7 @@
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
+#include "visual_language/cdpruner/cdpruner_config.hpp"
 
 namespace ov::genai {
 struct VLMPerfMetrics;
@@ -66,6 +67,14 @@ public:
 
     // finishes chat and clears a chat history 
     void finish_chat();
+
+    // set CDPruner setting
+    virtual void set_visual_token_pruning_config(size_t visual_tokens_percentage,
+                                                 float relevance_weight,
+                                                 bool enable_pruning,
+                                                 bool debug_mode = false);
+    // set CDPruner setting
+    void set_visual_token_pruning_config(const ov::AnyMap& config);
 
     virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
         const std::string& prompt,
@@ -117,8 +126,24 @@ private:
         Tokenizer get_tokenizer() const {
             return m_tokenizer;
         }
-    
-        utils::KVCacheState& get_kv_cache_state() {
+
+        virtual void set_visual_token_pruning_config(size_t visual_tokens_percentage,
+                                                     float relevance_weight,
+                                                     bool enable_pruning,
+                                                     bool debug_mode) {
+            if (!m_vision_encoder)
+                return;
+            auto pruner_config = m_vision_encoder->get_pruning_config();
+            if (pruner_config.has_value()) {
+                pruner_config->visual_tokens_percentage = visual_tokens_percentage;
+                pruner_config->relevance_weight = relevance_weight;
+                pruner_config->enable_pruning = enable_pruning;
+                pruner_config->debug_mode = debug_mode;
+            }
+            m_vision_encoder->set_pruning_config(pruner_config.value());
+        }
+
+        virtual utils::KVCacheState& get_kv_cache_state() {
             return m_kv_cache_state;
         }
     

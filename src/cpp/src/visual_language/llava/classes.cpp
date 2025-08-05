@@ -72,22 +72,6 @@ VisionEncoderLLaVA::VisionEncoderLLaVA(
     
     // Initialize text processing components
     initialize_text_components(model_dir, device, properties);
-    
-    // Initialize CDPruner with default configuration
-    try {
-        cdpruner::Config cdpruner_config;
-        cdpruner_config.num_visual_tokens = 64; // Default value, can be overridden
-        cdpruner_config.relevance_weight = 0.5f;
-        cdpruner_config.enable_pruning = true;
-        cdpruner_config.device = device;
-        m_cdpruner = std::make_unique<cdpruner::CDPruner>(cdpruner_config);
-    } catch (const std::exception& e) {
-        // CDPruner initialization failed, disable it for backward compatibility
-        // This ensures that existing LLaVA functionality continues to work
-        m_cdpruner.reset();
-        std::cerr << "Warning: CDPruner initialization failed: " << e.what() 
-                  << ". CDPruner functionality will be disabled." << std::endl;
-    }
 }
 
 VisionEncoderLLaVA::VisionEncoderLLaVA(
@@ -101,22 +85,6 @@ VisionEncoderLLaVA::VisionEncoderLLaVA(
     
     // Initialize text processing components
     initialize_text_components(models_map, config_dir_path, device, properties);
-    
-    // Initialize CDPruner with default configuration
-    try {
-        cdpruner::Config cdpruner_config;
-        cdpruner_config.num_visual_tokens = 64; // Default value, can be overridden
-        cdpruner_config.relevance_weight = 0.5f;
-        cdpruner_config.enable_pruning = true;
-        cdpruner_config.device = device;
-        m_cdpruner = std::make_unique<cdpruner::CDPruner>(cdpruner_config);
-    } catch (const std::exception& e) {
-        // CDPruner initialization failed, disable it for backward compatibility
-        // This ensures that existing LLaVA functionality continues to work
-        m_cdpruner.reset();
-        std::cerr << "Warning: CDPruner initialization failed: " << e.what() 
-                  << ". CDPruner functionality will be disabled." << std::endl;
-    }
 }
 
 void VisionEncoderLLaVA::initialize_text_components(
@@ -301,31 +269,34 @@ EncodedImage VisionEncoderLLaVA::encode(const ov::Tensor& image, const ov::AnyMa
 EncodedImage VisionEncoderLLaVA::encode_with_pruning(
     const ov::Tensor& image,
     const std::string& text_prompt,
-    const size_t num_visual_tokens,
+    const size_t visual_tokens_percentage,
     const ov::AnyMap& config_map) {
     
     // First, get the full visual features using the standard encode method
     EncodedImage full_encoded_image = encode(image, config_map);
-    
+
     // If CDPruner is not available or text processing failed, return full features
-    if (!m_cdpruner || !m_tokenizer.has_value() || !m_text_embedding_model) {
+    if (!is_pruning_available() || !m_tokenizer.has_value() || !m_text_embedding_model) {
         return full_encoded_image;
     }
-    
-    // Validate num_visual_tokens parameter
+
+    // Validate visual_tokens_percentage parameter
     auto visual_shape = full_encoded_image.resized_source.get_shape();
     if (visual_shape.size() != 3) {
         throw std::invalid_argument("Invalid visual features shape for pruning");
     }
     
     size_t total_visual_tokens = visual_shape[1];
-    if (num_visual_tokens == 0 || num_visual_tokens > total_visual_tokens) {
-        // If invalid token count, return full features
+    if (visual_tokens_percentage == 0 || visual_tokens_percentage >= 100) {
+        // If invalid percentage, return full features
         return full_encoded_image;
     }
     
+    // Calculate actual token count from percentage
+    size_t num_visual_tokens = static_cast<size_t>(std::round(total_visual_tokens * visual_tokens_percentage / 100.0));
+    
     // If requested tokens equals total tokens, no pruning needed
-    if (num_visual_tokens == total_visual_tokens) {
+    if (num_visual_tokens >= total_visual_tokens) {
         return full_encoded_image;
     }
     
@@ -338,28 +309,17 @@ EncodedImage VisionEncoderLLaVA::encode_with_pruning(
         if (text_shape.size() != 2) {
             throw std::runtime_error("Invalid text features shape for CDPruner");
         }
-        
-        // Update CDPruner configuration with the requested number of tokens
-        cdpruner::Config current_config = m_cdpruner->get_config();
-        if (current_config.num_visual_tokens != num_visual_tokens) {
-            // Create new CDPruner with updated token count
-            cdpruner::Config new_config = current_config;
-            new_config.num_visual_tokens = num_visual_tokens;
-            
-            // Validate the new configuration
-            if (new_config.num_visual_tokens == 0) {
-                throw std::invalid_argument("Invalid num_visual_tokens in CDPruner config");
-            }
-            
-            m_cdpruner = std::make_unique<cdpruner::CDPruner>(new_config);
+
+        // Update CDPruner configuration with the requested percentage
+        auto current_config = get_pruning_config();
+        if (current_config.has_value() && current_config->visual_tokens_percentage != visual_tokens_percentage) {
+            current_config->visual_tokens_percentage = visual_tokens_percentage;
+            set_pruning_config(current_config.value());
         }
-        
+
         // Apply CDPruner to get pruned visual features
-        ov::Tensor pruned_visual_features = m_cdpruner->apply_pruning(
-            full_encoded_image.resized_source, 
-            text_features
-        );
-        
+        ov::Tensor pruned_visual_features = apply_pruning(full_encoded_image.resized_source, text_features);
+
         // Validate pruned features shape
         auto pruned_shape = pruned_visual_features.get_shape();
         if (pruned_shape.size() != 3 || pruned_shape[1] != num_visual_tokens) {
@@ -418,12 +378,17 @@ EncodedImage VisionEncoderLLaVA::encode_with_pruning(
     }
 }
 
-InputsEmbedderLLaVA::InputsEmbedderLLaVA(
-    const VLMConfig& vlm_config,
-    const std::filesystem::path& model_dir,
-    const std::string& device,
-    const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
+InputsEmbedderLLaVA::InputsEmbedderLLaVA(const VLMConfig& vlm_config,
+                                         const std::filesystem::path& model_dir,
+                                         const std::string& device,
+                                         const ov::AnyMap device_config)
+    : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+    auto current_config = m_vision_encoder->get_pruning_config();
+    if (current_config.has_value() && current_config->use_negative_relevance) {
+        current_config->use_negative_relevance = true; // Keep negative relevance for LLaVA
+        m_vision_encoder->set_pruning_config(current_config.value());
+    }
+}
 
 InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const VLMConfig& vlm_config,
@@ -432,7 +397,13 @@ InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    auto current_config = m_vision_encoder->get_pruning_config();
+    if (current_config.has_value() && current_config->use_negative_relevance) {
+        current_config->use_negative_relevance = true;  // Keep negative relevance for LLaVA
+        m_vision_encoder->set_pruning_config(current_config.value());
+    }
+}
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> embeds;
@@ -460,12 +431,12 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
     // Check if CDPruner is enabled and text prompt is available
     bool use_pruning = false;
     std::string text_prompt;
-    size_t num_visual_tokens = 64; // default value
+    size_t visual_tokens_percentage = 30; // default percentage value
     
     try {
         auto enable_it = vision_config.find("enable_pruning");
         auto prompt_it = vision_config.find("text_prompt");
-        auto tokens_it = vision_config.find("num_visual_tokens");
+        auto tokens_it = vision_config.find("visual_tokens_percentage");
         
         if (enable_it != vision_config.end()) {
             use_pruning = enable_it->second.as<bool>();
@@ -474,7 +445,11 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
             text_prompt = prompt_it->second.as<std::string>();
         }
         if (tokens_it != vision_config.end()) {
-            num_visual_tokens = tokens_it->second.as<size_t>();
+            // Extract percentage and validate range
+            size_t percentage = tokens_it->second.as<size_t>();
+            if (percentage >= 1 && percentage <= 100) {
+                visual_tokens_percentage = percentage;
+            }
         }
         
         // Only use pruning if explicitly enabled and text prompt is provided
@@ -494,7 +469,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
                 auto llava_encoder = dynamic_cast<VisionEncoderLLaVA*>(m_vision_encoder.get());
                 if (llava_encoder) {
                     EncodedImage pruned_image = llava_encoder->encode_with_pruning(
-                        image, text_prompt, num_visual_tokens, vision_config
+                        image, text_prompt, visual_tokens_percentage, vision_config
                     );
                     embeds.emplace_back(std::move(pruned_image));
                 } else {
@@ -695,72 +670,8 @@ ov::Tensor InputsEmbedderLLaVA::merge_text_and_image_embeddings_llava(const ov::
     return inputs_embeds;
 }
 
-bool VisionEncoderLLaVA::is_pruning_available() const {
+bool VisionEncoderLLaVA::is_pruning_available() {
     return (m_cdpruner != nullptr && m_tokenizer.has_value() && m_text_embedding_model != nullptr);
-}
-
-std::optional<cdpruner::Config> VisionEncoderLLaVA::get_pruning_config() const {
-    if (!m_cdpruner) {
-        return std::nullopt;
-    }
-    return m_cdpruner->get_config();
-}
-
-bool VisionEncoderLLaVA::update_pruning_config(const cdpruner::Config& new_config) {
-    if (!m_cdpruner) {
-        return false;
-    }
-    
-    try {
-        // Validate the new configuration first
-        validate_cdpruner_config(new_config);
-        
-        // Create new CDPruner instance with updated config
-        m_cdpruner = std::make_unique<cdpruner::CDPruner>(new_config);
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to update CDPruner config: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-void VisionEncoderLLaVA::validate_cdpruner_config(const cdpruner::Config& config) const {
-    if (config.num_visual_tokens == 0) {
-        throw std::invalid_argument("num_visual_tokens must be greater than 0");
-    }
-    
-    if (config.relevance_weight < 0.0f || config.relevance_weight > 1.0f) {
-        throw std::invalid_argument("relevance_weight must be between 0.0 and 1.0");
-    }
-    
-    // Add more validation as needed
-}
-
-std::optional<cdpruner::PruningStatistics> VisionEncoderLLaVA::get_last_pruning_statistics() const {
-    if (!m_cdpruner) {
-        return std::nullopt;
-    }
-    
-    try {
-        return m_cdpruner->get_last_pruning_statistics();
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to get pruning statistics: " << e.what() << std::endl;
-        return std::nullopt;
-    }
-}
-
-void VisionEncoderLLaVA::set_debug_mode(bool enable) {
-    if (!m_cdpruner) {
-        return;
-    }
-    
-    try {
-        auto current_config = m_cdpruner->get_config();
-        current_config.debug_mode = enable;
-        m_cdpruner = std::make_unique<cdpruner::CDPruner>(current_config);
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to set debug mode: " << e.what() << std::endl;
-    }
 }
 
 } // namespace ov::genai

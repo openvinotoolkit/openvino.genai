@@ -19,9 +19,6 @@ namespace ov::genai {
 
 class VisionEncoderLLaVA : public VisionEncoder {
 private:
-    // CDPruner instance for token pruning
-    std::unique_ptr<cdpruner::CDPruner> m_cdpruner;
-    
     // Text processing components for relevance calculation
     std::shared_ptr<EmbeddingsModel> m_text_embedding_model;
     std::optional<Tokenizer> m_tokenizer;
@@ -44,8 +41,7 @@ private:
         const std::string& device,
         const ov::AnyMap& properties);
 
-    // Helper method to validate configuration
-    void validate_cdpruner_config(const cdpruner::Config& config) const;
+    bool is_pruning_available() override;
 
 public:
     VisionEncoderLLaVA(
@@ -64,29 +60,8 @@ public:
     EncodedImage encode_with_pruning(
         const ov::Tensor& image,
         const std::string& text_prompt,
-        const size_t num_visual_tokens,
+        const size_t visual_tokens_percentage,
         const ov::AnyMap& config_map = {}) override;
-    
-    /// @brief Check if CDPruner functionality is available
-    /// @return true if CDPruner is initialized and ready to use
-    bool is_pruning_available() const;
-    
-    /// @brief Get current CDPruner configuration
-    /// @return CDPruner configuration if available, empty optional otherwise
-    std::optional<cdpruner::Config> get_pruning_config() const;
-    
-    /// @brief Update CDPruner configuration
-    /// @param new_config New configuration for CDPruner
-    /// @return true if configuration was updated successfully
-    bool update_pruning_config(const cdpruner::Config& new_config);
-
-    /// @brief Get statistics from the last pruning operation
-    /// @return Pruning statistics if available
-    std::optional<cdpruner::PruningStatistics> get_last_pruning_statistics() const;
-
-    /// @brief Enable or disable debug mode for CDPruner
-    /// @param enable Whether to enable debug mode
-    void set_debug_mode(bool enable);
 };
 
 class InputsEmbedderLLaVA : public InputsEmbedder::IInputsEmbedder {

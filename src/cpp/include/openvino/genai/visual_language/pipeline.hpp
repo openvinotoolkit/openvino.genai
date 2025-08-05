@@ -226,14 +226,13 @@ public:
     void set_generation_config(const GenerationConfig& new_config);
 
     /// @brief Set visual token pruning configuration for CDPruner
-    /// @param num_visual_tokens Number of visual tokens to retain after pruning (default: 64)
+    /// @param visual_tokens_percentage Percentage of visual tokens to retain after pruning, range [1-100] (default: 30)
     /// @param relevance_weight Weight for balancing relevance vs diversity, range [0.0, 1.0] (default: 0.5)
     /// @param enable_pruning Whether to enable pruning functionality (default: true)
-    void set_visual_token_pruning_config(
-        size_t num_visual_tokens = 64,
-        float relevance_weight = 0.5f,
-        bool enable_pruning = true
-    );
+    void set_visual_token_pruning_config(size_t visual_tokens_percentage = 30,
+                                         float relevance_weight = 0.5f,
+                                         bool enable_pruning = true,
+                                         bool debug_mode = false);
 
     /// @brief Get current visual token pruning configuration
     /// @return A map containing current CDPruner configuration

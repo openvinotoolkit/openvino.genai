@@ -77,11 +77,10 @@ public:
 
     virtual void set_generation_config(const GenerationConfig& new_config) = 0;
 
-    virtual void set_visual_token_pruning_config(
-        size_t num_visual_tokens,
-        float relevance_weight,
-        bool enable_pruning
-    ) = 0;
+    virtual void set_visual_token_pruning_config(size_t visual_tokens_percentage,
+                                                 float relevance_weight,
+                                                 bool enable_pruning,
+                                                 bool debug_mode) = 0;
 
     virtual ov::AnyMap get_visual_token_pruning_config() const = 0;
 

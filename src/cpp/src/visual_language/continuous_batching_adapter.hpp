@@ -27,7 +27,7 @@ public:
         properties} {
         // Initialize CDPruner configuration with default values
         m_cdpruner_config = {
-            {"num_visual_tokens", static_cast<size_t>(64)},
+            {"visual_tokens_percentage", static_cast<size_t>(30)},
             {"relevance_weight", 0.5f},
             {"enable_pruning", true}
         };
@@ -51,7 +51,7 @@ public:
         generation_config} {
         // Initialize CDPruner configuration with default values
         m_cdpruner_config = {
-            {"num_visual_tokens", static_cast<size_t>(64)},
+            {"visual_tokens_percentage", static_cast<size_t>(30)},
             {"relevance_weight", 0.5f},
             {"enable_pruning", true}
         };
@@ -72,7 +72,7 @@ public:
         
         // Pass CDPruner configuration to the underlying pipeline
         m_impl.set_visual_token_pruning_config(vision_config);
-        
+
         auto result = m_impl.generate({prompt}, {rgbs}, {generation_config}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
         
@@ -104,21 +104,23 @@ public:
 
     virtual void set_generation_config(const GenerationConfig& new_config)  override { m_impl.set_config(new_config); };
 
-    virtual void set_visual_token_pruning_config(
-        size_t num_visual_tokens,
-        float relevance_weight,
-        bool enable_pruning
-    ) override {
+    virtual void set_visual_token_pruning_config(size_t visual_tokens_percentage,
+                                                 float relevance_weight,
+                                                 bool enable_pruning,
+                                                 bool debug_mode) override {
         // Validate input parameters
-        OPENVINO_ASSERT(num_visual_tokens > 0 && num_visual_tokens <= 1024,
-            "num_visual_tokens must be between 1 and 1024, got: ", num_visual_tokens);
+        OPENVINO_ASSERT(visual_tokens_percentage > 0 && visual_tokens_percentage <= 100,
+                        "visual_tokens_percentage must be between 1 and 100, got: ",
+                        visual_tokens_percentage);
         OPENVINO_ASSERT(relevance_weight >= 0.0f && relevance_weight <= 1.0f,
-            "relevance_weight must be between 0.0 and 1.0, got: ", relevance_weight);
+                        "relevance_weight must be between 0.0 and 1.0, got: ",
+                        relevance_weight);
 
         // Update configuration
-        m_cdpruner_config["num_visual_tokens"] = num_visual_tokens;
+        m_cdpruner_config["visual_tokens_percentage"] = visual_tokens_percentage;
         m_cdpruner_config["relevance_weight"] = relevance_weight;
         m_cdpruner_config["enable_pruning"] = enable_pruning;
+        m_cdpruner_config["debug_mode"] = debug_mode;
     }
 
     virtual ov::AnyMap get_visual_token_pruning_config() const override {

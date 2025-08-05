@@ -37,12 +37,13 @@ private:
     /// @param text_embeds Text embeddings [M, C]
     /// @return Similarity matrix [B, N, M]
     ov::Tensor matrix_multiply(const ov::Tensor& visual_embeds, const ov::Tensor& text_embeds);
-    
-    /// @brief Compute negative mean across the last dimension
+
+    /// @brief Compute mean across the last dimension with optional negation
     /// @param relevance_matrix Input relevance matrix [B, N, M]
+    /// @param use_negative Whether to apply negation before computing mean
     /// @return Mean relevance scores [B, N]
-    ov::Tensor compute_negative_mean(const ov::Tensor& relevance_matrix);
-    
+    ov::Tensor compute_mean(const ov::Tensor& relevance_matrix, bool use_negative);
+
     Config m_config;
 };
 

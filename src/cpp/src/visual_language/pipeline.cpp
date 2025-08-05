@@ -119,7 +119,7 @@ public:
 
         // Initialize CDPruner configuration with default values
         m_cdpruner_config = {
-            {"num_visual_tokens", static_cast<size_t>(64)},
+            {"visual_tokens_percentage", static_cast<size_t>(30)},
             {"relevance_weight", 0.5f},
             {"enable_pruning", true}
         };
@@ -161,7 +161,7 @@ public:
 
         // Initialize CDPruner configuration with default values
         m_cdpruner_config = {
-            {"num_visual_tokens", static_cast<size_t>(64)},
+            {"visual_tokens_percentage", static_cast<size_t>(30)},
             {"relevance_weight", 0.5f},
             {"enable_pruning", true}
         };
@@ -205,6 +205,9 @@ public:
         
         // Add text prompt to vision config for CDPruner
         vision_config["text_prompt"] = prompt;
+
+        // Set visual token pruning configuration
+        m_inputs_embedder->set_visual_token_pruning_config(vision_config);
         
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs, vision_config);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
@@ -370,21 +373,23 @@ public:
         m_generation_config.validate();
     }
 
-    void set_visual_token_pruning_config(
-        size_t num_visual_tokens,
-        float relevance_weight,
-        bool enable_pruning
-    ) override {
+    void set_visual_token_pruning_config(size_t visual_tokens_percentage,
+                                         float relevance_weight,
+                                         bool enable_pruning,
+                                         bool debug_mode) override {
         // Validate input parameters
-        OPENVINO_ASSERT(num_visual_tokens > 0 && num_visual_tokens <= 1024,
-            "num_visual_tokens must be between 1 and 1024, got: ", num_visual_tokens);
+        OPENVINO_ASSERT(visual_tokens_percentage > 0 && visual_tokens_percentage <= 100,
+                        "visual_tokens_percentage must be between 1 and 100, got: ",
+                        visual_tokens_percentage);
         OPENVINO_ASSERT(relevance_weight >= 0.0f && relevance_weight <= 1.0f,
-            "relevance_weight must be between 0.0 and 1.0, got: ", relevance_weight);
+                        "relevance_weight must be between 0.0 and 1.0, got: ",
+                        relevance_weight);
 
         // Update configuration
-        m_cdpruner_config["num_visual_tokens"] = num_visual_tokens;
+        m_cdpruner_config["visual_tokens_percentage"] = visual_tokens_percentage;
         m_cdpruner_config["relevance_weight"] = relevance_weight;
         m_cdpruner_config["enable_pruning"] = enable_pruning;
+        m_cdpruner_config["debug_mode"] = debug_mode;
     }
 
     ov::AnyMap get_visual_token_pruning_config() const override {
@@ -544,12 +549,11 @@ void VLMPipeline::set_generation_config(const GenerationConfig& new_config) {
     m_pimpl->set_generation_config(new_config);
 }
 
-void VLMPipeline::set_visual_token_pruning_config(
-    size_t num_visual_tokens,
-    float relevance_weight,
-    bool enable_pruning
-) {
-    m_pimpl->set_visual_token_pruning_config(num_visual_tokens, relevance_weight, enable_pruning);
+void VLMPipeline::set_visual_token_pruning_config(size_t visual_tokens_percentage,
+                                                  float relevance_weight,
+                                                  bool enable_pruning,
+                                                  bool debug_mode) {
+    m_pimpl->set_visual_token_pruning_config(visual_tokens_percentage, relevance_weight, enable_pruning, debug_mode);
 }
 
 ov::AnyMap VLMPipeline::get_visual_token_pruning_config() const {
