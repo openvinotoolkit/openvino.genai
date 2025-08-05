@@ -366,8 +366,49 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::SpeculativeDecodingI
 }
 // end of speculative_decoding_impl
 
+std::shared_ptr<ov::Model> extract_hidden_state_generic(std::shared_ptr<ov::Model> model,
+                                                       const std::string& eagle_version,
+                                                       const std::string& model_type,
+                                                       const std::string& custom_node_name = "") {
+    if (eagle_version == "EAGLE2") {
+        std::string target_node_name = custom_node_name.empty() ? "aten::div/Divide" : custom_node_name;
+        std::shared_ptr<ov::Node> target_node = nullptr;
+        
+        for (const auto& node : model->get_ops()) {
+            if (node->get_friendly_name() == target_node_name) {
+                target_node = node;
+                break;
+            }
+        }
+        
+        if (target_node == nullptr) {
+            return model;
+        }
+
+        auto hidden = std::make_shared<ov::op::v0::Result>(target_node);
+        std::string output_name = "last_hidden_state";
+        hidden->output(0).set_names({output_name});
+        hidden->set_friendly_name(output_name);
+        
+        ov::OutputVector new_outputs = model->outputs();
+        new_outputs.push_back(hidden->output(0));
+        
+        return std::make_shared<ov::Model>(new_outputs, model->get_parameters());
+        
+    } else if (eagle_version == "EAGLE3") {
+        std::cout << model_type << " model - Eagle 3 hidden state extraction: TBD" << std::endl;
+        // TODO: Eagle 3 implementation
+        return model;
+        
+    } else {
+        std::cerr << "Error: " << model_type << " model - Unsupported eagle version: " << eagle_version << std::endl;
+        return model;
+    }
+}
+
 ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
-                                                                 const ov::genai::ModelDesc& draft_model_desc) {
+                                                                 const ov::genai::ModelDesc& draft_model_desc,
+                                                                 const std::string& eagle_version) : m_eagle_version(eagle_version) {
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
 
@@ -432,50 +473,12 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
                     "Tokenizers for draft and main models are different!");
 
     m_tokenizer = main_model_tokenizer;
-    std::shared_ptr<ov::Model> new_main_model = main_model;
     // for eagle model, we need to obtain hidden layer state as extra output
-    if (1) {
-        std::string last_hidden_node_name =
-            "aten::div/Divide";  // more customizable method is required here, currently for MiniCPM4
-        std::shared_ptr<ov::Node> last_hidden_node = nullptr;
-
-        for (const auto& node : main_model->get_ops()) {
-            if (node->get_friendly_name() == last_hidden_node_name) {
-                std::cout << "matching node found: " << node->get_friendly_name() << std::endl;
-                last_hidden_node = node;
-                break;
-            }
-        }
-        auto hidden = std::make_shared<ov::op::v0::Result>(last_hidden_node);
-        hidden->output(0).set_names({"last_hidden_state"});
-        hidden->set_friendly_name("last_hidden_state");
-        ov::OutputVector new_outputs = main_model->outputs();
-        new_outputs.push_back(hidden->output(0));
-
-        new_main_model = std::make_shared<ov::Model>(new_outputs, main_model->get_parameters());
-    }
-    std::shared_ptr<ov::Model> new_draft_model = draft_model;
-    if (1) {
-        std::string last_hidden_node_name =
-            "aten::div/Divide";  // more customizable method is required here, currently for MiniCPM4
-        std::shared_ptr<ov::Node> last_hidden_node = nullptr;
-
-        for (const auto& node : draft_model->get_ops()) {
-            std::cout << node->get_friendly_name() << std::endl;
-            if (node->get_friendly_name() == last_hidden_node_name) {
-                std::cout << "matching node found: " << node->get_friendly_name() << std::endl;
-                last_hidden_node = node;
-                break;
-            }
-        }
-        auto hidden = std::make_shared<ov::op::v0::Result>(last_hidden_node);
-        hidden->output(0).set_names({"last_hidden_state"});
-        hidden->set_friendly_name("last_hidden_state");
-        ov::OutputVector new_outputs = draft_model->outputs();
-        new_outputs.push_back(hidden->output(0));
-
-        new_draft_model = std::make_shared<ov::Model>(new_outputs, draft_model->get_parameters());
-    }
+    // apply transformations needed to run eagle model
+    // target model: hidden state extraction, draft model: hidden state import , hidden state extraction
+    // eagle3 specific : dt importing
+    std::shared_ptr<ov::Model> new_main_model = extract_hidden_state_generic(main_model, m_eagle_version, "main", "aten::div/Divide");
+    std::shared_ptr<ov::Model> new_draft_model = extract_hidden_state_generic(draft_model, m_eagle_version, "draft", "aten::div/Divide");
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(new_main_model,

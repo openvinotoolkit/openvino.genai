@@ -89,9 +89,10 @@ protected:
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
     ov::Tensor update_main_input_ids(const ov::Tensor& original_input_ids);
+    std::string m_eagle_version;
     
 public:
-    EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
+    EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc, const std::string& eagle_version);
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
@@ -114,41 +115,5 @@ public:
              const StreamerVariant& streamer) override;
 
     SpeculativeDecodingMetrics get_speculative_decoding_metrics();
-
-    // eagle 2 tree structure
-    /*struct CandidateNode {
-        vector<int> tokens;
-        float score;
-        ov::Tensor past_key_values;
-        bool active;       
-        CandidateNode(const vector<int>& t, float s) : tokens(t), score(s), active(true) {}
-    };   
-    struct CandidateTree {
-        vector<shared_ptr<CandidateNode>> nodes;
-        int active_count;
-    };
-    struct DraftOutput {
-        vector<vector<int>> candidate_sequences;
-        vector<ov::Tensor> draft_pasts;
-        vector<float> draft_scores;
-    };
-
-    CandidateTree initialize_tree(const ov::Tensor& input_ids) {
-        CandidateTree tree;
-        
-        auto input_ids_ptr = input_ids.data<const int64_t>();
-        vector<int> tokens;
-        for (int i = 0; i < input_ids.get_size(); i++) {
-            tokens.push_back(static_cast<int>(input_ids_ptr[i]));
-        }
-        
-        auto node = make_shared<CandidateNode>(tokens, 1.0f);   // set prompts scores to 1.0f   
-        node->past_key_values = ov::Tensor{}; // to be updated later
-        
-        tree.nodes.push_back(node);
-        tree.active_count = 1;
-        
-        return tree;
-    }*/
 };
 }

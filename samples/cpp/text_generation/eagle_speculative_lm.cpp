@@ -28,12 +28,13 @@ int main(int argc, char* argv[]) try {
     //config.eagle_tree_width = 3;    // Number of candidate tokens to consider at each level
     //config.eagle_tree_depth = 4;    // How deep to explore the token tree
 
-    // Create pipeline with eagle speculative model
+    // Create pipeline with eagle speculative enabled
     ov::genai::LLMPipeline pipe(
         main_model_path,
         main_device,
-        ov::genai::draft_model(eagle_model_path, eagle_device));
-
+        ov::genai::draft_model(eagle_model_path, eagle_device),
+        std::pair<std::string, ov::Any>("eagle_mode", ov::Any("EAGLE2"))  // Specify eagle2 mode for draft model
+    );
     // Setup performance measurement
     auto start_time = std::chrono::high_resolution_clock::now();
 
