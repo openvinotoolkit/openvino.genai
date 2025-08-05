@@ -77,7 +77,7 @@ protected:
     std::shared_ptr<ContinuousBatchingForEagleDecodingImpl> m_main_pipeline, m_draft_pipeline; // bell: see if we can reuse this class impl for eagle pipelines
     // Metrics
     SpeculativeDecodingMetrics m_sd_metrics;
-    PerfMetrics m_perf_metrics;
+    ov::genai::SDPerModelsPerfMetrics m_perf_metrics;
     ov::Tensor hiddenstates_tensor; // Tensor to store hidden states for draft model
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;

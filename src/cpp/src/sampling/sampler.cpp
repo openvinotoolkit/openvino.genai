@@ -1026,7 +1026,7 @@ int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
                                                   main_model_logits,
                                                   logit_processor,
                                                   do_sample);
-    //std::cout << "seq group" << seq_group->get_request_id() << " accepted: " << validation_result.accepted_path_length << std::endl;
+    std::cout << "seq group" << seq_group->get_request_id() << " accepted: " << validation_result.accepted_path_length << std::endl;
 
     if (!validation_result.is_path_accepted) {
         // return false;
@@ -1063,7 +1063,7 @@ int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
 }
 
 // need to clear the selector after the request is finished
-void Sampler::clear_top_k_selector(uint64_t&& request_id) {
+void Sampler::clear_top_k_selector(uint64_t request_id) {
     auto it = m_top_k_selector_info.find(request_id);
     if (it != m_top_k_selector_info.end()) {
         m_top_k_selector_info.erase(it);

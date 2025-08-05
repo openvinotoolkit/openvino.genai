@@ -493,7 +493,7 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
                                                                                 draft_properties,
                                                                                 false);
 
-    m_perf_metrics = PerfMetrics();
+    m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 }
 
@@ -530,6 +530,7 @@ void ContinuousBatchingPipeline::EagleDecodingImpl::step() {
     // this blocks adding new requests during step as it may break coherence between main and draft models
     std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
     auto& raw_perf_counters = m_perf_metrics.raw_metrics;
+    auto& main_raw_perf_counters = m_perf_metrics.main_model_metrics.raw_metrics;
 
     ManualTimer step_timer("speculative_decoding: step()");
     step_timer.start();
@@ -652,7 +653,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer) {
-    m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();;
+    m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
     OPENVINO_ASSERT(!has_non_finished_requests(),

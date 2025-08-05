@@ -59,7 +59,7 @@ public:
     EagleGeneratedRequests get_generated_requests();
     UpdateRequestResult update_main_request(uint64_t request_id, const EagleGeneratedSequences& candidates);
     UpdateRequestResult update_draft_request(uint64_t request_id, const EagleGeneratedSequences& candidates);
-    void clear_sampler_top_k_selector(uint64_t&& request_id) {
+    void clear_sampler_top_k_selector(uint64_t request_id) {
         if (m_sampler) {
             m_sampler->clear_top_k_selector(request_id);
         }
@@ -85,7 +85,7 @@ public:
     size_t get_processed_tokens_per_iteration();
 
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
-
+    RawPerfMetrics raw_perf_metrics;
 protected:
     void finish_request(SequenceGroup::Ptr request);
     void _pull_awaiting_requests() override {};
