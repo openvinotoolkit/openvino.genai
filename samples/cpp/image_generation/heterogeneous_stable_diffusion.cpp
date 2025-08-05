@@ -58,7 +58,6 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     pipe.compile(text_encoder_device, unet_device, vae_decoder_device, properties);
 
-
     //
     // Step 4: Use the Text2ImagePipeline to generate 'number_of_images_to_generate' images.
     //

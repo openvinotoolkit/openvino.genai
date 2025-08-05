@@ -84,8 +84,10 @@ def get_argprser():
         default=0,
         required=False,
         type=int,
-        help='if the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2,'
-        ' output the maximum memory consumption in all iterations.',
+        help='Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations.'
+        ' If the value is 2, output the maximum memory consumption in all iterations.\nIt is not recommended to run memory consumption and'
+        ' performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay,'
+        ' but the impact is still expected. '
     )
     parser.add_argument(
         "--memory_consumption_delay",
@@ -196,8 +198,8 @@ def get_argprser():
     parser.add_argument("--embedding_max_length", type=int, default=None,
                         help="Max length for text embeddings. Input text will be padded or truncated to specified value")
     parser.add_argument("--apply_chat_template", action="store_true",
-                        help="Apply chat template for LLM. By default chat template is not applied. It's better to use with --disable_prompt_permutation, \
-                              otherwise the prompt will be modified after applying the chat template, so the structure of chat template will not be kept.")
+                        help="Apply chat template for LLM. By default chat template is not applied. It's better to use with --disable_prompt_permutation,"
+                             " otherwise the prompt will be modified after applying the chat template, so the structure of chat template will not be kept.")
     parser.add_argument("--speaker_embeddings", type=str, default=None,
                         help="Path to .bin or .pt file with speaker embeddings for text to speech scenarios")
     parser.add_argument("--vocoder_path", type=str, default=None,

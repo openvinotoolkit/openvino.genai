@@ -461,7 +461,6 @@ def run_extended_perf_metrics_collection(model_id, generation_config: Generation
 
 @pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.SPECULATIVE_DECODING])
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_speculative_decoding_extended_perf_metrics(pipeline_type):
     import time
     start_time = time.perf_counter()

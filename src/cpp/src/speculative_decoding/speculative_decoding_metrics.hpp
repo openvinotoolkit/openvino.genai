@@ -15,10 +15,11 @@ class SpeculativeDecodingMetrics {
     std::map<int64_t, AcceptanceRate> m_acceptance_rate;
 
     std::map<int64_t, size_t> m_draft_accepted_tokens;
-    std::map<int64_t, size_t> m_generated_len;
+    std::map<int64_t, size_t> m_draft_generated_len;
 
 public:
     float draft_duration = 0, main_duration = 0, total_duration = 0;
+    size_t m_generated_len = 0;
 
     float get_avg_acceptance_rate(int64_t request_id);
     void update_acceptance_rate(int64_t request_id, float acceptance_rate);
@@ -27,8 +28,9 @@ public:
     size_t get_draft_accepted_tokens_counter(int64_t request_id);
     void update_draft_accepted_tokens(int64_t request_id, size_t num_matches);
 
-    void set_generated_len(int64_t request_id, size_t generated_len);
-    size_t get_generated_len(int64_t request_id);
+    void update_draft_generated_len(int64_t request_id, size_t generated_len);
+    void update_generated_len(size_t generated_len);
+    size_t get_draft_generated_len(int64_t request_id);
 
     size_t get_iteration_number(int64_t request_id);
 

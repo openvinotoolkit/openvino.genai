@@ -109,7 +109,6 @@ def test_structured_ebnf(ov_pipe, prompt_and_ebnf):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "ov_pipe", [model_id for model_id in structured_id_models if "random" not in model_id], indirect=True
 )

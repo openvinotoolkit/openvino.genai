@@ -754,7 +754,6 @@ test_cases = [
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_perf_metrics_with_structured_output(generation_config, prompt):
     class Person(BaseModel):
         name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
