@@ -147,7 +147,7 @@ jobs:
         with:
           repos: ${{ env.SRC_DIR }}
           product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
-          target_arch: 'x86_64'
+          target_arch: 'arm64'
           build_type: ${{ matrix.build-type }}
           save_to: ${{ env.MANIFEST_PATH }}
 
@@ -264,7 +264,7 @@ jobs:
         with:
           repos: ${{ env.SRC_DIR }}
           product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
-          target_arch: 'x86_64'
+          target_arch: 'arm64'
           build_type: Release
           save_to: ${{ github.workspace }}
 
