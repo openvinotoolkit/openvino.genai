@@ -63,12 +63,14 @@ auto sparse_attention_config_docstring = R"(
     :param mode: Sparse attention mode to be applied.
     :type mode: openvino_genai.SparseAttentionMode
 
-    :param num_last_dense_tokens_in_prefill: TRISHAPE mode only - Number of tokens from the end of the prompt for which
-      full attention across previous KV cache contents will be computed. In contrast, for the rest of the tokens in the
-      prompt only the sparse attention (encompassing first and currently latest blocks) will be computed. Due to the
-      block-wise nature of continuous batching cache management, the actual number of prompt tokens for which the dense
-      attention will be computed may be up to block-size larger than this value (depending on the prompt length and
-      block size).*/
+    :param num_last_dense_tokens_in_prefill: TRISHAPE and XATTENTION modes - Number of tokens from the end of the prompt
+       for which full attention across previous KV cache contents will be computed. In contrast, for the rest of the tokens
+       in the prompt only the sparse attention will be computed according to the selected algorithm.
+       TRISHAPE: Due to the block-wise nature of continuous batching cache management, the actual number of prompt tokens
+       for which the dense attention will be computed may be up to block-size larger than this value (depending on the
+       prompt length and block size).
+       XATTENTION: Same as above applies, but the dense attention may overspill up to a subsequence chunk (i.e. multiple
+       blocks)
     :type num_last_dense_tokens_in_prefill: int
 
     :param num_retained_start_tokens_in_cache: TRISHAPE mode only - The number of tokens in the beginning of the cache
