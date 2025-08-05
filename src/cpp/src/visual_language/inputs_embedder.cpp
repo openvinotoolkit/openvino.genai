@@ -165,11 +165,16 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images, const bool& is_video) {
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+    std::vector<EncodedImage> embeds;
+
     if (is_video) {
-        return m_vision_encoder->encode_video(single_images);
+        embeds = m_vision_encoder->encode_video(single_images);
+        if (!embeds.empty()) {
+            return embeds;
+        }
+        // Fallback to image process.
     }
 
-    std::vector<EncodedImage> embeds;
     for (const ov::Tensor& image : single_images) {
         embeds.emplace_back(m_vision_encoder->encode(image));
     }
