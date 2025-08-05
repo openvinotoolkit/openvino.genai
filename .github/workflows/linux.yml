@@ -853,7 +853,7 @@ jobs:
 
   genai_xgrammar_tests:
     name: Build & Test XGrammar
-    needs: [ openvino_download ]
+    needs: [smart_ci, openvino_download, genai_build_wheel]
     timeout-minutes: 45
     defaults:
       run:
