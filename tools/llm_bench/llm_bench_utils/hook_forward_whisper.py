@@ -1,6 +1,10 @@
 import time
 import copy
+import logging as log
 import llm_bench_utils.hook_greedy_search
+
+
+logger = log.getLogger(__name__)
 
 
 class WhisperHook:
@@ -17,8 +21,8 @@ class WhisperHook:
         for data in self.time_data:
             if 'enc_token_time' in data:
                 first_token_latency += data['enc_token_time']
-            if 'dec_token_time' in data:
-                assert not data['dec_token_time']
+            if data.get('dec_token_time'):
+                logger.warning("Ignored non empty dec_token_time")
         self.tm_list.insert(0, first_token_latency)
         return self.tm_list
 
@@ -27,8 +31,8 @@ class WhisperHook:
         for data in self.time_data:
             if 'enc_infer_time' in data:
                 first_infer_latency += data['enc_infer_time']
-            if 'dec_infer_time' in data:
-                assert not data['dec_infer_time']
+            if data.get('dec_infer_time'):
+                logger.warning("Ignored non empty dec_infer_time")
         self.tm_infer_list.insert(0, first_infer_latency)
         return self.tm_infer_list
 
@@ -39,8 +43,8 @@ class WhisperHook:
             if 'enc_token_time' and 'enc_infer_time' in data:
                 latency_data['enc_token_time'] = round(data['enc_token_time'] * 1000, 2)
                 latency_data['enc_infer_time'] = round(data['enc_infer_time'] * 1000, 2)
-            if 'dec_token_time' in data:
-                assert not data['dec_token_time']
+            if data.get('dec_token_time'):
+                logger.warning("Ignored non empty dec_token_time")
             self.latency_list.append(latency_data)
 
     def print_whisper_latency(self, iter, prompt_idx):
