@@ -569,17 +569,11 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
-      - name: Install OpenVINO wheel
-        if: ${{ matrix.test.run_condition }}
-        run: |
-          python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
-        working-directory: ${{ env.INSTALL_DIR }}
-
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino_tokenizers[transformers];openvino_genai;whowhatbench"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
@@ -674,17 +668,11 @@ jobs:
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
 
-      - name: Install OpenVINO wheel
-        if: ${{ matrix.test.run_condition }}
-        run: |
-          python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
-        working-directory: ${{ env.INSTALL_DIR }}
-
       - name: Install GenAI wheels
         if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino_tokenizers[transformers];openvino_genai[testing]"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
@@ -766,15 +754,10 @@ jobs:
       - name: Fix C++ samples permissions
         run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
 
-      - name: Install OpenVINO wheel
-        run: |
-          python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
-        working-directory: ${{ env.INSTALL_DIR }}
-
       - name: Install GenAI wheels
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino_tokenizers[transformers];openvino_genai[testing]"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt;${{ env.SRC_DIR }}/tools/llm_bench/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
@@ -914,14 +897,10 @@ jobs:
                 -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR}} --config Release --parallel $(nproc) --verbose
 
-      - name: Install OpenVINO wheel
-        run: |
-          python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
-
-      - name: Install openvino_tokenizers and export-requirements.txt
+      - name: Install dependencies
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: openvino_tokenizers[transformers]
+          packages: openvino;openvino_tokenizers[transformers]
           requirements_files: "${{ env.SRC_DIR }}/samples/export-requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
