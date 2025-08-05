@@ -42,12 +42,15 @@ public:
     /**  Sparse attention mode to be applied. */
     SparseAttentionMode mode;
 
-    /** TRISHAPE mode only - Number of tokens from the end of the prompt for which full attention across previous KV
+    /** TRISHAPE and XATTENTION modes - Number of tokens from the end of the prompt for which full attention across previous KV
      * cache contents will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention
-     * (encompassing a configurable number of least-recent and most-recent blocks) will be computed. Due to the
-     * block-wise nature of continuous batching cache management, the actual number of prompt tokens for which the dense
-     * attention will be computed may be up to block-size larger than this value (depending on the prompt length and
-     * block size).*/
+     * will be computed according to the selected algorithm.
+     * TRISHAPE: Due to the block-wise nature of continuous batching cache management, the actual number of prompt tokens
+     * for which the dense attention will be computed may be up to block-size larger than this value (depending on the
+     * prompt length and block size).
+     * XATTENTION: Same as above applies, but the dense attention may overspill up to a subsequence chunk (i.e. multiple
+     * blocks)
+     * */
     size_t num_last_dense_tokens_in_prefill = 100;
 
     /** TRISHAPE mode only - The number of tokens in the beginning of the cache (least recent) to be retained when

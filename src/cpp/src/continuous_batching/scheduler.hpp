@@ -611,6 +611,15 @@ private:
             // generation phase, excluding last prompt chunk
             return 0.0;
         }
+
+        size_t prompt_len = sequence_group->get_prompt_len();
+        size_t num_processed_tokens_after_this_chunk = sequence_group->get_num_processed_tokens() + sequence_group->get_num_scheduled_tokens();
+
+        if (num_processed_tokens_after_this_chunk < prompt_len && (prompt_len - num_processed_tokens_after_this_chunk) < m_config.sparse_attention_config.num_last_dense_tokens_in_prefill) {
+            // dense attention chunk, potentially overspilling to an extra chunk before that
+            return 0.0;
+        }
+
         return m_config.sparse_attention_config.xattention_threshold;
     }
 
