@@ -33,7 +33,7 @@ ov::Tensor get_pixel_values_gemma3(const ov::Tensor& image, const ProcessorConfi
 
 } // namespace
 
-EncodedImage VisionEncoderGemma3::encode( const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderGemma3::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
 
@@ -93,9 +93,8 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prom
     std::string start_of_image = m_vlm_config.start_of_image;
     std::string image_token = m_vlm_config.image_soft_token;
     std::string end_of_image = m_vlm_config.end_of_image;
-    std::string NATIVE_TAG = start_of_image;
     
-    auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
+    auto [unified_prompt, images_sequence] = normalize(prompt, start_of_image, start_of_image, base_id, images.size());
 
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
@@ -111,7 +110,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prom
         }
         expanded_tag += end_of_image;
 
-        unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), "\n\n" + expanded_tag + "\n\n");
+        unified_prompt.replace(unified_prompt.find(start_of_image), start_of_image.length(), "\n\n" + expanded_tag + "\n\n");
     }
     return {std::move(unified_prompt), std::move(images_sequence)};
 }
