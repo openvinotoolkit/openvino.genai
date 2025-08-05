@@ -1,11 +1,11 @@
 """
-Pybind11 binding for Text-to-speech Pipeline
+Pybind11 binding for OpenVINO GenAI library
 """
 from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -413,6 +413,8 @@ class ContinuousBatchingPipeline:
     @typing.overload
     def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
         ...
+    def finish_chat(self) -> None:
+        ...
     @typing.overload
     def generate(self, input_ids: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[EncodedGenerationResult]:
         ...
@@ -432,6 +434,8 @@ class ContinuousBatchingPipeline:
     def get_tokenizer(self) -> Tokenizer:
         ...
     def has_non_finished_requests(self) -> bool:
+        ...
+    def start_chat(self, system_message: str = '') -> None:
         ...
     def step(self) -> None:
         ...
@@ -2849,6 +2853,58 @@ class TextEmbeddingPipeline:
     def wait_embed_query(self) -> list[float] | list[int] | list[int]:
         """
         Waits computed embeddings for a query
+        """
+class TextRerankPipeline:
+    """
+    Text rerank pipeline
+    """
+    class Config:
+        """
+        
+        Structure to keep TextRerankPipeline configuration parameters.
+        Attributes:
+            top_n (int, optional):
+                Number of documents to return sorted by score.
+            max_length (int, optional):
+                Maximum length of tokens passed to the embedding model.
+        """
+        @typing.overload
+        def __init__(self) -> None:
+            ...
+        @typing.overload
+        def __init__(self, **kwargs) -> None:
+            ...
+        @property
+        def max_length(self) -> int | None:
+            ...
+        @max_length.setter
+        def max_length(self, arg0: typing.SupportsInt | None) -> None:
+            ...
+        @property
+        def top_n(self) -> int:
+            ...
+        @top_n.setter
+        def top_n(self, arg0: typing.SupportsInt) -> None:
+            ...
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, config: openvino_genai.py_openvino_genai.TextRerankPipeline.Config | None = None, **kwargs) -> None:
+        """
+        Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+        models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
+        device (str): Device to run the model on (e.g., CPU, GPU).
+        config: (TextRerankPipeline.Config): Optional pipeline configuration
+        kwargs: Plugin and/or config properties
+        """
+    def rerank(self, query: str, texts: collections.abc.Sequence[str]) -> list[tuple[int, float]]:
+        """
+        Reranks a vector of texts based on the query.
+        """
+    def start_rerank_async(self, query: str, texts: collections.abc.Sequence[str]) -> None:
+        """
+        Asynchronously reranks a vector of texts based on the query.
+        """
+    def wait_rerank(self) -> list[tuple[int, float]]:
+        """
+        Waits for reranked texts.
         """
 class TextStreamer(StreamerBase):
     """

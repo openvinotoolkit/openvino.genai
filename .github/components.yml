@@ -120,8 +120,7 @@ Speech_generation_samples:
   revalidate: []
 
 GGUF:
-  revalidate:
-    - LLM # GGUF is tested via test_llm_pipeline.py
+  revalidate: []
 
 C_API:
   revalidate:
