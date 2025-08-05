@@ -316,19 +316,7 @@ ov::Tensor merge_text_and_image_embeddings(
 
 ov::Tensor VisionEncoderQwen2VL::preproces_single_image(const ov::Tensor& image,
                                                         const ProcessorConfig& config,
-                                                        ImageSize& target_image_size) {
-    ov::Shape image_shape = image.get_shape();
-    auto original_height = image_shape.at(1);
-    auto original_width = image_shape.at(2);
-
-    target_image_size = qwen2_vl_utils::smart_resize(
-        original_height, 
-        original_width, 
-        config.patch_size * config.merge_size,
-        config.min_pixels,
-        config.max_pixels
-    );
-
+                                                        const ImageSize& target_image_size) {
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
     clip_image_u8 resized_image;
     bicubic_resize(input_image, resized_image, target_image_size.width, target_image_size.height);
@@ -347,6 +335,10 @@ std::vector<EncodedImage> VisionEncoderQwen2VL::encode_video(const std::vector<o
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
+    if (images.empty()) {
+        return {};
+    }
+
     std::vector<ov::Tensor> tiled_images = images;
     size_t remainder = images.size() % config.temporal_patch_size;
     if (remainder > 0) {
@@ -355,13 +347,21 @@ std::vector<EncodedImage> VisionEncoderQwen2VL::encode_video(const std::vector<o
         }
     }
 
+    ov::Shape image_shape = images[0].get_shape();
+    auto original_height = image_shape.at(1);
+    auto original_width = image_shape.at(2);
+    ImageSize target_image_size = qwen2_vl_utils::smart_resize(original_height,
+                                                               original_width,
+                                                               config.patch_size * config.merge_size,
+                                                               config.min_pixels,
+                                                               config.max_pixels);
+
     std::vector<EncodedImage> encoded_imgs;
     for (size_t i = 0; i < tiled_images.size(); i += config.temporal_patch_size) {
         auto orig_shape = tiled_images[i].get_shape();
         ov::Tensor tiled_patches(ov::element::f32,
                                  {config.temporal_patch_size,  orig_shape.at(3), orig_shape.at(1), orig_shape.at(2)});
 
-        ImageSize target_image_size;
         for (size_t j = 0; j < config.temporal_patch_size; j++) {
             auto patch = preproces_single_image(tiled_images[i + j], config, target_image_size);
             std::memcpy(tiled_patches.data<float>() + j * patch.get_byte_size() / sizeof(float),
@@ -408,7 +408,14 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
     
-    ImageSize target_image_size;
+    ov::Shape image_shape = image.get_shape();
+    auto original_height = image_shape.at(1);
+    auto original_width = image_shape.at(2);
+    ImageSize target_image_size = qwen2_vl_utils::smart_resize(original_height,
+                                                               original_width,
+                                                               config.patch_size * config.merge_size,
+                                                               config.min_pixels,
+                                                               config.max_pixels);
     ov::Tensor patches = preproces_single_image(image, config, target_image_size);
 
     // For single patch tile it to match temporal_patch_size
