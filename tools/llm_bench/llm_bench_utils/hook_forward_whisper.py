@@ -22,7 +22,7 @@ class WhisperHook:
             if 'enc_token_time' in data:
                 first_token_latency += data['enc_token_time']
             if data.get('dec_token_time'):
-                logger.warning("Ignored nonempty dec_token_time")
+                logger.warning('Ignored nonempty dec_token_time')
         self.tm_list.insert(0, first_token_latency)
         return self.tm_list
 
@@ -32,7 +32,7 @@ class WhisperHook:
             if 'enc_infer_time' in data:
                 first_infer_latency += data['enc_infer_time']
             if data.get('dec_infer_time'):
-                logger.warning("Ignored nonempty dec_infer_time")
+                logger.warning('Ignored nonempty dec_infer_time')
         self.tm_infer_list.insert(0, first_infer_latency)
         return self.tm_infer_list
 
@@ -44,7 +44,7 @@ class WhisperHook:
                 latency_data['enc_token_time'] = round(data['enc_token_time'] * 1000, 2)
                 latency_data['enc_infer_time'] = round(data['enc_infer_time'] * 1000, 2)
             if data.get('dec_token_time'):
-                logger.warning("Ignored nonempty dec_token_time")
+                logger.warning('Ignored nonempty dec_token_time')
             self.latency_list.append(latency_data)
 
     def print_whisper_latency(self, iter, prompt_idx):
