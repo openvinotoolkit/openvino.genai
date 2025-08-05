@@ -347,12 +347,17 @@ jobs:
       - name: Build GenAI Node.js bindings
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+          /usr/bin/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
             -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
             -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
             -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
-          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+          /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+          /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+        env:
+          CXXFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
+          CFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
+          LDFLAGS: "-fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
 
       - name: Upload Node.js bindings Build Package
         if: always()
@@ -525,9 +530,9 @@ jobs:
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
-      SRC_DIR: ${{ github.workspace }}/openvino.genai
+      SRC_DIR: ${{ github.workspace }}/src
       INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
-      NODE_VERSION: 21
+      NODE_VERSION: 22
 
     steps:
       - name: Clone openvino.genai
