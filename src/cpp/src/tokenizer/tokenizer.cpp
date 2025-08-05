@@ -386,9 +386,6 @@ public:
         if (ov_tokenizer && ov_tokenizer->get_parameters().size() == 2) {
             is_paired_input = true;
         }
-        
-        // TODO: make this flag permanent while we validate that pass does not break IRs with one input
-        two_input_requested = true;
 
         // If model is already converted with 2 inputs, then skip the pass
         if (ov_tokenizer && two_input_requested && !is_paired_input) {
