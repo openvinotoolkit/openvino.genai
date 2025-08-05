@@ -884,7 +884,7 @@ jobs:
       options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
     env:
       CMAKE_GENERATOR: Unix Makefiles
-      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build_xgrammar
 
@@ -895,17 +895,17 @@ jobs:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
-      - name: Download OpenVINO package
-        uses: actions/download-artifact@v4
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
-          path: ${{ env.OV_INSTALL_DIR }}
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
+          path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
       - name: CMake Build without XGrammar
         run: |
-          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          cmake -DOpenVINODeveloperPackage_DIR=${{ env.INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=ON \
                 -DENABLE_XGRAMMAR=OFF \
                 -BUILD_TOKENIZERS=OFF \
@@ -929,7 +929,7 @@ jobs:
         env:
           PYTHONPATH: "${{ env.BUILD_DIR }}:"
         run: |
-          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
           python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -k "not test_perf_metrics_with_structured_output"
 
   Overall_Status:
