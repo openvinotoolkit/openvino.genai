@@ -21,6 +21,7 @@ CDPruner::CDPruner(const Config& config)
         std::cout << "CDPruner initialized with configuration:" << std::endl;
         std::cout << "  num_visual_tokens: " << m_config.num_visual_tokens << std::endl;
         std::cout << "  relevance_weight: " << m_config.relevance_weight << std::endl;
+        std::cout << "  use_negative_relevance: " << (m_config.use_negative_relevance ? "true" : "false") << std::endl;
         std::cout << "  enable_pruning: " << (m_config.enable_pruning ? "true" : "false") << std::endl;
         std::cout << "  device: " << m_config.device << std::endl;
     }
@@ -158,6 +159,7 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features,
     std::cout << "Pruning Configuration:" << std::endl;
     std::cout << "  Target vision tokens (after pruning): " << m_config.num_visual_tokens << std::endl;
     std::cout << "  Relevance weight: " << m_config.relevance_weight << std::endl;
+    std::cout << "  Use negative relevance: " << (m_config.use_negative_relevance ? "true (CLIP/LLaVA mode)" : "false (standard mode)") << std::endl;
     
     // Calculate pruning statistics
     float pruning_ratio = 1.0f - static_cast<float>(m_config.num_visual_tokens) / static_cast<float>(total_tokens);

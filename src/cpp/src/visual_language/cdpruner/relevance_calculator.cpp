@@ -42,18 +42,18 @@ ov::Tensor RelevanceCalculator::compute(const ov::Tensor& visual_embeds, const o
     
     // Step 2: L2 normalize text embeddings along the last dimension  
     ov::Tensor text_normalized = l2_normalize(text_embeds);
-    
+
     // Step 3: Compute cosine similarity between visual and text embeddings
     // relevance = visual_embeds @ text_embeds.T  => [B, N, M]
     ov::Tensor relevance_matrix = matrix_multiply(visual_normalized, text_normalized);
-    
-    // Step 4: Take negative mean across text tokens dimension to get relevance scores
-    // This follows the CDPruner implementation: relevance = (-relevance).mean(dim=-1)
-    ov::Tensor relevance_scores = compute_negative_mean(relevance_matrix);
-    
+
+    // Step 4: Take mean across text tokens dimension to get relevance scores
+    // Apply negative or positive mean based on configuration
+    ov::Tensor relevance_scores = compute_mean(relevance_matrix, m_config.use_negative_relevance);
+
     // Step 5: Min-max normalize the relevance scores
     ov::Tensor normalized_relevance = min_max_normalize(relevance_scores);
-    
+
     return normalized_relevance;
 }
 
@@ -197,9 +197,9 @@ ov::Tensor RelevanceCalculator::matrix_multiply(const ov::Tensor& visual_embeds,
     return result;
 }
 
-ov::Tensor RelevanceCalculator::compute_negative_mean(const ov::Tensor& relevance_matrix) {
+ov::Tensor RelevanceCalculator::compute_mean(const ov::Tensor& relevance_matrix, bool use_negative) {
     // relevance_matrix: [B, N, M]
-    // Result: [B, N] - mean across the last dimension with negation
+    // Result: [B, N] - mean across the last dimension with optional negation
     
     auto shape = relevance_matrix.get_shape();
     size_t batch_size = shape[0];
@@ -223,7 +223,13 @@ ov::Tensor RelevanceCalculator::compute_negative_mean(const ov::Tensor& relevanc
             
             float mean_val = sum / static_cast<float>(num_text_tokens);
             size_t result_idx = b * num_visual_tokens + i;
-            result_data[result_idx] = -mean_val; // Apply negation as in CDPruner
+            
+            // Apply negation conditionally based on parameter
+            if (use_negative) {
+                result_data[result_idx] = -mean_val; // For CLIP-based models (LLaVA)
+            } else {
+                result_data[result_idx] = mean_val;  // For non-CLIP models
+            }
         }
     }
     
