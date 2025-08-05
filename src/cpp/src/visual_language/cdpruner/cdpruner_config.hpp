@@ -30,8 +30,7 @@ struct Config {
 
     /// @brief Whether to apply negative mean for relevance calculation
     /// This is needed for CLIP-based models (like LLaVA) due to counterintuitive similarity values
-    /// but may not be needed for other visual encoders
-    bool use_negative_relevance = true;
+    bool use_negative_relevance = false;
 };
 
 } // namespace ov::genai::cdpruner 

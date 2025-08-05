@@ -388,6 +388,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     cdpruner_config.enable_pruning = true;    // Enable pruning functionality
     cdpruner_config.device = device;          // Use same device as the model
     cdpruner_config.debug_mode = false;       // Disable debug output for production
+    cdpruner_config.use_negative_relevance = true;  // needed for CLIP-based models
     m_cdpruner = std::make_unique<ov::genai::cdpruner::CDPruner>(cdpruner_config);
 }
 

@@ -80,6 +80,7 @@ VisionEncoderLLaVA::VisionEncoderLLaVA(
         cdpruner_config.relevance_weight = 0.5f;
         cdpruner_config.enable_pruning = true;
         cdpruner_config.device = device;
+        cdpruner_config.use_negative_relevance = true;  // needed for CLIP-based models
         m_cdpruner = std::make_unique<cdpruner::CDPruner>(cdpruner_config);
     } catch (const std::exception& e) {
         // CDPruner initialization failed, disable it for backward compatibility
