@@ -20,7 +20,7 @@ public:
     std::vector<EncodedImage> encode_video(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map) override;
 
 private:
-    ov::Tensor preproces_single_image(const ov::Tensor& image, const ProcessorConfig& config, ImageSize& target_image_size);
+    ov::Tensor preproces_single_image(const ov::Tensor& image, const ProcessorConfig& config, const ImageSize& target_image_size);
 };
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
