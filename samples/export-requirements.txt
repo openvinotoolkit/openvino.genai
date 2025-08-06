@@ -1,5 +1,4 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
---extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino-tokenizers[transformers]~=2025.3.0.0.dev
 optimum-intel[nncf]==1.25.0

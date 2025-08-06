@@ -1,4 +1,3 @@
---extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino_genai~=2025.3.0.0.dev
 librosa==0.11.0  # For Whisper
