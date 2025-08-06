@@ -19,10 +19,19 @@ OV_IMAGE_MODELS = ["echarlaix/tiny-random-stable-diffusion-xl",
 
 
 def run_wwb(args):
-    logger.info(" ".join(["TRANSFOREMRS_VERBOSITY=debug wwb"] + args))
-    result = subprocess.run(["wwb"] + args, capture_output=True, text=True)
-    logger.info(result)
-    return result
+    command = ["wwb"] + args
+    try:
+        return subprocess.check_output(
+            command,
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
+            text=True,
+            env={"TRANSFORMERS_VERBOSITY": 'debug', "PYTHONIOENCODING": "utf-8", **os.environ},
+        )
+    except subprocess.CalledProcessError as error:
+        logger.error(f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n"
+            f"{error.output}")
+        raise
 
 
 def setup_module():
@@ -56,8 +65,7 @@ def get_similarity(output: str) -> float:
         ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "image-inpainting", "hf"),
     ],
 )
-def test_image_model_types(model_id, model_type, backend):
-    GT_FILE = "test_sd.csv"
+def test_image_model_types(model_id, model_type, backend, tmp_path):
     wwb_args = [
         "--base-model",
         model_id,
@@ -66,7 +74,7 @@ def test_image_model_types(model_id, model_type, backend):
         "--num-samples",
         "1",
         "--gt-data",
-        GT_FILE,
+        tmp_path / "test_sd.csv",
         "--device",
         "CPU",
         "--model-type",
@@ -79,19 +87,10 @@ def test_image_model_types(model_id, model_type, backend):
     elif backend == "genai":
         wwb_args.append("--genai")
 
-    result = run_wwb(wwb_args)
-    print(result.stderr, result.stdout)
+    output = run_wwb(wwb_args)
 
-    try:
-        os.remove(GT_FILE)
-    except OSError:
-        pass
-    shutil.rmtree("reference", ignore_errors=True)
-    shutil.rmtree("target", ignore_errors=True)
-
-    assert result.returncode == 0
-    assert "Metrics for model" in result.stderr
-    similarity = get_similarity(str(result.stderr))
+    assert "Metrics for model" in output
+    similarity = get_similarity(output)
     assert similarity >= 0.98
 
 
@@ -207,8 +206,8 @@ def test_image_model_genai(model_id, model_type):
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
     ],
 )
-def test_image_custom_dataset(model_id, model_type, backend):
-    GT_FILE = "test_sd.csv"
+def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
+    GT_FILE = tmp_path / "test_sd.csv"
     wwb_args = [
         "--base-model",
         model_id,
@@ -232,14 +231,6 @@ def test_image_custom_dataset(model_id, model_type, backend):
     elif backend == "genai":
         wwb_args.append("--genai")
 
-    result = run_wwb(wwb_args)
+    run_wwb(wwb_args)
 
     assert os.path.exists(GT_FILE)
-
-    try:
-        os.remove(GT_FILE)
-    except OSError:
-        pass
-    shutil.rmtree("reference", ignore_errors=True)
-
-    assert result.returncode == 0
