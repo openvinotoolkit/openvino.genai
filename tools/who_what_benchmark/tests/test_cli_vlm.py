@@ -72,6 +72,7 @@ def test_vlm_basic(model_id, model_type, tmp_path):
         "--genai",
         "--output",
         tmp_path,
+    ])
 
     # test w/o models
     run_wwb([
