@@ -191,7 +191,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
     VLMPerfMetrics& metrics,
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& image_sequence) {
-    throw std::runtime_error("This model does not support token_type_ids.");
+    OPENVINO_THROW("This model does not support token_type_ids.");
 }
 
 bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
