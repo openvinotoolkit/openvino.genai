@@ -14,27 +14,44 @@ constexpr size_t BATCH_SIZE = 1;
 class LLMInferWrapper {
 public:
     LLMInferWrapper::LLMInferWrapper(const ov::genai::ModelDesc& model_desc);
+
     ov::genai::GenerationConfig get_generation_config() const;
+
     void set_generation_config(ov::genai::GenerationConfig config);
+
     int64_t infer_first(const ov::Tensor &input_ids,
                         const ov::Tensor &attention_mask,
                         const ov::Tensor &position_ids);
+
     bool can_infer();
+
     int64_t infer_next(const std::vector<int64_t> tokens);
+
     int64_t infer_next(int64_t out_token);
+
     std::vector<int64_t> infer_next_return_all(const std::vector<int64_t> tokens);
+
     ov::Tensor get_logits();
+
     std::size_t get_num_processed_tokens() const;
+
     ov::genai::GenerationHandle create_generation_handle();
+
     void remove_last_generated_tokens(const std::size_t tokens_to_remove); 
+
     void trimm_kv_cache(const std::size_t tokens_to_remove);
+
     ov::genai::EncodedResults finalize();
+
     ov::genai::GenerationStatus get_generation_status() const;
+
     void reset_state();
 
 private:
     ov::Tensor infer_next_internal(const std::vector<int64_t> tokens);
+
     void set_already_allocated_input_for_1_token();
+
     std::variant<int64_t, std::vector<int64_t>> sample_tokens(
         const ov::Tensor& logits, std::size_t num_tokens_to_return);
 
@@ -59,6 +76,7 @@ private:
     std::vector<int64_t> m_new_atten_mask_data;
 };
 
+// FIXME: Do we need this?
 struct SpeculativeConfig {
     void update_candidate_strategy(const size_t num_matches);
 
@@ -87,14 +105,10 @@ public:
     ) override;
 
     void start_chat(const std::string& system_message) override;
-    void finish_chat() override;
-    ~SpeculativeLLMPipelineNPU();
 
-private:
-    int64_t generate_next_token(const std::vector<int64_t> tokens);
-    std::vector<int64_t> generate_candidates(int64_t out_token);
-    void update_candidate_strategy(const size_t num_matches);
-    void update_kv_cache(const size_t seq_length);
+    void finish_chat() override;
+
+    ~SpeculativeLLMPipelineNPU();
 
 private:
     uint32_t m_max_prompt_len = 0u;
