@@ -397,6 +397,7 @@ VLMPipeline::VLMPipeline(
 
         if (m_pimpl == nullptr) {
             // [WA] add extract_scheduler_config for gemma3 with default SDPA_BACKEND in samples/cpp/visual_language_chat/benchmark_vlm.cpp
+            // [TODO] need a general solution for gemma3 and other models to use SDPA_BACKEND by default
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, plugin_properties);
         }
