@@ -132,7 +132,7 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     output = run_wwb([
         "--target-model",
         MODEL_PATH,
-        "--num-samples",``
+        "--num-samples",
         "1",
         "--gt-data",
         GT_FILE,
