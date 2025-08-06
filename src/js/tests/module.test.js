@@ -30,7 +30,6 @@ describe('module', async () => {
 
     assert.ok(result.length > 0);
     assert.strictEqual(typeof result, 'string');
-
   });
 });
 
@@ -191,9 +190,7 @@ describe('LLMPipeline.generate()', () => {
     const replyStr = await pipeline.generate('prompt', configStr);
     assert.strictEqual(typeof replyStr, 'string');
     assert.strictEqual(replyStr, reply.toString());
-
   });
-
 });
 
 describe('stream()', () => {
