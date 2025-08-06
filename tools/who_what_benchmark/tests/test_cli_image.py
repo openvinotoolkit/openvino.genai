@@ -103,102 +103,88 @@ def test_image_model_types(model_id, model_type, backend, tmp_path):
                             "image-inpainting"
                             ])),
 )
-def test_image_model_genai(model_id, model_type):
-    pytest.skip(reason="Ticket 170877")
-
+def test_image_model_genai(model_id, model_type, tmp_path):
     if ("flux-fill" in model_id) and (model_type != "image-inpainting"):
         pytest.skip(reason="FLUX-Fill is supported as inpainting only")
+    if model_type == "image-to-image":
+        pytest.xfail("Segfault. Ticket 170877")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        GT_FILE = os.path.join(temp_dir, "gt.csv")
-        MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+    GT_FILE = tmp_path / "gt.csv"
+    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
 
-        wwb_args = [
-            "--base-model",
-            model_id,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--num-inference-steps",
-            "2",
-        ]
-        result = run_wwb(wwb_args)
-        assert result.returncode == 0
-        assert os.path.exists(GT_FILE)
-        assert os.path.exists(os.path.join(temp_dir, "reference"))
+    run_wwb([
+        "--base-model",
+        model_id,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--num-inference-steps",
+        "2",
+    ])
+    assert GT_FILE.exists()
+    assert (tmp_path / "reference").exists()
 
-        wwb_args = [
-            "--target-model",
-            MODEL_PATH,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--genai",
-            "--num-inference-steps",
-            "2",
-        ]
-        result = run_wwb(wwb_args)
+    output = run_wwb([
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",``
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--genai",
+        "--num-inference-steps",
+        "2",
+    ])
 
-        assert result.returncode == 0
-        assert "Metrics for model" in result.stderr
-        similarity = get_similarity(str(result.stderr))
-        assert similarity >= 0.97751  # Ticket 166496
-        assert os.path.exists(os.path.join(temp_dir, "target"))
+    assert "Metrics for model" in output
+    similarity = get_similarity(output)
+    assert similarity >= 0.97751  # Ticket 166496
+    assert (tmp_path / "target").exists()
 
-        output_dir = tempfile.TemporaryDirectory().name
-        wwb_args = [
-            "--target-model",
-            MODEL_PATH,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--output",
-            output_dir,
-            "--genai",
-            "--num-inference-steps",
-            "2",
-        ]
-        result = run_wwb(wwb_args)
-        assert result.returncode == 0
-        assert os.path.exists(os.path.join(output_dir, "target"))
-        assert os.path.exists(os.path.join(output_dir, "target.csv"))
+    run_wwb([
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--output",
+        tmp_path,
+        "--genai",
+        "--num-inference-steps",
+        "2",
+    ])
+    assert (tmp_path / "target").exists()
+    assert (tmp_path / "target.csv").exists()
 
-        # test w/o models
-        wwb_args = [
-            "--target-data",
-            os.path.join(output_dir, "target.csv"),
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--num-inference-steps",
-            "2",
-        ]
-        result = run_wwb(wwb_args)
-        assert result.returncode == 0
-
-        shutil.rmtree("reference", ignore_errors=True)
-        shutil.rmtree("target", ignore_errors=True)
-        shutil.rmtree(output_dir, ignore_errors=True)
+    # test w/o models
+    run_wwb([
+        "--target-data",
+        tmp_path/ "target.csv",
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--num-inference-steps",
+        "2",
+    ])
 
 
 @pytest.mark.parametrize(
