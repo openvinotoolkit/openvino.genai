@@ -51,6 +51,8 @@ def get_ov_model(model_id):
         )
     else:
         tokenizer = processor.tokenizer
+        if tokenizer.chat_template is None:
+            tokenizer.chat_template = processor.chat_template
     tokenizer.save_pretrained(model_dir)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
         tokenizer, with_detokenizer=True
@@ -70,6 +72,7 @@ def get_ov_model(model_id):
     )
     if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
         processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
+    processor.audio_tokenizer = None
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
     return model_dir

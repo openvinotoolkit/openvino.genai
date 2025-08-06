@@ -5,6 +5,7 @@ openvino-tokenizers[transformers]~=2025.3.0.0.dev
 # optimum-intel main will get issue with VLM gemma3 when transformers < 4.52: https://github.com/huggingface/optimum-intel/issues/1405
 optimum-intel[nncf] @ git+https://github.com/huggingface/optimum-intel.git@d93fd59aebd24ac887deb1eaab7ff6af41b09946
 numpy<2.0.0; sys_platform == 'darwin'
+safetensors==0.5.3; platform_system == "Darwin" and platform_machine == "x86_64"
 einops==0.8.1  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.34.0 # For image generation pipelines
