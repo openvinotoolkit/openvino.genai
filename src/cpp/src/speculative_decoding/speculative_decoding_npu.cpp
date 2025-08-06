@@ -139,8 +139,8 @@ std::vector<int64_t> LLMInferWrapper::infer_next_return_all(const std::vector<in
 
     auto logits = infer_next_internal(tokens);
     auto tokens_size = tokens.size();
-    auto sampled_tokens = std::get<std::vector<int64_t>>(sample_tokens(logits, tokens_size + 1u));
-    last_token = sampled_tokens[tokens_size];
+    auto sampled_tokens = std::get<std::vector<int64_t>>(sample_tokens(logits, tokens_size));
+    last_token = sampled_tokens[tokens_size - 1];
     return sampled_tokens;
 }
 
@@ -415,8 +415,8 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         attention_mask = data->attention_mask;
     }
 
-    ov::Shape prompts_shape = input_ids.get_shape();
-    const size_t batch_size = prompts_shape[0];
+    ov::Shape prompt_shape = input_ids.get_shape();
+    const size_t batch_size = prompt_shape[0];
     OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size=1 is supported");
 
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
@@ -436,6 +436,8 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
 
     // FIXME: Update conditionally:
     m_main_request->set_generation_config(config);
+    auto prompt_len = prompt_shape[1];
+    m_speculative_config.max_seq_length = prompt_len + config.get_max_new_tokens(prompt_len);
 
     // Config draft model to not stop on EOS and remove stop strings:
     ov::genai::GenerationConfig draft_config = m_draft_request->get_generation_config();
@@ -560,7 +562,8 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
 
         auto mismatched_candidates = candidates.size() - accepted_tokens_number;
         std::vector<int64_t> validated_tokens(candidates.begin(), candidates.end() - mismatched_candidates);
-        validated_tokens.push_back(ref_out_tokens.back());
+        out_token = ref_out_tokens.back();
+        validated_tokens.push_back(out_token);
     
         // Phase 4: Update inference wrappers based on found matches and mismatches
         // This is the case when main model accepted all candidates from draft model
@@ -574,7 +577,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
 
         m_speculative_config.update_candidate_strategy(accepted_tokens_number);
         // Should be enough, if all will be streamed from logits?
-        stream_generated_tokens(streamer_ptr, validated_tokens);
+        streaming_status = stream_generated_tokens(streamer_ptr, validated_tokens);
 
         // raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         // raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
