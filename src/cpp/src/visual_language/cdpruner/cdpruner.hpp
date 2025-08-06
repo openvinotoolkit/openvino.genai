@@ -140,9 +140,9 @@ private:
 
     Config m_config;                        ///< Configuration
     RelevanceCalculator m_relevance_calc;   ///< Relevance computation module
-    ConditionalKernelBuilder m_kernel_builder; ///< Kernel matrix construction module
-    FastGreedyDPP m_dpp_selector;          ///< DPP selection module
-    
+    ConditionalKernelBuilder m_kernel_builder;  ///< Kernel matrix construction module (with OpenVINO ops)
+    FastGreedyDPP m_dpp_selector;               ///< DPP selection module
+
     mutable PruningStatistics m_last_statistics; ///< Statistics from last operation
 };
 

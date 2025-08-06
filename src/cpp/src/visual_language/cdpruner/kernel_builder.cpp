@@ -18,80 +18,147 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config) : m_con
     // Constructor implementation
 }
 
-ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, const ov::Tensor& relevance_scores) {
+ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, const ov::Tensor& input_param) {
     // Input validation
     if (visual_features.get_shape().size() != 3) {
         throw std::invalid_argument("Visual features must be 3D tensor [B, N, D]");
     }
-    if (relevance_scores.get_shape().size() != 2) {
-        throw std::invalid_argument("Relevance scores must be 2D tensor [B, N]");
-    }
-    
+
     auto visual_shape = visual_features.get_shape();
-    auto relevance_shape = relevance_scores.get_shape();
-    
     size_t batch_size = visual_shape[0];
     size_t num_tokens = visual_shape[1];
     size_t feature_dim = visual_shape[2];
-    
+
+    std::cout << "\n==== Kernel Build Performance Analysis ====" << std::endl;
+    std::cout << "Kernel Build Breakdown via " << (m_config.use_ops_model ? "OV Model: " : "Traditional Pipeline:")
+              << std::endl;
+    std::cout << "Input tensors: visual_features[" << batch_size << ", " << num_tokens << ", " << feature_dim << "]"
+              << std::endl;
+
+    ov::Tensor conditional_kernel;
+    if (m_config.use_ops_model) {
+        conditional_kernel = build_with_ov_model(visual_features, input_param);
+    } else {
+        conditional_kernel = build_with_normal_pipeline(visual_features, input_param);
+    }
+
+    std::cout << "==========================================\n" << std::endl;
+    return conditional_kernel;
+}
+
+ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visual_features,
+                                                         const ov::Tensor& text_features) {
+    auto visual_shape = visual_features.get_shape();
+    size_t batch_size = visual_shape[0];
+    size_t num_tokens = visual_shape[1];
+    size_t feature_dim = visual_shape[2];
+    size_t total_operations = batch_size * num_tokens * num_tokens;  // Dominant operation is N^2
+
+    // Use OV model for building the kernel matrix
+    if (text_features.get_shape().size() != 3) {
+        throw std::invalid_argument("Text features must be 2D tensor [B, N, D]");
+    }
+
+    // Check shape consistency
+    if (text_features.get_shape()[0] != batch_size || text_features.get_shape()[2] != feature_dim) {
+        throw std::invalid_argument("Visual features and text features must have consistent batch size, token "
+                                    "count, and feature dimension");
+    }
+    std::cout << "Input tensors: text_features[" << text_features.get_shape()[0] << ", "
+              << text_features.get_shape()[1] << ", " << text_features.get_shape()[2] << "]" << std::endl;
+
+    auto kernel_build_start = std::chrono::high_resolution_clock::now();
+    ov::Tensor conditional_kernel = compute_conditional_kernel_gpu(visual_features, text_features);
+    auto kernel_build_end = std::chrono::high_resolution_clock::now();
+    auto kernel_build_duration =
+        std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
+
+    // Print performance breakdown
+    std::cout << "  Total kernel build time: " << kernel_build_duration.count() << " us ("
+              << (kernel_build_duration.count() / 1000.0) << " ms)" << std::endl;
+
+    // Performance metrics
+    std::cout << "Kernel build throughput: "
+              << (static_cast<double>(total_operations) / kernel_build_duration.count() * 1000000) << " ops/sec"
+              << std::endl;
+
+    return conditional_kernel;
+}
+
+ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor& visual_features,
+                                                                const ov::Tensor& relevance_scores) {
+    auto visual_shape = visual_features.get_shape();
+    size_t batch_size = visual_shape[0];
+    size_t num_tokens = visual_shape[1];
+    size_t feature_dim = visual_shape[2];
+    size_t total_operations = batch_size * num_tokens * num_tokens;  // Dominant operation is N^2
+
+    if (relevance_scores.get_shape().size() != 2) {
+        throw std::invalid_argument("Relevance scores must be 2D tensor [B, N]");
+    }
+    auto relevance_shape = relevance_scores.get_shape();
+    std::cout << "Input tensors: relevance_scores[" << relevance_shape[0] << ", " << relevance_shape[1] << "]"
+              << std::endl;
+
     // Check shape consistency
     if (relevance_shape[0] != batch_size || relevance_shape[1] != num_tokens) {
-        throw std::invalid_argument("Visual features and relevance scores must have consistent batch size and token count");
+        throw std::invalid_argument(
+            "Visual features and relevance scores must have consistent batch size and token count");
     }
-    
+
     // Performance timing for kernel building steps
     auto kernel_build_start = std::chrono::high_resolution_clock::now();
-    
-    std::cout << "\n==== Kernel Build Performance Analysis ====" << std::endl;
-    std::cout << "Input tensors: visual_features[" << batch_size << ", " << num_tokens << ", " << feature_dim 
-              << "], relevance_scores[" << batch_size << ", " << num_tokens << "]" << std::endl;
-    
+
     // Step 1: L2 normalize visual features along the last dimension
     // This is equivalent to: image_normalized = image_features / image_features.norm(dim=-1, keepdim=True)
     auto normalize_start = std::chrono::high_resolution_clock::now();
     ov::Tensor normalized_features = l2_normalize_features(visual_features);
     auto normalize_end = std::chrono::high_resolution_clock::now();
-    auto normalize_duration = std::chrono::duration_cast<std::chrono::microseconds>(normalize_end - normalize_start);
-    
+    auto normalize_duration =
+        std::chrono::duration_cast<std::chrono::microseconds>(normalize_end - normalize_start);
+
     // Step 2: Compute similarity matrix L = normalized_features @ normalized_features.T
     // This gives us the base similarity matrix [B, N, N]
     auto similarity_start = std::chrono::high_resolution_clock::now();
     // ov::Tensor similarity_matrix = compute_similarity_matrix(normalized_features);
     ov::Tensor similarity_matrix = compute_similarity_matrix_gpu(normalized_features);
     auto similarity_end = std::chrono::high_resolution_clock::now();
-    auto similarity_duration = std::chrono::duration_cast<std::chrono::microseconds>(similarity_end - similarity_start);
-    
+    auto similarity_duration =
+        std::chrono::duration_cast<std::chrono::microseconds>(similarity_end - similarity_start);
+
     // Step 3: Build conditional kernel matrix L̃ = diag(r) · L · diag(r)
     // Following CDPruner: kernel = relevance.unsqueeze(2) * similarity * relevance.unsqueeze(1)
     auto conditional_start = std::chrono::high_resolution_clock::now();
     ov::Tensor conditional_kernel = build_conditional_kernel(similarity_matrix, relevance_scores);
     auto conditional_end = std::chrono::high_resolution_clock::now();
-    auto conditional_duration = std::chrono::duration_cast<std::chrono::microseconds>(conditional_end - conditional_start);
-    
+    auto conditional_duration =
+        std::chrono::duration_cast<std::chrono::microseconds>(conditional_end - conditional_start);
+
     auto kernel_build_end = std::chrono::high_resolution_clock::now();
-    auto total_kernel_duration = std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
-    
+    auto total_kernel_duration =
+        std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
+
     // Print performance breakdown
-    std::cout << "Kernel Build Breakdown:" << std::endl;
-    std::cout << "  L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim << "]: " 
-              << normalize_duration.count() << " us (" 
-              << (static_cast<double>(normalize_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
-    std::cout << "  Similarity matrix [" << batch_size << ", " << num_tokens << ", " << num_tokens << "]: " 
-              << similarity_duration.count() << " us (" 
-              << (static_cast<double>(similarity_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
-    std::cout << "  Conditional kernel [" << batch_size << ", " << num_tokens << ", " << num_tokens << "]: " 
-              << conditional_duration.count() << " us (" 
-              << (static_cast<double>(conditional_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
-    
-    std::cout << "Total kernel build time: " << total_kernel_duration.count() << " us (" 
+    std::cout << "  L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim
+              << "]: " << normalize_duration.count() << " us ("
+              << (static_cast<double>(normalize_duration.count()) / total_kernel_duration.count() * 100) << "%)"
+              << std::endl;
+    std::cout << "  Similarity matrix [" << batch_size << ", " << num_tokens << ", " << num_tokens
+              << "]: " << similarity_duration.count() << " us ("
+              << (static_cast<double>(similarity_duration.count()) / total_kernel_duration.count() * 100) << "%)"
+              << std::endl;
+    std::cout << "  Conditional kernel [" << batch_size << ", " << num_tokens << ", " << num_tokens
+              << "]: " << conditional_duration.count() << " us ("
+              << (static_cast<double>(conditional_duration.count()) / total_kernel_duration.count() * 100) << "%)"
+              << std::endl;
+
+    std::cout << "Total kernel build time: " << total_kernel_duration.count() << " us ("
               << (total_kernel_duration.count() / 1000.0) << " ms)" << std::endl;
-    
     // Performance metrics
-    size_t total_operations = batch_size * num_tokens * num_tokens; // Dominant operation is N^2
-    std::cout << "Kernel build throughput: " << (static_cast<double>(total_operations) / total_kernel_duration.count() * 1000000) 
-              << " ops/sec" << std::endl;
-    std::cout << "==========================================\n" << std::endl;
-    
+    std::cout << "Kernel build throughput: "
+              << (static_cast<double>(total_operations) / total_kernel_duration.count() * 1000000) << " ops/sec"
+              << std::endl;
+
     return conditional_kernel;
 }
 
@@ -326,6 +393,164 @@ ov::Tensor ConditionalKernelBuilder::build_conditional_kernel(const ov::Tensor& 
     }
     
     return conditional_kernel;
+}
+
+ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_gpu(
+    const ov::Tensor& visual_features,
+    const ov::Tensor& text_features) {
+    // Input validation
+    if (visual_features.get_shape().size() != 3) {
+        throw std::invalid_argument("Visual features must be 3D tensor [B, N, D]");
+    }
+    if (text_features.get_shape().size() != 3) {
+        throw std::invalid_argument("Text features must be 2D tensor [B, M, D]");
+    }
+
+    auto visual_shape = visual_features.get_shape();
+    auto text_shape = text_features.get_shape();
+
+    if (visual_shape[2] != text_shape[2]) {
+        throw std::invalid_argument("Visual and text features must have same feature dimension");
+    }
+    // Compile model for GPU
+    ov::Core core;
+    ov::CompiledModel compiled_model;
+    auto model = create_conditional_kernel_model();
+    if (m_config.device == "GPU") {
+        compiled_model = core.compile_model(model, "GPU");
+    } else {
+        // Fallback to CPU if GPU not available
+        compiled_model = core.compile_model(model, "CPU");
+    }
+    // Run ops model pipeline
+    auto request = compiled_model.create_infer_request();
+    request.set_input_tensor(0, visual_features);  // visual features
+    request.set_input_tensor(1, text_features);    // text features
+    request.infer();
+
+    // Get all outputs
+    auto relevance_scores = request.get_output_tensor(0);
+
+    return relevance_scores;
+}
+
+std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_model() {
+    // Input parameters
+    auto visual_input =
+        std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1, -1}  // [B, N, D]
+        );
+    auto text_input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1}  // [M, D]
+    );
+
+    // ========== RELEVANCE COMPUTATION ==========
+    // Step 1.1: L2 normalize visual features (will be reused for kernel computation)
+    auto visual_l2_norm = create_l2_normalize_ops(visual_input, -1);
+
+    // Step 1.2: L2 normalize text features
+    auto text_l2_norm = create_l2_normalize_ops(text_input, -1);
+
+    // Step 1.3: Compute similarity matrix [B, N, M]
+    auto text_transposed =
+        std::make_shared<ov::op::v1::Transpose>(text_l2_norm,
+                                                ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {1, 0}));
+
+    auto text_visual_similarity = std::make_shared<ov::op::v0::MatMul>(visual_l2_norm, text_transposed);
+
+    // Step 1.4: Compute mean similarity over text dimension
+    auto mean_similarity = std::make_shared<ov::op::v1::ReduceMean>(
+        text_visual_similarity,
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {2}),  // axis=2
+        false                                                               // keep_dims=false
+    );
+
+    // Step 1.5: Apply negative transformation based on configuration
+    std::shared_ptr<ov::Node> processed_mean;
+    if (m_config.use_negative_relevance) {
+        processed_mean = std::make_shared<ov::op::v1::Multiply>(
+            mean_similarity,
+            ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {-1.0f}));
+    } else {
+        processed_mean = mean_similarity;
+    }
+
+    // Step 1.6: Min-max normalization to get relevance scores
+    auto relevance_scores = create_min_max_normalize_ops(processed_mean);
+
+    // ========== KERNEL COMPUTATION ==========
+    // Step 2.1: Compute visual self-similarity matrix [B, N, N]
+    auto visual_transposed = std::make_shared<ov::op::v1::Transpose>(
+        visual_l2_norm,  // Reuse normalized visual features
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{3}, {0, 2, 1}));
+
+    auto visual_self_similarity = std::make_shared<ov::op::v0::MatMul>(visual_l2_norm, visual_transposed);
+
+    // Step 2.2: Build conditional kernel matrix
+    auto relevance_i = std::make_shared<ov::op::v0::Unsqueeze>(
+        relevance_scores,
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {2})  // axis=2
+    );
+    auto relevance_j = std::make_shared<ov::op::v0::Unsqueeze>(
+        relevance_scores,
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {1})  // axis=1
+    );
+
+    // Conditional kernel: relevance[i] * similarity[i,j] * relevance[j]
+    auto temp_kernel = std::make_shared<ov::op::v1::Multiply>(relevance_i, visual_self_similarity);
+    auto conditional_kernel = std::make_shared<ov::op::v1::Multiply>(temp_kernel, relevance_j);
+
+    // Create outputs
+    auto kernel_result = std::make_shared<ov::op::v0::Result>(conditional_kernel);
+
+    return std::make_shared<ov::Model>(ov::ResultVector{kernel_result},
+                                       ov::ParameterVector{visual_input, text_input},
+                                       "CDPruner_Kernel_Model");
+}
+
+std::shared_ptr<ov::Node> ConditionalKernelBuilder::create_l2_normalize_ops(std::shared_ptr<ov::Node> input, int axis) {
+    // Calculate squared values
+    auto squared = std::make_shared<ov::op::v1::Multiply>(input, input);
+
+    // Sum along the specified axis
+    auto sum_squared =
+        std::make_shared<ov::op::v1::ReduceSum>(squared,
+                                                ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {axis}),
+                                                true  // keep_dims=true
+        );
+
+    // Add small epsilon for numerical stability
+    auto epsilon = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {m_config.numerical_threshold});
+    auto sum_with_eps = std::make_shared<ov::op::v1::Add>(sum_squared, epsilon);
+
+    // Square root to get L2 norm
+    auto l2_norm = std::make_shared<ov::op::v0::Sqrt>(sum_with_eps);
+
+    // Divide input by L2 norm
+    return std::make_shared<ov::op::v1::Divide>(input, l2_norm);
+}
+
+std::shared_ptr<ov::Node> ConditionalKernelBuilder::create_min_max_normalize_ops(std::shared_ptr<ov::Node> input) {
+    // Find min and max values along the last dimension
+    auto min_vals = std::make_shared<ov::op::v1::ReduceMin>(
+        input,
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {1}),  // axis=1
+        true                                                                // keep_dims=true
+    );
+    auto max_vals = std::make_shared<ov::op::v1::ReduceMax>(
+        input,
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {1}),  // axis=1
+        true                                                                // keep_dims=true
+    );
+
+    // Compute range (max - min)
+    auto range = std::make_shared<ov::op::v1::Subtract>(max_vals, min_vals);
+
+    // Add small epsilon to avoid division by zero
+    auto epsilon = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {m_config.numerical_threshold});
+    auto range_with_eps = std::make_shared<ov::op::v1::Add>(range, epsilon);
+
+    // Normalize: (input - min) / (max - min)
+    auto shifted = std::make_shared<ov::op::v1::Subtract>(input, min_vals);
+    return std::make_shared<ov::op::v1::Divide>(shifted, range_with_eps);
 }
 
 } // namespace ov::genai::cdpruner 

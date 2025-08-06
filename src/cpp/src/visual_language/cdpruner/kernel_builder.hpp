@@ -24,14 +24,35 @@ public:
     /// @brief Constructor
     /// @param config Configuration for the kernel builder
     explicit ConditionalKernelBuilder(const Config& config);
-    
+
     /// @brief Build conditional kernel matrix L̃ = diag(r) · L · diag(r)
+    /// @param visual_features Visual feature embeddings [B, N, D]
+    /// @param input_param Input parameter for relevance scores or text features
+    /// @return Conditional kernel matrix [B, N, N]
+    ov::Tensor build(const ov::Tensor& visual_features, const ov::Tensor& input_param);
+
+    /// @brief Compute relevance scores and kernel matrix using OpenVINO ops model
+    /// @param visual_features Visual feature embeddings [B, N, D]
+    /// @param text_features Text feature embeddings [B, M, D]
+    /// @return Conditional kernel matrix [B, N, N]
+    ov::Tensor compute_conditional_kernel_gpu(const ov::Tensor& visual_features, const ov::Tensor& text_features);
+
+private:
+    /// @brief Build conditional kernel using OpenVINO ops model
+    /// @param visual_features Visual feature embeddings [B, N, D]
+    /// @param text_features Text feature embeddings [B, M, D]
+    /// @return Conditional kernel matrix [B, N, N]
+    ov::Tensor build_with_ov_model(const ov::Tensor& visual_features, const ov::Tensor& text_features);
+
+    /// @brief Build conditional kernel using traditional pipeline
     /// @param visual_features Visual feature embeddings [B, N, D]
     /// @param relevance_scores Relevance scores [B, N]
     /// @return Conditional kernel matrix [B, N, N]
-    ov::Tensor build(const ov::Tensor& visual_features, const ov::Tensor& relevance_scores);
+    ov::Tensor build_with_normal_pipeline(const ov::Tensor& visual_features, const ov::Tensor& relevance_scores);
+    /// @brief Create OpenVINO ops model for relevance and kernel computation
+    /// @return Shared pointer to the OpenVINO model
+    std::shared_ptr<ov::Model> create_conditional_kernel_model();
 
-private:
     /// @brief Compute similarity matrix between visual features
     /// @param features Visual feature embeddings [B, N, D]
     /// @return Similarity matrix [B, N, N]
@@ -57,14 +78,24 @@ private:
     /// @param features Input features [B, N, D]
     /// @return Normalized features [B, N, D]
     ov::Tensor l2_normalize_features(const ov::Tensor& features);
-    
+
     /// @brief Build conditional kernel matrix using relevance weighting
     /// @param similarity_matrix Base similarity matrix [B, N, N]
     /// @param relevance_scores Token relevance scores [B, N]
     /// @return Conditional kernel matrix [B, N, N]
-    ov::Tensor build_conditional_kernel(const ov::Tensor& similarity_matrix, 
-                                      const ov::Tensor& relevance_scores);
-    
+    ov::Tensor build_conditional_kernel(const ov::Tensor& similarity_matrix, const ov::Tensor& relevance_scores);
+
+    /// @brief Create L2 normalization subgraph using OpenVINO ops
+    /// @param input Input node to normalize
+    /// @param axis Axis along which to normalize
+    /// @return Normalized node
+    std::shared_ptr<ov::Node> create_l2_normalize_ops(std::shared_ptr<ov::Node> input, int axis);
+
+    /// @brief Create min-max normalization subgraph using OpenVINO ops
+    /// @param input Input node to normalize
+    /// @return Normalized node
+    std::shared_ptr<ov::Node> create_min_max_normalize_ops(std::shared_ptr<ov::Node> input);
+
     Config m_config;
 };
 

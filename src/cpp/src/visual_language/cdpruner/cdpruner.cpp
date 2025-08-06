@@ -23,6 +23,8 @@ CDPruner::CDPruner(const Config& config)
         std::cout << "  relevance_weight: " << m_config.relevance_weight << std::endl;
         std::cout << "  use_negative_relevance: " << (m_config.use_negative_relevance ? "true" : "false") << std::endl;
         std::cout << "  enable_pruning: " << (m_config.enable_pruning ? "true" : "false") << std::endl;
+        std::cout << "  use_ops_model: " << (m_config.use_ops_model ? "true (OpenVINO ops)" : "false (traditional)")
+                  << std::endl;
         std::cout << "  device: " << m_config.device << std::endl;
     }
 }
@@ -43,66 +45,97 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
     // Get input dimensions for context
     auto visual_shape = visual_features.get_shape();
     auto text_shape = text_features.get_shape();
-    
+
     try {
-        // Step 1: Compute relevance scores
-        if (m_config.debug_mode) {
-            std::cout << "Step 1: Computing relevance scores..." << std::endl;
+        std::vector<std::vector<size_t>> selected_tokens;
+
+        if (m_config.use_ops_model) {
+            // New OpenVINO ops model approach
+            if (m_config.debug_mode) {
+                std::cout << "Step 1-2: Computing relevance scores and kernel matrix using ov model on device: "
+                          << m_config.device << "..." << std::endl;
+            }
+            auto computation_start = std::chrono::high_resolution_clock::now();
+            auto kernel_matrix = m_kernel_builder.build(visual_features, text_features);
+            auto computation_end = std::chrono::high_resolution_clock::now();
+
+            auto computation_duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(computation_end - computation_start);
+
+            if (m_config.debug_mode) {
+                std::cout << "  Kernel building via ov model took: " << computation_duration.count() << " us"
+                          << std::endl;
+            }
+
+            // Step 3: Select tokens using fast greedy DPP
+            if (m_config.debug_mode) {
+                std::cout << "Step 3: Selecting tokens using DPP..." << std::endl;
+            }
+            auto dpp_start = std::chrono::high_resolution_clock::now();
+            selected_tokens = m_dpp_selector.select(kernel_matrix, m_config.num_visual_tokens);
+            auto dpp_end = std::chrono::high_resolution_clock::now();
+
+            auto dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
+
+            if (m_config.debug_mode) {
+                std::cout << "  DPP selection took: " << dpp_duration.count() << " us" << std::endl;
+            }
+        } else {
+            // Original step-by-step approach
+            if (m_config.debug_mode) {
+                std::cout << "Step 1: Computing relevance scores..." << std::endl;
+            }
+            auto relevance_start = std::chrono::high_resolution_clock::now();
+            ov::Tensor relevance_scores = m_relevance_calc.compute(visual_features, text_features);
+            auto relevance_end = std::chrono::high_resolution_clock::now();
+            
+            auto relevance_duration = std::chrono::duration_cast<std::chrono::microseconds>(relevance_end - relevance_start);
+            
+            if (m_config.debug_mode) {
+                std::cout << "  Relevance computation took: " << relevance_duration.count() << " us" << std::endl;
+            }
+            
+            // Step 2: Build conditional kernel matrix
+            if (m_config.debug_mode) {
+                std::cout << "Step 2: Building conditional kernel matrix..." << std::endl;
+            }
+            auto kernel_start = std::chrono::high_resolution_clock::now();
+            ov::Tensor kernel_matrix = m_kernel_builder.build(visual_features, relevance_scores);
+            auto kernel_end = std::chrono::high_resolution_clock::now();
+            
+            auto kernel_duration = std::chrono::duration_cast<std::chrono::microseconds>(kernel_end - kernel_start);
+
+            if (m_config.debug_mode) {
+                std::cout << "  Kernel building took: " << kernel_duration.count() << " us" << std::endl;
+            }
+
+            // Step 3: Select tokens using fast greedy DPP
+            if (m_config.debug_mode) {
+                std::cout << "Step 3: Selecting tokens using DPP..." << std::endl;
+            }
+            auto dpp_start = std::chrono::high_resolution_clock::now();
+            selected_tokens = m_dpp_selector.select(kernel_matrix, m_config.num_visual_tokens);
+            auto dpp_end = std::chrono::high_resolution_clock::now();
+
+            auto dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
+            
+            if (m_config.debug_mode) {
+                std::cout << "  DPP selection took: " << dpp_duration.count() << " us" << std::endl;
+            }
         }
-        auto relevance_start = std::chrono::high_resolution_clock::now();
-        ov::Tensor relevance_scores = m_relevance_calc.compute(visual_features, text_features);
-        auto relevance_end = std::chrono::high_resolution_clock::now();
-        
-        auto relevance_duration = std::chrono::duration_cast<std::chrono::microseconds>(relevance_end - relevance_start);
-        
-        if (m_config.debug_mode) {
-            std::cout << "  Relevance computation took: " << relevance_duration.count() << " us" << std::endl;
-        }
-        
-        // Step 2: Build conditional kernel matrix
-        if (m_config.debug_mode) {
-            std::cout << "Step 2: Building conditional kernel matrix..." << std::endl;
-        }
-        auto kernel_start = std::chrono::high_resolution_clock::now();
-        ov::Tensor kernel_matrix = m_kernel_builder.build(visual_features, relevance_scores);
-        auto kernel_end = std::chrono::high_resolution_clock::now();
-        
-        auto kernel_duration = std::chrono::duration_cast<std::chrono::microseconds>(kernel_end - kernel_start);
-        
-        if (m_config.debug_mode) {
-            std::cout << "  Kernel matrix construction took: " << kernel_duration.count() << " us" << std::endl;
-        }
-        
-        // Step 3: Select tokens using fast greedy DPP
-        if (m_config.debug_mode) {
-            std::cout << "Step 3: Selecting tokens using DPP..." << std::endl;
-        }
-        auto dpp_start = std::chrono::high_resolution_clock::now();
-        std::vector<std::vector<size_t>> selected_tokens = m_dpp_selector.select(kernel_matrix, m_config.num_visual_tokens);
-        auto dpp_end = std::chrono::high_resolution_clock::now();
-        
-        auto dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
-        
-        if (m_config.debug_mode) {
-            std::cout << "  DPP selection took: " << dpp_duration.count() << " us" << std::endl;
-        }
-        
+
         // Overall timing summary
         auto overall_end = std::chrono::high_resolution_clock::now();
         auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(overall_end - overall_start);
-        
+
         std::cout << "\n==== Performance Summary ====" << std::endl;
-        std::cout << "Total processing time: " << total_duration.count() << " us (" << (total_duration.count() / 1000.0) << " ms)" << std::endl;
-        
-        // Component timing breakdown
-        std::cout << "\nComponent Breakdown:" << std::endl;
-        std::cout << "  Relevance computation: " << relevance_duration.count() << " us (" 
-                  << (static_cast<double>(relevance_duration.count()) / total_duration.count() * 100) << "%)" << std::endl;
-        std::cout << "  Kernel matrix build:   " << kernel_duration.count() << " us (" 
-                  << (static_cast<double>(kernel_duration.count()) / total_duration.count() * 100) << "%)" << std::endl;
-        std::cout << "  DPP token selection:   " << dpp_duration.count() << " us (" 
-                  << (static_cast<double>(dpp_duration.count()) / total_duration.count() * 100) << "%)" << std::endl;
-        
+        std::cout << "Computation mode: "
+                  << (m_config.use_ops_model ? (std::string("OV Model by ") + m_config.device)
+                                             : "Traditional Step-by-Step by CPU")
+                  << std::endl;
+        std::cout << "Total processing time: " << total_duration.count() << " us (" << (total_duration.count() / 1000.0)
+                  << " ms)" << std::endl;
+
         // Performance metrics
         size_t total_input_tokens = visual_shape[0] * visual_shape[1];
         size_t total_output_tokens = visual_shape[0] * m_config.num_visual_tokens;
@@ -119,7 +152,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         std::cout << "================================\n" << std::endl;
         
         return selected_tokens;
-        
+
     } catch (const std::exception& e) {
         throw std::runtime_error("CDPruner::select_tokens failed: " + std::string(e.what()));
     }

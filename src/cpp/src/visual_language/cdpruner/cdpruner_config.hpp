@@ -31,6 +31,11 @@ struct Config {
     /// @brief Whether to apply negative mean for relevance calculation
     /// This is needed for CLIP-based models (like LLaVA) due to counterintuitive similarity values
     bool use_negative_relevance = false;
+
+    /// @brief Whether to use OpenVINO ops model for computation
+    /// When true, uses integrated OpenVINO ops model for relevance and kernel computation
+    /// When false, uses traditional step-by-step computation pipeline
+    bool use_ops_model = false;
 };
 
 } // namespace ov::genai::cdpruner 
