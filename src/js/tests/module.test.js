@@ -29,6 +29,8 @@ describe('module', async () => {
     );
 
     assert.ok(result.length > 0);
+    assert.strictEqual(typeof result, 'string');
+
   });
 });
 
@@ -157,6 +159,41 @@ describe('generation parameters validation', () => {
     const result = await pipeline.generate('continue: 1 2 3', generationConfig);
     assert.strictEqual(typeof result, 'string');
   });
+});
+
+describe('LLMPipeline.generate()', () => {
+  let pipeline = null;
+
+  before(async () => {
+    pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
+    await pipeline.startChat();
+  });
+
+  after(async () => {
+    await pipeline.finishChat();
+  });
+
+  it('generate(prompt, config) return_decoded_results', async () => {
+    const config = {
+      'max_new_tokens': 5,
+      'return_decoded_results': true,
+    };
+    const reply = await pipeline.generate('prompt', config);
+    assert.strictEqual(typeof reply, 'object');
+    assert.ok(Array.isArray(reply.texts));
+    assert.ok(reply.texts.every(text => typeof text === 'string'));
+    assert.ok(reply.perfMetrics !== undefined);
+
+    const configStr = {
+      'max_new_tokens': 5,
+      'return_decoded_results': false,
+    };
+    const replyStr = await pipeline.generate('prompt', configStr);
+    assert.strictEqual(typeof replyStr, 'string');
+    assert.strictEqual(replyStr, reply.toString());
+
+  });
+
 });
 
 describe('stream()', () => {

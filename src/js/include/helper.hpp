@@ -58,4 +58,14 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(
     const ov::genai::EmbeddingResults embedding_result
 );
 
+/** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<std::string> */
+template <>
+Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& env,
+                                                             const std::vector<std::string> value);
+
+/** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<float> */
+template <>
+Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env,
+                                                             const std::vector<float> value);
+
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);

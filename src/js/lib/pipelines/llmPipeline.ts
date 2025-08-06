@@ -8,6 +8,40 @@ export type Options = {
   'max_new_tokens'?: number
 };
 
+class DecodedResults {
+  constructor(texts: string[] = [],
+    scores: number[] = [],
+    perfMetrics: any = {}) {
+    this.texts = texts;
+    this.scores = scores;
+    this.perfMetrics = perfMetrics;
+  }
+  toString() {
+    if (this.scores.length !== this.texts.length) {
+      throw new Error(
+        'The number of scores and texts doesn\'t match in DecodedResults.',
+      );
+    }
+    if (this.texts.length === 0) {
+      return '';
+    }
+    if (this.texts.length === 1) {
+      return this.texts[0];
+    }
+    let result = '';
+    for (let i = 0; i < this.texts.length - 1; ++i) {
+      result += `${this.scores[i].toFixed(6)}: ${this.texts[i]}\n`;
+    }
+    result += `${this.scores[this.scores.length - 1]
+      .toFixed(6)}: ${this.texts[this.texts.length - 1]}`;
+
+    return result;
+  }
+  texts: string[];
+  scores: number[];
+  perfMetrics: any;
+}
+
 export class LLMPipeline {
   modelPath: string | null = null;
   device: string | null = null;
@@ -136,14 +170,25 @@ export class LLMPipeline {
     if (!callback) {
       options['disableStreamer'] = true;
     }
+    const returnDecoded = generationConfig['return_decoded_results'] || false;
 
     return new Promise(
-      (resolve: (value: string) => void) => {
-        const chunkOutput = (isDone: boolean, subword: string) => {
+      (resolve: (value: string | DecodedResults) => void) => {
+        const chunkOutput = (isDone: boolean, result: string | any) => {
           if (isDone) {
-            resolve(subword);
-          } else if (callback) {
-            return callback(subword);
+            const decodedResults = new DecodedResults(
+              result.texts, result.scores, result.perfMetrics);
+            if (returnDecoded) {
+              resolve(decodedResults);
+            } else {
+              console.warn('From 2026.0.0 LLMPipeline.generate() will return',
+                '"DecodedResults" object. "string" will be returned for',
+                'prompt: "string" and GenerationConfig.num_return_sequences:',
+                '1.\n');
+              resolve(result.subword);
+            }
+          } else if (callback && typeof result === 'string') {
+            return callback(result);
           }
 
           return StreamingStatus.RUNNING;
