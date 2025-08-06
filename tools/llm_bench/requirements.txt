@@ -16,6 +16,5 @@ packaging
 psutil
 timm
 tiktoken
-transformers>=4.52.1,<4.53
 librosa # For Whisper
 matplotlib
