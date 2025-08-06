@@ -26,7 +26,7 @@ def run_wwb(args):
             stderr=subprocess.STDOUT,
             encoding="utf-8",
             text=True,
-            env={"TRANSFORMERS_VERBOSITY": 'debug', "PYTHONIOENCODING": "utf-8", **os.environ},
+            env={"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ},
         )
     except subprocess.CalledProcessError as error:
         logger.error(
