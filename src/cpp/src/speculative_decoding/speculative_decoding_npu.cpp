@@ -241,23 +241,24 @@ ov::Tensor LLMInferWrapper::infer_next_internal(const std::vector<int64_t> token
     // }
 
     auto input_ids = m_request.get_tensor("input_ids");
-    input_ids.set_shape({BATCH_SIZE, tokens_size});
-    std::copy_n(tokens.begin(), tokens_size, input_ids.data<int64_t>());
+    ov::Tensor new_input_ids(input_ids.get_element_type(), ov::Shape{BATCH_SIZE, tokens_size});
+    std::copy_n(tokens.begin(), tokens_size, new_input_ids.data<int64_t>());
+    m_request.set_tensor("input_ids", new_input_ids);
 
     // FIXME: For model with static shapes we can just copy after
     //        the prefilled tokens, no reshape is needed.
     auto attention_mask = m_request.get_tensor("attention_mask");
-    std::vector<int64_t> attention_mask_copy(attention_mask.data<int64_t>(),
-        attention_mask.data<int64_t>() + m_num_processed_tokens);
-    attention_mask.set_shape({BATCH_SIZE, m_num_processed_tokens + tokens_size});
-    std::copy_n(attention_mask_copy.begin(), m_num_processed_tokens, attention_mask.data<int64_t>());
-    std::fill_n(attention_mask.data<int64_t>() + m_num_processed_tokens, tokens_size, 1);
+    ov::Tensor new_attention_mask(attention_mask.get_element_type(), ov::Shape{BATCH_SIZE, m_num_processed_tokens + tokens_size});
+    std::copy_n(attention_mask.data<int64_t>(), m_num_processed_tokens, new_attention_mask.data<int64_t>());
+    std::fill_n(new_attention_mask.data<int64_t>() + m_num_processed_tokens, tokens_size, 1);
+    m_request.set_tensor("attention_mask", new_attention_mask);
 
     auto position_ids = m_request.get_tensor("position_ids");
-    position_ids.set_shape({BATCH_SIZE, tokens_size});
-    std::iota(position_ids.data<int64_t>(),
-              position_ids.data<int64_t>() + position_ids.get_size(),
+    ov::Tensor new_position_ids(position_ids.get_element_type(), ov::Shape{BATCH_SIZE, tokens_size});
+    std::iota(new_position_ids.data<int64_t>(),
+              new_position_ids.data<int64_t>() + new_position_ids.get_size(),
               m_num_processed_tokens);
+    m_request.set_tensor("position_ids", new_position_ids);
 
     m_request.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     m_request.get_tensor("beam_idx").data<int32_t>()[0] = 0;
@@ -284,8 +285,7 @@ void LLMInferWrapper::set_already_allocated_input_for_1_token() {
     m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&m_new_position_id)));
 }
 
-// FIXME: It is wrong way to sample tokens, or right because of set output_seq_len in the sequence?
-// get_generated_ids will return all ids?
+// FIXME: Need to use Sampler correctly. Sampler does all the validation itself! Just needs to configure it correctly.
 std::variant<int64_t, std::vector<int64_t>>
     LLMInferWrapper::sample_tokens(const ov::Tensor& logits, std::size_t num_tokens_to_return) {
     OPENVINO_ASSERT(m_sequence_group, "sample_tokens() can be called only after infer_first()!");
@@ -298,7 +298,6 @@ std::variant<int64_t, std::vector<int64_t>>
         return sampled_tokens.back();
     } else {
         // FIXME condition can be switched to boolean?
-        OPENVINO_ASSERT(num_tokens_to_return == sampled_tokens.size());
         return sampled_tokens;
     }
 }
@@ -500,8 +499,8 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
 
     // To collect KV-cache for the prompt and to get the next token, run the very first infer request
     // for draft and main models:
-    m_draft_request->infer_first(input_ids, attention_mask, position_ids);
     auto out_token = m_main_request->infer_first(input_ids, attention_mask, position_ids);
+    m_draft_request->infer_first(input_ids, attention_mask, position_ids);
 
     // logits shape is [BATCH_SIZE, seq_len, vocab_size]
     auto draft_logits = m_draft_request->get_logits();
@@ -585,8 +584,8 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         // For the main network, candidates_size + 1 tokens will be fed at once in a single infer request:
         // last token from previous main inference + all candidates from the draft stage
         // FIXME: How max_seq_length will be handled?
-        auto input_for_main = candidates;
-        input_for_main.insert(candidates.begin(), out_token);
+        std::vector<int64_t> input_for_main(candidates.begin(), candidates.end());
+        input_for_main.insert(input_for_main.begin(), {out_token});
         // TODO: Handle OOM exception for static model here.
         auto ref_out_tokens = m_main_request->infer_next_return_all(input_for_main);
 
