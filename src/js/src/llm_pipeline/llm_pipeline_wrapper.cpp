@@ -26,7 +26,8 @@ Napi::Object create_decoded_results_object(Napi::Env env, const ov::genai::Decod
     obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, result.texts));
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, result.scores));
     const auto& metrics_prototype = env.GetInstanceData<AddonData>()->perf_metrics;
-    obj.Set("perf_metrics", metrics_prototype.New({}));
+    OPENVINO_ASSERT(metrics_prototype, "Invalid pointer to prototype.");
+    obj.Set("perfMetrics", metrics_prototype.New({}));
     obj.Set("subword", Napi::String::New(env, result));
     return obj;
 }

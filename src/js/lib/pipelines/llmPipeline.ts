@@ -175,18 +175,16 @@ export class LLMPipeline {
     return new Promise(
       (resolve: (value: string | DecodedResults) => void) => {
         const chunkOutput = (isDone: boolean, result: string | any) => {
-          if (isDone) {
+          if (isDone && returnDecoded) {
             const decodedResults = new DecodedResults(
               result.texts, result.scores, result.perfMetrics);
-            if (returnDecoded) {
-              resolve(decodedResults);
-            } else {
-              console.warn('From 2026.0.0 LLMPipeline.generate() will return',
-                '"DecodedResults" object. "string" will be returned for',
-                'prompt: "string" and GenerationConfig.num_return_sequences:',
-                '1.\n');
-              resolve(result.subword);
-            }
+            resolve(decodedResults);
+          } else if (isDone && !returnDecoded) {
+            console.warn('From 2026.0.0 LLMPipeline.generate() will return',
+              '"DecodedResults" object. "string" will be returned for',
+              'prompt: "string" and GenerationConfig.num_return_sequences:',
+              '1.\n');
+            resolve(result.subword);
           } else if (callback && typeof result === 'string') {
             return callback(result);
           }
