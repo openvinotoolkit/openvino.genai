@@ -1,4 +1,3 @@
-import subprocess  # nosec B404
 import os
 import shutil
 import tempfile

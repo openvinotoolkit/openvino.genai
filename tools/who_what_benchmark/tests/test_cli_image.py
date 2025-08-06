@@ -29,8 +29,10 @@ def run_wwb(args):
             env={"TRANSFORMERS_VERBOSITY": 'debug', "PYTHONIOENCODING": "utf-8", **os.environ},
         )
     except subprocess.CalledProcessError as error:
-        logger.error(f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n"
-            f"{error.output}")
+        logger.error(
+            f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n"
+            f"{error.output}"
+        )
         raise
 
 
