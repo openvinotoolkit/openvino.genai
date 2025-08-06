@@ -21,8 +21,9 @@ class WhisperHook:
         for data in self.time_data:
             if 'enc_token_time' in data:
                 first_token_latency += data['enc_token_time']
-            if data.get('dec_token_time'):
-                logger.warning('Ignored nonempty dec_token_time')
+            if 'dec_token_time' in data:
+                first_token_latency += data['dec_token_time'][0]
+                self.tm_list.extend(copy.deepcopy(data['dec_token_time'][1:]))
         self.tm_list.insert(0, first_token_latency)
         return self.tm_list
 
@@ -31,8 +32,9 @@ class WhisperHook:
         for data in self.time_data:
             if 'enc_infer_time' in data:
                 first_infer_latency += data['enc_infer_time']
-            if data.get('dec_infer_time'):
-                logger.warning('Ignored nonempty dec_infer_time')
+            if 'dec_infer_time' in data:
+                first_infer_latency += data['dec_infer_time'][0]
+                self.tm_infer_list.extend(copy.deepcopy(data['dec_infer_time'][1:]))
         self.tm_infer_list.insert(0, first_infer_latency)
         return self.tm_infer_list
 
@@ -43,8 +45,15 @@ class WhisperHook:
             if 'enc_token_time' and 'enc_infer_time' in data:
                 latency_data['enc_token_time'] = round(data['enc_token_time'] * 1000, 2)
                 latency_data['enc_infer_time'] = round(data['enc_infer_time'] * 1000, 2)
-            if data.get('dec_token_time'):
-                logger.warning('Ignored nonempty dec_token_time')
+            if 'dec_token_time' in data:
+                dec_token_count = len(data['dec_token_time'])
+                dec_infer_count = len(data['dec_infer_time'])
+                latency_data['dec_token_count'] = dec_token_count
+                latency_data['dec_infer_count'] = dec_infer_count
+                latency_data['dec_1st_token_time'] = round(data['dec_token_time'][0] * 1000, 2) if dec_token_count > 0 else 'NA'
+                latency_data['dec_2nd_tokens_time'] = round(sum(data['dec_token_time'][1:]) * 1000 / (dec_token_count - 1), 2) if dec_token_count > 1 else 'NA'
+                latency_data['dec_1st_infer_time'] = round(data['dec_infer_time'][0] * 1000, 2) if dec_infer_count > 0 else 'NA'
+                latency_data['dec_2nd_infers_time'] = round(sum(data['dec_infer_time'][1:]) * 1000 / (dec_infer_count - 1), 2) if dec_infer_count > 1 else 'NA'
             self.latency_list.append(latency_data)
 
     def print_whisper_latency(self, iter, prompt_idx):
@@ -124,7 +133,7 @@ class WhisperHook:
     def set_decoder_time_data(self):
         if self.enc_infer_count > 0:
             prev_loop_data = self.time_data[self.enc_infer_count - 1]
-            if self.greedy_hook is not None:
+            if self.greedy_hook is not None and (self.greedy_hook.get_time_list() or self.greedy_hook.get_time_infer_list()):
                 prev_loop_data['dec_token_time'] = copy.deepcopy(self.greedy_hook.get_time_list())
                 prev_loop_data['dec_infer_time'] = copy.deepcopy(self.greedy_hook.get_time_infer_list())
                 self.greedy_hook.clear_time_list()
