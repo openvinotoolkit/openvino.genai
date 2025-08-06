@@ -14,6 +14,10 @@ langchain_community==0.3.27
 langchain-core==0.3.72
 
 # requirements for specific models
+einops==0.8.1
+# - openbmb/MiniCPM-V-2
+torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
+torchvision==0.23.0; not (platform_system == "Darwin" and platform_machine == "x86_64")
 # - openai/whisper-base
 librosa==0.11.0
 soundfile==0.13.1
