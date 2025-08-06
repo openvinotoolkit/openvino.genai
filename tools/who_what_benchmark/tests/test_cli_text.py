@@ -68,7 +68,6 @@ def test_text_target_model():
 @pytest.fixture
 def test_text_gt_data(tmp_path):
     temp_file_name = tmp_path / "gt.csv"
-    temp_file_name = tmp_path / "gt.csv"
     run_wwb([
         "--base-model",
         base_model_path,
