@@ -19,10 +19,10 @@ def test_vlm_basic(model_id, model_type, tmp_path):
     MODEL_PATH = tmp_path / model_id.replace("/", "--")
 
     result = subprocess.run(["optimum-cli", "export",
-                                "openvino", "-m", model_id,
-                                MODEL_PATH, "--task",
-                                "image-text-to-text",
-                                "--trust-remote-code"],
+                             "openvino", "-m", model_id,
+                             MODEL_PATH, "--task",
+                             "image-text-to-text",
+                             "--trust-remote-code"],
                             capture_output=True,
                             text=True,
                             )
