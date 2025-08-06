@@ -462,8 +462,8 @@ models_with_pair_input = make_model_params()
 ]])
 def test_two_inputs_string_list_of_lists_batched(hf_ov_genai_models, input_pair):
     # Check with batched inputs: list of [str, str] pairs, consistent with HF format.
-    hf_tokenizer, genai_tokenzier = hf_ov_genai_models
-    ov_encoded = genai_tokenzier.encode(input_pair).input_ids.data
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+    ov_encoded = genai_tokenizer.encode(input_pair).input_ids.data
     hf_encoded = hf_tokenizer(input_pair, return_tensors="np", padding=True)["input_ids"]
     assert np.all(ov_encoded == hf_encoded)
 

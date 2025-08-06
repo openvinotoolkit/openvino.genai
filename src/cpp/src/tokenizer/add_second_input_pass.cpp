@@ -99,6 +99,7 @@ bool AddSecondInputPass::parse_and_assert_postprocessor(const std::shared_ptr<ov
 
     if (post_processor["single"]["ids"].get<std::vector<int>>() != input_signature) {
         m_pass_errors << "Could not add second input. Input signature from rt_info does not match to the CombineSegments node inputs." << std::endl;
+        return false;
     }
 
     auto pair_ids = post_processor["pair"]["ids"].get<std::vector<int>>();
@@ -131,6 +132,7 @@ void AddSecondInputPass::insert_splits() {
     auto it = std::find(input_signature.begin(), input_signature.end(), -1);
     if (it == input_signature.end()) {
         m_pass_errors << "No sequence input found in input_signature" << std::endl;
+        return;
     }
     size_t first_input_idx = std::distance(input_signature.begin(), it);
 
@@ -231,6 +233,7 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
     auto it = std::find(input_signature.begin(), input_signature.end(), -1);
     if (it == input_signature.end()) {
         m_pass_errors << "No sequence input found in input_signature" << std::endl;
+        return {};
     }
     size_t first_input_idx = std::distance(input_signature.begin(), it);
     std::copy(first_input.begin(), first_input.end(), new_inputs.begin() + 3 * first_input_idx);
@@ -325,6 +328,7 @@ bool AddSecondInputPass::run_on_model(const std::shared_ptr<ov::Model>& model) {
     }
     auto str_unpack = target_inputs.begin()->get_node();
     if (std::string(str_unpack->get_type_name()) != "StringTensorUnpack") {
+        m_pass_errors << "Expected node type 'StringTensorUnpack', but got '" << str_unpack->get_type_name() << "'.\n";
         return false;
     }
 
