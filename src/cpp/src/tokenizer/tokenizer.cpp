@@ -134,6 +134,7 @@ std::string patch_template(std::string&& chat_template) {
         {"'}", "' }"},
         {"{'", "{ '"},
         {".strip()", ""},
+        {".upper()", " | upper"},
         {"is not none", "is defined"},
         {"is none", "is undefined"},
         {"= none", "= undefined"},
