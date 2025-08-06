@@ -162,6 +162,11 @@ void FastGreedyDPP::update_marginal_gains(size_t iteration, size_t selected_idx,
     
     // Update marginal gains for all tokens
     for (size_t j = 0; j < total_tokens; ++j) {
+        // Skip updating if this token is already selected (marked as negative infinity)
+        if (di2s_data[j] == -std::numeric_limits<float>::infinity()) {
+            continue;
+        }
+        
         size_t cis_idx = iteration * total_tokens + j;
         float eis_j = cis_data[cis_idx];
         
