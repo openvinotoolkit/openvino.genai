@@ -173,7 +173,7 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     # test w/o models
     run_wwb([
         "--target-data",
-        tmp_path/ "target.csv",
+        tmp_path / "target.csv",
         "--num-samples",
         "1",
         "--gt-data",
