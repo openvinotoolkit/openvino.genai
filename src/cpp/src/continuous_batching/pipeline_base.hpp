@@ -132,7 +132,7 @@ public:
             const std::vector<GenerationConfig>& sampling_params,
             const StreamerVariant& streamer,
             const std::optional<std::vector<ov::Tensor>>& token_type_ids) {
-        throw std::runtime_error("token_type_ids generation not supported by this implementation");
+        OPENVINO_THROW("token_type_ids generation not supported by this implementation");
     }
     
     /**
