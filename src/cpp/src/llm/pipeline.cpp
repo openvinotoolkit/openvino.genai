@@ -115,12 +115,16 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
+    // First -> check draft model. for NPU leave it as is for the main model.
+    // if NPU
+    // if draft model is on NPU
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (utils::explicitly_requires_paged_attention(user_properties)) {
+    if (device == "NPU") {
+        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(models_path, properties);
+    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
-    } else if (device == "NPU") {
-        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(models_path, properties);
+
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
