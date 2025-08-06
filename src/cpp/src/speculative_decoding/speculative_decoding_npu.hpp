@@ -60,14 +60,13 @@ private:
     ov::genai::GenerationConfig m_generation_config;
     ov::genai::Tokenizer m_tokenizer;
 
+    std::size_t m_max_prompt_len = 0u;
+    std::size_t m_kvcache_total = 0u;
+    std::size_t m_first_prompt_len = 0u;
     std::size_t m_num_processed_tokens = 0u;
-    uint32_t m_max_prompt_len = 0u;
-    uint32_t m_kvcache_total = 0u;
+    int64_t last_token = -1;
     ov::genai::utils::KVAxesPosition m_kv_pos;
     ov::InferRequest m_request;
-    ov::genai::Sampler m_sampler;
-    std::shared_ptr<ov::genai::SequenceGroup> m_sequence_group = nullptr;
-    GenerationHandle m_handle = nullptr;
     // Separate metrics?
 
     // Data placeholder for 1-token inference:
