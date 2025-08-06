@@ -13,6 +13,8 @@ langchain_community==0.3.27
 langchain-core==0.3.72
 
 # requirements for specific models
+# - Qwen/Qwen-7B
+# - Qwen/Qwen-7B-Chat
 einops==0.8.1
 # - openbmb/MiniCPM-V-2
 torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
