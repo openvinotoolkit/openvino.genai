@@ -366,45 +366,224 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::SpeculativeDecodingI
 }
 // end of speculative_decoding_impl
 
-std::shared_ptr<ov::Model> extract_hidden_state_generic(std::shared_ptr<ov::Model> model,
+void extract_hidden_state_generic(std::shared_ptr<ov::Model>& model,
                                                        const std::string& eagle_version,
                                                        const std::string& model_type,
                                                        const std::string& custom_node_name = "") {
-    if (eagle_version == "EAGLE2") {
-        std::string target_node_name = custom_node_name.empty() ? "aten::div/Divide" : custom_node_name;
-        std::shared_ptr<ov::Node> target_node = nullptr;
+    if (eagle_version == "EAGLE2" || model_type == "draft") { // for draft model, we always only need to extract last hidden state
+        std::cout << model_type << " model - last hidden state extraction" << std::endl;
+        ov::pass::Manager pm;
+        std::vector<int> layers = {-1}; // -1 means last hidden layer
+        pm.register_pass<EagleModelTransform>(layers);
+        pm.run_passes(model);
+    } else if (eagle_version == "EAGLE3") {
+        std::cout << model_type << " model - Eagle 3 hidden state extraction" << std::endl;
+        ov::pass::Manager pm;
+        /*if idx==len(self.layers)-3 or idx==len(self.layers)//2 or idx==2:
+            all_hidden_states += (hidden_states,)*/
+        std::vector<int> layers = {2, 16, 31}; // need to add check, only support positive values
+        pm.register_pass<EagleModelTransform>(layers);
+        pm.run_passes(model);
+    } else {
+        std::cerr << "Error: " << model_type << " model - Unsupported eagle version: " << eagle_version << std::endl;
+    }
+}
+
+EagleModelTransform::EagleModelTransform(const std::vector<int>& layers) : m_layer_ids(layers) {
+}
+
+bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) {
+    //m_model = model;
+    m_new_results.clear();
+    if (m_layer_ids.size() == 1 && m_layer_ids[0] == -1) {
+        ov::pass::Manager manager;
+        manager.set_per_pass_validation(false);
+        manager.register_pass<EagleBaseTransform>(m_layer_ids, m_new_results);
+        manager.run_passes(model);
         
-        for (const auto& node : model->get_ops()) {
-            if (node->get_friendly_name() == target_node_name) {
-                target_node = node;
+        if (!m_new_results.empty()) {
+            model->add_results(m_new_results);
+            std::cout << "EagleModelTransform - Added last hidden output " << std::endl;
+            return true;
+        }
+    } else {
+        ov::pass::Manager manager;
+        manager.set_per_pass_validation(false);
+        manager.register_pass<Eagle3Transform>(m_layer_ids, m_hidden_layer_outputs);
+        manager.run_passes(model);
+        
+        if (!m_hidden_layer_outputs.empty()) {
+            std::cout << "EagleModelTransform - extracted intermediate hidden state outputs " << std::endl;
+            auto concat = std::make_shared<ov::op::v0::Concat>(m_hidden_layer_outputs, -1);
+            concat->set_friendly_name("eagle3_hidden_states_concat");
+            
+            auto result = std::make_shared<ov::op::v0::Result>(concat);
+            result->set_friendly_name("last_hidden_state");
+            model->add_results({result});
+            
+            std::cout << "EagleModelTransform - Added concated eagle3 hidden state output" << std::endl;
+            return true;
+        }
+    }
+    
+    return false;
+}
+EagleBaseTransform::EagleBaseTransform(const std::vector<int>& layers, std::vector<std::shared_ptr<ov::op::v0::Result>>& results) : m_layers(layers) {
+    register_matcher(
+        std::make_shared<ov::pass::pattern::Matcher>(ov::pass::pattern::wrap_type<v0::Result>(), this->get_type_info().name),
+        ([&results, this](ov::pass::pattern::Matcher& m) {
+            auto node = m.get_match_root();
+            try {
+                if (apply(node, results)) {
+                    ++applied; // FIXME: For debugging purposes only
+                    return true;
+                }
+            } catch (...) {
+                OPENVINO_ASSERT(false, "EagleTransform failed to apply");
+            }
+            return false;
+        })
+    );
+}
+
+std::shared_ptr<ov::Node> EagleBaseTransform::find_last_hidden_node(const std::shared_ptr<ov::Node>& start_node, 
+                                                               std::set<ov::Node*>& visited_nodes) {
+    if (visited_nodes.count(start_node.get())) {
+        return nullptr;
+    }
+
+    visited_nodes.insert(start_node.get());
+
+    if (ov::is_type<ov::op::v0::MatMul>(start_node)) {
+        // check the input nodes of MatMul, if found Gather node, return the gather node, otherwise ,retrun the matmul node
+        for (size_t i = 0; i < start_node->get_input_size(); ++i) {
+            auto input_node = start_node->get_input_node_shared_ptr(i);
+            if (!input_node) continue;
+            // rule out logit processing node
+            if (ov::as_type_ptr<op::util::GatherBase>(input_node)) {
+                return input_node;
+            }
+        }
+        return start_node;
+    }
+    
+    for (size_t i = 0; i < start_node->get_input_size(); ++i) {
+        auto input_node = start_node->get_input_node_shared_ptr(i);
+        if (!input_node) continue;
+        
+        auto result = find_last_hidden_node(input_node, visited_nodes);
+        if (result) {
+            return result;
+        }
+    }
+    return nullptr;
+}
+
+std::shared_ptr<ov::Node> EagleBaseTransform::find_last_hidden_node(const std::shared_ptr<ov::Node>& start_node) {
+    std::set<ov::Node*> visited_nodes;
+    return find_last_hidden_node(start_node, visited_nodes);
+}
+
+bool EagleBaseTransform::apply(NodePtr node, std::vector<std::shared_ptr<ov::op::v0::Result>>& results) {
+    if (ov::is_type<ov::op::v0::Result>(node)) {
+        // we are applying transformation to the last hidden state, eagle2 mode
+        NodePtr input_node = node->get_input_node_shared_ptr(0);
+        if (!input_node) {
+            return false;
+        }
+        auto last_hidden_node = find_last_hidden_node(input_node);
+        if (!last_hidden_node) {
+            return false;
+        }
+        // 
+        std::shared_ptr<ov::Node> non_const_input = nullptr;
+        size_t non_const_input_idx = 0;
+        
+        for (size_t i = 0; i < last_hidden_node->get_input_size(); ++i) {
+            auto input_node = last_hidden_node->get_input_node_shared_ptr(i);
+            if (!input_node) continue;
+            
+            if (!(ov::is_type<ov::op::v0::Constant>(input_node)) && !(ov::is_type<ov::op::v0::Convert>(input_node))) {
+                non_const_input = input_node;
+                non_const_input_idx = i;
                 break;
             }
         }
         
-        if (target_node == nullptr) {
-            return model;
+        if (!non_const_input) {
+            return false;
+        }
+        
+        auto result = std::make_shared<ov::op::v0::Result>(last_hidden_node->input_value(non_const_input_idx));
+        std::string output_name = "last_hidden_state";
+        result->output(0).set_names({output_name});
+        result->set_friendly_name(output_name);
+        results.push_back(result);
+        return true;
+    }
+    return false;
+}
+
+Eagle3Transform::Eagle3Transform(const std::vector<int>& layers, std::vector<Output<Node>>& hidden_state_outputs) : m_layers(layers) {
+    auto is_target_pattern = [&](const Output<Node>& output) {
+        auto add_node = ov::as_type_ptr<ov::op::v1::Add>(output.get_node_shared_ptr());
+        auto add_node_name = add_node->get_friendly_name();
+        if (add_node_name.find("self_attn") != std::string::npos)
+            return false; // Skip self-attention layers
+        bool layer_matched = false;
+        for (auto layer_idx : m_layers) {
+            if (add_node_name.find("layers." + std::to_string(layer_idx) + "/") != std::string::npos) {
+                layer_matched = true;
+                break;
+            }
         }
 
-        auto hidden = std::make_shared<ov::op::v0::Result>(target_node);
-        std::string output_name = "last_hidden_state";
-        hidden->output(0).set_names({output_name});
-        hidden->set_friendly_name(output_name);
-        
-        ov::OutputVector new_outputs = model->outputs();
-        new_outputs.push_back(hidden->output(0));
-        
-        return std::make_shared<ov::Model>(new_outputs, model->get_parameters());
-        
-    } else if (eagle_version == "EAGLE3") {
-        std::cout << model_type << " model - Eagle 3 hidden state extraction: TBD" << std::endl;
-        // TODO: Eagle 3 implementation
-        return model;
-        
-    } else {
-        std::cerr << "Error: " << model_type << " model - Unsupported eagle version: " << eagle_version << std::endl;
-        return model;
-    }
+        if (!layer_matched) {
+            return false; // Skip layers that are not in the specified layers
+        }
+        auto input0 = add_node->get_input_node_shared_ptr(1);
+        if (!input0 || !ov::is_type<ov::op::v0::MatMul>(input0)) {
+            return false;
+        }
+        auto matmul_node = input0;
+        auto matmul_input = matmul_node->get_input_node_shared_ptr(0);
+        if (!matmul_input) {
+            return false;
+        }
+
+        bool has_multiply = ov::is_type<ov::op::v1::Multiply>(matmul_input); // ACT(up) dot gate
+        return has_multiply;    
+    };
+
+    auto hidden_layer = ov::pass::pattern::wrap_type<ov::op::v1::Add>(is_target_pattern);
+    register_matcher(std::make_shared<ov::pass::pattern::Matcher>(hidden_layer, "Eagle3Transform::hidden_extraction"),
+        [&hidden_state_outputs, this](ov::pass::pattern::Matcher& m) {
+            auto node = m.get_match_root();
+            try {
+                if (apply(node, hidden_state_outputs)) {
+                    ++applied; // FIXME: For debugging purposes only
+                    return true;
+                }
+            } catch (...) {
+                OPENVINO_ASSERT(false, "Eagle3Transform failed to apply");
+            }
+            return false;
+        }
+    );
 }
+
+bool Eagle3Transform::apply(NodePtr node, std::vector<Output<Node>>& hidden_state_outputs) {
+    if (ov::is_type<ov::op::v1::Add>(node)) {
+        auto add_node = std::dynamic_pointer_cast<ov::op::v1::Add>(node);
+        if (!add_node) {
+            return false;
+        }
+        hidden_state_outputs.push_back(add_node->output(0));
+        return true;
+    }
+    return false;
+}
+
 
 ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                                  const ov::genai::ModelDesc& draft_model_desc,
@@ -477,18 +656,18 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
     // apply transformations needed to run eagle model
     // target model: hidden state extraction, draft model: hidden state import , hidden state extraction
     // eagle3 specific : dt importing
-    std::shared_ptr<ov::Model> new_main_model = extract_hidden_state_generic(main_model, m_eagle_version, "main", "aten::div/Divide");
-    std::shared_ptr<ov::Model> new_draft_model = extract_hidden_state_generic(draft_model, m_eagle_version, "draft", "aten::div/Divide");
+    extract_hidden_state_generic(main_model, m_eagle_version, "main", "");
+    extract_hidden_state_generic(draft_model, m_eagle_version, "draft", "");
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
-    m_main_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(new_main_model,
+    m_main_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(main_model,
                                                                                main_model_tokenizer,
                                                                                main_model_desc.generation_config,
                                                                                main_scheduler_config_updated,
                                                                                main_device,
                                                                                main_model_desc.properties,
                                                                                true);
-    m_draft_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(new_draft_model,
+    m_draft_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(draft_model,
                                                                                 draft_model_tokenizer,
                                                                                 draft_model_desc.generation_config,
                                                                                 draft_scheduler_config,
