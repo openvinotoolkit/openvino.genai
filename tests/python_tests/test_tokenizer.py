@@ -46,12 +46,12 @@ def get_chat_templates():
         "codellama/CodeLlama-34b-Instruct-hf",
         "deepseek-ai/deepseek-math-7b-rl",
         "allenai/tulu-2-7b",
-        "alexsobolev/IcaroLM",
+        "alexsobolev/IcaroLM",  # jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'value'
         "tokyotech-llm/Swallow-7b-instruct-v0.1",
         "bofenghuang/vigogne-2-7b-chat",
         "OpenBuddy/openbuddy-mistral2-7b-v20.3-32k",
-        "AliAbdelrasheed/maqa_llama_4bit",
-        "stephenlzc/Mistral-7B-v0.3-Chinese-Chat-uncensored",
+        "AliAbdelrasheed/maqa_llama_4bit",  # jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'from'
+        "stephenlzc/Mistral-7B-v0.3-Chinese-Chat-uncensored",  # jinja2.exceptions.UndefinedError: 'system_message' is undefined
         # TODO: Need to support chat templates in more models: CVS-145963
         # Either ov_genai is unable to parse chat_template or results do not match with HF.
         "meta-llama/Meta-Llama-3-8B-Instruct",
@@ -596,7 +596,6 @@ def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(
 @dataclasses.dataclass(frozen=True)
 class ChatTemplates:
     reference: Optional[str]
-    rt_simplified: Optional[str]
     rt_template: Optional[str]
     chat_template_json: Optional[str]
     processor_config_json: Optional[str]
@@ -612,8 +611,6 @@ def generate_tokenizer(tmp_path, chat_templates):
         [openvino.op.Result(input_ids), openvino.op.Result(attention_mask)],
         [openvino.op.Parameter(openvino.Type.string, openvino.Shape([1]))],
     )
-    if chat_templates.rt_simplified is not None:
-        model.set_rt_info(chat_templates.rt_simplified, "simplified_chat_template")
     if chat_templates.rt_template is not None:
         model.set_rt_info(chat_templates.rt_template, "chat_template")
     if chat_templates.chat_template_json is not None:
@@ -635,12 +632,6 @@ QWEN2_VL_2B = "{% if messages is string %}{{ messages }}{% else %}{% for content
 SIMPLIFIED_QWEN2_VL_2B = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
 
 
-SIMPLIFIED_QWEN3 = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
-
-
-PATCHED_SIMPLIFIED_QWEN3 = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
-
-
 @pytest.mark.precommit
 def test_set_special_runtime_template(tmp_path):
     tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None, None))
@@ -652,18 +643,12 @@ def test_set_special_runtime_template(tmp_path):
 @pytest.mark.parametrize(
     "chat_templates",
     [
-        # If the template was not in the list of not supported GenAI templates from (5), it's replaced with simplified_chat_template entry from rt_info section of ov::Model:
-        ChatTemplates("correct template", "correct template", "", "", "", ""),
-        ChatTemplates("correct template", None, "correct template", "", "", ""),
-        ChatTemplates("correct template", None, None, "correct template", "", ""),
-        ChatTemplates("correct template", None, None, None, "correct template", ""),
-        ChatTemplates("correct template", None, None, None, None, "correct template"),
+        ChatTemplates("correct template", "correct template", "", "", ""),
+        ChatTemplates("correct template", None, "correct template", "", ""),
+        ChatTemplates("correct template", None, None, "correct template", ""),
+        ChatTemplates("correct template", None, None, None, "correct template"),
         # If the template is known to be not supported by GenAI, it's replaced with a simplified supported version:
-        ChatTemplates(SIMPLIFIED_QWEN2_VL_2B, "", QWEN2_VL_2B, "", "", ""),
-        # Replace not supported instructions with equivalents in chat_template rt_info:
-        ChatTemplates(PATCHED_SIMPLIFIED_QWEN3, None, SIMPLIFIED_QWEN3, "", "", ""),
-        # Replace not supported instructions with equivalents in simplified_chat_template rt_info:
-        ChatTemplates(PATCHED_SIMPLIFIED_QWEN3, SIMPLIFIED_QWEN3, "", "", "", ""),
+        ChatTemplates(SIMPLIFIED_QWEN2_VL_2B, QWEN2_VL_2B, "", "", ""),
     ],
 )
 def test_template_priorities(tmp_path, chat_templates):
