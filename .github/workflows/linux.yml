@@ -900,9 +900,10 @@ jobs:
       - name: Install dependencies
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: openvino;openvino_tokenizers[transformers];pytest
+          packages: openvino;openvino_tokenizers[transformers]
           requirements_files: "${{ env.SRC_DIR }}/samples/export-requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+      - run: python -m pip install pytest
 
       - name: Run test_llm_pipeline.py when -DENABLE_XGRAMMAR=OFF
         env:

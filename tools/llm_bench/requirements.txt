@@ -10,7 +10,7 @@ torch
 transformers[sentencepiece]>=4.40.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
-optimum-intel[nncf]>=1.19.0
+optimum-intel[nncf]>=1.25.0
 packaging
 psutil
 timm
