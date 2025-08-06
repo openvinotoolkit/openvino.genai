@@ -286,7 +286,6 @@ TEST(AddSecondInputTest, error_post_processor_no_pair) {
     std::ostringstream pass_errors;
     bool ok = run_add_second_input_pass(model, pass_errors);
     ASSERT_FALSE(ok);
-    std::cout << pass_errors.str() << std::endl;
     ASSERT_NE(pass_errors.str().find("Could not add second input. post_processor does not contain input signature for paired input"), std::string::npos);
 }
 
@@ -321,7 +320,7 @@ TEST(AddSecondInputTest, error_post_processor_pair_not_widening) {
     std::ostringstream pass_errors;
     bool ok = run_add_second_input_pass(model, pass_errors);
     ASSERT_FALSE(ok);
-    ASSERT_NE(pass_errors.str().find("Paried inputs are allowed only when it's widening the single input"), std::string::npos);
+    ASSERT_NE(pass_errors.str().find("Paired inputs are allowed only when it's widening the single input"), std::string::npos);
 }
 
 // 9. parse_and_assert_postprocessor: not exactly 2 sequence inputs in pair

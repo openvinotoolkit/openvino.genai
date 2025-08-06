@@ -395,11 +395,7 @@ public:
             is_paired_input = true;
         }
 
-
-        if (two_input_requested && !is_paired_input) {
-            OPENVINO_THROW("Two input requested but AddSecondInputPass failed with " + m_pass_errors.str());
-        }
-
+        OPENVINO_ASSERT(!two_input_requested || is_paired_input, "Two input requested but AddSecondInputPass failed with " + m_pass_errors.str());
 
         // temporary allow absense both tokenizer and detokenizer for GGUF support
         // TODO: remove this code once Tokenizers can be created from GGUF file

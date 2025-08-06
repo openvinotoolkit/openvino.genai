@@ -451,7 +451,23 @@ def make_model_params():
 
 models_with_pair_input = make_model_params()
 
-# TODO: add cases for batched inputs
+@pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
+@pytest.mark.precommit
+@pytest.mark.parametrize("input_pair", [[
+    ["hi", "sun in yellow"],
+    ["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!"],
+    ["Eng... test, string?!", "Multiline\nstring!\nWow!" * 100],
+    ["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!" * 100],
+    ["hi" * 20, "buy" * 90],
+]])
+def test_two_inputs_string_list_of_lists_batched(hf_ov_genai_models, input_pair):
+    # Check with batched inputs: list of [str, str] pairs, consistent with HF format.
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models
+    ov_encoded = genai_tokenzier.encode(input_pair).input_ids.data
+    hf_encoded = hf_tokenizer(input_pair, return_tensors="np", padding=True)["input_ids"]
+    assert np.all(ov_encoded == hf_encoded)
+
+# Original single batch cases
 @pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
 @pytest.mark.precommit
 @pytest.mark.parametrize("input_pair", [

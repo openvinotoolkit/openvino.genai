@@ -3,6 +3,8 @@
 #include "openvino/core/model.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
 
+namespace ov::genai {
+
 /**
  * @class AddSecondInputPass
  * @brief Changes the ov::Model of tokenizer so that it accepts paired input.
@@ -12,11 +14,18 @@
  * before the CombineSegments node. If any constant SpecialToken depends on sequence inputs, they are zeroed.
  * The truncation operation is also modified to support max_length.
  */
-namespace ov::genai {
-
-
 class AddSecondInputPass : public ov::pass::ModelPass {
 public:
+    /**
+    * @brief Constructs the AddSecondInputPass.
+    *
+    * This constructor initializes the pass with a shared object containing OpenVINO tokenizer functionality
+    * and a reference to an error stream for reporting pass-specific errors.
+    * It retrieves the tokenizer node factory function from the shared object for later use in the pass.
+    *
+    * @param openvino_tokenizers_shared_object Shared pointer to the OpenVINO tokenizer shared object.
+    * @param pass_errors Reference to an output string stream for collecting error messages during the pass execution.
+    */
     AddSecondInputPass(const std::shared_ptr<void>& openvino_tokenizers_shared_object, std::ostringstream& pass_errors):
     m_pass_errors(pass_errors) {
         node_factory = reinterpret_cast<FactoryCreateType>(get_symbol(openvino_tokenizers_shared_object, "create_tokenizer_node"));

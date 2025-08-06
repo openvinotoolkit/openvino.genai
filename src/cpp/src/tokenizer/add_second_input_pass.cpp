@@ -103,7 +103,7 @@ bool AddSecondInputPass::parse_and_assert_postprocessor(const std::shared_ptr<ov
 
     auto pair_ids = post_processor["pair"]["ids"].get<std::vector<int>>();
     if (std::vector<int>(pair_ids.begin(), pair_ids.begin() + input_signature.size()) != input_signature) {
-        m_pass_errors << "Could not add second input. Paried inputs are allowed only when it's widening the single input." << std::endl;
+        m_pass_errors << "Could not add second input. Paired inputs are allowed only when it's widening the single input." << std::endl;
         return false;
     }
 
@@ -172,7 +172,7 @@ void AddSecondInputPass::insert_splits() {
     auto zero_const = make_constant({0});
     this->equal_node = std::make_shared<Equal>(param_2_shape, zero_const);
     begins_2 = std::make_shared<Select>(equal_node, zero_const, begins_2);
-    // TODO: indeed for ends it should've been 1 but for thix bug CSV-160624 we set to zero for the moment.
+    // TODO: indeed for ends it should've been 1 but for this bug CSV-160624 we set to zero for the moment.
     // auto one_const = make_constant({1});
     ends_2 = std::make_shared<Select>(equal_node, zero_const, ends_2);
 
