@@ -5,6 +5,7 @@ openvino-tokenizers[transformers]~=2025.3.0.0.dev
 optimum-intel[nncf]==1.25.0
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.5.3; platform_system == "Darwin" and platform_machine == "x86_64"
+gguf==0.17.1
 einops==0.8.1  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.34.0 # For image generation pipelines
@@ -12,6 +13,8 @@ timm==1.0.19  # For exporting InternVL2
 # torchvision for visual language models
 torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
 torchvision==0.23.0; platform_system != "Darwin" or platform_machine != "x86_64"
+timm==1.0.19  # For openbmb/MiniCPM-V-2
 transformers==4.52.4 # For Whisper
 hf_transfer==0.1.9  # for faster models download, should used with env var HF_HUB_ENABLE_HF_TRANSFER=1
 backoff==2.2.1  # for microsoft/Phi-3.5-vision-instruct
+peft==0.17.0  # For microsoft/Phi-4-multimodal-instruct
