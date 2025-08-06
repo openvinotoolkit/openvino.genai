@@ -224,7 +224,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     } else {
         prompt_len = input_ids.get_size();
     }
-    OPENVINO_ASSERT(sampling_params.max_length > prompt_len, "'max_length' must be greater number o prompt tokens");
+    OPENVINO_ASSERT(sampling_params.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
 
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
 
