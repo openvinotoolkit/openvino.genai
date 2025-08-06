@@ -4,6 +4,7 @@
 openvino-tokenizers[transformers]~=2025.3.0.0.dev
 optimum-intel[nncf]==1.25.0
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
+safetensors==0.5.3; platform_system == "Darwin" and platform_machine == "x86_64"
 einops==0.8.1  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.34.0 # For image generation pipelines
