@@ -5,6 +5,7 @@ numpy<2.0.0; platform_system == "Darwin" and platform_machine == "x86_64"
 onnx==1.18.0
 pytest
 pytest-html
+transformers==4.52.4
 hf_transfer
 langchain_community
 gguf>=0.10.0

@@ -2,13 +2,14 @@
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino-tokenizers[transformers]~=2025.3.0.0.dev
-optimum-intel[nncf] @ git+https://github.com/huggingface/optimum-intel.git@main
+# optimum-intel main will get issue with VLM gemma3 when transformers < 4.52: https://github.com/huggingface/optimum-intel/issues/1405
+optimum-intel[nncf] @ git+https://github.com/huggingface/optimum-intel.git@d93fd59aebd24ac887deb1eaab7ff6af41b09946
 numpy<2.0.0; sys_platform == 'darwin'
 einops==0.8.1  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.34.0 # For image generation pipelines
 timm==1.0.19  # For exporting InternVL2
 torchvision  # For visual language models
-transformers>=4.43 # For Whisper
+transformers==4.52.4 # For Whisper
 hf_transfer # for faster models download, should used with env var HF_HUB_ENABLE_HF_TRANSFER=1
 backoff # for microsoft/Phi-3.5-vision-instruct
