@@ -22,14 +22,11 @@ ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, si
     return ov::Tensor(tensor, start_shape, end_shape);
 }
 
-void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
-                             ov::genai::GenerationHandle& handle) {
-    if (streamer_ptr && handle->can_read()) {
-        std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
-        auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
-        if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-            streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
-        }
+
+ov::genai::StreamingStatus stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
+                                                   const std::vector<int64_t>& tokens) {
+    if (streamer_ptr) {
+        return streamer_ptr->write(tokens);
     }
 }
 } // anonymous namespace
@@ -52,9 +49,6 @@ namespace genai {
         // utils::apply_gather_before_matmul_transformation(model_desc.model);
         m_request = ov::genai::utils::singleton_core().compile_model(model_desc.model, model_desc.device, m_properties).create_infer_request();
     }
- 
-    m_sampler.set_tokenizer(m_tokenizer);
-    m_sampler.set_seed(model_desc.generation_config.rng_seed);
 }
 
 ov::genai::GenerationConfig LLMInferWrapper::get_generation_config() const {
@@ -77,13 +71,7 @@ int64_t LLMInferWrapper::infer_first(const ov::Tensor &input_ids,
 
     m_request.infer();
     m_num_processed_tokens = input_ids.get_shape()[1];
-
-    // Need for tokens sampling and streaming:
-    m_sequence_group = std::make_shared<SequenceGroup>(
-        0 /* request_id */, input_ids, m_generation_config, 1 /* block_size */);
-    m_sequence_group->schedule_tokens(m_sequence_group->get_prompt_len());
-    auto logits = get_logits();
-    m_sequence_group->set_output_seq_len(logits.get_shape().at(1));
+    m_first_prompt_len = m_num_processed_tokens;
 
     // Initialize placeholder data for next inferences on input_ids of size 1 (if any)
     // with values of previous iteration for simple increment on next iteration:
@@ -92,12 +80,26 @@ int64_t LLMInferWrapper::infer_first(const ov::Tensor &input_ids,
     m_new_atten_mask_data = std::vector<int64_t>(m_num_processed_tokens, 1);
     set_already_allocated_input_for_1_token();
 
-    return std::get<int64_t>(sample_tokens(logits, 1u));
+    last_token = std::get<int64_t>(sample_tokens(get_logits(), 1u));
+    return last_token;
 }
 
 bool LLMInferWrapper::can_infer() {
-    OPENVINO_ASSERT(m_sequence_group, "can_infer() can be called only after infer_first()!");
-    return (m_sequence_group->is_running() && !m_sequence_group->handle_stopped() && !m_sequence_group->handle_cancelled());
+    OPENVINO_ASSERT(m_num_processed_tokens > 0, "can_infer() can be called only after infer_first()!");
+
+    // FIXME: Add condition to get out of KV-Cache length for static models.
+    auto stop_token_ids = m_generation_config.stop_token_ids;
+    if (!m_generation_config.ignore_eos && (last_token == m_generation_config.eos_token_id)) {
+        return false;
+    }
+    if (std::find(stop_token_ids.begin(), stop_token_ids.end(), last_token) != stop_token_ids.end()) {
+       return false;
+    }
+    if (m_num_processed_tokens - m_first_prompt_len + 1 >= m_generation_config.get_max_new_tokens()) {
+        return false;
+    }
+       
+    return true;
 }
 
 int64_t LLMInferWrapper::infer_next(int64_t token) {
@@ -108,9 +110,6 @@ int64_t LLMInferWrapper::infer_next(int64_t token) {
     //     m_sequence_group->set_out_of_memory();
     //     return -1;
     // }
-
-    m_sequence_group->schedule_tokens(1u);
-    m_sequence_group->set_output_seq_len(1u);
 
     // Just change the variables here, as pointers to them are already set to corresponding tensors
     m_new_input_token = token;
@@ -123,26 +122,26 @@ int64_t LLMInferWrapper::infer_next(int64_t token) {
 
     m_num_processed_tokens += 1u;
 
-    return std::get<int64_t>(sample_tokens(get_logits(), 1u));
+    last_token = std::get<int64_t>(sample_tokens(get_logits(), 1u));
+    return last_token;
 }
 
 int64_t LLMInferWrapper::infer_next(const std::vector<int64_t> tokens) {
     OPENVINO_ASSERT(m_num_processed_tokens > 0, "infer_next() can be called only after infer_first()!");
 
-    m_sequence_group->schedule_tokens(tokens.size());
-    m_sequence_group->set_output_seq_len(1u);
     auto logits = infer_next_internal(tokens);
-    return std::get<int64_t>(sample_tokens(logits, 1u));
+    last_token = std::get<int64_t>(sample_tokens(logits, 1u));
+    return last_token;
 }
 
 std::vector<int64_t> LLMInferWrapper::infer_next_return_all(const std::vector<int64_t> tokens) {
     OPENVINO_ASSERT(m_num_processed_tokens > 0, "infer_next_return_all() can be called only after infer_first()!");
 
-    auto tokens_size = tokens.size();
-    m_sequence_group->schedule_tokens(tokens_size);
-    m_sequence_group->set_output_seq_len(tokens_size + 1u);
     auto logits = infer_next_internal(tokens);
-    return std::get<std::vector<int64_t>>(sample_tokens(logits, tokens_size + 1u));
+    auto tokens_size = tokens.size();
+    auto sampled_tokens = std::get<std::vector<int64_t>>(sample_tokens(logits, tokens_size + 1u));
+    last_token = sampled_tokens[tokens_size];
+    return sampled_tokens;
 }
 
 ov::Tensor LLMInferWrapper::get_logits() {
@@ -151,41 +150,6 @@ ov::Tensor LLMInferWrapper::get_logits() {
 
 std::size_t LLMInferWrapper::get_num_processed_tokens() const {
     return m_num_processed_tokens;
-}
-
-// NB: This method should be called only after infer_first()!
-GenerationHandle LLMInferWrapper::create_generation_handle() {
-    OPENVINO_ASSERT(m_num_processed_tokens > 0, "create_generation_handle() can be called only after infer_first()!");
-     // NB: Controls what tokens are ready to be pushed into the streamer
-    m_handle = std::make_shared<GenerationHandleImpl>(
-        m_sequence_group->get_generation_stream(), m_sequence_group->get_sampling_parameters());
-    return m_handle;
-}
-
-// TODO: Debug
-void LLMInferWrapper::remove_last_generated_tokens(const size_t tokens_to_remove) {
-    OPENVINO_ASSERT(m_sequence_group, "remove_last_generated_tokens() can be called only after infer_first()!");
-
-    // Remove last generated tokens
-    const auto running_sequences = m_sequence_group->get_running_sequences();
-    const auto sequence = running_sequences.front();
-    OPENVINO_ASSERT(running_sequences.size() == 1u);
-    const auto generated_token_ids = sequence->get_generated_ids(); 
-    const auto sequence_generated_len = generated_token_ids.size();
-    // auto& logit_processor = m_sampler->get_logit_processor(0);
-    OPENVINO_ASSERT(sequence_generated_len >= tokens_to_remove);
-
-    // size_t start_pos = sequence_generated_len - tokens_to_remove;
-    // TODO: We might need it, however, we sample each token, unlike in CB pipeline
-    // for (size_t i = start_pos; i < sequence_generated_len; ++i) {
-    //     logit_processor.decrease_generated_token_occurance(generated_token_ids[i]);
-    // }
-    sequence->remove_last_tokens(tokens_to_remove);
-
-    // FIXME: Should we do it or shouldn't?
-    // if (is_update_logit_processor) {
-    //     logit_processor.update_generated_len(min_candidate_len);
-    // }
 }
 
 void LLMInferWrapper::trimm_kv_cache(const size_t tokens_to_remove) {
@@ -198,39 +162,12 @@ void LLMInferWrapper::trimm_kv_cache(const size_t tokens_to_remove) {
     m_num_processed_tokens -= tokens_to_remove;
 }
 
-ov::genai::EncodedResults LLMInferWrapper::finalize() {
-    OPENVINO_ASSERT(m_sequence_group, "finalize() can be called only after infer_first()!");
-
-    ov::genai::EncodedResults results;
-    // NB: Only batch=1 is supported now
-    results.scores.resize(1u);
-    results.scores[0] = 0u;
-    results.tokens.resize(1u);
-
-    OPENVINO_ASSERT(m_sequence_group->get_finished_sequences().size() == 1,
-        "finalize() should be called when inference for current model is finished till EOS or other stop criteria.");
-
-    auto sequence = m_sequence_group->get_finished_sequences().front();
-    results.tokens[0] = sequence->get_generated_ids();
-    results.scores[0] = sequence->get_cumulative_log_prob();
-
-    m_sampler.clear_request_info(m_sequence_group->get_request_id());
-
-    return results;
-}
-
-ov::genai::GenerationStatus LLMInferWrapper::get_generation_status() const {
-    OPENVINO_ASSERT(m_sequence_group, "get_generation_status() can be called only after infer_first()!");
-
-    return m_sequence_group->get_generation_stream()->get_status();
-}
-
 void LLMInferWrapper::reset_state() {
     return m_request.reset_state();
 }
 
 ov::Tensor LLMInferWrapper::infer_next_internal(const std::vector<int64_t> tokens) {
-    OPENVINO_ASSERT(m_num_processed_tokens > 0, "ov::Tensor infer_next() can be called only after infer_first()!");
+    OPENVINO_ASSERT(m_num_processed_tokens > 0, "infer_next_internal() can be called only after infer_first()!");
 
     size_t tokens_size = tokens.size();
 
@@ -285,19 +222,36 @@ void LLMInferWrapper::set_already_allocated_input_for_1_token() {
     m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&m_new_position_id)));
 }
 
-// FIXME: Need to use Sampler correctly. Sampler does all the validation itself! Just needs to configure it correctly.
+// TODO: Use already provided Sampler API, that will support both greedy and
+//       multinomial decoding.
 std::variant<int64_t, std::vector<int64_t>>
-    LLMInferWrapper::sample_tokens(const ov::Tensor& logits, std::size_t num_tokens_to_return) {
-    OPENVINO_ASSERT(m_sequence_group, "sample_tokens() can be called only after infer_first()!");
+    LLMInferWrapper::sample_tokens(const ov::Tensor& logits, std::size_t num_tokens_to_sample) {
+    OPENVINO_ASSERT(m_num_processed_tokens > 0, "sample_tokens() can be called only after infer_first()!");
 
-    m_sampler.sample({m_sequence_group}, logits);
-    const auto running_sequences = m_sequence_group->get_running_sequences();
-    OPENVINO_ASSERT(running_sequences.size() == 1u);
-    auto sampled_tokens = running_sequences.front()->get_generated_ids();
-    if (num_tokens_to_return == 1) {
-        return sampled_tokens.back();
+    // logits.shape = [1, seq_len, vocab_size].
+    auto logits_shape = logits.get_shape();
+    OPENVINO_ASSERT(logits_shape.size() == 3);
+    std::size_t batch_size = logits_shape[0];
+    OPENVINO_ASSERT(batch_size == 1);
+    std::size_t seq_len = logits_shape[1];
+    OPENVINO_ASSERT(num_tokens_to_sample <= seq_len);
+    std::size_t vocab_size = logits_shape[2];
+
+    auto sample_token = [&](const ov::Tensor& logits, std::size_t idx) {
+        size_t sequence_offset = idx * vocab_size;
+        float* logits_data = logits.data<float>() + sequence_offset;
+        return std::max_element(logits_data, logits_data + vocab_size) - logits_data;
+    };
+
+    if (num_tokens_to_sample == 1) {
+        // Sample last logit:
+        return sample_token(logits, seq_len - 1);
     } else {
-        // FIXME condition can be switched to boolean?
+        // Sample last num_tokens_to_sample logits:
+        std::vector<int64_t> sampled_tokens;
+        for (std::size_t i = 0; i < num_tokens_to_sample; i++) {
+            sampled_tokens.push_back(sample_token(logits, seq_len - num_tokens_to_sample + i));
+        }
         return sampled_tokens;
     }
 }
@@ -338,7 +292,6 @@ SpeculativeLLMPipelineNPU::SpeculativeLLMPipelineNPU(
     // todo: remove this condition after support of CVS-154103
     OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
     m_tokenizer = main_model_tokenizer;
-    OPENVINO_ASSERT(draft_model_desc.generation_config.rng_seed == main_model_desc.generation_config.rng_seed, "Seed for sampling must be equal for draft and main models!");
     
     // Draft model (which is smaller, less accurate but faster)
     auto draft_model_desc_copy = draft_model_desc;
@@ -357,7 +310,7 @@ SpeculativeLLMPipelineNPU::SpeculativeLLMPipelineNPU(
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
 
     // FIXME: Where to take it when draft model will be on NPU?
-    size_t max_sequence_length = main_model_desc.generation_config.get_max_new_tokens();
+    size_t max_sequence_length = main_model_desc.generation_config.max_length;
     if (max_sequence_length == SIZE_MAX) {
         // FIXME: NPUW_LLM_MAX_PROMPT_LEN + NPUW_LLM_MIN_RESPONSE_LEN
         max_sequence_length = 100;
@@ -474,10 +427,6 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     if (config.eos_token_id == -1)
         config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
-    // FIXME: Update conditionally:
-    m_main_request->set_generation_config(config);
-
-    std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
         "Currently only greedy and multinomial decoding are supported");
@@ -485,9 +434,21 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     OPENVINO_ASSERT(config.num_return_sequences == 1u,
         "Currently only \"num_return_sequences\" equal to 1 is supported!");
 
+    // FIXME: Update conditionally:
+    m_main_request->set_generation_config(config);
+
+    // Config draft model to not stop on EOS and remove stop strings:
+    ov::genai::GenerationConfig draft_config = m_draft_request->get_generation_config();
+    draft_config.ignore_eos = true;
+    draft_config.stop_strings = {};
+    draft_config.validate();
+    m_draft_request->set_generation_config(draft_config);
+
+    std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
+
     // FIXME: Return back for the static draft model.
     // NB: Check if there is enough space in KV-cache to process input prompt
-    auto prompt_len = prompts_shape[1];
+    // auto prompt_len = prompts_shape[1];
     // if (prompt_len > m_max_prompt_len) {
     //     OPENVINO_THROW("Static Stateful LLM pipeline may only process prompts up to "
     //                    + std::to_string(m_max_prompt_len) + " tokens. "
@@ -529,15 +490,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
                     "Num of generated useful logits from draft models should be less"
                     "or equal than ones from main model.");
 
-    // Config draft model to not stop on EOS and remove stop strings:
-    ov::genai::GenerationConfig draft_config = m_draft_request->get_generation_config();
-    draft_config.ignore_eos = true;
-    draft_config.stop_strings = {};
-    draft_config.validate();
-    m_draft_request->set_generation_config(draft_config);
-
-    GenerationHandle m_main_gen_handle = m_main_request->create_generation_handle();
-    stream_generated_tokens(streamer_ptr, m_main_gen_handle);
+    auto streaming_status = stream_generated_tokens(streamer_ptr, std::vector<int64_t> {out_token});
 
     /* Speculative decoding works the following way. The draft model predicts the next K
        tokens one by one in an autoregressive manner, while the main model validates these
@@ -555,7 +508,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     // Last generated token by draft model needs to be prepended before next run if it is accepted by the main model!
     // So it will get into context too.
     int64_t draft_prefix_token = -1;
-    while (m_main_request->can_infer()) {
+    while (m_main_request->can_infer() && (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
         // Phase 1: Generation of candidates with the draft model:
         std::vector<int64_t> candidates;
         // Limit candidates size by num_pred_tokens or by max_seq_length:
@@ -586,6 +539,12 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         // FIXME: How max_seq_length will be handled?
         std::vector<int64_t> input_for_main(candidates.begin(), candidates.end());
         input_for_main.insert(input_for_main.begin(), {out_token});
+        // Note: If model isn't sliced to return logit only for the last element,
+        // then it returns logits for all elements of the input prompt.
+        // In that tensor, for each token `t` of the input prompt it contains
+        // distribution (over the vocabulary) for the next possible token
+        // that is generated based on subsequence [first token,...,`t`]
+        // of the input prompt.
         // TODO: Handle OOM exception for static model here.
         auto ref_out_tokens = m_main_request->infer_next_return_all(input_for_main);
 
@@ -600,23 +559,22 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         }
 
         auto mismatched_candidates = candidates.size() - accepted_tokens_number;
-
+        std::vector<int64_t> validated_tokens(candidates.begin(), candidates.end() - mismatched_candidates);
+        validated_tokens.push_back(ref_out_tokens.back());
+    
         // Phase 4: Update inference wrappers based on found matches and mismatches
         // This is the case when main model accepted all candidates from draft model
         // we need to collect kv cache for draft last generated token by infering it.n
         if (mismatched_candidates == 0) {
             draft_prefix_token = candidate;
         } else {
-            m_draft_request->remove_last_generated_tokens(mismatched_candidates);
             m_draft_request->trimm_kv_cache(mismatched_candidates - 1);
-            // Check that this works correctly for the model with output seq length != 1
-            m_main_request->remove_last_generated_tokens(mismatched_candidates + 1);
             m_main_request->trimm_kv_cache(mismatched_candidates);
         }
 
         m_speculative_config.update_candidate_strategy(accepted_tokens_number);
         // Should be enough, if all will be streamed from logits?
-        stream_generated_tokens(streamer_ptr, m_main_gen_handle);
+        stream_generated_tokens(streamer_ptr, validated_tokens);
 
         // raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         // raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
@@ -629,8 +587,14 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     m_draft_request->reset_state();
     m_main_request->reset_state();
     
-    ov::genai::EncodedResults results = m_main_request->finalize();
-    m_chat_generation_finish_status = m_main_request->get_generation_status();
+    ov::genai::EncodedResults results;
+    // NB: Only batch=1 is supported now
+    results.scores.resize(1u);
+    results.scores[0] = 0u;
+    results.tokens.resize(1u);
+    // results.tokens[0] = sequence->get_generated_ids();
+    // results.scores[0] = sequence->get_cumulative_log_prob();
+    // m_chat_generation_finish_status = m_streaming_status;
 
     // auto stop_time = std::chrono::steady_clock::now();
     // If is called without tokenization then that stat will not be reported.
