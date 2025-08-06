@@ -35,7 +35,7 @@ def generation_config_to_hf(
     # generic parameters
     kwargs['max_length'] = generation_config.max_length
     # has higher priority than 'max_length'
-    SIZE_MAX = 18446744073709551615
+    SIZE_MAX = 2**64 - 1
     if generation_config.max_new_tokens != SIZE_MAX:
         kwargs['max_new_tokens'] = generation_config.max_new_tokens
     kwargs['min_new_tokens'] = generation_config.min_new_tokens
