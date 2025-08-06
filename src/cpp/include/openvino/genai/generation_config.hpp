@@ -26,11 +26,57 @@ namespace genai {
 enum class StopCriteria { EARLY, HEURISTIC, NEVER };
 
 
+/**
+ * @brief StructuralTagItem is used to define a structural tag with its properties.
+ * @param begin the string that marks the beginning of the structural tag.
+ * @param schema JSON schema that defines the structure of the tag.
+ * @param end the string that marks the end of the structural tag.
+ */
+struct OPENVINO_GENAI_EXPORTS StructuralTagItem {
+    StructuralTagItem() = default;
+    StructuralTagItem(const ov::AnyMap& properties);
+    void update_config(const ov::AnyMap& properties);
+    std::string to_string() const;
+
+    std::string begin;
+    std::string schema;
+    std::string end;
+};
+
+/**
+ * @brief Configures structured output generation by combining regular sampling with structural tags.
+ *
+ * When the model generates a trigger string, it switches to structured output mode and produces output
+ * based on the defined structural tags. Afterward, regular sampling resumes.
+ *
+ * Example:
+ *   - Trigger "<func=" activates tags with begin "<func=sum>" or "<func=multiply>".
+ *
+ * Note:
+ *   - Simple triggers like "<" may activate structured output unexpectedly if present in regular text.
+ *   - Very specific or long triggers may be difficult for the model to generate, so structured output may not be triggered.
+ *
+ * @param structural_tags List of StructuralTagItem objects defining structural tags.
+ * @param triggers List of strings that trigger structured output generation. Triggers may match the beginning or part of a tag's begin string.
+ */
+struct OPENVINO_GENAI_EXPORTS StructuralTagsConfig {
+public:
+    StructuralTagsConfig() = default;
+    StructuralTagsConfig(const ov::AnyMap& properties);
+    void update_config(const ov::AnyMap& properties);
+    std::string to_string() const;
+
+    std::vector<StructuralTagItem> structural_tags;
+    std::vector<std::string> triggers;
+};
+
+
 /* 
 * Structured output parameters:
 * @param json_schema if set, the output will be a JSON string constrained by the specified json_schema.
 * @param regex if set, the output will be constrained by specified regex.
 * @param grammar if set, the output will be constrained by specified EBNF grammar.
+* @param structural_tags_config if set, the output could contain substrings constrained by the specified structural tags.
 * @param backend if set, the structured output generation will use specified backend, currently only "xgrammar" is supported.
 * 
 * If several parameters are set, e.g. json_schema and regex, then an error will be thrown when validating the configuration.
@@ -48,6 +94,7 @@ public:
     std::optional<std::string> json_schema;
     std::optional<std::string> regex;
     std::optional<std::string> grammar;
+    std::optional<StructuralTagsConfig> structural_tags_config;
     std::optional<std::string> backend;
     void validate() const;
     void update_config(const ov::AnyMap& properties);

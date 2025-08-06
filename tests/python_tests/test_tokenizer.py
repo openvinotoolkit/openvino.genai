@@ -199,6 +199,27 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
 
 
 @pytest.mark.precommit
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", 
+    [("Xenova/c4ai-command-r-v01-tokenizer", { "padding_side": None })],
+    indirect=True
+)
+def test_non_string_chat_template(hf_ov_genai_models):
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models
+    
+    hf_full_history_str = hf_tokenizer.apply_chat_template(
+        conversation, add_generation_prompt=False, tokenize=False,
+    )
+
+    ov_full_history_str = genai_tokenzier.apply_chat_template(conversation, add_generation_prompt=False)
+
+    if ov_full_history_str != hf_full_history_str:
+        print(f"hf reference: {hf_full_history_str}")
+        print(f"ov_genai out: {ov_full_history_str}")
+    assert ov_full_history_str == hf_full_history_str
+
+
+@pytest.mark.precommit
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 def test_set_chat_template(ov_hf_tokenizers):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
@@ -433,7 +454,7 @@ def test_two_inputs_string_list_of_lists(hf_ov_genai_models, input_pair):
 @pytest.mark.parametrize("input_pair", [
     [["Eng... test, string?!" * 100], ["Multiline\nstring!\nWow!"]],
     [["hi" * 20], ["buy" * 90]],
-    # [["What is the capital of Great Britain"] * 4, ["London is capital of Great Britain"]],  # TODO: broadcast of [4, 1] to [4, 4] fails
+    [["What is the capital of Great Britain"] * 4, ["London is capital of Great Britain"]],
     [["What is the capital of Great Britain"], ["London is capital of Great Britain"] * 4],
 ])
 def test_two_inputs_string(hf_ov_genai_models, input_pair):

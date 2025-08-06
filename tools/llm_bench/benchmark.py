@@ -18,6 +18,7 @@ import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
 import task.text_embeddings as bench_text_embed
+import task.text_to_speech_generation as bench_text_to_speech
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 memory_monitor = MemMonitorWrapper()
@@ -83,8 +84,10 @@ def get_argprser():
         default=0,
         required=False,
         type=int,
-        help='if the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2,'
-        ' output the maximum memory consumption in all iterations.',
+        help='Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations.'
+        ' If the value is 2, output the maximum memory consumption in all iterations.\nIt is not recommended to run memory consumption and'
+        ' performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay,'
+        ' but the impact is still expected. '
     )
     parser.add_argument(
         "--memory_consumption_delay",
@@ -194,6 +197,13 @@ def get_argprser():
     parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
     parser.add_argument("--embedding_max_length", type=int, default=None,
                         help="Max length for text embeddings. Input text will be padded or truncated to specified value")
+    parser.add_argument("--apply_chat_template", action="store_true",
+                        help="Apply chat template for LLM. By default chat template is not applied. It's better to use with --disable_prompt_permutation,"
+                             " otherwise the prompt will be modified after applying the chat template, so the structure of chat template will not be kept.")
+    parser.add_argument("--speaker_embeddings", type=str, default=None,
+                        help="Path to .bin or .pt file with speaker embeddings for text to speech scenarios")
+    parser.add_argument("--vocoder_path", type=str, default=None,
+                        help="Path to vocoder  for text to speech scenarios")
     return parser.parse_args()
 
 
@@ -204,7 +214,8 @@ CASE_TO_BENCH = {
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
     'speech2text': bench_speech.run_speech_2_txt_benchmark,
     "vlm": bench_vlm.run_visual_language_generation_benchmark,
-    "text_embed": bench_text_embed.run_text_embddings_benchmark
+    "text_embed": bench_text_embed.run_text_embddings_benchmark,
+    "text2speech": bench_text_to_speech.run_text_2_speech_benchmark
 }
 
 

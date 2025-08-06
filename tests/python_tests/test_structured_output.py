@@ -106,3 +106,37 @@ def test_structured_ebnf(ov_pipe, prompt_and_ebnf):
     # Currently there is not general way to validate EBNF output,
     # so we will just check if it matches the expected date format.
     assert re.match(r"^\d{4}-\d{2}-\d{2}$", res_str), f"Output {res_str} does not match date format"
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    "ov_pipe", [model_id for model_id in structured_id_models if "random" not in model_id], indirect=True
+)
+@pytest.mark.parametrize("prompt_and_structural_tag", [
+    (
+        "Repeat the word 'function'",
+        ov_genai.StructuralTagItem(
+            begin="function",
+            schema=json.dumps(RESTAPIResponse.model_json_schema()),
+            end="</function>"
+        )
+    ),
+])
+def test_structural_tags(ov_pipe, prompt_and_structural_tag):
+    prompt, structural_tag = prompt_and_structural_tag
+    structured_output_config = ov_genai.StructuredOutputConfig(
+        structural_tags_config=ov_genai.StructuralTagsConfig(
+            structural_tags=[structural_tag],
+            triggers=["function"],
+        )
+    )
+    gen_config = ov_genai.GenerationConfig()
+    gen_config.max_new_tokens = 100
+    gen_config.do_sample = False
+    gen_config.structured_output_config = structured_output_config
+
+    res_str = ov_pipe.generate(prompt, generation_config=gen_config)
+
+    match = re.search(rf"{structural_tag.begin}(.*?){structural_tag.end}", res_str)
+    assert match, f"Output `{res_str}` does not contain structural tag {structural_tag.begin}...{structural_tag.end}"
+    RESTAPIResponse.model_validate_json(match.group(1))

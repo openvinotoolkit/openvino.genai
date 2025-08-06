@@ -194,7 +194,7 @@ public:
                 image_sequence[idx] -= m_image_id;
             }
         }
-        else if (generation_config.apply_chat_template) {
+        else {
             m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
         }
 
@@ -300,18 +300,6 @@ public:
     void start_chat(const std::string& system_message) override {
         OPENVINO_ASSERT(!m_is_npu, "start_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = true;
-        m_image_id = 0;
-        bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
-        if (have_state) {
-            // Resetting state may be slow.
-            m_language.reset_state();
-            // Since if is already introduced, move all resetting here.
-            m_language.get_tensor("attention_mask").set_shape({0, 0});
-        }
-        auto kv_cache_state = m_inputs_embedder->get_kv_cache_state();
-        if (!m_inputs_embedder->get_kv_cache_state().get_state().empty()) {
-            m_history.clear();
-        }
         m_inputs_embedder->start_chat(system_message);
         if (system_message.empty()) {
             return;
@@ -472,6 +460,7 @@ VLMDecodedResults VLMPipeline::generate(
 }
 
 void VLMPipeline::start_chat(const std::string& system_message) {
+    m_pimpl->finish_chat();
     m_pimpl->start_chat(system_message);
 }
 
