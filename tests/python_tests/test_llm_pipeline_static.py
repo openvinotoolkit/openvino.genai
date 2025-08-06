@@ -169,7 +169,7 @@ def test_multinomial_sampling(generation_config, config, model_id):
 def test_length_properties_set_no_exception(config, model_id):
     _, _, model_path = download_and_convert_model(model_id)
     # NB: Check it doesn't throw any exception
-    pipeline_config = { "MAX_PROMPT_LEN": 128, "MIN_RESPONSE_LEN": 64 }
+    pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= config
     pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
 
