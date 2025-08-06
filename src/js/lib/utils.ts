@@ -103,7 +103,7 @@ export type GenericGenerationConfig = {
 export type DecodedResultsConfig = {
     /** a helper option to get DecodedResult from LLMPipeline and keep backward compability.
      * If set to true, LLMPipeline.generate() will return DecodedResults object instead of string.
-     * If set to false, LLMPipeline.generate() will return deafult value.
+     * If set to false, LLMPipeline.generate() will return default value.
      */
     return_decoded_results?: boolean
 }

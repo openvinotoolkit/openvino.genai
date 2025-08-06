@@ -11,6 +11,5 @@ Napi::Function PerfMetricsWrapper::get_class(Napi::Env env) {
 }
 
 Napi::Value PerfMetricsWrapper::to_string(const Napi::CallbackInfo& info) {
-    printf("PerfMetricsWrapper::to_string called\n");
     return Napi::String::New(info.Env(), "PerfMetrics.toString(). Not implemented.");
 }
