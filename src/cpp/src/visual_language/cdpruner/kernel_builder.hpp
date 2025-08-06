@@ -85,12 +85,6 @@ private:
     /// @return Conditional kernel matrix [B, N, N]
     ov::Tensor build_conditional_kernel(const ov::Tensor& similarity_matrix, const ov::Tensor& relevance_scores);
 
-    /// @brief Create L2 normalization subgraph using OpenVINO ops
-    /// @param input Input node to normalize
-    /// @param axis Axis along which to normalize
-    /// @return Normalized node
-    std::shared_ptr<ov::Node> create_l2_normalize_ops(std::shared_ptr<ov::Node> input, int axis);
-
     /// @brief Create min-max normalization subgraph using OpenVINO ops
     /// @param input Input node to normalize
     /// @return Normalized node

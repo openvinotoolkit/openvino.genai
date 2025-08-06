@@ -55,17 +55,17 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
     size_t total_operations = batch_size * num_tokens * num_tokens;  // Dominant operation is N^2
 
     // Use OV model for building the kernel matrix
-    if (text_features.get_shape().size() != 3) {
-        throw std::invalid_argument("Text features must be 2D tensor [B, N, D]");
+    if (text_features.get_shape().size() != 2) {
+        throw std::invalid_argument("Text features must be 3D tensor [N, D]");
     }
 
     // Check shape consistency
-    if (text_features.get_shape()[0] != batch_size || text_features.get_shape()[2] != feature_dim) {
+    if (text_features.get_shape()[1] != feature_dim) {
         throw std::invalid_argument("Visual features and text features must have consistent batch size, token "
                                     "count, and feature dimension");
     }
-    std::cout << "Input tensors: text_features[" << text_features.get_shape()[0] << ", "
-              << text_features.get_shape()[1] << ", " << text_features.get_shape()[2] << "]" << std::endl;
+    std::cout << "Input tensors: text_features[" << text_features.get_shape()[0] << ", " << text_features.get_shape()[1]
+              << "]" << std::endl;
 
     auto kernel_build_start = std::chrono::high_resolution_clock::now();
     ov::Tensor conditional_kernel = compute_conditional_kernel_gpu(visual_features, text_features);
@@ -402,14 +402,14 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_gpu(
     if (visual_features.get_shape().size() != 3) {
         throw std::invalid_argument("Visual features must be 3D tensor [B, N, D]");
     }
-    if (text_features.get_shape().size() != 3) {
-        throw std::invalid_argument("Text features must be 2D tensor [B, M, D]");
+    if (text_features.get_shape().size() != 2) {
+        throw std::invalid_argument("Text features must be 2D tensor [M, D]");
     }
 
     auto visual_shape = visual_features.get_shape();
     auto text_shape = text_features.get_shape();
 
-    if (visual_shape[2] != text_shape[2]) {
+    if (visual_shape[2] != text_shape[1]) {
         throw std::invalid_argument("Visual and text features must have same feature dimension");
     }
     // Compile model for GPU
@@ -444,10 +444,18 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
 
     // ========== RELEVANCE COMPUTATION ==========
     // Step 1.1: L2 normalize visual features (will be reused for kernel computation)
-    auto visual_l2_norm = create_l2_normalize_ops(visual_input, -1);
+    auto axes = ov::op::v0::Constant::create(element::i32, {1}, {2});
+    auto visual_l2_norm = std::make_shared<ov::op::v0::NormalizeL2>(visual_input,
+                                                                    axes,
+                                                                    m_config.numerical_threshold,
+                                                                    ov::op::EpsMode::ADD);
 
     // Step 1.2: L2 normalize text features
-    auto text_l2_norm = create_l2_normalize_ops(text_input, -1);
+    auto axes_text = ov::op::v0::Constant::create(element::i32, {1}, {1});
+    auto text_l2_norm = std::make_shared<ov::op::v0::NormalizeL2>(text_input,
+                                                                  axes_text,
+                                                                  m_config.numerical_threshold,
+                                                                  ov::op::EpsMode::ADD);
 
     // Step 1.3: Compute similarity matrix [B, N, M]
     auto text_transposed =
@@ -504,28 +512,6 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
     return std::make_shared<ov::Model>(ov::ResultVector{kernel_result},
                                        ov::ParameterVector{visual_input, text_input},
                                        "CDPruner_Kernel_Model");
-}
-
-std::shared_ptr<ov::Node> ConditionalKernelBuilder::create_l2_normalize_ops(std::shared_ptr<ov::Node> input, int axis) {
-    // Calculate squared values
-    auto squared = std::make_shared<ov::op::v1::Multiply>(input, input);
-
-    // Sum along the specified axis
-    auto sum_squared =
-        std::make_shared<ov::op::v1::ReduceSum>(squared,
-                                                ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {axis}),
-                                                true  // keep_dims=true
-        );
-
-    // Add small epsilon for numerical stability
-    auto epsilon = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {m_config.numerical_threshold});
-    auto sum_with_eps = std::make_shared<ov::op::v1::Add>(sum_squared, epsilon);
-
-    // Square root to get L2 norm
-    auto l2_norm = std::make_shared<ov::op::v0::Sqrt>(sum_with_eps);
-
-    // Divide input by L2 norm
-    return std::make_shared<ov::op::v1::Divide>(input, l2_norm);
 }
 
 std::shared_ptr<ov::Node> ConditionalKernelBuilder::create_min_max_normalize_ops(std::shared_ptr<ov::Node> input) {
