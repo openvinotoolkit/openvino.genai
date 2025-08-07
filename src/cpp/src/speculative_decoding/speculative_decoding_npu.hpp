@@ -15,17 +15,21 @@ class LLMInferWrapper {
 public:
     LLMInferWrapper::LLMInferWrapper(const ov::genai::ModelDesc& model_desc);
 
+    std::string device() const;
+
     ov::genai::GenerationConfig get_generation_config() const;
 
     void set_generation_config(ov::genai::GenerationConfig config);
+
+    int64_t get_kvcache_capacity() const;
+
+    int64_t get_generation_capacity() const;
 
     int64_t infer_first(const ov::Tensor &input_ids,
                         const ov::Tensor &attention_mask,
                         const ov::Tensor &position_ids);
 
-    bool can_infer();
-
-    int64_t infer_next(const std::vector<int64_t> tokens);
+    bool can_infer(const std::size_t prompt_len = 0);
 
     int64_t infer_next(int64_t out_token);
 
@@ -48,14 +52,13 @@ public:
     void reset_state();
 
 private:
-    ov::Tensor infer_next_internal(const std::vector<int64_t> tokens);
-
     void set_already_allocated_input_for_1_token();
 
     std::variant<int64_t, std::vector<int64_t>> sample_tokens(
         const ov::Tensor& logits, std::size_t num_tokens_to_return);
 
 private:
+    std::string m_device;
     ov::AnyMap m_properties;
     ov::genai::GenerationConfig m_generation_config;
     ov::genai::Tokenizer m_tokenizer;
@@ -119,7 +122,7 @@ private:
 
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
-    ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
+    bool m_streaming_was_cancelled = false;
 };
 
 }  // namespace genai
