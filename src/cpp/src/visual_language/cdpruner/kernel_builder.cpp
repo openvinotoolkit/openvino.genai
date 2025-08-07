@@ -14,8 +14,48 @@
 
 namespace ov::genai::cdpruner {
 
-ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config) : m_config(config) {
-    // Constructor implementation
+ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
+    : m_config(config),
+      m_requests_initialized(false) {
+    // Precompile models and create infer requests for performance optimization
+    try {
+        ov::Core core;
+
+        if (m_config.use_ops_model) {
+            // Compile and create infer request for conditional kernel model
+            auto kernel_model = create_conditional_kernel_model();
+            ov::CompiledModel compiled_kernel_model;
+            if (m_config.device == "GPU") {
+                compiled_kernel_model = core.compile_model(kernel_model, "GPU");
+            } else {
+                compiled_kernel_model = core.compile_model(kernel_model, "CPU");
+            }
+            m_conditional_kernel_infer_request = compiled_kernel_model.create_infer_request();
+        }
+
+        // Always compile similarity matrix model for potential GPU acceleration
+        auto similarity_model = create_similarity_matrix_model();
+        ov::CompiledModel compiled_similarity_model;
+        if (m_config.device == "GPU") {
+            compiled_similarity_model = core.compile_model(similarity_model, "GPU");
+        } else {
+            compiled_similarity_model = core.compile_model(similarity_model, "CPU");
+        }
+        m_similarity_infer_request = compiled_similarity_model.create_infer_request();
+
+        m_requests_initialized = true;
+
+        if (m_config.debug_mode) {
+            std::cout << "ConditionalKernelBuilder: InferRequests initialized for device " << m_config.device
+                      << std::endl;
+        }
+    } catch (const std::exception& e) {
+        if (m_config.debug_mode) {
+            std::cout << "ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " << e.what()
+                      << std::endl;
+        }
+        m_requests_initialized = false;
+    }
 }
 
 ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, const ov::Tensor& input_param) {
@@ -74,11 +114,11 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
         std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
 
     // Print performance breakdown
-    std::cout << "  Total kernel build time: " << kernel_build_duration.count() << " us ("
+    std::cout << "Total conditional kernel matrix build time: " << kernel_build_duration.count() << " us ("
               << (kernel_build_duration.count() / 1000.0) << " ms)" << std::endl;
 
     // Performance metrics
-    std::cout << "Kernel build throughput: "
+    std::cout << "Total conditional kernel matrix build throughput: "
               << (static_cast<double>(total_operations) / kernel_build_duration.count() * 1000000) << " ops/sec"
               << std::endl;
 
@@ -166,51 +206,23 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
 ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_gpu(const ov::Tensor& features) {
     // features: [B, N, D] - normalized visual features
     // Result: [B, N, N] - similarity matrix
-    
-    auto shape = features.get_shape();
-    size_t batch_size = shape[0];
-    size_t num_tokens = shape[1];
-    size_t feature_dim = shape[2];
-    
-    try {
-        // Create a simple MatMul model dynamically
-        auto input_features = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{batch_size, num_tokens, feature_dim});
-        
-        // Transpose features for batch matrix multiplication: [B, N, D] -> [B, D, N]
-        auto axes_order = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{3}, {0, 2, 1});
-        auto features_transposed = std::make_shared<ov::op::v1::Transpose>(input_features, axes_order);
-        
-        // Batch matrix multiplication: [B, N, D] @ [B, D, N] = [B, N, N]
-        auto matmul = std::make_shared<ov::op::v0::MatMul>(input_features, features_transposed);
-        
-        auto result = std::make_shared<ov::op::v0::Result>(matmul);
-        auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input_features});
-        
-        // Compile model for GPU
-        ov::Core core;
-        ov::CompiledModel compiled_model;
-        
-        if (m_config.device == "GPU") {
-            compiled_model = core.compile_model(model, "GPU");
-        } else {
-            // Fallback to CPU if GPU not available
-            compiled_model = core.compile_model(model, "CPU");
+
+    if (!m_requests_initialized) {
+        // Fallback to CPU implementation if infer requests not initialized
+        if (m_config.debug_mode) {
+            std::cout << "Using CPU fallback for similarity matrix computation" << std::endl;
         }
-        
-        // Create inference request
-        auto infer_request = compiled_model.create_infer_request();
-        
-        // Set input tensor
-        infer_request.set_input_tensor(features);
-        
-        // Run inference
-        infer_request.infer();
-        
-        // Get output tensor
-        auto output_tensor = infer_request.get_output_tensor();
-        
+        return compute_similarity_matrix(features);
+    }
+
+    try {
+        // Use preinitialized infer request
+        m_similarity_infer_request.set_input_tensor(features);
+        m_similarity_infer_request.infer();
+        auto output_tensor = m_similarity_infer_request.get_output_tensor();
+
         return output_tensor;
-        
+
     } catch (const std::exception& e) {
         // Fallback to CPU implementation if GPU fails
         if (m_config.debug_mode) {
@@ -412,26 +424,41 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_gpu(
     if (visual_shape[2] != text_shape[1]) {
         throw std::invalid_argument("Visual and text features must have same feature dimension");
     }
-    // Compile model for GPU
-    ov::Core core;
-    ov::CompiledModel compiled_model;
-    auto model = create_conditional_kernel_model();
-    if (m_config.device == "GPU") {
-        compiled_model = core.compile_model(model, "GPU");
-    } else {
-        // Fallback to CPU if GPU not available
-        compiled_model = core.compile_model(model, "CPU");
+
+    if (!m_requests_initialized) {
+        throw std::runtime_error("Conditional kernel infer request not initialized. Cannot use GPU acceleration.");
     }
-    // Run ops model pipeline
-    auto request = compiled_model.create_infer_request();
-    request.set_input_tensor(0, visual_features);  // visual features
-    request.set_input_tensor(1, text_features);    // text features
-    request.infer();
 
-    // Get all outputs
-    auto relevance_scores = request.get_output_tensor(0);
+    // Use preinitialized infer request
+    m_conditional_kernel_infer_request.set_input_tensor(0, visual_features);  // visual features
+    m_conditional_kernel_infer_request.set_input_tensor(1, text_features);    // text features
+    m_conditional_kernel_infer_request.infer();
 
-    return relevance_scores;
+    // Get output tensor
+    auto conditional_kernel = m_conditional_kernel_infer_request.get_output_tensor(0);
+
+    return conditional_kernel;
+}
+
+std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_similarity_matrix_model() {
+    // Create a simple MatMul model for similarity matrix computation
+    // Input: [B, N, D] normalized features
+    // Output: [B, N, N] similarity matrix
+
+    auto input_features = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1, -1});
+
+    // Transpose features for batch matrix multiplication: [B, N, D] -> [B, D, N]
+    auto axes_order = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{3}, {0, 2, 1});
+    auto features_transposed = std::make_shared<ov::op::v1::Transpose>(input_features, axes_order);
+
+    // Batch matrix multiplication: [B, N, D] @ [B, D, N] = [B, N, N]
+    auto matmul = std::make_shared<ov::op::v0::MatMul>(input_features, features_transposed);
+
+    auto result = std::make_shared<ov::op::v0::Result>(matmul);
+
+    return std::make_shared<ov::Model>(ov::ResultVector{result},
+                                       ov::ParameterVector{input_features},
+                                       "SimilarityMatrix_Model");
 }
 
 std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_model() {

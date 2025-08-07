@@ -4,6 +4,7 @@
 #pragma once
 
 #include "cdpruner_config.hpp"
+#include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
 
 namespace ov::genai::cdpruner {
@@ -53,6 +54,10 @@ private:
     /// @return Shared pointer to the OpenVINO model
     std::shared_ptr<ov::Model> create_conditional_kernel_model();
 
+    /// @brief Create OpenVINO ops model for similarity matrix computation
+    /// @return Shared pointer to the OpenVINO model for similarity computation
+    std::shared_ptr<ov::Model> create_similarity_matrix_model();
+
     /// @brief Compute similarity matrix between visual features
     /// @param features Visual feature embeddings [B, N, D]
     /// @return Similarity matrix [B, N, N]
@@ -91,6 +96,11 @@ private:
     std::shared_ptr<ov::Node> create_min_max_normalize_ops(std::shared_ptr<ov::Node> input);
 
     Config m_config;
+
+    // Precompiled infer requests for performance optimization
+    ov::InferRequest m_similarity_infer_request;
+    ov::InferRequest m_conditional_kernel_infer_request;
+    bool m_requests_initialized;
 };
 
-} // namespace ov::genai::cdpruner 
+}  // namespace ov::genai::cdpruner
