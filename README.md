@@ -12,6 +12,7 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 
 Please follow the following blogs to setup your first hands-on experience with C++ and Python samples.
 
+* [How to Build OpenVINO™ GenAI](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/BUILD.md)
 * [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
 * [How to run Llama 3.2 locally with OpenVINO™](https://medium.com/openvino-toolkit/how-to-run-llama-3-2-locally-with-openvino-60a0f3674549)
 
