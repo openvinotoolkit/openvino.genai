@@ -191,7 +191,7 @@ def parse_args():
     parser.add_argument(
         "--long-prompt",
         action='store_true',
-        help="LLMPipeline specific parameter that defines of using long context prompt",
+        help="LLMPipeline specific parameter that defines the use of a long context prompt",
     )
 
     return parser.parse_args()
