@@ -191,6 +191,26 @@ describe('LLMPipeline.generate()', () => {
     assert.strictEqual(typeof replyStr, 'string');
     assert.strictEqual(replyStr, reply.toString());
   });
+
+  it('DecodedResults.perfMetrics', async () => {
+    const config = {
+      'max_new_tokens': 20,
+      'return_decoded_results': true,
+    };
+    const prompt = ['The Sky is blue because'];
+    const res = await pipeline.generate(prompt, config);
+    const { perfMetrics } = res;
+
+    const loadTime = perfMetrics.getLoadTime();
+
+    // assert.ok(perfMetrics.get_num_generated_tokens() !== undefined);
+    // assert.ok(perfMetrics.get_generate_duration() !== undefined);
+    // assert.ok(perfMetrics.get_tokenization_duration() !== undefined);
+    // assert.ok(perfMetrics.get_detokenization_duration() !== undefined);
+    // assert.ok(perfMetrics.get_ttft() !== undefined);
+    // assert.ok(perfMetrics.get_tpot() !== undefined);
+    // assert.ok(perfMetrics.get_throughput() !== undefined);
+  });
 });
 
 describe('stream()', () => {

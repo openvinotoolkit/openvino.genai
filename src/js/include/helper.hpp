@@ -9,6 +9,13 @@
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
+#define VALIDATE_ARGS_COUNT(info, expected_count, method_name)                                 \
+    if (info.Length() != expected_count) {                                                     \
+        Napi::TypeError::New(info.Env(), method_name " expects " #expected_count " arguments") \
+            .ThrowAsJavaScriptException();                                                     \
+        return info.Env().Undefined();                                                         \
+    }
+
 ov::AnyMap to_anyMap(const Napi::Env&, const Napi::Value&);
 
 /**
