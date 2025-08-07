@@ -467,7 +467,6 @@ def test_two_inputs_string_list_of_lists_batched(hf_ov_genai_models, input_pair)
     hf_encoded = hf_tokenizer(input_pair, return_tensors="np", padding=True)["input_ids"]
     assert np.all(ov_encoded == hf_encoded)
 
-# Original single batch cases
 @pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
 @pytest.mark.precommit
 @pytest.mark.parametrize("input_pair", [

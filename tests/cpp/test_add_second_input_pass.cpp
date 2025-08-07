@@ -5,7 +5,6 @@
 #include "tokenizer/tokenizers_path.hpp"
 #include "gguf_utils/gguf_tokenizer.hpp"
 #include <gtest/gtest.h>
-#include <openvino/pass/visualize_tree.hpp>
 #include <openvino/pass/manager.hpp>
 #include <openvino/op/parameter.hpp>
 #include <openvino/op/constant.hpp>
@@ -112,9 +111,7 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
     std::ostringstream pass_errors;
     
     ov::pass::Manager manager;
-    manager.register_pass<ov::pass::VisualizeTree>("graph_before.svg");
     manager.register_pass<ov::genai::AddSecondInputPass>(shared_object_ov_tokenizers, pass_errors);
-    manager.register_pass<ov::pass::VisualizeTree>("graph_after.svg");
     manager.run_passes(model);
 
     // Check that resulting graph contains required fields.
@@ -133,12 +130,8 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
 static bool run_add_second_input_pass(std::shared_ptr<ov::Model> model, std::ostringstream& pass_errors) {
     ov::pass::Manager manager;
     manager.register_pass<ov::genai::AddSecondInputPass>(shared_object_ov_tokenizers, pass_errors);
-    try {
-        manager.run_passes(model);
-    } catch (...) {
-        // Some errors may throw, but pass should return false
-        return false;
-    }
+    manager.run_passes(model);
+    
     return pass_errors.str().empty();
 }
 

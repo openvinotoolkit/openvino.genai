@@ -72,13 +72,13 @@ bool AddSecondInputPass::parse_inputs(std::shared_ptr<ov::Node>& combine_seg) {
             }
             
             for (size_t i = 3; i < trunc_inputs.size(); ++i) {
-                this->trunc_values.push_back(trunc_inputs[i]);
+                this->m_trunc_values.push_back(trunc_inputs[i]);
             }
         }
     }
-    this->inputs = inputs;
-    this->input_signature = input_signature;
-    return true;
+    this->m_inputs = inputs;
+    this->m_input_signature = input_signature;
+    return true;  // means successfully parsed inputs
 }
 
 bool AddSecondInputPass::parse_and_assert_postprocessor(const std::shared_ptr<ov::Model>& model) {
@@ -97,13 +97,13 @@ bool AddSecondInputPass::parse_and_assert_postprocessor(const std::shared_ptr<ov
         return false;
     }
 
-    if (post_processor["single"]["ids"].get<std::vector<int>>() != input_signature) {
+    if (post_processor["single"]["ids"].get<std::vector<int>>() != m_input_signature) {
         m_pass_errors << "Could not add second input. Input signature from rt_info does not match to the CombineSegments node inputs." << std::endl;
         return false;
     }
 
     auto pair_ids = post_processor["pair"]["ids"].get<std::vector<int>>();
-    if (std::vector<int>(pair_ids.begin(), pair_ids.begin() + input_signature.size()) != input_signature) {
+    if (std::vector<int>(pair_ids.begin(), pair_ids.begin() + m_input_signature.size()) != m_input_signature) {
         m_pass_errors << "Could not add second input. Paired inputs are allowed only when it's widening the single input." << std::endl;
         return false;
     }
@@ -121,13 +121,13 @@ bool AddSecondInputPass::parse_and_assert_postprocessor(const std::shared_ptr<ov
         return false;
     }
 
-    this->post_processor = post_processor;
+    this->m_post_processor = post_processor;
     return true;
 }
 
 void AddSecondInputPass::insert_splits() {
     // Find the index of the first sequence input (-1)
-    auto input_signature = this->input_signature;
+    auto input_signature = this->m_input_signature;
     
     auto it = std::find(input_signature.begin(), input_signature.end(), -1);
     if (it == input_signature.end()) {
@@ -136,9 +136,9 @@ void AddSecondInputPass::insert_splits() {
     }
     size_t first_input_idx = std::distance(input_signature.begin(), it);
 
-    auto begin = inputs[3 * first_input_idx];
-    auto end = inputs[3 * first_input_idx + 1];
-    auto data = inputs[3 * first_input_idx + 2];
+    auto begin = m_inputs[3 * first_input_idx];
+    auto end = m_inputs[3 * first_input_idx + 1];
+    auto data = m_inputs[3 * first_input_idx + 2];
 
     // Create two new Parameters for paired input
     std::vector<std::shared_ptr<ov::op::v0::Parameter>> new_parameters;
@@ -147,7 +147,7 @@ void AddSecondInputPass::insert_splits() {
         param->set_friendly_name("string_input_" + std::to_string(i + 1));
         new_parameters.push_back(param);
     }
-    this->new_parameters = new_parameters;
+    this->m_new_parameters = new_parameters;
 
     auto param_1_shape = std::make_shared<ShapeOf>(new_parameters[0], element::i32);
     auto param_2_shape = std::make_shared<ShapeOf>(new_parameters[1], element::i32);
@@ -172,11 +172,14 @@ void AddSecondInputPass::insert_splits() {
 
     // If inputs_2 is empty, we need to zero the second dimension of the broadcasted begins and ends tensors.
     auto zero_const = make_constant({0});
-    this->equal_node = std::make_shared<Equal>(param_2_shape, zero_const);
-    begins_2 = std::make_shared<Select>(equal_node, zero_const, begins_2);
-    // TODO: indeed for ends it should've been 1 but for this bug CSV-160624 we set to zero for the moment.
+    this->m_equal_node = std::make_shared<Equal>(param_2_shape, zero_const);
+    begins_2 = std::make_shared<Select>(m_equal_node, zero_const, begins_2);
+    // TODO: For correct behavior, 'ends_2' should be set to 1 when the second input is empty.
+    // However, due to bug CSV-160624 (incorrect handling of empty second input in Select and broadcast),
+    // we temporarily set it to zero as a workaround. 
+    // The following line to use 1 instead of 0 is kept for future reference: once bug CSV-160624 is resolved
     // auto one_const = make_constant({1});
-    ends_2 = std::make_shared<Select>(equal_node, zero_const, ends_2);
+    ends_2 = std::make_shared<Select>(m_equal_node, zero_const, ends_2);
 
     // Broadcast shapes
     auto broadcasted_shape = std::make_shared<Maximum>(param_1_shape, param_2_shape);
@@ -193,11 +196,11 @@ void AddSecondInputPass::insert_splits() {
     };
 
     // Extend signature and adjust truncation
-    auto pair_ids = post_processor["pair"]["ids"].get<std::vector<int>>();
+    auto pair_ids = m_post_processor["pair"]["ids"].get<std::vector<int>>();
     std::vector<int> signature_to_extend(pair_ids.begin() + input_signature.size(), pair_ids.end());
 
     // Adjust truncation values
-    auto& trunc_values = this->trunc_values;
+    auto& trunc_values = this->m_trunc_values;
     if (!trunc_values.empty()) {
         auto trunc_const_max_len = std::dynamic_pointer_cast<Constant>(trunc_values[0].get_node_shared_ptr());
         if (trunc_const_max_len) {
@@ -214,19 +217,19 @@ void AddSecondInputPass::insert_splits() {
         truncate_inputs.push_back(t);
     }
 
-    auto trunc = node_factory("Truncate", truncate_inputs, {});
-    this->first_input = {trunc[0], trunc[1], trunc[2]};
-    this->second_input = {trunc[3], trunc[4], trunc[5]};
+    auto trunc = m_node_factory("Truncate", truncate_inputs, {});
+    this->m_first_input = {trunc[0], trunc[1], trunc[2]};
+    this->m_second_input = {trunc[3], trunc[4], trunc[5]};
 }
 
 std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
     // This part of the code is responsible for creating new inputs for the CombineSegments node.
     // It combines inputs for the first and second input, and adds special tokens for the second input.
     // The new inputs are then returned as a vector.
-    auto inputs = this->inputs;
-    auto input_signature = this->input_signature;
-    auto first_input = this->first_input;
-    auto second_input = this->second_input;
+    auto inputs = this->m_inputs;
+    auto input_signature = this->m_input_signature;
+    auto first_input = this->m_first_input;
+    auto second_input = this->m_second_input;
 
     std::vector<ov::Output<ov::Node>> new_inputs = inputs;
     // Replace original input with first_input
@@ -239,7 +242,7 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
     std::copy(first_input.begin(), first_input.end(), new_inputs.begin() + 3 * first_input_idx);
 
     // Extend signature with additional inputs
-    auto pair_ids = post_processor["pair"]["ids"].get<std::vector<int>>();
+    auto pair_ids = m_post_processor["pair"]["ids"].get<std::vector<int>>();
     std::vector<int> signature_to_extend(pair_ids.begin() + input_signature.size(), pair_ids.end());
     for (auto value : signature_to_extend) {
         if (value <= -1) {
@@ -254,7 +257,7 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
 
         // Nullify special tokens constant if ends for sequence_2 is nullified
         auto select_node = std::make_shared<Select>(
-            equal_node,
+            m_equal_node,
             make_constant({0}),
             make_constant({1})
         );
@@ -266,11 +269,11 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
             added_spec_data
         });
     }
-    if (!post_processor["pair"].contains("type_ids")) {
+    if (!m_post_processor["pair"].contains("type_ids")) {
         m_pass_errors << "Could not add second input. post_processor does not contain 'type_ids' for paired input" << std::endl;
         return {};
     }
-    auto type_ids = post_processor["pair"]["type_ids"].get<std::vector<int>>();
+    auto type_ids = m_post_processor["pair"]["type_ids"].get<std::vector<int>>();
     auto new_segment_ids = make_constant(type_ids);
     new_inputs.push_back(new_segment_ids);
 
@@ -317,7 +320,7 @@ bool AddSecondInputPass::run_on_model(const std::shared_ptr<ov::Model>& model) {
     }
 
     // Replace the CombineSegments node with a new one that takes the pair of inputs
-    auto new_combine_segments = node_factory("CombineSegments", new_inputs, {})[0].get_node_shared_ptr();
+    auto new_combine_segments = m_node_factory("CombineSegments", new_inputs, {})[0].get_node_shared_ptr();
     ov::replace_node(combine_seg, new_combine_segments);
 
     // Find StringTensorUnpack node connected to the model input
@@ -333,12 +336,12 @@ bool AddSecondInputPass::run_on_model(const std::shared_ptr<ov::Model>& model) {
     }
 
     // Concatenate new parameters for input
-    auto new_input = std::make_shared<Concat>(ov::OutputVector{new_parameters[0], new_parameters[1]}, 0);
+    auto new_input = std::make_shared<Concat>(ov::OutputVector{m_new_parameters[0], m_new_parameters[1]}, 0);
 
     str_unpack->input(0).replace_source_output(new_input->output(0));
 
-    model->replace_parameter(0, new_parameters[0]);
-    model->add_parameters({new_parameters[1]});
+    model->replace_parameter(0, m_new_parameters[0]);
+    model->add_parameters({m_new_parameters[1]});
 
     return true;
 }

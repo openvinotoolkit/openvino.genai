@@ -28,20 +28,20 @@ public:
     */
     AddSecondInputPass(const std::shared_ptr<void>& openvino_tokenizers_shared_object, std::ostringstream& pass_errors):
     m_pass_errors(pass_errors) {
-        node_factory = reinterpret_cast<FactoryCreateType>(get_symbol(openvino_tokenizers_shared_object, "create_tokenizer_node"));
+        m_node_factory = reinterpret_cast<FactoryCreateType>(get_symbol(openvino_tokenizers_shared_object, "create_tokenizer_node"));
     }
 
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 private:
-    FactoryCreateType node_factory;
-    std::vector<int> input_signature;
-    std::vector<ov::Output<ov::Node>> inputs;
-    nlohmann::json post_processor;
-    ov::ParameterVector new_parameters;
-    std::shared_ptr<ov::Node> equal_node;
-    std::vector<ov::Output<ov::Node>> trunc_values;
-    std::array<ov::Output<ov::Node>, 3> first_input;
-    std::array<ov::Output<ov::Node>, 3> second_input;
+    FactoryCreateType m_node_factory;
+    std::vector<int> m_input_signature;
+    std::vector<ov::Output<ov::Node>> m_inputs;
+    nlohmann::json m_post_processor;
+    ov::ParameterVector m_new_parameters;
+    std::shared_ptr<ov::Node> m_equal_node;
+    std::vector<ov::Output<ov::Node>> m_trunc_values;
+    std::array<ov::Output<ov::Node>, 3> m_first_input;
+    std::array<ov::Output<ov::Node>, 3> m_second_input;
     std::ostringstream& m_pass_errors;
 
     /// @brief Handles combining segment inputs and managing input_signature.

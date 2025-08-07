@@ -382,20 +382,21 @@ public:
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
         auto [filtered_properties, two_input_requested] = utils::extract_paired_input_props(properties);
-
-        if (ov_tokenizer && ov_tokenizer->get_parameters().size() == 2) {
-            is_paired_input = true;
-        }
+        
+        is_paired_input = ov_tokenizer && ov_tokenizer->get_parameters().size() == 2;
+        
+        // buffer to store the error messages from the pass
+        std::ostringstream pass_errors;
 
         // If model is already converted with 2 inputs, then skip the pass
         if (ov_tokenizer && two_input_requested && !is_paired_input) {
             ov::pass::Manager manager;
-            manager.register_pass<ov::genai::AddSecondInputPass>(m_shared_object_ov_tokenizers, m_pass_errors);
+            manager.register_pass<ov::genai::AddSecondInputPass>(m_shared_object_ov_tokenizers, pass_errors);
             manager.run_passes(ov_tokenizer);
-            is_paired_input = true;
         }
-
-        OPENVINO_ASSERT(!two_input_requested || is_paired_input, "Two input requested but AddSecondInputPass failed with " + m_pass_errors.str());
+        
+        is_paired_input = pass_errors.str().empty();
+        OPENVINO_ASSERT(!two_input_requested || is_paired_input, "Two input requested but AddSecondInputPass failed with " + pass_errors.str());
 
         // temporary allow absense both tokenizer and detokenizer for GGUF support
         // TODO: remove this code once Tokenizers can be created from GGUF file

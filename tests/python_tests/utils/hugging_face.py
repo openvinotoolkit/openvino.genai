@@ -199,15 +199,9 @@ def download_and_convert_model(model_id: str, **tokenizer_kwargs):
     return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
 
 @pytest.fixture()
-def download_and_convert_embeddings_models(request):
+def download_and_convert_models(request):
     model_id = request.param
     return _download_and_convert_model(model_id, OVModelForFeatureExtraction)
-
-
-@pytest.fixture()
-def download_and_convert_rerank_model(request):
-    model_id = request.param
-    return _download_and_convert_model(model_id, OVModelForSequenceClassification)
 
 
 def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):
