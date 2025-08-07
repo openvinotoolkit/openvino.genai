@@ -138,12 +138,6 @@ if(NOT ENABLE_GGUF)
     list(REMOVE_ITEM SOURCE_FILES ${GGUF_SOURCES})
 endif()
 
-if(NOT ENABLE_XGRAMMAR)
-    set(XGRAMMAR_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/sampling/structured_output/xgrammar_backend.hpp
-                         ${CMAKE_CURRENT_SOURCE_DIR}/src/sampling/structured_output/xgrammar_backend.cpp)
-    list(REMOVE_ITEM SOURCE_FILES ${XGRAMMAR_SOURCES})
-endif()
-
 set(TARGET_NAME openvino_genai)
 set(TARGET_NAME_OBJ ${TARGET_NAME}_obj)
 
@@ -174,10 +168,6 @@ set_target_properties(${TARGET_NAME_OBJ} PROPERTIES POSITION_INDEPENDENT_CODE ON
 add_library(${TARGET_NAME} SHARED $<TARGET_OBJECTS:${TARGET_NAME_OBJ}>)
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
-if(ENABLE_XGRAMMAR)
-    target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
-endif()
-
 if(WIN32)
   add_vs_version_resource(${TARGET_NAME})
 endif()
@@ -187,7 +177,12 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
 if(ENABLE_XGRAMMAR)
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE xgrammar)
     target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
+else()
+    set(XGRAMMAR_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/sampling/structured_output/xgrammar_backend.hpp
+                         ${CMAKE_CURRENT_SOURCE_DIR}/src/sampling/structured_output/xgrammar_backend.cpp)
+    list(REMOVE_ITEM SOURCE_FILES ${XGRAMMAR_SOURCES})
 endif()
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
 
