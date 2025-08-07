@@ -634,7 +634,7 @@ SIMPLIFIED_QWEN2_VL_2B = "{% for message in messages %}{{ message['content'] }}{
 
 @pytest.mark.precommit
 def test_set_special_runtime_template(tmp_path):
-    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None, None))
+    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None))
     tokenizer.chat_template = QWEN2_VL_2B
     assert tokenizer.chat_template == SIMPLIFIED_QWEN2_VL_2B
 
