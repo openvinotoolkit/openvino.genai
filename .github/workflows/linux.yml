@@ -25,7 +25,7 @@ env:
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   HF_HOME: /mount/caches/huggingface/lin
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/3ace0cbed82ce5d376658b52ca30824b5960dbc8
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
   ARTIFACTS_SHARE: '/mount/build-artifacts'
@@ -851,8 +851,8 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: npm test
 
-  genai_xgrammar_tests:
-    name: Build & Test XGrammar
+  genai_xgrammar_off_tests:
+    name: Build & Test when ENABLE_XGRAMMAR=OFF
     needs: [smart_ci, openvino_download, genai_build_wheel]
     timeout-minutes: 45
     defaults:

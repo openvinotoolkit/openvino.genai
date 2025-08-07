@@ -22,7 +22,7 @@ env:
   BASE_PRODUCT_TYPE: public_darwin
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: ~/.cache/hf
-  OV_CACHE: ~/.cache/ov_cache
+  OV_CACHE: ~/.cache/ov_cache/194c936
 
 jobs:
   smart_ci:

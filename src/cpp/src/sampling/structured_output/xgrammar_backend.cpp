@@ -31,7 +31,10 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
     auto& structured_output_config = *sampling_parameters.structured_output_config;
     structured_output_config.validate();
 
-    xgrammar::Grammar grammar;
+    // Default constructor for xgrammar::Grammar is not enabled,
+    // create explicitly an empty grammar.
+    xgrammar::Grammar grammar = xgrammar::Grammar::FromEBNF("root ::= root");
+
     if (structured_output_config.json_schema.has_value()) {
         grammar = xgrammar::Grammar::FromJSONSchema(*structured_output_config.json_schema);
     } else if (structured_output_config.regex.has_value()) {
@@ -64,14 +67,13 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     std::optional<std::vector<int>> override_stop_tokens,
     bool terminate_without_stop_token,
     int max_rollback_tokens
-) {
+): m_grammar_matcher(
+      compiled_grammar,
+      override_stop_tokens,
+      terminate_without_stop_token,
+      max_rollback_tokens
+  ) {
     m_vocab_size = compiled_grammar.GetTokenizerInfo().GetVocabSize();
-    m_grammar_matcher = xgrammar::GrammarMatcher(
-        compiled_grammar,
-        override_stop_tokens,
-        terminate_without_stop_token,
-        max_rollback_tokens
-    );
     
     // Divide vocab into 32 for bitmask and ceil to the nearest integer
     // This is to ensure that we can use a bitmask to represent the vocabulary
