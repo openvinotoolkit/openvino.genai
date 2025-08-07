@@ -3012,13 +3012,13 @@ class Tokenizer:
         """
         Returns the vocabulary as list of strings, where position of a string represents token ID.
         """
-    def is_paired_input(self) -> bool:
-        """
-        Returns true if the tokenizer supports paired input, false otherwise.
-        """
     def set_chat_template(self, chat_template: str) -> None:
         """
         Override a chat_template read from tokenizer_config.json.
+        """
+    def supports_paired_input(self) -> bool:
+        """
+        Returns true if the tokenizer supports paired input, false otherwise.
         """
 class TorchGenerator(CppStdGenerator):
     """
