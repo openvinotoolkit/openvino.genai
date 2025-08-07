@@ -40,9 +40,6 @@ EncodedImage VisionEncoderGemma3::encode(const ov::Tensor& image, const ov::AnyM
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Tensor pixel_values = get_pixel_values_gemma3(image, config);
-    
-    auto pixel_values_ptr = pixel_values.data<float>();
-    ov::Shape pixel_values_shape = pixel_values.get_shape();
 
     encoder.set_tensor("pixel_values", pixel_values);
     encoder.infer();
@@ -51,8 +48,7 @@ EncodedImage VisionEncoderGemma3::encode(const ov::Tensor& image, const ov::AnyM
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
-    ImageSize resized_source_size{config.size_height / config.patch_size, config.size_width / config.patch_size};
-    return {std::move(image_features), resized_source_size};
+    return {std::move(image_features)};
 }
 
 InputsEmbedderGemma3::InputsEmbedderGemma3(
