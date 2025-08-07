@@ -191,12 +191,6 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
         print(f"ov_genai out: {ov_full_history_str}")
     assert ov_full_history_str == hf_full_history_str
 
-    # Test throwing exception for empty rendered chat template
-    # Example: Qwen2-VL chat template
-    chat_template_for_empty_output = "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}"
-    with pytest.raises(Exception):
-        ov_tokenizer.apply_chat_template(conversation, chat_template=chat_template_for_empty_output)
-
 
 @pytest.mark.precommit
 @pytest.mark.parametrize(
@@ -655,3 +649,12 @@ def test_template_priorities(tmp_path, chat_templates):
     tokenizer = generate_tokenizer(tmp_path, chat_templates)
     assert tokenizer.chat_template == chat_templates.reference
 
+
+@pytest.mark.precommit
+def test_chat_template_with_empty_output(tmp_path):
+    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None))
+    # Test throwing exception for empty rendered chat template (e.g. Qwen2-VL)
+    # Original Qwen2-VL chat template is modified with \n to avoid remapping with simplified template.
+    chat_template_with_empty_output = QWEN2_VL_2B + "\n"
+    with pytest.raises(Exception):
+        tokenizer.apply_chat_template(conversation, add_generation_prompt=False, chat_template=chat_template_with_empty_output)
