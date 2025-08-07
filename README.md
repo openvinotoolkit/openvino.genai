@@ -12,7 +12,7 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 
 * [Introduction to OpenVINO™ GenAI](https://openvinotoolkit.github.io/openvino.genai/docs/getting-started/introduction)
 * [Install OpenVINO™ GenAI](https://openvinotoolkit.github.io/openvino.genai/docs/getting-started/installation)
-* [Build OpenVINO™ GenAI](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/BUILD.md)
+* [Build OpenVINO™ GenAI](./src/docs/BUILD.md)
 
 Please follow the following blogs to setup your first hands-on experience with C++ and Python samples.
 
