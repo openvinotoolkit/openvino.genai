@@ -146,7 +146,7 @@ public:
             total_num_tokens += sequence_group->get_num_scheduled_tokens() * num_sequences;
             total_num_blocks += sequence_group->get_num_blocks() * num_sequences;
             max_context_len_val = std::max(max_context_len_val, sequence_group->get_context_len());
-            have_token_type_ids = sequence_group->have_token_type_ids();
+            have_token_type_ids = have_token_type_ids || sequence_group->have_token_type_ids();
         }
 
         ov::Tensor
@@ -211,7 +211,7 @@ public:
             size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
             size_t group_position_id = sequence_group->get_num_processed_tokens();
             size_t prompt_len = sequence_group->get_prompt_len();
-            have_token_type_ids = sequence_group->have_token_type_ids();
+            have_token_type_ids = have_token_type_ids || sequence_group->have_token_type_ids();
 
             // Next variables are only for sliced matmul case
             size_t output_seq_len = 0;
