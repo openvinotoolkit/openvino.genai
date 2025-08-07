@@ -14,8 +14,8 @@ public:
     Napi::Value get_load_time(const Napi::CallbackInfo& info);
     // Napi::Value get_grammar_compiler_init_times(const Napi::CallbackInfo& info);
     // Napi::Value get_grammar_compile_time(const Napi::CallbackInfo& info);
-    // Napi::Value get_num_generated_tokens(const Napi::CallbackInfo& info);
-    // Napi::Value get_num_input_tokens(const Napi::CallbackInfo& info);
+    Napi::Value get_num_generated_tokens(const Napi::CallbackInfo& info);
+    Napi::Value get_num_input_tokens(const Napi::CallbackInfo& info);
     // Napi::Value get_ttft(const Napi::CallbackInfo& info);
     // Napi::Value get_tpot(const Napi::CallbackInfo& info);
     // Napi::Value get_ipot(const Napi::CallbackInfo& info);

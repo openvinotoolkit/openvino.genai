@@ -3,6 +3,7 @@ import { LLMPipeline } from '../dist/index.js';
 import assert from 'node:assert/strict';
 import { describe, it, before, after } from 'node:test';
 import { models } from './models.js';
+import { hrtime } from 'node:process';
 
 const MODEL_PATH = process.env.MODEL_PATH
   || `./tests/models/${models.LLM.split('/')[1]}`;
@@ -197,11 +198,23 @@ describe('LLMPipeline.generate()', () => {
       'max_new_tokens': 20,
       'return_decoded_results': true,
     };
-    const prompt = ['The Sky is blue because'];
+    const prompt = 'The Sky is blue because';
+    const start = hrtime.bigint();
+    pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
+    await pipeline.startChat();
     const res = await pipeline.generate(prompt, config);
-    const { perfMetrics } = res;
+    const elapsed = Number(hrtime.bigint() - start) / 1e6;
 
+    const { perfMetrics } = res;
     const loadTime = perfMetrics.getLoadTime();
+    assert.ok(loadTime >= 0 && loadTime <= elapsed);
+
+    const numGeneratedTokens = perfMetrics.getNumGeneratedTokens();
+    assert.ok(numGeneratedTokens > 0);
+    assert.ok(numGeneratedTokens <= config.max_new_tokens);
+
+    const numInputTokens = perfMetrics.getNumInputTokens();
+    assert.ok(numInputTokens > 0 && typeof numInputTokens === 'number');
 
     // assert.ok(perfMetrics.get_num_generated_tokens() !== undefined);
     // assert.ok(perfMetrics.get_generate_duration() !== undefined);

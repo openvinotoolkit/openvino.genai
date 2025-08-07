@@ -1,7 +1,7 @@
 #include "include/js_perf_metrics.hpp"
 
-#include "include/helper.hpp"
 #include "include/addon.hpp"
+#include "include/helper.hpp"
 
 PerfMetricsWrapper::PerfMetricsWrapper(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<PerfMetricsWrapper>(info),
@@ -12,6 +12,8 @@ Napi::Function PerfMetricsWrapper::get_class(Napi::Env env) {
                        "PerfMetrics",
                        {
                            InstanceMethod("getLoadTime", &PerfMetricsWrapper::get_load_time),
+                           InstanceMethod("getNumGeneratedTokens", &PerfMetricsWrapper::get_num_generated_tokens),
+                           InstanceMethod("getNumInputTokens", &PerfMetricsWrapper::get_num_input_tokens),
                            InstanceMethod("toString", &PerfMetricsWrapper::to_string),
                        });
 }
@@ -28,6 +30,16 @@ Napi::Object PerfMetricsWrapper::wrap(Napi::Env env, const ov::genai::PerfMetric
 Napi::Value PerfMetricsWrapper::get_load_time(const Napi::CallbackInfo& info) {
     VALIDATE_ARGS_COUNT(info, 0, "getLoadTime()");
     return Napi::Number::New(info.Env(), _metrics.get_load_time());
+}
+
+Napi::Value PerfMetricsWrapper::get_num_generated_tokens(const Napi::CallbackInfo& info) {
+    VALIDATE_ARGS_COUNT(info, 0, "getNumGeneratedTokens()");
+    return Napi::Number::New(info.Env(), _metrics.get_num_generated_tokens());
+}
+
+Napi::Value PerfMetricsWrapper::get_num_input_tokens(const Napi::CallbackInfo& info) {
+    VALIDATE_ARGS_COUNT(info, 0, "getNumInputTokens()");
+    return Napi::Number::New(info.Env(), _metrics.get_num_input_tokens());
 }
 
 Napi::Value PerfMetricsWrapper::to_string(const Napi::CallbackInfo& info) {
