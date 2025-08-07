@@ -58,7 +58,7 @@ StatefulLLMPipelineNPU::StatefulLLMPipelineNPU(
     : LLMPipelineImplBase(tokenizer, generation_config) {
     auto properties_without_draft_model = properties;
     auto draft_model_descr = extract_draft_model_from_config(properties_without_draft_model);
-     if (draft_model_descr.model != nullptr) {
+    if (draft_model_descr.model != nullptr) {
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
         m_pimpl = std::make_unique<SpeculativeLLMPipelineNPU>(main_model_descr, draft_model_descr);
     } else if (properties_without_draft_model.count("STATIC_PIPELINE")) {
