@@ -441,6 +441,7 @@ def make_model_params():
     params = []
     for model_id_and_params in base_models_for_paired_input_test:
         model_id, params_dict = model_id_and_params
+        params.append((model_id, {**params_dict}))
         params.append((model_id, {**params_dict, "add_second_input": True}))
         params.append((model_id, {**params_dict, "number_of_inputs": 2}))
 

@@ -119,7 +119,7 @@ public:
                               const Config& config,
                               const ov::AnyMap& properties = {})
         : m_config{config},
-          m_tokenizer{models_path, ov::AnyMap{ov::genai::add_second_input(true)}} {
+          m_tokenizer{models_path} {
         ov::Core core = utils::singleton_core();
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);

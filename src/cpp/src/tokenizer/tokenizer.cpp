@@ -959,7 +959,7 @@ const std::vector<std::string>& Tokenizer::get_vocab_vector() const {
     return m_pimpl->m_vocab;
 }
 
-bool Tokenizer::is_paired_input() const {
+bool Tokenizer::supports_paired_input() const {
     return m_pimpl->is_paired_input;
 }
 

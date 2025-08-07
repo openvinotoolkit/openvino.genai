@@ -234,7 +234,7 @@ void init_tokenizer(py::module_& m) {
         .def("get_vocab_vector", &Tokenizer::get_vocab_vector, 
              R"(Returns the vocabulary as list of strings, where position of a string represents token ID.)"
         )
-        .def("is_paired_input", &Tokenizer::is_paired_input, 
+        .def("supports_paired_input", &Tokenizer::supports_paired_input, 
              R"(Returns true if the tokenizer supports paired input, false otherwise.)"
         );
 }

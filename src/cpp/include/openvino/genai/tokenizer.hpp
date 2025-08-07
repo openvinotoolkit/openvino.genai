@@ -304,7 +304,7 @@ public:
     const std::vector<std::string>& get_vocab_vector() const;
     
      /// @brief Check if the tokenizer supports paired input.
-    bool is_paired_input() const;
+    bool supports_paired_input() const;
 
     Tokenizer() = default;
     ~Tokenizer();
