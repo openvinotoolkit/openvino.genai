@@ -180,10 +180,10 @@ export class LLMPipeline {
               result.texts, result.scores, result.perfMetrics);
             resolve(decodedResults);
           } else if (isDone && !returnDecoded) {
-            console.warn('From 2026.0.0 LLMPipeline.generate() will return',
-              '"DecodedResults" object. "string" will be returned for',
-              'prompt: "string" and GenerationConfig.num_return_sequences:',
-              '1.\n');
+            console.warn('DEPRECATION WARNING: Starting in version 2026.0.0,',
+              'LLMPipeline.generate() will return DecodedResults by default.\n',
+              'To use the new behavior now, set "return_decoded_results": true',
+              'in GenerationConfig.');
             resolve(result.subword);
           } else if (callback && typeof result === 'string') {
             return callback(result);
