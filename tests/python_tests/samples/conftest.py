@@ -147,7 +147,8 @@ TEST_FILES = {
     "overture-creations-mask.png": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png",
     "cat.png": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png",
     "cat": "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11",
-    "3283_1447_000.tar.gz": "https://huggingface.co/datasets/facebook/multilingual_librispeech/resolve/main/data/mls_polish/train/audio/3283_1447_000.tar.gz"
+    "3283_1447_000.tar.gz": "https://huggingface.co/datasets/facebook/multilingual_librispeech/resolve/main/data/mls_polish/train/audio/3283_1447_000.tar.gz",
+    "cmu_us_awb_arctic-wav-arctic_a0001.bin": "https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin"
 }
 
 SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python")))
@@ -209,7 +210,11 @@ def convert_model(request):
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
+        try:
+            retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
+        except subprocess.CalledProcessError as error:
+            logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+            raise
 
         if MODELS[model_id].get("convert_2_input_tokenizer", False):
             convert_2_input_tokenizer(Path(model_path))
