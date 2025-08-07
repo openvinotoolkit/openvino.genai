@@ -39,7 +39,7 @@ public:
 
     void remove_last_generated_tokens(const std::size_t tokens_to_remove); 
 
-    void trimm_kv_cache(const std::size_t tokens_to_remove);
+    void trim_kv_cache(const std::size_t tokens_to_remove);
 
     ov::genai::EncodedResults finalize();
 
