@@ -33,29 +33,33 @@ namespace ov::genai {
 StatefulLLMPipelineNPU::StatefulLLMPipelineNPU(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
+    const std::string& device,
     const ov::AnyMap& properties)
     : StatefulLLMPipelineNPU(
         utils::read_model(models_path, properties),
         tokenizer,
+        device,
         properties,
         utils::from_config_json_if_exists(models_path)
     ) {}
 
 StatefulLLMPipelineNPU::StatefulLLMPipelineNPU(
     const std::filesystem::path& models_path,
+    const std::string& device,
     const ov::AnyMap& plugin_config)
-    : StatefulLLMPipelineNPU{models_path, Tokenizer(models_path, plugin_config), plugin_config} {}
+    : StatefulLLMPipelineNPU{models_path, Tokenizer(models_path, plugin_config), device, plugin_config} {}
 
 StatefulLLMPipelineNPU::StatefulLLMPipelineNPU(
     const std::shared_ptr<ov::Model>& model,
     const ov::genai::Tokenizer& tokenizer,
+    const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config) {
     auto properties_without_draft_model = properties;
     auto draft_model_descr = extract_draft_model_from_config(properties_without_draft_model);
      if (draft_model_descr.model != nullptr) {
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, "NPU", properties_without_draft_model, {}, generation_config);
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
         m_pimpl = std::make_unique<SpeculativeLLMPipelineNPU>(main_model_descr, draft_model_descr);
     } else if (properties_without_draft_model.count("STATIC_PIPELINE")) {
         m_pimpl = static_llm::LLMPipelineFactory::create(model, tokenizer,

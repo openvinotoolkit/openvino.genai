@@ -443,6 +443,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     ov::genai::GenerationConfig draft_config = m_draft_request->get_generation_config();
     draft_config.ignore_eos = true;
     draft_config.stop_strings = {};
+    draft_config.max_new_tokens = config.get_max_new_tokens();
     draft_config.validate();
     m_draft_request->set_generation_config(draft_config);
 
@@ -509,6 +510,9 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     */
     // Last generated token by draft model needs to be prepended before next run if it is accepted by the main model!
     // So it will get into context too.
+    // Remove debug lines.
+    // std::cout << std::endl << "Launching spec decode for " << config.get_max_new_tokens(prompt_len) << " max new tokens." << std::endl << std::endl;
+    // std::vector<std::pair<int,int>> accepted_tokens;
     int64_t draft_prefix_token = -1;
     while (m_main_request->can_infer() && (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
         // Phase 1: Generation of candidates with the draft model:
@@ -534,7 +538,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
             candidate = m_draft_request->infer_next(candidate);
             candidates.push_back(candidate);
         }
-        
+
         // Phase 2. Main inference.
         // For the main network, candidates_size + 1 tokens will be fed at once in a single infer request:
         // last token from previous main inference + all candidates from the draft stage
@@ -548,22 +552,23 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         // that is generated based on subsequence [first token,...,`t`]
         // of the input prompt.
         // TODO: Handle OOM exception for static model here.
-        auto ref_out_tokens = m_main_request->infer_next_return_all(input_for_main);
+        auto ref_tokens = m_main_request->infer_next_return_all(input_for_main);
 
         // Phase 3. Check if main model produced the same tokens as input candidates:
         size_t accepted_tokens_number = 0u;
         // Last token is a new token from the main model, skip it:
-        for (size_t i = 0; i < ref_out_tokens.size() - 1; ++i) {
-            if (ref_out_tokens[i] != candidates[i]) {
+        for (size_t i = 0; i < ref_tokens.size() - 1; ++i) {
+            if (ref_tokens[i] != candidates[i]) {
                 break;
             }
             accepted_tokens_number++;
         }
 
+        // FIXME: Remove debug line
+        // accepted_tokens.push_back({accepted_tokens_number, candidates.size()});
         auto mismatched_candidates = candidates.size() - accepted_tokens_number;
-        std::vector<int64_t> validated_tokens(candidates.begin(), candidates.end() - mismatched_candidates);
-        out_token = ref_out_tokens.back();
-        validated_tokens.push_back(out_token);
+        std::vector<int64_t> validated_tokens(ref_tokens.begin(), ref_tokens.end() - mismatched_candidates);
+        out_token = validated_tokens.back();
     
         // Phase 4: Update inference wrappers based on found matches and mismatches
         // This is the case when main model accepted all candidates from draft model
@@ -573,6 +578,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         } else {
             m_draft_request->trimm_kv_cache(mismatched_candidates - 1);
             m_main_request->trimm_kv_cache(mismatched_candidates);
+            draft_prefix_token = -1;
         }
 
         m_speculative_config.update_candidate_strategy(accepted_tokens_number);
@@ -586,6 +592,14 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
     }
+
+    // Remove debug lines
+    // std::cout << std::endl << std::endl << "Acceptance ratios for each iteration from total of " << accepted_tokens.size() << "." << std::endl;
+    // std::cout << "Format: n/m per iteration, `n` accepted tokens from `m` candidates." << std::endl;
+    // for (int i = 0; i < accepted_tokens.size(); ++i) {
+    //     std::cout << accepted_tokens[i].first << "/" << accepted_tokens[i].second << ", ";
+    // }
+    m_speculative_config.num_pred_tokens = 5;
 
     m_draft_request->reset_state();
     m_main_request->reset_state();
