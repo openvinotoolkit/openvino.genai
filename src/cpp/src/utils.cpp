@@ -322,7 +322,7 @@ std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& externa
     bool add_second_input = false;
     ov::AnyMap properties = external_properties;
 
-    auto it = properties.find("add_second_input");
+    auto it = properties.find(ov::genai::add_second_input.name());
     if (it != properties.end()) {
         add_second_input = it->second.as<bool>();
         properties.erase(it);
