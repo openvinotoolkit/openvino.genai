@@ -106,8 +106,8 @@ def test_image_model_types(model_id, model_type, backend, tmp_path):
 def test_image_model_genai(model_id, model_type, tmp_path):
     if ("flux-fill" in model_id) and (model_type != "image-inpainting"):
         pytest.skip(reason="FLUX-Fill is supported as inpainting only")
-    if model_type == "image-to-image":
-        pytest.xfail("Segfault. Ticket 170877")
+    # if model_type == "image-to-image":
+    #     pytest.xfail("Segfault. Ticket 170877")
 
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
