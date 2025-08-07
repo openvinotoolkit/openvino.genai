@@ -100,13 +100,13 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prom
 
         size_t num_image_tokens = image_embeds.back().get_shape().at(1);
 
-        std::string expanded_tag = start_of_image;
+        std::string expanded_tag = "\n\n" + start_of_image;
         for (size_t i = 0; i < num_image_tokens; i++) {
             expanded_tag += image_token;
         }
-        expanded_tag += end_of_image;
+        expanded_tag += end_of_image + "\n\n";
 
-        unified_prompt.replace(unified_prompt.find(start_of_image), start_of_image.length(), "\n\n" + expanded_tag + "\n\n");
+        unified_prompt.replace(unified_prompt.find(start_of_image), start_of_image.length(), expanded_tag);
     }
     return {std::move(unified_prompt), std::move(images_sequence)};
 }
@@ -149,7 +149,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma3::get_inputs_embeds_with_t
         std::vector<int64_t> token_type_ids_data(seq_len, 0);
         ov::Tensor token_type_ids_all_0(ov::element::i64, {1, seq_len});
         std::fill_n(token_type_ids_all_0.data<int64_t>(), seq_len, 0);
-        
+
         return {inputs_embeds, token_type_ids_all_0};
     }
 
