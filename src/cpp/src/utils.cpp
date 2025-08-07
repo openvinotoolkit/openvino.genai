@@ -618,10 +618,10 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
     return false;
 }
 
-std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, const std::string& default_attention_backend) {
-    std::string attention_backend = default_attention_backend;
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
+    std::string attention_backend = PA_BACKEND;
     ov::AnyMap properties = external_properties;
-    
+
     auto it = properties.find("ATTENTION_BACKEND");
     if (it != properties.end()) {
         attention_backend = it->second.as<std::string>();
@@ -630,7 +630,7 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
         properties.erase(it);
     }
 
-    if ((default_attention_backend == PA_BACKEND) && explicitly_requires_paged_attention(external_properties)) {
+    if (explicitly_requires_paged_attention(external_properties)) {
         OPENVINO_ASSERT(attention_backend == PA_BACKEND,
             "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
     }
