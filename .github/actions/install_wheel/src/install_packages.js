@@ -69,14 +69,28 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
   if (installArgs.length > 0) {
     core.debug(`Installing packages with arguments: ${installArgs.join(' ')}`);
     console.log(`Installing packages: ${installArgs.join(' ')}`);
-    const { stdout, stderr } = await execAsync(
-      `python -m pip install ${installArgs.join(' ')}`,
-      {
-        stdio: 'inherit'
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        console.log(`Attempt ${attempt} of 3`);
+        const { stdout, stderr } = await execAsync(
+          `python -m pip install ${installArgs.join(' ')}`,
+          {
+            stdio: 'inherit'
+          }
+        );
+        console.log('stdout:', stdout);
+        console.error('stderr:', stderr);
+        break;
+      } catch (error) {
+        console.error(`Attempt ${attempt + 1} failed:`, error.message);
+        if (attempt === 2) {
+          throw error;
+        }
+        const sleepTime = Math.pow(2, attempt) * 1000;
+        console.log(`Waiting ${sleepTime / 1000} seconds before retry...`);
+        await new Promise(resolve => setTimeout(resolve, sleepTime));
       }
-    );
-    console.log('stdout:', stdout);
-    console.error('stderr:', stderr);
+    }
   }
 }
 
