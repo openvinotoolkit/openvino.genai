@@ -485,16 +485,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
-      - name: Install OpenVINO wheel
-        if: ${{ matrix.test.run_condition }}
-        run: python3 -m pip install openvino==${{ needs.openvino_download.outputs.ov_version }} ${{ needs.openvino_download.outputs.ov_wheel_source }}
-        working-directory: ${{ env.INSTALL_DIR }}
-
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino_tokenizers[transformers];openvino_genai;whowhatbench"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
