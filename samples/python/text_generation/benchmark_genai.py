@@ -42,12 +42,12 @@ def main():
     config.max_new_tokens = args.max_new_tokens
 
     if device == "NPU":
-        pipe = ov_genai.VLMPipeline(models_path, device)
+        pipe = ov_genai.LLMPipeline(models_path, device)
     else:
         scheduler_config = ov_genai.SchedulerConfig()
         scheduler_config.enable_prefix_caching = False
         scheduler_config.max_num_batched_tokens = sys.maxsize
-        pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
+        pipe = ov_genai.LLMPipeline(models_path, device, scheduler_config=scheduler_config)
 
     input_data = pipe.get_tokenizer().encode(prompt)
     prompt_token_size = input_data.input_ids.get_shape()[1]
