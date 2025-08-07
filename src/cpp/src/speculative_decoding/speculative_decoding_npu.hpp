@@ -112,7 +112,9 @@ public:
 private:
     uint32_t m_max_prompt_len = 0u;
     uint32_t m_kvcache_total = 0u;
+    std::string m_draft_device;
     std::unique_ptr<LLMInferWrapper> m_draft_request;
+    std::string m_main_device;
     std::unique_ptr<LLMInferWrapper> m_main_request;
     SpeculativeConfig m_speculative_config;
     ov::genai::SDPerModelsPerfMetrics m_perf_metrics;
