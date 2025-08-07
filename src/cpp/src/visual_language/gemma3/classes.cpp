@@ -147,7 +147,9 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma3::get_inputs_embeds_with_t
 
         const size_t seq_len = text_embeds.get_shape()[1];
         std::vector<int64_t> token_type_ids_data(seq_len, 0);
-        auto token_type_ids_all_0 = ov::Tensor(ov::element::i64, {1, seq_len}, token_type_ids_data.data());
+        ov::Tensor token_type_ids_all_0(ov::element::i64, {1, seq_len});
+        std::fill_n(token_type_ids_all_0.data<int64_t>(), seq_len, 0);
+        
         return {inputs_embeds, token_type_ids_all_0};
     }
 
