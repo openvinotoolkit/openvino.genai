@@ -418,7 +418,9 @@ bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) 
             concat->set_friendly_name("eagle3_hidden_states_concat");
             
             auto result = std::make_shared<ov::op::v0::Result>(concat);
-            result->set_friendly_name("last_hidden_state");
+            std::string output_name = "last_hidden_state";
+            result->output(0).set_names({output_name});
+            result->set_friendly_name(output_name);
             model->add_results({result});
             
             std::cout << "EagleModelTransform - Added concated eagle3 hidden state output" << std::endl;
@@ -674,7 +676,6 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
                                                                                 draft_device,
                                                                                 draft_properties,
                                                                                 false);
-
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 }

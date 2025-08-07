@@ -65,6 +65,12 @@ public:
         }
     }
     bool is_requests_empty();
+
+    void set_d2t_for_draft_decoding(std::shared_ptr<ov::op::v0::Constant>& d2t) {
+        if (m_sampler) {
+            m_sampler->set_d2t_for_decoding(d2t);
+        }
+    }
     void set_hidden_state_export_needed(bool is_needed) {
         if (m_model_runner) {
             m_model_runner->set_hidden_state_export_needed(is_needed);

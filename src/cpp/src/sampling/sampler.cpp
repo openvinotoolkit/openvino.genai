@@ -1070,9 +1070,10 @@ void Sampler::clear_top_k_selector(uint64_t request_id) {
     }
 }
 
-Sampler::TopKSelector::TopKSelector(SequenceGroup::Ptr sequence_group)
+Sampler::TopKSelector::TopKSelector(SequenceGroup::Ptr sequence_group, ov::Tensor d2t)
     : m_sequence_group(sequence_group),
-        m_parameters{m_sequence_group->get_sampling_parameters()} {
+        m_parameters{m_sequence_group->get_sampling_parameters()},
+        m_d2t(d2t? d2t.data<int64_t>() : nullptr) {
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1); // for eagle, support 1 running seq at the very beginning
     //m_tree_layers.resize(m_parameters.eagle_depth + 1); // +1 for root layer
     //m_tree_layers[0].push_back(Beam(*sequence_group)[0]);
@@ -1210,7 +1211,7 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
         for (Token token : tokens) {
             Beam new_candidate = beam;
             new_candidate.m_score += new_candidate.m_log_prob = token.m_log_prob;
-            new_candidate.m_token_id = token.m_index;
+            new_candidate.m_token_id = (token.m_index + (m_d2t? m_d2t[token.m_index] : 0));
             m_eagle2_candidate_graph->add_candidate(new_candidate, beam.m_node_id);
             candidates.push_back(new_candidate);
             if (++add_count == m_parameters.eagle_branching_factor) {
@@ -1562,7 +1563,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             uint64_t request_id = sequence_group->get_request_id();
             std::lock_guard<std::mutex> lock(m_beam_search_info_mutex);
             if (m_top_k_selector_info.find(request_id) == m_top_k_selector_info.end()) {
-                m_top_k_selector_info.emplace(request_id, TopKSelector(sequence_group));
+                m_top_k_selector_info.emplace(request_id, TopKSelector(sequence_group, m_d2t->get_tensor_view()));
             }
             topk_searcher = &m_top_k_selector_info.at(request_id);
         }

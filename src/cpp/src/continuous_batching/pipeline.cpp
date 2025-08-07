@@ -15,7 +15,7 @@
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
-
+#include "safe_tensor_wrapper.hpp"
 using namespace ov::genai;
 
 namespace {
@@ -124,6 +124,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         m_impl = std::make_shared<EagleDecodingImpl>(main_model_descr, draft_model_desr, eagle_mode);
+        if (eagle_mode == "EAGLE3") {
+            // parse d2t from safe tensors
+            ConstantMap constant_tensors = safetensor_to_constant_map(ov::read_tensor_data(models_path / "eagle3.safetensor"));
+            std::dynamic_pointer_cast<EagleDecodingImpl>(m_impl)->set_d2t_for_draft_decoding(constant_tensors["d2t"]);
+        }
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
