@@ -80,12 +80,12 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
-    // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (utils::explicitly_requires_paged_attention(user_properties)) {
+    if (ov::genai::utils::is_npu_requested(device, properties)) {
+        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(models_path, tokenizer, device, properties);
+    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
+        // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
-    } else if (device == "NPU") {
-        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(models_path, tokenizer, properties);
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
@@ -115,13 +115,10 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
-    // First -> check draft model. for NPU leave it as is for the main model.
-    // if NPU
-    // if draft model is on NPU
-    // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (device == "NPU") {
-        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(models_path, properties);
+    if (ov::genai::utils::is_npu_requested(device, properties)) {
+        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(models_path, device, properties);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
+        // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
 
@@ -157,17 +154,18 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
-    // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (utils::explicitly_requires_paged_attention(user_properties)) {
-        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
-                                                              tokenizer, scheduler_config, device, device_properties, generation_config);
-    } else if (device == "NPU") {
+    if (ov::genai::utils::is_npu_requested(device, properties)) {
         m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(
                 utils::singleton_core().read_model(model_str, weights_tensor),
                 tokenizer,
+                device,
                 properties,
                 generation_config);
+    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
+        // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
+        auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
+                                                              tokenizer, scheduler_config, device, device_properties, generation_config);
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {

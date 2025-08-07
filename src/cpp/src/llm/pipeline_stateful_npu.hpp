@@ -13,17 +13,20 @@ public:
     StatefulLLMPipelineNPU(
         const std::filesystem::path& models_path,
         const ov::genai::Tokenizer& tokenizer,
+        const std::string& device,
         const ov::AnyMap& plugin_config
     );
 
     StatefulLLMPipelineNPU(
         const std::filesystem::path& models_path,
+        const std::string& device,
         const ov::AnyMap& plugin_config
     );
 
     StatefulLLMPipelineNPU(
         const std::shared_ptr<ov::Model>& model,
         const ov::genai::Tokenizer& tokenizer,
+        const std::string& device,
         const ov::AnyMap& config,
         const ov::genai::GenerationConfig& generation_config
     );
