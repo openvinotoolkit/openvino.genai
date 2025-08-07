@@ -233,10 +233,8 @@ public:
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
                         if (have_token_type_ids) {
-                            std::vector<int64_t> token_type_ids_vec  = sequence_group->get_token_type_ids();
-                            // OPENVINO_ASSERT(token_type_ids_vec.size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
-                            // OPENVINO_ASSERT(total_num_tokens >= prompt_len, "total_num_tokens must be >= prompt_len");
-                            // No OPENVINO_ASSERT here because the 1st token inference and subsequent token inferences have different constraints
+                            std::vector<int64_t> token_type_ids_vec = sequence_group->get_token_type_ids();
+                            OPENVINO_ASSERT(token_type_ids_vec.size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
                             for (size_t i = 0; i < total_num_tokens; ++i) {
                                 token_type_ids_data[i] = (i < prompt_len ? token_type_ids_vec[i] : 0);
                             }
