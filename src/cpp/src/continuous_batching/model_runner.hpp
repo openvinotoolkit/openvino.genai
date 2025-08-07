@@ -152,7 +152,7 @@ public:
         ov::Tensor
             input_ids(ov::element::i64, {total_num_tokens}),
             inputs_embeds(ov::element::f32, {total_num_tokens, hidden_size}),
-            token_type_ids(ov::element::i64, {total_num_tokens}),
+            token_type_ids(ov::element::i64, {1, total_num_tokens}),
             position_ids(ov::element::i64, {total_num_tokens}),
             // PA specific parameters
             past_lens(ov::element::i32, {batch_size_in_sequences}),
@@ -317,8 +317,7 @@ public:
         else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             m_request.set_tensor("inputs_embeds", inputs_embeds);
             if (have_token_type_ids) {
-                ov::Tensor reshaped_token_type_ids(token_type_ids.get_element_type(), {1, total_num_tokens}, token_type_ids.data());
-                m_request.set_tensor("token_type_ids", reshaped_token_type_ids); 
+                m_request.set_tensor("token_type_ids", token_type_ids);
             }
         }
 
