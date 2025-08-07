@@ -159,10 +159,6 @@ if(ENABLE_GGUF)
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_GGUF)
 endif()
 
-if(ENABLE_XGRAMMAR)
-    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE xgrammar)
-endif()
-
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
 target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json jinja2cpp)
@@ -177,6 +173,10 @@ set_target_properties(${TARGET_NAME_OBJ} PROPERTIES POSITION_INDEPENDENT_CODE ON
 
 add_library(${TARGET_NAME} SHARED $<TARGET_OBJECTS:${TARGET_NAME_OBJ}>)
 add_library(openvino::genai ALIAS ${TARGET_NAME})
+
+if(ENABLE_XGRAMMAR)
+    target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
+endif()
 
 if(WIN32)
   add_vs_version_resource(${TARGET_NAME})
