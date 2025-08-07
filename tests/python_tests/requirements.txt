@@ -1,45 +1,30 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 diffusers==0.34.0
-optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main
-numpy<2.0.0; platform_system == "Darwin" and platform_machine == "x86_64"
-onnx==1.18.0
-pytest
-pytest-html
-hf_transfer
-gguf>=0.10.0
+optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@55bc71281c4e6317cfbaee46c6fb600d871273dd
+numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
+safetensors==0.5.3; platform_system == "Darwin" and platform_machine == "x86_64"
+pytest==8.4.1
+transformers==4.52.4
+hf_transfer==0.1.9
+gguf==0.17.1
 
 # rag requirements
 langchain_community==0.3.27
-langchain-core==0.3.69
+langchain-core==0.3.72
 
 # requirements for specific models
-# - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
-rjieba
-# - baichuan-inc/Baichuan2-7B-Chat
-bitsandbytes
-# - nomic-ai/gpt4all-falcon
 # - Qwen/Qwen-7B
 # - Qwen/Qwen-7B-Chat
-# - mosaicml/mpt-7b
-# - internlm/internlm2-7b
-einops
-# - Qwen/Qwen-7B
-# - Qwen/Qwen-7B-Chat
-transformers_stream_generator
+einops==0.8.1
 # - openbmb/MiniCPM-V-2
-torchvision
+torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
+torchvision==0.23.0; platform_system != "Darwin" or platform_machine != "x86_64"
 # - openbmb/MiniCPM-V-2
-timm
-# - Qwen/Qwen-7B
-# - Qwen/Qwen-7B-Chat
-# - Salesforce/xgen-7b-8k-base
-tiktoken
-# - microsoft/biogpt
-sacremoses
+timm==1.0.19
 # - openai/whisper-base
-librosa
-soundfile
+librosa==0.11.0
+soundfile==0.13.1
 datasets==3.6.0
-rouge
+rouge==1.0.1
 # - microsoft/Phi-4-multimodal-instruct
-peft
+peft==0.17.0

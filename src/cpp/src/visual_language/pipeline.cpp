@@ -348,6 +348,13 @@ public:
     }
 };
 
+// TODO: remove it when CVS-167316 is fixed
+bool requires_sdpa(const std::filesystem::path& models_dir) {
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::QWEN2_VL || 
+           vlm_config.model_type == VLMModelType::QWEN2_5_VL;
+}
+
 VLMPipeline::VLMPipeline(
     const std::filesystem::path& models_dir,
     const std::string& device,
@@ -362,10 +369,10 @@ VLMPipeline::VLMPipeline(
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     } else {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        if (utils::explicitly_requires_paged_attention(properties)) {
+        if (utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
-        } else if (attention_backend == PA_BACKEND) {
+        } else if (attention_backend == PA_BACKEND && !requires_sdpa(models_dir)) {
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
                 auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -405,10 +412,10 @@ VLMPipeline::VLMPipeline(
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     } else {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        if (utils::explicitly_requires_paged_attention(properties)) {
+        if (utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
-        } else if (attention_backend == PA_BACKEND) {
+        } else if (attention_backend == PA_BACKEND && !requires_sdpa(config_dir_path)) {
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
                 auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
