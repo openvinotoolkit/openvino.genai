@@ -1,6 +1,6 @@
 # Retrieval Augmented Generation Sample
 
-This example showcases inference of Text Embedding Models. The application limited configuration configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.TextEmbeddingPipeline` and uses text as an input source.
+This example showcases inference of Text Embedding and Text Rerank Models. The application has limited configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.TextEmbeddingPipeline` and `openvino_genai.TextRerankPipeline` and uses text as an input source.
 
 ## Download and Convert the Model and Tokenizers
 
@@ -38,9 +38,23 @@ export_tokenizer(tokenizer, output_dir)
 
 Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
-`python text_embeddings.py BAAI/bge-small-en-v1.5 "Document 1" "Document 2"`
-
+### 1. Text Embedding Sample (`text_embeddings.py`)
+- **Description:**
+  Demonstrates inference of text embedding models using OpenVINO GenAI. Converts input text into vector embeddings for downstream tasks such as retrieval or semantic search.
+- **Run Command:**
+  ```sh
+  python text_embeddings.py <MODEL_DIR> "Document 1" "Document 2"
+  ```
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#text-embeddings-models) for more details.
+
+### 2. Text Rerank Sample (`text_rerank.py`)
+- **Description:**
+  Demonstrates inference of text rerank models using OpenVINO GenAI. Reranks a list of candidate documents based on their relevance to a query using a cross-encoder or reranker model.
+- **Run Command:**
+  ```sh
+  python text_rerank.py <MODEL_DIR> "<QUERY>" "<TEXT 1>" ["<TEXT 2>" ...]
+  ```
+
 
 # Text Embedding Pipeline Usage
 
@@ -50,4 +64,14 @@ import openvino_genai
 pipeline = openvino_genai.TextEmbeddingPipeline(model_dir, "CPU")
 
 embeddings = pipeline.embed_documents(["document1", "document2"])
+```
+
+# Text Rerank Pipeline Usage
+
+```python
+import openvino_genai
+
+pipeline = openvino_genai.TextRerankPipeline(model_dir, "CPU")
+
+rerank_result = pipeline.rerank(query, documents)
 ```

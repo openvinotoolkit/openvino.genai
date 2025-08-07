@@ -73,6 +73,7 @@ int main(int argc, char* argv[]) try {
     if (device == "NPU")
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
     else
+        // Setting of Scheduler config will trigger usage of ContinousBatching pipeline, which is not default for Qwen2VL and Qwen2.5VL due to accuracy issues.
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
 
     auto input_data = pipe->get_tokenizer().encode(prompt);

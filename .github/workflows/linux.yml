@@ -25,7 +25,7 @@ env:
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   HF_HOME: /mount/caches/huggingface/lin
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/3ace0cbed82ce5d376658b52ca30824b5960dbc8
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
   ARTIFACTS_SHARE: '/mount/build-artifacts'
@@ -517,6 +517,10 @@ jobs:
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 180
+          - name: 'GGUF Reader tests'
+            cmd: 'tests/python_tests/test_gguf_reader.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
+            timeout: 60
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}

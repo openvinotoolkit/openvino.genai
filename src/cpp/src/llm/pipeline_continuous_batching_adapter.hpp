@@ -98,9 +98,9 @@ public:
         PerfMetrics perf_metrics;
         // For GenerationResults, all perf_metrics are the same except tokenization and detokenization durations.
         // Since we return here only one perf_metrics, we should accumulate all tokenization and detokenization times.
-        if (generated.size() > 0) {
-            perf_metrics = generated[0].perf_metrics;
-        }
+        OPENVINO_ASSERT(!generated.empty());
+        perf_metrics = generated[0].perf_metrics;
+        perf_metrics.load_time = m_load_time_ms;
 
         // Tokenizations and detokenization times are dispersed across GenerationResult vector.
         // Need to collect them into a single perf_metric for DecodedResult.
@@ -191,9 +191,10 @@ public:
         
         PerfMetrics perf_metrics;
         // For EncodedGenerationResults, all perf_metrics are the same.
-        if (generated.size() > 0) {
-            perf_metrics = generated[0].perf_metrics;
-        }
+        OPENVINO_ASSERT(!generated.empty());
+        perf_metrics = generated[0].perf_metrics;
+        perf_metrics.load_time = m_load_time_ms;
+
         auto& raw_counters = perf_metrics.raw_metrics;
         raw_counters.generate_durations.clear();
         raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));

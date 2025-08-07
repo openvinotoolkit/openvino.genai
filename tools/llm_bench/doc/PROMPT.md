@@ -55,7 +55,7 @@ Supported parameters that can be set are:
 Prompt file example：
 {"steps":"10", "width":"256", "height":"256", "guidance_scale":"0.8", "prompt": "side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, 8K HD Resolution, beautifully background", "media": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png"}
 
-## 5. Inpaiting Image Generation
+## 7. Inpainting Image Generation
 Supported parameters that can be set are:
 * `steps` - inference steps (default 20)
 * `width` - resolution width (default 512)
@@ -67,3 +67,10 @@ Supported parameters that can be set are:
 * `mask_image` - mask image file path or url
 Prompt file example：
 {"steps":"10", "width":"256", "height":"256", "guidance_scale":"0.8", "prompt": "side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, 8K HD Resolution, beautifully background", "media": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png", "mask_image": "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png"}
+
+## 8. Text To Speech Models
+Supported parameters that can be set are:
+* `prompt` - input prompt text for the speech generation
+Prompt file example：
+{"prompt": "what is openvino?"}
+{"prompt": "A chat between a curious user and an artificial intelligence assistant."}

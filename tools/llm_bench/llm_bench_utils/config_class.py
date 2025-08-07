@@ -2,7 +2,15 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from transformers import AutoTokenizer
-from transformers import AutoModelForCausalLM, T5ForConditionalGeneration, BlenderbotForConditionalGeneration, AutoModel
+from transformers import (
+    AutoModelForCausalLM,
+    T5ForConditionalGeneration,
+    BlenderbotForConditionalGeneration,
+    AutoModel,
+    SpeechT5ForTextToSpeech,
+    SpeechT5Processor,
+    SpeechT5HifiGan
+)
 from diffusers.pipelines import DiffusionPipeline, LDMSuperResolutionPipeline
 from optimum.intel.openvino import (
     OVModelForCausalLM,
@@ -12,7 +20,8 @@ from optimum.intel.openvino import (
     OVModelForVisualCausalLM,
     OVPipelineForInpainting,
     OVPipelineForImage2Image,
-    OVModelForFeatureExtraction
+    OVModelForFeatureExtraction,
+    OVModelForTextToSpeechSeq2Seq
 )
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 
@@ -22,7 +31,10 @@ TOKENIZE_CLASSES_MAPPING = {
     't5': AutoTokenizer,
     'blenderbot': AutoTokenizer,
     'falcon': AutoTokenizer,
+    'speecht5': SpeechT5Processor
 }
+
+TEXT_TO_SPEECH_VOCODER_CLS = SpeechT5HifiGan
 
 IMAGE_GEN_CLS = OVDiffusionPipeline
 
@@ -45,7 +57,8 @@ OV_MODEL_CLASSES_MAPPING = {
     'chatglm': OVChatGLMModel,
     'whisper': OVModelForSpeechSeq2Seq,
     "vlm": OVModelForVisualCausalLM,
-    "bert": OVModelForFeatureExtraction
+    "bert": OVModelForFeatureExtraction,
+    'speecht5': OVModelForTextToSpeechSeq2Seq
 }
 
 PT_MODEL_CLASSES_MAPPING = {
@@ -58,6 +71,7 @@ PT_MODEL_CLASSES_MAPPING = {
     'ldm_super_resolution': LDMSuperResolutionPipeline,
     'chatglm': AutoModel,
     "bert": AutoModel,
+    'speecht5': SpeechT5ForTextToSpeech
 }
 
 USE_CASES = {
@@ -86,6 +100,7 @@ USE_CASES = {
         'opt-',
         'pythia-',
         'stablelm-',
+        'stablelm',
         'stable-zephyr-',
         'rocket-',
         'blenderbot',
@@ -120,7 +135,8 @@ USE_CASES = {
         "gptj"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
-    'text_embed': ["bge", "bert", "albert", "roberta", "xlm-roberta"]
+    'text_embed': ["bge", "bert", "albert", "roberta", "xlm-roberta"],
+    'text2speech': ['speecht5'],
 }
 
 DEFAULT_MODEL_CLASSES = {
@@ -131,7 +147,8 @@ DEFAULT_MODEL_CLASSES = {
     'code_gen': 'decoder',
     'ldm_super_resolution': 'ldm_super_resolution',
     "vlm": "vlm",
-    'text_embed': 'bert'
+    'text_embed': 'bert',
+    'text2speech': 'speecht5',
 }
 
 TASK = {
