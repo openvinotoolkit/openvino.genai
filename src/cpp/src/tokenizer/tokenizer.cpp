@@ -128,6 +128,7 @@ const T& find_or_fallback(const ov::AnyMap& rt_info, const char name[], const T&
 
 std::string patch_template(std::string&& chat_template) {
     // Replace what minja doesn't support
+    // Patching can be removed once https://github.com/google/minja/pull/76 is merged
     std::pair<std::string, std::string> replace_str_map[] = {
         {".upper()", " | upper"},
     };
