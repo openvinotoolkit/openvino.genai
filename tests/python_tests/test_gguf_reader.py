@@ -125,7 +125,7 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     ov_generation_config.apply_chat_template = True
     ov_generation_config.set_eos_token_id(151645)
 
-    # Original GGUF model output (run with transformers):
+    # Original GGUF model output (run with transformers >= 4.54.0):
     # <think>\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color.
     # Prompt after applying chat template is identical between HF and GenAI, so the issue is not in chat template.
     # TODO: Investigate output difference for GGUF models. Ticket: TBD
