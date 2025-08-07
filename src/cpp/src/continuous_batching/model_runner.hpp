@@ -232,11 +232,10 @@ public:
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
-                        if (have_token_type_ids) {
-                            std::vector<int64_t> token_type_ids_vec = sequence_group->get_token_type_ids();
-                            OPENVINO_ASSERT(token_type_ids_vec.size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
+                        if (auto token_type_ids = sequence_group->get_token_type_ids()) {
+                            OPENVINO_ASSERT(token_type_ids->size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
                             for (size_t i = 0; i < total_num_tokens; ++i) {
-                                token_type_ids_data[i] = (i < prompt_len ? token_type_ids_vec[i] : 0);
+                                token_type_ids_data[i] = (i < prompt_len ? (*token_type_ids)[i] : 0);
                             }
                         }
                     } else {

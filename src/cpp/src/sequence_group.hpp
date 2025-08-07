@@ -614,9 +614,8 @@ public:
         return m_token_type_ids.has_value() && m_sequence_group_type == SequenceGroupType::EMBEDDINGS;
     }
 
-    std::vector<int64_t> get_token_type_ids() const {
-        OPENVINO_ASSERT(have_token_type_ids(), "Token type IDs are not available");
-        return *m_token_type_ids;
+    std::optional<std::vector<int64_t>> get_token_type_ids() const {
+        return m_token_type_ids;
     }
 
     size_t get_hidden_size() const {
