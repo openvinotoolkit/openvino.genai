@@ -242,8 +242,17 @@ public:
         OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
             pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
 
+        m_root_dir = pipe.m_root_dir;
+
+        m_clip_text_encoder = std::make_shared<CLIPTextModel>(*pipe.m_clip_text_encoder);
+        m_t5_text_encoder = std::make_shared<T5EncoderModel>(*pipe.m_t5_text_encoder);
+        m_vae = std::make_shared<AutoencoderKL>(*pipe.m_vae);
+        m_transformer = std::make_shared<FluxTransformer2DModel>(*pipe.m_transformer);
+
         m_pipeline_type = pipeline_type;
         initialize_generation_config("FluxPipeline");
+
+        OPENVINO_ASSERT(!is_inpainting_model(), "inpainting model is not currently supported by Flux InpaintingPipeline. Please, contact OpenVINO GenAI developers.");
     }
 
     void reshape(const int num_images_per_prompt,

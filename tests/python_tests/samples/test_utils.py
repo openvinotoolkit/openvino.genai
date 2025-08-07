@@ -11,7 +11,7 @@ def run_sample(command, input_data=None):
     try:
         result = subprocess.run(command, text=True, check=True, encoding='utf-8', env=os.environ.copy(), input=input_data, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
     except subprocess.CalledProcessError as error:
-        logger.exception(f"Sample returned {error.returncode}. Output:\n{error.output}")
+        logger.error(f"Sample returned {error.returncode}. Output:\n{error.output}")
         raise
     logger.info(f"Sample output: {result.stdout}")
     return result

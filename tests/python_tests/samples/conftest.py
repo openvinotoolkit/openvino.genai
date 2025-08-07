@@ -213,7 +213,7 @@ def convert_model(request):
         try:
             retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
         except subprocess.CalledProcessError as error:
-            logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+            logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
             raise
 
         if MODELS[model_id].get("convert_2_input_tokenizer", False):

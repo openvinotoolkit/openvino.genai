@@ -4,7 +4,6 @@
 import os
 import pytest
 import sys
-import subprocess # nosec B404
 
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, download_test_content
 from test_utils import run_sample
@@ -28,7 +27,6 @@ class TestInpainting:
         ],
         indirect=["download_test_content", "download_mask_image"],
     )
-    @pytest.mark.xfail(reason="Failed to open model_index.json. Ticket 171245", raises=subprocess.CalledProcessError)
     def test_sample_inpainting(self, download_model, prompt, download_test_content, download_mask_image):
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "image_generation/inpainting.py")
