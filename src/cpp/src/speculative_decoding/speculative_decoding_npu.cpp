@@ -152,7 +152,7 @@ std::size_t LLMInferWrapper::get_num_processed_tokens() const {
     return m_num_processed_tokens;
 }
 
-void LLMInferWrapper::trimm_kv_cache(const size_t tokens_to_remove) {
+void LLMInferWrapper::trim_kv_cache(const size_t tokens_to_remove) {
     // Trim kv_cache values on tokens_to_remove
     ov::genai::utils::KVCacheState to_trim_state;
     to_trim_state.num_tokens_to_trim = tokens_to_remove;
@@ -160,6 +160,16 @@ void LLMInferWrapper::trimm_kv_cache(const size_t tokens_to_remove) {
     to_trim_state.reset_mem_state = false;
     ov::genai::utils::trim_kv_cache(m_request, to_trim_state, {});
     m_num_processed_tokens -= tokens_to_remove;
+
+    // Update pre-allocated inputs for 1 token and return back to use it
+    // in case if next infer will be called on input_ids of size 1
+    // (most frequent case).
+    m_new_input_token = -1;
+    m_new_position_id = m_num_processed_tokens - 1;
+    for (std::size_t i = 0; i < tokens_to_remove; ++i) {
+        m_new_atten_mask_data.pop_back();
+    }
+    set_already_allocated_input_for_1_token();
 }
 
 void LLMInferWrapper::reset_state() {
@@ -211,7 +221,7 @@ ov::Tensor LLMInferWrapper::infer_next_internal(const std::vector<int64_t> token
     m_new_position_id = m_num_processed_tokens - 1;
     for (std::size_t i = 0; i < tokens_size; ++i) {
         m_new_atten_mask_data.push_back(1);
-    } 
+    }
     set_already_allocated_input_for_1_token();
 
     return get_logits();
@@ -282,7 +292,7 @@ SpeculativeLLMPipelineNPU::SpeculativeLLMPipelineNPU(
     }
 
     // TODO: We might need it for manipulations with indices
-    // utils::apply_gather_before_matmul_transformation(main_model);
+    // utils::apply_gather_before_matmul_transformation(main_model_desc.model);
     // utils::apply_gather_before_matmul_transformation(draft_model);
     
     // Main and Draft model can have different tokenizers
@@ -553,7 +563,6 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         // of the input prompt.
         // TODO: Handle OOM exception for static model here.
         auto ref_tokens = m_main_request->infer_next_return_all(input_for_main);
-
         // Phase 3. Check if main model produced the same tokens as input candidates:
         size_t accepted_tokens_number = 0u;
         // Last token is a new token from the main model, skip it:
@@ -574,10 +583,11 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         // This is the case when main model accepted all candidates from draft model
         // we need to collect kv cache for draft last generated token by infering it.n
         if (mismatched_candidates == 0) {
-            draft_prefix_token = candidate;
+            draft_prefix_token = candidates.back();
         } else {
-            m_draft_request->trimm_kv_cache(mismatched_candidates - 1);
-            m_main_request->trimm_kv_cache(mismatched_candidates);
+            // Last draft candidate is out of KV-Cache, as it is output token.
+            m_draft_request->trim_kv_cache(mismatched_candidates - 1);
+            m_main_request->trim_kv_cache(mismatched_candidates);
             draft_prefix_token = -1;
         }
 
