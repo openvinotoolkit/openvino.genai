@@ -126,22 +126,10 @@ const T& find_or_fallback(const ov::AnyMap& rt_info, const char name[], const T&
     return iter->second.as<T>();
 }
 
-// TODO Consider removing template patching
 std::string patch_template(std::string&& chat_template) {
-    return chat_template;
-    // Replace what jinja2cpp doesn't support
+    // Replace what minja doesn't support
     std::pair<std::string, std::string> replace_str_map[] = {
-        {"'}", "' }"},
-        {"{'", "{ '"},
-        {".strip()", ""},
         {".upper()", " | upper"},
-        {"is not none", "is defined"},
-        {"is none", "is undefined"},
-        {"= none", "= undefined"},
-        // Jinja2Cpp does not support Python-style slicing, e.g. [1:].
-        // If chat template contains such slicing, we replace it with
-        // a placeholder at the moment.
-        {"messages[1:]", "slice(messages, 1)"},
     };
 
     for (const auto& [from, to] : replace_str_map) {
@@ -413,11 +401,7 @@ public:
 
             parse_chat_template_from_tokenizer(ov_tokenizer, m_chat_template);
 
-            std::optional<std::string> fallback = remap_template(m_chat_template);
-            if (fallback.has_value()) {
-                m_chat_template = std::move(fallback).value();
-            }
-            m_chat_template = patch_template(std::move(m_chat_template));
+            m_chat_template = remap_and_patch(m_chat_template);
 
             // Initialize tokenizer's cache to save time later.
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
@@ -784,7 +768,6 @@ public:
 
     void set_chat_template(const std::string& chat_template) {
         m_chat_template = remap_and_patch(chat_template);
-        // m_chat_template = remap_template(chat_template).value_or(chat_template);
     }
 
     std::string get_chat_template() {
