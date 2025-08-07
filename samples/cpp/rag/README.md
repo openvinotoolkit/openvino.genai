@@ -18,7 +18,7 @@ To export text embedding model run Optimum CLI command:
 optimum-cli export openvino --trust-remote-code --model BAAI/bge-small-en-v1.5 BAAI/bge-small-en-v1.5
 ```
 
-To export text rerank model run Optimum CLI command:
+To export text reranking model run Optimum CLI command:
 
 ```sh
 optimum-cli export openvino --trust-remote-code --model cross-encoder/ms-marco-MiniLM-L6-v2 cross-encoder/ms-marco-MiniLM-L6-v2
