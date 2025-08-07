@@ -27,7 +27,8 @@ def retry_request(func, retries=7):
         "Timeout",
         "Time-out",
         "ServiceUnavailable",
-        "InternalServerError"
+        "InternalServerError",
+        "OSError",
     ]
 
     for attempt in range(retries):
