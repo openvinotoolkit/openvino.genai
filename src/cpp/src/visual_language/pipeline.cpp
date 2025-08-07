@@ -357,6 +357,14 @@ public:
     }
 };
 
+// TODO: remove it when QWEN ticket-167316/GEMMA3 ticket-171180 is fixed
+bool requires_sdpa(const std::filesystem::path& models_dir) {
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::QWEN2_VL || 
+           vlm_config.model_type == VLMModelType::QWEN2_5_VL ||
+           vlm_config.model_type == VLMModelType::GEMMA3;
+}
+
 VLMPipeline::VLMPipeline(
     const std::filesystem::path& models_dir,
     const std::string& device,
@@ -364,24 +372,17 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
-    // [WA] Set default attention backend to SDPA_BACKEND for Gemma3 ("ticket-171180")
-    std::string default_attention_backend = PA_BACKEND;
-    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    if ( vlm_config.model_type == VLMModelType::GEMMA3) {
-        default_attention_backend = SDPA_BACKEND;
-    }
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, default_attention_backend);
- 
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     } else {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        if ((default_attention_backend == PA_BACKEND) && utils::explicitly_requires_paged_attention(properties)) {
+        if (utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
-        } else if (attention_backend == PA_BACKEND) {
+        } else if (attention_backend == PA_BACKEND && !requires_sdpa(models_dir)) {
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
                 auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -396,10 +397,7 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
-            // [WA] add extract_scheduler_config for gemma3 with default SDPA_BACKEND in samples/cpp/visual_language_chat/benchmark_vlm.cpp
-            // [TODO] need a general solution for gemma3 and other models to use SDPA_BACKEND by default
-            auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-            m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, plugin_properties);
+            m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
         }
     }
 
@@ -417,25 +415,17 @@ VLMPipeline::VLMPipeline(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
-    // [WA] Set default attention backend to SDPA_BACKEND for Gemma3 ("ticket-171180")
-    std::string default_attention_backend = PA_BACKEND;
-    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
-    if ( vlm_config.model_type == VLMModelType::GEMMA3) {
-        default_attention_backend = SDPA_BACKEND;
-    }
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, default_attention_backend);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     } else {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-        if ((default_attention_backend == PA_BACKEND) && utils::explicitly_requires_paged_attention(properties)) {
-
+        if (utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
             m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
-        } else if (attention_backend == PA_BACKEND) {
-
+        } else if (attention_backend == PA_BACKEND && !requires_sdpa(config_dir_path)) {
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
                 auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -450,7 +440,6 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
-
             m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
         }
 
