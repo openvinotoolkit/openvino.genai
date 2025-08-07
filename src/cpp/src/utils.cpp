@@ -104,7 +104,6 @@ inline bool is_paged_attention_available() {
     return false;
 #endif
 }
-
 } // anonymous
 
 namespace ov {
@@ -203,6 +202,27 @@ ProcessorConfig from_any_map(
     read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
     read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
     return extracted_config;
+}
+
+ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {
+    ov::genai::ModelDesc draft_model;
+    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
+        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
+    }
+    return draft_model;
+}
+
+bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
+    if (device == "NPU") {
+        return true;
+    }
+
+    auto draft_model_descr = get_draft_model_from_config(properties);
+    if (draft_model_descr.model != nullptr) {
+        return draft_model_descr.device == "NPU";
+    }
+
+    return false;
 }
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
