@@ -128,7 +128,7 @@ const T& find_or_fallback(const ov::AnyMap& rt_info, const char name[], const T&
 
 std::string patch_template(std::string&& chat_template) {
     // Replace what minja doesn't support
-    // Patching can be removed once https://github.com/google/minja/pull/76 is merged
+    // This patching is required until minja supports the '.upper()' syntax natively (https://github.com/google/minja/pull/76).
     std::pair<std::string, std::string> replace_str_map[] = {
         {".upper()", " | upper"},
     };
