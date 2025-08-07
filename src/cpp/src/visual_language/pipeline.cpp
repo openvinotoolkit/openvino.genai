@@ -203,9 +203,7 @@ public:
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         if (m_inputs_embedder->has_token_type_ids()) {
-            auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
-            inputs_embeds = std::move(embeds);
-            token_type_ids = std::move(tt_ids);
+            std::tie(inputs_embeds, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
         } else {
             inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
         }
