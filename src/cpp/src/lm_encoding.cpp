@@ -190,10 +190,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         ov::Tensor new_input_ids(ov::element::i64, {total_num_tokens, 1});
         int64_t * input_ids_data = new_input_ids.data<int64_t>();
 
-        ov::Tensor new_token_type_ids(ov::element::i64, {total_num_tokens, 1});
-        int64_t* token_type_data = new_token_type_ids.data<int64_t>();
-        std::fill(token_type_data, token_type_data + total_num_tokens, 0);
-
         std::vector<int32_t> next_beams;
         size_t current_batch_size = 0;
 
@@ -217,7 +213,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
                 // apply strides to shift to a next sequence
                 input_ids_data += num_scheduled_tokens;
-                token_type_data += num_scheduled_tokens;
 
                 // for different sequences iteration of beams started from 0, but we collect it to one input_ids
                 next_beams.push_back(beam_idxs[sequence->get_id()] + beam_offets.at(sequence_group->get_request_id()));
@@ -236,8 +231,12 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             EmbeddingsRequest& req = embeddings_request_guard.get();
             const ov::Tensor& embed_prompt_tensor = m_embedding->infer(req, new_input_ids, return_remote_tensor);
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
-            if (token_type_ids.has_value())
+            if (token_type_ids.has_value()) {
+                ov::Tensor new_token_type_ids(ov::element::i64, {total_num_tokens, 1});
+                int64_t* token_type_data = new_token_type_ids.data<int64_t>();
+                std::fill(token_type_data, token_type_data + total_num_tokens, 0);
                 m_llm.set_tensor("token_type_ids", new_token_type_ids);
+            }
         } else {
             m_llm.set_tensor("input_ids", new_input_ids);
         }
