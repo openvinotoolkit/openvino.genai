@@ -392,19 +392,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std:
         m_adapter_controller->apply(m_model_runner->get_infer_request(), adapters);
     }
 }
-std::vector<EncodedGenerationResult>
-ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(
-    const std::vector<ov::Tensor>& input_ids,
-    const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer) {
-    return generate(input_ids, sampling_params, streamer, std::nullopt);
-}
 
 std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer,
-                                                             const std::optional<std::vector<ov::Tensor>>& token_type_ids) {
+                                                             const std::optional<std::vector<ov::Tensor>> token_type_ids) {
 
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
