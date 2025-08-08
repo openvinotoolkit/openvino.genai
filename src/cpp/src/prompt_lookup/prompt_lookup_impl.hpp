@@ -45,7 +45,8 @@ public:
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) override;
+             const StreamerVariant& streamer,
+             std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt) override;
 
     SpeculativeDecodingMetrics get_metrics();
 };

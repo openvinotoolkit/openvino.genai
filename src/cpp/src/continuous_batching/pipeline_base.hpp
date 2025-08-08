@@ -110,7 +110,8 @@ public:
     virtual std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) = 0;
+             const StreamerVariant& streamer,
+             std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt) = 0;
 
     /**
      * Performs monolitic generation based on text prompts

@@ -80,6 +80,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     Sampler& sampler,
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
+    std::optional<ov::Tensor> token_type_ids,
     utils::KVCacheState& kv_cache_state,
     EmbeddingsModel::Ptr m_embedding,
     std::optional<int64_t> rope_delta,
@@ -134,6 +135,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     if (m_embedding) {
         m_llm.set_tensor("inputs_embeds", input_ids);
+        if (token_type_ids.has_value())
+            m_llm.set_tensor("token_type_ids", *token_type_ids);
     } else {
         kv_cache_state.add_inputs(input_ids);
         m_llm.set_tensor("input_ids", input_ids);
@@ -228,6 +231,12 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             EmbeddingsRequest& req = embeddings_request_guard.get();
             const ov::Tensor& embed_prompt_tensor = m_embedding->infer(req, new_input_ids, return_remote_tensor);
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
+            if (token_type_ids.has_value()) {
+                ov::Tensor new_token_type_ids(ov::element::i64, {total_num_tokens, 1});
+                int64_t* token_type_data = new_token_type_ids.data<int64_t>();
+                std::fill(token_type_data, token_type_data + total_num_tokens, 0);
+                m_llm.set_tensor("token_type_ids", new_token_type_ids);
+            }
         } else {
             m_llm.set_tensor("input_ids", new_input_ids);
         }

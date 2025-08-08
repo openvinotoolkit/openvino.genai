@@ -408,7 +408,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
-    return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+    return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 }
 
 } // namespace ov::genai
