@@ -151,6 +151,8 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
 
 void print_gguf_debug_info(const std::string& debug_info);
 
+void print_scheduler_config_info(const SchedulerConfig &scheduler_config);
+
 struct KVDesc {
     uint32_t max_prompt_len;
     uint32_t min_response_len;

@@ -19,6 +19,13 @@ enum class AggregationMode {
                 * of a given token in cache */
 };
 
+namespace {
+const std::unordered_map<AggregationMode, std::string> AggregationModeToString = {
+    {AggregationMode::SUM, "SUM"},
+    {AggregationMode::NORM_SUM, "NORM_SUM"},
+};
+} // anonymous namespace
+
 /**
 * @brief Configuration struct for the cache eviction algorithm.
 */
@@ -60,6 +67,20 @@ public:
      * will be considered for eviction. */
     std::size_t get_evictable_size() const {
         return m_evictable_size;
+    }
+
+    std::string to_string() const {
+        std::ostringstream oss;
+        oss << "CacheEvictionConfig { " << "\n";
+        oss << "  start_size: " << m_start_size << "\n";
+        oss << "  recent_size: " << m_recent_size << "\n";
+        oss << "  max_cache_size: " << m_max_cache_size << "\n";
+        oss << "  evictable_size: " << m_evictable_size << "\n";
+        oss << "  aggregation_mode: " << AggregationModeToString.at(aggregation_mode) << "\n";
+        oss << "  apply_rotation: " << std::boolalpha << apply_rotation << "\n";
+        oss << "  snapkv_window_size: " << snapkv_window_size << "\n";
+        oss << " }";
+        return oss.str();
     }
 
     /** The mode used to compute the importance of tokens for eviction */
