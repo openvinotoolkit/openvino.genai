@@ -41,6 +41,7 @@ class Sequence {
 
     TokenIds m_generated_ids;
     LogProbs m_generated_log_probs;
+    ov::Tensor m_hidden_state;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     SequenceStatus m_status = SequenceStatus::RUNNING;
@@ -65,6 +66,8 @@ class Sequence {
 
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
+        m_generated_log_probs(seq.m_generated_log_probs),
+        m_hidden_state(seq.m_hidden_state),
         m_grouped_id(id),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
@@ -124,6 +127,14 @@ public:
 
     void set_finish_reason(GenerationFinishReason finish_reason) {
         m_finish_reason = finish_reason;
+    }
+
+    void update_hidden_state(ov::Tensor tensor) {
+        m_hidden_state = tensor;
+    }
+
+    ov::Tensor& get_hidden_state() {
+        return m_hidden_state;
     }
 
     // appends new tokens to a generated part
