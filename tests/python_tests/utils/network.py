@@ -29,6 +29,7 @@ def retry_request(func, retries=7):
         "ServiceUnavailable",
         "InternalServerError",
         "OSError",
+        "HTTPError",
     ]
 
     for attempt in range(retries):
@@ -39,10 +40,10 @@ def retry_request(func, retries=7):
                 if e.stderr is not None and any(pattern in e.stderr for pattern in network_error_patterns):
                     logger.warning(f"CalledProcessError occurred: {e.stderr}")
                 else:
-                    raise e
+                    raise
             if attempt < retries - 1:
                 timeout = 2 ** attempt
                 logger.info(f"Attempt {attempt + 1} failed. Retrying in {timeout} seconds.")
                 time.sleep(timeout)
             else:
-                raise e
+                raise
