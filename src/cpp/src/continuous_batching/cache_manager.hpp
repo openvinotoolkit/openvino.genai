@@ -224,57 +224,60 @@ public:
         for (const auto & blocks_pair : block_copy_map) {
             size_t src_block_id = blocks_pair.first;
             const std::list<size_t>& dst_block_ids = blocks_pair.second;
+            size_t decoder_layer_id = 0;
             for (size_t dst_block_id : dst_block_ids) {
-                for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
-                    ov::Shape key_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], m_num_allocated_kv_blocks);
-                    ov::Shape value_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], m_num_allocated_kv_blocks);
-                    ov::Coordinate key_src_start_roi(key_shape.size(), 0);
-                    ov::Coordinate key_src_end_roi = key_shape;
-                    ov::Coordinate key_dst_start_roi(key_shape.size(), 0);
-                    ov::Coordinate key_dst_end_roi = key_shape;
-            
-                    ov::Coordinate value_src_start_roi(value_shape.size(), 0);
-                    ov::Coordinate value_src_end_roi = value_shape;
-                    ov::Coordinate value_dst_start_roi(value_shape.size(), 0);
-                    ov::Coordinate value_dst_end_roi = value_shape;
-                    key_src_end_roi[0] = (key_src_start_roi[0] = src_block_id) + 1;
-                    value_src_end_roi[0] = (value_src_start_roi[0] = src_block_id) + 1;
-                    key_dst_end_roi[0] = (key_dst_start_roi[0] = dst_block_id) + 1;
-                    value_dst_end_roi[0] = (value_dst_start_roi[0] = dst_block_id) + 1;
-
-                    auto copy_one_block = [&](ov::Tensor& dst, const ov::Tensor& src, size_t src_start, size_t dst_start, size_t stride) {
-                        const bool is_remote = dst.is<ov::RemoteTensor>() || src.is<ov::RemoteTensor>();
-                        if (is_remote) {
-                            return;
-                        }
-                        auto sub_byte_multipyer = sub_byte_data_type_multiplier(dst.get_element_type());
-                        OPENVINO_SUPPRESS_DEPRECATED_START
-                        const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(src.data()) + src_start * stride;
-                        uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(dst.data()) + dst_start * stride;
-                        OPENVINO_SUPPRESS_DEPRECATED_END
-                        std::memcpy(dst_ptr, src_ptr, 1 * stride);
-                    };
-
-                    const auto& key_cache_prec = m_key_cache[decoder_layer_id].get_element_type();
-                    if (key_cache_prec == ov::element::u4 || key_cache_prec == ov::element::i4) {
-                        size_t stride = std::accumulate(std::next(key_shape.begin()), key_shape.end(), 1, std::multiplies<size_t>()) / 2;
-                        copy_one_block(m_key_cache[decoder_layer_id], m_key_cache[decoder_layer_id], key_src_start_roi[0], key_dst_start_roi[0], stride);
-                    } else {
-                        ov::Tensor key_src_cache_roi(m_key_cache[decoder_layer_id], key_src_start_roi, key_src_end_roi);
-                        ov::Tensor key_dst_cache_roi(m_key_cache[decoder_layer_id], key_dst_start_roi, key_dst_end_roi);
-                        key_src_cache_roi.copy_to(key_dst_cache_roi);
-                    }
-
-                    const auto& value_cache_prec = m_value_cache[decoder_layer_id].get_element_type();
-                    if (value_cache_prec == ov::element::u4 || value_cache_prec == ov::element::i4) {
-                        size_t stride = std::accumulate(std::next(value_shape.begin()), value_shape.end(), 1, std::multiplies<size_t>()) / 2;
-                        copy_one_block(m_value_cache[decoder_layer_id], m_value_cache[decoder_layer_id], value_src_start_roi[0], value_dst_start_roi[0], stride);
-                    } else {
-                        ov::Tensor value_src_cache_roi(m_value_cache[decoder_layer_id], value_src_start_roi, value_src_end_roi);
-                        ov::Tensor value_dst_cache_roi(m_value_cache[decoder_layer_id], value_dst_start_roi, value_dst_end_roi);
-                        value_src_cache_roi.copy_to(value_dst_cache_roi);
-                    }
+                if (decoder_layer_id == m_num_decoder_layers) {
+                    decoder_layer_id = 0;
                 }
+                ov::Shape key_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], m_num_allocated_kv_blocks);
+                ov::Shape value_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], m_num_allocated_kv_blocks);
+                ov::Coordinate key_src_start_roi(key_shape.size(), 0);
+                ov::Coordinate key_src_end_roi = key_shape;
+                ov::Coordinate key_dst_start_roi(key_shape.size(), 0);
+                ov::Coordinate key_dst_end_roi = key_shape;
+        
+                ov::Coordinate value_src_start_roi(value_shape.size(), 0);
+                ov::Coordinate value_src_end_roi = value_shape;
+                ov::Coordinate value_dst_start_roi(value_shape.size(), 0);
+                ov::Coordinate value_dst_end_roi = value_shape;
+                key_src_end_roi[0] = (key_src_start_roi[0] = src_block_id) + 1;
+                value_src_end_roi[0] = (value_src_start_roi[0] = src_block_id) + 1;
+                key_dst_end_roi[0] = (key_dst_start_roi[0] = dst_block_id) + 1;
+                value_dst_end_roi[0] = (value_dst_start_roi[0] = dst_block_id) + 1;
+
+                auto copy_one_block = [&](ov::Tensor& dst, const ov::Tensor& src, size_t src_start, size_t dst_start, size_t stride) {
+                    const bool is_remote = dst.is<ov::RemoteTensor>() || src.is<ov::RemoteTensor>();
+                    if (is_remote) {
+                        return;
+                    }
+                    auto sub_byte_multipyer = sub_byte_data_type_multiplier(dst.get_element_type());
+                    OPENVINO_SUPPRESS_DEPRECATED_START
+                    const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(src.data()) + src_start * stride;
+                    uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(dst.data()) + dst_start * stride;
+                    OPENVINO_SUPPRESS_DEPRECATED_END
+                    std::memcpy(dst_ptr, src_ptr, 1 * stride);
+                };
+
+                const auto& key_cache_prec = m_key_cache[decoder_layer_id].get_element_type();
+                if (key_cache_prec == ov::element::u4 || key_cache_prec == ov::element::i4) {
+                    size_t stride = std::accumulate(std::next(key_shape.begin()), key_shape.end(), 1, std::multiplies<size_t>()) / 2;
+                    copy_one_block(m_key_cache[decoder_layer_id], m_key_cache[decoder_layer_id], key_src_start_roi[0], key_dst_start_roi[0], stride);
+                } else {
+                    ov::Tensor key_src_cache_roi(m_key_cache[decoder_layer_id], key_src_start_roi, key_src_end_roi);
+                    ov::Tensor key_dst_cache_roi(m_key_cache[decoder_layer_id], key_dst_start_roi, key_dst_end_roi);
+                    key_src_cache_roi.copy_to(key_dst_cache_roi);
+                }
+
+                const auto& value_cache_prec = m_value_cache[decoder_layer_id].get_element_type();
+                if (value_cache_prec == ov::element::u4 || value_cache_prec == ov::element::i4) {
+                    size_t stride = std::accumulate(std::next(value_shape.begin()), value_shape.end(), 1, std::multiplies<size_t>()) / 2;
+                    copy_one_block(m_value_cache[decoder_layer_id], m_value_cache[decoder_layer_id], value_src_start_roi[0], value_dst_start_roi[0], stride);
+                } else {
+                    ov::Tensor value_src_cache_roi(m_value_cache[decoder_layer_id], value_src_start_roi, value_src_end_roi);
+                    ov::Tensor value_dst_cache_roi(m_value_cache[decoder_layer_id], value_dst_start_roi, value_dst_end_roi);
+                    value_src_cache_roi.copy_to(value_dst_cache_roi);
+                }
+                decoder_layer_id++;
             }
         }
     }
