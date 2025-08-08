@@ -220,6 +220,16 @@ public:
             const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
 
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
+                // compute token_type_ids for current sequence
+                if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                    if (auto token_type_ids = sequence_group->get_token_type_ids()) {
+                        OPENVINO_ASSERT(token_type_ids->size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
+                        for (size_t i = 0; i < num_scheduled_tokens; ++i) {
+                            token_type_ids_data[i] = (i < prompt_len ? (*token_type_ids)[i] : 0);
+                        }
+                    }
+                }
+
                 output_seq_len = 0;
                 Sequence::CPtr sequence = running_sequences[seq_idx];
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
@@ -232,12 +242,6 @@ public:
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
-                        if (auto token_type_ids = sequence_group->get_token_type_ids()) {
-                            OPENVINO_ASSERT(token_type_ids->size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
-                            for (size_t i = 0; i < total_num_tokens; ++i) {
-                                token_type_ids_data[i] = (i < prompt_len ? (*token_type_ids)[i] : 0);
-                            }
-                        }
                     } else {
                         OPENVINO_THROW("Unknown model inputs type.");
                     }
