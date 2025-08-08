@@ -2,6 +2,8 @@
 
 This script provides a unified approach to estimate performance for Large Language Models (LLMs). It leverages pipelines provided by Optimum-Intel and allows performance estimation for PyTorch and OpenVINO models using nearly identical code and pre-collected models.
 
+### 0. Install Python
+We recommend installing Python packages from the [Official Python website](https://www.python.org/downloads). Python versions 3.10-3.12 are recommended.  
 
 ### 1. Prepare Python Virtual Environment for LLM Benchmarking
    
