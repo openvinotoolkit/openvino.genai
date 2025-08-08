@@ -260,14 +260,24 @@ public:
         std::optional<bool> skip_special_tokens_flag = true;
         std::optional<int32_t> max_length_val;
         std::optional<bool> pad_to_max_length_val = false;
-        std::optional<std::string> padding_side_val = "right";
-
+        std::optional<std::string> padding_side_val = std::nullopt;
+        
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
         ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
         ov::genai::utils::read_anymap_param(params, padding_side.name(), padding_side_val);
-        std::optional<bool> pad_right = (padding_side_val.has_value() && *padding_side_val == "right") ? true : false;
+        std::optional<bool> pad_right;
+
+        // If padding_side is not set, we should leave nullopt this will indicate that default value from RaggetToDense attribute will be used.
+        if (padding_side_val.has_value()) {
+            OPENVINO_ASSERT(
+                padding_side_val == "left" || padding_side_val == "right",
+                "padding_side should be either 'left' or 'right', but got: ",
+                *padding_side_val
+            );
+            pad_right = (*padding_side_val == "right") ? true : false;
+        }
 
         std::optional<bool> is_max_length_set_val = max_length_val.has_value();
 
@@ -286,7 +296,7 @@ public:
                 set_state_value(state, pad_to_max_length_val, state_flags);
             } else if (name == IS_MAX_LENGTH_SET) {
                 set_state_value(state, is_max_length_set_val, state_flags);
-            } else  if (name == PAD_RIGHT_VAR_ID) {
+            } else if (name == PAD_RIGHT_VAR_ID) {
                 set_state_value(state, pad_right, state_flags);
             }
         }

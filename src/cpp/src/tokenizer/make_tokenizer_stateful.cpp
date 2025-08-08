@@ -248,8 +248,12 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     model->add_variables({pad_to_max_length_var});
     
     // Add padding side variable.
-    auto pad_right_var = std::make_shared<op::util::Variable>(op::util::VariableInfo{ov::Shape{}, ov::element::boolean, ov::genai::PAD_RIGHT_VAR_ID});
-    auto pad_right_const = std::make_shared<v0::Constant>(ov::element::boolean, ov::Shape{}, std::vector{true});
+    auto pad_right_var = std::make_shared<op::util::Variable>(op::util::VariableInfo{ov::Shape{}, ov::element::i32, ov::genai::PAD_RIGHT_VAR_ID});
+    // If user called encode without explicitly stating padding side, then we should pad it to the default side
+    // which was defined during model conversion, but we don't know default side value during this transformation,
+    // therefore we should indicate that padding side should be taken from the operation attribute.
+    // We decided that to be number 2.
+    auto pad_right_const = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{2});
     auto pad_right_rv = std::make_shared<v6::ReadValue>(pad_right_const, pad_right_var);
     model->add_sinks({std::make_shared<v6::Assign>(pad_right_rv, pad_right_var)});
     model->add_variables({pad_right_var});
