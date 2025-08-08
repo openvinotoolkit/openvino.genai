@@ -153,6 +153,11 @@ target_compile_features(${TARGET_NAME_OBJ} PRIVATE cxx_std_17)
 
 target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE openvino_genai_EXPORTS)
 
+# Add /bigobj flag for MSVC to handle large object files
+if(MSVC)
+    target_compile_options(${TARGET_NAME_OBJ} PRIVATE "/bigobj")
+endif()
+
 set_target_properties(${TARGET_NAME_OBJ} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Shared library
@@ -178,6 +183,11 @@ if(ENABLE_GGUF)
 endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
+
+# Add /bigobj flag for MSVC to handle large object files  
+if(MSVC)
+    target_compile_options(${TARGET_NAME} PRIVATE "/bigobj")
+endif()
 
 if(TARGET openvino_tokenizers)
     add_dependencies(${TARGET_NAME} openvino_tokenizers)
