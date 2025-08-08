@@ -1,4 +1,4 @@
-name: macOS (13, Python 3.10)
+name: macOS (14, Python 3.10)
 on:
   workflow_dispatch:
   pull_request:
@@ -19,7 +19,7 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '11.0'
   PYTHON_VERSION: '3.10'
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
-  BASE_PRODUCT_TYPE: public_darwin
+  BASE_PRODUCT_TYPE: public_macos_arm64
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: ~/.cache/hf
   OV_CACHE: ~/.cache/ov_cache/194c936
@@ -80,7 +80,8 @@ jobs:
     - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
       id: openvino_download
       with:
-        platform: macos_12_6
+        platform: macos_14_7
+        arch: 'arm64'
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
         revision: latest_available_commit
 
@@ -95,7 +96,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-14
     env:
       CMAKE_GENERATOR: Ninja
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -147,7 +148,7 @@ jobs:
         with:
           repos: ${{ env.SRC_DIR }}
           product_type: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
-          target_arch: 'x86_64'
+          target_arch: 'arm64'
           build_type: ${{ matrix.build-type }}
           save_to: ${{ env.MANIFEST_PATH }}
 
@@ -160,7 +161,7 @@ jobs:
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=ON \
                 -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-                -S ${{ env.SRC_DIR}} \
+                -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
@@ -215,7 +216,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-14-xlarge
     env:
       CCACHE_DIR: ${{ github.workspace }}/ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -264,7 +265,7 @@ jobs:
         with:
           repos: ${{ env.SRC_DIR }}
           product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
-          target_arch: 'x86_64'
+          target_arch: 'arm64'
           build_type: Release
           save_to: ${{ github.workspace }}
 
@@ -316,7 +317,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-14
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -368,11 +369,11 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download ]
-    timeout-minutes: 30
+    timeout-minutes: 50
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-14-xlarge
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
@@ -455,7 +456,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-14-xlarge
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -534,7 +535,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-14
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -634,7 +635,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-14
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -691,7 +692,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-14
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
