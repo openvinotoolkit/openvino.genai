@@ -1,4 +1,4 @@
-#include "include/js_perf_metrics.hpp"
+#include "include/perf_metrics.hpp"
 
 #include "include/addon.hpp"
 #include "include/helper.hpp"

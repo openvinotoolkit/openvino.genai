@@ -3,7 +3,7 @@
 #include <future>
 #include "include/addon.hpp"
 #include "include/helper.hpp"
-#include "include/js_perf_metrics.hpp"
+#include "include/perf_metrics.hpp"
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 #include "include/llm_pipeline/start_chat_worker.hpp"
 #include "include/llm_pipeline/finish_chat_worker.hpp"

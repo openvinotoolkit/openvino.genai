@@ -3,7 +3,7 @@
 
 #include "include/addon.hpp"
 
-#include "include/js_perf_metrics.hpp"
+#include "include/perf_metrics.hpp"
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 #include "include/text_embedding_pipeline/pipeline_wrapper.hpp"
 
