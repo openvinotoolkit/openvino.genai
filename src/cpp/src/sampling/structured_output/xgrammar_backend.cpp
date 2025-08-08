@@ -24,11 +24,7 @@ XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, s
 }
 
 std::shared_ptr<LogitTransformers::ILogitTransformer>
-XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& sampling_parameters) {
-    OPENVINO_ASSERT(sampling_parameters.is_structured_output_generation(),
-                   "XGrammarStructuredOutput can only be used for structured output generation");
-    
-    auto& structured_output_config = *sampling_parameters.structured_output_config;
+XGrammarStructuredOutput::get_logits_transformer(const StructuredOutputConfig& structured_output_config, const std::set<int64_t>& stop_token_ids) {
     structured_output_config.validate();
 
     // Default constructor for xgrammar::Grammar is not enabled,
@@ -36,26 +32,26 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
     xgrammar::Grammar grammar = xgrammar::Grammar::FromEBNF("root ::= root");
 
     if (structured_output_config.json_schema.has_value()) {
-        grammar = xgrammar::Grammar::FromJSONSchema(*structured_output_config.json_schema);
+        grammar = xgrammar::Grammar::FromJSONSchema(structured_output_config.json_schema.value());
     } else if (structured_output_config.regex.has_value()) {
-        grammar = xgrammar::Grammar::FromRegex(*structured_output_config.regex);
+        grammar = xgrammar::Grammar::FromRegex(structured_output_config.regex.value());
     } else if (structured_output_config.grammar.has_value()) {
-        grammar = xgrammar::Grammar::FromEBNF(*structured_output_config.grammar);
+        grammar = xgrammar::Grammar::FromEBNF(structured_output_config.grammar.value());
     } else if (structured_output_config.structural_tags_config.has_value()) {
         std::vector<xgrammar::StructuralTagItem> xgrammar_structural_tags;
-        for (const auto& tag : structured_output_config.structural_tags_config->structural_tags) {
+        for (const auto& tag : structured_output_config.structural_tags_config.value().structural_tags) {
             auto structural_tag = xgrammar::StructuralTagItem{tag.begin, tag.schema, tag.end};
             xgrammar_structural_tags.push_back(std::move(structural_tag));
         }
         grammar = xgrammar::Grammar::FromStructuralTag(
-            xgrammar_structural_tags, structured_output_config.structural_tags_config->triggers
+            xgrammar_structural_tags, structured_output_config.structural_tags_config.value().triggers
         );
     } else {
         OPENVINO_THROW("No grammar definition provided for structured output generation.");
     }
 
     auto compiled_grammar = m_grammar_compiler->CompileGrammar(grammar);
-    std::vector<int> override_stop_tokens(sampling_parameters.stop_token_ids.begin(), sampling_parameters.stop_token_ids.end());
+    std::vector<int> override_stop_tokens(stop_token_ids.begin(), stop_token_ids.end());
     
     return std::make_shared<LogitTransformers::XGrammarLogitsTransformer>(std::move(compiled_grammar), override_stop_tokens);
 }
