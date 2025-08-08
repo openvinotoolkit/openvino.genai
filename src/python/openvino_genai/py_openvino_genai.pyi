@@ -2811,6 +2811,13 @@ class TextEmbeddingPipeline:
         Attributes:
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
+            pad_to_max_length (bool, optional):
+                If 'True', model input tensors are padded to the maximum length.
+            batch_size (int, optional):
+                Batch size for the embedding model.
+                Useful for database population. If set, the pipeline will fix model shape for inference optimization. Number
+                of documents passed to pipeline should be equal to batch_size
+                For query embeddings, batch_size should be set to 1 or not set
             pooling_type (TextEmbeddingPipeline.PoolingType, optional):
                 Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
             normalize (bool, optional):
@@ -2822,6 +2829,7 @@ class TextEmbeddingPipeline:
         """
         embed_instruction: str | None
         normalize: bool
+        pad_to_max_length: bool | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload
@@ -2829,6 +2837,16 @@ class TextEmbeddingPipeline:
             ...
         @typing.overload
         def __init__(self, **kwargs) -> None:
+            ...
+        def validate(self) -> None:
+            """
+            Checks that are no conflicting parameters. Raises exception if config is invalid.
+            """
+        @property
+        def batch_size(self) -> int | None:
+            ...
+        @batch_size.setter
+        def batch_size(self, arg0: typing.SupportsInt | None) -> None:
             ...
         @property
         def max_length(self) -> int | None:
