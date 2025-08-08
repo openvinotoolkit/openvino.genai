@@ -127,7 +127,6 @@ MODELS = {
     "ms-marco-TinyBERT-L2-v2": {
         "name": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "convert_args": ["--trust-remote-code", "--task", "text-classification"],
-        "convert_2_input_tokenizer": True
     },
     "tiny-random-SpeechT5ForTextToSpeech": {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
@@ -182,12 +181,6 @@ def setup_and_teardown(request, tmp_path_factory):
             logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
 
 
-def convert_2_input_tokenizer(models_path):
-    hf_tokenizer = AutoTokenizer.from_pretrained(models_path, trust_remote_code=True)
-    ov_tokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=False, number_of_inputs=2)
-    save_model(ov_tokenizer, models_path / "openvino_tokenizer.xml")
-
-
 @pytest.fixture(scope="session")
 def convert_model(request):
     """Fixture to convert the model once for the session."""
@@ -215,9 +208,6 @@ def convert_model(request):
         except subprocess.CalledProcessError as error:
             logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
             raise
-
-        if MODELS[model_id].get("convert_2_input_tokenizer", False):
-            convert_2_input_tokenizer(Path(model_path))
 
     yield model_path
 

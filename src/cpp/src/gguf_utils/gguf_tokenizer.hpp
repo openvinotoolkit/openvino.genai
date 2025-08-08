@@ -7,6 +7,10 @@
 
 #include "gguf.hpp"
 
+using FactoryCreateType = ov::OutputVector (*)(const std::string& op_type,
+                                               const ov::OutputVector& inputs,
+                                               const ov::AnyMap& attributes);
+
 namespace ov {
 namespace genai {
 bool is_gguf_model(const std::filesystem::path& file_path);

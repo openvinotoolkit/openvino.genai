@@ -199,18 +199,9 @@ def download_and_convert_model(model_id: str, **tokenizer_kwargs):
     return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
 
 @pytest.fixture()
-def download_and_convert_embeddings_models(request):
+def download_and_convert_models(request):
     model_id = request.param
     return _download_and_convert_model(model_id, OVModelForFeatureExtraction)
-
-
-@pytest.fixture()
-def download_and_convert_rerank_model(request):
-    model_id = request.param
-    opt_model, hf_tokenizer, models_path = _download_and_convert_model(model_id, OVModelForSequenceClassification)
-    ov_tokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=False, number_of_inputs=2)
-    save_model(ov_tokenizer, models_path / "openvino_tokenizer.xml")
-    return opt_model, hf_tokenizer, models_path
 
 
 def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):
