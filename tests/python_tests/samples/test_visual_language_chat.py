@@ -16,7 +16,7 @@ class TestVisualLanguageChat:
         "convert_model, download_test_content, questions",
         [
             pytest.param("llava-1.5-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("llava-v1.6-mistral-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?', marks=pytest.mark.xfail(reason="Export failure: https://github.com/huggingface/optimum-intel/issues/1398", raises=subprocess.CalledProcessError)),
+            pytest.param("llava-v1.6-mistral-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
             pytest.param("InternVL2-1B", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
             pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
             pytest.param("tiny-random-minicpmv-2_6", "images/image.png", 'What is unusual on this image?\nGo on.')
