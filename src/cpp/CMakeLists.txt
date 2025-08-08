@@ -20,7 +20,7 @@ if(NOT TARGET minja)
     FetchContent_Declare(
         minja
         GIT_REPOSITORY https://github.com/google/minja.git
-        GIT_TAG 58568621432715b0ed38efd16238b0e7ff36c3ba
+        GIT_TAG 5be6f88a648570b26341bb008e686f3b64c2f4ac
     )
 
     FetchContent_GetProperties(minja)
