@@ -165,7 +165,7 @@ public:
     * @param add_special_tokens whether to add special tokens
     * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
     * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
-    * @param padding_side side to pad, either "left" or "right". Default is "right".
+    * @param padding_side side to pad, either "left" or "right". If not defined value is taken from IR.
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -179,7 +179,7 @@ public:
     * @param add_special_tokens whether to add special tokens
     * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
     * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
-    * @param padding_side side to pad, either "left" or "right". Default is "right".
+    * @param padding_side side to pad, either "left" or "right". If not defined value is taken from IR.
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
