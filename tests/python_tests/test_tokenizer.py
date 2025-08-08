@@ -325,7 +325,7 @@ def test_multiple_infer_request_state(tmp_path):
 @pytest.fixture(scope="module")
 def hf_ov_genai_models(request, tmp_path_factory):
     model_id, args = request.param
-    tok_load_properties = {"add_second_input": args.pop("add_second_input", False)}
+    tok_load_properties = {"add_second_input": args.pop("add_second_input")} if "add_second_input" in args else {}
     
     hf_args = args.copy()  # to overcome mutable default argument side effects
     if "padding_side" in hf_args and hf_args["padding_side"] is None:
@@ -441,7 +441,6 @@ def make_model_params():
     params = []
     for model_id_and_params in base_models_for_paired_input_test:
         model_id, params_dict = model_id_and_params
-        params.append((model_id, {**params_dict}))
         params.append((model_id, {**params_dict, "add_second_input": True}))
         params.append((model_id, {**params_dict, "number_of_inputs": 2}))
 
