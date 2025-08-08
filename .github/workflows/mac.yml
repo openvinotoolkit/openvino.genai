@@ -216,7 +216,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-14-xlarge
     env:
       CCACHE_DIR: ${{ github.workspace }}/ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -373,7 +373,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-14-xlarge
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
