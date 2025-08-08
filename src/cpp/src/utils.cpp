@@ -619,7 +619,7 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
 }
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
-    std::string attention_backend = PA_BACKEND;
+    std::string attention_backend = SDPA_BACKEND;
     ov::AnyMap properties = external_properties;
 
     auto it = properties.find("ATTENTION_BACKEND");
