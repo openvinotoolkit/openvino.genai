@@ -1,76 +1,16 @@
 from typing import Any, Union
 
 import os
+import yaml
 import pandas as pd
 from tqdm import tqdm
+from importlib.resources import files
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
 from .utils import patch_awq_for_inference, get_ignore_parameters_flag
 
-default_data = {
-    "en": {
-        "prompts": [
-            "Who is Mark Twain?",
-            "Who is William Shakespeare?",
-            "Who is Agatha Christie?",
-            "Who is Barbara Cartland?",
-            "Who is Danielle Steel?",
-            "Who is Harold Robbins?",
-            "Who is Georges Simenon?",
-            "Who is Enid Blyton?",
-            "Who is Sidney Sheldon?",
-            "Who is Akira Toriyama?",
-            "Who is Leo Tolstoy?",
-            "Who is Alexander Pushkin?",
-            "Who is Stephen King?",
-            "What is C++?",
-            "What is Python?",
-            "What is Java?",
-            "What is JavaScript?",
-            "What is Perl?",
-            "What is OpenCV?",
-            "Who is the most famous writer?",
-            "Who is the most famous inventor?",
-            "Who is the most famous mathematician?",
-            "Who is the most famous composer?",
-            "Who is the most famous programmer?",
-            "Who is the most famous athlete?",
-            "Who is the most famous ancient Greek scientist?",
-            "What color will you get when you mix blue and yellow?",
-        ],
-    },
-    "cn": {
-        "prompts": [
-            "马克吐温是谁?",
-            "谁是威廉-莎士比亚?",
-            "阿加莎-克里斯蒂是谁?",
-            "芭芭拉-卡特兰是谁?",
-            "丹妮尔-斯蒂尔是谁?",
-            "谁是哈罗德-罗宾斯?",
-            "乔治-西默农是谁?",
-            "伊妮德-布莱顿是谁?",
-            "西德尼-谢尔顿是谁?",
-            "鸟山明是谁?",
-            "谁是列夫-托尔斯泰?",
-            "亚历山大-普希金是谁?",
-            "斯蒂芬-金是谁?",
-            "C++是什么?",
-            "Python是什么?",
-            "什么是 Java?",
-            "JavaScript是什么?",
-            "什么是 Perl?",
-            "什么是 OpenCV?",
-            "谁是最著名的作家?",
-            "谁是最有名的发明家?",
-            "谁是最著名的数学家?",
-            "最著名的作曲家是谁?",
-            "谁是最有名的程序员?",
-            "谁是最著名的运动员?",
-            "谁是最著名的古希腊科学家?",
-            "蓝色和黄色混合会得到什么颜色?",
-        ],
-    },
-}
+PROMPTS_FILE = 'text_prompts.yaml'
+LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
 
 
 @register_evaluator(
@@ -94,6 +34,7 @@ class TextEvaluator(BaseEvaluator):
         generation_config_base=None,
         seqs_per_request=None,
         use_chat_template=None,
+        long_prompt=False
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -115,6 +56,8 @@ class TextEvaluator(BaseEvaluator):
 
         # Take language from the base model if provided
         self.language = language
+
+        self.long_prompt = long_prompt
 
         if base_model:
             self.gt_data = self._generate_data(
@@ -220,7 +163,10 @@ class TextEvaluator(BaseEvaluator):
                     data = {"prompts": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(default_data[self.language])
+            prompts_file_path = LONG_PROMPTS_FILE if self.long_prompt else PROMPTS_FILE
+            data_path = files('whowhatbench.prompts').joinpath(prompts_file_path)
+            prompt_data = yaml.safe_load(data_path.read_text())
+            data = pd.DataFrame.from_dict(prompt_data[self.language])
 
         prompt_data = data["prompts"]
 
