@@ -1,6 +1,7 @@
 from typing import Union, Optional
 from packaging.version import Version
 import torch
+import transformers
 from contextlib import contextmanager
 
 
@@ -23,6 +24,18 @@ def new_randn_tensor(
 def patch_diffusers():
     from diffusers.utils import torch_utils
     torch_utils.randn_tensor = new_randn_tensor
+
+
+@contextmanager
+def mock_AwqQuantizer_validate_environment(to_patch):
+    original_fun = transformers.quantizers.quantizer_awq.AwqQuantizer.validate_environment
+    if to_patch:
+        transformers.quantizers.quantizer_awq.AwqQuantizer.validate_environment = lambda self, device_map, **kwargs: None
+    try:
+        yield
+    finally:
+        if to_patch:
+            transformers.quantizers.quantizer_awq.AwqQuantizer.validate_environment = original_fun
 
 
 @contextmanager
