@@ -19,10 +19,20 @@ OV_IMAGE_MODELS = ["echarlaix/tiny-random-stable-diffusion-xl",
 
 
 def run_wwb(args):
-    logger.info(" ".join(["TRANSFOREMRS_VERBOSITY=debug wwb"] + args))
-    result = subprocess.run(["wwb"] + args, capture_output=True, text=True)
-    logger.info(result)
-    return result
+    command = ["wwb"] + args
+    try:
+        return subprocess.check_output(
+            command,
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
+            env={"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ},
+        )
+    except subprocess.CalledProcessError as error:
+        logger.error(
+            f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n"
+            f"{error.output}"
+        )
+        raise
 
 
 def setup_module():
@@ -56,8 +66,7 @@ def get_similarity(output: str) -> float:
         ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "image-inpainting", "hf"),
     ],
 )
-def test_image_model_types(model_id, model_type, backend):
-    GT_FILE = "test_sd.csv"
+def test_image_model_types(model_id, model_type, backend, tmp_path):
     wwb_args = [
         "--base-model",
         model_id,
@@ -66,7 +75,7 @@ def test_image_model_types(model_id, model_type, backend):
         "--num-samples",
         "1",
         "--gt-data",
-        GT_FILE,
+        tmp_path / "test_sd.csv",
         "--device",
         "CPU",
         "--model-type",
@@ -79,19 +88,10 @@ def test_image_model_types(model_id, model_type, backend):
     elif backend == "genai":
         wwb_args.append("--genai")
 
-    result = run_wwb(wwb_args)
-    print(result.stderr, result.stdout)
+    output = run_wwb(wwb_args)
 
-    try:
-        os.remove(GT_FILE)
-    except OSError:
-        pass
-    shutil.rmtree("reference", ignore_errors=True)
-    shutil.rmtree("target", ignore_errors=True)
-
-    assert result.returncode == 0
-    assert "Metrics for model" in result.stderr
-    similarity = get_similarity(str(result.stderr))
+    assert "Metrics for model" in output
+    similarity = get_similarity(output)
     assert similarity >= 0.98
 
 
@@ -103,102 +103,88 @@ def test_image_model_types(model_id, model_type, backend):
                             "image-inpainting"
                             ])),
 )
-def test_image_model_genai(model_id, model_type):
-    pytest.skip(reason="Ticket 170877")
-
+def test_image_model_genai(model_id, model_type, tmp_path):
     if ("flux-fill" in model_id) and (model_type != "image-inpainting"):
         pytest.skip(reason="FLUX-Fill is supported as inpainting only")
+    if model_type == "image-inpainting":
+        pytest.xfail("Segfault. Ticket 170877")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        GT_FILE = os.path.join(temp_dir, "gt.csv")
-        MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+    GT_FILE = tmp_path / "gt.csv"
+    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
 
-        wwb_args = [
-            "--base-model",
-            model_id,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--num-inference-steps",
-            "2",
-        ]
-        result = run_wwb(wwb_args)
-        assert result.returncode == 0
-        assert os.path.exists(GT_FILE)
-        assert os.path.exists(os.path.join(temp_dir, "reference"))
+    run_wwb([
+        "--base-model",
+        model_id,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--num-inference-steps",
+        "2",
+    ])
+    assert GT_FILE.exists()
+    assert (tmp_path / "reference").exists()
 
-        wwb_args = [
-            "--target-model",
-            MODEL_PATH,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--genai",
-            "--num-inference-steps",
-            "2",
-        ]
-        result = run_wwb(wwb_args)
+    output = run_wwb([
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--genai",
+        "--num-inference-steps",
+        "2",
+    ])
 
-        assert result.returncode == 0
-        assert "Metrics for model" in result.stderr
-        similarity = get_similarity(str(result.stderr))
-        assert similarity >= 0.97751  # Ticket 166496
-        assert os.path.exists(os.path.join(temp_dir, "target"))
+    assert "Metrics for model" in output
+    similarity = get_similarity(output)
+    assert similarity >= 0.97751  # Ticket 166496
+    assert (tmp_path / "target").exists()
 
-        output_dir = tempfile.TemporaryDirectory().name
-        wwb_args = [
-            "--target-model",
-            MODEL_PATH,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--output",
-            output_dir,
-            "--genai",
-            "--num-inference-steps",
-            "2",
-        ]
-        result = run_wwb(wwb_args)
-        assert result.returncode == 0
-        assert os.path.exists(os.path.join(output_dir, "target"))
-        assert os.path.exists(os.path.join(output_dir, "target.csv"))
+    run_wwb([
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--output",
+        tmp_path,
+        "--genai",
+        "--num-inference-steps",
+        "2",
+    ])
+    assert (tmp_path / "target").exists()
+    assert (tmp_path / "target.csv").exists()
 
-        # test w/o models
-        wwb_args = [
-            "--target-data",
-            os.path.join(output_dir, "target.csv"),
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--num-inference-steps",
-            "2",
-        ]
-        result = run_wwb(wwb_args)
-        assert result.returncode == 0
-
-        shutil.rmtree("reference", ignore_errors=True)
-        shutil.rmtree("target", ignore_errors=True)
-        shutil.rmtree(output_dir, ignore_errors=True)
+    # test w/o models
+    run_wwb([
+        "--target-data",
+        tmp_path / "target.csv",
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--num-inference-steps",
+        "2",
+    ])
 
 
 @pytest.mark.parametrize(
@@ -207,8 +193,8 @@ def test_image_model_genai(model_id, model_type):
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
     ],
 )
-def test_image_custom_dataset(model_id, model_type, backend):
-    GT_FILE = "test_sd.csv"
+def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
+    GT_FILE = tmp_path / "test_sd.csv"
     wwb_args = [
         "--base-model",
         model_id,
@@ -232,14 +218,6 @@ def test_image_custom_dataset(model_id, model_type, backend):
     elif backend == "genai":
         wwb_args.append("--genai")
 
-    result = run_wwb(wwb_args)
+    run_wwb(wwb_args)
 
     assert os.path.exists(GT_FILE)
-
-    try:
-        os.remove(GT_FILE)
-    except OSError:
-        pass
-    shutil.rmtree("reference", ignore_errors=True)
-
-    assert result.returncode == 0
