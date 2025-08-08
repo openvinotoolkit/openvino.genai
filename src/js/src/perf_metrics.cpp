@@ -2,6 +2,10 @@
 
 #include "include/addon.hpp"
 #include "include/helper.hpp"
+#include "bindings_utils.hpp"
+
+using ov::genai::common_bindings::utils::get_ms;
+using ov::genai::common_bindings::utils::timestamp_to_ms;
 
 PerfMetricsWrapper::PerfMetricsWrapper(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<PerfMetricsWrapper>(info),

@@ -24,7 +24,7 @@ set(TARGET_NAME py_openvino_genai)
 pybind11_add_module(${TARGET_NAME} ${python_sources})
 
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai)
-target_include_directories(${TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src") # for tokenizer/tokenizers_path.hpp
+target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.." "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src") # for tokenizer/tokenizers_path.hpp
 set_target_properties(${TARGET_NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"

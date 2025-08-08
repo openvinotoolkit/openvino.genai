@@ -82,27 +82,3 @@ Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, co
                                                                   
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);
 
-// function from src/python/py_utils.hpp
-template <typename T, typename U>
-std::vector<float> get_ms(const T& instance, U T::*member) {
-    // Converts c++ duration to float.
-    std::vector<float> res;
-    const auto& durations = instance.*member;
-    res.reserve(durations.size());
-    std::transform(durations.begin(), durations.end(), std::back_inserter(res),
-                   [](const auto& duration) { return duration.count(); });
-    return res;
-}
-
-// function from src/python/py_perf_metrics.cpp
-template <typename T, typename U>
-std::vector<double> timestamp_to_ms(const T& instance, U T::*member) {
-    std::vector<double> res;
-    const auto& timestamps = instance.*member;
-    res.reserve(timestamps.size());
-    std::transform(timestamps.begin(), timestamps.end(), std::back_inserter(res),
-                   [](const auto& timestamp) { 
-                        return std::chrono::duration<double, std::milli>(timestamp.time_since_epoch()).count(); 
-                    });
-    return res;
-}
