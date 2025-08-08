@@ -24,8 +24,10 @@ using namespace ov::genai;
 using namespace ov;
 using namespace ov::op;
 
-
-ScopedVar env_manager(tokenizers_relative_to_genai());
+// Get the parent path two levels up and append "openvino_genai"
+auto genai_root = std::filesystem::path(tokenizers_relative_to_genai());
+auto openvino_genai_path = genai_root.parent_path().parent_path().parent_path() / "openvino_genai" / genai_root.filename();
+ScopedVar env_manager(openvino_genai_path.string());
 std::filesystem::path ov_tokenizer_filesystem_path;
 
 #ifdef _WIN32
