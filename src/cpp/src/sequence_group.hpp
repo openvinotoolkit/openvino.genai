@@ -299,11 +299,34 @@ public:
         }
         OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
 
+        bool inject_structural_tag_trigger = false;
+        bool has_structural_tags = sampling_params.is_structured_output_generation() && sampling_params.structured_output_config.value().structural_tags_config.has_value();
+        if (has_structural_tags) {
+            auto& structural_tags_config = sampling_params.structured_output_config.value().structural_tags_config.value();      
+            if (structural_tags_config.inject_trigger && structural_tags_config.triggers_tokens.size() > 0 && structural_tags_config.triggers_tokens[0].size() > 0) {
+                inject_structural_tag_trigger = true;
+            }
+        }
+
         if (input_ids.get_element_type() == ov::element::i64) {
-            m_prompt_ids.resize(prompt_len);
-            OPENVINO_SUPPRESS_DEPRECATED_START
-            std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
-            OPENVINO_SUPPRESS_DEPRECATED_END
+            if (inject_structural_tag_trigger) {
+                auto& structural_tags_config = sampling_params.structured_output_config.value().structural_tags_config.value();
+                m_prompt_ids.resize(prompt_len + structural_tags_config.triggers_tokens[0].size());
+                OPENVINO_SUPPRESS_DEPRECATED_START
+                std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
+                OPENVINO_SUPPRESS_DEPRECATED_END
+                // append trigger tokens
+                std::copy_n(structural_tags_config.triggers_tokens[0].data(), structural_tags_config.triggers_tokens[0].size(), m_prompt_ids.begin() + prompt_len);
+                m_prompt_log_probs.resize(prompt_len + structural_tags_config.triggers_tokens[0].size(), -1.0f);
+                auto triggerTokensLogProbs = std::vector<float>(structural_tags_config.triggers_tokens[0].size(), -1.0f);
+                // notify handle with trigger tokens
+                notify_handle_with_tokens(structural_tags_config.triggers_tokens[0], triggerTokensLogProbs);
+            } else {
+                m_prompt_ids.resize(prompt_len);
+                OPENVINO_SUPPRESS_DEPRECATED_START
+                std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
+                OPENVINO_SUPPRESS_DEPRECATED_END
+            }
             m_sequence_group_type = SequenceGroupType::TOKENS;
         } else if (input_ids.get_element_type() == ov::element::f32) {
             hidden_size = input_ids.get_shape()[2];
@@ -787,6 +810,20 @@ public:
             set_generation_status(GenerationStatus::FINISHED);
             m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
         }
+        GenerationOutputs outputs;
+        outputs.emplace(0, output);
+        m_generation_stream->push(std::move(outputs));
+    }
+
+    // Helper method to manual handle notification with specific tokens, used to
+    // send tokens to the handler outside of the generation loop
+    // e.g. return implictly injected part of the prompt
+    void notify_handle_with_tokens(const std::vector<int64_t>& token_ids, const std::vector<float>& log_probs) {
+        GenerationOutput output;
+        output.generated_ids = token_ids;
+        output.generated_log_probs = log_probs;
+        output.score = 0.0;
+        output.finish_reason = GenerationFinishReason::NONE;
         GenerationOutputs outputs;
         outputs.emplace(0, output);
         m_generation_stream->push(std::move(outputs));
