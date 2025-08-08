@@ -77,7 +77,7 @@ public:
      * @param sampling_parameters The generation configuration parameters that may include JSON schema, regex, or EBNF grammar.
      * @return A shared pointer to the logit transformer that applies XGrammar grammar matching.
      */
-    std::shared_ptr<LogitTransformers::ILogitTransformer> get_logits_transformer(const GenerationConfig& sampling_parameters) override;
+    std::shared_ptr<LogitTransformers::ILogitTransformer> get_logits_transformer(const StructuredOutputConfig& structured_output_config, const std::set<int64_t>& stop_token_ids) override;
 private:
     std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
 };

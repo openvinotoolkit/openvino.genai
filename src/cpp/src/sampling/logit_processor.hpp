@@ -41,7 +41,7 @@ public:
 
         OPENVINO_ASSERT(structured_output_controller != nullptr || !sampling_params.is_structured_output_generation(), "Structured output controller is not set for structured output generation");
         if (sampling_params.is_structured_output_generation() && structured_output_controller != nullptr) {
-            auto transformer = structured_output_controller->get_logits_transformer(sampling_params);
+            auto transformer = structured_output_controller->get_logits_transformer();
             m_logit_transformers.push_back(transformer);
             m_stateful_logit_transformers.emplace_back(std::dynamic_pointer_cast<LogitTransformers::IStatefulLogitTransformer>(transformer));
         }

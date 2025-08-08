@@ -348,6 +348,19 @@ void GenerationConfig::validate() const {
     }
 }
 
+void GenerationConfig::parse_structured_output_config(Tokenizer& tokenizer) {
+    if (structured_output_config.has_value()) {
+        structured_output_controller = std::make_shared<StructuredOutputController>(tokenizer);
+        structured_output_controller->initialize_logits_transformer(structured_output_config.value(), stop_token_ids);
+    } else {
+        OPENVINO_THROW("StructuredOutputController is not initialized, cannot compile grammar.");
+    }
+}
+
+const std::shared_ptr<StructuredOutputController>& GenerationConfig::get_structured_output_controller() const {
+    return structured_output_controller;
+}
+
 void StructuredOutputConfig::validate() const {
     auto& registry = StructuredOutputController::get_backend_registry();
     std::string backend_name = backend.has_value() ? *backend : StructuredOutputController::get_default_backend_name();

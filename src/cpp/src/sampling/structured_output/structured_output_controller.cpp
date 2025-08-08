@@ -33,14 +33,10 @@ StructuredOutputController::StructuredOutputController(const ov::genai::Tokenize
                                                        std::optional<int> vocab_size)
     : m_tokenizer(tokenizer), m_vocab_size(vocab_size) {}
 
-std::shared_ptr<LogitTransformers::ILogitTransformer>
-StructuredOutputController::get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) {
-    auto& guided_gen_config = sampling_parameters.structured_output_config;
-    if (!guided_gen_config.has_value()) {
-        OPENVINO_THROW("Structured output is not enabled in the provided GenerationConfig.");
-    }
-    std::string backend_name = (*guided_gen_config).backend.value_or(get_default_backend_name());
-    
+void StructuredOutputController::initialize_logits_transformer(const StructuredOutputConfig& structured_output_config, const std::set<int64_t>& stop_token_ids) {
+
+    std::string backend_name = structured_output_config.backend.value_or(get_default_backend_name());
+
     std::unique_lock<std::mutex> lock(m_mutex);
 
     // Check if backend already instantiated
@@ -63,10 +59,16 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
 
     // Use the instantiated backend
     const auto start = std::chrono::steady_clock::now();
-    auto res = impl_it->second->get_logits_transformer(sampling_parameters);
+    m_logits_transformer = impl_it->second->get_logits_transformer(structured_output_config, stop_token_ids);
     const auto end = std::chrono::steady_clock::now();
     m_grammar_compile_times.emplace_back(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
-    return res;
+}
+
+std::shared_ptr<LogitTransformers::ILogitTransformer> StructuredOutputController::get_logits_transformer() const {
+    if (!m_logits_transformer) {
+        OPENVINO_THROW("Logit transformer is not initialized. Call initialize_logits_transformer() first.");
+    }
+    return m_logits_transformer;
 }
 
 std::pair<std::map<std::string, float>, std::vector<float>> StructuredOutputController::get_times() const {

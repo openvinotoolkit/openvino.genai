@@ -156,9 +156,9 @@ public:
  * 
  * @param apply_chat_template whether or not to apply chat_template for non-chat scenarios
  */
-
+class StructuredOutputController;
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
-
+    std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr;
 public:
     GenerationConfig() = default;
     explicit GenerationConfig(const std::filesystem::path& json_path);
@@ -239,6 +239,9 @@ public:
     /// @brief checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.
     /// @throws Exception if config is invalid.
     void validate() const;
+
+    void parse_structured_output_config(ov::genai::Tokenizer& tokenizer);
+    const std::shared_ptr<ov::genai::StructuredOutputController>& get_structured_output_controller() const;
 };
 
 /*

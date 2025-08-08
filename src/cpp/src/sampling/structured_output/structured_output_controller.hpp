@@ -47,7 +47,7 @@ class IStructuredOutputImpl {
 public:
     virtual ~IStructuredOutputImpl() = default;
     virtual std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer>
-        get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) = 0;
+        get_logits_transformer(const StructuredOutputConfig& structured_output_config, const std::set<int64_t>& stop_token_ids) = 0;
 };
 
 /**
@@ -60,6 +60,7 @@ public:
  * keeps backend-specific logic encapsulated.
  */
 class StructuredOutputController {
+    std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> m_logits_transformer;
 public:
     using BackendFactory = std::function<std::unique_ptr<ov::genai::IStructuredOutputImpl>(
         const ov::genai::Tokenizer&, std::optional<int>)>;
@@ -68,8 +69,8 @@ public:
                               std::optional<int> vocab_size=std::nullopt);
 
 
-    std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer>
-        get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters);
+    void initialize_logits_transformer(const StructuredOutputConfig& structured_output_config, const std::set<int64_t>& stop_token_ids);
+    std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> get_logits_transformer() const;
 
     static void register_backend(const std::string& name, BackendFactory factory);
     static void set_default_backend(const std::string& name);
