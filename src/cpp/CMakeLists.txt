@@ -14,7 +14,7 @@ if(NOT TARGET nlohmann_json)
 endif()
 
 # Pretend ccache is not found
-set(CCACHE_FOUND FALSE CACHE INTERNAL "Prevent third-party from enabling ccache automatically")
+# set(CCACHE_FOUND FALSE CACHE INTERNAL "Prevent third-party from enabling ccache automatically")
 
 if(NOT TARGET minja)
     FetchContent_Declare(
