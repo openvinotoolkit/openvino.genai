@@ -225,9 +225,12 @@ def run_pipeline_with_ref(
     streamer: typing.Callable[[str], bool] | None = None,
 ):
     _, _, hf_pipe, genai_pipe = read_whisper_model((model_id, tmp_path))
-    _, _, _, genai_with_past_pipe = read_whisper_model(
-        (model_id, tmp_path), stateful=False
-    )
+
+    # starting with transformers 4.53.0 optimum-cli exports bad whisper model
+    # unskip when ticket 171932 is fixed or for 2026.0 release as stateless model is deprecated
+    # _, _, _, genai_with_past_pipe = read_whisper_model(
+    #     (model_id, tmp_path), stateful=False
+    # )
 
     if type(sample) is np.ndarray and len(sample.shape) == 1:
         sample = np.expand_dims(sample, 0)
@@ -238,11 +241,11 @@ def run_pipeline_with_ref(
 
         compare_results(hf_result, genai_result)
 
-        genai_with_past_result = run_genai(
-            genai_with_past_pipe, _sample, generation_config, streamer
-        )
+        # genai_with_past_result = run_genai(
+        #     genai_with_past_pipe, _sample, generation_config, streamer
+        # )
 
-        compare_results(hf_result, genai_with_past_result)
+        # compare_results(hf_result, genai_with_past_result)
 
 
 def compare_results(hf_result, genai_result):
