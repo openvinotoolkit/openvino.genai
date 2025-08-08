@@ -25,6 +25,9 @@ struct TokenizedInputs {
     std::optional<ov::Tensor> token_type_ids;
 };
 
+class TokenizerImpl;
+class StructuredOutputController;
+
 /**
  * @brief The class is used to encode prompts and decode resulting tokens
  *
@@ -306,8 +309,12 @@ public:
 
     Tokenizer() = default;
     ~Tokenizer();
+    bool operator==(const Tokenizer& other) const {
+        return m_pimpl == other.m_pimpl;
+    }
 private:
-    class TokenizerImpl;
+    friend class StructuredOutputConfig;
+    friend class Sampler;
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
 

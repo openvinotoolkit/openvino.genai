@@ -22,6 +22,7 @@
 #include "sequence_group.hpp"
 #include "threadpool.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
+#include "tokenizer/tokenizer_impl.hpp"
 
 namespace ov::genai {
 // Handle stop_token_ids
@@ -99,7 +100,6 @@ class Sampler {
     Tokenizer m_tokenizer;
 
     ThreadPool m_thread_pool;
-    std::shared_ptr<ov::genai::StructuredOutputController> m_structured_output_controller;
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;

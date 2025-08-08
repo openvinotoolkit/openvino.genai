@@ -9,10 +9,12 @@
 #include <vector>
 #include <unordered_map>
 #include <functional>
+#include <set>
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "sampling/logit_transformers.hpp"
+#include "tokenizer/tokenizer_impl.hpp"
 
 namespace ov {
 namespace genai {
@@ -48,6 +50,7 @@ public:
     virtual ~IStructuredOutputImpl() = default;
     virtual std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer>
         get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) = 0;
+    virtual void validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) = 0;
 };
 
 /**
@@ -60,16 +63,17 @@ public:
  * keeps backend-specific logic encapsulated.
  */
 class StructuredOutputController {
+    std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> m_logits_transformer;
 public:
     using BackendFactory = std::function<std::unique_ptr<ov::genai::IStructuredOutputImpl>(
-        const ov::genai::Tokenizer&, std::optional<int>)>;
+        const ov::genai::TokenizerImpl&, std::optional<int>)>;
 
-    StructuredOutputController(const ov::genai::Tokenizer& tokenizer,
+    StructuredOutputController(const ov::genai::TokenizerImpl& tokenizer_impl,
                               std::optional<int> vocab_size=std::nullopt);
 
 
-    std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer>
-        get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters);
+    void validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config);
+    std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters);
 
     static void register_backend(const std::string& name, BackendFactory factory);
     static void set_default_backend(const std::string& name);
@@ -82,7 +86,7 @@ private:
     std::map<std::string, float> m_init_grammar_compiler_times;
     std::vector<float> m_grammar_compile_times;
     std::unordered_map<std::string, std::unique_ptr<IStructuredOutputImpl>> m_impls;
-    const ov::genai::Tokenizer& m_tokenizer;
+    const TokenizerImpl& m_tokenizer_impl;
     std::optional<int> m_vocab_size;
     mutable std::mutex m_mutex;
 };

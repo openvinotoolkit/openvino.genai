@@ -8,6 +8,7 @@
 #include <openvino/runtime/core.hpp>
 #include "openvino/genai/generation_config.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
+#include "tokenizer/tokenizer_impl.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"
 
@@ -378,6 +379,12 @@ void StructuredOutputConfig::validate() const {
             }
         }, *compound_grammar) : "")
     );
+}
+
+void StructuredOutputConfig::validate(Tokenizer& tokenizer) const {
+    validate();
+    OPENVINO_ASSERT(tokenizer.m_pimpl != nullptr, "Tokenizer not initialized properly");
+    tokenizer.m_pimpl->get_structured_output_controller()->validate_grammar(*this);
 }
 
 
