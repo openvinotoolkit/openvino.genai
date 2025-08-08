@@ -12,10 +12,16 @@ Install [../../export-requirements.txt](../../export-requirements.txt) to conver
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 ```
 
-Then, run the export with Optimum CLI:
+To export text embedding model run Optimum CLI command:
 
 ```sh
 optimum-cli export openvino --trust-remote-code --model BAAI/bge-small-en-v1.5 BAAI/bge-small-en-v1.5
+```
+
+To export text reranking model run Optimum CLI command:
+
+```sh
+optimum-cli export openvino --trust-remote-code --model cross-encoder/ms-marco-MiniLM-L6-v2 cross-encoder/ms-marco-MiniLM-L6-v2
 ```
 
 
