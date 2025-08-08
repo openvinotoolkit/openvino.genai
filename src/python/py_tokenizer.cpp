@@ -75,12 +75,17 @@ void init_tokenizer(py::module_& m) {
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, 
                           bool add_special_tokens, 
                           bool pad_to_max_length,
-                          std::optional<size_t> max_length) {
+                          std::optional<size_t> max_length,
+                          std::optional<std::string> padding_side) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
                 tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
+
                 if (max_length.has_value()) {
                     tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
+                if (padding_side.has_value()) {
+                    tokenization_params[ov::genai::padding_side.name()] = *padding_side;
                 }
                 return tok.encode(prompts, tokenization_params);
             },
@@ -88,17 +93,23 @@ void init_tokenizer(py::module_& m) {
             py::arg("add_special_tokens") = true,
             py::arg("pad_to_max_length") = false,
             py::arg("max_length") = std::nullopt,
+            py::arg("padding_side") = std::nullopt,
             R"(Encodes a list of prompts into tokenized inputs.)")
 
         .def("encode", [](Tokenizer& tok, const std::string prompt, 
                           bool add_special_tokens, 
                           bool pad_to_max_length,
-                          std::optional<size_t> max_length) {
+                          std::optional<size_t> max_length,
+                          std::optional<std::string> padding_side
+                        ) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
                 tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
                 if (max_length.has_value()) {
                     tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
+                if (padding_side.has_value()) {
+                    tokenization_params[ov::genai::padding_side.name()] = *padding_side;
                 }
                 return tok.encode(prompt, tokenization_params);
             },
@@ -106,6 +117,7 @@ void init_tokenizer(py::module_& m) {
             py::arg("add_special_tokens") = true, 
             py::arg("pad_to_max_length") = false,
             py::arg("max_length") = std::nullopt,
+            py::arg("padding_side") = std::nullopt,
             R"(Encodes a single prompt into tokenized input.)")
             
             .def("encode", [](Tokenizer& tok, 
@@ -113,12 +125,17 @@ void init_tokenizer(py::module_& m) {
                 std::vector<std::string>& prompts_2,
                 bool add_special_tokens, 
                 bool pad_to_max_length,
-                std::optional<size_t> max_length) {
+                std::optional<size_t> max_length,
+                std::optional<std::string> padding_side) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
                 tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
+
                 if (max_length.has_value()) {
                     tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
+                if (padding_side.has_value()) {
+                    tokenization_params[ov::genai::padding_side.name()] = *padding_side;
                 }
                 return tok.encode(prompts_1, prompts_2, tokenization_params);
             },
@@ -127,18 +144,24 @@ void init_tokenizer(py::module_& m) {
             py::arg("add_special_tokens") = true,
             py::arg("pad_to_max_length") = false,
             py::arg("max_length") = std::nullopt,
+            py::arg("padding_side") = std::nullopt,
             R"(Encodes a list of prompts into tokenized inputs. The number of strings must be the same, or one of the inputs can contain one string.
             In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.)")
 
             .def("encode", [](Tokenizer& tok, py::list& prompts, 
                             bool add_special_tokens, 
                             bool pad_to_max_length,
-                            std::optional<size_t> max_length) {
+                            std::optional<size_t> max_length,
+                            std::optional<std::string> padding_side) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
                 tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
+                
                 if (max_length.has_value()) {
                     tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
+                if (padding_side.has_value()) {
+                    tokenization_params[ov::genai::padding_side.name()] = *padding_side;
                 }
 
                 // Convert py::list to std::vector<std::string>
@@ -156,6 +179,7 @@ void init_tokenizer(py::module_& m) {
             py::arg("add_special_tokens") = true,
             py::arg("pad_to_max_length") = false,
             py::arg("max_length") = std::nullopt,
+            py::arg("padding_side") = std::nullopt,
             R"(Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].)")
             
             .def(
