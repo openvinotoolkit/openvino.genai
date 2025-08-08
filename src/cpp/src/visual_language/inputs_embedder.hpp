@@ -39,7 +39,7 @@ public:
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
-    std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
+    std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images, const bool& is_video = false);
 
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
@@ -102,7 +102,7 @@ private:
 
         ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence);
 
-        virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
+        virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images, const bool& is_video = false);
     
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
     
