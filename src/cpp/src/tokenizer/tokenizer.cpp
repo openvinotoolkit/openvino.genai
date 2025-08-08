@@ -55,13 +55,13 @@ ov::Core get_core_singleton() {
     return core;
 }
 
-std::optional<std::string> remap_template(const std::string& chat_template) {
+std::string remap_template(const std::string& chat_template) {
     for (const auto& [known, fallback] : chat_template_fallback_map) {
         if (chat_template == known) {
             return fallback;
         }
     }
-    return std::nullopt;
+    return chat_template;
 }
 
 void parse_chat_template_from_file(const std::filesystem::path& path, std::string& value) {
@@ -124,29 +124,6 @@ const T& find_or_fallback(const ov::AnyMap& rt_info, const char name[], const T&
         return fallback;
     }
     return iter->second.as<T>();
-}
-
-std::string patch_template(std::string&& chat_template) {
-    // Replace what minja doesn't support
-    // This patching is required until minja supports the '.upper()' syntax natively (https://github.com/google/minja/pull/76).
-    std::pair<std::string, std::string> replace_str_map[] = {
-        {".upper()", " | upper"},
-    };
-
-    for (const auto& [from, to] : replace_str_map) {
-        size_t pos = 0;
-        while ((pos = chat_template.find(from, pos)) != std::string::npos) {
-            chat_template.replace(pos, from.size(), to);
-            pos += to.size();
-        }
-    }
-    return chat_template;
-}
-
-std::string remap_and_patch(const std::string& chat_template) {
-    return patch_template(
-        remap_template(chat_template).value_or(chat_template)
-    );
 }
 
 std::vector<std::string> read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model) {
@@ -402,7 +379,7 @@ public:
 
             parse_chat_template_from_tokenizer(ov_tokenizer, m_chat_template);
 
-            m_chat_template = remap_and_patch(m_chat_template);
+            m_chat_template = remap_template(m_chat_template);
 
             // Initialize tokenizer's cache to save time later.
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
@@ -725,7 +702,7 @@ public:
     std::string apply_chat_template(ChatHistory history,
                                     bool add_generation_prompt,
                                     const std::string& chat_template) const {
-        std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_and_patch(chat_template);
+        std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_template(chat_template);
         OPENVINO_ASSERT(!chat_tpl.empty(),
                         "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                         " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
@@ -768,7 +745,7 @@ public:
     }
 
     void set_chat_template(const std::string& chat_template) {
-        m_chat_template = remap_and_patch(chat_template);
+        m_chat_template = remap_template(chat_template);
     }
 
     std::string get_chat_template() {
