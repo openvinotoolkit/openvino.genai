@@ -1623,7 +1623,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
         static const std::map<std::string, AdapterConfig::Mode> default_modes {
             {"CPU", AdapterConfig::MODE_DYNAMIC},
             {"GPU", AdapterConfig::MODE_DYNAMIC},
-            {"NPU", AdapterConfig::MODE_STATIC},
+            {"NPU", AdapterConfig::MODE_DYNAMIC},
         };
         if(device.find("GPU") != std::string::npos) {  // to handle GPU device variants which doesn't matter for adapter mode
             device = "GPU";
