@@ -246,7 +246,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
         timer.end();
         return add_request(request_id, inputs, sampling_params);
     } else if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, {}, sampling_params);
     } else {
         OPENVINO_THROW("Unknown model input type.");
     }

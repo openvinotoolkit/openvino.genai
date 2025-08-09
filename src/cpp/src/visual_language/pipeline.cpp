@@ -153,6 +153,7 @@ public:
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& rgbs,
+        const std::vector<ov::Tensor>& video,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
@@ -183,7 +184,12 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs, generation_config.is_video);
+        std::vector<ov::genai::EncodedImage> encoded_images;
+        if (rgbs.size() > 0) {
+            encoded_images = m_inputs_embedder->encode_images(rgbs, false);
+        } else if (rgbs.size() > 0) {
+            encoded_images = m_inputs_embedder->encode_images(video, true);
+        }
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
         if (m_is_chat_conversation) {
@@ -444,10 +450,11 @@ VLMPipeline::~VLMPipeline() = default;
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const std::vector<ov::Tensor>& rgbs,
+    const std::vector<ov::Tensor>& video,
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, rgbs, generation_config, streamer);
+    return m_pimpl->generate(prompt, rgbs, video, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -456,7 +463,7 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, {rgb}, generation_config, streamer);
+    return m_pimpl->generate(prompt, {rgb}, {}, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(

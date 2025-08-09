@@ -23,6 +23,7 @@ public:
     virtual VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& rgbs,
+        const std::vector<ov::Tensor>& video,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) = 0;
@@ -33,6 +34,7 @@ public:
     ) {
         auto image = config_map.find(ov::genai::image.name());
         auto images = config_map.find(ov::genai::images.name());
+        auto video = config_map.find(ov::genai::video.name());
         OPENVINO_ASSERT(
             config_map.end() == image || config_map.end() == images,
             "Only one property can be set: image of images."
@@ -52,6 +54,19 @@ public:
             }
         }
 
+        std::vector<ov::Tensor> video_rgbs;
+        if (config_map.end() != video) {
+            if (video->second.is<std::vector<ov::Tensor>>()) {
+                video_rgbs = video->second.as<std::vector<ov::Tensor>>();
+            }
+            else if (video->second.is<ov::Tensor>()){
+                video_rgbs = {video->second.as<ov::Tensor>()};
+            }
+            else {
+                OPENVINO_THROW("Unknown video type.");
+            }
+        }
+
         ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
         config.update_generation_config(config_map);
@@ -59,6 +74,7 @@ public:
         return generate(
             prompt,
             rgbs,
+            video_rgbs,
             config,
             utils::get_streamer_from_map(config_map)
         );

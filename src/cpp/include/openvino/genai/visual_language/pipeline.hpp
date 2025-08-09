@@ -98,6 +98,7 @@ public:
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& rgbs,
+        const std::vector<ov::Tensor>& video,
         const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     );
@@ -235,7 +236,10 @@ private:
 /*
  * utils that allow to use generate() in the following way:
  * pipe.generate(prompt, ov::genai::image(image_tensor)).
+ * pipe.generate(prompt, ov::genai::images(image_tensors)).
+ * pipe.generate(prompt, ov::genai::video(video_tensors)).
 */
 static constexpr ov::Property<ov::Tensor> image{"image"};
 static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
+static constexpr ov::Property<std::vector<ov::Tensor>> video{"video"};
 }
