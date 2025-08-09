@@ -238,4 +238,5 @@ private:
 */
 static constexpr ov::Property<ov::Tensor> image{"image"};
 static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
+// static constexpr ov::Property<std::vector<ov::Tensor>> video{"video"};
 }
