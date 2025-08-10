@@ -429,9 +429,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         bool has_valid_token = token_type_ids.has_value() && request_id < token_type_ids->size();
         generations.push_back(
-            has_valid_token
-                ? add_request(request_id, input_ids[request_id], sampling_params[request_id], (*token_type_ids)[request_id])
-                : add_request(request_id, input_ids[request_id], sampling_params[request_id])
+            add_request(request_id, input_ids[request_id], sampling_params[request_id], has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt)
         );
     }
 
