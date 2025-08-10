@@ -212,15 +212,8 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
-    ov::genai::GenerationConfig sampling_params) {
-    return add_request(request_id, input_ids, sampling_params, std::nullopt);
-}
-
-GenerationHandle
-ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
-                                                               const ov::Tensor& input_ids,
-                                                               ov::genai::GenerationConfig sampling_params,
-                                                               const std::optional<ov::Tensor>& token_type_ids) {
+    ov::genai::GenerationConfig sampling_params,
+    std::optional<ov::Tensor> token_type_ids) {
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params.stop_token_ids.empty())
         sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
@@ -241,12 +234,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     }
 
     return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
-};
+}
 
 GenerationHandle
-ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
-                                                                const std::string& prompt,
-                                                                ov::genai::GenerationConfig sampling_params) {
+ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    ov::genai::GenerationConfig sampling_params,
+    std::optional<ov::Tensor> token_type_ids) {
     ov::Tensor inputs;
     ov::genai::VLMPerfMetrics metrics;
     if (m_model_input_type == ModelInputType::TOKENS) {
@@ -254,14 +249,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
         timer.start();
         inputs = m_tokenizer.encode(prompt).input_ids;
         timer.end();
-        return add_request(request_id, inputs, sampling_params);
+        return add_request(request_id, inputs, sampling_params, token_type_ids);
     } else if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params, token_type_ids);
     } else {
         OPENVINO_THROW("Unknown model input type.");
     }
 
-    return add_request(request_id, inputs, sampling_params);
+    return add_request(request_id, inputs, sampling_params, token_type_ids);
 }
 
 bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_requests() {
