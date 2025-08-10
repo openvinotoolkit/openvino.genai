@@ -45,7 +45,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
-    utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation);
+    bool allow_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
+    utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation, allow_xattention);
     utils::apply_gather_before_matmul_transformation(model);
 
     initialize_pipeline(model, scheduler_config, device, properties);
@@ -137,6 +138,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
 
     // Scheduler and Model Runner instantiation
+    bool is_use_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
     bool is_use_cache_eviction = scheduler_config.use_cache_eviction;
     if (is_use_cache_eviction) {
         const auto& eviction_config = scheduler_config.cache_eviction_config;
@@ -149,14 +151,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        /* collect_attention_scores = */ true,
                                                        /* is_use_per_layer_cache_control = */ true,
                                                        /* is_use_rotation_inputs = */ is_apply_rotation,
-                                                       /* is_aggregate_attention_scores = */ true);
+                                                       /* is_aggregate_attention_scores = */ true,
+                                                       is_use_xattention);
         if (eviction_config.apply_rotation) {
             _prepare_rotation_data_storage(normalized_config, cache_manager->get_v_head_size(0));
         }
     } else {
         m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
         m_model_runner =
-            std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
+            std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers,
+                                                       /* collect_attention_scores = */ false,
+                                                       /* is_use_per_layer_cache_control = */ false,
+                                                       /* is_use_rotation_inputs = */ false,
+                                                       /* is_aggregate_attention_scores = */ false,
+                                                       is_use_xattention);
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);

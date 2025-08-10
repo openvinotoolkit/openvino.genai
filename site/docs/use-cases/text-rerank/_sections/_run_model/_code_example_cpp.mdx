@@ -1,0 +1,20 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="cpp" showLineNumbers>
+{`#include "openvino/genai/rag/text_rerank_pipeline.hpp"
+
+int main(int argc, char* argv[]) {
+    std::vector<std::string> documents(argv + 3, argv + argc);
+    std::string models_path = argv[1], query = argv[2];
+    
+    ov::genai::TextRerankPipeline pipeline(models_path, "${props.device || 'CPU'}", ov::genai::top_n(3));
+    
+    auto rerank_result = pipeline.rerank(query, documents);
+    
+    std::cout << "Reranked documents:\\n";
+    for (const auto& [index, score] : rerank_result) {
+        std::cout << "Document " << index << " (score: " << score << "): " << documents[index] << '\\n';
+    }
+}
+`}
+</CodeBlock>
