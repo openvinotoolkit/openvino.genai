@@ -112,7 +112,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prom
 }
 
 ov::Tensor InputsEmbedderGemma3::get_inputs_embeds(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
-    OPENVINO_ASSERT(
+    OPENVINO_THROW(
         "[InputsEmbedderGemma3] The method get_inputs_embeds is not supported for Gemma3 models because token type IDs are required to distinguish between text and image tokens in the input sequence. "
         "Please use get_inputs_embeds_with_token_type_ids instead, which returns both the input embeddings and the necessary token type IDs. "
         "This is required for correct processing of multimodal inputs in Gemma3."
