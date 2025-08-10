@@ -135,7 +135,6 @@ public:
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             hidden_size = sequence_groups[0]->get_hidden_size();
-            have_token_type_ids = sequence_groups[0]->have_token_type_ids();
         }
 
         // compute aggregated values
@@ -222,6 +221,7 @@ public:
                 // compute token_type_ids for current sequence
                 if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                     if (auto token_type_ids = sequence_group->get_token_type_ids()) {
+                        have_token_type_ids = true;
                         OPENVINO_ASSERT(token_type_ids->size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
                         for (size_t i = 0; i < num_scheduled_tokens; ++i) {
                             token_type_ids_data[i] = (i < prompt_len ? (*token_type_ids)[i] : 0);

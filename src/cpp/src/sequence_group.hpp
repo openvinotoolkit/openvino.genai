@@ -610,10 +610,6 @@ public:
         return m_input_embeds;
     }
 
-    bool have_token_type_ids() const {
-        return m_token_type_ids.has_value() && m_sequence_group_type == SequenceGroupType::EMBEDDINGS;
-    }
-
     std::optional<std::vector<int64_t>> get_token_type_ids() const {
         return m_token_type_ids;
     }
