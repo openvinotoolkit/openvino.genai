@@ -221,9 +221,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
         sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params.validate();
 
-    auto sequence_group = token_type_ids.has_value()
-    ? std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, *token_type_ids)
-    : std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
+    auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, token_type_ids);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
