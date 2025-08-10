@@ -165,7 +165,7 @@ class TextEvaluator(BaseEvaluator):
         else:
             prompts_file_path = LONG_PROMPTS_FILE if self.long_prompt else PROMPTS_FILE
             data_path = files('whowhatbench.prompts').joinpath(prompts_file_path)
-            prompt_data = yaml.safe_load(data_path.read_text())
+            prompt_data = yaml.safe_load(data_path.read_text(encoding='utf-8'))
             data = pd.DataFrame.from_dict(prompt_data[self.language])
 
         prompt_data = data["prompts"]

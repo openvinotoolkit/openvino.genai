@@ -43,6 +43,7 @@ class ModelRunner {
 
     bool m_is_aggregate_attention_scores;
 
+    bool m_is_use_xattention_inputs;
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
@@ -63,6 +64,8 @@ public:
      * @param is_aggregate_attention_scores If true, then the runner will pass the input tensors containing per-sequence
      * score aggregation window sizes to the model as requested by the scheduler.
      * on a per-attention layer basis.
+     * @param is_use_xattention_inputs If true, then the runner will pass the input tensors containing XAttention
+     * configuration per-sequence on a per-attention layer basis.
      */
     ModelRunner(ov::InferRequest request,
                 size_t block_size,
@@ -70,7 +73,8 @@ public:
                 bool collect_attention_scores = false,
                 bool is_use_per_layer_cache_control = false,
                 bool is_use_rotation_inputs = false,
-                bool is_aggregate_attention_scores = false)
+                bool is_aggregate_attention_scores = false,
+                bool is_use_xattention_inputs = false)
         : m_request(std::move(request)),
           m_block_size(block_size),
           m_num_decoder_layers(num_decoder_layers),
@@ -78,7 +82,8 @@ public:
           m_is_use_per_layer_cache_control(is_use_per_layer_cache_control),
           m_is_use_rotation_inputs(is_use_rotation_inputs),
           m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers),
-          m_is_aggregate_attention_scores(is_aggregate_attention_scores) {
+          m_is_aggregate_attention_scores(is_aggregate_attention_scores),
+          m_is_use_xattention_inputs(is_use_xattention_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
     }
@@ -337,6 +342,10 @@ public:
         if (m_is_use_rotation_inputs) {
             m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
             _set_cache_rotation_coefficients(sequence_groups, scheduler_output);
+        }
+
+        if (m_is_use_xattention_inputs) {
+            _set_xattention_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
         if (matmul_gathering_is_available) {
@@ -678,6 +687,44 @@ private:
             }
             m_last_attention_scores[global_sequence_id] = attention_scores_across_decoder_layers_for_current_sequence;
         }
+    }
+
+    void _set_xattention_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                 const Scheduler::Output& scheduler_output,
+                                 size_t batch_size_in_sequences) {
+        ov::Tensor xattention_block_size(ov::element::i32, {});
+        ov::Tensor xattention_stride(ov::element::i32, {});
+        xattention_block_size.data<int32_t>()[0] = scheduler_output.m_xattention_block_size;
+        xattention_stride.data<int32_t>()[0] = scheduler_output.m_xattention_stride;
+        m_request.set_tensor("xattention_block_size", xattention_block_size);
+        m_request.set_tensor("xattention_stride", xattention_stride);
+
+        ov::Tensor xattention_thresholds(ov::element::f32, {batch_size_in_sequences});
+        float* xattention_threshold_data = xattention_thresholds.data<float>();
+        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); i++) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            size_t num_running_sequences = running_sequences.size();
+            for (size_t k = 0; k < num_running_sequences; ++k) {
+                Sequence::CPtr sequence = running_sequences[k];
+                size_t seq_id = sequence->get_id();
+                float threshold = 0.0;
+
+                if (scheduler_output.m_xattention_thresholds.find(seq_id) != scheduler_output.m_xattention_thresholds.end()) {
+                    threshold = scheduler_output.m_xattention_thresholds.at(seq_id);
+                }
+                *xattention_threshold_data = threshold;
+                xattention_threshold_data += 1;
+            }
+        }
+
+        std::vector<std::string> xattention_tensor_names(m_num_decoder_layers);
+        for (size_t i = 0; i < m_num_decoder_layers; i++) {
+            auto tensor_name = std::string("xattention_threshold.") + std::to_string(i);
+            m_request.set_tensor(tensor_name, xattention_thresholds);
+        }
+
     }
 };
 }
