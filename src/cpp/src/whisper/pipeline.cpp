@@ -77,7 +77,7 @@ public:
             auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties);
             // NB: only batch_size == 1 is supported now for NPU
             reshape_to_static_encoder(encoder_model, m_feature_extractor.feature_size);
-            compiled_model = core.compile_model(encoder_model, "NPU");
+            compiled_model = core.compile_model(encoder_model, "NPU", properties);
         } else {
             compiled_model = core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
         }

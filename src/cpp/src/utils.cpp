@@ -101,6 +101,8 @@ void update_npu_config_whisper(ov::AnyMap& config,
                                const ov::genai::utils::KVDesc& kv_desc) {
     update_config(config, {"NPU_USE_NPUW", "YES"});
     update_config(config, {"NPUW_ONLINE_PIPELINE", "NONE"});
+    update_config(config, {"NPUW_FUNCALL_FOR_ALL", "NO"});
+    update_config(config, {"NPUW_FOLD", "NO"});
     update_config(config, {"NPUW_LLM", "YES"});
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
@@ -108,6 +110,9 @@ void update_npu_config_whisper(ov::AnyMap& config,
 
     update_config(config, {"NPUW_LLM_MAX_PROMPT_LEN", kv_desc.max_prompt_len});
     update_config(config, {"NPUW_LLM_MIN_RESPONSE_LEN", kv_desc.min_response_len});
+
+    // To disable chunking
+    update_config(config, {"NPUW_LLM_PREFILL_HINT", "STATIC"});
 }
 
 inline bool is_paged_attention_available() {
