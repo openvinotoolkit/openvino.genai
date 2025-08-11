@@ -1,6 +1,14 @@
 'category: GHA':
 - '.github/**/*'
 
+'category: tests dependencies':
+- 'tests/python_tests/requirements.txt'
+
+'category: samples dependencies':
+- 'samples/requirements.txt'
+- 'samples/deployment-requirements.txt'
+- 'samples/export-requirements.txt'
+
 'category: tokenizers':
 - 'src/cpp/include/openvino/genai/tokenizer.hpp'
 - 'src/cpp/src/tokenizer/**/*'
@@ -131,6 +139,8 @@
 - 'src/include/openvino/genai/speech_generation/**/*'
 - 'src/cpp/src/speech_generation/**/*'
 - 'src/python/py_speech_generation.cpp'
+
+'category: Speech generation samples':
 - 'samples/cpp/speech_generation/**/*'
 - 'samples/python/speech_generation/**/*'
 - 'tests/python_tests/samples/test_text2speech.py'
