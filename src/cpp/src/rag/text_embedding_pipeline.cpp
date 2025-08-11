@@ -262,14 +262,15 @@ private:
                 std::stringstream message;
                 message << "max_length is set to " << *m_config.max_length
                         << " which is greater than models max_position_embeddings (" << *max_position_embeddings << ")."
-                        << "Some models may fail with such configuration.";
+                        << " Some models may fail with such configuration."
+                        << " Remove max_position_embeddings from config.json to silence this warning.";
                 Logger::warn(message.str());
             }
 
             if (m_config.pad_to_max_length.has_value() && *m_config.pad_to_max_length) {
                 target_shape[1] = ov::Dimension(*m_config.max_length);
             } else {
-                target_shape[1] = ov::Dimension{0, static_cast<int64_t>(*m_config.max_length)};
+                target_shape[1] = ov::Dimension{1, static_cast<int64_t>(*m_config.max_length)};
             }
         }
 

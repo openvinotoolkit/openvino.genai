@@ -318,9 +318,11 @@ def dataset_embeddings_genai_default_config_refs(download_and_convert_embeddings
 def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
     _, _, models_path = download_and_convert_embeddings_models
 
-    result = run_text_embedding_genai(models_path, dataset_documents[: config.batch_size], config, "embed_documents")
+    docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
+    result = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
 
-    validate_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
+    refs_to_validate = dataset_embeddings_genai_default_config_refs[: config.batch_size] if config.batch_size else dataset_embeddings_genai_default_config_refs
+    validate_embedding_results(refs_to_validate, result)
 
 
 @pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
@@ -340,9 +342,11 @@ def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_do
 def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
     _, _, models_path = download_and_convert_embeddings_models
 
-    result = run_text_embedding_genai(models_path, dataset_documents[: config.batch_size], config, "embed_documents")
+    docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
+    result = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
 
-    validate_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
+    refs_to_validate = dataset_embeddings_genai_default_config_refs[: config.batch_size] if config.batch_size else dataset_embeddings_genai_default_config_refs
+    validate_embedding_results(refs_to_validate, result)
 
 
 @pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
@@ -364,9 +368,11 @@ def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents,
     NPU_FALLBACK_PROPERTIES = {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
 
     pipeline = TextEmbeddingPipeline(models_path, "NPU", config, **NPU_FALLBACK_PROPERTIES)
-    result = pipeline.embed_documents(dataset_documents[: config.batch_size])
+    docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
+    result = pipeline.embed_documents(docs_to_embed)
 
-    validate_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
+    refs_to_validate = dataset_embeddings_genai_default_config_refs[: config.batch_size] if config.batch_size else dataset_embeddings_genai_default_config_refs
+    validate_embedding_results(refs_to_validate, result)
 
 
 @pytest.mark.parametrize("download_and_convert_rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
