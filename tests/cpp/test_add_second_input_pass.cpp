@@ -35,7 +35,7 @@ static void initlize_shared_ov_tokenziers() {
     std::filesystem::path ov_tokenizer_filesystem_path;
 
     #ifdef _WIN32
-            const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+            const wchar_t* ov_tokenizer_path = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
     #else
             const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
     #endif
