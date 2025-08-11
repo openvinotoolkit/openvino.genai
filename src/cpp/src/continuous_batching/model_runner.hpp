@@ -293,6 +293,7 @@ public:
                     input_ids_data += num_scheduled_tokens;
                 } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                     inputs_embeds_data += num_scheduled_tokens * hidden_size;
+                    token_type_ids_data += num_scheduled_tokens;
                 }
 
 
