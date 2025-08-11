@@ -3,6 +3,7 @@ import { LLMPipeline } from '../dist/index.js';
 import assert from 'node:assert/strict';
 import { describe, it, before, after } from 'node:test';
 import { models } from './models.js';
+import { hrtime } from 'node:process';
 
 const MODEL_PATH = process.env.MODEL_PATH
   || `./tests/models/${models.LLM.split('/')[1]}`;
@@ -29,6 +30,7 @@ describe('module', async () => {
     );
 
     assert.ok(result.length > 0);
+    assert.strictEqual(typeof result, 'string');
   });
 });
 
@@ -156,6 +158,119 @@ describe('generation parameters validation', () => {
     };
     const result = await pipeline.generate('continue: 1 2 3', generationConfig);
     assert.strictEqual(typeof result, 'string');
+  });
+});
+
+describe('LLMPipeline.generate()', () => {
+  let pipeline = null;
+
+  before(async () => {
+    pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
+    await pipeline.startChat();
+  });
+
+  after(async () => {
+    await pipeline.finishChat();
+  });
+
+  it('generate(prompt, config) return_decoded_results', async () => {
+    const config = {
+      'max_new_tokens': 5,
+      'return_decoded_results': true,
+    };
+    const reply = await pipeline.generate('prompt', config);
+    assert.strictEqual(typeof reply, 'object');
+    assert.ok(Array.isArray(reply.texts));
+    assert.ok(reply.texts.every(text => typeof text === 'string'));
+    assert.ok(reply.perfMetrics !== undefined);
+
+    const configStr = {
+      'max_new_tokens': 5,
+      'return_decoded_results': false,
+    };
+    const replyStr = await pipeline.generate('prompt', configStr);
+    assert.strictEqual(typeof replyStr, 'string');
+    assert.strictEqual(replyStr, reply.toString());
+  });
+
+  it('DecodedResults.perfMetrics', async () => {
+    const config = {
+      'max_new_tokens': 20,
+      'return_decoded_results': true,
+    };
+    const prompt = 'The Sky is blue because';
+    const start = hrtime.bigint();
+    pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
+    await pipeline.startChat();
+    const res = await pipeline.generate(prompt, config);
+    const totalTime = Number(hrtime.bigint() - start) / 1e6;
+
+    const { perfMetrics } = res;
+    const loadTime = perfMetrics.getLoadTime();
+    assert.ok(loadTime >= 0 && loadTime <= totalTime);
+
+    const numGeneratedTokens = perfMetrics.getNumGeneratedTokens();
+    assert.ok(numGeneratedTokens > 0);
+    assert.ok(numGeneratedTokens <= config.max_new_tokens);
+
+    const numInputTokens = perfMetrics.getNumInputTokens();
+    assert.ok(numInputTokens > 0 && typeof numInputTokens === 'number');
+
+    const ttft = perfMetrics.getTTFT();
+    assert.ok(ttft.mean >= 0 && ttft.mean < 1000.0);
+    assert.ok(typeof ttft.std === 'number');
+
+    const tpot = perfMetrics.getTPOT();
+    assert.ok(tpot.mean >= 0 && tpot.mean < 1000.0);
+    assert.ok(typeof tpot.std === 'number');
+
+    const throughput = perfMetrics.getThroughput();
+    assert.ok(throughput.mean >= 0 && throughput.mean < 20000.0);
+    assert.ok(typeof throughput.std === 'number');
+
+    const inferenceDuration = perfMetrics.getInferenceDuration();
+    assert.ok(inferenceDuration.mean >= 0 &&
+      loadTime + inferenceDuration.mean < totalTime);
+    assert.strictEqual(inferenceDuration.std, 0);
+
+    const generateDuration = perfMetrics.getGenerateDuration();
+    assert.ok(generateDuration.mean >= 0 &&
+      loadTime + generateDuration.mean < totalTime);
+    assert.strictEqual(generateDuration.std, 0);
+
+    const tokenizationDuration = perfMetrics.getTokenizationDuration();
+    assert.ok(tokenizationDuration.mean >= 0 &&
+      tokenizationDuration.mean < generateDuration.mean);
+    assert.strictEqual(tokenizationDuration.std, 0);
+
+    const detokenizationDuration = perfMetrics.getDetokenizationDuration();
+    assert.ok(detokenizationDuration.mean >= 0 &&
+      detokenizationDuration.mean < generateDuration.mean);
+    assert.strictEqual(detokenizationDuration.std, 0);
+
+    // assert that calculating statistics manually from the raw counters
+    // we get the same restults as from PerfMetrics
+    assert.strictEqual(
+      ((perfMetrics.rawMetrics.generateDurations / 1000).toFixed(3)),
+      generateDuration.mean.toFixed(3),
+    );
+
+    assert.strictEqual(
+      (perfMetrics.rawMetrics.tokenizationDurations / 1000).toFixed(3),
+      tokenizationDuration.mean.toFixed(3),
+    );
+
+    assert.strictEqual(
+      (perfMetrics.rawMetrics.detokenizationDurations / 1000).toFixed(3),
+      detokenizationDuration.mean.toFixed(3),
+    );
+
+    assert.ok(perfMetrics.rawMetrics.timesToFirstToken.length > 0);
+    assert.ok(perfMetrics.rawMetrics.newTokenTimes.length > 0);
+    assert.ok(perfMetrics.rawMetrics.tokenInferDurations.length > 0);
+    assert.ok(perfMetrics.rawMetrics.batchSizes.length > 0);
+    assert.ok(perfMetrics.rawMetrics.durations.length > 0);
+    assert.ok(perfMetrics.rawMetrics.inferenceDurations.length > 0);
   });
 });
 

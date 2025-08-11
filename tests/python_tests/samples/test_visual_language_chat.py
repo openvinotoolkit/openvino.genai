@@ -3,6 +3,7 @@
 
 import os
 import pytest
+import subprocess # nosec B404
 import sys
 
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
