@@ -119,7 +119,7 @@ def main():
     generation_config.max_new_tokens = 300
     generation_config.do_sample = True
 
-    user_text_1 = "Does dolphins have fingers?"
+    user_text_1 = "Do dolphins have fingers?"
     print("User: ", user_text_1)
     chat_history.append({"role": "user", "content": user_text_1})
     model_input = tokenizer.apply_chat_template(
