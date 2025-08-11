@@ -36,10 +36,6 @@ struct TokenizedInputs {
  * 4. chat_template entry from rt_info section of ov::Model
  * 5. If the template is known to be not supported by GenAI, it's
  *     replaced with a simplified supported version.
- * 6. If the template was not in the list of not supported GenAI
- *     templates from (5), it's replaced with simplified_chat_template entry
- *     from rt_info section of ov::Model.
- * 7. Replace not supported instructions with equivalents.
 */
 class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
