@@ -1,6 +1,9 @@
 #include "include/helper.hpp"
 
 #include <future>
+#include "include/addon.hpp"
+#include "include/helper.hpp"
+#include "include/perf_metrics.hpp"
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 #include "include/llm_pipeline/start_chat_worker.hpp"
 #include "include/llm_pipeline/finish_chat_worker.hpp"
@@ -18,6 +21,15 @@ struct TsfnContext {
     std::shared_ptr<ov::AnyMap> generation_config = nullptr;
     std::shared_ptr<ov::AnyMap> options = nullptr;
 };
+
+Napi::Object create_decoded_results_object(Napi::Env env, const ov::genai::DecodedResults& result) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, result.texts));
+    obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, result.scores));
+    obj.Set("perfMetrics", PerfMetricsWrapper::wrap(env, result.perf_metrics));
+    obj.Set("subword", Napi::String::New(env, result));
+    return obj;
+}
 
 void performInferenceThread(TsfnContext* context) {
     try {
@@ -65,10 +77,7 @@ void performInferenceThread(TsfnContext* context) {
 
         auto result = context->pipe->generate(context->prompt, config, streamer);
         napi_status status = context->tsfn.BlockingCall([result](Napi::Env env, Napi::Function jsCallback) {
-            jsCallback.Call({
-                Napi::Boolean::New(env, true),
-                Napi::String::New(env, result)
-            });
+            jsCallback.Call({Napi::Boolean::New(env, true), create_decoded_results_object(env, result)});
         });
 
         if (status != napi_ok) {
