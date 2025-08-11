@@ -167,7 +167,8 @@
 - 'tests/python_tests/samples/test_continuous_batching_tools.py'
 
 'category: GGUF':
-- 'src/cpp/src/gguf_utils/**/*'
+- 'src/cpp/src/gguf_utils/**'
+- 'tests/python_tests/**'
 
 'category: Structured Output samples':
 - 'samples/cpp/text_generation/structured_output_generation'

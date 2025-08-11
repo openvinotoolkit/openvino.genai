@@ -3,6 +3,7 @@
 
 #include "include/addon.hpp"
 
+#include "include/perf_metrics.hpp"
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 #include "include/text_embedding_pipeline/pipeline_wrapper.hpp"
 
@@ -24,6 +25,7 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
 
     init_class(env, exports, "LLMPipeline", &LLMPipelineWrapper::get_class, addon_data->core);
     init_class(env, exports, "TextEmbeddingPipeline", &TextEmbeddingPipelineWrapper::get_class, addon_data->core);
+    init_class(env, exports, "PerfMetrics", &PerfMetricsWrapper::get_class, addon_data->perf_metrics);
 
     return exports;
 }
