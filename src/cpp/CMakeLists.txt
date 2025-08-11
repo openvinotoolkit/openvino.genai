@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
+list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
+
 # Dependencies
 
 include(FetchContent)
@@ -116,9 +119,13 @@ if(ENABLE_XGRAMMAR)
             target_compile_options(xgrammar PRIVATE "/wd4146")
         endif()
     endif()
+else()
+    set(XGRAMMAR_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/sampling/structured_output/xgrammar_backend.hpp
+                         ${CMAKE_CURRENT_SOURCE_DIR}/src/sampling/structured_output/xgrammar_backend.cpp)
+    list(REMOVE_ITEM SOURCE_FILES ${XGRAMMAR_SOURCES})
 endif()
-# generate version files
 
+# generate version files
 configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.hpp.in"
                "${CMAKE_CURRENT_BINARY_DIR}/openvino/genai/version.hpp" @ONLY)
 
@@ -126,10 +133,6 @@ configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.cpp.in"
                "${CMAKE_CURRENT_BINARY_DIR}/version.cpp" @ONLY)
 
 # Object library
-
-file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
-list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
-
 if(NOT ENABLE_GGUF)
     set(GGUF_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf.cpp
                      ${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_quants.cpp
@@ -147,6 +150,11 @@ target_include_directories(${TARGET_NAME_OBJ}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
            "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+if(ENABLE_XGRAMMAR)
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE xgrammar)
+    target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
+endif()
 
 if(ENABLE_GGUF)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE gguflib)
@@ -176,14 +184,6 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
-if(ENABLE_XGRAMMAR)
-    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE xgrammar)
-    target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
-else()
-    set(XGRAMMAR_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/sampling/structured_output/xgrammar_backend.hpp
-                         ${CMAKE_CURRENT_SOURCE_DIR}/src/sampling/structured_output/xgrammar_backend.cpp)
-    list(REMOVE_ITEM SOURCE_FILES ${XGRAMMAR_SOURCES})
-endif()
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
 
 if(ENABLE_GGUF)
