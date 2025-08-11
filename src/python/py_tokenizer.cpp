@@ -35,8 +35,8 @@ constexpr char class_docstring[] = R"(
 constexpr char common_encode_docstring[] =R"(
  'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
  'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
- 'max_length' - maximum length of the sequence. If None (default), the value will be taken from the model configuration.
- 'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the model configuration.
+ 'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+ 'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
 Returns:
  TokenizedInputs object containing input_ids and attention_mask tensors.
 )";
