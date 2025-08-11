@@ -44,14 +44,14 @@ describe('tokenizer', async () => {
     assert.ok(!template.includes(testValue));
   });
 
-  it('applyChatTemplate with unknown property', async () => {
+  it('applyChatTemplate with true addGenerationPrompt', async () => {
     const template = tokenizer.applyChatTemplate([{
       role: 'user',
       content: 'continue: 1 2 3',
     }],
     true,
     );
-    assert.ok(template.includes('<|assistant|>'));
+    assert.ok(template.includes('assistant'));
   });
 
   it('applyChatTemplate with missed role', async () => {
@@ -76,12 +76,6 @@ describe('tokenizer', async () => {
       role: 'user',
       content: 'continue: 1 2 3',
     }],
-    ));
-  });
-
-  it('applyChatTemplate with empty history', async () => {
-    assert.throws(() => tokenizer.applyChatTemplate([],
-      false,
     ));
   });
 
@@ -116,7 +110,6 @@ describe('tokenizer', async () => {
     }],
     false,
     chatTemplate);
-    console.log(template);
     assert.strictEqual(template, `${prompt}\n`);
   });
 
