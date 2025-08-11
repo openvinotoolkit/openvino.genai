@@ -700,12 +700,12 @@ jobs:
             marker: 'dreamlike_anime_1_0'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-win-8-cores-16gb'
+            runner: 'aks-win-16-cores-32gb'
           - name: 'LCM_Dreamshaper_v7_int8_ov'
             marker: 'LCM_Dreamshaper_v7_int8_ov'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-win-8-cores-16gb'
+            runner: 'aks-win-16-cores-32gb'
           - name: 'Rag'
             marker: 'rag'
             cmd: 'tests/python_tests/samples'
