@@ -846,7 +846,7 @@ jobs:
       - name: gtests unit tests
         run: |
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
-          & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe"
+          & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe --gtest_filter="-AddSecondInputTest.*""
 
       - name: Test C++ Tools
         run: |

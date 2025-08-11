@@ -24,28 +24,51 @@ using namespace ov::genai;
 using namespace ov;
 using namespace ov::op;
 
-// Get the parent path two levels up and append "openvino_genai"
-auto genai_root = std::filesystem::path(tokenizers_relative_to_genai());
-auto openvino_genai_path = genai_root.parent_path().parent_path() / "openvino_genai" / genai_root.filename();
-ScopedVar env_manager(openvino_genai_path.string());
-std::filesystem::path ov_tokenizer_filesystem_path;
+static FactoryCreateType create_func = nullptr;
+static std::shared_ptr<void> shared_object_ov_tokenizers = nullptr;
 
-#ifdef _WIN32
-        const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
-#else
-        const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
-#endif
+static void initlize_shared_ov_tokenziers() {
+    // Get the parent path two levels up and append "openvino_genai"
+    auto genai_root = std::filesystem::path(tokenizers_relative_to_genai());
+    auto openvino_genai_path = genai_root.parent_path().parent_path() / "openvino_genai" / genai_root.filename();
+    ScopedVar env_manager(openvino_genai_path.string());
+    std::filesystem::path ov_tokenizer_filesystem_path;
 
-auto shared_object_ov_tokenizers = load_shared_object(std::filesystem::path(ov_tokenizer_path));
+    #ifdef _WIN32
+            const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+    #else
+            const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+    #endif
 
-FactoryCreateType create_func = reinterpret_cast<FactoryCreateType>(get_symbol(shared_object_ov_tokenizers, "create_tokenizer_node"));
+    if (std::filesystem::exists(ov_tokenizer_path)) {
+        shared_object_ov_tokenizers = load_shared_object(ov_tokenizer_path);
+    }
+}
+
+static FactoryCreateType get_factory_create_func() {
+    if (create_func != nullptr) {
+        return create_func;
+    }
+
+    if (shared_object_ov_tokenizers == nullptr) {
+        initlize_shared_ov_tokenziers();
+    }
+
+    if (shared_object_ov_tokenizers != nullptr) {
+        create_func = reinterpret_cast<FactoryCreateType>(get_symbol(shared_object_ov_tokenizers, "create_tokenizer_node"));
+        return create_func;
+    }
+
+    // If we made it here then we failed to load the shared object
+    OPENVINO_THROW("Failed to load the shared object for tokenizer factory creation function.");
+}
 
 
 TEST(AddSecondInputTest, add_second_input_test_1) {
     std::shared_ptr<Model> model;
     auto parameter_1 = std::make_shared<v0::Parameter>(element::string, Shape{2});
-    OutputVector outputs = create_func("StringTensorUnpack", {parameter_1}, {});
-    
+    OutputVector outputs = get_factory_create_func()("StringTensorUnpack", {parameter_1}, {});
+
     // Prepare all necessary BPETokenizer inputs according to evaluate() logic
 
     auto ragged_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
@@ -66,14 +89,14 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
         merges_begins, merges_ends, merges_chars
     };
 
-    auto BPETokenizer = create_func("BPETokenizer", bpe_inputs, {});
+    auto BPETokenizer = get_factory_create_func()("BPETokenizer", bpe_inputs, {});
 
     auto max_length = std::make_shared<v0::Constant>(element::i32, Shape{}, std::vector<int32_t>({10}));
     // Create trunc_side constant: "right" as u8 chars
     auto trunc_side = std::make_shared<v0::Constant>(
         element::u8, Shape{5}, std::vector<uint8_t>{'r', 'i', 'g', 'h', 't'}
     );
-    auto truncate = create_func("Truncate", {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], max_length, trunc_side}, {});
+    auto truncate = get_factory_create_func()("Truncate", {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], max_length, trunc_side}, {});
 
     int32_t eos_token_id = 42;
     auto eos_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
@@ -93,7 +116,7 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
         ids
     };
 
-    auto CombineSegments = create_func("CombineSegments", {combine_inputs}, {});
+    auto CombineSegments = get_factory_create_func()("CombineSegments", {combine_inputs}, {});
     model = std::make_shared<ov::Model>(OutputVector{CombineSegments}, ParameterVector{parameter_1});
     
     // Add a valid post_processor to model's rt_info
@@ -147,7 +170,7 @@ static std::shared_ptr<ov::Model> make_minimal_model(
     auto parameter_1 = std::make_shared<v0::Parameter>(element::string, Shape{2});
     OutputVector outputs;
     if (with_string_unpack)
-        outputs = create_func("StringTensorUnpack", {parameter_1}, {});
+        outputs = get_factory_create_func()("StringTensorUnpack", {parameter_1}, {});
     else
         outputs = {parameter_1, parameter_1, parameter_1};
 
@@ -165,10 +188,10 @@ static std::shared_ptr<ov::Model> make_minimal_model(
         vocab_begins, vocab_ends, vocab_chars,
         merges_begins, merges_ends, merges_chars
     };
-    auto BPETokenizer = create_func("BPETokenizer", bpe_inputs, {});
+    auto BPETokenizer = get_factory_create_func()("BPETokenizer", bpe_inputs, {});
     auto max_length = std::make_shared<v0::Constant>(element::i32, Shape{}, std::vector<int32_t>({10}));
     auto trunc_side = std::make_shared<v0::Constant>(element::u8, Shape{5}, std::vector<uint8_t>{'r', 'i', 'g', 'h', 't'});
-    auto truncate = create_func("Truncate", {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], max_length, trunc_side}, {});
+    auto truncate = get_factory_create_func()("Truncate", {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], max_length, trunc_side}, {});
     int32_t eos_token_id = 42;
     auto eos_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
     auto eos_ends = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{1});
@@ -182,7 +205,7 @@ static std::shared_ptr<ov::Model> make_minimal_model(
     if (combine_inputs_out) *combine_inputs_out = combine_inputs;
     std::shared_ptr<ov::Node> combine_node;
     if (with_combine_segments)
-        combine_node = create_func("CombineSegments", {combine_inputs}, {})[0].get_node_shared_ptr();
+        combine_node = get_factory_create_func()("CombineSegments", {combine_inputs}, {})[0].get_node_shared_ptr();
     else
         combine_node = truncate[0].get_node_shared_ptr();
     auto model = std::make_shared<ov::Model>(OutputVector{combine_node}, ParameterVector{parameter_1});
@@ -216,7 +239,7 @@ TEST(AddSecondInputTest, error_parse_inputs_data_not_constant) {
     // fake param is not a Constant, so it will fail the check
     auto fake_param = std::make_shared<ov::op::v0::Parameter>(ov::element::i32, ov::Shape{1});
     combine_inputs[2] = fake_param;
-    auto combine_node = create_func("CombineSegments", {combine_inputs}, {})[0];
+    auto combine_node = get_factory_create_func()("CombineSegments", {combine_inputs}, {})[0];
     auto parameter_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::string, ov::Shape{2});
 
     auto new_inputs = model->get_parameters();
@@ -243,7 +266,7 @@ TEST(AddSecondInputTest, error_parse_inputs_begin_not_truncate) {
     auto model = make_minimal_model(true, true, &combine_inputs);
     auto fake_param = std::make_shared<ov::op::v0::Parameter>(ov::element::i32, ov::Shape{1});
     combine_inputs[0] = fake_param;
-    auto combine_node = create_func("CombineSegments", {combine_inputs}, {})[0];
+    auto combine_node = get_factory_create_func()("CombineSegments", {combine_inputs}, {})[0];
     auto parameter_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::string, ov::Shape{2});
     auto new_inputs = model->get_parameters();
     new_inputs.emplace_back(fake_param);
@@ -374,7 +397,7 @@ TEST(AddSecondInputTest, error_no_target_inputs_for_parameter) {
     // Model with a CombineSegments node, but parameter not connected to anything
     auto parameter_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::string, ov::Shape{2});
     auto c = std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector<int32_t>{0});
-    auto combine_node = create_func("CombineSegments", {{c, c, c, c, c, c, c}}, {})[0];
+    auto combine_node = get_factory_create_func()("CombineSegments", {{c, c, c, c, c, c, c}}, {})[0];
     auto model = std::make_shared<ov::Model>(ov::OutputVector{combine_node}, ov::ParameterVector{parameter_1});
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
     std::vector<int> input_signature = {-1, 42};
