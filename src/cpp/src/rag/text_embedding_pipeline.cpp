@@ -117,27 +117,25 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const 
     return processor.build();
 }
 
-class ModelConfig {
-public:
-    explicit ModelConfig(const std::filesystem::path& models_path) {
-        // config.json not found. Skip parameters initialization from file, use defaults.
-        const std::filesystem::path& json_path = models_path / "config.json";
-        if (!std::filesystem::exists(json_path)) {
-            return;
-        }
+std::optional<size_t> read_max_position_embeddings(const std::filesystem::path& models_path) {
+    // config.json not found. Skip parameters initialization from file, use defaults.
+    const std::filesystem::path& json_path = models_path / "config.json";
+    if (!std::filesystem::exists(json_path)) {
+        return std::nullopt;
+    }
 
-        using ov::genai::utils::read_json_param;
+    using ov::genai::utils::read_json_param;
 
-        std::ifstream f(json_path);
-        OPENVINO_ASSERT(f.is_open(), "Failed to open '", json_path);
+    std::ifstream f(json_path);
+    OPENVINO_ASSERT(f.is_open(), "Failed to open '", json_path);
 
-        nlohmann::json data = nlohmann::json::parse(f);
-
-        read_json_param(data, "max_position_embeddings", max_position_embeddings);
-    };
+    nlohmann::json data = nlohmann::json::parse(f);
 
     std::optional<size_t> max_position_embeddings;
-};
+    read_json_param(data, "max_position_embeddings", max_position_embeddings);
+    return max_position_embeddings;
+}
+
 }  // namespace
 
 namespace ov {
@@ -172,7 +170,7 @@ public:
                               const ov::AnyMap& properties = {})
         : m_config{config},
           m_tokenizer{models_path},
-          m_model_config{models_path} {
+          m_max_position_embeddings{read_max_position_embeddings(models_path)} {
         m_config.validate();
 
         ov::Core core = utils::singleton_core();
@@ -246,8 +244,8 @@ private:
     Tokenizer m_tokenizer;
     InferRequest m_request;
     Config m_config;
-    ModelConfig m_model_config;
     AnyMap m_tokenization_params;
+    std::optional<size_t> m_max_position_embeddings;
 
     void reshape_model(std::shared_ptr<Model>& model) {
         ov::PartialShape target_shape{ov::Dimension::dynamic(), ov::Dimension::dynamic()};
@@ -257,11 +255,11 @@ private:
         }
 
         if (m_config.max_length.has_value()) {
-            const auto max_position_embeddings = m_model_config.max_position_embeddings;
-            if (max_position_embeddings.has_value() && *m_config.max_length > *max_position_embeddings) {
+            if (m_max_position_embeddings.has_value() && *m_config.max_length > *m_max_position_embeddings) {
                 std::stringstream message;
                 message << "max_length is set to " << *m_config.max_length
-                        << " which is greater than models max_position_embeddings (" << *max_position_embeddings << ")."
+                        << " which is greater than models max_position_embeddings (" << *m_max_position_embeddings
+                        << ")."
                         << " Some models may fail with such configuration."
                         << " Remove max_position_embeddings from config.json to silence this warning.";
                 Logger::warn(message.str());
