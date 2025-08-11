@@ -1,3 +1,4 @@
+from turtle import st
 import pytest
 import json
 import openvino_genai as ov_genai
@@ -39,11 +40,17 @@ structured_id_models = [
     ("Generate a json about a transaction.", Transaction),
     ("Generate a json about a REST API response.", RESTAPIResponse)
 ])
-def test_structured_output_generation(ov_pipe, prompt_and_scheme):
+@pytest.mark.parametrize("use_compound_grammar", [True, False])
+def test_structured_output_generation(ov_pipe, prompt_and_scheme, use_compound_grammar):
     prompt, SchemeType = prompt_and_scheme
 
     structured_output_config = ov_genai.StructuredOutputConfig()
-    structured_output_config.json_schema = json.dumps(SchemeType.model_json_schema())
+    if use_compound_grammar:
+        structured_output_config.compound_grammar = structured_output_config.Regex(
+            json.dumps(SchemeType.model_json_schema())
+        )
+    else:
+        structured_output_config.json_schema = json.dumps(SchemeType.model_json_schema())
 
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 100
@@ -63,10 +70,16 @@ def test_structured_output_generation(ov_pipe, prompt_and_scheme):
     ("Generate an email.", r'^[a-zA-Z0-9._%+-]{1,64}@[a-z]{1,64}\.[a-z]{1,10}$'),
     ("Generate a json about a REST API response.", r'^\{"status":"(success|error)"\}$'),
 ])
-def test_structured_regex(ov_pipe, prompt_and_regex):
+@pytest.mark.parametrize("use_compound_grammar", [True, False])
+def test_structured_regex(ov_pipe, prompt_and_regex, use_compound_grammar):
     prompt, regex_str = prompt_and_regex
     structured_output_config = ov_genai.StructuredOutputConfig()
-    structured_output_config.regex = regex_str
+    if use_compound_grammar:
+        structured_output_config.compound_grammar = structured_output_config.Regex(
+            regex_str
+        )
+    else:
+        structured_output_config.regex = regex_str
 
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 100
@@ -91,10 +104,16 @@ def test_structured_regex(ov_pipe, prompt_and_regex):
         """
     ),
 ])
-def test_structured_ebnf(ov_pipe, prompt_and_ebnf):
+@pytest.mark.parametrize("use_compound_grammar", [True, False])
+def test_structured_ebnf(ov_pipe, prompt_and_ebnf, use_compound_grammar):
     prompt, ebnf_grammar = prompt_and_ebnf
     structured_output_config = ov_genai.StructuredOutputConfig()
-    structured_output_config.grammar = ebnf_grammar
+    if use_compound_grammar:
+        structured_output_config.compound_grammar = structured_output_config.EBNF(
+            ebnf_grammar
+        )
+    else:
+        structured_output_config.grammar = ebnf_grammar
 
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 100
