@@ -24,15 +24,16 @@ class TestMultinomialCausalLM:
         indirect=["convert_model"],
     )
     def test_sample_multinomial_causal_lm(self, convert_model, sample_args):
+        # Run C++ sample
+        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
+        cpp_command = [cpp_sample, convert_model, sample_args]
+        cpp_result = run_sample(cpp_command)
+
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/multinomial_causal_lm.py")
         py_command = [sys.executable, py_script, convert_model, sample_args]
         py_result = run_sample(py_command)
 
-        # Run C++ sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
-        cpp_command = [cpp_sample, convert_model, sample_args]
-        cpp_result = run_sample(cpp_command)
 
         # Test JS sample
         js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/multinomial_causal_lm.js")
