@@ -10,7 +10,7 @@ from utils.hugging_face import download_and_convert_embeddings_models, download_
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
-from typing import Literal
+from typing import Literal, Union
 import sys
 import platform
 
@@ -129,16 +129,16 @@ def run_text_embedding_langchain(
         return ov_embeddings.embed_query(documents[0])
 
 
-EmbeddingResult = list[list[float]] | list[list[int]] | list[float] | list[int]
+EmbeddingResult = Union[list[list[float]], list[list[int]], list[float], list[int]]
+MAX_EMBEDDING_ERROR = 2e-6
 
 
-def assert_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):
+def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):
     np_result_1 = np.array(result_1)
     np_result_2 = np.array(result_2)
 
     max_error = np.abs(np_result_1 - np_result_2).max()
-    print(f"Max error: {max_error}")
-    assert max_error < 2e-6, f"Max error: {max_error}"
+    assert max_error < MAX_EMBEDDING_ERROR, f"Max error: {max_error} is greater than allowed {MAX_EMBEDDING_ERROR}"
 
 
 def run_text_embedding_pipeline_with_ref(
@@ -150,7 +150,7 @@ def run_text_embedding_pipeline_with_ref(
     genai_result = run_text_embedding_genai(models_path, documents, config, task)
     langchain_result = run_text_embedding_langchain(models_path, documents, config, task)
 
-    assert_embedding_results(genai_result, langchain_result)
+    validate_embedding_results(genai_result, langchain_result)
 
 
 def assert_rerank_results(result_1: list[tuple[int, float]], result_2: list[tuple[int, float]]):
@@ -320,7 +320,7 @@ def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_do
 
     result = run_text_embedding_genai(models_path, dataset_documents[: config.batch_size], config, "embed_documents")
 
-    assert_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
+    validate_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
 
 
 @pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
@@ -342,7 +342,7 @@ def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, data
 
     result = run_text_embedding_genai(models_path, dataset_documents[: config.batch_size], config, "embed_documents")
 
-    assert_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
+    validate_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
 
 
 @pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
@@ -366,7 +366,7 @@ def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents,
     pipeline = TextEmbeddingPipeline(models_path, "NPU", config, **NPU_FALLBACK_PROPERTIES)
     result = pipeline.embed_documents(dataset_documents[: config.batch_size])
 
-    assert_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
+    validate_embedding_results(dataset_embeddings_genai_default_config_refs[: config.batch_size], result)
 
 
 @pytest.mark.parametrize("download_and_convert_rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
