@@ -317,6 +317,8 @@ prompts = [
 @pytest.mark.parametrize("add_special_tokens", [True, False])
 @pytest.mark.parametrize("max_length", [None, 16, 103, 512, 1024])
 @pytest.mark.parametrize("pad_to_max_length", [None, True, False])
+# regardless of what side was set during conversion we should be able to set it at runtime
+@pytest.mark.parametrize("padding_side", [None, "right", "left"])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize(
     "hf_ov_genai_models",
@@ -338,6 +340,7 @@ def test_padding(
     add_special_tokens,
     max_length,
     pad_to_max_length,
+    padding_side,
     prompt,
 ):
     hf_tokenizer, genai_tokenzier = hf_ov_genai_models
@@ -370,8 +373,13 @@ def test_padding(
         hf_params.pop("max_length")
         ov_params.pop("max_length")
 
+    if padding_side is not None:
+        hf_params["padding_side"] = padding_side
+        ov_params["padding_side"] = padding_side
+
     ov_res = genai_tokenzier.encode(prompt, **ov_params)
     hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
+
     assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
     assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
 

@@ -227,11 +227,25 @@ public:
         std::optional<bool> skip_special_tokens_flag = true;
         std::optional<int32_t> max_length_val;
         std::optional<bool> pad_to_max_length_val = false;
-
+        std::optional<std::string> padding_side_val = std::nullopt;
+        
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
         ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
+        ov::genai::utils::read_anymap_param(params, padding_side.name(), padding_side_val);
+        std::optional<bool> pad_right;
+
+        // If padding_side is not set, we should leave nullopt this will indicate that default value from RaggetToDense attribute will be used.
+        if (padding_side_val.has_value()) {
+            OPENVINO_ASSERT(
+                padding_side_val == "left" || padding_side_val == "right",
+                "padding_side should be either 'left' or 'right', but got: ",
+                *padding_side_val
+            );
+            pad_right = (*padding_side_val == "right") ? true : false;
+        }
+
         std::optional<bool> is_max_length_set_val = max_length_val.has_value();
 
         ov::AnyMap& state_flags = m_request_to_state_flags[&infer_request_guard.get()];
@@ -249,6 +263,8 @@ public:
                 set_state_value(state, pad_to_max_length_val, state_flags);
             } else if (name == IS_MAX_LENGTH_SET) {
                 set_state_value(state, is_max_length_set_val, state_flags);
+            } else if (name == PAD_RIGHT_VAR_ID) {
+                set_state_value(state, pad_right, state_flags);
             }
         }
     }
@@ -789,27 +805,42 @@ Tokenizer::Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, c
 }
 
 TokenizedInputs Tokenizer::encode(const std::string& prompt, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(std::move(prompt), tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::pair<std::string, std::string>>& prompts, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(prompts_1, prompts_2, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::initializer_list<std::string>& text, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return encode(std::vector<std::string>(text.begin(), text.end()), tokenization_params);
 }
 
