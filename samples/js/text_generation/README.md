@@ -82,7 +82,7 @@ Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
 - **Main Feature:** Real-time reasoning-action from user's input.
 - **Run Command:**
   ```bash
-  node react_sample.py model_dir
+  node react_sample.js model_dir
   ```
 
 ### Troubleshooting

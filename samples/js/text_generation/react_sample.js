@@ -116,14 +116,14 @@ function parseFirstToolCall(text) {
         if (k < j) { // but does not contain `Observation`,
             // then it is likely that `Observation` is omitted by the LLM,
             // because the output text may have discarded the stop word.
-            resultText = resultText.rstrip() + "\nObservation:" // Add it back.
+            resultText = resultText.trimEnd() + "\nObservation:" // Add it back.
         }
         k = resultText.indexOf("\nObservation:");
         toolName = resultText.slice(i + "\nAction:".length, j).trim();
         toolArgs = resultText.slice(j + "\nAction Input:".length, k).trim();
         resultText = resultText.slice(0, k);
     }
-    return toolName, toolArgs, resultText;
+    return [toolName, toolArgs, resultText];
 }
 
 async function callTool(toolName, toolArgs) {
@@ -181,7 +181,7 @@ async function llmWithTool(llmPipe, prompt, history, listOfToolInfo) {
             streamer,
         );
         // parse the output to get action
-        const { action, actionInput, output } = parseFirstToolCall(generationOutput);
+        const [action, actionInput, output] = parseFirstToolCall(generationOutput);
         if (action) {
             const observation = callTool(action, actionInput);
             const observationTxt = `\nObservation: = ${observation}\nThought:`
@@ -192,7 +192,7 @@ async function llmWithTool(llmPipe, prompt, history, listOfToolInfo) {
             break;
         }
     }
-    return { response: text, history }
+    return [text, history]
 }
 
 async function main() {
@@ -202,7 +202,7 @@ async function main() {
 
     const message_history = [];
     const query = "get the weather in London, and create a picture of Big Ben based on the weather information";
-    const { response, history } = await llmWithTool(llmPipe, query, message_history, tools);
+    const [response, history] = await llmWithTool(llmPipe, query, message_history, tools);
 }
 
 function streamer(subword) {

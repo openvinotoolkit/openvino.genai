@@ -25,7 +25,7 @@ class TestReactSample:
         py_result = run_sample(py_command, '\n'.join(prompts))
 
         # Test JS sample
-        js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/greedy_causal_lm.js")
+        js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/react_sample.js")
         js_command =['node', js_sample, convert_model, sample_args]
         js_result = run_sample(js_command)
 
