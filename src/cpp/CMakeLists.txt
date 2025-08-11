@@ -152,7 +152,7 @@ target_include_directories(${TARGET_NAME_OBJ}
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 if(ENABLE_XGRAMMAR)
-    target_link_libraries(${TARGET_NAME_OBJ} PUBLIC xgrammar)
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE xgrammar)
 endif()
 
 if(ENABLE_GGUF)
