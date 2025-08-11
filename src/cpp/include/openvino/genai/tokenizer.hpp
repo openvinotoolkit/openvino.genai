@@ -313,10 +313,11 @@ private:
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
 
+static constexpr ov::Property<bool> add_second_input{"add_second_input"};
 static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
 static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};
 static constexpr ov::Property<bool> pad_to_max_length{"pad_to_max_length"};
-static constexpr ov::Property<bool> add_second_input{"add_second_input"};
+static constexpr ov::Property<std::string> padding_side{"padding_side"};
 
 }  // namespace genai
 }  // namespace ov
