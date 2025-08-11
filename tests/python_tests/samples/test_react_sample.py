@@ -26,7 +26,7 @@ class TestReactSample:
 
         # Test JS sample
         js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/react_sample.js")
-        js_command =['node', js_sample, convert_model, sample_args]
+        js_command =['node', js_sample, convert_model]
         js_result = run_sample(js_command)
 
         assert py_result.stdout == js_result.stdout, f"Results should match"
