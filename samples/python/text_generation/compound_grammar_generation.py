@@ -6,7 +6,12 @@ import argparse
 import json
 from typing import Any
 
-from openvino_genai import LLMPipeline, GenerationConfig, StructuredOutputConfig as SOC, StreamingStatus
+from openvino_genai import (
+    LLMPipeline,
+    GenerationConfig,
+    StructuredOutputConfig as SOC,
+    StreamingStatus,
+)
 
 from pydantic import BaseModel, Field
 
@@ -18,14 +23,18 @@ def streamer(subword):
 
 class booking_flight_tickets(BaseModel):
     """booking flights"""
+
     origin_airport_code: str = Field(description="The name of Departure airport code")
-    destination_airport_code: str = Field(description="The name of Destination airport code")
+    destination_airport_code: str = Field(
+        description="The name of Destination airport code"
+    )
     departure_date: str = Field(description="The date of outbound flight")
     return_date: str = Field(description="The date of return flight")
 
 
 class booking_hotels(BaseModel):
     """booking hotel"""
+
     destination: str = Field(description="The name of the city")
     check_in_date: str = Field(description="The date of check in")
     checkout_date: str = Field(description="The date of check out")
@@ -46,16 +55,13 @@ def tool_to_dict(tool: BaseModel, with_description: bool = True) -> dict[str, An
     _recursive_purge_dict_key(schema, "title")
     if not with_description:
         _recursive_purge_dict_key(schema, "description")
-    return  {
+    return {
         "type": "object",
         "properties": {
-            "name": {
-                "type": "string",
-                "enum": [tool.__name__]
-            },
-            "arguments": schema
+            "name": {"type": "string", "enum": [tool.__name__]},
+            "arguments": schema,
         },
-        "required": ["name", "arguments"]
+        "required": ["name", "arguments"],
     }
 
 
@@ -69,10 +75,7 @@ def tools_to_array_schema(*tools: BaseModel) -> str:
         {
             "type": "array",
             "items": {
-                "anyOf": [
-                    tool_to_dict(tool, with_description=False)
-                    for tool in tools
-                ]
+                "anyOf": [tool_to_dict(tool, with_description=False) for tool in tools]
             },
         }
     )
@@ -97,9 +100,12 @@ sys_message += generate_system_prompt_tools(booking_flight_tickets, booking_hote
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("model_dir", help="Path to the model directory. It should contain the OpenVINO model files.")
+    parser.add_argument(
+        "model_dir",
+        help="Path to the model directory. It should contain the OpenVINO model files.",
+    )
     args = parser.parse_args()
-    
+
     device = "CPU"
     pipe = LLMPipeline(args.model_dir, device)
 
@@ -108,7 +114,7 @@ def main():
     print("Pipeline loaded")
     tokenizer = pipe.get_tokenizer()
     chat_history = [{"role": "system", "content": sys_message}]
-    
+
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 300
     generation_config.do_sample = True
@@ -116,11 +122,15 @@ def main():
     user_text_1 = "Does dolphins have fingers?"
     print("User: ", user_text_1)
     chat_history.append({"role": "user", "content": user_text_1})
-    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
+    model_input = tokenizer.apply_chat_template(
+        chat_history, add_generation_prompt=True
+    )
 
     # the example grammar works the same as SOC.Regex("yes|no")
     # but the Union grammar is more flexible and can be extended with more options
-    yes_or_no = SOC.Regex("yes") | SOC.Regex("no")  # SOC.Union(SOC.Regex("yes"), SOC.Regex("no"))
+    yes_or_no = SOC.Regex("yes") | SOC.Regex(
+        "no"
+    )  # SOC.Union(SOC.Regex("yes"), SOC.Regex("no"))
     generation_config.structured_output_config = SOC(compound_grammar=yes_or_no)
     print("Assistant: ", end="")
     answer = pipe.generate(model_input, generation_config, streamer=streamer)
@@ -133,16 +143,22 @@ def main():
     )
     print("User: ", user_text_2)
     chat_history.append({"role": "user", "content": user_text_2})
-    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
+    model_input = tokenizer.apply_chat_template(
+        chat_history, add_generation_prompt=True
+    )
 
     start_tool_call_tag = SOC.Regex(r"functools")
-    tools_json = SOC.JSONSchema(tools_to_array_schema(booking_flight_tickets, booking_hotels))
-    tool_call = start_tool_call_tag + tools_json  # SOC.Concat(start_tool_call_tag, tools_json)
+    tools_json = SOC.JSONSchema(
+        tools_to_array_schema(booking_flight_tickets, booking_hotels)
+    )
+    tool_call = (
+        start_tool_call_tag + tools_json
+    )  # SOC.Concat(start_tool_call_tag, tools_json)
     generation_config.structured_output_config.compound_grammar = tool_call
 
     print("Assistant: ", end="")
     pipe.generate(model_input, generation_config, streamer=streamer)
 
 
-if '__main__' == __name__:
+if "__main__" == __name__:
     main()
