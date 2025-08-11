@@ -49,7 +49,7 @@ find_python3 = true
 build_args = ["--parallel", "--target", "py_openvino_genai_stub"]
 install_args = ["--strip"]
 install_components = ["wheel_genai"]
-options = {"ENABLE_PYTHON" = "ON", "BUILD_TOKENIZERS" = "OFF", "ENABLE_SAMPLES" = "OFF", "ENABLE_TESTS" = "OFF", "CMAKE_SKIP_INSTALL_RPATH" = "OFF"}
+options = {"ENABLE_PYTHON" = "ON", "BUILD_TOKENIZERS" = "OFF", "ENABLE_SAMPLES" = "OFF", "ENABLE_TESTS" = "OFF", "ENABLE_TOOLS" = "OFF", "CMAKE_SKIP_INSTALL_RPATH" = "OFF"}
 
 [build-system]
 requires = [
