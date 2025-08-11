@@ -45,7 +45,7 @@ def test_structured_output_generation(ov_pipe, prompt_and_scheme, use_compound_g
 
     structured_output_config = ov_genai.StructuredOutputConfig()
     if use_compound_grammar:
-        structured_output_config.compound_grammar = structured_output_config.Regex(
+        structured_output_config.compound_grammar = structured_output_config.JSONSchema(
             json.dumps(SchemeType.model_json_schema())
         )
     else:
