@@ -20,8 +20,6 @@ class TestLoraText2Image:
     )
     @pytest.mark.parametrize("download_test_content", ["soulcard.safetensors"], indirect=True)
     def test_sample_lora_text2image(self, convert_model, prompt, download_test_content, sample_args):
-        pytest.skip(reason="Ticket 170878")
-
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "image_generation/lora_text2image.py")
         py_command = [sys.executable, py_script, convert_model, prompt, download_test_content, sample_args]
