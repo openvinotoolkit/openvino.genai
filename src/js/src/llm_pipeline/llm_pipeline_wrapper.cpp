@@ -5,6 +5,7 @@
 #include "include/llm_pipeline/start_chat_worker.hpp"
 #include "include/llm_pipeline/finish_chat_worker.hpp"
 #include "include/llm_pipeline/init_worker.hpp"
+#include "include/tokenizer.hpp"
 
 struct TsfnContext {
     TsfnContext(ov::genai::StringInputs prompt) : prompt(prompt) {};
@@ -92,6 +93,7 @@ Napi::Function LLMPipelineWrapper::get_class(Napi::Env env) {
                        "LLMPipeline",
                        {InstanceMethod("init", &LLMPipelineWrapper::init),
                         InstanceMethod("generate", &LLMPipelineWrapper::generate),
+                        InstanceMethod("getTokenizer", &LLMPipelineWrapper::get_tokenizer),
                         InstanceMethod("startChat", &LLMPipelineWrapper::start_chat),
                         InstanceMethod("finishChat", &LLMPipelineWrapper::finish_chat)});
 }
@@ -173,4 +175,10 @@ Napi::Value LLMPipelineWrapper::finish_chat(const Napi::CallbackInfo& info) {
     asyncWorker->Queue();
 
     return info.Env().Undefined();
+}
+
+Napi::Value LLMPipelineWrapper::get_tokenizer(const Napi::CallbackInfo& info) {
+    auto tokenizer = this->pipe->get_tokenizer();
+
+    return TokenizerWrapper::wrap(info.Env(), tokenizer);
 }

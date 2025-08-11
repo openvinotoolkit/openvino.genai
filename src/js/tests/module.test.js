@@ -30,6 +30,11 @@ describe('module', async () => {
 
     assert.ok(result.length > 0);
   });
+
+  it('should include tokenizer', async () => {
+    const tokenizer = pipeline.getTokenizer();
+    assert.strictEqual(typeof tokenizer, 'object');
+  });
 });
 
 describe('corner cases', async () => {

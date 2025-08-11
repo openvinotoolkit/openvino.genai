@@ -8,6 +8,20 @@ export type Options = {
   'max_new_tokens'?: number
 };
 
+interface Tokenizer {
+  applyChatTemplate(
+    chatHistory: {'role': string, 'content': string}[],
+    addGenerationPrompt: boolean,
+    chatTemplate?: string
+  ): string;
+  getBosToken(): string;
+  getBosTokenId(): number;
+  getEosToken(): string;
+  getEosTokenId(): number;
+  getPadToken(): string;
+  getPadTokenId(): number;
+}
+
 export class LLMPipeline {
   modelPath: string | null = null;
   device: string | null = null;
@@ -151,5 +165,9 @@ export class LLMPipeline {
         this.pipeline.generate(prompt, chunkOutput, generationConfig, options);
       },
     );
+  }
+
+  getTokenizer(): Tokenizer {
+    return this.pipeline.getTokenizer();
   }
 }
