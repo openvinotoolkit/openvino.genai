@@ -274,7 +274,7 @@ jobs:
 
       - name: Build Tokenizers Wheel
         run: |
-          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(nproc) - 1 ))
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
@@ -283,7 +283,7 @@ jobs:
 
       - name: Build GenAI Wheel
         run: |
-          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(nproc) - 1 ))
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
@@ -291,7 +291,7 @@ jobs:
 
       - name: Build WWB Wheel
         run: |
-          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(nproc) - 1 ))
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
