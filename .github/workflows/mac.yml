@@ -405,12 +405,11 @@ jobs:
       - name: Build GenAI Node.js bindings
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
             -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
             -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
             -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
-          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel --verbose
+          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
 
       - name: Upload Node.js bindings Build Package
