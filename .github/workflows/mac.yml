@@ -672,6 +672,7 @@ jobs:
 
       - name: gtests unit tests
         run: |
+          tree -L 5
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching

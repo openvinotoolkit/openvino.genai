@@ -845,6 +845,7 @@ jobs:
 
       - name: gtests unit tests
         run: |
+          tree /f
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
           & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe"
 
