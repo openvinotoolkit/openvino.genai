@@ -138,7 +138,7 @@ VLM_samples:
 RAG_samples:
   revalidate: []
 
-speech_generation_samples:
+Speech_generation_samples:
   revalidate: []
 
 GGUF:
