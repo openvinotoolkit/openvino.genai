@@ -263,11 +263,10 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     auto pad_to_max_length_rv = std::make_shared<v6::ReadValue>(default_false_const, pad_to_max_length_var);
     auto select_node = std::make_shared<v1::Select>(pad_to_max_length_rv, max_length_rv, zero_constant);
 
-    
     // If user called encode without explicitly stating padding side, then we should pad it to the default side.
     // Here we get that side from the RaggedToDense nodes attribute. 
     auto pad_right_attr_visitor = ReadPadRightAttributes();
-    bool first_iter = false;
+    bool first_iter = true;
     bool default_pad_right = true;
     for (auto ragged_to_dense_node : ragged_to_dense_nodes) {
         if (!ragged_to_dense_node) {
@@ -279,6 +278,7 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
         } else if (pad_right_attr_visitor.get_pad_right() != default_pad_right) {
             return true;  // true since at this point we already have modified the graph.
         }
+        first_iter = false;
     }
 
     // Add padding side variable.
