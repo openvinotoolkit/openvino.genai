@@ -31,12 +31,6 @@ const std::string SDPA_BACKEND = "SDPA";
 
 namespace {
 
-void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
-    if (config.count(pair.first) == 0) {
-        config.insert(pair);
-    }
-}
-
 void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
     if (config.count(old_key) != 0) {
         auto opt_value = ov::genai::utils::pop_option(config, old_key);
@@ -77,6 +71,8 @@ void update_npu_config(ov::AnyMap& config,
                        const std::shared_ptr<ov::Model>& model,
                        const ov::genai::utils::KVAxesPosition& kv_pos,
                        const ov::genai::utils::KVDesc& kv_desc) {
+    using ov::genai::utils::update_config;
+
     update_config(config, {"NPU_USE_NPUW", "YES"});
     update_config(config, {"NPUW_LLM", "YES"});
 
@@ -644,6 +640,12 @@ void release_core_plugin(const std::string& device) {
     } catch (const ov::Exception&) {
         // Note: in a theory it can throw an exception when 2 different pipelines are created from
         // different threads and then both of them unload plugin for 'device' from ov::Core
+    }
+}
+
+void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
+    if (config.count(pair.first) == 0) {
+        config.insert(pair);
     }
 }
 
