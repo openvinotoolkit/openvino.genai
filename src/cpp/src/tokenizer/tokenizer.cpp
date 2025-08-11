@@ -66,10 +66,57 @@ std::optional<std::string> remap_template(const std::string& chat_template) {
     return std::nullopt;
 }
 
-void parse_if_exists(const std::filesystem::path& path, std::string& value) {
-    if (std::filesystem::exists(path)) {
-        ov::genai::utils::read_json_param(nlohmann::json::parse(std::ifstream{path}), "chat_template", value);
+void parse_chat_template_from_file(const std::filesystem::path& path, std::string& value) {
+    if (!std::filesystem::exists(path)) {
+        return;
     }
+    auto json_data = nlohmann::json::parse(std::ifstream{path});
+    if (!json_data.contains("chat_template")) {
+        return;
+    }
+    auto chat_template_field = json_data["chat_template"];
+
+    if (chat_template_field.is_string()) {
+        value = chat_template_field.get<std::string>();
+        return;
+    }
+    // Handle chat template format: [{ "name": "default", "template": "..." }]
+    // e.g. for CohereLabs/aya-23-8B & CohereLabs/c4ai-command-r-v01 models
+    if (chat_template_field.is_array()) {
+        for (const auto& item : chat_template_field) {
+            if (
+                item.is_object() && item.contains("name") && item["name"] == "default" &&
+                item.contains("template") && item["template"].is_string()
+            ) {
+                value = item["template"].get<std::string>();
+                return;
+            }
+        }
+    }
+    std::cerr << "[ WARNING ] Unsupported chat_template format in file: " << path.string() << "\n";
+    std::cerr << "Supported formats: string or array of objects with 'name' and 'template' fields.\n";
+    std::cerr << "To avoid this warning, check \"chat_template\" field in the file and update it accordingly.\n";
+}
+
+void parse_chat_template_from_tokenizer(std::shared_ptr<ov::Model> ov_tokenizer, std::string& value) {
+    if (!ov_tokenizer->has_rt_info("chat_template")) {
+        return;
+    }
+    ov::Any chat_template_value = ov_tokenizer->get_rt_info<ov::Any>("chat_template");
+    if (chat_template_value.is<std::string>()) {
+        value = chat_template_value.as<std::string>();
+        return;
+    }
+    // Handle rt_info chat template format: <chat_template><default value="..." /></chat_template>
+    if (chat_template_value.is<ov::AnyMap>()) {
+        ov::AnyMap chat_template_map = chat_template_value.as<ov::AnyMap>();
+        auto default_iter = chat_template_map.find("default");
+        if (default_iter != chat_template_map.end() && default_iter->second.is<std::string>()) {
+            value = default_iter->second.as<std::string>();
+            return;
+        }
+    }
+    std::cerr << "[ WARNING ] Unsupported type for 'chat_template' in ov_tokenizer model: " << chat_template_value.type_info().name() << std::endl;
 }
 
 template <typename T>
@@ -321,9 +368,9 @@ public:
         read_special_tokens_map(models_path);
         // Try to read tokenizer_config if some token ids or token str are not defined.
         read_tokenizer_config_if_necessary(models_path);
-        parse_if_exists(models_path / "tokenizer_config.json", m_chat_template);
-        parse_if_exists(models_path / "processor_config.json", m_chat_template);
-        parse_if_exists(models_path / "chat_template.json", m_chat_template);
+        parse_chat_template_from_file(models_path / "tokenizer_config.json", m_chat_template);
+        parse_chat_template_from_file(models_path / "processor_config.json", m_chat_template);
+        parse_chat_template_from_file(models_path / "chat_template.json", m_chat_template);
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
     }
 
@@ -363,7 +410,8 @@ public:
             m_bos_token_id = find_or_fallback(rt_info, "bos_token_id", m_bos_token_id);
             m_eos_token_id = find_or_fallback(rt_info, "eos_token_id", m_eos_token_id);
 
-            m_chat_template = find_or_fallback(rt_info, "chat_template", m_chat_template);
+            parse_chat_template_from_tokenizer(ov_tokenizer, m_chat_template);
+
             std::optional<std::string> fallback = remap_template(m_chat_template);
             if (fallback.has_value()) {
                 m_chat_template = std::move(fallback).value();
@@ -566,7 +614,6 @@ public:
     TokenizedInputs encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params = {}) {
         OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                                 "Tokenizer::encode is not available");
-        size_t batch_size = prompts_1.size();
         OPENVINO_ASSERT(prompts_1.size() == prompts_2.size() || prompts_1.size() == 1 || prompts_2.size() == 1,
                         "prompts_1 and prompts_2 should be of the same size or one of them should be of size 1");
 
@@ -574,8 +621,8 @@ public:
         {
             CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
             set_state_if_necessary(infer_request_guard, tokenization_params);
-            infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(prompts_1.data())});
-            infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(prompts_2.data())});
+            infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {prompts_1.size()}, const_cast<std::string*>(prompts_1.data())});
+            infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {prompts_2.size()}, const_cast<std::string*>(prompts_2.data())});
 
             infer_request_guard.get().infer();
 
@@ -583,8 +630,19 @@ public:
                 infer_request_guard.get().get_tensor("input_ids"),
                 infer_request_guard.get().get_tensor("attention_mask")
             );
+
+            // If the model has a token_type_ids output, copy it to the result
+            for (const auto& output : infer_request_guard.get().get_compiled_model().outputs()) {
+                if (output.get_any_name() != "token_type_ids") {
+                    continue;
+                }
+                ov::Tensor token_type_ids = infer_request_guard.get().get_tensor(output);
+                ov::Tensor token_type_ids_copy = ov::Tensor(token_type_ids.get_element_type(), token_type_ids.get_shape());
+                token_type_ids.copy_to(token_type_ids_copy);
+                result.token_type_ids = token_type_ids_copy;
+            }
         }
-        return {result.input_ids, result.attention_mask};
+        return {result.input_ids, result.attention_mask, result.token_type_ids};
     }
 
     TokenizedInputs encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params = {}) {

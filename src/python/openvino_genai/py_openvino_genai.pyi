@@ -1,11 +1,11 @@
 """
-Pybind11 binding for Text-to-speech Pipeline
+Pybind11 binding for OpenVINO GenAI library
 """
 from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -2101,15 +2101,43 @@ class SparseAttentionConfig:
         :param mode: Sparse attention mode to be applied.
         :type mode: openvino_genai.SparseAttentionMode
     
-        :param num_last_dense_tokens_in_prefill: Number of tokens from the end of the prompt for which full attention across previous KV cache contents
-          will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention (encompassing first
-          and currently latest blocks) will be computed. Due to the block-wise nature of continuous batching cache management,
-          the actual number of prompt tokens for which the dense attention will be computed may be up to block-size larger than
-          this value (depending on the prompt length and block size).*/
+        :param num_last_dense_tokens_in_prefill: TRISHAPE and XATTENTION modes - Number of tokens from the end of the prompt
+           for which full attention across previous KV cache contents will be computed. In contrast, for the rest of the tokens
+           in the prompt only the sparse attention will be computed according to the selected algorithm.
+           TRISHAPE: Due to the block-wise nature of continuous batching cache management, the actual number of prompt tokens
+           for which the dense attention will be computed may be up to block-size larger than this value (depending on the
+           prompt length and block size).
+           XATTENTION: Same as above applies, but the dense attention may overspill up to a subsequence chunk (i.e. multiple
+           blocks)
         :type num_last_dense_tokens_in_prefill: int
+    
+        :param num_retained_start_tokens_in_cache: TRISHAPE mode only - The number of tokens in the beginning of the cache
+         (least recent) to be retained when applying sparse attention. Must be a multiple of block size.
+        :type num_retained_start_tokens_in_cache: int
+    
+        :param num_retained_recent_tokens_in_cache: TRISHAPE mode only - The number of most recent tokens in cache to be retained when
+          applying sparse attention. Must be a multiple of block size.
+        :param num_retained_recent_tokens_in_cache: int
+    
+        :param xattention_threshold: XATTENTION mode only - Cumulative importance score threshold to be compared against when
+          determining blocks to exclude from the attention calculations in the block-sparse approach. Only the attention matrix
+          blocks with highest importance score sum not exceeding this threshold will be taking part in the computations. The lower
+          the threshold, the less computation will the main attention operation will take, and vice versa, with the corresponding
+          potential impact on generation accuracy.
+        :type xattention_threshold: float
+    
+        :param xattention_block_size: XATTENTION mode only - Block granularity, in tokens, with which the block-sparse attention
+          calculation will be applied.
+        :type xattention_block_size: int
+    
+        :param xattention_stride: XATTENTION mode only - The stride of antidiagonal sampling employed to calculate the importance
+         scores of each `xattention_block_size`-sized block of the attention matrix before the actual attention calculation takes
+         place.  Directly influences the overhead portion of the importance score computations - if full (dense) attention takes
+         M time to be calculated, then the importance score calculation would be taking `M / xattention_stride` time as overhead.
+        :type xattention_stride: int
     """
     mode: SparseAttentionMode
-    def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: typing.SupportsInt = 100, num_retained_start_tokens_in_cache: typing.SupportsInt = 128, num_retained_recent_tokens_in_cache: typing.SupportsInt = 1920) -> None:
+    def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: typing.SupportsInt = 100, num_retained_start_tokens_in_cache: typing.SupportsInt = 128, num_retained_recent_tokens_in_cache: typing.SupportsInt = 1920, xattention_threshold: typing.SupportsFloat = 0.8, xattention_block_size: typing.SupportsInt = 64, xattention_stride: typing.SupportsInt = 8) -> None:
         ...
     @property
     def num_last_dense_tokens_in_prefill(self) -> int:
@@ -2129,17 +2157,40 @@ class SparseAttentionConfig:
     @num_retained_start_tokens_in_cache.setter
     def num_retained_start_tokens_in_cache(self, arg0: typing.SupportsInt) -> None:
         ...
+    @property
+    def xattention_block_size(self) -> int:
+        ...
+    @xattention_block_size.setter
+    def xattention_block_size(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def xattention_stride(self) -> int:
+        ...
+    @xattention_stride.setter
+    def xattention_stride(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def xattention_threshold(self) -> float:
+        ...
+    @xattention_threshold.setter
+    def xattention_threshold(self, arg0: typing.SupportsFloat) -> None:
+        ...
 class SparseAttentionMode:
     """
     Represents the mode of sparse attention applied during generation.
                                    :param SparseAttentionMode.TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.
+                                   :param SparseAttentionMode.XATTENTION: Following https://arxiv.org/pdf/2503.16428, introduces importance score threshold-based block sparsity into the prefill stage.  Computing importance scores introduces an overhead, but the total inference time is expected to be reduced even more.
+    
     
     Members:
     
       TRISHAPE
+    
+      XATTENTION
     """
     TRISHAPE: typing.ClassVar[SparseAttentionMode]  # value = <SparseAttentionMode.TRISHAPE: 0>
-    __members__: typing.ClassVar[dict[str, SparseAttentionMode]]  # value = {'TRISHAPE': <SparseAttentionMode.TRISHAPE: 0>}
+    XATTENTION: typing.ClassVar[SparseAttentionMode]  # value = <SparseAttentionMode.XATTENTION: 1>
+    __members__: typing.ClassVar[dict[str, SparseAttentionMode]]  # value = {'TRISHAPE': <SparseAttentionMode.TRISHAPE: 0>, 'XATTENTION': <SparseAttentionMode.XATTENTION: 1>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -2933,6 +2984,58 @@ class TextEmbeddingPipeline:
     def wait_embed_query(self) -> list[float] | list[int] | list[int]:
         """
         Waits computed embeddings for a query
+        """
+class TextRerankPipeline:
+    """
+    Text rerank pipeline
+    """
+    class Config:
+        """
+        
+        Structure to keep TextRerankPipeline configuration parameters.
+        Attributes:
+            top_n (int, optional):
+                Number of documents to return sorted by score.
+            max_length (int, optional):
+                Maximum length of tokens passed to the embedding model.
+        """
+        @typing.overload
+        def __init__(self) -> None:
+            ...
+        @typing.overload
+        def __init__(self, **kwargs) -> None:
+            ...
+        @property
+        def max_length(self) -> int | None:
+            ...
+        @max_length.setter
+        def max_length(self, arg0: typing.SupportsInt | None) -> None:
+            ...
+        @property
+        def top_n(self) -> int:
+            ...
+        @top_n.setter
+        def top_n(self, arg0: typing.SupportsInt) -> None:
+            ...
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, config: openvino_genai.py_openvino_genai.TextRerankPipeline.Config | None = None, **kwargs) -> None:
+        """
+        Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+        models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
+        device (str): Device to run the model on (e.g., CPU, GPU).
+        config: (TextRerankPipeline.Config): Optional pipeline configuration
+        kwargs: Plugin and/or config properties
+        """
+    def rerank(self, query: str, texts: collections.abc.Sequence[str]) -> list[tuple[int, float]]:
+        """
+        Reranks a vector of texts based on the query.
+        """
+    def start_rerank_async(self, query: str, texts: collections.abc.Sequence[str]) -> None:
+        """
+        Asynchronously reranks a vector of texts based on the query.
+        """
+    def wait_rerank(self) -> list[tuple[int, float]]:
+        """
+        Waits for reranked texts.
         """
 class TextStreamer(StreamerBase):
     """

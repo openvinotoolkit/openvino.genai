@@ -327,7 +327,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
     }
-    OPENVINO_THROW("Property \"", property_name, "\" has unsupported type. Please, add type support to 'py_object_to_any' function");
+    OPENVINO_THROW(py::str(py_obj.get_type()), " isn't supported for argument ", property_name);
 }
 
 void add_deprecation_warning_for_chunk_streamer(std::shared_ptr<StreamerBase> streamer) {

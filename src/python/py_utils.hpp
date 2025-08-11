@@ -45,15 +45,4 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
 
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer);
 
-template <typename T, typename U>
-std::vector<float> get_ms(const T& instance, U T::*member) {
-    // Converts c++ duration to float so that it can be used in Python.
-    std::vector<float> res;
-    const auto& durations = instance.*member;
-    res.reserve(durations.size());
-    std::transform(durations.begin(), durations.end(), std::back_inserter(res),
-                   [](const auto& duration) { return duration.count(); });
-    return res;
-}
-
 }  // namespace ov::genai::pybind::utils

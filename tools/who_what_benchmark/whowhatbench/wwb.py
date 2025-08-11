@@ -44,7 +44,8 @@ def parse_args():
     parser.add_argument(
         "--omit-chat-template",
         action="store_true",
-        help="Do not apply the default chat template if it's present.",
+        help="Do not apply the default chat template if it's present for LLMs."
+        " The flag is ignored for VLMs because they depend on the chat template to merge images and text.",
     )
     parser.add_argument(
         "--gt-data",
@@ -186,6 +187,11 @@ def parse_args():
         nargs='*',
         default=None,
         help="Weights for LoRA adapters.",
+    )
+    parser.add_argument(
+        "--long-prompt",
+        action='store_true',
+        help="LLMPipeline specific parameter that defines the use of a long context prompt",
     )
 
     return parser.parse_args()
@@ -422,6 +428,7 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
+                long_prompt=args.long_prompt,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(

@@ -94,12 +94,15 @@ from .py_openvino_genai import (
     GenerationStatus,
     SchedulerConfig,
     CacheEvictionConfig,
-    AggregationMode
+    AggregationMode,
+    SparseAttentionMode,
+    SparseAttentionConfig
 )
 
 # RAG
 from .py_openvino_genai import (
-    TextEmbeddingPipeline
+    TextEmbeddingPipeline,
+    TextRerankPipeline
 )
 
 # Speech generation

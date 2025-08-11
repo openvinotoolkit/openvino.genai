@@ -107,7 +107,7 @@
 'category: RAG samples':
 - 'samples/cpp/rag/**/*'
 - 'samples/python/rag/**/*'
-- 'tests/python_tests/samples/test_text_embedding_pipeline.py'
+- 'tests/python_tests/samples/test_rag.py'
 
 'category: structured output generation':
 - 'src/cpp/src/sampling/structured_output/*'
@@ -167,7 +167,8 @@
 - 'tests/python_tests/samples/test_continuous_batching_tools.py'
 
 'category: GGUF':
-- 'src/cpp/src/gguf_utils/**/*'
+- 'src/cpp/src/gguf_utils/**'
+- 'tests/python_tests/**'
 
 'category: Structured Output samples':
 - 'samples/cpp/text_generation/structured_output_generation'
