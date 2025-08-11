@@ -1,4 +1,3 @@
-from turtle import st
 import pytest
 import json
 import openvino_genai as ov_genai
