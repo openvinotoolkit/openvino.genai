@@ -14,15 +14,15 @@ class TestTextEmbeddingPipeline:
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["bge-small-en-v1.5"], indirect=True)
     def test_sample_text_embedding_pipeline(self, convert_model):
-        # Run Python sample
-        py_script = os.path.join(SAMPLES_PY_DIR, "rag/text_embeddings.py")
-        py_command = [sys.executable, py_script, convert_model, "Document 1", "Document 2"]
-        py_result = run_sample(py_command)
-
         # Run C++ sample
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, "text_embeddings")
         cpp_command = [cpp_sample, convert_model, "Document 1", "Document 2"]
         cpp_result = run_sample(cpp_command)
+
+        # Run Python sample
+        py_script = os.path.join(SAMPLES_PY_DIR, "rag/text_embeddings.py")
+        py_command = [sys.executable, py_script, convert_model, "Document 1", "Document 2"]
+        py_result = run_sample(py_command)
 
         # Run JS sample
         js_sample = os.path.join(SAMPLES_JS_DIR, "rag/text_embeddings.js")

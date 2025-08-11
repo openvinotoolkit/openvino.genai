@@ -35845,8 +35845,12 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
             stdio: 'inherit'
           }
         );
-        core.debug('stdout:', stdout);
-        core.error('stderr:', stderr);
+        if (stdout) {
+          core.debug('stdout:', stdout);
+        }
+        if (stderr) {
+          core.error('stderr:', stderr);
+        }
         break;
       } catch (error) {
         core.error(`Attempt ${attempt + 1} failed:`, error.message);
