@@ -30,5 +30,4 @@ class TestBenchmarkImageGen:
         ], indirect=["download_test_content", "download_mask_image"],
     )
     def test_sample_benchmark_image_gen(self, executable, download_model, pipeline_type, prompt, download_test_content, download_mask_image):
-        inference_steps = "3"
-        run_sample(executable + ["-t", pipeline_type, "-m" , download_model, "-p", "'" + prompt + "'", "-i", download_test_content, "--mi", download_mask_image, "--is", inference_steps])
+        run_sample(executable + ["-t", pipeline_type, "-m" , download_model, "-p", "'" + prompt + "'", "-i", download_test_content, "--mask_image", download_mask_image, "--num_inference_steps", "3"])
