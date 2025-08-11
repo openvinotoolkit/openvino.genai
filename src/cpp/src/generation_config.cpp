@@ -361,7 +361,7 @@ void StructuredOutputConfig::validate() const {
 
     OPENVINO_ASSERT(
         (json_schema.has_value() + regex.has_value() + grammar.has_value() + structural_tags_config.has_value() + compound_grammar.has_value()) == 1,
-        "Only one of json, regex, grammar or structural_tags_config should be set in StructuredOutputConfig, but got: ",
+        "Only one of json, regex, grammar, structural_tags_config, or compound_grammar should be set in StructuredOutputConfig, but got: ",
         (json_schema.has_value() ? "json=" + *json_schema +", " : ""),
         (regex.has_value() ? "regex=" + *regex + ", " : ""),
         (grammar.has_value() ? "grammar=" + *grammar : ""),
