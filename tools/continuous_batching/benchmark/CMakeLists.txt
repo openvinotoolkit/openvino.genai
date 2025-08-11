@@ -30,6 +30,10 @@ set(TARGET_NAME continuous_batching_benchmark)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai nlohmann_json::nlohmann_json cxxopts::cxxopts Threads::Threads)
 
+if(ENABLE_XGRAMMAR)
+    target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
+endif()
+
 set_target_properties(${TARGET_NAME} PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
