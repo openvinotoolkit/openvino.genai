@@ -85,7 +85,7 @@ public:
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
             // disable chunking as at the moment it is not supported for VLMs
-            ov::genai::utils::update_config(lm_properties, {"NPUW_LLM_PREFILL_HINT", "STATIC"});
+            lm_properties.insert({"NPUW_LLM_PREFILL_HINT", "STATIC"});
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
