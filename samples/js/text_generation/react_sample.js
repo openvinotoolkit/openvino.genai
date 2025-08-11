@@ -62,6 +62,7 @@ function formatTemplate(template, values) {
         let value = values[key] || '';
         if (typeof value !== "string") {
             value = JSON.stringify(value)
+                .replaceAll(':', ': ').replaceAll(',', ', '); // to align with Python
         }
         return value;
     });
@@ -107,7 +108,6 @@ function buildInputText(tokenizer, chatHistory, listOfToolInfo) {
 function parseFirstToolCall(text) {
     let resultText = text;
     let toolName = "", toolArgs = "";
-    console.log(resultText);
     const i = resultText.indexOf("\nAction:");
     const j = resultText.indexOf("\nAction Input:");
     let k = resultText.indexOf("\nObservation:");
