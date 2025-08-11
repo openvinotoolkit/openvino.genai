@@ -69,9 +69,6 @@
 - 'samples/cpp/text_generation/**/*'
 - 'samples/js/text_generation/**/*'
 - 'samples/python/text_generation/**/*'
-- 'samples/deployment-requirements.txt'
-- 'samples/export-requirements.txt'
-- 'samples/requirements.txt'
 - 'tests/python_tests/samples/test_beam_search_causal_lm.py'
 - 'tests/python_tests/samples/test_benchmark_genai.py'
 - 'tests/python_tests/samples/test_chat_sample.py'
@@ -86,16 +83,10 @@
 'category: Whisper samples':
 - 'samples/cpp/whisper_speech_recognition/**/*'
 - 'samples/python/whisper_speech_recognition/**/*'
-- 'samples/deployment-requirements.txt'
-- 'samples/export-requirements.txt'
-- 'samples/requirements.txt'
 
 'category: Image generation samples':
 - 'samples/cpp/image_generation/**/*'
 - 'samples/python/image_generation/**/*'
-- 'samples/deployment-requirements.txt'
-- 'samples/export-requirements.txt'
-- 'samples/requirements.txt'
 - 'tests/python_tests/samples/test_benchmark_image_gen.py'
 - 'tests/python_tests/samples/test_heterogeneous_stable_diffusion.py'
 - 'tests/python_tests/samples/test_text2image.py'
@@ -106,9 +97,6 @@
 'category: VLM samples':
 - 'samples/cpp/visual_language_chat/**/*'
 - 'samples/python/visual_language_chat/**/*'
-- 'samples/deployment-requirements.txt'
-- 'samples/export-requirements.txt'
-- 'samples/requirements.txt'
 - 'tests/python_tests/samples/test_benchmark_vlm.py'
 - 'tests/python_tests/samples/test_visual_language_chat.py'
 
