@@ -160,5 +160,5 @@ def main():
     pipe.generate(model_input, generation_config, streamer=streamer)
 
 
-if "__main__" == __name__:
+if __name__ == "__main__":
     main()
