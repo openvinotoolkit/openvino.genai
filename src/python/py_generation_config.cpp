@@ -236,7 +236,6 @@ void init_generation_config(py::module_& m) {
     add_grammar_operators(concat);
 
     auto union_ = py::class_<StructuredOutputConfig::Union, std::shared_ptr<StructuredOutputConfig::Union>>(structured_output_config, "Union")
-//        .def(py::init<>())
         .def_static("__new__", [](py::object cls, py::object left, py::object right) {
             return std::make_shared<StructuredOutputConfig::Union>(
                 pyutils::py_obj_to_compound_grammar(left),
