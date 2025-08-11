@@ -12,7 +12,7 @@ download_mask_image = download_test_content
 
 class TestInpainting:
     @pytest.mark.samples
-    @pytest.mark.image_generation
+    @pytest.mark.LCM_Dreamshaper_v7_int8_ov
     @pytest.mark.parametrize(
         "download_model, prompt",
         [
