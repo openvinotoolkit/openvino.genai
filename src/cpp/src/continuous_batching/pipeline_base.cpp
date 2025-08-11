@@ -258,8 +258,7 @@ GenerationHandle
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t request_id,
                                         const std::string& prompt,
                                         const std::vector<ov::Tensor>& rgbs,
-                                        GenerationConfig sampling_params,
-                                        std::optional<ov::Tensor> token_type_ids) {
+                                        GenerationConfig sampling_params) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
@@ -269,13 +268,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
-        if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, metrics, true, image_sequence);
-        } else {
-            inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
-        }
+        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
     }
-    return add_request(request_id, inputs, sampling_params, token_type_ids);
+    return add_request(request_id, inputs, sampling_params);
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(

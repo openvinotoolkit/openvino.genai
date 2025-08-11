@@ -84,8 +84,7 @@ public:
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
-                                         GenerationConfig sampling_params,
-                                         std::optional<ov::Tensor> token_type_ids = std::nullopt) = 0;
+                                         GenerationConfig sampling_params) = 0;
 
     /**
      * Adds request to running queue based on string input and vector of images
@@ -94,8 +93,7 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const std::vector<ov::Tensor>& rgbs,
-                                 GenerationConfig sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt);
+                                 GenerationConfig sampling_params);
 
     /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
