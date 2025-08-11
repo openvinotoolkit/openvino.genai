@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_JS_DIR
 from test_utils import run_sample
     
 class TestReactSample:
@@ -22,4 +22,12 @@ class TestReactSample:
         # Python test
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/react_sample.py")
         py_command = [sys.executable, py_script, convert_model]
-        run_sample(py_command, '\n'.join(prompts))
+        py_result = run_sample(py_command, '\n'.join(prompts))
+
+        # Test JS sample
+        js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/greedy_causal_lm.js")
+        js_command =['node', js_sample, convert_model, sample_args]
+        js_result = run_sample(js_command)
+
+        assert py_result.stdout == js_result.stdout, f"Results should match"
+
