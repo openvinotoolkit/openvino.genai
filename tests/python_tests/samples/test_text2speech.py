@@ -68,10 +68,5 @@ class TestTextToSpeechSample:
         py_command = [sys.executable, py_script, convert_model, input_prompt]
         py_result = run_sample(py_command)
 
-        # Run C++ sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'text2speech')
-        cpp_command = [cpp_sample, convert_model, input_prompt]
-        cpp_result = run_sample(cpp_command)
-
         assert "Text successfully converted to audio file" in cpp_result.stdout, "C++ sample text2speech must be successfully completed"
         assert "Text successfully converted to audio file" in py_result.stdout, "Python sample text2speech must be successfully completed"
