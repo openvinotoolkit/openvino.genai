@@ -1,11 +1,6 @@
-# OpenVINO™ GenAI Node.js bindings (preview)
+# OpenVINO™ GenAI Node.js bindings
 
 Use OpenVINO GenAI to deploy most popular Generative AI model pipelines that run on top of highly performant OpenVINO Runtime.
-
-## DISCLAIMER
-
-This is preview version, do not use it in production!
-In this version, only the LLM pipeline is implemented for NodeJS.
 
 ## Quick Start
 
@@ -43,7 +38,7 @@ function streamer(subword) {
 
 ## Build From Sources
 
-Build OpenVINO™ GenAI JavaScript Bindings from sources following the [instructions](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/js/BUILD.md#build-openvino-genai-nodejs-bindings-preview).
+Build OpenVINO™ GenAI JavaScript Bindings from sources following the [instructions](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/js/BUILD.md#build-openvino-genai-nodejs-bindings).
 
 ## License
 
