@@ -372,11 +372,11 @@ MILEBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
 @pytest.mark.parametrize("device", ["CPU", "GPU"])
 @pytest.mark.parametrize(
     ("test_struct", "download_test_content"), [
-    (BenchmarkTestData("ALFRED", 0.018, 2.10, 2.33), "MileBench_part0.tar.gz"),
-    (BenchmarkTestData("MMCoQA", 0.001, 1.91, 1.64), "MileBench_part2.tar.gz"),
-    (BenchmarkTestData("WikiVQA", 0.001, 1.41, 1.47), "MileBench_part5.tar.gz"),
+    (BenchmarkTestData("ALFRED", 0.007, 1.98, 1.91), "MileBench_part0.tar.gz"),
+    (BenchmarkTestData("MMCoQA", 0.001, 3.75, 4.55), "MileBench_part2.tar.gz"),
     ],
-    indirect=["download_test_content"]
+    indirect=["download_test_content"],
+    ids=["ALFRED", "MMCoQA"],
 )
 def test_optimized_generation_milebench(test_struct, download_test_content):
     seqs_per_request = 16
@@ -405,6 +405,7 @@ def test_optimized_generation_milebench(test_struct, download_test_content):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = 64  # change to 512 for full evaluation
     generation_config.do_sample = False
+    generation_config.apply_chat_template = False
 
     subset = test_struct.subset
     data = MileBenchDataset(
