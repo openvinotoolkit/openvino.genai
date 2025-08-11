@@ -216,7 +216,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14-xlarge
+    runs-on: macos-14
     env:
       CCACHE_DIR: ${{ github.workspace }}/ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -274,6 +274,7 @@ jobs:
 
       - name: Build Tokenizers Wheel
         run: |
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
@@ -282,13 +283,16 @@ jobs:
 
       - name: Build GenAI Wheel
         run: |
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Build WWB Wheel
-        run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
+        run: |
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Save ccache
@@ -373,7 +377,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14-xlarge
+    runs-on: macos-14
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
@@ -401,6 +405,7 @@ jobs:
       - name: Build GenAI Node.js bindings
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
             -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
             -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
