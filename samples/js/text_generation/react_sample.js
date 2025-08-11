@@ -1,10 +1,11 @@
 // Copyright(C) 2025 Intel Corporation
 // SPDX - License - Identifier: Apache - 2.0
-
+import * as https from 'https';
 import { LLMPipeline, StreamingStatus } from "openvino-genai-node";
 
 const llmConfig = {
     'max_new_tokens': 256,
+    'return_decoded_results': true,
 }
 
 const TOOL_DESC = `{name_for_model}: Call this tool to interact with the {name_for_human} API. What is the {name_for_human} API useful for? {description_for_model} Parameters: {parameters}`
@@ -61,12 +62,16 @@ function formatTemplate(template, values) {
     const result = template.replace(/{(\w+)}/g, (_, key) => {
         let value = values[key] || '';
         if (typeof value !== "string") {
-            value = JSON.stringify(value)
-                .replaceAll(':', ': ').replaceAll(',', ', '); // to align with Python
+            value = serialize_json(value);
         }
         return value;
     });
     return result;
+}
+
+function serialize_json(object) {
+    return JSON.stringify(object)
+        .replaceAll('":', '": ').replaceAll('",', '", '); // to align with Python;
 }
 
 function buildInputText(tokenizer, chatHistory, listOfToolInfo) {
@@ -138,11 +143,24 @@ async function callTool(toolName, toolArgs) {
                 "observation_time",
             ],
         };
-        const response = await fetch(`https://wttr.in/${cityName}?format=j1`);
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        const data = await response.json();
+        const response = new Promise((resolve, reject) => {
+            https.get(`https://wttr.in/${cityName}?format=j1`, {}, (res) => {
+                let data = '';
+
+                res.on('data', (chunk) => {
+                    data += chunk.toString();
+                });
+
+                res.on('end', () => {
+                    resolve(JSON.parse(data));
+                });
+
+                res.on('error', (err) => {
+                    reject(err);
+                });
+            });
+        });
+        const data = await response;
         const result = {};
         for (const [key, values] of Object.entries(keySelection)) {
             if (data[key] && Array.isArray(data[key]) && data[key][0]) {
@@ -152,18 +170,17 @@ async function callTool(toolName, toolArgs) {
                 }
             }
         }
-        return JSON.stringify(result);
+        return serialize_json(result);
     } else if (toolName === "generate_image") {
-        toolArgs = toolArgs.replace(/\(/g, "").replace(/\)/g, "");
+        toolArgs = toolArgs.replaceAll('(', '').replaceAll(')', '');
         const parsed = JSON.parse(toolArgs);
         const prompt = encodeURIComponent(parsed.prompt);
-        return JSON.stringify({
+        return serialize_json({
             "image_url": `https://image.pollinations.ai/prompt/${prompt}`
-        }, null, 4);
+        });
     } else {
-        new Error(`Tool ${toolName} is not supported`);
+        throw new Error(`Tool ${toolName} is not supported`);
     }
-
 }
 
 async function llmWithTool(llmPipe, prompt, history, listOfToolInfo) {
@@ -181,11 +198,11 @@ async function llmWithTool(llmPipe, prompt, history, listOfToolInfo) {
             streamer,
         );
         // parse the output to get action
-        const [action, actionInput, output] = parseFirstToolCall(generationOutput);
+        const [action, actionInput, output] = parseFirstToolCall(generationOutput.toString());
         if (action) {
-            const observation = callTool(action, actionInput);
+            const observation = await callTool(action, actionInput);
             const observationTxt = `\nObservation: = ${observation}\nThought:`
-            console.log(`\n\n- Getting information from the tool API -${observationTxt}\n`);
+            console.log(`\n\n- Getting information from the tool API - ${observationTxt} \n`);
             text += output + observationTxt
         } else {
             text += output;
