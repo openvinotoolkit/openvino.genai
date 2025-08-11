@@ -11,6 +11,7 @@
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "py_utils.hpp"
+#include "bindings_utils.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 
 namespace py = pybind11;
@@ -32,6 +33,7 @@ using ov::genai::WhisperPipeline;
 using ov::genai::WhisperRawPerfMetrics;
 
 namespace pyutils = ov::genai::pybind::utils;
+namespace common_utils = ov::genai::common_bindings::utils;
 
 namespace {
 
@@ -337,7 +339,7 @@ void init_whisper_pipeline(py::module_& m) {
     py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
         .def_property_readonly("features_extraction_durations", [](const WhisperRawPerfMetrics& rw) {
-            return pyutils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
+            return common_utils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
         });
 
     py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
