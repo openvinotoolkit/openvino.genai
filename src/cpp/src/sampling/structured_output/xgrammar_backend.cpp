@@ -44,7 +44,10 @@ xgrammar::Grammar XGrammarStructuredOutput::parse_compound_grammar(const Structu
                 this->parse_compound_grammar(grammar->right)
             });
         } else {
-            OPENVINO_THROW("Cannot compile the compound grammar. Unsupported compound grammar type.");
+            OPENVINO_THROW(
+                "Cannot compile the compound grammar. Unsupported compound grammar type. "
+                "Supported types are: Regex, JSONSchema, EBNF, Union, Concat."
+            );
         }
     }, compound_grammar);
 }
