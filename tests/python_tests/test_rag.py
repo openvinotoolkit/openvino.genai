@@ -6,7 +6,7 @@ import pytest
 import gc
 from pathlib import Path
 from openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
-from utils.hugging_face import download_and_convert_models, download_and_convert_models
+from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_rerank_model
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
@@ -198,10 +198,10 @@ def run_text_rerank_pipeline_with_ref(
     assert_rerank_results(genai_result, langchain_result)
 
 
-@pytest.mark.parametrize("download_and_convert_models", ["BAAI/bge-small-en-v1.5"], indirect=True)
+@pytest.mark.parametrize("download_and_convert_embeddings_models", ["BAAI/bge-small-en-v1.5"], indirect=True)
 @pytest.mark.precommit
-def test_embedding_constructors(download_and_convert_models):
-    _, _, models_path = download_and_convert_models
+def test_embedding_constructors(download_and_convert_embeddings_models):
+    _, _, models_path = download_and_convert_embeddings_models
 
     TextEmbeddingPipeline(models_path, "CPU")
     TextEmbeddingPipeline(models_path, "CPU", TextEmbeddingPipeline.Config())
@@ -226,7 +226,7 @@ def test_embedding_constructors(download_and_convert_models):
     )
 
 
-@pytest.mark.parametrize("download_and_convert_models", EMBEDDINGS_TEST_MODELS, indirect=True)
+@pytest.mark.parametrize("download_and_convert_embeddings_models", EMBEDDINGS_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize(
     "config",
     [
@@ -248,12 +248,12 @@ def test_embedding_constructors(download_and_convert_models):
     ],
 )
 @pytest.mark.precommit
-def test_embed_documents(download_and_convert_models, dataset_documents, config):
-    _, _, models_path = download_and_convert_models
+def test_embed_documents(download_and_convert_embeddings_models, dataset_documents, config):
+    _, _, models_path = download_and_convert_embeddings_models
     run_text_embedding_pipeline_with_ref(models_path, dataset_documents, config, "embed_documents")
 
 
-@pytest.mark.parametrize("download_and_convert_models", EMBEDDINGS_TEST_MODELS, indirect=True)
+@pytest.mark.parametrize("download_and_convert_embeddings_models", EMBEDDINGS_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize(
     "config",
     [
@@ -275,15 +275,15 @@ def test_embed_documents(download_and_convert_models, dataset_documents, config)
     ],
 )
 @pytest.mark.precommit
-def test_embed_query(download_and_convert_models, dataset_documents, config):
-    _, _, models_path = download_and_convert_models
+def test_embed_query(download_and_convert_embeddings_models, dataset_documents, config):
+    _, _, models_path = download_and_convert_embeddings_models
     run_text_embedding_pipeline_with_ref(models_path, dataset_documents[:1], config, "embed_query")
 
 
-@pytest.mark.parametrize("download_and_convert_models", [RERANK_TEST_MODELS[0]], indirect=True)
+@pytest.mark.parametrize("download_and_convert_rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
 @pytest.mark.precommit
-def test_rerank_constructors(download_and_convert_models):
-    _, _, models_path = download_and_convert_models
+def test_rerank_constructors(download_and_convert_rerank_model):
+    _, _, models_path = download_and_convert_rerank_model
 
     TextRerankPipeline(models_path, "CPU")
     TextRerankPipeline(models_path, "CPU", TextRerankPipeline.Config())
@@ -306,7 +306,7 @@ def test_rerank_constructors(download_and_convert_models):
     )
 
 
-@pytest.mark.parametrize("download_and_convert_models", RERANK_TEST_MODELS, indirect=True)
+@pytest.mark.parametrize("download_and_convert_rerank_model", RERANK_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize("query", ["What are the main features of Intel Core Ultra processors?"])
 @pytest.mark.parametrize(
     "config",
@@ -320,6 +320,6 @@ def test_rerank_constructors(download_and_convert_models):
     ],
 )
 @pytest.mark.precommit
-def test_rerank_documents(download_and_convert_models, dataset_documents, query, config):
-    _, _, models_path = download_and_convert_models
+def test_rerank_documents(download_and_convert_rerank_model, dataset_documents, query, config):
+    _, _, models_path = download_and_convert_rerank_model
     run_text_rerank_pipeline_with_ref(models_path, query, dataset_documents, config)

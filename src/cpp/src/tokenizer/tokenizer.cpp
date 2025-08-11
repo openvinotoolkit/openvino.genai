@@ -209,9 +209,6 @@ public:
     // handle to shared_object with openvino tokenizers
     std::shared_ptr<void> m_shared_object_ov_tokenizers = nullptr;
 
-    // buffer to store the error messages from the pass
-    std::ostringstream m_pass_errors;
-
     bool is_paired_input = false;
 
     bool m_older_than_24_5 = false;
@@ -398,8 +395,8 @@ public:
             manager.run_passes(ov_tokenizer);
         }
         
-        is_paired_input = pass_errors.str().empty();
-        OPENVINO_ASSERT(!two_input_requested || is_paired_input, "Two input requested but AddSecondInputPass failed with " + pass_errors.str());
+        is_paired_input = pass_errors.str().empty() && ov_tokenizer && ov_tokenizer->get_parameters().size() == 2;
+        OPENVINO_ASSERT(!two_input_requested || is_paired_input || !ov_tokenizer, "Two input requested but AddSecondInputPass failed with " + pass_errors.str());
 
         // temporary allow absense both tokenizer and detokenizer for GGUF support
         // TODO: remove this code once Tokenizers can be created from GGUF file
