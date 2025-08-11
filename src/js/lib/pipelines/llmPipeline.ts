@@ -1,3 +1,4 @@
+/* eslint-disable max-len */
 import util from 'node:util';
 import addon from '../addon.js';
 import { GenerationConfig, StreamingStatus } from '../utils.js';
@@ -9,6 +10,7 @@ export type Options = {
 };
 
 interface Tokenizer {
+  /** Embeds input prompts with special tags for a chat scenario. */
   applyChatTemplate(
     chatHistory: {'role': string, 'content': string}[],
     addGenerationPrompt: boolean,
@@ -20,6 +22,111 @@ interface Tokenizer {
   getEosTokenId(): number;
   getPadToken(): string;
   getPadTokenId(): number;
+}
+
+/** Structure with raw performance metrics for each generation before any statistics are calculated. */
+export type RawMetrics = {
+  /** Durations for each generate call in milliseconds. */
+  generateDurations: number[],
+  /** Durations for the tokenization process in milliseconds. */
+  tokenizationDurations: number[],
+  /** Durations for the detokenization process in milliseconds. */
+  detokenizationDurations: number[],
+  /** Times to the first token for each call in milliseconds. */
+  timesToFirstToken: number[],
+  /** Timestamps of generation every token or batch of tokens in milliseconds. */
+  newTokenTimes: number[],
+  /** Inference time for each token in milliseconds. */
+  tokenInferDurations: number[],
+  /** Batch sizes for each generate call. */
+  batchSizes: number[],
+  /** Total durations for each generate call in milliseconds. */
+  durations: number[],
+  /** Total inference duration for each generate call in microseconds. */
+  inferenceDurations: number[],
+  /** Time to compile the grammar in milliseconds. */
+  grammarCompileTimes: number[]
+}
+
+export type MeanStdPair = {
+  mean: number,
+  std: number,
+}
+
+/**
+ * Holds performance metrics for each generate call.
+ *
+ * PerfMetrics holds fields with mean and standard deviations for the following metrics:
+    - Time To the First Token (TTFT), ms
+    - Time per Output Token (TPOT), ms/token
+    - Generate total duration, ms
+    - Tokenization duration, ms
+    - Detokenization duration, ms
+    - Throughput, tokens/s
+ * Additional fields include:
+    - Load time, ms
+    - Number of generated tokens
+    - Number of tokens in the input prompt
+ */
+export interface PerfMetrics {
+  /** Returns the load time in milliseconds. */
+  getLoadTime(): number;
+  /** Returns the number of generated tokens. */
+  getNumGeneratedTokens(): number;
+  /** Returns the number of tokens in the input prompt. */
+  getNumInputTokens(): number;
+  /** Returns the mean and standard deviation of Time To the First Token (TTFT) in milliseconds. */
+  getTTFT(): MeanStdPair;
+  /** Returns the mean and standard deviation of Time Per Output Token (TPOT) in milliseconds. */
+  getTPOT(): MeanStdPair;
+  /** Returns the mean and standard deviation of Inference time Per Output Token in milliseconds. */
+  getIPOT(): MeanStdPair;
+  /** Returns the mean and standard deviation of throughput in tokens per second. */
+  getThroughput(): MeanStdPair;
+  /** Returns the mean and standard deviation of inference durations in milliseconds. */
+  getInferenceDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of generate durations in milliseconds. */
+  getGenerateDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of tokenization durations in milliseconds. */
+  getTokenizationDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of detokenization durations in milliseconds. */
+  getDetokenizationDuration(): MeanStdPair;
+  /** A structure of RawPerfMetrics type that holds raw metrics. */
+  rawMetrics: RawMetrics;
+}
+
+export class DecodedResults {
+  constructor(texts: string[],
+    scores: number[],
+    perfMetrics: PerfMetrics) {
+    this.texts = texts;
+    this.scores = scores;
+    this.perfMetrics = perfMetrics;
+  }
+  toString() {
+    if (this.scores.length !== this.texts.length) {
+      throw new Error(
+        'The number of scores and texts doesn\'t match in DecodedResults.',
+      );
+    }
+    if (this.texts.length === 0) {
+      return '';
+    }
+    if (this.texts.length === 1) {
+      return this.texts[0];
+    }
+    let result = '';
+    for (let i = 0; i < this.texts.length - 1; ++i) {
+      result += `${this.scores[i].toFixed(6)}: ${this.texts[i]}\n`;
+    }
+    result += `${this.scores[this.scores.length - 1]
+      .toFixed(6)}: ${this.texts[this.texts.length - 1]}`;
+
+    return result;
+  }
+  texts: string[];
+  scores: number[];
+  perfMetrics: PerfMetrics;
 }
 
 export class LLMPipeline {
@@ -150,14 +257,23 @@ export class LLMPipeline {
     if (!callback) {
       options['disableStreamer'] = true;
     }
+    const returnDecoded = generationConfig['return_decoded_results'] || false;
 
     return new Promise(
-      (resolve: (value: string) => void) => {
-        const chunkOutput = (isDone: boolean, subword: string) => {
-          if (isDone) {
-            resolve(subword);
-          } else if (callback) {
-            return callback(subword);
+      (resolve: (value: string | DecodedResults) => void) => {
+        const chunkOutput = (isDone: boolean, result: string | any) => {
+          if (isDone && returnDecoded) {
+            const decodedResults = new DecodedResults(
+              result.texts, result.scores, result.perfMetrics);
+            resolve(decodedResults);
+          } else if (isDone && !returnDecoded) {
+            console.warn('DEPRECATION WARNING: Starting in version 2026.0.0,',
+              'LLMPipeline.generate() will return DecodedResults by default.\n',
+              'To use the new behavior now, set "return_decoded_results": true',
+              'in GenerationConfig.');
+            resolve(result.subword);
+          } else if (callback && typeof result === 'string') {
+            return callback(result);
           }
 
           return StreamingStatus.RUNNING;

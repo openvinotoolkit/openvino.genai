@@ -193,6 +193,46 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env&
     }, embedding_result);
 }
 
+template <>
+Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& env,
+                                                             const std::vector<std::string> value) {
+    auto js_array = Napi::Array::New(env, value.size());
+    for (auto i = 0; i < value.size(); i++) {
+        js_array[i] = Napi::String::New(env, value[i]);
+    }
+    return js_array;
+}
+
+template <>
+Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env,
+                                                             const std::vector<float> value) {
+    auto js_array = Napi::Array::New(env, value.size());
+    for (auto i = 0; i < value.size(); i++) {
+        js_array[i] = Napi::Number::New(env, value[i]);
+    }
+    return js_array;
+}
+
+template <>
+Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env,
+                                                             const std::vector<double> value) {
+    auto js_array = Napi::Array::New(env, value.size());
+    for (auto i = 0; i < value.size(); i++) {
+        js_array[i] = Napi::Number::New(env, value[i]);
+    }
+    return js_array;
+}
+
+template <>
+Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env,
+                                                             const std::vector<size_t> value) {
+    auto js_array = Napi::Array::New(env, value.size());
+    for (auto i = 0; i < value.size(); i++) {
+        js_array[i] = Napi::Number::New(env, value[i]);
+    }
+    return js_array;
+}
+
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num) {
     return env.Global().Get("Number").ToObject().Get("isInteger").As<Napi::Function>().Call({num}).ToBoolean().Value();
 }

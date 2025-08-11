@@ -4,7 +4,7 @@ import torch
 
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
 
-from .utils import mock_torch_cuda_is_available
+from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 
 
 logging.basicConfig(level=logging.INFO)
@@ -105,7 +105,7 @@ def load_text_hf_pipeline(model_id, device):
         if is_gptq or is_awq:
             # infer in FP32
             model_kwargs["torch_dtype"] = torch.float32
-        with mock_torch_cuda_is_available(is_gptq or is_awq):
+        with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
             model.is_awq = is_awq
