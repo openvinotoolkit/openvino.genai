@@ -10,7 +10,7 @@ from test_utils import run_sample
 
 class TestText2Image:
     @pytest.mark.samples
-    @pytest.mark.image_generation
+    @pytest.mark.dreamlike_anime_1_0
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
@@ -31,7 +31,7 @@ class TestText2Image:
 
 
     @pytest.mark.samples
-    @pytest.mark.image_generation
+    @pytest.mark.dreamlike_anime_1_0
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
