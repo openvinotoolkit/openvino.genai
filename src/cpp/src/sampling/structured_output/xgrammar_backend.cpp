@@ -78,7 +78,6 @@ XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& samplin
     } else {
         OPENVINO_THROW("No grammar definition provided for structured output generation.");
     }
-
     auto compiled_grammar = m_grammar_compiler->CompileGrammar(grammar);
     std::vector<int> override_stop_tokens(sampling_parameters.stop_token_ids.begin(), sampling_parameters.stop_token_ids.end());
     
