@@ -153,7 +153,6 @@ target_include_directories(${TARGET_NAME_OBJ}
 
 if(ENABLE_XGRAMMAR)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE xgrammar)
-    target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
 endif()
 
 if(ENABLE_GGUF)
@@ -185,6 +184,10 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
+
+if(ENABLE_XGRAMMAR)
+    target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
+endif()
 
 if(ENABLE_GGUF)
   target_link_libraries(${TARGET_NAME} PRIVATE gguflib)
