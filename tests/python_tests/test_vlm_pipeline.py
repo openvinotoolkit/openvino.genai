@@ -106,6 +106,14 @@ model_ids = [
     "katuni4ka/tiny-random-qwen2.5-vl",
     "katuni4ka/tiny-random-gemma3",
 ]
+if sys.platform == "darwin":
+    model_ids = [
+        pytest.param(
+            model_id,
+            marks=pytest.mark.xfail(reason="gemma3 not supported on macOS with older transformers")
+        ) if "gemma3" in model_id else model_id
+        for model_id in model_ids
+    ]
 
 attention_backend = ["PA", "SDPA"]
 
@@ -726,6 +734,8 @@ models_to_tag = image_id_ignorant + [
 @pytest.fixture(scope="module")
 def model_and_tag(request):
     model_id, tag = request.param
+    if sys.platform == "darwin" and "gemma3" in model_id:
+        pytest.xfail("gemma3 not supported on macOS with older transformers")
     model = get_ov_model(model_id)
     backend = "PA"
     # TODO Remove when PA will be enabled for gemma3
@@ -902,6 +912,8 @@ class TestImageTags:
         with pytest.raises(RuntimeError):
             vlm.generate(tag(0))
 
+# On macOS, transformers<4.52 is required, but this causes gemma3 to fail
+GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
 
 @pytest.mark.precommit
 @pytest.mark.parametrize(
@@ -911,7 +923,7 @@ class TestImageTags:
         pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
-        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "SDPA"),
+        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "SDPA"),
         pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
     ],
 )
