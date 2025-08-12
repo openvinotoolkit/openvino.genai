@@ -377,11 +377,18 @@ public:
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
     }
 
-    void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
+    void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, ov::AnyMap properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
-        auto [filtered_properties, two_input_requested] = utils::extract_paired_input_props(properties);
+        bool two_input_requested = false;
+
+        auto it = properties.find(ov::genai::add_second_input.name());
+        if (it != properties.end()) {
+            two_input_requested = it->second.as<bool>();
+            properties.erase(it);
+        }
+
         // Pass no addtional properties to tokenizer/detokenizer models since it was not used by default
-        filtered_properties = {};
+        properties = {};
         
         is_paired_input = ov_tokenizer && ov_tokenizer->get_parameters().size() == 2;
         
@@ -417,7 +424,7 @@ public:
             manager.register_pass<MakeAddSpecialTokensSatateful>();
             manager.register_pass<MakePaddingSatateful>();
             manager.run_passes(ov_tokenizer);
-            ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, filtered_properties);
+            ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, properties);
             ov::genai::utils::print_compiled_model_properties(tokenizer, "OV Tokenizer");
 
             m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -449,7 +456,7 @@ public:
             ov::pass::Manager manager_detok;
             manager_detok.register_pass<MakeVocabDecoderSatateful>();
             manager_detok.run_passes(ov_detokenizer);
-            ov::CompiledModel detokenizer = core.compile_model(ov_detokenizer, device, filtered_properties);
+            ov::CompiledModel detokenizer = core.compile_model(ov_detokenizer, device, properties);
             ov::genai::utils::print_compiled_model_properties(detokenizer, "OV Detokenizer");
 
             m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
