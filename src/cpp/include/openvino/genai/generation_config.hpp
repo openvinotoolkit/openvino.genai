@@ -214,6 +214,15 @@ public:
     void update_config(const ov::AnyMap& properties);
 };
 
+
+OPENVINO_GENAI_EXPORTS std::shared_ptr<StructuredOutputConfig::Concat>
+operator+(const StructuredOutputConfig::CompoundGrammar& lhs,
+          const StructuredOutputConfig::CompoundGrammar& rhs);
+
+OPENVINO_GENAI_EXPORTS std::shared_ptr<StructuredOutputConfig::Union>
+operator|(const StructuredOutputConfig::CompoundGrammar& lhs,
+          const StructuredOutputConfig::CompoundGrammar& rhs);
+
 /**
  * @brief Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
  * and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will

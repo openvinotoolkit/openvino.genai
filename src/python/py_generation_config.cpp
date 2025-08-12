@@ -132,16 +132,10 @@ template <typename PyClass>
 void add_grammar_operators(PyClass& py_cls) {
     py_cls
         .def("__add__", [](py::object self, py::object other) {
-            return std::make_shared<StructuredOutputConfig::Concat>(
-                pyutils::py_obj_to_compound_grammar(self),
-                pyutils::py_obj_to_compound_grammar(other)
-            );
+            return pyutils::py_obj_to_compound_grammar(self) + pyutils::py_obj_to_compound_grammar(other);
         })
         .def("__or__", [](py::object self, py::object other) {
-            return std::make_shared<StructuredOutputConfig::Union>(
-                pyutils::py_obj_to_compound_grammar(self),
-                pyutils::py_obj_to_compound_grammar(other)
-            );
+            return pyutils::py_obj_to_compound_grammar(self) | pyutils::py_obj_to_compound_grammar(other);
         });
 };
 

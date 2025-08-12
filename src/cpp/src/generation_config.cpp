@@ -380,13 +380,13 @@ void StructuredOutputConfig::validate() const {
 }
 
 
-inline std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>
+std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>
 operator+(const ov::genai::StructuredOutputConfig::CompoundGrammar& lhs,
           const ov::genai::StructuredOutputConfig::CompoundGrammar& rhs) {
     return std::make_shared<ov::genai::StructuredOutputConfig::Concat>(lhs, rhs);
 }
 
-inline std::shared_ptr<ov::genai::StructuredOutputConfig::Union>
+std::shared_ptr<ov::genai::StructuredOutputConfig::Union>
 operator|(const ov::genai::StructuredOutputConfig::CompoundGrammar& lhs,
           const ov::genai::StructuredOutputConfig::CompoundGrammar& rhs) {
     return std::make_shared<ov::genai::StructuredOutputConfig::Union>(lhs, rhs);

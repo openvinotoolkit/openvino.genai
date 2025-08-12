@@ -81,7 +81,7 @@ public:
 private:
     std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
 
-    xgrammar::Grammar parse_compound_grammar(const StructuredOutputConfig::CompoundGrammar& compound_grammar);
+    static xgrammar::Grammar parse_compound_grammar(const StructuredOutputConfig::CompoundGrammar& compound_grammar);
 };
 
 

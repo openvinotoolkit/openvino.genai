@@ -25,7 +25,7 @@ XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, s
 
 
 xgrammar::Grammar XGrammarStructuredOutput::parse_compound_grammar(const StructuredOutputConfig::CompoundGrammar& compound_grammar) {
-    return std::visit([this](const auto& grammar) -> xgrammar::Grammar {
+    return std::visit([](const auto& grammar) -> xgrammar::Grammar {
         using T = std::decay_t<decltype(grammar)>;
         if constexpr (std::is_same_v<T, StructuredOutputConfig::Regex>) {
             return xgrammar::Grammar::FromRegex(grammar.value);
@@ -35,13 +35,13 @@ xgrammar::Grammar XGrammarStructuredOutput::parse_compound_grammar(const Structu
             return xgrammar::Grammar::FromEBNF(grammar.value);
         } else if constexpr (std::is_same_v<T, std::shared_ptr<StructuredOutputConfig::Concat>>) {
             return xgrammar::Grammar::Concat({
-                this->parse_compound_grammar(grammar->left),
-                this->parse_compound_grammar(grammar->right)
+                XGrammarStructuredOutput::parse_compound_grammar(grammar->left),
+                XGrammarStructuredOutput::parse_compound_grammar(grammar->right)
             });
         } else if constexpr (std::is_same_v<T, std::shared_ptr<StructuredOutputConfig::Union>>) {
             return xgrammar::Grammar::Union({
-                this->parse_compound_grammar(grammar->left),
-                this->parse_compound_grammar(grammar->right)
+                XGrammarStructuredOutput::parse_compound_grammar(grammar->left),
+                XGrammarStructuredOutput::parse_compound_grammar(grammar->right)
             });
         } else {
             OPENVINO_THROW(
