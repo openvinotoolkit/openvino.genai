@@ -278,7 +278,7 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   It showcases how to combine multiple grammar types - Regex, JSONSchema and EBNF - using Union (`|`) and Concat (`+`) operations to strictly control LLM output.
   It features multi-turn chat, switching grammar constraints between turns (e.g., "yes"/"no" answers and structured tool calls).
   Union (`|`) operation allows the model to choose which grammar to use during generation. 
-  In the sample it used to combine two regex  grammars for `"yes"` or `"no"` answer.
+  In the sample it is used to combine two regex grammars for `"yes"` or `"no"` answer.
   Concat (`+`) operation allows to start with one grammar and continue with another. 
   In the sample it used to create a `phi-4-mini-instruct` style tool calling answer - `functools[{tool_1_json}, ...]` - by combining regex and JSON schema grammars.
 

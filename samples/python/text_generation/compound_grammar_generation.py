@@ -92,7 +92,7 @@ If you decide to call functions:
     * prefix function calls with functools marker (no closing marker required)
     * all function calls should be generated in a single JSON list formatted as functools[{"name": [function name], "arguments": [function arguments as JSON]}, ...]
     * follow the provided JSON schema. Do not hallucinate arguments or values. Do not blindly copy values from the provided samples
-    * respect the argument type formatting. E.g., if the type if number and format is float, write value 7 as 7.0
+    * respect the argument type formatting. E.g., if the type is number and format is float, write value 7 as 7.0
     * make sure you pick the right functions that match the user intent
 """
 sys_message += generate_system_prompt_tools(booking_flight_tickets, booking_hotels)
@@ -109,9 +109,7 @@ def main():
     device = "CPU"
     pipe = LLMPipeline(args.model_dir, device)
 
-    print("Loading pipeline...")
     pipe = LLMPipeline(args.model_dir, "CPU")
-    print("Pipeline loaded")
     tokenizer = pipe.get_tokenizer()
     chat_history = [{"role": "system", "content": sys_message}]
 
