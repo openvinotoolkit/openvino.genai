@@ -36,8 +36,9 @@ def get_gguf_model_list():
             "dynamic_quantization_group_size": None,
         },
         {
-            "gguf_model_id": "unsloth/Llama-3.2-1B-Instruct-GGUF",
-            "gguf_filename": "Llama-3.2-1B-Instruct-Q4_1.gguf",
+            "hf_model_id": "HuggingFaceTB/SmolLM2-135M",
+            "gguf_model_id": "QuantFactory/SmolLM2-135M-GGUF",
+            "gguf_filename": "SmolLM2-135M.Q4_1.gguf",
             "dynamic_quantization_group_size": None,
         },
         {
