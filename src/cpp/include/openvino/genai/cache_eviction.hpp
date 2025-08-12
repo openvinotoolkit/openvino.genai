@@ -30,7 +30,6 @@ public:
         OPENVINO_ASSERT(start_size, "CacheEvictionConfig.start_size must be non-zero");
         OPENVINO_ASSERT(recent_size, "CacheEvictionConfig.recent_size must be non-zero");
         OPENVINO_ASSERT(max_cache_size, "CacheEvictionConfig.max_cache_size must be non-zero");
-        OPENVINO_ASSERT(snapkv_window_size, "CacheEvictionConfig.snapkv_window_size must be non-zero");
 
         OPENVINO_ASSERT(max_cache_size > (start_size + recent_size),
                         "CacheEvictionConfig.max_cache_size must be larger than CacheEvictionConfig.start_size + CacheEvictionConfig.recent_size");
@@ -73,7 +72,8 @@ public:
 
     /** The size of the importance score aggregation window (in token positions from the end of the prompt) for
      * computing initial importance scores at the beginning of the generation phase for purposes of eviction,
-     * following the SnapKV article approach (https://arxiv.org/abs/2404.14469). **/
+     * following the SnapKV article approach (https://arxiv.org/abs/2404.14469). Setting this to 0 disables the SnapKV
+     * score aggregation. **/
     size_t snapkv_window_size = 8;
 
 private:
