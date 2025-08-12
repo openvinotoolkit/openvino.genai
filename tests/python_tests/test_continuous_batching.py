@@ -153,7 +153,6 @@ generation_configs = [
     dict(do_sample=False, max_new_tokens=20),
     dict(do_sample=True, max_new_tokens=20, temperature=0.7),
     dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0, repetition_penalty=1.0),
-    dict(max_length=1, ignore_eos=True) # max_length smaller than number of prompt tokens, generation should stop right away
 ]
 questions = [
     '1+1=',
@@ -187,6 +186,28 @@ def test_continuous_batching_add_request_health_check(model_id, generation_confi
         for output in outputs:
             assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
 
+invalid_generation_configs = [
+    dict(max_length=1, ignore_eos=True) # max_length smaller than number of prompt tokens, generation should stop right away
+]
+@pytest.mark.parametrize("generation_config_kwargs", invalid_generation_configs)
+@pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("pipeline_type", [PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING,])
+@pytest.mark.precommit
+def test_continuous_batching_add_request_fails(model_id, generation_config_kwargs: dict, pipeline_type):
+    _, _, models_path = download_and_convert_model(model_id)
+
+    cb_pipe = create_ov_cb_pipeline(models_path, pipeline_type=pipeline_type)
+
+    generation_config = GenerationConfig(**generation_config_kwargs)
+
+    if generation_config.is_beam_search() and pipeline_type != PipelineType.CONTINUOUS_BATCHING:
+        pytest.skip("Assisted generation does not support beam search")
+
+    generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
+    handles = []
+    for idx, question in enumerate(questions):
+        with pytest.raises(RuntimeError):
+            handle = cb_pipe.add_request(idx, question, generation_config=generation_config)
 
 #
 # Stress tests to check OOM case
