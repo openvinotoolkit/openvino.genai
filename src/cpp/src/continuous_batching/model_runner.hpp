@@ -135,6 +135,7 @@ public:
         size_t total_num_tokens = 0, total_num_blocks = 0;
         size_t max_context_len_val = 0;
         size_t hidden_size = 0;
+        bool have_token_type_ids = false;
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
@@ -155,6 +156,7 @@ public:
         ov::Tensor
             input_ids(ov::element::i64, {total_num_tokens}),
             inputs_embeds(ov::element::f32, {total_num_tokens, hidden_size}),
+            token_type_ids(ov::element::i64, {1, total_num_tokens}),
             position_ids(ov::element::i64, {total_num_tokens}),
             // PA specific parameters
             past_lens(ov::element::i32, {batch_size_in_sequences}),
@@ -173,9 +175,11 @@ public:
         // get raw pointers to copy to
         float *inputs_embeds_data = nullptr;
         int64_t *input_ids_data = nullptr;
+        int64_t *token_type_ids_data = nullptr;
 
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
+            token_type_ids_data = token_type_ids.data<int64_t>();
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
         }
@@ -219,6 +223,17 @@ public:
             const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
 
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
+                // compute token_type_ids for current sequence
+                if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                    if (auto token_type_ids = sequence_group->get_token_type_ids()) {
+                        have_token_type_ids = true;
+                        OPENVINO_ASSERT(token_type_ids->size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
+                        for (size_t i = 0; i < num_scheduled_tokens; ++i) {
+                            token_type_ids_data[i] = (i < prompt_len ? (*token_type_ids)[i] : 0);
+                        }
+                    }
+                }
+
                 output_seq_len = 0;
                 Sequence::CPtr sequence = running_sequences[seq_idx];
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
@@ -278,6 +293,8 @@ public:
                     input_ids_data += num_scheduled_tokens;
                 } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                     inputs_embeds_data += num_scheduled_tokens * hidden_size;
+                    if (have_token_type_ids)
+                        token_type_ids_data += num_scheduled_tokens;
                 }
 
 
@@ -308,6 +325,9 @@ public:
         }
         else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             m_request.set_tensor("inputs_embeds", inputs_embeds);
+            if (have_token_type_ids) {
+                m_request.set_tensor("token_type_ids", token_type_ids);
+            }
         }
 
         // typical LLM parameters

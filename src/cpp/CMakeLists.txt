@@ -13,45 +13,24 @@ if(NOT TARGET nlohmann_json)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
-function(ov_genai_build_jinja2cpp)
-    # Pretend ccache is not found
-    set(CCACHE_FOUND FALSE CACHE INTERNAL "Prevent third-party from enabling ccache automatically")
-    
-    FetchContent_Declare(jinja2cpp
-        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/86dfb939b5c2beb7fabddae2df386be4e7fb9507.tar.gz
-        URL_HASH SHA256=c222e2407316a573561bd74dfd1cd7b34b359f5481ac59529b3de355162ef9f7)
+if(NOT TARGET minja)
+    FetchContent_Declare(
+        minja
+        GIT_REPOSITORY https://github.com/google/minja.git
+        GIT_TAG 5be6f88a648570b26341bb008e686f3b64c2f4ac
+    )
 
-    FetchContent_GetProperties(jinja2cpp)
-    
-    if(NOT jinja2cpp_POPULATED)
-        FetchContent_Populate(jinja2cpp)
+    FetchContent_GetProperties(minja)
+    if(NOT minja_POPULATED)
+        FetchContent_Populate(minja)
 
-        set(BUILD_SHARED_LIBS OFF)
-        set(JINJA2CPP_INSTALL OFF CACHE BOOL "")
-        set(JINJA2CPP_CXX_STANDARD 17 CACHE STRING "")
-        set(JINJA2CPP_BUILD_SHARED OFF CACHE BOOL "")
-        set(JINJA2CPP_USE_REGEX "std" CACHE STRING "")
-        set(JINJA2CPP_WITH_JSON_BINDINGS "none" CACHE STRING "")
-        set(JINJA2CPP_STRICT_WARNINGS OFF CACHE BOOL "")
-        set(JINJA2CPP_PIC ON CACHE BOOL "")
-
-        # options for Jinja2Cpp dependencies
-        option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
-
-        if(CMAKE_COMPILER_IS_GNUCXX OR OV_COMPILER_IS_CLANG OR (OV_COMPILER_IS_INTEL_LLVM AND UNIX))
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-undef")
-        endif()
-        if(SUGGEST_OVERRIDE_SUPPORTED)
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-suggest-override")
-        endif()
-
-        add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
-
-        target_compile_definitions(jinja2cpp PUBLIC JINJA2CPP_LINK_AS_SHARED=0)
+        add_library(minja INTERFACE)
+        target_include_directories(minja INTERFACE
+            $<BUILD_INTERFACE:${minja_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+        target_link_libraries(minja INTERFACE nlohmann_json::nlohmann_json)
     endif()
-endfunction()
-
-ov_genai_build_jinja2cpp()
+endif()
 
 FetchContent_Declare(safetensors.h
     URL https://github.com/hsnyder/safetensors.h/archive/974a85d7dfd6e010558353226638bb26d6b9d756.tar.gz
@@ -165,11 +144,16 @@ endif()
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
-target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json jinja2cpp)
+target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json minja)
 
 target_compile_features(${TARGET_NAME_OBJ} PRIVATE cxx_std_17)
 
 target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE openvino_genai_EXPORTS)
+
+# Add /bigobj flag for MSVC to handle large object files
+if(MSVC)
+    target_compile_options(${TARGET_NAME_OBJ} PRIVATE "/bigobj")
+endif()
 
 set_target_properties(${TARGET_NAME_OBJ} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
@@ -189,13 +173,18 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
 if(ENABLE_XGRAMMAR)
     target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
 endif()
-target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
+target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json minja ${CMAKE_DL_LIBS})
 
 if(ENABLE_GGUF)
   target_link_libraries(${TARGET_NAME} PRIVATE gguflib)
 endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
+
+# Add /bigobj flag for MSVC to handle large object files  
+if(MSVC)
+    target_compile_options(${TARGET_NAME} PRIVATE "/bigobj")
+endif()
 
 if(TARGET openvino_tokenizers)
     add_dependencies(${TARGET_NAME} openvino_tokenizers)

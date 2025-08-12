@@ -4,11 +4,9 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <jinja2cpp/template.h>
-#include <jinja2cpp/template_env.h>
-#include <jinja2cpp/user_callable.h>
-#include <jinja2cpp/generic_list.h>
-#include <jinja2cpp/generic_list_iterator.h>
+
+#include "minja/minja.hpp"
+#include "minja/chat-template.hpp"
 
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
@@ -57,13 +55,13 @@ ov::Core get_core_singleton() {
     return core;
 }
 
-std::optional<std::string> remap_template(const std::string& chat_template) {
+std::string remap_template(const std::string& chat_template) {
     for (const auto& [known, fallback] : chat_template_fallback_map) {
         if (chat_template == known) {
             return fallback;
         }
     }
-    return std::nullopt;
+    return chat_template;
 }
 
 void parse_chat_template_from_file(const std::filesystem::path& path, std::string& value) {
@@ -126,37 +124,6 @@ const T& find_or_fallback(const ov::AnyMap& rt_info, const char name[], const T&
         return fallback;
     }
     return iter->second.as<T>();
-}
-
-std::string patch_template(std::string&& chat_template) {
-    // Replace what jinja2cpp doesn't support
-    std::pair<std::string, std::string> replace_str_map[] = {
-        {"'}", "' }"},
-        {"{'", "{ '"},
-        {".strip()", ""},
-        {"is not none", "is defined"},
-        {"is none", "is undefined"},
-        {"= none", "= undefined"},
-        // Jinja2Cpp does not support Python-style slicing, e.g. [1:].
-        // If chat template contains such slicing, we replace it with
-        // a placeholder at the moment.
-        {"messages[1:]", "slice(messages, 1)"},
-    };
-
-    for (const auto& [from, to] : replace_str_map) {
-        size_t pos = 0;
-        while ((pos = chat_template.find(from, pos)) != std::string::npos) {
-            chat_template.replace(pos, from.size(), to);
-            pos += to.size();
-        }
-    }
-    return chat_template;
-}
-
-std::string remap_and_patch(const std::string& chat_template) {
-    return patch_template(
-        remap_template(chat_template).value_or(chat_template)
-    );
 }
 
 std::vector<std::string> read_vocab_from_detokenizer_model(const std::shared_ptr<ov::Model>& model) {
@@ -260,11 +227,25 @@ public:
         std::optional<bool> skip_special_tokens_flag = true;
         std::optional<int32_t> max_length_val;
         std::optional<bool> pad_to_max_length_val = false;
-
+        std::optional<std::string> padding_side_val = std::nullopt;
+        
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
         ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
+        ov::genai::utils::read_anymap_param(params, padding_side.name(), padding_side_val);
+        std::optional<bool> pad_right;
+
+        // If padding_side is not set, we should leave nullopt this will indicate that default value from RaggetToDense attribute will be used.
+        if (padding_side_val.has_value()) {
+            OPENVINO_ASSERT(
+                padding_side_val == "left" || padding_side_val == "right",
+                "padding_side should be either 'left' or 'right', but got: ",
+                *padding_side_val
+            );
+            pad_right = (*padding_side_val == "right") ? true : false;
+        }
+
         std::optional<bool> is_max_length_set_val = max_length_val.has_value();
 
         ov::AnyMap& state_flags = m_request_to_state_flags[&infer_request_guard.get()];
@@ -282,6 +263,8 @@ public:
                 set_state_value(state, pad_to_max_length_val, state_flags);
             } else if (name == IS_MAX_LENGTH_SET) {
                 set_state_value(state, is_max_length_set_val, state_flags);
+            } else if (name == PAD_RIGHT_VAR_ID) {
+                set_state_value(state, pad_right, state_flags);
             }
         }
     }
@@ -412,13 +395,8 @@ public:
 
             parse_chat_template_from_tokenizer(ov_tokenizer, m_chat_template);
 
-            std::optional<std::string> fallback = remap_template(m_chat_template);
-            if (fallback.has_value()) {
-                m_chat_template = std::move(fallback).value();
-            } else {
-                m_chat_template = find_or_fallback(rt_info, "simplified_chat_template", m_chat_template);
-            }
-            m_chat_template = patch_template(std::move(m_chat_template));
+            m_chat_template = remap_template(m_chat_template);
+
             // Initialize tokenizer's cache to save time later.
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
             encode("non empty string");
@@ -740,59 +718,41 @@ public:
     std::string apply_chat_template(ChatHistory history,
                                     bool add_generation_prompt,
                                     const std::string& chat_template) const {
-        std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_and_patch(chat_template);
+        std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_template(chat_template);
         OPENVINO_ASSERT(!chat_tpl.empty(),
                         "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                         " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
                         " For more information see the section Troubleshooting in README.md");
-        jinja2::TemplateEnv env;
-        env.GetSettings().lstripBlocks = true;
-        env.GetSettings().trimBlocks = true;
-        jinja2::Template tpl(&env);
-        tpl.Load(chat_tpl);
 
-        jinja2::UserCallable slice_callable = jinja2::MakeCallable(
-            [](const jinja2::GenericList& messages, const size_t& start) {
-                jinja2::ValuesList result;
+        minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
 
-                size_t iter_num = 0;
-                for (auto message = messages.begin(); message != messages.end(); message++, iter_num++) {
-                    if (iter_num < start)
-                        continue;
-                    result.emplace_back(*message);
-                }
-
-                return result;
-            },
-            jinja2::ArgInfo{"messages"}, jinja2::ArgInfo{"start"}
-        );
-
-        jinja2::ValuesList jinja_messages;
-        jinja2::ValuesMap jinja_message;
+        nlohmann::ordered_json messages = nlohmann::ordered_json::array();
         for (const auto& message : history) {
-            jinja_message = {{"role", message.at("role")}, {"content", message.at("content")}};
-            jinja_messages.emplace_back(jinja_message);
+            nlohmann::ordered_json msg;
+            for (const auto& [key, value] : message) {
+                msg[key] = value;
+            }
+            messages.push_back(msg);
         }
 
-        jinja2::ValuesMap params = {
-            {"messages", jinja_messages},
-            {"bos_token", m_bos_token},
-            {"eos_token", m_eos_token},
-            {"pad_token", m_pad_token},
-            {"add_generation_prompt", add_generation_prompt},
-            {"slice", slice_callable},
-        };
+        minja::chat_template_inputs minja_inputs;
+        minja_inputs.messages = messages;
+        minja_inputs.add_generation_prompt = add_generation_prompt;
+        minja_inputs.extra_context = nlohmann::ordered_json::object();
+        minja_inputs.extra_context["bos_token"] = m_bos_token;
+        minja_inputs.extra_context["eos_token"] = m_eos_token;
+        minja_inputs.extra_context["pad_token"] = m_pad_token;
 
         std::string result;
         try {
-            result = tpl.RenderAsString(params).value();
+            result = minja_template.apply(minja_inputs);
         } catch (const std::exception& error) {
-            OPENVINO_THROW("Jinja2Cpp failed to apply chat template. Possible solutions are\n"
+            OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
                            "* Provide a simplified chat template with set_chat_template().\n"
                            "* Set apply_chat_template to false in GenerationConfig. "
                            "It's possible to apply the template manually to your prompt before calling generate. "
                            "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
-                           "Jinja2Cpp's error: ", error.what());
+                           "Minja's error: ", error.what());
         }
         OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
                                          "Please check the chat template or apply template manually to your prompt before calling generate."
@@ -801,7 +761,7 @@ public:
     }
 
     void set_chat_template(const std::string& chat_template) {
-        m_chat_template = remap_and_patch(chat_template);
+        m_chat_template = remap_template(chat_template);
     }
 
     std::string get_chat_template() {
@@ -845,27 +805,42 @@ Tokenizer::Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, c
 }
 
 TokenizedInputs Tokenizer::encode(const std::string& prompt, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(std::move(prompt), tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::pair<std::string, std::string>>& prompts, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(prompts_1, prompts_2, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::initializer_list<std::string>& text, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(),
+                                          ov::genai::max_length.name(),
+                                          ov::genai::pad_to_max_length.name(),
+                                          ov::genai::padding_side.name()});
     return encode(std::vector<std::string>(text.begin(), text.end()), tokenization_params);
 }
 
