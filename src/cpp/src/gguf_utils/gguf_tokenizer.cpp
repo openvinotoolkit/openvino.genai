@@ -302,6 +302,10 @@ std::vector<std::string> split_utf8_chars(const std::string& input) {
             std::cerr << "Invalid UTF-8 sequence at byte index " << i << std::endl;
             break;  // Stop on error
         }
+        OPENVINO_ASSERT(
+            std::numeric_limits<size_t>::max() - i > len,
+            "UTF-8 character length exceeds size_t limit at index ", i
+        );
         result.emplace_back(input.substr(i, len));
         i += len;
     }
