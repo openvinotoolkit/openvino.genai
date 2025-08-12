@@ -158,6 +158,7 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -199,9 +200,15 @@ public:
         else {
             m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
         }
+        ov::Tensor inputs_embeds;
+        std::optional<ov::Tensor> token_type_ids;
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+        if (m_inputs_embedder->has_token_type_ids()) {
+            std::tie(inputs_embeds, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+        } else {
+            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+        }
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
         if (m_is_npu) {
@@ -250,7 +257,7 @@ public:
         }
 
         ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
-                                                                                               position_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size);
+                                                                                               position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size);
         EncodedResults& encoded_result = finish_info.results;
 
         auto decode_start_time = std::chrono::steady_clock::now();
@@ -350,11 +357,12 @@ public:
     }
 };
 
-// TODO: remove it when CVS-167316 is fixed
+// TODO: remove it when QWEN ticket-167316/GEMMA3 ticket-171180 is fixed
 bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::QWEN2_VL ||
-           vlm_config.model_type == VLMModelType::QWEN2_5_VL;
+    return vlm_config.model_type == VLMModelType::QWEN2_VL || 
+           vlm_config.model_type == VLMModelType::QWEN2_5_VL ||
+           vlm_config.model_type == VLMModelType::GEMMA3;
 }
 
 VLMPipeline::VLMPipeline(

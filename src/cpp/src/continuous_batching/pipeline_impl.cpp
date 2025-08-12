@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <thread>
+#include <optional>
 
 #include "openvino/genai/text_streamer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
@@ -208,9 +209,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_prepare_rotation_data_
 }
 
 GenerationHandle
-ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
-                                                               const ov::Tensor& input_ids,
-                                                               ov::genai::GenerationConfig sampling_params) {
+ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    ov::genai::GenerationConfig sampling_params,
+    std::optional<ov::Tensor> token_type_ids) {
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params.stop_token_ids.empty())
         sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
@@ -219,7 +222,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
         sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params.validate();
 
-    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
+    auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, token_type_ids);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
@@ -231,7 +234,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     }
 
     return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
-};
+}
 
 GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
@@ -392,7 +395,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std:
 std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
-                                                             const StreamerVariant& streamer) {
+                                                             const StreamerVariant& streamer,
+                                                             const std::optional<std::vector<ov::Tensor>> token_type_ids) {
+
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
     generate_timer.start();
@@ -421,7 +426,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        generations.push_back(add_request(request_id, input_ids[request_id], sampling_params[request_id]));
+        bool has_valid_token = token_type_ids.has_value() && request_id < token_type_ids->size();
+        generations.push_back(
+            add_request(request_id, input_ids[request_id], sampling_params[request_id], has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt)
+        );
     }
 
     auto all_requests = get_awaiting_requests(); // we need to store all requests to get results from them once generation has finished
