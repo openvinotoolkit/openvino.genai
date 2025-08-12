@@ -104,7 +104,20 @@ model_ids = [
     "katuni4ka/tiny-random-internvl2",
     "katuni4ka/tiny-random-qwen2vl",
     "katuni4ka/tiny-random-qwen2.5-vl",
+    "katuni4ka/tiny-random-gemma3",
 ]
+
+# On macOS, transformers<4.52 is required, but this causes gemma3 to fail
+GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
+
+if sys.platform == "darwin":
+    model_ids = [
+        pytest.param(
+            model_id,
+            marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)
+        ) if "gemma3" in model_id else model_id
+        for model_id in model_ids
+    ]
 
 attention_backend = ["PA", "SDPA"]
 
@@ -445,6 +458,7 @@ def test_perf_metrics(cache, backend):
 def test_vlm_npu_no_exception(model_id, backend):
     unsupported_models = {
         "katuni4ka/tiny-random-internvl2",
+        "katuni4ka/tiny-random-gemma3",
     }
 
     if model_id in unsupported_models:
@@ -703,6 +717,7 @@ tag_inserted_by_template = [
     ("katuni4ka/tiny-random-llava-next", lambda idx: "<image>"),
     ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
     ("katuni4ka/tiny-random-qwen2.5-vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
+    ("katuni4ka/tiny-random-gemma3", lambda idx: "<start_of_image>"),
 ]
 
 image_id_ignorant =  tag_inserted_by_template + [
@@ -723,8 +738,14 @@ models_to_tag = image_id_ignorant + [
 @pytest.fixture(scope="module")
 def model_and_tag(request):
     model_id, tag = request.param
+    if sys.platform == "darwin" and "gemma3" in model_id:
+        pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
     model = get_ov_model(model_id)
-    vlm = VLMPipeline(model, "CPU")
+    backend = "PA"
+    # TODO Remove when PA will be enabled for gemma3
+    if model_id == "katuni4ka/tiny-random-gemma3":
+        backend = "SDPA"
+    vlm = VLMPipeline(model, "CPU", ATTENTION_BACKEND=backend)
     return vlm, tag
 
 
@@ -895,7 +916,6 @@ class TestImageTags:
         with pytest.raises(RuntimeError):
             vlm.generate(tag(0))
 
-
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "model_id, image_link, target_size, backend",
@@ -903,7 +923,9 @@ class TestImageTags:
         pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316"))
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "SDPA"),
+        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
     ],
 )
 def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size, backend):
@@ -929,6 +951,11 @@ def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size
             ],
         }
     ]
+
+    # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
+    if model.config.model_type == "gemma3":
+        processor.tokenizer.add_bos_token = False
+
     templated_prompt = processor.apply_chat_template(conversation,add_generation_prompt=True)
     inputs = processor(text=[templated_prompt], images=[resized_image], padding=True, return_tensors="pt")
     output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens)
