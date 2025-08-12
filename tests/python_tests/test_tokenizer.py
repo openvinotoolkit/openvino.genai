@@ -38,53 +38,11 @@ def get_chat_templates():
     # but skips some models that currently are not processed correctly.
 
     skipped_models = {
-        # TODO: openchat/openchat_3.5 and berkeley-nest/Starling-LM-7B-alpha have the same template.
-        # Need to enable and unskip, since it's preset in continuous batching and has >100 000 downloads.
-        "openchat/openchat-3.5-0106",
-        # These models fail even on HF so no need to check if applying chat matches.
-        "vibhorag101/llama-2-13b-chat-hf-phr_mental_therapy",
-        "codellama/CodeLlama-34b-Instruct-hf",
-        "deepseek-ai/deepseek-math-7b-rl",
-        "allenai/tulu-2-7b",
-        "alexsobolev/IcaroLM",
-        "tokyotech-llm/Swallow-7b-instruct-v0.1",
-        "bofenghuang/vigogne-2-7b-chat",
-        "OpenBuddy/openbuddy-mistral2-7b-v20.3-32k",
-        "AliAbdelrasheed/maqa_llama_4bit",
-        "stephenlzc/Mistral-7B-v0.3-Chinese-Chat-uncensored",
+        # The following models fail even on HF, e.g. due to different message structure.
+        "alexsobolev/IcaroLM",  # jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'value'
+        "AliAbdelrasheed/maqa_llama_4bit",  # jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'from'
+        "stephenlzc/Mistral-7B-v0.3-Chinese-Chat-uncensored",  # jinja2.exceptions.UndefinedError: 'system_message' is undefined
         # TODO: Need to support chat templates in more models: CVS-145963
-        # Either ov_genai is unable to parse chat_template or results do not match with HF.
-        "meta-llama/Meta-Llama-3-8B-Instruct",
-        "databricks/dbrx-instruct",  # Chat template is not supported by Jinja2Cpp
-        "mosaicml/mpt-30b-chat",
-        "deepseek-ai/deepseek-coder-6.7b-instruct",  # Chat template is not supported by Jinja2Cpp
-        "maldv/winter-garden-7b-alpha",  # Chat template is not supported by Jinja2Cpp
-        "ishorn5/RTLCoder-Deepseek-v1.1",  # Chat template is not supported by Jinja2Cpp
-        "openchat/openchat-3.5-0106",
-        "casperhansen/llama-3-70b-instruct-awq",
-        "TheBloke/deepseek-coder-33B-instruct-GPTQ",
-        "AI-Sweden-Models/gpt-sw3-356m-instruct",
-        "google/gemma-7b-it",
-        "THUDM/cogvlm2-llama3-chat-19B",
-        "KnutJaegersberg/internlm-20b-llama",
-        "maywell/Synatra-Mixtral-8x7B",
-        "MediaTek-Research/Breeze-7B-Instruct-v1_0",
-        "bofenghuang/vigostral-7b-chat",
-        "meetkai/functionary-small-v2.5",  # Chat template is not supported by Jinja2Cpp
-        "openchat/openchat-3.6-8b-20240522",
-        "tenyx/TenyxChat-7B-v1",
-        "LoneStriker/TinyLlama-1.1B-32k-Instruct-3.0bpw-h6-exl2",
-        "yam-peleg/Hebrew-Gemma-11B-V2",
-        "shenzhi-wang/Llama3-8B-Chinese-Chat",  # AssertionError
-        "nlpai-lab/KULLM3",
-        "HuggingFaceH4/zephyr-7b-gemma-sft-v0.1",
-        "MediaTek-Research/Breeze-7B-Instruct-v0_1",
-        "shanchen/llama3-8B-slerp-biomed-chat-chinese",  # AssertionError
-        "MLP-KTLim/llama-3-Korean-Bllossom-8B",
-        "aloobun/CosmicBun-8B",  # Chat template is not supported by Jinja2Cpp
-        "codellama/CodeLlama-70b-Instruct-hf",
-        "gorilla-llm/gorilla-openfunctions-v2",  # Chat template is not supported by Jinja2Cpp
-        "BramVanroy/Llama-2-13b-chat-dutch",
     }
 
     from data.tokenizer_configs import get_tokenizer_configs
@@ -190,12 +148,6 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
         print(f"hf reference: {hf_full_history_str}")
         print(f"ov_genai out: {ov_full_history_str}")
     assert ov_full_history_str == hf_full_history_str
-
-    # Test throwing exception for empty rendered chat template
-    # Example: Qwen2-VL chat template
-    chat_template_for_empty_output = "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}"
-    with pytest.raises(Exception):
-        ov_tokenizer.apply_chat_template(conversation, chat_template=chat_template_for_empty_output)
 
 
 @pytest.mark.precommit
@@ -365,6 +317,8 @@ prompts = [
 @pytest.mark.parametrize("add_special_tokens", [True, False])
 @pytest.mark.parametrize("max_length", [None, 16, 103, 512, 1024])
 @pytest.mark.parametrize("pad_to_max_length", [None, True, False])
+# regardless of what side was set during conversion we should be able to set it at runtime
+@pytest.mark.parametrize("padding_side", [None, "right", "left"])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize(
     "hf_ov_genai_models",
@@ -386,6 +340,7 @@ def test_padding(
     add_special_tokens,
     max_length,
     pad_to_max_length,
+    padding_side,
     prompt,
 ):
     hf_tokenizer, genai_tokenzier = hf_ov_genai_models
@@ -418,8 +373,13 @@ def test_padding(
         hf_params.pop("max_length")
         ov_params.pop("max_length")
 
+    if padding_side is not None:
+        hf_params["padding_side"] = padding_side
+        ov_params["padding_side"] = padding_side
+
     ov_res = genai_tokenzier.encode(prompt, **ov_params)
     hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
+
     assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
     assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
 
@@ -596,7 +556,6 @@ def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(
 @dataclasses.dataclass(frozen=True)
 class ChatTemplates:
     reference: Optional[str]
-    rt_simplified: Optional[str]
     rt_template: Optional[str]
     chat_template_json: Optional[str]
     processor_config_json: Optional[str]
@@ -612,8 +571,6 @@ def generate_tokenizer(tmp_path, chat_templates):
         [openvino.op.Result(input_ids), openvino.op.Result(attention_mask)],
         [openvino.op.Parameter(openvino.Type.string, openvino.Shape([1]))],
     )
-    if chat_templates.rt_simplified is not None:
-        model.set_rt_info(chat_templates.rt_simplified, "simplified_chat_template")
     if chat_templates.rt_template is not None:
         model.set_rt_info(chat_templates.rt_template, "chat_template")
     if chat_templates.chat_template_json is not None:
@@ -635,15 +592,9 @@ QWEN2_VL_2B = "{% if messages is string %}{{ messages }}{% else %}{% for content
 SIMPLIFIED_QWEN2_VL_2B = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
 
 
-SIMPLIFIED_QWEN3 = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
-
-
-PATCHED_SIMPLIFIED_QWEN3 = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
-
-
 @pytest.mark.precommit
 def test_set_special_runtime_template(tmp_path):
-    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None, None))
+    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None))
     tokenizer.chat_template = QWEN2_VL_2B
     assert tokenizer.chat_template == SIMPLIFIED_QWEN2_VL_2B
 
@@ -652,21 +603,24 @@ def test_set_special_runtime_template(tmp_path):
 @pytest.mark.parametrize(
     "chat_templates",
     [
-        # If the template was not in the list of not supported GenAI templates from (5), it's replaced with simplified_chat_template entry from rt_info section of ov::Model:
-        ChatTemplates("correct template", "correct template", "", "", "", ""),
-        ChatTemplates("correct template", None, "correct template", "", "", ""),
-        ChatTemplates("correct template", None, None, "correct template", "", ""),
-        ChatTemplates("correct template", None, None, None, "correct template", ""),
-        ChatTemplates("correct template", None, None, None, None, "correct template"),
+        ChatTemplates("correct template", "correct template", "", "", ""),
+        ChatTemplates("correct template", None, "correct template", "", ""),
+        ChatTemplates("correct template", None, None, "correct template", ""),
+        ChatTemplates("correct template", None, None, None, "correct template"),
         # If the template is known to be not supported by GenAI, it's replaced with a simplified supported version:
-        ChatTemplates(SIMPLIFIED_QWEN2_VL_2B, "", QWEN2_VL_2B, "", "", ""),
-        # Replace not supported instructions with equivalents in chat_template rt_info:
-        ChatTemplates(PATCHED_SIMPLIFIED_QWEN3, None, SIMPLIFIED_QWEN3, "", "", ""),
-        # Replace not supported instructions with equivalents in simplified_chat_template rt_info:
-        ChatTemplates(PATCHED_SIMPLIFIED_QWEN3, SIMPLIFIED_QWEN3, "", "", "", ""),
+        ChatTemplates(SIMPLIFIED_QWEN2_VL_2B, QWEN2_VL_2B, "", "", ""),
     ],
 )
 def test_template_priorities(tmp_path, chat_templates):
     tokenizer = generate_tokenizer(tmp_path, chat_templates)
     assert tokenizer.chat_template == chat_templates.reference
 
+
+@pytest.mark.precommit
+def test_chat_template_with_empty_output(tmp_path):
+    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None))
+    # Test throwing exception for empty rendered chat template (e.g. Qwen2-VL)
+    # Original Qwen2-VL chat template is modified with \n to avoid remapping with simplified template.
+    chat_template_with_empty_output = QWEN2_VL_2B + "\n"
+    with pytest.raises(Exception):
+        tokenizer.apply_chat_template(conversation, add_generation_prompt=False, chat_template=chat_template_with_empty_output)

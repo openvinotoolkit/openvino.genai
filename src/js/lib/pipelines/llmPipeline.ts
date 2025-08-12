@@ -9,6 +9,21 @@ export type Options = {
   'max_new_tokens'?: number
 };
 
+interface Tokenizer {
+  /** Embeds input prompts with special tags for a chat scenario. */
+  applyChatTemplate(
+    chatHistory: {'role': string, 'content': string}[],
+    addGenerationPrompt: boolean,
+    chatTemplate?: string
+  ): string;
+  getBosToken(): string;
+  getBosTokenId(): number;
+  getEosToken(): string;
+  getEosTokenId(): number;
+  getPadToken(): string;
+  getPadTokenId(): number;
+}
+
 /** Structure with raw performance metrics for each generation before any statistics are calculated. */
 export type RawMetrics = {
   /** Durations for each generate call in milliseconds. */
@@ -266,5 +281,9 @@ export class LLMPipeline {
         this.pipeline.generate(prompt, chunkOutput, generationConfig, options);
       },
     );
+  }
+
+  getTokenizer(): Tokenizer {
+    return this.pipeline.getTokenizer();
   }
 }

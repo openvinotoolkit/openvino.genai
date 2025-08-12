@@ -5,7 +5,7 @@ import os
 import subprocess # nosec B404
 
 def run_sample(command, input_data=None):
-    logger.info(f"Running sample command: {' '.join(command)}")
+    logger.info(f"Running sample command: {' '.join(map(str, command))}")
     if input_data:
         logger.info(f"Input data: {input_data}")
     try:
