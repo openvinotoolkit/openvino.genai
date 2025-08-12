@@ -40,6 +40,9 @@ std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& en
 /** @brief  A template specialization for TargetType ov::genai::StringInputs */
 template <>
 ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::ChatHistory */
+template <>
+ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
 
 /**
  * @brief  Template function to convert C++ data types into Javascript data types
