@@ -433,7 +433,7 @@ StructuredOutputConfig::CompoundGrammar py_obj_to_compound_grammar(const py::obj
     } else if (py::isinstance<ov::genai::StructuredOutputConfig::Union>(py_obj)) {
         return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::Union>>(py_obj);
     } else {
-        OPENVINO_THROW(py_obj.get_type()), " type isn't supported for StructuredOutputConfig compound grammar: ", py::str(py_obj));
+        OPENVINO_THROW(py_obj.get_type(), " type isn't supported for StructuredOutputConfig compound grammar: ", py::str(py_obj));
     }
 }
 
