@@ -303,8 +303,6 @@ public:
         std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
         std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
         auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-        // Pass no addtional properties to tokenizer/detokenizer models since it was not used by default
-        filtered_properties = {};
         if (is_gguf_model(models_path)) {
             std::map<std::string, GGUFMetaData> tokenizer_config{};
             std::filesystem::path ov_tokenizer_filesystem_path;
