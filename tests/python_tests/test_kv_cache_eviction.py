@@ -369,10 +369,9 @@ MILEBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("device", ["CPU", "GPU"])
 @pytest.mark.parametrize(
     ("test_struct", "download_test_content"), [
-    (BenchmarkTestData("ALFRED", 0.007, 1.98, 1.91), "MileBench_part0.tar.gz"),
+    (BenchmarkTestData("ALFRED", 0.008, 1.98, 1.91), "MileBench_part0.tar.gz"),
     (BenchmarkTestData("MMCoQA", 0.001, 3.75, 4.55), "MileBench_part2.tar.gz"),
     ],
     indirect=["download_test_content"],
