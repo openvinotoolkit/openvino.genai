@@ -3096,6 +3096,10 @@ class Tokenizer:
         """
         Override a chat_template read from tokenizer_config.json.
         """
+    def supports_paired_input(self) -> bool:
+        """
+        Returns true if the tokenizer supports paired input, false otherwise.
+        """
 class TorchGenerator(CppStdGenerator):
     """
     This class provides OpenVINO GenAI Generator wrapper for torch.Generator
