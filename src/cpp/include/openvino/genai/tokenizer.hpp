@@ -36,10 +36,6 @@ struct TokenizedInputs {
  * 4. chat_template entry from rt_info section of ov::Model
  * 5. If the template is known to be not supported by GenAI, it's
  *     replaced with a simplified supported version.
- * 6. If the template was not in the list of not supported GenAI
- *     templates from (5), it's replaced with simplified_chat_template entry
- *     from rt_info section of ov::Model.
- * 7. Replace not supported instructions with equivalents.
 */
 class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
@@ -163,8 +159,9 @@ public:
     * @brief encode a single prompt
     * @param prompt std::string with input prompt
     * @param add_special_tokens whether to add special tokens
-    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
+    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR (where default value from original HF/GGUF model is stored).
     * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
+    * @param padding_side side to pad, either "left" or "right". If not defined value is taken from IR (where default value from original HF/GGUF model is stored).
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -176,8 +173,9 @@ public:
     * @brief encode batch of prompts.
     * @param prompts vector storing batch of prompts
     * @param add_special_tokens whether to add special tokens
-    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
+    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR (where default value from original HF/GGUF model is stored).
     * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
+    * @param padding_side side to pad, either "left" or "right". If not defined value is taken from IR (where default value from original HF/GGUF model is stored).
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -313,6 +311,7 @@ private:
 static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
 static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};
 static constexpr ov::Property<bool> pad_to_max_length{"pad_to_max_length"};
+static constexpr ov::Property<std::string> padding_side{"padding_side"};
 
 }  // namespace genai
 }  // namespace ov
