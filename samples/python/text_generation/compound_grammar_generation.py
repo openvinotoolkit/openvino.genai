@@ -109,9 +109,7 @@ def main():
     device = "CPU"
     pipe = LLMPipeline(args.model_dir, device)
 
-    print("Loading pipeline...")
     pipe = LLMPipeline(args.model_dir, "CPU")
-    print("Pipeline loaded")
     tokenizer = pipe.get_tokenizer()
     chat_history = [{"role": "system", "content": sys_message}]
 
