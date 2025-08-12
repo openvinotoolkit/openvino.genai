@@ -2990,10 +2990,6 @@ class Tokenizer:
         4. chat_template entry from rt_info section of openvino.Model
         5. If the template is known to be not supported by GenAI, it's
             replaced with a simplified supported version.
-        6. If the template was not in the list of not supported GenAI
-            templates from (5), it's replaced with simplified_chat_template entry
-            from rt_info section of ov::Model.
-        7. Replace not supported instructions with equivalents.
     """
     chat_template: str
     @typing.overload
@@ -3022,25 +3018,58 @@ class Tokenizer:
         Decode a batch of tokens into a list of string prompt.
         """
     @typing.overload
-    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
+    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs.
+        Args:
+         'prompts' - list of prompts to encode
+         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+        Returns:
+         TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
+    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
         """
         Encodes a single prompt into tokenized input.
+        Args:
+         'prompt' - prompt to encode
+         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+        Returns:
+         TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
+    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs. The number of strings must be the same, or one of the inputs can contain one string.
-                    In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.
+        In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.)
+        Args:
+         'prompts_1' - list of prompts to encode
+         'prompts_2' - list of prompts to encode
+         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+        Returns:
+         TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
+    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
         """
         Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
+        Args:
+         'prompts' - list of prompts to encode\\n
+         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+        Returns:
+         TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     def get_bos_token(self) -> str:
         ...
