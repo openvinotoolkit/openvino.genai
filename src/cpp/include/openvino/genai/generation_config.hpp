@@ -81,6 +81,7 @@ public:
 * 
 * If several parameters are set, e.g. json_schema and regex, then an error will be thrown when validating the configuration.
 */
+
 class OPENVINO_GENAI_EXPORTS StructuredOutputConfig {
 public:
     /* 
