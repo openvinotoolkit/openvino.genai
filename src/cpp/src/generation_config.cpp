@@ -230,6 +230,7 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     if (max_new_tokens != SIZE_MAX) {
         return max_new_tokens;
     } else {
+        OPENVINO_ASSERT(max_length > prompt_length, "Internal error: generation_config.max_length should be bigger than number of prompt tokens");
         return max_length - prompt_length;
     }
 }
