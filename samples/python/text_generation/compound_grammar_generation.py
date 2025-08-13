@@ -107,9 +107,6 @@ def main():
     )
     args = parser.parse_args()
 
-    device = "CPU"
-    pipe = LLMPipeline(args.model_dir, device)
-
     pipe = LLMPipeline(args.model_dir, "CPU")
     tokenizer = pipe.get_tokenizer()
     chat_history = [{"role": "system", "content": sys_message}]
