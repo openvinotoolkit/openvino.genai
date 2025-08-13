@@ -16,6 +16,38 @@ namespace ov::genai::cdpruner {
 
 ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config) : m_config(config) {
     // Constructor implementation
+    try {
+        // Create a simple MatMul model dynamically
+        auto input_features = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1, -1});
+
+        // Transpose features for batch matrix multiplication: [B, N, D] -> [B, D, N]
+        auto axes_order = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{3}, {0, 2, 1});
+        auto features_transposed = std::make_shared<ov::op::v1::Transpose>(input_features, axes_order);
+
+        // Batch matrix multiplication: [B, N, D] @ [B, D, N] = [B, N, N]
+        auto matmul = std::make_shared<ov::op::v0::MatMul>(input_features, features_transposed);
+
+        auto result = std::make_shared<ov::op::v0::Result>(matmul);
+        auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input_features});
+
+        // Compile model for GPU
+        ov::Core core;
+        ov::CompiledModel compiled_model;
+
+        if (m_config.device == "GPU") {
+            compiled_model = core.compile_model(model, "GPU");
+        } else {
+            // Fallback to CPU if GPU not available
+            compiled_model = core.compile_model(model, "CPU");
+        }
+
+        // Create inference request
+        infer_request = compiled_model.create_infer_request();
+    } catch (const std::exception& e) {
+        if (m_config.debug_mode) {
+            std::cout << "Error occurred while building kernel: " << e.what() << std::endl;
+        }
+    }
 }
 
 ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, const ov::Tensor& relevance_scores) {
@@ -104,50 +136,23 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_gpu(const ov::Ten
     size_t batch_size = shape[0];
     size_t num_tokens = shape[1];
     size_t feature_dim = shape[2];
-    
-    try {
-        // Create a simple MatMul model dynamically
-        auto input_features = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{batch_size, num_tokens, feature_dim});
-        
-        // Transpose features for batch matrix multiplication: [B, N, D] -> [B, D, N]
-        auto axes_order = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{3}, {0, 2, 1});
-        auto features_transposed = std::make_shared<ov::op::v1::Transpose>(input_features, axes_order);
-        
-        // Batch matrix multiplication: [B, N, D] @ [B, D, N] = [B, N, N]
-        auto matmul = std::make_shared<ov::op::v0::MatMul>(input_features, features_transposed);
-        
-        auto result = std::make_shared<ov::op::v0::Result>(matmul);
-        auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input_features});
-        
-        // Compile model for GPU
-        ov::Core core;
-        ov::CompiledModel compiled_model;
-        
-        if (m_config.device == "GPU") {
-            compiled_model = core.compile_model(model, "GPU");
-        } else {
-            // Fallback to CPU if GPU not available
-            compiled_model = core.compile_model(model, "CPU");
-        }
-        
-        // Create inference request
-        auto infer_request = compiled_model.create_infer_request();
-        
+
+    if (infer_request) {
         // Set input tensor
         infer_request.set_input_tensor(features);
-        
+
         // Run inference
         infer_request.infer();
-        
+
         // Get output tensor
         auto output_tensor = infer_request.get_output_tensor();
-        
+
         return output_tensor;
-        
-    } catch (const std::exception& e) {
+
+    } else {
         // Fallback to CPU implementation if GPU fails
         if (m_config.debug_mode) {
-            std::cout << "GPU MatMul failed, falling back to CPU: " << e.what() << std::endl;
+            std::cout << "GPU MatMul failed, falling back to CPU." << std::endl;
         }
         return compute_similarity_matrix(features);
     }

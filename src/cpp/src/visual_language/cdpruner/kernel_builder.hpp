@@ -5,6 +5,7 @@
 
 #include "cdpruner_config.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include <openvino/runtime/infer_request.hpp>
 
 namespace ov::genai::cdpruner {
 
@@ -66,6 +67,7 @@ private:
                                       const ov::Tensor& relevance_scores);
     
     Config m_config;
+    ov::InferRequest infer_request;
 };
 
 } // namespace ov::genai::cdpruner 
