@@ -9,15 +9,10 @@ find_package(OpenVINOGenAI REQUIRED
 )
 
 function(add_sample_executable target_name)
-    add_executable(${target_name} ${target_name}.cpp)
-    target_link_libraries(${target_name} PRIVATE openvino::genai)
-    set_target_properties(${target_name} PROPERTIES
-        # Ensure out-of-box LC_RPATH on macOS with SIP
-        INSTALL_RPATH_USE_LINK_PATH ON)
-    install(TARGETS ${target_name}
-            RUNTIME DESTINATION samples_bin/
-            COMPONENT samples_bin
-            EXCLUDE_FROM_ALL)
+    genai_add_sample_target(
+            NAME ${target_name}
+            ROOT ${CMAKE_CURRENT_SOURCE_DIR}
+            SOURCES ${target_name}.cpp)
 endfunction()
 
 set (SAMPLE_LIST
@@ -47,13 +42,8 @@ FetchContent_Declare(cxxopts
     URL_HASH SHA256=523175f792eb0ff04f9e653c90746c12655f10cb70f1d5e6d6d9491420298a08)
 FetchContent_MakeAvailable(cxxopts)
 
-add_executable(benchmark_genai benchmark_genai.cpp read_prompt_from_file.cpp)
-target_link_libraries(benchmark_genai PRIVATE openvino::genai cxxopts::cxxopts)
-set_target_properties(benchmark_genai PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-install(TARGETS benchmark_genai
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+genai_add_sample_target(
+        NAME benchmark_genai
+        ROOT ${CMAKE_CURRENT_SOURCE_DIR}
+        SOURCES benchmark_genai.cpp read_prompt_from_file.cpp
+        LINK_LIBRARIES cxxopts::cxxopts)
