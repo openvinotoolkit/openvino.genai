@@ -1565,7 +1565,8 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             uint64_t request_id = sequence_group->get_request_id();
             std::lock_guard<std::mutex> lock(m_beam_search_info_mutex);
             if (m_top_k_selector_info.find(request_id) == m_top_k_selector_info.end()) {
-                m_top_k_selector_info.emplace(request_id, TopKSelector(sequence_group, m_d2t->get_tensor_view()));
+                ov::Tensor empty_tensor;
+                m_top_k_selector_info.emplace(request_id, TopKSelector(sequence_group, (m_d2t ? m_d2t->get_tensor_view() : empty_tensor)));
             }
             topk_searcher = &m_top_k_selector_info.at(request_id);
         }
