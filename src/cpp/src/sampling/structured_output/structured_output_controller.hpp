@@ -12,7 +12,6 @@
 #include <set>
 
 #include "openvino/genai/generation_config.hpp"
-#include "openvino/genai/tokenizer.hpp"
 #include "sampling/logit_transformers.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
 
@@ -66,9 +65,9 @@ class StructuredOutputController {
     std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> m_logits_transformer;
 public:
     using BackendFactory = std::function<std::unique_ptr<ov::genai::IStructuredOutputImpl>(
-        const ov::genai::TokenizerImpl&, std::optional<int>)>;
+        const ov::genai::Tokenizer::TokenizerImpl&, std::optional<int>)>;
 
-    StructuredOutputController(const ov::genai::TokenizerImpl& tokenizer_impl,
+    StructuredOutputController(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl,
                               std::optional<int> vocab_size=std::nullopt);
 
 
@@ -86,7 +85,7 @@ private:
     std::map<std::string, float> m_init_grammar_compiler_times;
     std::vector<float> m_grammar_compile_times;
     std::unordered_map<std::string, std::unique_ptr<IStructuredOutputImpl>> m_impls;
-    const TokenizerImpl& m_tokenizer_impl;
+    const Tokenizer::TokenizerImpl& m_tokenizer_impl;
     std::optional<int> m_vocab_size;
     mutable std::mutex m_mutex;
 };

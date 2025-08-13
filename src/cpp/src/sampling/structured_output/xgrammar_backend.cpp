@@ -7,7 +7,7 @@
 namespace ov {
 namespace genai {
 
-XGrammarStructuredOutput::XGrammarStructuredOutput(const ov::genai::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size) {
+XGrammarStructuredOutput::XGrammarStructuredOutput(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size) {
     auto vocab_vector = tokenizer_impl.m_vocab;
     if (!vocab_size.has_value()) {
         vocab_size = vocab_vector.size();

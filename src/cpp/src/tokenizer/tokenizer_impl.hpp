@@ -20,42 +20,15 @@
 #include "json_utils.hpp"
 #include "utils.hpp"
 
-
-namespace {
-void check_arguments(const ov::AnyMap& parameters, std::set<std::string> allowed_argnames) {
-    for (const auto& [key, value] : parameters) {
-        if (allowed_argnames.find(key) == allowed_argnames.end()) {
-            OPENVINO_THROW("unacceptable parameter key: " + key);
-        }
-    }
-}
-
-ov::Core core_with_extension() {
-    ov::Core core;
-
-#ifdef _WIN32
-    const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
-    OPENVINO_ASSERT(ov_tokenizer_path_w, "openvino_tokenizers path is not set");
-    core.add_extension(std::wstring(ov_tokenizer_path_w));
-#else
-    const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
-    OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
-    core.add_extension(ov_tokenizer_path);
-#endif
-    
-    return core;
-}
-
-ov::Core get_core_singleton() {
-    static ov::Core core = core_with_extension();
-    return core;
-}
-}
-
 namespace ov {
 namespace genai {
+void check_arguments(const ov::AnyMap& parameters, std::set<std::string> allowed_argnames);
+ov::Core core_with_extension();
+ov::Core get_core_singleton();
+
 class StructuredOutputController;
-class TokenizerImpl {
+class Tokenizer;
+class Tokenizer::TokenizerImpl {
 public:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_detokenizer;

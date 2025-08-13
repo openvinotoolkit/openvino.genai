@@ -5,7 +5,38 @@
 #include "add_second_input_pass.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
 
-namespace {
+namespace ov {
+namespace genai {
+
+void check_arguments(const ov::AnyMap& parameters, std::set<std::string> allowed_argnames) {
+    for (const auto& [key, value] : parameters) {
+        if (allowed_argnames.find(key) == allowed_argnames.end()) {
+            OPENVINO_THROW("unacceptable parameter key: " + key);
+        }
+    }
+}
+
+ov::Core core_with_extension() {
+    ov::Core core;
+
+#ifdef _WIN32
+    const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+    OPENVINO_ASSERT(ov_tokenizer_path_w, "openvino_tokenizers path is not set");
+    core.add_extension(std::wstring(ov_tokenizer_path_w));
+#else
+    const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+    OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
+    core.add_extension(ov_tokenizer_path);
+#endif
+    
+    return core;
+}
+
+ov::Core get_core_singleton() {
+    static ov::Core core = core_with_extension();
+    return core;
+}
+
 constexpr char bos_token_key_name[] = "bos_token";
 constexpr char eos_token_key_name[] = "eos_token";
 constexpr char pad_token_key_name[] = "pad_token";
@@ -112,12 +143,8 @@ std::vector<std::string> read_vocab_from_detokenizer_model(const std::shared_ptr
     return vocab_vector;
 }
 
-}  // namespace
-
-namespace ov {
-namespace genai {
 template <typename T>
-void TokenizerImpl::set_state_value(ov::VariableState& state, std::optional<T> value, ov::AnyMap& state_flags) {
+void Tokenizer::TokenizerImpl::set_state_value(ov::VariableState& state, std::optional<T> value, ov::AnyMap& state_flags) {
     // better to store which value is in the state locally so that get_state is not called every infer request
     std::optional<T> last_value;
     ov::genai::utils::read_anymap_param(state_flags, state.get_name(), last_value);
@@ -140,7 +167,7 @@ void TokenizerImpl::set_state_value(ov::VariableState& state, std::optional<T> v
     }
 }
 
-void TokenizerImpl::set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
+void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
     if (m_older_than_24_5) {
         // Changing add_special_tokens at runtime was introduced in
         // 24.5. Older tokenizers still allow manipulating their
@@ -196,15 +223,15 @@ void TokenizerImpl::set_state_if_necessary(CircularBufferQueueElementGuard<ov::I
     }
 }
 
-TokenizerImpl::TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
+Tokenizer::TokenizerImpl::TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
     setup_tokenizer(models_path, properties);
 }
 
-TokenizerImpl::TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
+Tokenizer::TokenizerImpl::TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
     setup_tokenizer(models, properties);
 }
 
-void TokenizerImpl::setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
+void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
     ScopedVar env_manager(tokenizers_relative_to_genai());
     auto core = get_core_singleton();
 
@@ -283,7 +310,7 @@ void TokenizerImpl::setup_tokenizer(const std::filesystem::path& models_path, co
     setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
 }
 
-void TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, ov::AnyMap properties) {
+void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, ov::AnyMap properties) {
     auto [ov_tokenizer, ov_detokenizer] = models;
     bool two_input_requested = false;
 
@@ -381,7 +408,7 @@ void TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, 
 }
 
 // load special tokens ids from config.json
-void TokenizerImpl::read_config(const std::filesystem::path& tokenizer_path) {
+void Tokenizer::TokenizerImpl::read_config(const std::filesystem::path& tokenizer_path) {
     auto config_file_path = tokenizer_path / "config.json";
     if (!std::filesystem::exists(config_file_path))
         return;
@@ -396,7 +423,7 @@ void TokenizerImpl::read_config(const std::filesystem::path& tokenizer_path) {
 }
 
 // Reads the string representation of special tokens if they exist.
-void TokenizerImpl::read_special_tokens_map(const std::filesystem::path& tokenizer_path) {
+void Tokenizer::TokenizerImpl::read_special_tokens_map(const std::filesystem::path& tokenizer_path) {
     auto special_tokens_file_path = tokenizer_path / "special_tokens_map.json";
     if (!std::filesystem::exists(special_tokens_file_path))
         return;
@@ -418,7 +445,7 @@ void TokenizerImpl::read_special_tokens_map(const std::filesystem::path& tokeniz
 // Read string representation of special tokens if they exist.
 // Also tries to load special token ids from added_tokens_decoder if they exist.
 // Will not override special token strings or ids if they already exist.
-void TokenizerImpl::read_tokenizer_config_if_necessary(const std::filesystem::path& tokenizer_path) {
+void Tokenizer::TokenizerImpl::read_tokenizer_config_if_necessary(const std::filesystem::path& tokenizer_path) {
     if (m_pad_token_id != -1 && m_bos_token_id != -1 && m_eos_token_id != -1 &&
         !m_pad_token.empty() && !m_bos_token.empty() && !m_eos_token.empty()) {
         return ;
@@ -486,7 +513,7 @@ void TokenizerImpl::read_tokenizer_config_if_necessary(const std::filesystem::pa
 }
 
 // tokenize str representation to get special tokens integer values
-void TokenizerImpl::infer_special_tokens_if_necessary() {
+void Tokenizer::TokenizerImpl::infer_special_tokens_if_necessary() {
     auto get_id_from_str = [this](std::string token_str, int64_t& token_val) {
         if (token_val != -1 || token_str.empty())
             return;
@@ -500,7 +527,7 @@ void TokenizerImpl::infer_special_tokens_if_necessary() {
     get_id_from_str(m_eos_token, m_eos_token_id);
 }
 
-TokenizedInputs TokenizerImpl::encode(const std::string& prompt, const ov::AnyMap& tokenization_params) {
+TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::string& prompt, const ov::AnyMap& tokenization_params) {
     OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                             "Tokenizer::encode is not available");
 
@@ -526,7 +553,7 @@ TokenizedInputs TokenizerImpl::encode(const std::string& prompt, const ov::AnyMa
     );
 }
 
-TokenizedInputs TokenizerImpl::encode(const std::vector<std::pair<std::string, std::string>>& prompts_pairs, const ov::AnyMap& tokenization_params) {
+TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::pair<std::string, std::string>>& prompts_pairs, const ov::AnyMap& tokenization_params) {
     OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                             "Tokenizer::encode is not available");
     size_t batch_size = prompts_pairs.size();
@@ -540,7 +567,7 @@ TokenizedInputs TokenizerImpl::encode(const std::vector<std::pair<std::string, s
     return encode(prompts_1, prompts_2, tokenization_params);
 }
 
-TokenizedInputs TokenizerImpl::encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params) {
+TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params) {
     OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                             "Tokenizer::encode is not available");
     OPENVINO_ASSERT(prompts_1.size() == prompts_2.size() || prompts_1.size() == 1 || prompts_2.size() == 1,
@@ -574,7 +601,7 @@ TokenizedInputs TokenizerImpl::encode(const std::vector<std::string>& prompts_1,
     return {result.input_ids, result.attention_mask, result.token_type_ids};
 }
 
-TokenizedInputs TokenizerImpl::encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
+TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
     OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                             "Tokenizer::encode is not available");
 
@@ -604,7 +631,7 @@ TokenizedInputs TokenizerImpl::encode(const std::vector<std::string>& prompts, c
     return {unpadded.input_ids, unpadded.attention_mask};
 }
 
-TokenizedInputs TokenizerImpl::get_copied_results(ov::Tensor input_ids, ov::Tensor attention_mask) {
+TokenizedInputs Tokenizer::TokenizerImpl::get_copied_results(ov::Tensor input_ids, ov::Tensor attention_mask) {
     ov::Tensor input_ids_ = ov::Tensor(input_ids.get_element_type(), input_ids.get_shape());
     ov::Tensor attention_mask_ = ov::Tensor(attention_mask.get_element_type(), attention_mask.get_shape());
     input_ids.copy_to(input_ids_);
@@ -613,7 +640,7 @@ TokenizedInputs TokenizerImpl::get_copied_results(ov::Tensor input_ids, ov::Tens
     return {input_ids_, attention_mask_};
 }
 
-std::string TokenizerImpl::decode(const std::vector<int64_t>& tokens, const ov::AnyMap& detokenization_params) {
+std::string Tokenizer::TokenizerImpl::decode(const std::vector<int64_t>& tokens, const ov::AnyMap& detokenization_params) {
     OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
@@ -624,7 +651,7 @@ std::string TokenizerImpl::decode(const std::vector<int64_t>& tokens, const ov::
     return infer_request_guard.get().get_output_tensor().data<std::string>()[0];
 }
 
-std::vector<std::string> TokenizerImpl::decode(const ov::Tensor& tokens, const ov::AnyMap& detokenization_params) {
+std::vector<std::string> Tokenizer::TokenizerImpl::decode(const ov::Tensor& tokens, const ov::AnyMap& detokenization_params) {
     OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
     OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64, "tokens tensor element type should be an i64");
     OPENVINO_ASSERT(tokens.get_shape().size() == 2, "tokens tensor should of rank 2 with shape [batch_size, seq_len]");
@@ -639,7 +666,7 @@ std::vector<std::string> TokenizerImpl::decode(const ov::Tensor& tokens, const o
     return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
 }
 
-std::vector<std::string> TokenizerImpl::decode(const std::vector<std::vector<int64_t>>& lines, const ov::AnyMap& detokenization_params) {
+std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std::vector<int64_t>>& lines, const ov::AnyMap& detokenization_params) {
     OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
     auto compare_lengths = [](const std::vector<int64_t>& a, const std::vector<int64_t>& b) {
@@ -666,7 +693,7 @@ std::vector<std::string> TokenizerImpl::decode(const std::vector<std::vector<int
     return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
 }
 
-std::string TokenizerImpl::apply_chat_template(ChatHistory history,
+std::string Tokenizer::TokenizerImpl::apply_chat_template(ChatHistory history,
                                 bool add_generation_prompt,
                                 const std::string& chat_template) const {
     std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_template(chat_template);
@@ -711,15 +738,15 @@ std::string TokenizerImpl::apply_chat_template(ChatHistory history,
     return result;
 }
 
-void TokenizerImpl::set_chat_template(const std::string& chat_template) {
+void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_template) {
     m_chat_template = remap_template(chat_template);
 }
 
-std::string TokenizerImpl::get_chat_template() {
+std::string Tokenizer::TokenizerImpl::get_chat_template() {
     return m_chat_template;
 }
 
-std::shared_ptr<StructuredOutputController> TokenizerImpl::get_structured_output_controller() {
+std::shared_ptr<StructuredOutputController> Tokenizer::TokenizerImpl::get_structured_output_controller() {
     if (m_structured_output_controller == nullptr) {
         m_structured_output_controller = std::make_shared<StructuredOutputController>(*this);
     }

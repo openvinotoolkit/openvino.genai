@@ -65,7 +65,7 @@ public:
      * @param tokenizer The tokenizer to be used for grammar compilation.
      * @param vocab_size Optional vocabulary size; if not provided, it will be determined from the tokenizer.
      */
-    XGrammarStructuredOutput(const ov::genai::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size = std::nullopt);
+    XGrammarStructuredOutput(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size = std::nullopt);
 
     /**
      * @brief Returns a logit transformer that applies XGrammar grammar matching to logits.
@@ -90,7 +90,7 @@ private:
 // Static initializer for XGrammar backend registration
 static bool registerXGrammarBackend() {
     StructuredOutputController::register_backend("xgrammar",
-        [](const ov::genai::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size) {
+        [](const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size) {
             return std::make_unique<XGrammarStructuredOutput>(tokenizer_impl, vocab_size);
         });
         return true;

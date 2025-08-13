@@ -18,7 +18,7 @@ namespace ov {
 namespace genai {
 
 Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties) {
-    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, properties);
+    m_pimpl = std::make_shared<Tokenizer::TokenizerImpl>(tokenizer_path, properties);
 }
 
 Tokenizer::Tokenizer(
@@ -33,7 +33,7 @@ Tokenizer::Tokenizer(
 
     auto ov_tokenizer = core.read_model(tokenizer_model_str, tokenizer_weights_tensor);
     auto ov_detokenizer = core.read_model(detokenizer_model_str, detokenizer_weights_tensor);
-    m_pimpl = std::make_shared<TokenizerImpl>(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
+    m_pimpl = std::make_shared<Tokenizer::TokenizerImpl>(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
 }
 
 Tokenizer::Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties) {
@@ -45,10 +45,10 @@ Tokenizer::Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, c
     OPENVINO_ASSERT(!parameters.empty());
     if (parameters.front()->get_element_type() == ov::element::string) {
         // It's a tokenizer
-        m_pimpl = std::make_shared<TokenizerImpl>(std::make_pair(model, nullptr), properties);
+        m_pimpl = std::make_shared<Tokenizer::TokenizerImpl>(std::make_pair(model, nullptr), properties);
     } else {
         // It's a detokenizer
-        m_pimpl = std::make_shared<TokenizerImpl>(std::make_pair(nullptr, model), properties);
+        m_pimpl = std::make_shared<Tokenizer::TokenizerImpl>(std::make_pair(nullptr, model), properties);
     }
 }
 

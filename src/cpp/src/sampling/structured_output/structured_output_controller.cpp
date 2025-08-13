@@ -29,7 +29,7 @@ void StructuredOutputController::set_default_backend(const std::string& name) {
     get_default_backend_name() = name;
 }
 
-StructuredOutputController::StructuredOutputController(const ov::genai::TokenizerImpl& tokenizer_impl,
+StructuredOutputController::StructuredOutputController(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl,
                                                        std::optional<int> vocab_size)
     : m_tokenizer_impl(tokenizer_impl), m_vocab_size(vocab_size) {}
 
