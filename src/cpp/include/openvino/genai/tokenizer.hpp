@@ -262,6 +262,7 @@ public:
 
     // get information about a chat template to check its status, for example whether it is empty
     std::string get_chat_template() const;
+    std::string get_original_chat_template() const;
 
     // information about <bos>, <eos> tokens should be public,
     // they are used at least in StreamerBase descendants

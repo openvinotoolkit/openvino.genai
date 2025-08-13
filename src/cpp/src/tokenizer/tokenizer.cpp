@@ -189,6 +189,7 @@ public:
     std::string m_eos_token = {};
 
     std::string m_chat_template = {};
+    std::string m_original_chat_template = {};
 
     std::vector<std::string> m_vocab = {};
 
@@ -318,6 +319,7 @@ public:
                 m_chat_template = *val;
             }            
             if (!m_chat_template.empty()) {
+                m_original_chat_template = m_chat_template;
                 m_chat_template = patch_gguf_chat_template(m_chat_template);
             }
 
@@ -329,11 +331,13 @@ public:
                 ov_tokenizer->set_rt_info(m_bos_token_id, "bos_token_id");
                 ov_tokenizer->set_rt_info(m_eos_token_id, "eos_token_id");
                 ov_tokenizer->set_rt_info(m_chat_template, "chat_template");
+                ov_tokenizer->set_rt_info(m_original_chat_template, "original_chat_template");
 
                 ov_detokenizer->set_rt_info(m_pad_token_id, "pad_token_id");
                 ov_detokenizer->set_rt_info(m_bos_token_id, "bos_token_id");
                 ov_detokenizer->set_rt_info(m_eos_token_id, "eos_token_id");
                 ov_detokenizer->set_rt_info(m_chat_template, "chat_template");
+                ov_detokenizer->set_rt_info(m_original_chat_template, "original_chat_template");
 
                 ov::genai::utils::save_openvino_model(ov_tokenizer, save_ov_tokenizer_path.string(), false);
                 ov::genai::utils::save_openvino_model(ov_detokenizer, save_ov_detokenizer_path.string(), false);
@@ -422,7 +426,7 @@ public:
             m_eos_token_id = find_or_fallback(rt_info, "eos_token_id", m_eos_token_id);
 
             parse_chat_template_from_tokenizer(ov_tokenizer, m_chat_template);
-
+            m_original_chat_template = m_chat_template;
             m_chat_template = remap_template(m_chat_template);
 
             // Initialize tokenizer's cache to save time later.
@@ -789,11 +793,15 @@ public:
     }
 
     void set_chat_template(const std::string& chat_template) {
+        m_original_chat_template = chat_template;
         m_chat_template = remap_template(chat_template);
     }
 
     std::string get_chat_template() {
         return m_chat_template;
+    }
+    std::string get_original_chat_template() const {
+        return m_original_chat_template;
     }
 };
 
@@ -919,6 +927,9 @@ std::string Tokenizer::apply_chat_template(ChatHistory history,
 
 std::string Tokenizer::get_chat_template() const {
     return m_pimpl->get_chat_template();
+}
+std::string Tokenizer::get_original_chat_template() const {
+    return m_pimpl->get_original_chat_template();
 }
 
 void Tokenizer::set_chat_template(const std::string& chat_template) {
