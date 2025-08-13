@@ -80,14 +80,14 @@ def tools_to_array_schema(*tools: BaseModel) -> str:
         }
     )
 
-# system message from:
+# modified system message from:
 # https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_phi4_mini.jinja
 sys_message = """You are a helpful AI assistant.
 You can answer yes or no to questions, or you can chose to call one or more of the provided functions.
 
 Use the following rule to decide when to call a function:
     * if the response can be generated from your internal knowledge, do so, but use only yes or no as the response
-    * if you need external information that can be obtained by calling one or more of the provided functions, generate a function calls
+    * if you need external information that can be obtained by calling one or more of the provided functions, generate function calls
     
 If you decide to call functions:
     * prefix function calls with functools marker (no closing marker required)
