@@ -393,7 +393,7 @@ public:
             properties.erase(it);
         }
         
-        // Filter properties by leaving only params from the white list
+        // Filter properties by leaving only params from the allowlist
         filter_properties(properties);
         
         is_paired_input = ov_tokenizer && ov_tokenizer->get_parameters().size() == 2;
