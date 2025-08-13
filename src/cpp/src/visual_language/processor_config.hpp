@@ -46,6 +46,10 @@ public:
     // llava-next specific config params
     std::vector<std::pair<int, int>> image_grid_pinpoints{{336, 672}, {672, 336}, {672, 672}, {1008, 336}, {336, 1008}};
 
+    // gemma3-4b-it specific config params
+    size_t size_height = 896;
+    size_t size_width = 896;
+
     struct {
         size_t num_crops = 4;
         size_t num_img_tokens = 144;

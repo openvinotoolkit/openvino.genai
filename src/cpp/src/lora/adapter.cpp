@@ -645,23 +645,9 @@ protected:
     }
 };
 
-std::shared_ptr<ov::Node> set_scale(const std::shared_ptr<ov::Node>& A,
-                                    const std::shared_ptr<ov::Node>& alpha,
-                                    const ov::element::Type& element_type) {
-    using namespace ov::op;
-
-    // rank = A_shape[0]
-    auto axis_0 = v0::Constant::create(ov::element::i32, {}, {0});
-    auto rank = std::make_shared<v8::Gather>(std::make_shared<v3::ShapeOf>(A),
-                                             v0::Constant::create(ov::element::i32, {1}, {0}),
-                                             axis_0);
-
-    // scaled_alpha = alpha / rank
-    auto lora_rank = std::make_shared<v0::Convert>(rank, element_type);
-    auto scaled_alpha = std::make_shared<v1::Divide>(alpha, lora_rank);
-
-    return scaled_alpha;
-}
+// TODO [ticket 171466]: LoRA should support two separate parameters: alpha (defined in the config or .safetensors), weight (set by the user)
+// Currently, the implementation merges them into a single effective scaling factor: alpha = (alpha_from_file / rank) * weight
+// Check whether `weight` should be supported for text generation
 
 // Builds LoRA subgraph that consists of several matrix and element-wise multiplications with optional data type
 // conversions and reshapes to build a consistent graph.
@@ -691,9 +677,6 @@ NodePtr tensors_multiplication(NodePtr input,
         if (input) {
             if (i == alpha_pos) {  // Multiply for alpha
                 // TODO: Apply alpha multiplication separately
-
-                // scale alpha to align with Peft: self.scaling[adapter] = scale * self.lora_alpha[adapter] / self.r[adapter]
-                normalized = set_scale(multipliers[A_pos], normalized, target_type);
                 input = std::make_shared<v1::Multiply>(input, normalized);
             } else {  // MatMul for A and B
                 input = std::make_shared<v0::MatMul>(input,
@@ -1097,7 +1080,7 @@ public:
     }
 
     const LoRAConstantTensors& get_constant_tensors() const override {
-        return *constant_tensors;
+        return origin->get_constant_tensors();
     }
 
     bool eq(const AdapterImpl* other) const override {
@@ -1640,7 +1623,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
         static const std::map<std::string, AdapterConfig::Mode> default_modes {
             {"CPU", AdapterConfig::MODE_DYNAMIC},
             {"GPU", AdapterConfig::MODE_DYNAMIC},
-            {"NPU", AdapterConfig::MODE_STATIC},
+            {"NPU", AdapterConfig::MODE_DYNAMIC},
         };
         if(device.find("GPU") != std::string::npos) {  // to handle GPU device variants which doesn't matter for adapter mode
             device = "GPU";

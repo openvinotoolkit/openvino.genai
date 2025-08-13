@@ -9,6 +9,13 @@
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
+#define VALIDATE_ARGS_COUNT(info, expected_count, method_name)                                 \
+    if (info.Length() != expected_count) {                                                     \
+        Napi::TypeError::New(info.Env(), method_name " expects " #expected_count " arguments") \
+            .ThrowAsJavaScriptException();                                                     \
+        return info.Env().Undefined();                                                         \
+    }
+
 ov::AnyMap to_anyMap(const Napi::Env&, const Napi::Value&);
 
 /**
@@ -33,6 +40,9 @@ std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& en
 /** @brief  A template specialization for TargetType ov::genai::StringInputs */
 template <>
 ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::ChatHistory */
+template <>
+ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
 
 /**
  * @brief  Template function to convert C++ data types into Javascript data types
@@ -58,4 +68,20 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(
     const ov::genai::EmbeddingResults embedding_result
 );
 
+/** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<std::string> */
+template <>
+Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& env,
+                                                             const std::vector<std::string> value);
+
+/** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<float> */
+template <>
+Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env, const std::vector<float> value);
+
+template <>
+Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, const std::vector<double> value);
+
+template <>
+Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, const std::vector<size_t> value);
+                                                                  
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);
+

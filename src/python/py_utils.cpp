@@ -74,8 +74,16 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     std::set<std::string> any_map_properties = {
         "GENERATE_CONFIG",
         "PREFILL_CONFIG",
+        "SHARED_HEAD_CONFIG",
+        "NPUW_LLM_GENERATE_CONFIG",
+        "NPUW_LLM_PREFILL_CONFIG",
+        "NPUW_LLM_SHARED_HEAD_CONFIG",
         "++GENERATE_CONFIG",
-        "++PREFILL_CONFIG"
+        "++PREFILL_CONFIG",
+        "++SHARED_HEAD_CONFIG",
+        "++NPUW_LLM_GENERATE_CONFIG",
+        "++NPUW_LLM_PREFILL_CONFIG",
+        "++NPUW_LLM_SHARED_HEAD_CONFIG"
     };
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");
@@ -318,7 +326,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
     }
-    OPENVINO_THROW("Property \"", property_name, "\" has unsupported type. Please, add type support to 'py_object_to_any' function");
+    OPENVINO_THROW(py::str(py_obj.get_type()), " isn't supported for argument ", property_name);
 }
 
 void add_deprecation_warning_for_chunk_streamer(std::shared_ptr<StreamerBase> streamer) {

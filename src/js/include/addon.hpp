@@ -9,6 +9,8 @@ typedef Napi::Function (*Prototype)(Napi::Env);
 
 struct AddonData {
     Napi::FunctionReference core;
+    Napi::FunctionReference tokenizer;
+    Napi::FunctionReference perf_metrics;
 };
 
 void init_class(Napi::Env env,
