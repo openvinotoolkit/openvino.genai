@@ -9,7 +9,6 @@
 #include <vector>
 #include <unordered_map>
 #include <functional>
-#include <set>
 
 #include "openvino/genai/generation_config.hpp"
 #include "sampling/logit_transformers.hpp"

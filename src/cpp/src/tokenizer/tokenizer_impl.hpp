@@ -27,7 +27,6 @@ ov::Core core_with_extension();
 ov::Core get_core_singleton();
 
 class StructuredOutputController;
-class Tokenizer;
 class Tokenizer::TokenizerImpl {
 public:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
