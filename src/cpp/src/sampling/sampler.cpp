@@ -995,7 +995,7 @@ size_t Sampler::select_best_continuation_path(const std::vector<std::vector<int6
 int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
                                          const ov::Tensor& main_model_logits,
                                          LogitProcessor& logit_processor,
-                                         size_t& accepted_tokens_count,
+                                         size_t& generated_tokens_count,
                                          size_t& max_removed_tokens,
                                          size_t& num_tokens_to_process,
                                          bool do_sample) {
@@ -1026,6 +1026,7 @@ int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
                                                   main_model_logits,
                                                   logit_processor,
                                                   do_sample);
+    generated_tokens_count = validation_result.accepted_path_length;
     std::cout << "seq group" << seq_group->get_request_id() << " accepted: " << validation_result.accepted_path_length << std::endl;
 
     if (!validation_result.is_path_accepted) {
@@ -1059,6 +1060,7 @@ int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
     // Add the bonus token with updated probabilities
     selected_sequence->append_token(validation_result.extra_sampled_token.m_index, validation_result.extra_sampled_token.m_log_prob);
     logit_processor.register_new_generated_token(validation_result.extra_sampled_token.m_index);
+    generated_tokens_count++;
     return validation_result.accepted_path_id;
 }
 
