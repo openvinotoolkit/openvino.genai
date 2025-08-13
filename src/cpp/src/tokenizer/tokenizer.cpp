@@ -280,6 +280,29 @@ public:
         setup_tokenizer(models, properties);
     }
 
+    void filter_properties(ov::AnyMap& properties) {
+        // Properties allowed for tokenizer/detokenizer on CPU
+        std::set<std::string> allowed_argnames = {
+            ov::hint::performance_mode.name(),
+            ov::hint::num_requests.name(),
+            ov::hint::enable_cpu_pinning.name(),
+            ov::hint::execution_mode.name(),
+            ov::hint::compiled_blob.name(),
+            ov::hint::enable_hyper_threading.name(),
+            ov::hint::enable_cpu_reservation.name(),
+            ov::enable_profiling.name(),
+        };
+
+        for (auto prop_it = properties.begin(); prop_it != properties.end();) {
+            auto it = allowed_argnames.find(prop_it->first);
+            if (it == allowed_argnames.end()) {
+                prop_it = properties.erase(prop_it);
+            } else {
+                ++prop_it;
+            }
+        }
+    }
+
     void setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
         ScopedVar env_manager(tokenizers_relative_to_genai());
         auto core = get_core_singleton();
@@ -369,9 +392,9 @@ public:
             two_input_requested = it->second.as<bool>();
             properties.erase(it);
         }
-
-        // Pass no addtional properties to tokenizer/detokenizer models since it was not used by default
-        properties = {};
+        
+        // Filter properties by leaving only params from the white list
+        filter_properties(properties);
         
         is_paired_input = ov_tokenizer && ov_tokenizer->get_parameters().size() == 2;
         
