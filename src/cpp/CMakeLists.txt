@@ -179,7 +179,7 @@ endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
 
-# Add /bigobj flag for MSVC to handle large object files  
+# Add /bigobj flag for MSVC to handle large object files
 if(MSVC)
     target_compile_options(${TARGET_NAME} PRIVATE "/bigobj")
 endif()
@@ -191,9 +191,6 @@ endif()
 set_target_properties(${TARGET_NAME} PROPERTIES
     EXPORT_NAME genai
     INTERPROCEDURAL_OPTIMIZATION_RELEASE ${ENABLE_LTO}
-    ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
-    LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
-    RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
 
 if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND LINUX)
