@@ -9,17 +9,11 @@ find_package(OpenVINOGenAI REQUIRED
 )
 
 function(add_sample_executable target_name)
-    add_executable(${target_name} ${target_name}.c)
-    # Specifies that the source file should be compiled as a C source file
+    ov_add_sample(
+            NAME ${target_name}
+            SOURCES ${target_name}.c
+            DEPENDENCIES openvino::genai::c)
     set_source_files_properties(${target_name}.c PROPERTIES LANGUAGE C)
-    target_link_libraries(${target_name} PRIVATE openvino::genai::c)
-    set_target_properties(${target_name} PROPERTIES
-        # Ensure out-of-box LC_RPATH on macOS with SIP
-        INSTALL_RPATH_USE_LINK_PATH ON)
-    install(TARGETS ${target_name}
-            RUNTIME DESTINATION samples_bin/
-            COMPONENT samples_bin
-            EXCLUDE_FROM_ALL)
 endfunction()
 
 set (SAMPLE_LIST

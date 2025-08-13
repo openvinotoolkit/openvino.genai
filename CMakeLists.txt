@@ -39,32 +39,37 @@ if(NOT DEFINED Python3_FIND_VIRTUALENV)
     set(Python3_FIND_VIRTUALENV FIRST)
 endif()
 
-# Looking for OpenVINO in the python distribution. It doesn't work for cross-compiling build
-if(NOT CMAKE_CROSSCOMPILING)
-    find_package(Python3 QUIET COMPONENTS Interpreter)
-    if(Python3_Interpreter_FOUND)
-        execute_process(
-            COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
-            OUTPUT_VARIABLE OpenVINO_DIR_PY
-            ERROR_QUIET
-        )
-    endif()
-endif()
 
-# Find OpenVINODeveloperPackage first to compile with SDL flags
-set(OV_COMPATIBILITY_VERSION ${OpenVINOGenAI_VERSION_MAJOR}.${OpenVINOGenAI_VERSION_MINOR}.${OpenVINOGenAI_VERSION_PATCH})
-find_package(OpenVINODeveloperPackage ${OV_COMPATIBILITY_VERSION} QUIET
-             COMPONENTS Runtime Threading
-             PATHS "${OpenVINO_DIR}")
-if(NOT OpenVINODeveloperPackage_FOUND)
-    find_package(OpenVINO ${OV_COMPATIBILITY_VERSION} REQUIRED
-                 COMPONENTS Runtime Threading
-                 PATHS "${OpenVINO_DIR_PY}")
-endif()
+function(load_openvino)
+    # Looking for OpenVINO in the python distribution. It doesn't work for cross-compiling build
+    if(NOT CMAKE_CROSSCOMPILING)
+        find_package(Python3 QUIET COMPONENTS Interpreter)
+        if(Python3_Interpreter_FOUND)
+            execute_process(
+                COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
+                OUTPUT_VARIABLE OpenVINO_DIR_PY
+                ERROR_QUIET
+            )
+        endif()
+    endif()
+
+    # Find OpenVINODeveloperPackage first to compile with SDL flags
+    set(OV_COMPATIBILITY_VERSION ${OpenVINOGenAI_VERSION_MAJOR}.${OpenVINOGenAI_VERSION_MINOR}.${OpenVINOGenAI_VERSION_PATCH})
+    find_package(OpenVINODeveloperPackage ${OV_COMPATIBILITY_VERSION} QUIET
+                COMPONENTS Runtime Threading
+                PATHS "${OpenVINO_DIR}")
+    if(NOT OpenVINODeveloperPackage_FOUND)
+        find_package(OpenVINO ${OV_COMPATIBILITY_VERSION} REQUIRED
+                    COMPONENTS Runtime Threading
+                    PATHS "${OpenVINO_DIR_PY}")
+    endif()
+endfunction()
+load_openvino()
 
 include(cmake/features.cmake)
 include(cmake/version.cmake)
 include(cmake/vs_version.cmake)
+include(cmake/add_target_helpers.cmake)
 
 if(ENABLE_PYTHON)
     # the following two calls are required for cross-compilation
@@ -89,6 +94,8 @@ endif()
 if(MSVC AND MSVC_VERSION GREATER_EQUAL 1930 AND MSVC_VERSION LESS 1941)
     add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
+
+include(cmake/global_properties.cmake)
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)

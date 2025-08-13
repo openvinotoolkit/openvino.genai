@@ -9,16 +9,13 @@ find_package(OpenVINOGenAI REQUIRED
 )
 
 function(add_sample_executable target_name)
-    add_executable(${target_name} ${target_name}.cpp)
-    target_link_libraries(${target_name} PRIVATE openvino::genai)
+    ov_add_sample(
+            NAME ${target_name}
+            DEPENDENCIES openvino::genai
+            SOURCES ${target_name}.cpp)
+
     set_target_properties(${target_name} PROPERTIES
-        COMPILE_PDB_NAME ${target_name}
-        # Ensure out-of-box LC_RPATH on macOS with SIP
-        INSTALL_RPATH_USE_LINK_PATH ON)
-    install(TARGETS ${target_name}
-            RUNTIME DESTINATION samples_bin/
-            COMPONENT samples_bin
-            EXCLUDE_FROM_ALL)
+        COMPILE_PDB_NAME ${target_name})
 endfunction()
 
 set(SAMPLE_LIST text_embeddings text_rerank)
