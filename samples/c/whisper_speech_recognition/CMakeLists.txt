@@ -9,18 +9,10 @@ find_package(OpenVINOGenAI REQUIRED
 )
 
 # Whisper Speech Recognition Sample
-add_executable(whisper_speech_recognition_c whisper_speech_recognition.c whisper_utils.c)
+ov_add_sample(
+        NAME whisper_speech_recognition_c
+        SOURCES whisper_speech_recognition.c whisper_utils.c
+        DEPENDENCIES openvino::genai::c
+)
 
-# Specifies that the source file should be compiled as a C source file
 set_source_files_properties(whisper_speech_recognition.c whisper_utils.c PROPERTIES LANGUAGE C)
-target_link_libraries(whisper_speech_recognition_c PRIVATE openvino::genai::c)
-
-set_target_properties(whisper_speech_recognition_c PROPERTIES
-    # Ensure out-of-box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-# Install
-install(TARGETS whisper_speech_recognition_c
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
