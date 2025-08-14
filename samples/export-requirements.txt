@@ -1,6 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-openvino-tokenizers[transformers]~=2025.3.0.0.dev
+openvino-tokenizers[transformers]~=2025.4.0.0.dev
 optimum-intel[nncf]==1.25.1
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"
