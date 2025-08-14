@@ -17,7 +17,7 @@ langchain-core==0.3.74
 # - Qwen/Qwen-7B-Chat
 einops==0.8.1
 # - openbmb/MiniCPM-V-2
-torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
+torchvision==0.23.0+cpu; platform_system == "Darwin" and platform_machine == "x86_64"
 torchvision==0.23.0+cpu; platform_system != "Darwin" or platform_machine != "x86_64"
 # - openbmb/MiniCPM-V-2
 timm==1.0.19
