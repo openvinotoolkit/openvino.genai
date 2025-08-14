@@ -43,6 +43,7 @@ class ModelRunner {
 
     bool m_is_aggregate_attention_scores;
 
+    bool m_is_use_xattention_inputs;
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
@@ -63,6 +64,8 @@ public:
      * @param is_aggregate_attention_scores If true, then the runner will pass the input tensors containing per-sequence
      * score aggregation window sizes to the model as requested by the scheduler.
      * on a per-attention layer basis.
+     * @param is_use_xattention_inputs If true, then the runner will pass the input tensors containing XAttention
+     * configuration per-sequence on a per-attention layer basis.
      */
     ModelRunner(ov::InferRequest request,
                 size_t block_size,
@@ -70,7 +73,8 @@ public:
                 bool collect_attention_scores = false,
                 bool is_use_per_layer_cache_control = false,
                 bool is_use_rotation_inputs = false,
-                bool is_aggregate_attention_scores = false)
+                bool is_aggregate_attention_scores = false,
+                bool is_use_xattention_inputs = false)
         : m_request(std::move(request)),
           m_block_size(block_size),
           m_num_decoder_layers(num_decoder_layers),
@@ -78,7 +82,8 @@ public:
           m_is_use_per_layer_cache_control(is_use_per_layer_cache_control),
           m_is_use_rotation_inputs(is_use_rotation_inputs),
           m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers),
-          m_is_aggregate_attention_scores(is_aggregate_attention_scores) {
+          m_is_aggregate_attention_scores(is_aggregate_attention_scores),
+          m_is_use_xattention_inputs(is_use_xattention_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
     }
@@ -130,6 +135,7 @@ public:
         size_t total_num_tokens = 0, total_num_blocks = 0;
         size_t max_context_len_val = 0;
         size_t hidden_size = 0;
+        bool have_token_type_ids = false;
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
@@ -150,6 +156,7 @@ public:
         ov::Tensor
             input_ids(ov::element::i64, {total_num_tokens}),
             inputs_embeds(ov::element::f32, {total_num_tokens, hidden_size}),
+            token_type_ids(ov::element::i64, {1, total_num_tokens}),
             position_ids(ov::element::i64, {total_num_tokens}),
             // PA specific parameters
             past_lens(ov::element::i32, {batch_size_in_sequences}),
@@ -168,9 +175,11 @@ public:
         // get raw pointers to copy to
         float *inputs_embeds_data = nullptr;
         int64_t *input_ids_data = nullptr;
+        int64_t *token_type_ids_data = nullptr;
 
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
+            token_type_ids_data = token_type_ids.data<int64_t>();
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
         }
@@ -214,6 +223,17 @@ public:
             const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
 
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
+                // compute token_type_ids for current sequence
+                if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                    if (auto token_type_ids = sequence_group->get_token_type_ids()) {
+                        have_token_type_ids = true;
+                        OPENVINO_ASSERT(token_type_ids->size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
+                        for (size_t i = 0; i < num_scheduled_tokens; ++i) {
+                            token_type_ids_data[i] = (i < prompt_len ? (*token_type_ids)[i] : 0);
+                        }
+                    }
+                }
+
                 output_seq_len = 0;
                 Sequence::CPtr sequence = running_sequences[seq_idx];
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
@@ -273,6 +293,8 @@ public:
                     input_ids_data += num_scheduled_tokens;
                 } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                     inputs_embeds_data += num_scheduled_tokens * hidden_size;
+                    if (have_token_type_ids)
+                        token_type_ids_data += num_scheduled_tokens;
                 }
 
 
@@ -303,6 +325,9 @@ public:
         }
         else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             m_request.set_tensor("inputs_embeds", inputs_embeds);
+            if (have_token_type_ids) {
+                m_request.set_tensor("token_type_ids", token_type_ids);
+            }
         }
 
         // typical LLM parameters
@@ -319,6 +344,10 @@ public:
         if (m_is_use_rotation_inputs) {
             m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
             _set_cache_rotation_coefficients(sequence_groups, scheduler_output);
+        }
+
+        if (m_is_use_xattention_inputs) {
+            _set_xattention_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
         if (matmul_gathering_is_available) {
@@ -660,6 +689,44 @@ private:
             }
             m_last_attention_scores[global_sequence_id] = attention_scores_across_decoder_layers_for_current_sequence;
         }
+    }
+
+    void _set_xattention_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                 const Scheduler::Output& scheduler_output,
+                                 size_t batch_size_in_sequences) {
+        ov::Tensor xattention_block_size(ov::element::i32, {});
+        ov::Tensor xattention_stride(ov::element::i32, {});
+        xattention_block_size.data<int32_t>()[0] = scheduler_output.m_xattention_block_size;
+        xattention_stride.data<int32_t>()[0] = scheduler_output.m_xattention_stride;
+        m_request.set_tensor("xattention_block_size", xattention_block_size);
+        m_request.set_tensor("xattention_stride", xattention_stride);
+
+        ov::Tensor xattention_thresholds(ov::element::f32, {batch_size_in_sequences});
+        float* xattention_threshold_data = xattention_thresholds.data<float>();
+        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); i++) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            size_t num_running_sequences = running_sequences.size();
+            for (size_t k = 0; k < num_running_sequences; ++k) {
+                Sequence::CPtr sequence = running_sequences[k];
+                size_t seq_id = sequence->get_id();
+                float threshold = 0.0;
+
+                if (scheduler_output.m_xattention_thresholds.find(seq_id) != scheduler_output.m_xattention_thresholds.end()) {
+                    threshold = scheduler_output.m_xattention_thresholds.at(seq_id);
+                }
+                *xattention_threshold_data = threshold;
+                xattention_threshold_data += 1;
+            }
+        }
+
+        std::vector<std::string> xattention_tensor_names(m_num_decoder_layers);
+        for (size_t i = 0; i < m_num_decoder_layers; i++) {
+            auto tensor_name = std::string("xattention_threshold.") + std::to_string(i);
+            m_request.set_tensor(tensor_name, xattention_thresholds);
+        }
+
     }
 };
 }

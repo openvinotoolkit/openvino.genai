@@ -13,6 +13,7 @@
 #include "visual_language/llava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
+#include "visual_language/gemma3/classes.hpp"
 
 namespace ov::genai {
 
@@ -72,6 +73,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderQwen2VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN2_5_VL) {
         return std::make_shared<VisionEncoderQwen2_5_VL>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::GEMMA3) {
+        return std::make_shared<VisionEncoderGemma3>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
@@ -99,6 +102,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderQwen2VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN2_5_VL) {
         return std::make_shared<VisionEncoderQwen2_5_VL>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::GEMMA3) {
+        return std::make_shared<VisionEncoderGemma3>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }

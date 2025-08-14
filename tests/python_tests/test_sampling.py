@@ -17,14 +17,14 @@ from utils.hugging_face import download_and_convert_model
                          [(dict(max_new_tokens=30), 'table is made of'),
                           (dict(max_new_tokens=30, min_new_tokens=30), '你好！ 你好嗎？'),
                           (dict(max_new_tokens=30, ignore_eos=True), 'Alan Turing was a'),
-                        #   (dict(max_length=40), 'table is made of'),
+                          (dict(max_length=30, ignore_eos=True), 'table is made of'),
                           (dict(stop_token_ids={28998}, apply_chat_template=False), 'The Sun is yellow because'), # since a test does not hang, it means stop token is met, skip chat template to generate long answer
                         #   (dict(max_new_tokens=1, min_new_tokens=0, echo=True), 'What is OpenVINO?')
                           ],
                          ids=["max_new_tokens",
                               "min_and_max_new_tokens",
                               "max_new_tokens_and_ignore_eos_true",
-                            #   "max_length",
+                              "max_length",
                               "stop_token_ids",
                             #   "echo_with_generation",
                               ])

@@ -6,6 +6,8 @@ option(ENABLE_PYTHON "Enable Python API build" ON)
 option(ENABLE_GIL_PYTHON_API "Build Python API with Global Interpreter Lock" ON)
 option(ENABLE_JS "Enable JS API build" OFF)
 option(ENABLE_SAMPLES "Enable samples build" ON)
+option(ENABLE_TESTS "Enable tests build" ON)
+option(ENABLE_TOOLS "Enable tools build" ON)
 option(ENABLE_GGUF "Enable support for GGUF format" ON)
 option(ENABLE_XGRAMMAR "Enable support for structured output generation with xgrammar backend" ON)
 

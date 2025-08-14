@@ -11,9 +11,15 @@
 #include "gtest/gtest.h"
 #include "openvino/genai/cache_eviction.hpp"
 
+using ov::genai::KVCrushAnchorPointMode;
+using ov::genai::KVCrushConfig;
 
-const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG = {32, 32, 192, ov::genai::AggregationMode::NORM_SUM};
-const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG = {32, 32, 72, ov::genai::AggregationMode::NORM_SUM};
+const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG =
+    {32, 32, 192, ov::genai::AggregationMode::NORM_SUM, false, 0, KVCrushConfig(0, KVCrushAnchorPointMode::MEAN)};
+const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG =
+    {32, 32, 72, ov::genai::AggregationMode::NORM_SUM, false, 0, KVCrushConfig(0, KVCrushAnchorPointMode::MEAN)};
+const ov::genai::CacheEvictionConfig KVCRUSH_CACHE_EVICTION_CONFIG =
+    {32, 32, 192, ov::genai::AggregationMode::NORM_SUM, false, 0, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)};
 constexpr size_t DEFAULT_BLOCK_SIZE = 4;
 constexpr size_t DEFAULT_NUM_DECODER_LAYERS = 2;
 constexpr size_t DEFAULT_MAX_POOL_WINDOW_SIZE = 8;
@@ -177,6 +183,7 @@ struct EvictionScoreManagerRegisterScoresTestStruct {
     ov::genai::AggregationMode aggregation_mode;
     size_t max_pool_window_size;
     size_t ignore_first_n_blocks;
+    size_t snapkv_window_size;
 
     std::vector<std::pair<std::vector<std::vector<float>>, std::set<size_t>>> scores_and_skips;
     std::vector<std::vector<float>> ref_scores;
@@ -187,7 +194,7 @@ using EvictionScoreManagerRegisterScoresParameterizedTest = ::testing::TestWithP
 
 const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_TEST_CASES = {
     { "basic_case_sum",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7},
              {-0.9, 1.4, 6.4, -9.0}}, {} }
@@ -199,7 +206,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
         {} }
     },
     { "basic_case_norm_sum",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7},
              {-0.9, 1.4, 6.4, -9.0}}, {} }
@@ -211,7 +218,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
         {4, 3, 2, 1} }
     },
     { "two_scores_sum",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7},
              {-0.9, 1.4, 6.4, -9.0}}, {} },
@@ -225,7 +232,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
         {} }
     },
     { "two_scores_norm_sum",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7},
              {-0.9, 1.4, 6.4, -9.0}}, {} },
@@ -240,7 +247,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
     },
 
     { "more_scores_second_time",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7},
              {-0.9, 1.4, 6.4, -9.0}}, {} },
@@ -254,7 +261,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
         {5, 4, 3, 2, 1} }
     },
     { "less_scores_second_time_with_skips",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 0, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
              {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
@@ -268,7 +275,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
         {7, 6, 5, 4, 3, 2, 1} }
     },
     { "with_ignore_first_n_blocks_base",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
              {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
@@ -282,7 +289,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
         {4, 3, 2, 1} }
     },
     { "with_ignore_first_n_blocks_more_scores_second_time",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
              {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
@@ -296,7 +303,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
         {5, 4, 3, 2, 1} }
     },
     { "with_ignore_first_n_blocks_less_second_time_with_skips",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 0, /* ignore_first_n_blocks = */ 1, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
              {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
@@ -310,7 +317,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
         {5, 4, 3, 2, 1} }
     },
     { "with_max_pool_base",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 0,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 0, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
              {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
@@ -322,7 +329,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
         {6, 5, 4, 3, 2, 1} }
     },
     { "with_max_pool_two_score",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 0,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 0, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
              {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
@@ -336,7 +343,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
         {7, 6, 5, 4, 3, 2, 1} }
     },
     { "with_max_pool_ignore_and_skips",
-      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 1,
+      /* block_size =*/ 2, /* aggregation_mode = */ ov::genai::AggregationMode::NORM_SUM, /* max_pool_window_size = */ 3, /* ignore_first_n_blocks = */ 1, /* snapkv_window_size = */ 0,
       {
           { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
              {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
@@ -353,7 +360,7 @@ const std::vector<EvictionScoreManagerRegisterScoresTestStruct> REGISTER_SCORES_
 
 TEST_P(EvictionScoreManagerRegisterScoresParameterizedTest, ScoresAndCountersAfterRegistrationAreCorrect) {
     const auto& test_struct = GetParam();
-    ov::genai::EvictionScoreManager mgr(test_struct.block_size, DEFAULT_NUM_DECODER_LAYERS, test_struct.max_pool_window_size, test_struct.aggregation_mode, test_struct.ignore_first_n_blocks);
+    ov::genai::EvictionScoreManager mgr(test_struct.block_size, DEFAULT_NUM_DECODER_LAYERS, test_struct.max_pool_window_size, test_struct.aggregation_mode, test_struct.ignore_first_n_blocks, test_struct.snapkv_window_size);
     for (const auto& score_and_skip : test_struct.scores_and_skips) {
         mgr.register_new_token_scores(get_layer_scores_from_2d_vector(score_and_skip.first), score_and_skip.second);
     }
@@ -371,6 +378,85 @@ TEST_P(EvictionScoreManagerRegisterScoresParameterizedTest, ScoresAndCountersAft
 
 INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerRegisterScoresParameterizedTest, ::testing::ValuesIn(REGISTER_SCORES_TEST_CASES),
                          [](const testing::TestParamInfo<EvictionScoreManagerRegisterScoresParameterizedTest::ParamType>& info) {
+                             return info.param.test_id;
+                         });
+
+struct EvictionScoreManagerSnapKVCounterTestStruct {
+    std::string test_id;
+    size_t snapkv_window_size;
+
+    std::vector<std::pair<size_t, size_t>> num_scores_and_num_snapkv_scores;
+    std::vector<size_t> ref_counters; // expected to be equal for all layers
+};
+
+using EvictionScoreManagerSnapKVCounterParameterizedTest = ::testing::TestWithParam<EvictionScoreManagerSnapKVCounterTestStruct>;
+
+const std::vector<EvictionScoreManagerSnapKVCounterTestStruct> SNAPKV_COUNTER_TEST_CASES = {
+    {
+        "snapkv_window_not_completely_filled",
+        3,
+        { {4, 1}, {5, 1} },
+        {2, 2, 2, 2, 1},
+    },
+    {
+        "snapkv_window_exactly_filled",
+        4,
+        { {3, 1}, {6, 3} },
+        {4, 4, 4, 3, 2, 1},
+    },
+    {
+        "snapkv_window_overflow_by_1",
+        4,
+        { {3, 1}, {7, 3} },
+        {5, 5, 5, 4, 3, 2, 1},
+    },
+    {
+        "snapkv_window_filled_followed_by_generation_step",
+        4,
+        { {3, 1}, {6, 3}, {7, 1} },
+        {5, 5, 5, 4, 3, 2, 1},
+    },
+    {
+        "snapkv_window_filled_followed_by_two_generation_steps",
+        4,
+        { {3, 1}, {6, 3}, {7, 1}, {8, 1} },
+        {6, 6, 6, 5, 4, 3, 2, 1},
+    },
+    {
+        "snapkv_window_not_filled_in_multiple_steps",
+        9,
+        { {3, 3}, {4, 1}, {5, 1}, {8, 3} },
+        {8, 7, 6, 5, 4, 3, 2, 1},
+    },
+    {
+        "snapkv_window_filled_exactly_in_multiple_steps",
+        8,
+        { {3, 3}, {4, 1}, {5, 1}, {8, 3} },
+        {8, 7, 6, 5, 4, 3, 2, 1},
+    }
+};
+
+
+TEST_P(EvictionScoreManagerSnapKVCounterParameterizedTest, CountersAfterRegistrationAreCorrect) {
+    const auto& test_struct = GetParam();
+    ov::genai::EvictionScoreManager mgr(DEFAULT_BLOCK_SIZE, DEFAULT_NUM_DECODER_LAYERS, DEFAULT_MAX_POOL_WINDOW_SIZE, ov::genai::AggregationMode::NORM_SUM, /* ignore_first_n_blocks = */ 0, test_struct.snapkv_window_size);
+    for (const auto& num_scores_num_snapkv_scores_pair : test_struct.num_scores_and_num_snapkv_scores) {
+        size_t num_scores_to_register = num_scores_num_snapkv_scores_pair.first;
+        size_t num_snapkv_scores = num_scores_num_snapkv_scores_pair.second;
+        ASSERT_GE(num_scores_to_register, num_snapkv_scores);
+        std::vector<std::vector<float>> mock_scores(DEFAULT_NUM_DECODER_LAYERS, std::vector<float>(num_scores_to_register, 0));
+        mgr.register_new_token_scores(get_layer_scores_from_2d_vector(mock_scores), {}, num_snapkv_scores);
+    }
+    const auto& test_counters = mgr.get_counters();
+    ASSERT_EQ(test_counters.size(), DEFAULT_NUM_DECODER_LAYERS);
+
+    for (size_t layer_idx = 0; layer_idx < DEFAULT_NUM_DECODER_LAYERS; layer_idx++) {
+        EXPECT_EQ(mgr.get_counters()[layer_idx], test_struct.ref_counters);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerSnapKVCounterParameterizedTest, ::testing::ValuesIn(SNAPKV_COUNTER_TEST_CASES),
+                         [](const testing::TestParamInfo<EvictionScoreManagerSnapKVCounterParameterizedTest::ParamType>& info) {
                              return info.param.test_id;
                          });
 
@@ -477,6 +563,77 @@ TEST_P(EvictionScoreManagerRemoveScoresParameterizedTest, ScoresAndCountersAfter
 
 INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerRemoveScoresParameterizedTest, ::testing::ValuesIn(REMOVE_SCORES_TEST_CASES),
                          [](const testing::TestParamInfo<EvictionScoreManagerRemoveScoresParameterizedTest::ParamType>& info) {
+                             return info.param.test_id;
+                         });
+
+struct SnapKVScoreAggregationCalculatorTestStruct {
+    std::string test_id;
+    size_t snapkv_window_size;
+    size_t prompt_len;
+    size_t num_processed_tokens;
+    size_t num_scheduled_tokens;
+    size_t ref_num_scores_aggregated;
+};
+
+using SnapKVScoreAggregationCalculatorParameterizedTest = ::testing::TestWithParam<SnapKVScoreAggregationCalculatorTestStruct>;
+
+const std::vector<SnapKVScoreAggregationCalculatorTestStruct> SNAPKV_SCORE_AGGREGATOR_TEST_CASES = {
+    {
+        "snapkv_window_not_reached",
+        /* snapkv_window_size = */ 8, /* prompt_len = */ 100, /* num_processed_tokens = */ 30, /* num_scheduled_tokens = */ 45,
+        /* ref_num_scores_aggregated = */ 0
+    },
+    {
+        "snapkv_window_begins",
+        /* snapkv_window_size = */ 16, /* prompt_len = */ 30, /* num_processed_tokens = */ 13, /* num_scheduled_tokens = */ 4,
+        /* ref_num_scores_aggregated = */ 3
+    },
+    {
+        "snapkv_window_in_progress",
+        /* snapkv_window_size = */ 16, /* prompt_len = */ 30, /* num_processed_tokens = */ 16, /* num_scheduled_tokens = */ 8,
+        /* ref_num_scores_aggregated = */ 8
+    },
+    {
+        "snapkv_window_ends",
+        /* snapkv_window_size = */ 16, /* prompt_len = */ 30, /* num_processed_tokens = */ 28, /* num_scheduled_tokens = */ 2,
+        /* ref_num_scores_aggregated = */ 2
+    },
+    {
+        "generation_phase",
+        /* snapkv_window_size = */ 16, /* prompt_len = */ 30, /* num_processed_tokens = */ 33, /* num_scheduled_tokens = */ 1,
+        /* ref_num_scores_aggregated = */ 1
+    },
+    {
+        "snapkv_window_in_one_chunk",
+        /* snapkv_window_size = */ 6, /* prompt_len = */ 42, /* num_processed_tokens = */ 33, /* num_scheduled_tokens = */ 9,
+        /* ref_num_scores_aggregated = */ 6
+    },
+    {
+        "no_snapkv_prefill_phase",
+        /* snapkv_window_size = */ 0, /* prompt_len = */ 89, /* num_processed_tokens = */ 61, /* num_scheduled_tokens = */ 13,
+        /* ref_num_scores_aggregated = */ 13
+    },
+    {
+        "no_snapkv_prefill_end",
+        /* snapkv_window_size = */ 0, /* prompt_len = */ 89, /* num_processed_tokens = */ 83, /* num_scheduled_tokens = */ 6,
+        /* ref_num_scores_aggregated = */ 6
+    },
+    {
+        "no_snapkv_generation_phase",
+        /* snapkv_window_size = */ 0, /* prompt_len = */ 89, /* num_processed_tokens = */ 101, /* num_scheduled_tokens = */ 1,
+        /* ref_num_scores_aggregated = */ 1
+    },
+};
+
+TEST_P(SnapKVScoreAggregationCalculatorParameterizedTest, AggregatesCorrectNumberOfScores) {
+    const auto& test_struct = GetParam();
+    auto calc = ov::genai::SnapKVScoreAggregationCalculator(test_struct.snapkv_window_size);
+    size_t test_num_scores_aggregated = calc.get_num_token_scores_to_aggregate(test_struct.prompt_len, test_struct.num_scheduled_tokens, test_struct.num_processed_tokens);
+    EXPECT_EQ(test_num_scores_aggregated, test_struct.ref_num_scores_aggregated);
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs, SnapKVScoreAggregationCalculatorParameterizedTest, ::testing::ValuesIn(SNAPKV_SCORE_AGGREGATOR_TEST_CASES),
+                         [](const testing::TestParamInfo<SnapKVScoreAggregationCalculatorParameterizedTest::ParamType>& info) {
                              return info.param.test_id;
                          });
 
@@ -667,6 +824,39 @@ const std::vector<LowScoreBlocksTestStruct> LOW_SCORE_BLOCK_EVICTION_TEST_CASES 
                 {{0, 9, 10, 11, 13}, {12, 11, 8, 9, 17}},
                 {{8, 9, 10, 11, 13}, {8, 9, 10, 11, 12}}
         },
+        //multiple blocks in evictable area - with KVCrush
+        {
+                "three_blocks_kvcrush",
+                2 * 4 + 2,  // 2 blocks worth of overflow + 2 tokens, amounting to 3 blocks to be evicted
+                KVCRUSH_CACHE_EVICTION_CONFIG,
+                {{28, 10, 11}, {18, 8, 31}},
+                {{28, 10, 11}, {18, 8, 31}}
+        },
+        //if there are more blocks with same low score than should be evicted, the lower-indexed ones should take precedence - with KVCrush
+        {
+                "four_zeroed_two_to_evict_kvcrush",
+                1 * 4 + 2,  // 2 blocks to be evicted
+                KVCRUSH_CACHE_EVICTION_CONFIG,
+                {{15, 36, 13, 10}, {9, 39, 31, 11}},  // 4 zeroed blocks
+                {{10, 13}, {9, 11}}
+        },
+        //will prefer to evict lower-indexed blocks if there are multiple same-scored blocks - with KVCrush
+        {
+                "less_zeroed_than_to_evict_kvcrush",
+                5 * 4 + 2,  // 6 blocks to be evicted
+                KVCRUSH_CACHE_EVICTION_CONFIG,
+                {{}, {30, 22}},  // 1st layer has no zeroed blocks, 2nd has only 2 zeroed blocks
+                {{8, 9, 10, 11, 12, 13}, {8, 9, 10, 11, 22, 30}}  // non-zeroed blocks to evict are taken from the beginning of evictable range
+        },
+
+        //low-scored blocks in non-evictable range do not lead to eviction - with KVCrush
+        {
+                "zeros_also_in_non_evictable_areas_kvcrush",
+                5 * 4 + 2,  // 6 blocks to be evicted
+                KVCRUSH_CACHE_EVICTION_CONFIG,
+                {{0, 2, 7, 24, 31, 49}, {5, 19, 27, 39, 50, 52}},  // 1st layer has 0, 2, 7 in start_area, 49 in recent_area; 2nd has 5 in start_area, 50, 54 in recent_area
+                {{8, 9, 10, 11, 24, 31}, {8, 9, 10, 19, 27, 39}}   // eviction padded up to 6 blocks by blocks in the beginning of the evictable_area
+        }
 };
 // clang-format on
 
@@ -692,7 +882,24 @@ TEST_P(CacheEvictionLowScoreBlocksParameterizedTest, EvictsLowestScoredBlocks) {
     auto test_evicted_blocks = algo.evict_logical_blocks();
     auto ref_evicted_blocks = test_struct.ref_evicted_blocks;
     for (size_t layer_idx = 0; layer_idx < num_decoder_layers; layer_idx++) {
-        EXPECT_EQ(test_evicted_blocks[layer_idx], ref_evicted_blocks[layer_idx]);
+        bool should_apply_kvcrush =
+            (test_struct.eviction_config.kvcrush_config.budget > 0) &&
+            (std::ceil(static_cast<double>(test_struct.tokens_over_max_cache_size) / DEFAULT_BLOCK_SIZE) >=
+             (test_struct.eviction_config.kvcrush_config.budget));
+        if (should_apply_kvcrush) {
+            // check test_evicted_blocks is a subset of ref_evicted_blocks
+            EXPECT_TRUE(std::includes(ref_evicted_blocks[layer_idx].begin(),
+                                      ref_evicted_blocks[layer_idx].end(),
+                                      test_evicted_blocks[layer_idx].begin(),
+                                      test_evicted_blocks[layer_idx].end()));
+            EXPECT_EQ(static_cast<int>(test_evicted_blocks[layer_idx].size()),
+                      static_cast<int>(ref_evicted_blocks[layer_idx].size()) -
+                          static_cast<int>(test_struct.eviction_config.kvcrush_config.budget));
+        }
+        // if kvcrush is disabled
+        else {
+            EXPECT_EQ(test_evicted_blocks[layer_idx], ref_evicted_blocks[layer_idx]);
+        }
     }
 }
 
@@ -850,26 +1057,24 @@ struct CacheEvictionConfigInitParamsForTest {
     size_t recent_size;
     size_t max_cache_size;
     size_t snapkv_window_size;
+    size_t kvcrush_budget;
 };
 
 using CacheEvictionConfigInitializationTest = ::testing::TestWithParam<CacheEvictionConfigInitParamsForTest>;
 
 const std::vector<CacheEvictionConfigInitParamsForTest> INVALID_CONFIG_INIT_PARAMS_CASES = {
         // zero area sizes
-        {32, 32, 64, 8},
-        {0, 13, 39, 1},
-        {128, 0, 384, 7},
+        {32, 32, 64, 8, 10},
+        {0, 13, 39, 1, 10},
+        {128, 0, 384, 7, 10},
 
         // max_cache_size less than start_size + recent_size
-        {32, 64, 32},
-
-        // zero snapkv window
-        {32, 32, 256, 0},
+        {32, 64, 32, 8, 10},
 };
 
 TEST_P(CacheEvictionConfigInitializationTest, ThrowsForInvalidConfigParams) {
     auto params = GetParam();
-    EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size, params.recent_size, params.max_cache_size, ov::genai::AggregationMode::NORM_SUM, /* apply_rotation = */ false, params.snapkv_window_size), ov::Exception);
+    EXPECT_THROW(ov::genai::CacheEvictionConfig(params.start_size, params.recent_size, params.max_cache_size, ov::genai::AggregationMode::NORM_SUM, /* apply_rotation = */ false, params.snapkv_window_size, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)), ov::Exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionConfigInitializationTest,
@@ -885,12 +1090,12 @@ using CacheEvictionAlgoInitializationTest = ::testing::TestWithParam<CacheEvicti
 
 const std::vector<CacheEvictionAlgoInitParamsForTest> INVALID_ALGO_INIT_PARAMS_CASES = {
         // area sizes not multiple of block size
-        { {32, 32, 97, ov::genai::AggregationMode::SUM}, 16, 8},
-        { {11, 13, 50, ov::genai::AggregationMode::NORM_SUM}, 13, 1},
-        { {128, 200, 584, ov::genai::AggregationMode::NORM_SUM}, 128, 19},
+        { {32, 32, 97, ov::genai::AggregationMode::SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)}, 16, 8},
+        { {11, 13, 50, ov::genai::AggregationMode::NORM_SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)}, 13, 1},
+        { {128, 200, 584, ov::genai::AggregationMode::NORM_SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)}, 128, 19},
 
         // zero decoder layers
-        { {32, 64, 192, ov::genai::AggregationMode::SUM}, 32, 0},
+        { {32, 64, 192, ov::genai::AggregationMode::SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)}, 32, 0},
 };
 TEST_P(CacheEvictionAlgoInitializationTest, ThrowsForInvalidConfigs) {
     auto params = GetParam();

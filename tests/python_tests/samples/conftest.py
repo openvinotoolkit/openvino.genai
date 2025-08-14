@@ -127,7 +127,6 @@ MODELS = {
     "ms-marco-TinyBERT-L2-v2": {
         "name": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "convert_args": ["--trust-remote-code", "--task", "text-classification"],
-        "convert_2_input_tokenizer": True
     },
     "tiny-random-SpeechT5ForTextToSpeech": {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
@@ -151,8 +150,8 @@ TEST_FILES = {
     "cmu_us_awb_arctic-wav-arctic_a0001.bin": "https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin"
 }
 
-SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python")))
-SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
+SAMPLES_PY_DIR = Path(os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python"))))
+SAMPLES_CPP_DIR = Path(os.environ.get("SAMPLES_CPP_DIR", os.getcwd()))
 SAMPLES_C_DIR = os.environ.get("SAMPLES_C_DIR", os.getcwd())
 SAMPLES_JS_DIR = os.environ.get("SAMPLES_JS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/js")))
 
@@ -182,12 +181,6 @@ def setup_and_teardown(request, tmp_path_factory):
             logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
 
 
-def convert_2_input_tokenizer(models_path):
-    hf_tokenizer = AutoTokenizer.from_pretrained(models_path, trust_remote_code=True)
-    ov_tokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=False, number_of_inputs=2)
-    save_model(ov_tokenizer, models_path / "openvino_tokenizer.xml")
-
-
 @pytest.fixture(scope="session")
 def convert_model(request):
     """Fixture to convert the model once for the session."""
@@ -213,11 +206,8 @@ def convert_model(request):
         try:
             retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
         except subprocess.CalledProcessError as error:
-            logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+            logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
             raise
-
-        if MODELS[model_id].get("convert_2_input_tokenizer", False):
-            convert_2_input_tokenizer(Path(model_path))
 
     yield model_path
 
