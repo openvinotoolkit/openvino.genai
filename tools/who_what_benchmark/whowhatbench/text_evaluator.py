@@ -70,8 +70,8 @@ class TextEvaluator(BaseEvaluator):
         if self.language is None and "language" in self.gt_data.columns:
             self.language = self.gt_data["language"].values[0]
 
-        if "prompt_lenght_type" in self.gt_data.columns:
-            self.long_prompt = self.gt_data["language"].values[0] == 'long'
+        if "prompt_length_type" in self.gt_data.columns:
+            self.long_prompt = self.gt_data["prompt_length_type"].values[0] == 'long'
 
         self.similarity = None
         self.divergency = None
@@ -213,6 +213,6 @@ class TextEvaluator(BaseEvaluator):
         res_data = {"prompts": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)
         df["language"] = self.language
-        df["prompt_lenght_type"] = 'long' if self.long_prompt else 'short'
+        df["prompt_length_type"] = 'long' if self.long_prompt else 'short'
 
         return df
