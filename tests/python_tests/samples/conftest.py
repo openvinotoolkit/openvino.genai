@@ -10,9 +10,6 @@ from pathlib import Path
 
 from utils.network import retry_request
 from utils.constants import get_ov_cache_dir
-from transformers import AutoTokenizer
-from openvino_tokenizers import convert_tokenizer
-from openvino import save_model
 
 
 # Configure logging
@@ -173,7 +170,7 @@ def setup_and_teardown(request, tmp_path_factory):
     
     yield
     
-    if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
+    if os.environ.get("CLEANUP_CACHE", "false").lower() != "false":
         if os.path.exists(ov_cache):
             logger.info(f"Removing temporary directory: {ov_cache}")
             shutil.rmtree(ov_cache)
