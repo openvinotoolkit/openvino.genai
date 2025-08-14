@@ -75,8 +75,8 @@ xgrammar::Grammar XGrammarStructuredOutput::create_grammar(const std::optional<S
         grammar = xgrammar::Grammar::FromStructuralTag(
             xgrammar_structural_tags, structured_output_config.value().structural_tags_config.value().triggers
         );
-    } else if (structured_output_config.compound_grammar.has_value()) {
-        grammar = parse_compound_grammar(*structured_output_config.compound_grammar);
+    } else if (structured_output_config.value().compound_grammar.has_value()) {
+        grammar = parse_compound_grammar(structured_output_config.value().compound_grammar.value());
     } else {
         OPENVINO_THROW("No grammar definition provided for structured output generation.");
     }
