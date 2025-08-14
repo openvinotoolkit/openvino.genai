@@ -190,10 +190,5 @@ public:
     */
     void finish_chat();
 
-    /**
-     * @brief Set visual token pruning configuration for VLM pipelines
-     * @param vision_config Configuration map for CDPruner and vision processing
-     */
-    void set_visual_token_pruning_config(const ov::AnyMap& vision_config);
 };
 }

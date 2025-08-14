@@ -206,7 +206,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("visual_tokens_percentage", &GenerationConfig::visual_tokens_percentage)
         .def_readwrite("relevance_weight", &GenerationConfig::relevance_weight)
         .def_readwrite("enable_pruning", &GenerationConfig::enable_pruning)
-        .def_readwrite("debug_mode", &GenerationConfig::debug_mode)
+        .def_readwrite("pruning_debug_mode", &GenerationConfig::pruning_debug_mode)
         .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
         .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
         .def_readwrite("echo", &GenerationConfig::echo)

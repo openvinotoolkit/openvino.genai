@@ -72,7 +72,7 @@ public:
     virtual void set_visual_token_pruning_config(size_t visual_tokens_percentage,
                                                  float relevance_weight,
                                                  bool enable_pruning,
-                                                 bool debug_mode = false);
+                                                 bool pruning_debug_mode = false);
     // set CDPruner setting
     void set_visual_token_pruning_config(const ov::AnyMap& config);
 
@@ -130,7 +130,7 @@ private:
         virtual void set_visual_token_pruning_config(size_t visual_tokens_percentage,
                                                      float relevance_weight,
                                                      bool enable_pruning,
-                                                     bool debug_mode) {
+                                                     bool pruning_debug_mode) {
             if (!m_vision_encoder)
                 return;
             auto pruner_config = m_vision_encoder->get_pruning_config();
@@ -138,7 +138,7 @@ private:
                 pruner_config->visual_tokens_percentage = visual_tokens_percentage;
                 pruner_config->relevance_weight = relevance_weight;
                 pruner_config->enable_pruning = enable_pruning;
-                pruner_config->debug_mode = debug_mode;
+                pruner_config->pruning_debug_mode = pruning_debug_mode;
             }
             m_vision_encoder->set_pruning_config(pruner_config.value());
         }

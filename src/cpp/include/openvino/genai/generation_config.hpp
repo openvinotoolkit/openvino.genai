@@ -151,7 +151,7 @@ public:
  * @param visual_tokens_percentage the percentage of visual tokens to keep.
  * @param relevance_weight the weight of relevance for visual tokens.
  * @param enable_pruning whether to enable pruning.
- * @param debug_mode whether to enable debug mode.
+ * @param pruning_debug_mode whether to enable pruning debug mode.
  *
  * Assisting generation parameters:
  * @param assistant_confidence_threshold the lower token probability of candidate to be validated by main model in case of dynamic strategy candidates number update.
@@ -209,7 +209,7 @@ public:
     size_t visual_tokens_percentage = 0;
     float relevance_weight = 0.f;
     bool enable_pruning = false;
-    bool debug_mode = false;
+    bool pruning_debug_mode = false;
 
     // Assisting generation parameters
     float assistant_confidence_threshold = 0.f;
@@ -286,7 +286,7 @@ static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
 static constexpr ov::Property<size_t> visual_tokens_percentage{"visual_tokens_percentage"};
 static constexpr ov::Property<float> relevance_weight{"relevance_weight"};
 static constexpr ov::Property<bool> enable_pruning{"enable_pruning"};
-static constexpr ov::Property<bool> debug_mode{"debug_mode"};
+static constexpr ov::Property<bool> pruning_debug_mode{"pruning_debug_mode"};
 
 extern OPENVINO_GENAI_EXPORTS ov::Property<size_t> rng_seed;
 

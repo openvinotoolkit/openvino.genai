@@ -207,8 +207,11 @@ public:
         vision_config["text_prompt"] = prompt;
 
         // Set visual token pruning configuration
-        m_inputs_embedder->set_visual_token_pruning_config(vision_config);
-        
+        m_inputs_embedder->set_visual_token_pruning_config(generation_config.visual_tokens_percentage,
+                                                           generation_config.relevance_weight,
+                                                           generation_config.enable_pruning,
+                                                           generation_config.pruning_debug_mode);
+
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs, vision_config);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
@@ -372,45 +375,6 @@ public:
 
         m_generation_config.validate();
     }
-
-    void set_visual_token_pruning_config(size_t visual_tokens_percentage,
-                                         float relevance_weight,
-                                         bool enable_pruning,
-                                         bool debug_mode) override {
-        // Validate input parameters
-        OPENVINO_ASSERT(visual_tokens_percentage > 0 && visual_tokens_percentage <= 100,
-                        "visual_tokens_percentage must be between 1 and 100, got: ",
-                        visual_tokens_percentage);
-        OPENVINO_ASSERT(relevance_weight >= 0.0f && relevance_weight <= 1.0f,
-                        "relevance_weight must be between 0.0 and 1.0, got: ",
-                        relevance_weight);
-
-        // Update configuration
-        m_cdpruner_config["visual_tokens_percentage"] = visual_tokens_percentage;
-        m_cdpruner_config["relevance_weight"] = relevance_weight;
-        m_cdpruner_config["enable_pruning"] = enable_pruning;
-        m_cdpruner_config["debug_mode"] = debug_mode;
-    }
-
-    ov::AnyMap get_visual_token_pruning_config() const override {
-        return m_cdpruner_config;
-    }
-
-    void set_visual_token_pruning_enabled(bool enable) override {
-        m_cdpruner_config["enable_pruning"] = enable;
-    }
-
-    bool is_visual_token_pruning_enabled() const override {
-        auto it = m_cdpruner_config.find("enable_pruning");
-        if (it != m_cdpruner_config.end()) {
-            try {
-                return it->second.as<bool>();
-            } catch (const std::exception&) {
-                return true; // default value
-            }
-        }
-        return true; // default value
-    }
 };
 
 VLMPipeline::VLMPipeline(
@@ -547,23 +511,4 @@ GenerationConfig VLMPipeline::get_generation_config() const {
 
 void VLMPipeline::set_generation_config(const GenerationConfig& new_config) {
     m_pimpl->set_generation_config(new_config);
-}
-
-void VLMPipeline::set_visual_token_pruning_config(size_t visual_tokens_percentage,
-                                                  float relevance_weight,
-                                                  bool enable_pruning,
-                                                  bool debug_mode) {
-    m_pimpl->set_visual_token_pruning_config(visual_tokens_percentage, relevance_weight, enable_pruning, debug_mode);
-}
-
-ov::AnyMap VLMPipeline::get_visual_token_pruning_config() const {
-    return m_pimpl->get_visual_token_pruning_config();
-}
-
-void VLMPipeline::set_visual_token_pruning_enabled(bool enable) {
-    m_pimpl->set_visual_token_pruning_enabled(enable);
-}
-
-bool VLMPipeline::is_visual_token_pruning_enabled() const {
-    return m_pimpl->is_visual_token_pruning_enabled();
 }

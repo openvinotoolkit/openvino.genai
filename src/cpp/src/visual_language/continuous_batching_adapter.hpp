@@ -12,9 +12,6 @@ class ov::genai::VLMPipeline::VLMContinuousBatchingAdapter : public ov::genai::V
 public:
     ContinuousBatchingPipeline m_impl;
     
-    // CDPruner configuration storage
-    ov::AnyMap m_cdpruner_config;
-
     VLMContinuousBatchingAdapter(
         const std::filesystem::path& models_dir,
         const SchedulerConfig& scheduler_config,
@@ -25,12 +22,6 @@ public:
         scheduler_config, 
         device, 
         properties} {
-        // Initialize CDPruner configuration with default values
-        m_cdpruner_config = {
-            {"visual_tokens_percentage", static_cast<size_t>(30)},
-            {"relevance_weight", 0.5f},
-            {"enable_pruning", true}
-        };
     }
 
     VLMContinuousBatchingAdapter(
@@ -49,12 +40,6 @@ public:
         config_dir_path,
         properties,
         generation_config} {
-        // Initialize CDPruner configuration with default values
-        m_cdpruner_config = {
-            {"visual_tokens_percentage", static_cast<size_t>(30)},
-            {"relevance_weight", 0.5f},
-            {"enable_pruning", true}
-        };
     }
 
     VLMDecodedResults generate(
@@ -64,14 +49,11 @@ public:
         const StreamerVariant& streamer
     ) override {
         auto start_time = std::chrono::steady_clock::now();
-        
+
         // Set CDPruner configuration in the ContinuousBatchingPipeline
         // Add text prompt to the configuration for CDPruner
-        ov::AnyMap vision_config = m_cdpruner_config;
+        ov::AnyMap vision_config;
         vision_config["text_prompt"] = prompt;
-        
-        // Pass CDPruner configuration to the underlying pipeline
-        m_impl.set_visual_token_pruning_config(vision_config);
 
         auto result = m_impl.generate({prompt}, {rgbs}, {generation_config}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
@@ -103,43 +85,5 @@ public:
     virtual GenerationConfig get_generation_config() const override { return m_impl.get_config(); };
 
     virtual void set_generation_config(const GenerationConfig& new_config)  override { m_impl.set_config(new_config); };
-
-    virtual void set_visual_token_pruning_config(size_t visual_tokens_percentage,
-                                                 float relevance_weight,
-                                                 bool enable_pruning,
-                                                 bool debug_mode) override {
-        // Validate input parameters
-        OPENVINO_ASSERT(visual_tokens_percentage > 0 && visual_tokens_percentage <= 100,
-                        "visual_tokens_percentage must be between 1 and 100, got: ",
-                        visual_tokens_percentage);
-        OPENVINO_ASSERT(relevance_weight >= 0.0f && relevance_weight <= 1.0f,
-                        "relevance_weight must be between 0.0 and 1.0, got: ",
-                        relevance_weight);
-
-        // Update configuration
-        m_cdpruner_config["visual_tokens_percentage"] = visual_tokens_percentage;
-        m_cdpruner_config["relevance_weight"] = relevance_weight;
-        m_cdpruner_config["enable_pruning"] = enable_pruning;
-        m_cdpruner_config["debug_mode"] = debug_mode;
-    }
-
-    virtual ov::AnyMap get_visual_token_pruning_config() const override {
-        return m_cdpruner_config;
-    }
-
-    virtual void set_visual_token_pruning_enabled(bool enable) override {
-        m_cdpruner_config["enable_pruning"] = enable;
-    }
-
-    virtual bool is_visual_token_pruning_enabled() const override {
-        auto it = m_cdpruner_config.find("enable_pruning");
-        if (it != m_cdpruner_config.end()) {
-            try {
-                return it->second.as<bool>();
-            } catch (const std::exception&) {
-                return true; // default value
-            }
-        }
-        return true; // default value
-    }
+    
 };

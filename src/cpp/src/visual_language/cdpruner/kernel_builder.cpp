@@ -44,7 +44,7 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config) : m_con
         // Create inference request
         infer_request = compiled_model.create_infer_request();
     } catch (const std::exception& e) {
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "Error occurred while building kernel: " << e.what() << std::endl;
         }
     }
@@ -151,7 +151,7 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_gpu(const ov::Ten
 
     } else {
         // Fallback to CPU implementation if GPU fails
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "GPU MatMul failed, falling back to CPU." << std::endl;
         }
         return compute_similarity_matrix(features);

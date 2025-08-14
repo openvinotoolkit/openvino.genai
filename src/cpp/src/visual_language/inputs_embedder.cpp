@@ -292,16 +292,22 @@ void InputsEmbedder::finish_chat() {
 void InputsEmbedder::set_visual_token_pruning_config(size_t visual_tokens_percentage,
                                                      float relevance_weight,
                                                      bool enable_pruning,
-                                                     bool debug_mode) {
-    return m_impl->set_visual_token_pruning_config(visual_tokens_percentage, relevance_weight, enable_pruning, debug_mode);
+                                                     bool pruning_debug_mode) {
+    return m_impl->set_visual_token_pruning_config(visual_tokens_percentage,
+                                                   relevance_weight,
+                                                   enable_pruning,
+                                                   pruning_debug_mode);
 }
 
 void InputsEmbedder::set_visual_token_pruning_config(const ov::AnyMap& config) {
     size_t visual_tokens_percentage = config.count("visual_tokens_percentage") ? config.at("visual_tokens_percentage").as<size_t>() : 30;
     float relevance_weight = config.count("relevance_weight") ? config.at("relevance_weight").as<float>() : 0.5f;
     bool enable_pruning = config.count("enable_pruning") ? config.at("enable_pruning").as<bool>() : false;
-    bool debug_mode = config.count("debug_mode") ? config.at("debug_mode").as<bool>() : false;
-    return m_impl->set_visual_token_pruning_config(visual_tokens_percentage, relevance_weight, enable_pruning, debug_mode);
+    bool pruning_debug_mode = config.count("pruning_debug_mode") ? config.at("pruning_debug_mode").as<bool>() : false;
+    return m_impl->set_visual_token_pruning_config(visual_tokens_percentage,
+                                                   relevance_weight,
+                                                   enable_pruning,
+                                                   pruning_debug_mode);
 }
 
 std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(

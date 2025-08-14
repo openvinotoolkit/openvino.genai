@@ -22,9 +22,9 @@ struct Config {
     
     /// @brief Device to run CDPruner computations on
     std::string device = "CPU";
-    
+
     /// @brief Whether to enable debug output
-    bool debug_mode = false;
+    bool pruning_debug_mode = false;
 
     /// @brief Threshold for numerical stability
     float numerical_threshold = 1e-6f;
@@ -39,7 +39,7 @@ struct Config {
     bool operator==(const Config& other) const {
         return visual_tokens_percentage == other.visual_tokens_percentage &&
                std::abs(relevance_weight - other.relevance_weight) < 1e-6f && enable_pruning == other.enable_pruning &&
-               device == other.device && debug_mode == other.debug_mode &&
+               device == other.device && pruning_debug_mode == other.pruning_debug_mode &&
                std::abs(numerical_threshold - other.numerical_threshold) < 1e-9f &&
                use_negative_relevance == other.use_negative_relevance;
     }

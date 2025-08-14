@@ -55,9 +55,6 @@ protected:
     std::vector<size_t> m_history_image_ids;
     size_t m_image_id = 0;
 
-    // CDPruner configuration for VLM
-    std::optional<ov::AnyMap> m_vision_config;
-
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms
     friend class ContinuousBatchingPipeline;
@@ -69,10 +66,6 @@ protected:
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 
 public:
-    virtual void set_visual_token_pruning_config(size_t visual_tokens_percentage,
-                                                 float relevance_weight,
-                                                 bool enable_pruning,
-                                                 bool debug_mode = false);
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);
     PipelineMetrics get_metrics() const;

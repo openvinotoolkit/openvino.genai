@@ -16,8 +16,8 @@ CDPruner::CDPruner(const Config& config)
     
     // Validate configuration
     validate_config(config);
-    
-    if (m_config.debug_mode) {
+
+    if (m_config.pruning_debug_mode) {
         std::cout << "CDPruner initialized with configuration:" << std::endl;
         std::cout << "  visual_tokens_percentage: " << m_config.visual_tokens_percentage << "%" << std::endl;
         std::cout << "  relevance_weight: " << m_config.relevance_weight << std::endl;
@@ -32,7 +32,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
     // Input validation
     if (!m_config.enable_pruning) {
         // If pruning is disabled, return all tokens
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "Pruning is disabled. Returning all tokens." << std::endl;
         }
         return create_all_tokens_selection(visual_features);
@@ -43,7 +43,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
     size_t num_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * m_config.visual_tokens_percentage / 100.0));
     
     if (m_config.visual_tokens_percentage == 0 || num_tokens_to_keep >= total_tokens) {
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "Warning: visual_tokens_percentage is 0 or results in keeping all tokens. "
                       << "Returning all tokens without pruning." << std::endl;
         }
@@ -61,7 +61,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
     
     try {
         // Step 1: Compute relevance scores
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "Step 1: Computing relevance scores..." << std::endl;
         }
         auto relevance_start = std::chrono::high_resolution_clock::now();
@@ -70,12 +70,12 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         
         auto relevance_duration = std::chrono::duration_cast<std::chrono::microseconds>(relevance_end - relevance_start);
         
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "  Relevance computation took: " << relevance_duration.count() << " us" << std::endl;
         }
         
         // Step 2: Build conditional kernel matrix
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "Step 2: Building conditional kernel matrix..." << std::endl;
         }
         auto kernel_start = std::chrono::high_resolution_clock::now();
@@ -84,12 +84,12 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         
         auto kernel_duration = std::chrono::duration_cast<std::chrono::microseconds>(kernel_end - kernel_start);
         
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "  Kernel matrix construction took: " << kernel_duration.count() << " us" << std::endl;
         }
         
         // Step 3: Select tokens using fast greedy DPP
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "Step 3: Selecting tokens using DPP..." << std::endl;
         }
         auto dpp_start = std::chrono::high_resolution_clock::now();
@@ -98,7 +98,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         
         auto dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
         
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "  DPP selection took: " << dpp_duration.count() << " us" << std::endl;
         }
         
@@ -126,7 +126,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         std::cout << "  Pruning efficiency: " << (static_cast<double>(total_output_tokens) / total_duration.count() * 1000000) << " output tokens/sec" << std::endl;
         std::cout << "  Pruning ratio: " << (1.0 - static_cast<double>(num_tokens_to_keep) / visual_shape[1]) * 100 << "%" << std::endl;
         
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "CDPruner total processing time: " << total_duration.count() << " us" << std::endl;
             print_selection_statistics(visual_features, selected_tokens);
         }
@@ -229,7 +229,7 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features,
     m_last_statistics.batch_size = batch_size;
 
     // Show selected token indices for first batch (for debugging)
-    if (!selected_tokens.empty() && m_config.debug_mode) {
+    if (!selected_tokens.empty() && m_config.pruning_debug_mode) {
         std::cout << "Selected token indices (batch 0): [";
         const auto& first_batch_tokens = selected_tokens[0];
         for (size_t i = 0; i < std::min(static_cast<size_t>(10), first_batch_tokens.size()); ++i) {
@@ -261,7 +261,10 @@ PruningStatistics CDPruner::get_last_pruning_statistics() const {
 }
 
 void CDPruner::validate_config(const Config& config) {
-    if (config.visual_tokens_percentage <= 0 || config.visual_tokens_percentage > 100) {
+    if (!config.enable_pruning)
+        return;
+
+    if (config.visual_tokens_percentage < 0 || config.visual_tokens_percentage > 100) {
         throw std::invalid_argument("visual_tokens_percentage must be between 1 and 100");
     }
     
@@ -269,7 +272,7 @@ void CDPruner::validate_config(const Config& config) {
         throw std::invalid_argument("relevance_weight must be in range [0.0, 1.0]");
     }
     
-    if (config.numerical_threshold <= 0.0f) {
+    if (config.numerical_threshold < 0.0f) {
         throw std::invalid_argument("numerical_threshold must be positive");
     }
     
@@ -291,7 +294,7 @@ bool CDPruner::update_config(const Config& new_config) {
         m_kernel_builder = ConditionalKernelBuilder(new_config);
         m_dpp_selector = FastGreedyDPP(new_config);
 
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "CDPruner configuration updated successfully:" << std::endl;
             std::cout << "  visual_tokens_percentage: " << m_config.visual_tokens_percentage << "%" << std::endl;
             std::cout << "  relevance_weight: " << m_config.relevance_weight << std::endl;
@@ -300,7 +303,7 @@ bool CDPruner::update_config(const Config& new_config) {
 
         return true;
     } catch (const std::exception& e) {
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cerr << "Failed to update CDPruner configuration: " << e.what() << std::endl;
         }
         return false;
