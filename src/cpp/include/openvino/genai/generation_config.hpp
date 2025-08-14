@@ -206,8 +206,8 @@ public:
     size_t rng_seed = 0;
 
     // CDPruner config
-    size_t visual_tokens_percentage = 0;
-    float relevance_weight = 0.f;
+    size_t visual_tokens_percentage = 50;
+    float relevance_weight = 0.5f;
     bool enable_pruning = false;
     bool pruning_debug_mode = false;
 

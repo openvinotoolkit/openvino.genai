@@ -11,7 +11,7 @@ bool print_subword(std::string&& subword) {
 
 int main(int argc, char* argv[]) try {
     if (3 > argc || argc > 7) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE> [<DEVICE>] [<ENABLE_CDPRUNER>] [<NUM_VISUAL_TOKENS>] [<DEBUG_MODE>]");
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE> [<DEVICE>] [<ENABLE_CDPRUNER>] [<NUM_VISUAL_TOKENS>] [<PRUNING_DEBUG_MODE>]");
     }
 
     std::string model_dir = argv[1];
@@ -19,7 +19,7 @@ int main(int argc, char* argv[]) try {
     std::string device = argc > 3 ? argv[3] : "CPU";
     bool enable_cdpruner = argc > 4 ? (std::string(argv[4]) == "true" || std::string(argv[4]) == "1") : false;
     size_t visual_tokens_percentage = argc > 5 ? std::stoul(argv[5]) : 30;
-    bool debug_mode = argc > 6 ? (std::string(argv[6]) == "true" || std::string(argv[6]) == "1") : false;
+    bool pruning_debug_mode = argc > 6 ? (std::string(argv[6]) == "true" || std::string(argv[6]) == "1") : false;
 
     std::vector<ov::Tensor> rgbs = utils::load_images(image_file);
 
@@ -33,49 +33,36 @@ int main(int argc, char* argv[]) try {
     // Initialize VLMPipeline with cache configuration if needed
     ov::genai::VLMPipeline pipe(model_dir, device, enable_compile_cache);
     
+    ov::genai::GenerationConfig generation_config;
+    generation_config.max_new_tokens = 100;
     // Configure CDPruner if requested
     if (enable_cdpruner) {
-        std::cout << "Enabling CDPruner with " << visual_tokens_percentage << "% visual tokens" << std::endl;
-        pipe.set_visual_token_pruning_config(
-            visual_tokens_percentage,  // visual_tokens_percentage
-            0.5f,              // relevance_weight
-            true,              // enable_pruning
-            debug_mode         // enable debug mode
-        );
-        
-        // Print current configuration
-        auto config = pipe.get_visual_token_pruning_config();
-        std::cout << "CDPruner configuration:" << std::endl;
-        for (const auto& [key, value] : config) {
-            std::cout << "  - " << key << ": " << value.as<std::string>() << std::endl;
-        }
-    } else {
-        std::cout << "CDPruner is disabled" << std::endl;
-        pipe.set_visual_token_pruning_enabled(false);
+        std::cout << "Enabling CDPruner with keeping " << visual_tokens_percentage << "% visual tokens" << std::endl;
+        generation_config.enable_pruning = enable_cdpruner;
+        generation_config.visual_tokens_percentage = visual_tokens_percentage;
+        generation_config.pruning_debug_mode = pruning_debug_mode;
     }
 
-    ov::genai::GenerationConfig generation_config;
-    generation_config.max_new_tokens = 3000;
 
-    std::string prompt = "describe this image in details";
+    std::string prompt;
 
     pipe.start_chat();
-    //std::cout << "question:\n";
+    std::cout << "question:\n";
 
-    //std::getline(std::cin, prompt);
+    std::getline(std::cin, prompt);
     pipe.generate(prompt,
                   ov::genai::images(rgbs),
                   ov::genai::generation_config(generation_config),
                   ov::genai::streamer(print_subword));
-    //std::cout << "\n----------\n"
-    //    "question:\n";
-    //while (std::getline(std::cin, prompt)) {
-    //    pipe.generate(prompt,
-    //                  ov::genai::generation_config(generation_config),
-    //                  ov::genai::streamer(print_subword));
-    //    std::cout << "\n----------\n"
-    //        "question:\n";
-    //}
+    std::cout << "\n----------\n"
+        "question:\n";
+    while (std::getline(std::cin, prompt)) {
+        pipe.generate(prompt,
+                      ov::genai::generation_config(generation_config),
+                      ov::genai::streamer(print_subword));
+        std::cout << "\n----------\n"
+            "question:\n";
+    }
     pipe.finish_chat();
 } catch (const std::exception& error) {
     try {
