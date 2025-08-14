@@ -23,6 +23,7 @@ env:
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: ~/.cache/hf
   OV_CACHE: ~/.cache/ov_cache/194c936
+  OPENVINO_LOG_LEVEL: 5
 
 jobs:
   smart_ci:
