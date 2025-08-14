@@ -429,27 +429,15 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
     embeds.reserve(single_images.size());
     
     // Check if CDPruner is enabled and text prompt is available
-    bool use_pruning = false;
+    auto current_pruning_config = m_vision_encoder->get_pruning_config();
+    bool use_pruning = current_pruning_config->enable_pruning;
     std::string text_prompt;
-    size_t visual_tokens_percentage = 30; // default percentage value
+    size_t visual_tokens_percentage = current_pruning_config->use_negative_relevance; // default percentage value
     
     try {
-        auto enable_it = vision_config.find("enable_pruning");
         auto prompt_it = vision_config.find("text_prompt");
-        auto tokens_it = vision_config.find("visual_tokens_percentage");
-        
-        if (enable_it != vision_config.end()) {
-            use_pruning = enable_it->second.as<bool>();
-        }
         if (prompt_it != vision_config.end()) {
             text_prompt = prompt_it->second.as<std::string>();
-        }
-        if (tokens_it != vision_config.end()) {
-            // Extract percentage and validate range
-            size_t percentage = tokens_it->second.as<size_t>();
-            if (percentage >= 1 && percentage <= 100) {
-                visual_tokens_percentage = percentage;
-            }
         }
         
         // Only use pruning if explicitly enabled and text prompt is provided
@@ -620,6 +608,12 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_pro
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+    if (m_vision_encoder->is_pruning_available()) {
+        auto current_config = m_vision_encoder->get_pruning_config();
+        current_config->use_negative_relevance = true; // Ensure negative relevance is used for LLaVA
+        m_vision_encoder->set_pruning_config(current_config.value());
+    }
+
     return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 }
 

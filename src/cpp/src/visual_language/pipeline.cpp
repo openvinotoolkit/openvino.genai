@@ -48,9 +48,6 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     size_t m_image_id = 0;
     ChatHistory m_history;
 
-    // CDPruner configuration
-    ov::AnyMap m_cdpruner_config;
-
 public:
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -118,13 +115,6 @@ public:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
-
-        // Initialize CDPruner configuration with default values
-        m_cdpruner_config = {
-            {"visual_tokens_percentage", static_cast<size_t>(30)},
-            {"relevance_weight", 0.5f},
-            {"enable_pruning", true}
-        };
     }
 
 
@@ -160,13 +150,6 @@ public:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
-
-        // Initialize CDPruner configuration with default values
-        m_cdpruner_config = {
-            {"visual_tokens_percentage", static_cast<size_t>(30)},
-            {"relevance_weight", 0.5f},
-            {"enable_pruning", true}
-        };
     }
 
     VLMDecodedResults generate(
@@ -203,8 +186,7 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        // Create config map that includes CDPruner configuration
-        ov::AnyMap vision_config = m_cdpruner_config;
+        ov::AnyMap vision_config;
         
         // Add text prompt to vision config for CDPruner
         vision_config["text_prompt"] = prompt;

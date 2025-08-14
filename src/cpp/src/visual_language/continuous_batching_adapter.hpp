@@ -50,11 +50,6 @@ public:
     ) override {
         auto start_time = std::chrono::steady_clock::now();
 
-        // Set CDPruner configuration in the ContinuousBatchingPipeline
-        // Add text prompt to the configuration for CDPruner
-        ov::AnyMap vision_config;
-        vision_config["text_prompt"] = prompt;
-
         auto result = m_impl.generate({prompt}, {rgbs}, {generation_config}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
         

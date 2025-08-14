@@ -80,9 +80,6 @@ public:
                                                  float relevance_weight,
                                                  bool enable_pruning,
                                                  bool pruning_debug_mode = false);
-    // set CDPruner setting
-    void set_visual_token_pruning_config(const ov::AnyMap& config);
-
     virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
         const std::string& prompt,
         size_t base_id,
