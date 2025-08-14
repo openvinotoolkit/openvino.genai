@@ -306,8 +306,13 @@ public:
 
     Tokenizer() = default;
     ~Tokenizer();
-private:
+    bool operator==(const Tokenizer& other) const {
+        return m_pimpl == other.m_pimpl;
+    }
     class TokenizerImpl;
+private:
+    friend class StructuredOutputConfig;
+    friend class Sampler;
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
 

@@ -65,7 +65,7 @@ public:
      * @param tokenizer The tokenizer to be used for grammar compilation.
      * @param vocab_size Optional vocabulary size; if not provided, it will be determined from the tokenizer.
      */
-    XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size = std::nullopt);
+    XGrammarStructuredOutput(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size = std::nullopt);
 
     /**
      * @brief Returns a logit transformer that applies XGrammar grammar matching to logits.
@@ -77,19 +77,21 @@ public:
      * @param sampling_parameters The generation configuration parameters that may include JSON schema, regex, or EBNF grammar.
      * @return A shared pointer to the logit transformer that applies XGrammar grammar matching.
      */
-    std::shared_ptr<LogitTransformers::ILogitTransformer> get_logits_transformer(const GenerationConfig& sampling_parameters) override;
+    std::shared_ptr<LogitTransformers::ILogitTransformer> get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) override;
+    void validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) override;
 private:
     std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
 
     static xgrammar::Grammar parse_compound_grammar(const StructuredOutputConfig::CompoundGrammar& compound_grammar);
+    xgrammar::Grammar create_grammar(const std::optional<StructuredOutputConfig>& structured_output_config);
 };
 
 
 // Static initializer for XGrammar backend registration
 static bool registerXGrammarBackend() {
     StructuredOutputController::register_backend("xgrammar",
-        [](const ov::genai::Tokenizer& tokenizer, std::optional<int> vocab_size) {
-            return std::make_unique<XGrammarStructuredOutput>(tokenizer, vocab_size);
+        [](const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size) {
+            return std::make_unique<XGrammarStructuredOutput>(tokenizer_impl, vocab_size);
         });
         return true;
 }
