@@ -944,7 +944,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         if (!m_logit_processors.count(request_id)) {
             std::shared_ptr<StructuredOutputController> structured_output_controller = nullptr;
             if (m_tokenizer.m_pimpl != nullptr) {
-                structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller();
+                structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller(vocab_size);
             }
             m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids(), structured_output_controller)});
         }

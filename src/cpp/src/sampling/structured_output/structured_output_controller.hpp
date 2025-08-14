@@ -80,6 +80,7 @@ public:
     
     std::pair<std::map<std::string, float>, std::vector<float>> get_times() const;
     void clear_compile_times();
+    std::optional<int> get_vocab_size() const { return m_vocab_size; }
 private:
     std::map<std::string, float> m_init_grammar_compiler_times;
     std::vector<float> m_grammar_compile_times;

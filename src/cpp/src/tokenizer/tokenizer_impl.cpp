@@ -746,9 +746,13 @@ std::string Tokenizer::TokenizerImpl::get_chat_template() {
     return m_chat_template;
 }
 
-std::shared_ptr<StructuredOutputController> Tokenizer::TokenizerImpl::get_structured_output_controller() {
-    if (m_structured_output_controller == nullptr) {
-        m_structured_output_controller = std::make_shared<StructuredOutputController>(*this);
+std::shared_ptr<StructuredOutputController> Tokenizer::TokenizerImpl::get_structured_output_controller(std::optional<int> vocab_size) {
+    if (m_structured_output_controller == nullptr || vocab_size.has_value()) {
+        if (m_structured_output_controller != nullptr && vocab_size.has_value() &&
+            m_structured_output_controller->get_vocab_size() == *vocab_size) {
+            return m_structured_output_controller;
+        }
+        m_structured_output_controller = std::make_shared<StructuredOutputController>(*this, vocab_size);
     }
     return m_structured_output_controller;
 }

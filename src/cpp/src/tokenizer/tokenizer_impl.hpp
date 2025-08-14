@@ -78,7 +78,7 @@ public:
 
     void set_chat_template(const std::string& chat_template);
     std::string get_chat_template();
-    std::shared_ptr<StructuredOutputController> get_structured_output_controller();
+    std::shared_ptr<StructuredOutputController> get_structured_output_controller(std::optional<int> vocab_size = std::nullopt);
 };
 
 }  // namespace genai
