@@ -1,5 +1,5 @@
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-openvino_genai~=2025.3.0.0.dev
+openvino_genai~=2025.4.0.0.dev
 librosa==0.11.0  # For Whisper
 pillow==11.3.0  # Image processing for VLMs
 json5==0.12.1  # For ReAct
