@@ -166,7 +166,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        /* is_aggregate_attention_scores = */ false,
                                                        is_use_xattention);
     }
-
+    m_scheduler->set_validation_mode(m_is_validation_mode_enabled);
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
     m_sampler->set_seed(m_generation_config.rng_seed);
 
