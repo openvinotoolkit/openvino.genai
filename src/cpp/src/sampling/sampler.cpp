@@ -1205,9 +1205,12 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
         std::vector<Token> tokens = log_softmax(logits, beam.m_global_beam_idx);
 
         // sort tokens
-        std::sort(tokens.begin(), tokens.end(), [](Token left, Token right) {
-            return left.m_log_prob > right.m_log_prob;  // Most probable tokens in front
-        });
+        std::partial_sort(tokens.begin(),
+                          tokens.begin() + m_parameters.eagle_branching_factor,
+                          tokens.end(),
+                          [](const Token& a, const Token& b) {
+                              return a.m_log_prob > b.m_log_prob;
+                          });
 
         size_t add_count = 0;
         for (Token token : tokens) {
@@ -1570,8 +1573,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             }
             topk_searcher = &m_top_k_selector_info.at(request_id);
         }
-            topk_searcher->select_top_k(sequence_group_logits, sg_sampling_info.sampler_output);
-    
+        topk_searcher->select_top_k(sequence_group_logits, sg_sampling_info.sampler_output);
     } else if (sampling_params.is_beam_search()) {
         uint64_t request_id = sequence_group->get_request_id();
 
