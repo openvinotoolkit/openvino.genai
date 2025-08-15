@@ -99,7 +99,6 @@ class Sampler {
     Tokenizer m_tokenizer;
 
     ThreadPool m_thread_pool;
-    std::shared_ptr<ov::genai::StructuredOutputController> m_structured_output_controller;
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;

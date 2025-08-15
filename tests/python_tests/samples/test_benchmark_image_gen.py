@@ -1,7 +1,6 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import pytest
 import sys
 
@@ -12,7 +11,11 @@ download_mask_image = download_test_content
 
 class TestBenchmarkImageGen:
     @pytest.mark.samples
-    @pytest.mark.image_generation
+    @pytest.mark.LCM_Dreamshaper_v7_int8_ov
+    @pytest.mark.parametrize("executable", [
+        [SAMPLES_CPP_DIR / "benchmark_image_gen"],
+        [sys.executable, SAMPLES_PY_DIR / "image_generation/benchmark_image_gen.py"],
+    ])
     @pytest.mark.parametrize(
         "download_model, prompt",
         [
@@ -26,14 +29,5 @@ class TestBenchmarkImageGen:
             pytest.param("images/image.png", "mask_image.png"),
         ], indirect=["download_test_content", "download_mask_image"],
     )
-    def test_sample_benchmark_image_gen(self, download_model, pipeline_type, prompt, download_test_content, download_mask_image):
-        inference_steps = "3"
-        # Run C++ benchmark sample
-        benchmark_sample = os.path.join(SAMPLES_CPP_DIR, 'benchmark_image_gen')
-        benchmark_cpp_command = [benchmark_sample, "-t", pipeline_type, "-m" , download_model, "-p", "'" + prompt + "'", "-i", download_test_content, "--mi", download_mask_image, "--is", inference_steps]
-        run_sample(benchmark_cpp_command)
-        
-        # Run Python benchmark sample
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'image_generation/benchmark_image_gen.py')
-        benchmark_py_command = [sys.executable, benchmark_script, "-t", pipeline_type, "-m" , download_model, "-p", "'" + prompt + "'", "-i", download_test_content, "-mi", download_mask_image, "-is", inference_steps]
-        run_sample(benchmark_py_command)
+    def test_sample_benchmark_image_gen(self, executable, download_model, pipeline_type, prompt, download_test_content, download_mask_image):
+        run_sample(executable + ["-t", pipeline_type, "-m" , download_model, "-p", "'" + prompt + "'", "-i", download_test_content, "--mask_image", download_mask_image, "--num_inference_steps", "3"])

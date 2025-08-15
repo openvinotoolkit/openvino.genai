@@ -20,15 +20,15 @@ class TestBeamSearchCausalLM:
         indirect=["convert_model"],
     )
     def test_sample_beam_search_causal_lm(self, convert_model, sample_args):
-        # Python test
-        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/beam_search_causal_lm.py")
-        py_command = [sys.executable, py_script, convert_model, f'"{sample_args}"']
-        py_result = run_sample(py_command)
-
         # C++ test
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'beam_search_causal_lm')
         cpp_command = [cpp_sample, convert_model, f'"{sample_args}"']
         cpp_result = run_sample(cpp_command)
+
+        # Python test
+        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/beam_search_causal_lm.py")
+        py_command = [sys.executable, py_script, convert_model, f'"{sample_args}"']
+        py_result = run_sample(py_command)
 
         # Test JS sample
         js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/beam_search_causal_lm.js")
@@ -54,17 +54,17 @@ class TestBeamSearchCausalLM:
         ],
     )
     def test_sample_beam_search_causal_lm_refs(self, request, convert_model, sample_args):
-        # Python test
-        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/beam_search_causal_lm.py")
-        py_command = [sys.executable, py_script, convert_model] + [f'"{arg}"' for arg in sample_args]
-        py_result = run_sample(py_command)
-        py_predictions = py_result.stdout
-
         # C++ test
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'beam_search_causal_lm')
         cpp_command = [cpp_sample, convert_model] + [f'"{arg}"' for arg in sample_args]
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
+
+        # Python test
+        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/beam_search_causal_lm.py")
+        py_command = [sys.executable, py_script, convert_model] + [f'"{arg}"' for arg in sample_args]
+        py_result = run_sample(py_command)
+        py_predictions = py_result.stdout
 
         # Test JS sample
         js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/beam_search_causal_lm.js")
