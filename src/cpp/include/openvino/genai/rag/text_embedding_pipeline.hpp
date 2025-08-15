@@ -36,6 +36,19 @@ public:
         std::optional<size_t> max_length;
 
         /**
+         * @brief If 'true', model input tensors are padded to the maximum length
+         */
+        std::optional<bool> pad_to_max_length;
+
+        /**
+         * @brief Batch size of embedding model.
+         * Useful for database population. If set, the pipeline will fix model shape for inference optimization. 
+         * Number of documents passed to pipeline should be equal to batch_size.
+         * For query embeddings, batch_size should be set to 1 or not set.
+         */
+        std::optional<size_t> batch_size;
+
+        /**
          * @brief Pooling strategy applied to model output tensor
          */
         PoolingType pooling_type = PoolingType::CLS;
@@ -71,6 +84,12 @@ public:
          * ov::genai::TextEmbeddingPipeline::Config config({{"normalize", false}});
          */
         explicit Config(const ov::AnyMap& properties);
+
+        /**
+         * @brief checks that are no conflicting parameters
+         * @throws Exception if config is invalid.
+         */
+        void validate() const;
     };
 
     /**
@@ -167,6 +186,13 @@ static constexpr ov::Property<std::string> query_instruction{"query_instruction"
  * @brief Instruction to use for embedding document
  */
 static constexpr ov::Property<std::string> embed_instruction{"embed_instruction"};
+
+/**
+ * @brief Batch size for embedding model.
+ * If batch_size, max_length and pad_to_max_length are set, the pipeline will fix model shape
+ * for inference optimization. Number of documents passed to pipeline should be equal to batch_size.
+ */
+static constexpr ov::Property<size_t> batch_size{"batch_size"};
 
 }  // namespace genai
 }  // namespace ov

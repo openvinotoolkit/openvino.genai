@@ -3,6 +3,12 @@
 
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 
+#include <fstream>
+#include <nlohmann/json.hpp>
+
+#include "json_utils.hpp"
+#include "logger.hpp"
+#include "openvino/core/except.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/opsets/opset.hpp"
 #include "openvino/opsets/opset1.hpp"
@@ -18,12 +24,24 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     auto properties_copy = properties;
 
     properties_copy.erase(max_length.name());
+    properties_copy.erase(pad_to_max_length.name());
+    properties_copy.erase(batch_size.name());
     properties_copy.erase(pooling_type.name());
     properties_copy.erase(normalize.name());
     properties_copy.erase(embed_instruction.name());
     properties_copy.erase(query_instruction.name());
 
     return properties_copy;
+}
+
+template <typename T>
+bool has_token_type_ids_input(const T& inputs) {
+    for (const auto& input : inputs) {
+        if (input.get_any_name() == "token_type_ids") {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -98,6 +116,26 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const 
 
     return processor.build();
 }
+
+std::optional<size_t> read_max_position_embeddings(const std::filesystem::path& models_path) {
+    // config.json not found. Skip parameters initialization from file, use defaults.
+    const std::filesystem::path& json_path = models_path / "config.json";
+    if (!std::filesystem::exists(json_path)) {
+        return std::nullopt;
+    }
+
+    using ov::genai::utils::read_json_param;
+
+    std::ifstream f(json_path);
+    OPENVINO_ASSERT(f.is_open(), "Failed to open '", json_path);
+
+    nlohmann::json data = nlohmann::json::parse(f);
+
+    std::optional<size_t> max_position_embeddings;
+    read_json_param(data, "max_position_embeddings", max_position_embeddings);
+    return max_position_embeddings;
+}
+
 }  // namespace
 
 namespace ov {
@@ -106,11 +144,23 @@ using utils::read_anymap_param;
 
 TextEmbeddingPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::max_length.name(), max_length);
+    read_anymap_param(properties, ov::genai::pad_to_max_length.name(), pad_to_max_length);
+    read_anymap_param(properties, ov::genai::batch_size.name(), batch_size);
     read_anymap_param(properties, ov::genai::pooling_type.name(), pooling_type);
     read_anymap_param(properties, ov::genai::normalize.name(), normalize);
     read_anymap_param(properties, ov::genai::embed_instruction.name(), embed_instruction);
     read_anymap_param(properties, ov::genai::query_instruction.name(), query_instruction);
 };
+
+void TextEmbeddingPipeline::Config::validate() const {
+    if (max_length.has_value()) {
+        OPENVINO_ASSERT(max_length.value() > 0, "max_length should be greater than 0");
+    }
+
+    if (batch_size.has_value()) {
+        OPENVINO_ASSERT(batch_size.value() > 0, "batch_size should be greater than 0");
+    }
+}
 
 class TextEmbeddingPipeline::TextEmbeddingPipelineImpl {
 public:
@@ -119,14 +169,33 @@ public:
                               const Config& config,
                               const ov::AnyMap& properties = {})
         : m_config{config},
-          m_tokenizer{models_path} {
+          m_tokenizer{models_path},
+          m_max_position_embeddings{read_max_position_embeddings(models_path)} {
+        m_config.validate();
+
         ov::Core core = utils::singleton_core();
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
+        const bool should_reshape = m_config.batch_size.has_value() || m_config.max_length.has_value();
+        if (should_reshape) {
+            reshape_model(model);
+        }
+
+        if (device == "NPU") {
+            OPENVINO_ASSERT(!model->is_dynamic(),
+                            "NPU device does not support dynamic shapes. In order to fix model shape, set batch_size, "
+                            "max_length and pad_to_max_length in the configuration.");
+        }
+
         model = apply_postprocessing(model, m_config);
+
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
+        }
+
+        if (m_config.pad_to_max_length) {
+            m_tokenization_params.insert({pad_to_max_length.name(), *m_config.pad_to_max_length});
         }
 
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
@@ -176,8 +245,54 @@ private:
     InferRequest m_request;
     Config m_config;
     AnyMap m_tokenization_params;
+    std::optional<size_t> m_max_position_embeddings;
+
+    void reshape_model(std::shared_ptr<Model>& model) {
+        ov::PartialShape target_shape{ov::Dimension::dynamic(), ov::Dimension::dynamic()};
+
+        if (m_config.batch_size.has_value()) {
+            target_shape[0] = ov::Dimension(*m_config.batch_size);
+        }
+
+        if (m_config.max_length.has_value()) {
+            if (m_max_position_embeddings.has_value() && *m_config.max_length > *m_max_position_embeddings) {
+                std::stringstream message;
+                message << "max_length is set to " << *m_config.max_length
+                        << " which is greater than models max_position_embeddings (" << *m_max_position_embeddings
+                        << ")."
+                        << " Some models may fail with such configuration."
+                        << " Remove max_position_embeddings from config.json to silence this warning.";
+                Logger::warn(message.str());
+            }
+
+            if (m_config.pad_to_max_length.has_value() && *m_config.pad_to_max_length) {
+                target_shape[1] = ov::Dimension(*m_config.max_length);
+            } else {
+                target_shape[1] = ov::Dimension{1, static_cast<int64_t>(*m_config.max_length)};
+            }
+        }
+
+        std::map<std::string, ov::PartialShape> input_name_to_shape;
+        input_name_to_shape["input_ids"] = target_shape;
+        input_name_to_shape["attention_mask"] = target_shape;
+
+        if (has_token_type_ids_input(model->inputs())) {
+            input_name_to_shape["token_type_ids"] = target_shape;
+        }
+
+        model->reshape(input_name_to_shape);
+    }
 
     void start_embed_async(std::vector<std::string>& texts) {
+        if (m_config.batch_size.has_value()) {
+            // if batch_size is set, model shape is fixed
+            // provide user friendly error message if number of texts is not equal to batch_size
+            OPENVINO_ASSERT(texts.size() == *m_config.batch_size,
+                            "Number of texts passed to pipeline should be equal to batch_size(",
+                            *m_config.batch_size,
+                            ")");
+        }
+
         const auto encoded = m_tokenizer.encode(texts, m_tokenization_params);
 
         m_request.set_tensor("input_ids", encoded.input_ids);
@@ -185,13 +300,10 @@ private:
 
         // fill token_type_ids
         // todo: pass token_type_ids from tokenizer
-        for (auto& input : m_request.get_compiled_model().inputs()) {
-            if (input.get_any_name() == "token_type_ids") {
-                ov::Tensor token_type_ids{ov::element::i64, encoded.input_ids.get_shape()};
-                std::fill_n(token_type_ids.data<int64_t>(), encoded.input_ids.get_size(), 0);
-                m_request.set_tensor("token_type_ids", token_type_ids);
-                break;
-            }
+        if (has_token_type_ids_input(m_request.get_compiled_model().inputs())) {
+            ov::Tensor token_type_ids{ov::element::i64, encoded.input_ids.get_shape()};
+            std::fill_n(token_type_ids.data<int64_t>(), encoded.input_ids.get_size(), 0);
+            m_request.set_tensor("token_type_ids", token_type_ids);
         }
 
         m_request.start_async();
@@ -229,7 +341,7 @@ private:
     }
 
     EmbeddingResults to_embedding_result(const Tensor& last_hidden_state) {
-        const auto last_hidden_state_data = last_hidden_state.data<float>();
+        const float* last_hidden_state_data = last_hidden_state.data<float>();
 
         std::vector<std::vector<float>> result;
         const auto shape = last_hidden_state.get_shape();
@@ -239,7 +351,7 @@ private:
 
         for (size_t batch = 0; batch < batch_size; batch++) {
             const auto batch_offset = batch * hidden_size;
-            const auto batch_data = last_hidden_state_data + batch_offset;
+            const float* batch_data = last_hidden_state_data + batch_offset;
             const std::vector<float> batch_result(batch_data, batch_data + hidden_size);
             result.push_back(batch_result);
         }
