@@ -64,8 +64,6 @@ protected:
     int64_t m_rope_delta = 0;
     ov::Tensor m_merged_image_embeddings;
 
-    // [CDPruner] CDPruner instance for token pruning
-    std::unique_ptr<ov::genai::cdpruner::CDPruner> m_cdpruner;
     bool m_with_cu_seqlens_input = false;
 
     virtual ov::Tensor run_image_embeddings_merger(

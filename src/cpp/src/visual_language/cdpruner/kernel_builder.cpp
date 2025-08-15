@@ -45,12 +45,12 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
 
         m_requests_initialized = true;
 
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "ConditionalKernelBuilder: InferRequests initialized for device " << m_config.device
                       << std::endl;
         }
     } catch (const std::exception& e) {
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " << e.what()
                       << std::endl;
         }
@@ -209,7 +209,7 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_gpu(const ov::Ten
 
     if (!m_requests_initialized) {
         // Fallback to CPU implementation if infer requests not initialized
-        if (m_config.debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "Using CPU fallback for similarity matrix computation" << std::endl;
         }
         return compute_similarity_matrix(features);
@@ -225,8 +225,8 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_gpu(const ov::Ten
 
     } catch (const std::exception& e) {
         // Fallback to CPU implementation if GPU fails
-        if (m_config.debug_mode) {
-            std::cout << "GPU MatMul failed, falling back to CPU: " << e.what() << std::endl;
+        if (m_config.pruning.pruning_debug_mode) {
+            std::cout << "GPU MatMul failed, falling back to CPU." << std::endl;
         }
         return compute_similarity_matrix(features);
     }

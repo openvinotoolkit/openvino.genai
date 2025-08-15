@@ -39,7 +39,7 @@ struct PruningStatistics {
  * Usage example:
  * ```cpp
  * Config config;
- * config.num_visual_tokens = 64;
+ * config.visual_tokens_percentage = 30;
  * config.enable_pruning = true;
  * 
  * CDPruner pruner(config);
@@ -77,7 +77,7 @@ public:
      * @brief Apply pruning and return only selected features
      * @param visual_features Input visual features [B, N, D]
      * @param text_features Input text features [M, D]
-     * @return Pruned visual features [B, T, D] where T is num_visual_tokens
+     * @return Pruned visual features [B, T, D] where T is calculated from visual_tokens_percentage
      */
     ov::Tensor apply_pruning(const ov::Tensor& visual_features, 
                            const ov::Tensor& text_features);
@@ -87,7 +87,14 @@ public:
      * @return Current configuration
      */
     const Config& get_config() const { return m_config; }
-    
+
+    /**
+     * @brief Update configuration dynamically
+     * @param new_config New configuration to apply
+     * @return true if configuration was updated successfully
+     */
+    bool update_config(const Config& new_config);
+
     /**
      * @brief Compute current pruning ratio
      * @return Ratio of selected tokens to default token count

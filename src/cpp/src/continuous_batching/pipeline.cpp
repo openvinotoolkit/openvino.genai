@@ -286,7 +286,3 @@ void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
 void ContinuousBatchingPipeline::finish_chat() {
     m_impl->finish_chat();
 }
-
-void ContinuousBatchingPipeline::set_visual_token_pruning_config(const ov::AnyMap& vision_config) {
-    m_impl->m_vision_config = vision_config;
-}

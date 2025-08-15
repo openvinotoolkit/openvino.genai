@@ -410,17 +410,6 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
-    
-    // [CDPruner] Initialize CDPruner with hardcoded configuration
-    ov::genai::cdpruner::Config cdpruner_config;
-    cdpruner_config.num_visual_tokens = 300;  // Hardcoded 40% retention rate for Qwen2.5-VL
-    cdpruner_config.relevance_weight = 0.5f;  // Balance between relevance and diversity
-    cdpruner_config.enable_pruning = true;    // Enable pruning functionality
-    cdpruner_config.device = device;          // Use same device as the model
-    cdpruner_config.debug_mode = false;       // Disable debug output for production
-    cdpruner_config.use_negative_relevance = true;  // needed for CLIP-based models
-    cdpruner_config.use_ops_model = false; // Use OpenVINO ops model for relevance scoring
-    m_cdpruner = std::make_unique<ov::genai::cdpruner::CDPruner>(cdpruner_config);
 }
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
@@ -451,15 +440,6 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
-    
-    // [CDPruner] Initialize CDPruner with hardcoded configuration
-    ov::genai::cdpruner::Config cdpruner_config;
-    cdpruner_config.num_visual_tokens = 550;  // Hardcoded 40% retention rate for Qwen2.5-VL (from ~1376 to 550)
-    cdpruner_config.relevance_weight = 0.5f;  // Balance between relevance and diversity
-    cdpruner_config.enable_pruning = true;    // Enable pruning functionality
-    cdpruner_config.device = device;          // Use same device as the model
-    cdpruner_config.debug_mode = false;       // Disable debug output for production
-    m_cdpruner = std::make_unique<ov::genai::cdpruner::CDPruner>(cdpruner_config);
 }
 
 std::pair<std::string, std::vector<size_t>> InputsEmbedderQwen2VL::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
@@ -543,10 +523,10 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     size_t original_visual_tokens = 0;
     size_t pruned_visual_tokens = 0;
 
-    auto pruner_config = m_cdpruner->get_config();
-    bool pruner_enabled = pruner_config.enable_pruning;
-    
-    if (m_cdpruner && pruner_enabled && !images.empty()) {
+    auto current_config = m_vision_encoder->get_pruning_config();
+    bool pruner_enabled = !current_config.has_value() ? false : current_config->enable_pruning;
+
+    if (m_vision_encoder->is_pruning_available() && pruner_enabled && !images.empty()) {
         // Store original visual token count for position adjustment
         original_visual_tokens = merged_image_embeddings_tensor.get_shape()[0];
         
@@ -558,10 +538,10 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
         
         // Convert visual features for CDPruner using the implemented function
         ov::Tensor visual_features = convert_visual_features_for_cdpruner(merged_image_embeddings_tensor);
-        
+
         // Apply CDPruner to get pruned visual tokens
-        ov::Tensor pruned_visual_features = m_cdpruner->apply_pruning(visual_features, text_features);
-        
+        ov::Tensor pruned_visual_features = m_vision_encoder->apply_pruning(visual_features, text_features);
+
         // [CDPruner] Convert back from 3D [1, num_tokens, hidden_size] to 2D [num_tokens, hidden_size]
         // to match the expected input format for merge_text_and_image_embeddings
         ov::Shape pruned_shape = pruned_visual_features.get_shape();
@@ -599,9 +579,14 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     }
 
     // [CDPruner] Handle pruned visual tokens case
-    if (m_cdpruner && pruner_enabled  && !images.empty() && original_visual_tokens != pruned_visual_tokens) {
+    if (m_vision_encoder->is_pruning_available() && pruner_enabled && !images.empty() &&
+        original_visual_tokens != pruned_visual_tokens) {
         // Visual tokens have been pruned, need to create new merged embeddings with correct dimensions
-        return merge_text_and_image_embeddings_with_pruning(input_ids, text_embeds, merged_image_embeddings_tensor, image_pad_token_id, original_visual_tokens);
+        return merge_text_and_image_embeddings_with_pruning(input_ids,
+                                                            text_embeds,
+                                                            merged_image_embeddings_tensor,
+                                                            image_pad_token_id,
+                                                            original_visual_tokens);
     } else {
         // No pruning or no images, use original function
         return qwen2_vl_utils::merge_text_and_image_embeddings(input_ids, text_embeds, merged_image_embeddings_tensor, image_pad_token_id);

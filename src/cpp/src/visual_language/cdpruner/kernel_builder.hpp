@@ -6,6 +6,7 @@
 #include "cdpruner_config.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include <openvino/runtime/infer_request.hpp>
 
 namespace ov::genai::cdpruner {
 
