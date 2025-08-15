@@ -164,6 +164,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
     std::vector<EncodedImage> encoded_images = {};
 
+    const auto& generation_config = sampling_params[0];
+    // Set visual token pruning configuration
+    m_inputs_embedder->set_visual_token_pruning_config(generation_config.visual_tokens_percentage,
+                                                       generation_config.relevance_weight,
+                                                       generation_config.enable_pruning,
+                                                       generation_config.pruning_debug_mode);
+
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
         const auto& rgbs = rgbs_vector[0];

@@ -78,4 +78,5 @@ public:
     virtual GenerationConfig get_generation_config() const override { return m_impl.get_config(); };
 
     virtual void set_generation_config(const GenerationConfig& new_config)  override { m_impl.set_config(new_config); };
+    
 };

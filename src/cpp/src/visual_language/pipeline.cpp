@@ -186,7 +186,18 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        ov::AnyMap vision_config;
+        
+        // Add text prompt to vision config for CDPruner
+        vision_config["text_prompt"] = prompt;
+
+        // Set visual token pruning configuration
+        m_inputs_embedder->set_visual_token_pruning_config(generation_config.visual_tokens_percentage,
+                                                           generation_config.relevance_weight,
+                                                           generation_config.enable_pruning,
+                                                           generation_config.pruning_debug_mode);
+
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs, vision_config);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
         if (m_is_chat_conversation) {

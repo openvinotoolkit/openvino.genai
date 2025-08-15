@@ -139,6 +139,16 @@ def analyze_args(args):
     model_args["emb_max_length"] = args.embedding_max_length
     model_args["apply_chat_template"] = args.apply_chat_template
 
+    # CDPruner config
+    model_args['enable_pruning'] = args.enable_pruning
+    if model_args['enable_pruning']:
+        if args.visual_tokens_percentage is not None:
+            model_args['visual_tokens_percentage'] = args.visual_tokens_percentage
+        if args.relevance_weight is not None:
+            model_args['relevance_weight'] = args.relevance_weight
+        if args.pruning_debug_mode:
+            model_args['pruning_debug_mode'] = args.pruning_debug_mode
+
     optimum = args.optimum
 
     if optimum and args.genai:
