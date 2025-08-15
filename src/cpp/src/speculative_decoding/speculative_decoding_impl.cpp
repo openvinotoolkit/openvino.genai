@@ -348,6 +348,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
 SpeculativeDecodingMetrics
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::get_speculative_decoding_metrics() {
+    std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
     return m_sd_metrics;
 };
 
