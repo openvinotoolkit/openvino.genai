@@ -1124,16 +1124,8 @@ void Sampler::TopKSelector::finalize_eagle2_candidates(SamplerOutput& sampler_ou
             if (generated_ids.size() < path.size()) {
                 continue;  // cannot match if generated ids are shorter than path
             }
-            bool is_exact_match = true;
-            auto start_idx = generated_ids.size() - path.size();
-            for (size_t j = 0; j < path.size(); ++j) {
-                if (generated_ids[start_idx + j] != path[j]) {
-                    is_exact_match = false;
-                    break;
-                }
-            }
 
-            if (is_exact_match) {
+            if (std::search(generated_ids.begin(), generated_ids.end(), path.begin(), path.end()) != generated_ids.end()) {
                 seq->set_status(SequenceStatus::RUNNING);
                 used_sequences.push_back(seq);
                 used_sequence_ids.insert(seq->get_id());
