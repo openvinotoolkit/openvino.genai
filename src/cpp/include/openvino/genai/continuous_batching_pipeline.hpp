@@ -189,6 +189,5 @@ public:
     * @brief finish chat and clear kv cache.
     */
     void finish_chat();
-
 };
 }

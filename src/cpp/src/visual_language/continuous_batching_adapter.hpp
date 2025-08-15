@@ -11,7 +11,7 @@ using namespace ov::genai;
 class ov::genai::VLMPipeline::VLMContinuousBatchingAdapter : public ov::genai::VLMPipeline::VLMPipelineBase {
 public:
     ContinuousBatchingPipeline m_impl;
-    
+
     VLMContinuousBatchingAdapter(
         const std::filesystem::path& models_dir,
         const SchedulerConfig& scheduler_config,
@@ -21,8 +21,7 @@ public:
         models_dir, 
         scheduler_config, 
         device, 
-        properties} {
-    }
+        properties} { }
 
     VLMContinuousBatchingAdapter(
         const ModelsMap& models_map,
@@ -49,7 +48,6 @@ public:
         const StreamerVariant& streamer
     ) override {
         auto start_time = std::chrono::steady_clock::now();
-
         auto result = m_impl.generate({prompt}, {rgbs}, {generation_config}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
         

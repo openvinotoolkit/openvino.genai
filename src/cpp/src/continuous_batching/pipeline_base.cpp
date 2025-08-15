@@ -271,7 +271,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
-        
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);

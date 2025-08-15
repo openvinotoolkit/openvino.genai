@@ -64,7 +64,6 @@ protected:
     std::mutex m_embeddings_mutex;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
-
 public:
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);
