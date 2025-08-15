@@ -26,6 +26,7 @@ env:
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   HF_HOME: /mount/caches/huggingface/lin
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin
+  OPENVINO_LOG_LEVEL: 5
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
   ARTIFACTS_SHARE: '/mount/build-artifacts'
