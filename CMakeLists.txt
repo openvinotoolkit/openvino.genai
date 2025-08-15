@@ -65,6 +65,7 @@ endif()
 include(cmake/features.cmake)
 include(cmake/version.cmake)
 include(cmake/vs_version.cmake)
+include(cmake/add_target_helpers.cmake)
 
 if(ENABLE_PYTHON)
     # the following two calls are required for cross-compilation
@@ -89,6 +90,11 @@ endif()
 if(MSVC AND MSVC_VERSION GREATER_EQUAL 1930 AND MSVC_VERSION LESS 1941)
     add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
+
+# Default output directories
+set (CMAKE_RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/${RELATIVE_SAMPLE_PATH}>")
+set (CMAKE_LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/${RELATIVE_SAMPLE_PATH}>")
+set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/${RELATIVE_SAMPLE_PATH}>")
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
