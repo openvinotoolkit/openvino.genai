@@ -66,6 +66,7 @@ protected:
 
     // [CDPruner] CDPruner instance for token pruning
     std::unique_ptr<ov::genai::cdpruner::CDPruner> m_cdpruner;
+    bool m_with_cu_seqlens_input = false;
 
     virtual ov::Tensor run_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
@@ -119,6 +120,7 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_i
 );
 
 ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw);
+ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw);
 
 ov::Tensor concatenate_image_embeds(const std::vector<ov::Tensor>& reordered_image_embeds);
 

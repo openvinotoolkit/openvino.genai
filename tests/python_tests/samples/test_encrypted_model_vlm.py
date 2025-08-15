@@ -17,15 +17,15 @@ class TestEncryptedVLM:
     @pytest.mark.parametrize("generate_test_content", ["images/lines.png"], indirect=True)
 
     def test_sample_encrypted_lm(self, convert_model, download_test_content, generate_test_content, sample_args):
-        # Test Python sample
-        py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/encrypted_model_vlm.py")
-        py_command = [sys.executable, py_script, convert_model, os.path.dirname(generate_test_content), sample_args]
-        py_result = run_sample(py_command)
-
         # Test CPP sample
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'encrypted_model_vlm')
         cpp_command =[cpp_sample, convert_model, os.path.dirname(generate_test_content), sample_args]
         cpp_result = run_sample(cpp_command)
+
+        # Test Python sample
+        py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/encrypted_model_vlm.py")
+        py_command = [sys.executable, py_script, convert_model, os.path.dirname(generate_test_content), sample_args]
+        py_result = run_sample(py_command)
 
         # Test common sample
         py_common_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")

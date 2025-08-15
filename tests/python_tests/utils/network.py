@@ -27,21 +27,23 @@ def retry_request(func, retries=7):
         "Timeout",
         "Time-out",
         "ServiceUnavailable",
-        "InternalServerError"
+        "InternalServerError",
+        "OSError",
+        "HTTPError",
     ]
-    
+
     for attempt in range(retries):
         try:
             return func()
         except (CalledProcessError, RequestException, HfHubHTTPError) as e:
             if isinstance(e, CalledProcessError):
-                if any(pattern in e.stderr for pattern in network_error_patterns):
+                if e.stderr is not None and any(pattern in e.stderr for pattern in network_error_patterns):
                     logger.warning(f"CalledProcessError occurred: {e.stderr}")
                 else:
-                    raise e
+                    raise
             if attempt < retries - 1:
                 timeout = 2 ** attempt
                 logger.info(f"Attempt {attempt + 1} failed. Retrying in {timeout} seconds.")
                 time.sleep(timeout)
             else:
-                raise e
+                raise

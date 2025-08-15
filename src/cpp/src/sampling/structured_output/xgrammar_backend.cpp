@@ -7,8 +7,8 @@
 namespace ov {
 namespace genai {
 
-XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, std::optional<int> vocab_size) {
-    auto vocab_vector = tokenizer.get_vocab_vector();
+XGrammarStructuredOutput::XGrammarStructuredOutput(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size) {
+    auto vocab_vector = tokenizer_impl.m_vocab;
     if (!vocab_size.has_value()) {
         vocab_size = vocab_vector.size();
     }
@@ -17,43 +17,85 @@ XGrammarStructuredOutput::XGrammarStructuredOutput(const Tokenizer& tokenizer, s
         std::move(vocab_vector),
         xgrammar::VocabType::RAW,
         vocab_size,
-        std::vector<int32_t>{static_cast<int32_t>(tokenizer.get_eos_token_id())},
+        std::vector<int32_t>{static_cast<int32_t>(tokenizer_impl.m_eos_token_id)},
         true
     );
     m_grammar_compiler = std::make_unique<xgrammar::GrammarCompiler>(std::move(tokenizer_info));
 }
 
-std::shared_ptr<LogitTransformers::ILogitTransformer>
-XGrammarStructuredOutput::get_logits_transformer(const GenerationConfig& sampling_parameters) {
-    OPENVINO_ASSERT(sampling_parameters.is_structured_output_generation(),
-                   "XGrammarStructuredOutput can only be used for structured output generation");
-    
-    auto& structured_output_config = *sampling_parameters.structured_output_config;
-    structured_output_config.validate();
 
-    xgrammar::Grammar grammar;
-    if (structured_output_config.json_schema.has_value()) {
-        grammar = xgrammar::Grammar::FromJSONSchema(*structured_output_config.json_schema);
-    } else if (structured_output_config.regex.has_value()) {
-        grammar = xgrammar::Grammar::FromRegex(*structured_output_config.regex);
-    } else if (structured_output_config.grammar.has_value()) {
-        grammar = xgrammar::Grammar::FromEBNF(*structured_output_config.grammar);
-    } else if (structured_output_config.structural_tags_config.has_value()) {
+xgrammar::Grammar XGrammarStructuredOutput::parse_compound_grammar(const StructuredOutputConfig::CompoundGrammar& compound_grammar) {
+    return std::visit([](const auto& grammar) -> xgrammar::Grammar {
+        using T = std::decay_t<decltype(grammar)>;
+        if constexpr (std::is_same_v<T, StructuredOutputConfig::Regex>) {
+            return xgrammar::Grammar::FromRegex(grammar.value);
+        } else if constexpr (std::is_same_v<T, StructuredOutputConfig::JSONSchema>) {
+            return xgrammar::Grammar::FromJSONSchema(grammar.value);
+        } else if constexpr (std::is_same_v<T, StructuredOutputConfig::EBNF>) {
+            return xgrammar::Grammar::FromEBNF(grammar.value);
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<StructuredOutputConfig::Concat>>) {
+            return xgrammar::Grammar::Concat({
+                XGrammarStructuredOutput::parse_compound_grammar(grammar->left),
+                XGrammarStructuredOutput::parse_compound_grammar(grammar->right)
+            });
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<StructuredOutputConfig::Union>>) {
+            return xgrammar::Grammar::Union({
+                XGrammarStructuredOutput::parse_compound_grammar(grammar->left),
+                XGrammarStructuredOutput::parse_compound_grammar(grammar->right)
+            });
+        } else {
+            OPENVINO_THROW(
+                "Cannot compile the compound grammar. Unsupported compound grammar type. "
+                "Supported types are: Regex, JSONSchema, EBNF, Union, Concat."
+            );
+        }
+    }, compound_grammar);
+}
+
+xgrammar::Grammar XGrammarStructuredOutput::create_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) {
+    // Default constructor for xgrammar::Grammar is not enabled,
+    // create explicitly an empty grammar.
+    xgrammar::Grammar grammar = xgrammar::Grammar::FromEBNF("root ::= root");
+    if (!structured_output_config.has_value()) {
+        return grammar;
+    }
+
+    if (structured_output_config.value().json_schema.has_value()) {
+        grammar = xgrammar::Grammar::FromJSONSchema(structured_output_config.value().json_schema.value());
+    } else if (structured_output_config.value().regex.has_value()) {
+        grammar = xgrammar::Grammar::FromRegex(structured_output_config.value().regex.value());
+    } else if (structured_output_config.value().grammar.has_value()) {
+        grammar = xgrammar::Grammar::FromEBNF(structured_output_config.value().grammar.value());
+    } else if (structured_output_config.value().structural_tags_config.has_value()) {
         std::vector<xgrammar::StructuralTagItem> xgrammar_structural_tags;
-        for (const auto& tag : structured_output_config.structural_tags_config->structural_tags) {
+        for (const auto& tag : structured_output_config.value().structural_tags_config.value().structural_tags) {
             auto structural_tag = xgrammar::StructuralTagItem{tag.begin, tag.schema, tag.end};
             xgrammar_structural_tags.push_back(std::move(structural_tag));
         }
         grammar = xgrammar::Grammar::FromStructuralTag(
-            xgrammar_structural_tags, structured_output_config.structural_tags_config->triggers
+            xgrammar_structural_tags, structured_output_config.value().structural_tags_config.value().triggers
         );
+    } else if (structured_output_config.value().compound_grammar.has_value()) {
+        grammar = parse_compound_grammar(structured_output_config.value().compound_grammar.value());
     } else {
         OPENVINO_THROW("No grammar definition provided for structured output generation.");
     }
+    return grammar;
+}
 
+void XGrammarStructuredOutput::validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) {
+    create_grammar(structured_output_config);
+}
+
+std::shared_ptr<LogitTransformers::ILogitTransformer>
+XGrammarStructuredOutput::get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) {
+    if (!sampling_parameters.structured_output_config.has_value()) {
+        OPENVINO_THROW("Structured output is not enabled in the provided GenerationConfig.");
+    }
+    sampling_parameters.structured_output_config.value().validate();
+    auto grammar = create_grammar(sampling_parameters.structured_output_config);
     auto compiled_grammar = m_grammar_compiler->CompileGrammar(grammar);
     std::vector<int> override_stop_tokens(sampling_parameters.stop_token_ids.begin(), sampling_parameters.stop_token_ids.end());
-    
     return std::make_shared<LogitTransformers::XGrammarLogitsTransformer>(std::move(compiled_grammar), override_stop_tokens);
 }
 
@@ -64,14 +106,13 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     std::optional<std::vector<int>> override_stop_tokens,
     bool terminate_without_stop_token,
     int max_rollback_tokens
-) {
+): m_grammar_matcher(
+      compiled_grammar,
+      override_stop_tokens,
+      terminate_without_stop_token,
+      max_rollback_tokens
+  ) {
     m_vocab_size = compiled_grammar.GetTokenizerInfo().GetVocabSize();
-    m_grammar_matcher = xgrammar::GrammarMatcher(
-        compiled_grammar,
-        override_stop_tokens,
-        terminate_without_stop_token,
-        max_rollback_tokens
-    );
     
     // Divide vocab into 32 for bitmask and ceil to the nearest integer
     // This is to ensure that we can use a bitmask to represent the vocabulary

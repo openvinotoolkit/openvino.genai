@@ -46,31 +46,10 @@ def get_tokenizer_configs():
             "chat_template": "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + message['content'] + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ message['content'] + eos_token}}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}"
         },
         "vibhorag101/llama-2-13b-chat-hf-phr_mental_therapy": {
-            "bos_token": {
-                "__type": "AddedToken",
-                "content": "<s>",
-                "lstrip": False,
-                "normalized": False,
-                "rstrip": False,
-                "single_word": False
-            },
-            "eos_token": {
-             "__type": "AddedToken",
-                "content": "</s>",
-                "lstrip": False,
-                "normalized": False,
-                "rstrip": False,
-                "single_word": False
-            },
+            "bos_token": "<s>",
+            "eos_token": "</s>",
             "pad_token": None,
-                "unk_token": {
-                "__type": "AddedToken",
-                "content": "<unk>",
-                "lstrip": False,
-                "normalized": False,
-                "rstrip": False,
-                "single_word": False
-            },
+            "unk_token": "<unk>",
             "chat_template": "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}{% else %}{% set loop_messages = messages %}{% set system_message = false %}{% endif %}{% for message in loop_messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if loop.index0 == 0 and system_message != false %}{% set content = '<<SYS>>\n' + system_message + '\n<</SYS>>\n\n' + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ bos_token + '[INST] ' + content + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content + ' ' + eos_token }}{% endif %}{% endfor %}"
         },
         "Qwen/Qwen1.5-0.5B": {
@@ -123,31 +102,10 @@ def get_tokenizer_configs():
             "chat_template": "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
         },
         "codellama/CodeLlama-34b-Instruct-hf": {
-            "bos_token": {
-                "__type": "AddedToken",
-                "content": "<s>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "eos_token": {
-                "__type": "AddedToken",
-                "content": "</s>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
+            "bos_token": "<s>",
+            "eos_token": "</s>",
             "pad_token": None,
-                "unk_token": {
-                "__type": "AddedToken",
-                "content": "<unk>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
+            "unk_token": "<unk>",
             "chat_template": "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}{% else %}{% set loop_messages = messages %}{% set system_message = false %}{% endif %}{% for message in loop_messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if loop.index0 == 0 and system_message != false %}{% set content = '<<SYS>>\\n' + system_message + '\\n<</SYS>>\\n\\n' + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ bos_token + '[INST] ' + content | trim + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content | trim + ' ' + eos_token }}{% endif %}{% endfor %}"
         },
         "OpenBuddy/openbuddy-llama3-8b-v21.1-8k": {
@@ -172,60 +130,18 @@ def get_tokenizer_configs():
             "chat_template": "{{bos_token}}{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
         },
         "deepseek-ai/deepseek-coder-6.7b-instruct": {
-            "bos_token": {
-                "__type": "AddedToken",
-                "content": "<\uff5cbegin\u2581of\u2581sentence\uff5c>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "eos_token": {
-                "__type": "AddedToken",
-                "content": "<|EOT|>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "pad_token": {
-                "__type": "AddedToken",
-                "content": "<\uff5cend\u2581of\u2581sentence\uff5c>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
+            "bos_token": "<\uff5cbegin\u2581of\u2581sentence\uff5c>",
+            "eos_token": "<|EOT|>",
+            "pad_token": "<\uff5cend\u2581of\u2581sentence\uff5c>",
             "unk_token": None,
             "chat_template": "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'You are an AI programming assistant, utilizing the Deepseek Coder model, developed by Deepseek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n<|EOT|>\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
         },
         "deepseek-ai/deepseek-math-7b-rl": {
-            "bos_token": {
-                "__type": "AddedToken",
-                "content": "<\uff5cbegin\u2581of\u2581sentence\uff5c>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "eos_token": {
-                "__type": "AddedToken",
-                "content": "<\uff5cend\u2581of\u2581sentence\uff5c>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "pad_token": {
-                "__type": "AddedToken",
-                "content": "<\uff5cend\u2581of\u2581sentence\uff5c>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
+            "bos_token": "<\uff5cbegin\u2581of\u2581sentence\uff5c>",
+            "eos_token": "<\uff5cend\u2581of\u2581sentence\uff5c>",
+            "pad_token": "<\uff5cend\u2581of\u2581sentence\uff5c>",
             "unk_token": None,
-             "chat_template": "{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{{ bos_token }}{% for message in messages %}{% if message['role'] == 'user' %}{{ 'User: ' + message['content'] + '\n\n' }}{% elif message['role'] == 'assistant' %}{{ 'Assistant: ' + message['content'] + eos_token }}{% elif message['role'] == 'system' %}{{ message['content'] + '\n\n' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'Assistant:' }}{% endif %}"
+            "chat_template": "{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{{ bos_token }}{% for message in messages %}{% if message['role'] == 'user' %}{{ 'User: ' + message['content'] + '\n\n' }}{% elif message['role'] == 'assistant' %}{{ 'Assistant: ' + message['content'] + eos_token }}{% elif message['role'] == 'system' %}{{ message['content'] + '\n\n' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'Assistant:' }}{% endif %}"
         },
         "FINGU-AI/FinguAI-Chat-v1": {
             "bos_token": None,
@@ -235,31 +151,10 @@ def get_tokenizer_configs():
             "chat_template": "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content']}}{% if (loop.last and add_generation_prompt) or not loop.last %}{{ '<|im_end|>' + '\n'}}{% endif %}{% endfor %}{% if add_generation_prompt and messages[-1]['role'] != 'assistant' %}{{ '<|im_start|>assistant\n' }}{% endif %}"
         },
         "allenai/tulu-2-7b": {
-            "bos_token": {
-                "__type": "AddedToken",
-                "content": "<s>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "eos_token": {
-                "__type": "AddedToken",
-                "content": "</s>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
+            "bos_token": "<s>",
+            "eos_token": "</s>",
             "pad_token": None,
-                "unk_token": {
-                "__type": "AddedToken",
-                "content": "<unk>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
+            "unk_token": "<unk>",
             "chat_template": "{% for message in messages %}\n{% if message['role'] == 'user' %}\n{{ '<|user|>\n' + message['content'] }}\n{% elif message['role'] == 'assistant' %}\n{{ '<|assistant|>\n'  + message['content'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
         },
         "maldv/winter-garden-7b-alpha": {
@@ -396,31 +291,10 @@ def get_tokenizer_configs():
             "chat_template": "{% for message in messages %}{% if message['from'] == 'human' %}{{'<|im_start|>user\n' + message['value'] + '<|im_end|>\n'}}{% elif message['from'] == 'gpt' %}{{'<|im_start|>assistant\n' + message['value'] + '<|im_end|>\n' }}{% else %}{{ '<|im_start|>system\n' + message['value'] + '<|im_end|>\n' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
         },
         "tokyotech-llm/Swallow-7b-instruct-v0.1": {
-            "bos_token": {
-                "__type": "AddedToken",
-                "content": "<s>",
-                "lstrip": False,
-                "normalized": False,
-                "rstrip": False,
-                "single_word": False
-            },
-            "eos_token": {
-                "__type": "AddedToken",
-                "content": "</s>",
-                "lstrip": False,
-                "normalized": False,
-                "rstrip": False,
-                "single_word": False
-            },
+            "bos_token": "<s>",
+            "eos_token": "</s>",
             "pad_token": None,
-            "unk_token": {
-                "__type": "AddedToken",
-                "content": "<unk>",
-                "lstrip": False,
-                "normalized": False,
-                "rstrip": False,
-                "single_word": False
-            },
+            "unk_token": "<unk>",
             "chat_template": "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}{% elif false == true and not '<<SYS>>' in messages[0]['content'] %}{% set loop_messages = messages %}{% set system_message = '\u3042\u306a\u305f\u306f\u8aa0\u5b9f\u3067\u512a\u79c0\u306a\u65e5\u672c\u4eba\u306e\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8\u3067\u3059\u3002' %}{% else %}{% set loop_messages = messages %}{% set system_message = false %}{% endif %}{{ bos_token }}{% for message in loop_messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if loop.index0 == 0 and system_message != false %}{% set content = '<<SYS>>\\n' + system_message + '\\n<</SYS>>\\n\\n' + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + content.strip() + ' [/INST] ' }}{% elif message['role'] == 'system' %}{{ '<<SYS>>\\n' + content.strip() + '\\n<</SYS>>\\n\\n' }}{% elif message['role'] == 'assistant' %}{{ ''  + content.strip() + '' + eos_token }}{% endif %}{% endfor %}"
         },
         "instructlab/merlinite-7b-lab": {
@@ -459,10 +333,10 @@ def get_tokenizer_configs():
             "chat_template": "{% set system_message = 'Du bist ein freundlicher und hilfsbereiter KI-Assistent.' %}{% if messages[0]['role'] == 'system' %}{% set system_message = messages[0]['content'] %}{% endif %}{% if system_message is defined %}{{ '<|im_start|>system\\n' + system_message + '<|im_end|>\\n' }}{% endif %}{% for message in messages %}{% set content = message['content'] %}{% if message['role'] == 'user' %}{{ '<|im_start|>user\\n' + content + '<|im_end|>\\n<|im_start|>assistant\\n' }}{% elif message['role'] == 'assistant' %}{{ content + '<|im_end|>' + '\\n' }}{% endif %}{% endfor %}"
         },
         "AI-Sweden-Models/gpt-sw3-356m-instruct": {
-            "bos_token": None,
-            "eos_token": None,
-            "pad_token": None,
-            "unk_token": None,
+            "bos_token": "<s>",
+            "eos_token": "<|endoftext|>",
+            "pad_token": "<pad>",
+            "unk_token": "<unk>",
             "chat_template": "{{ eos_token }}{{ bos_token }}{% for message in messages %}{% if message['role'] == 'user' %}{{ 'User: ' + message['content']}}{% else %}{{ 'Bot: ' + message['content']}}{% endif %}{{ message['text'] }}{{ bos_token }}{% endfor %}Bot:"
         },
         "google/gemma-7b-it": {  # google/gemma-2b-it
@@ -508,31 +382,10 @@ def get_tokenizer_configs():
             "chat_template": "{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% for message in messages %}{{'<|start_header_id|>' + message['role'] + '<|end_header_id|>' + '\n' + message['content'] + '<|eot_id|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n' }}{% endif %}"
         },
         "bofenghuang/vigogne-2-7b-chat": {
-            "bos_token": {
-                "__type": "AddedToken",
-                "content": "<s>",
-                "lstrip": False,
-                "normalized": False,
-                "rstrip": False,
-                "single_word": False
-            },
-            "eos_token": {
-                "__type": "AddedToken",
-                "content": "</s>",
-                "lstrip": False,
-                "normalized": False,
-                "rstrip": False,
-                "single_word": False
-            },
+            "bos_token": "<s>",
+            "eos_token": "</s>",
             "pad_token": None,
-            "unk_token": {
-                "__type": "AddedToken",
-                "content": "<unk>",
-                "lstrip": False,
-                "normalized": False,
-                "rstrip": False,
-                "single_word": False
-            },
+            "unk_token": "<unk>",
             "chat_template": "{{ bos_token }}{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}{% elif true == true %}{% set loop_messages = messages %}{% set system_message = 'Vous \u00eates Vigogne, un assistant IA cr\u00e9\u00e9 par Zaion Lab. Vous suivez extr\u00eamement bien les instructions. Aidez autant que vous le pouvez.' %}{% else %}{% set loop_messages = messages %}{% set system_message = false %}{% endif %}{% if system_message != false %}{{ '<|system|>: ' + system_message + '\\n' }}{% endif %}{% for message in loop_messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if message['role'] == 'user' %}{{ '<|user|>: ' + message['content'].strip() + '\\n' }}{% elif message['role'] == 'assistant' %}{{ '<|assistant|>: ' + message['content'].strip() + eos_token + '\\n' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '<|assistant|>:' }}{% endif %}"
         },
         "aisingapore/sea-lion-7b-instruct": {
@@ -704,31 +557,10 @@ def get_tokenizer_configs():
             "chat_template": "{{ bos_token }}{% for message in messages %}{% if message['role'] in ['user', 'assistant'] %}{% set content = '<|start_header_id|>GPT4 Correct ' + message['role'].title() + '<|end_header_id|>\n\n' + message['content'] | trim + '<|eot_id|>' %}{% elif message['role'] == 'system' %}{% set content = '<|start_header_id|>System<|end_header_id|>\n\n' + message['content'] | trim + '<|eot_id|>' %}{% else %}{{ raise_exception('Only user, assistant and system roles are supported!') }}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>GPT4 Correct Assistant<|end_header_id|>\n\n' }}{% endif %}"
         },
         "OpenBuddy/openbuddy-mistral2-7b-v20.3-32k": {
-            "bos_token": {
-                "__type": "AddedToken",
-                "content": "<s>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "eos_token": {
-                "__type": "AddedToken",
-                "content": "</s>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
+            "bos_token": "<s>",
+            "eos_token": "</s>",
             "pad_token": None,
-            "unk_token": {
-                "__type": "AddedToken",
-                "content": "<unk>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
+            "unk_token": "<unk>",
             "chat_template": "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'User: ' + message['content'] + '\n' }}{% elif message['role'] == 'assistant' %}{% if loop.last %}{{ 'Assistant: ' + message['content']}}{% else %}{{ 'Assistant: ' + message['content'] + eos_token + '\n' }}{% endif %}{% elif message['role'] == 'system' %}{{ message['content'] + '\n' }}{% endif %}{% endfor %}{% if add_generation_prompt and messages[-1]['role'] != 'assistant' %}{{ 'Assistant:' }}{% endif %}"
         },
         "tenyx/TenyxChat-7B-v1": {

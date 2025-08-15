@@ -117,6 +117,7 @@ public:
     /// Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
     /// Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+    /// gemma-3-4b-it: <start_of_image>
     /// If the prompt doesn't contain image tags, but images are
     /// provided, the tags are prepended to the prompt.
     /// @param image Image to be prepended to a prompt.
@@ -147,6 +148,7 @@ public:
     /// Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
     /// Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+    /// gemma-3-4b-it: <start_of_image>
     /// If the prompt doesn't contain image tags, but images are
     /// provided, the tags are prepended to the prompt.
     /// @param config_map A config may contain GenerationConfig, values
@@ -178,6 +180,7 @@ public:
     /// Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
     /// Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     /// Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+    /// gemma-3-4b-it: <start_of_image>
     /// If the prompt doesn't contain image tags, but images are
     /// provided, the tags are prepended to the prompt.
     /// @param ...properties ov::Property instances to be combined into

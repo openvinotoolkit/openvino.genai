@@ -75,6 +75,16 @@ Recommended models: meta-llama/Llama-2-7b-hf, etc
   node multinomial_causal_lm.js model_dir prompt
   ```
 
+### 5. LLM ReAct Agent Sample (`react_sample`)
+- **Description:**
+Interactive ReAct Agent powered by OpenVINO.
+Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
+- **Main Feature:** Real-time reasoning-action from user's input.
+- **Run Command:**
+  ```bash
+  node react_sample.js model_dir
+  ```
+
 ### Troubleshooting
 
 #### Unicode characters encoding error on Windows

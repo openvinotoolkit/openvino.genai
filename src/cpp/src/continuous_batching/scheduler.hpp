@@ -15,6 +15,7 @@
 #include "continuous_batching/timer.hpp"
 #include "continuous_batching/sparse_attention.hpp"
 #include "utils.hpp"
+#include "continuous_batching/cache_eviction.hpp"
 
 namespace ov::genai {
 class Scheduler {
@@ -44,6 +45,13 @@ public:
 
         bool m_apply_sparse_attention_mask = false;
         std::map<uint64_t, std::set<size_t>> m_sparse_attention_skipped_logical_blocks;
+
+        // XAttention thresholds per-sequence, a value of 0.0 means that XAttention is not to be applied
+        // to this sequence
+        std::map<uint64_t, float> m_xattention_thresholds;
+        size_t m_xattention_block_size = 0;
+        size_t m_xattention_stride = 0;
+
 
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
@@ -309,19 +317,17 @@ private:
 
 
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
-                        scheduler_output.m_apply_sparse_attention_mask = m_config.use_sparse_attention;
+                        scheduler_output.m_apply_sparse_attention_mask = m_config.use_sparse_attention && m_config.sparse_attention_config.mode == SparseAttentionMode::TRISHAPE;
                         if (scheduler_output.m_apply_sparse_attention_mask) {
-                            if (m_config.sparse_attention_config.mode == SparseAttentionMode::TRISHAPE) {
-                                TriShapeSparseAttentionTokenSkipper skipper(block_size,
-                                        m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
-                                        m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
-                                        m_config.sparse_attention_config.num_retained_recent_tokens_in_cache);
-                                scheduler_output.m_sparse_attention_skipped_logical_blocks[seq_id] = skipper.get_skipped_blocks(sequence_group);
-                            }
-                            else {
-                                OPENVINO_THROW("Unsupported sparse attention mode");
-                            }
+                            TriShapeSparseAttentionTokenSkipper skipper(block_size,
+                                    m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
+                                    m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
+                                    m_config.sparse_attention_config.num_retained_recent_tokens_in_cache);
+                            scheduler_output.m_sparse_attention_skipped_logical_blocks[seq_id] = skipper.get_skipped_blocks(sequence_group);
                         }
+                        scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
+                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
+                        scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
                     }
                 }
 
@@ -389,10 +395,9 @@ private:
                         // block tables for each running sequence within a group
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
 
-                        if (seq->get_generated_len() == 0) {
-                            // full prompt or its remaining tail part fit completely into the next inference
-                            scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
-                        }
+                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
+                        scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
                     }
 
 
@@ -480,6 +485,9 @@ private:
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+                        scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
+                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
+                        scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
                     }
 
                     // update "is_prompt" flag
@@ -575,23 +583,35 @@ private:
     }
 
     size_t _schedule_scores_to_aggregate(SequenceGroup::Ptr sequence_group) {
-        size_t prompt_len = sequence_group->get_prompt_len();
-        size_t first_scored_token_position = m_snapkv_window_size > prompt_len ? 0 : prompt_len - m_snapkv_window_size;
-        size_t num_scored_token_positions_in_this_chunk = 0;
-        size_t num_processed_tokens_before_this_chunk = sequence_group->get_num_processed_tokens();
-        size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
-        size_t num_processed_tokens_after_this_chunk = num_processed_tokens_before_this_chunk + num_scheduled_tokens;
-        if (num_processed_tokens_after_this_chunk > first_scored_token_position) {
-            if (num_processed_tokens_before_this_chunk > first_scored_token_position) {
-                num_scored_token_positions_in_this_chunk = num_scheduled_tokens;
-            }
-            else {
-                num_scored_token_positions_in_this_chunk = num_processed_tokens_after_this_chunk - first_scored_token_position;
-            }
+        auto calculator = SnapKVScoreAggregationCalculator(m_snapkv_window_size);
 
-        }
-        return num_scored_token_positions_in_this_chunk;
+        size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
+        size_t prompt_len = sequence_group->get_prompt_len();
+
+        return calculator.get_num_token_scores_to_aggregate(prompt_len, num_scheduled_tokens, num_processed_tokens);
     }
+
+    float _schedule_xattention_threshold(SequenceGroup::Ptr sequence_group) {
+        if (!(m_config.use_sparse_attention && m_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION)) {
+            return 0.0;
+        }
+        if (sequence_group->can_generate_tokens() && sequence_group->get_num_scheduled_tokens() == 1) {
+            // generation phase, excluding last prompt chunk
+            return 0.0;
+        }
+
+        size_t prompt_len = sequence_group->get_prompt_len();
+        size_t num_processed_tokens_after_this_chunk = sequence_group->get_num_processed_tokens() + sequence_group->get_num_scheduled_tokens();
+
+        if (num_processed_tokens_after_this_chunk < prompt_len && (prompt_len - num_processed_tokens_after_this_chunk) < m_config.sparse_attention_config.num_last_dense_tokens_in_prefill) {
+            // dense attention chunk, potentially overspilling to an extra chunk before that
+            return 0.0;
+        }
+
+        return m_config.sparse_attention_config.xattention_threshold;
+    }
+
 };
 
 }
