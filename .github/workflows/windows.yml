@@ -634,6 +634,10 @@ jobs:
             cmd: 'tests/python_tests/test_rag.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
+          - name: 'WWB tests'
+            cmd: 'tools/who_what_benchmark/tests'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 90
     defaults:
       run:
         shell: pwsh
