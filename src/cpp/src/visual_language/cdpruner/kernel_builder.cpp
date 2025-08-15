@@ -225,7 +225,7 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_gpu(const ov::Ten
 
     } catch (const std::exception& e) {
         // Fallback to CPU implementation if GPU fails
-        if (m_config.pruning.pruning_debug_mode) {
+        if (m_config.pruning_debug_mode) {
             std::cout << "GPU MatMul failed, falling back to CPU." << std::endl;
         }
         return compute_similarity_matrix(features);

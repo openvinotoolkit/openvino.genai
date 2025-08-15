@@ -36,7 +36,7 @@ struct Config {
     /// @brief Whether to use OpenVINO ops model for computation
     /// When true, uses integrated OpenVINO ops model for relevance and kernel computation
     /// When false, uses traditional step-by-step computation pipeline
-    bool use_ops_model = false;
+    bool use_ops_model = true;
     /// @brief Compare two Config structures for equality
     /// @param other The other Config to compare with
     /// @return true if all configuration parameters are equal, false otherwise
