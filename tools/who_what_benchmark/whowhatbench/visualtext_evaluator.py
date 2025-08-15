@@ -141,6 +141,7 @@ class VisualTextEvaluator(TextEvaluator):
                 tokenizer=tokenizer,
                 **get_ignore_parameters_flag()
             )
+            return tokens[0][0]
             if crop_question:
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
 
