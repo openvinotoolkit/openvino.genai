@@ -36,6 +36,12 @@ def get_gguf_model_list():
             "dynamic_quantization_group_size": None,
         },
         {
+            "hf_model_id": "HuggingFaceTB/SmolLM2-135M",
+            "gguf_model_id": "QuantFactory/SmolLM2-135M-GGUF",
+            "gguf_filename": "SmolLM2-135M.Q4_1.gguf",
+            "dynamic_quantization_group_size": None,
+        },
+        {
             "gguf_model_id": "sammysun0711/tiny-random-deepseek-distill-qwen-gguf",
             "gguf_filename": "tiny-random-deepseek-distill-qwen_q8_0.gguf",
             # Dummy gguf model accuracy is sensitive for dynamic quantization w/ small group size 32 (default), set group size as 64 explicitly instead
