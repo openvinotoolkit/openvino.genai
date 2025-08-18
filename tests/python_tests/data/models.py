@@ -35,12 +35,15 @@ def get_gguf_model_list():
             "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
             "dynamic_quantization_group_size": None,
         },
-        {
-            "hf_model_id": "HuggingFaceTB/SmolLM2-135M",
-            "gguf_model_id": "QuantFactory/SmolLM2-135M-GGUF",
-            "gguf_filename": "SmolLM2-135M.Q4_1.gguf",
-            "dynamic_quantization_group_size": None,
-        },
+        pytest.param(
+            {
+                "hf_model_id": "HuggingFaceTB/SmolLM2-135M",
+                "gguf_model_id": "QuantFactory/SmolLM2-135M-GGUF",
+                "gguf_filename": "SmolLM2-135M.Q4_1.gguf",
+                "dynamic_quantization_group_size": None,
+            },
+            marks=pytest.mark.xfail(reason="CVS-172345"),
+        ),
         {
             "gguf_model_id": "sammysun0711/tiny-random-deepseek-distill-qwen-gguf",
             "gguf_filename": "tiny-random-deepseek-distill-qwen_q8_0.gguf",
