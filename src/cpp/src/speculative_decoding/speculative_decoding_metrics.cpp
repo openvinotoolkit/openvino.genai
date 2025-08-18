@@ -21,8 +21,11 @@ float SpeculativeDecodingMetrics::get_avg_acceptance_rate(int64_t request_id) {
         }
         avg_acceptance_rate /= total_iteration_cnt;
     } else {
-        OPENVINO_ASSERT(m_acceptance_rate.count(request_id));
-        const auto& acceptance_rate = m_acceptance_rate[request_id];
+        auto iter = m_acceptance_rate.find(request_id);
+        if (iter == m_acceptance_rate.end()) {
+            return std::numeric_limits<float>::quiet_NaN();
+        }
+        const auto& acceptance_rate = iter->second;
         avg_acceptance_rate = std::accumulate(acceptance_rate.begin(), acceptance_rate.end(), 0);
         OPENVINO_ASSERT(acceptance_rate.size() > 0);        
         avg_acceptance_rate /= acceptance_rate.size();
