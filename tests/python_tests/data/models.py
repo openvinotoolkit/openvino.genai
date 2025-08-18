@@ -42,7 +42,7 @@ def get_gguf_model_list():
                 "gguf_filename": "SmolLM2-135M.Q4_1.gguf",
                 "dynamic_quantization_group_size": None,
             },
-            marks=pytest.mark.xfail(reason="CVS-172345"),
+            marks=pytest.mark.xfail(reason="Prediction mismatch. Ticket 172345", raises=AssertionError),
         ),
         {
             "gguf_model_id": "sammysun0711/tiny-random-deepseek-distill-qwen-gguf",
