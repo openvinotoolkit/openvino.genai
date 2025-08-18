@@ -141,6 +141,7 @@ def analyze_args(args):
 
     # CDPruner config
     model_args['enable_pruning'] = args.enable_pruning
+    log.info(f"CDPruner config: Enable pruning - {model_args['enable_pruning']}")
     if model_args['enable_pruning']:
         if args.visual_tokens_percentage is not None:
             model_args['visual_tokens_percentage'] = args.visual_tokens_percentage
@@ -148,6 +149,8 @@ def analyze_args(args):
             model_args['relevance_weight'] = args.relevance_weight
         if args.pruning_debug_mode:
             model_args['pruning_debug_mode'] = args.pruning_debug_mode
+        log.info(f"CDPruner config: Percentage of visual tokens to keep - {model_args['visual_tokens_percentage']}%")
+        log.info(f"CDPruner config: Pruning debug mode - {model_args['pruning_debug_mode']}")
 
     optimum = args.optimum
 
