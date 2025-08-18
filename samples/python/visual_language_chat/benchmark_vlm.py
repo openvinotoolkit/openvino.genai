@@ -73,6 +73,7 @@ def main():
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
     config.enable_pruning = args.enable_pruning
+    print(f'CDPruner config: Enable pruning - {config.enable_pruning}')
     if config.enable_pruning:
         if args.visual_tokens_percentage is not None:
             config.visual_tokens_percentage = args.visual_tokens_percentage
@@ -80,6 +81,8 @@ def main():
             config.relevance_weight = args.relevance_weight
         if args.pruning_debug_mode:
             config.pruning_debug_mode = args.pruning_debug_mode
+        print(f'CDPruner config: Percentage of visual tokens to keep - {config.visual_tokens_percentage}%')
+        print(f'CDPruner config: Pruning debug mode - {config.pruning_debug_mode}')
 
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)
