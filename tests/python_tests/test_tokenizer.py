@@ -277,6 +277,8 @@ def test_multiple_infer_request_state(tmp_path):
 @pytest.fixture(scope="module")
 def hf_ov_genai_models(request, tmp_path_factory):
     model_id, args = request.param
+    tok_load_properties = {"add_second_input": args.pop("add_second_input")} if "add_second_input" in args else {}
+    
     hf_args = args.copy()  # to overcome mutable default argument side effects
     if "padding_side" in hf_args and hf_args["padding_side"] is None:
         # HF does not accept None.
@@ -290,7 +292,8 @@ def hf_ov_genai_models(request, tmp_path_factory):
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_args)
     convert_args = {"number_of_inputs": hf_args.pop("number_of_inputs")} if "number_of_inputs" in hf_args else {}
     convert_and_save_tokenizer(hf_tokenizer, model_dir, **convert_args)
-    genai_tokenizer = Tokenizer(model_dir)
+
+    genai_tokenizer = Tokenizer(model_dir, tok_load_properties)
     return hf_tokenizer, genai_tokenizer
 
 
@@ -384,13 +387,45 @@ def test_padding(
     assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
 
 
-models_with_pair_input =[
-    ("answerdotai/ModernBERT-base", {"padding_side": None, 'number_of_inputs': 2}),
-    ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None, 'number_of_inputs': 2}),
-    ("katuni4ka/tiny-random-llava-next", {"padding_side": "right", 'number_of_inputs': 2}),
-    ("katuni4ka/tiny-random-llava-next", {"padding_side": "left", 'number_of_inputs': 2}),
+# Define model base configs
+base_models_for_paired_input_test = [
+    ("answerdotai/ModernBERT-base", {"padding_side": None}),
+    ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None}),
+    ("katuni4ka/tiny-random-llava-next", {"padding_side": "right"}),
+    ("katuni4ka/tiny-random-llava-next", {"padding_side": "left"}),
 ]
 
+def make_model_params():
+    # Parametrize over add_second_input and number_of_inputs
+    
+    params = []
+    for model_id_and_params in base_models_for_paired_input_test:
+        model_id, params_dict = model_id_and_params
+        params.append((model_id, {**params_dict, "add_second_input": True}))
+        params.append((model_id, {**params_dict, "number_of_inputs": 2}))
+
+        # in this case even user requested add_second_input, since during conversion model will be ready for paired input
+        # without calling the AddSecondInputPass.
+        params.append((model_id, {**params_dict, "add_second_input": True, "number_of_inputs": 2}))
+    return params
+
+models_with_pair_input = make_model_params()
+
+@pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
+@pytest.mark.precommit
+@pytest.mark.parametrize("input_pair", [[
+    ["hi", "sun in yellow"],
+    ["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!"],
+    ["Eng... test, string?!", "Multiline\nstring!\nWow!" * 100],
+    ["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!" * 100],
+    ["hi" * 20, "buy" * 90],
+]])
+def test_two_inputs_string_list_of_lists_batched(hf_ov_genai_models, input_pair):
+    # Check with batched inputs: list of [str, str] pairs, consistent with HF format.
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+    ov_encoded = genai_tokenizer.encode(input_pair).input_ids.data
+    hf_encoded = hf_tokenizer(input_pair, return_tensors="np", padding=True)["input_ids"]
+    assert np.all(ov_encoded == hf_encoded)
 
 @pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
 @pytest.mark.precommit
