@@ -3,12 +3,13 @@
 
 import openvino_tokenizers
 import openvino
+import PIL
 import pytest
 import platform
+import requests
 import sys
 import os
 import transformers
-import functools
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import (
     VLMPipeline,
@@ -83,17 +84,47 @@ prompts = [
     "What is special about this image?",
 ]
 
-image_links = [
-    "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11",
-    "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg",
-    "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350",
-]
 
-image_links_for_testing = [
-    [],
-    [image_links[0]],
-    [image_links[0], image_links[2], image_links[1]],
-]
+def download_image(link):
+    return PIL.Image.open(requests.get(link, stream=True).raw).convert("RGB")
+
+
+def cache_or_download_image(pytestconfig, link, file_name):
+    try:
+        image_path = pytestconfig.cache.mkdir("images") / file_name
+        if image_path.exists():
+            image = PIL.Image.open(image_path).convert("RGB")
+        else:
+            image = download_image(link)
+            image.save(image_path)
+        return image
+    except AttributeError:
+        # Cache is disabled with -p no:cacheprovider
+        return download_image(link)
+
+
+@pytest.fixture(scope="module")
+def cat_image(pytestconfig):
+    cat_url = "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11"
+    return cache_or_download_image(pytestconfig, cat_url, "cat.jpg")
+
+
+@pytest.fixture(scope="module")
+def cat_tensor(cat_image):
+    return openvino.Tensor(cat_image)
+
+
+@pytest.fixture(scope="module")
+def car_tensor(pytestconfig):
+    car_url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg"
+    return openvino.Tensor(cache_or_download_image(pytestconfig, car_url, "car.jpg"))
+
+
+@pytest.fixture(scope="module")
+def handwritten_tensor(pytestconfig):
+    handwritten_url = "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350"
+    return openvino.Tensor(cache_or_download_image(pytestconfig, handwritten_url, "handwritten.png"))
+
 
 model_ids = [
     "katuni4ka/tiny-random-minicpmv-2_6",
@@ -121,37 +152,11 @@ if sys.platform == "darwin":
 
 attention_backend = ["PA", "SDPA"]
 
-@functools.lru_cache()
-def get_pil_image_by_link(link, target_size=None):
-    """
-    Get PIL image by link.
-    Args:
-        link (str): Link to the image.
-        target_size (tuple): Target size of the image (width, height).
-    """
-    from PIL import Image
-    import requests
-
-    image = Image.open(requests.get(link, stream=True).raw)
-    if image.mode != "RGB":
-        image = image.convert("RGB")
-    if target_size:
-        image = image.resize(target_size)
-    return image
-
-
-def get_image_by_link(link):
-    import numpy as np
-
-    image = get_pil_image_by_link(link)
-    image_data = np.array(image)
-    return openvino.Tensor(image_data)
-
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline(model_id, backend):
+def test_vlm_pipeline(model_id, backend, cat_tensor, handwritten_tensor, car_tensor):
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -163,11 +168,7 @@ def test_vlm_pipeline(model_id, backend):
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
 
-    for links in image_links_for_testing:
-        images = []
-        for link in links:
-            images.append(get_image_by_link(link))
-
+    for images in [], [cat_tensor], [cat_tensor, handwritten_tensor, car_tensor]:
         result_from_streamer = []
         res = ov_pipe.generate(
             prompts[0],
@@ -186,7 +187,7 @@ configs = [
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", configs)
-def test_vlm_continuous_batching_generate_vs_add_request(config):
+def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
     scheduler_config = SchedulerConfig()
     models_path = get_ov_model(model_ids[0])
     ov_pipe = VLMPipeline(
@@ -198,14 +199,10 @@ def test_vlm_continuous_batching_generate_vs_add_request(config):
     generation_config = config
     generation_config.max_new_tokens = 30
     eps = 0.001
-    image_links_list = [[], [image_links[0]]]
+    image_links_list = [[], [cat_tensor]]
 
     res_generate = []
-    for links in image_links_list:
-        images = []
-        for link in links:
-            images.append(get_image_by_link(link))
-
+    for images in image_links_list:
         res_generate.append(
             ov_pipe.generate(
                 prompts[0], images=images, generation_config=generation_config
@@ -220,10 +217,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config):
     )
     tokenizer = cb_pipe.get_tokenizer()
 
-    for idx, links in enumerate(image_links_list):
-        images = []
-        for link in links:
-            images.append(get_image_by_link(link))
+    for idx, images in enumerate(image_links_list):
         handle = cb_pipe.add_request(idx, prompts[0], images, generation_config)
         while handle.get_status() != GenerationStatus.FINISHED:
             cb_pipe.step()
@@ -240,7 +234,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", configs)
-def test_vlm_continuous_batching_vs_stateful(config):
+def test_vlm_continuous_batching_vs_stateful(config, cat_tensor):
     scheduler_config = SchedulerConfig()
     models_path = get_ov_model(model_ids[0])
     cb_pipe = ContinuousBatchingPipeline(
@@ -252,14 +246,10 @@ def test_vlm_continuous_batching_vs_stateful(config):
     generation_config = config
     generation_config.max_new_tokens = 25
     eps = 0.001
-    image_links_list = [[], [image_links[0]]]
+    image_links_list = [[], [cat_tensor]]
 
     res_cb = []
-    for links in image_links_list:
-        images = []
-        for link in links:
-            images.append(get_image_by_link(link))
-
+    for images in image_links_list:
         res_cb.append(
             cb_pipe.generate(
                 [prompts[0]], images=[images], generation_config=[generation_config]
@@ -267,12 +257,8 @@ def test_vlm_continuous_batching_vs_stateful(config):
         )
 
     models_path = get_ov_model(model_ids[0])
-    for idx, links in enumerate(image_links_list):
+    for idx, images in enumerate(image_links_list):
         stateful_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="SDPA", **get_default_llm_properties())
-
-        images = []
-        for link in links:
-            images.append(get_image_by_link(link))
 
         res_stateful = stateful_pipe.generate(
             prompts[0], images=images, generation_config=generation_config
@@ -284,34 +270,28 @@ def test_vlm_continuous_batching_vs_stateful(config):
             )
 
 
+@pytest.fixture(scope="module", params=[
+    pytest.param([[], []], id="generation with text input only"),
+    pytest.param(
+        [[], ["cat_tensor", "car_tensor", "handwritten_tensor"], []],
+        id="combination of generations with text input and text + image input, empty image first"
+    ),
+    pytest.param(
+        [["cat_tensor", "car_tensor", "handwritten_tensor"], ["cat_tensor"]],
+        id="generation with text + image input"
+    ),
+    pytest.param(
+        [["cat_tensor", "car_tensor", "handwritten_tensor"], [], ["cat_tensor"]],
+        id="combination of generations with text input and text + image input, image input first"
+    ),
+])
+def iteration_images(request):
+    return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
 
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
-@pytest.mark.parametrize(
-    "iteration_images",
-    [
-        [
-            image_links_for_testing[0],
-            image_links_for_testing[0],
-        ],  # generation with text input only
-        [
-            image_links_for_testing[0],
-            image_links_for_testing[2],
-            image_links_for_testing[0],
-        ],  # combination of generations with text input and text + image input, empty image first
-        [
-            image_links_for_testing[2],
-            image_links_for_testing[1],
-        ],  # generation with text + image input
-        [
-            image_links_for_testing[2],
-            image_links_for_testing[0],
-            image_links_for_testing[1],
-        ],
-    ],  # combination of generations with text input and text + image input, image input first
-)
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
     def streamer(word: str) -> bool:
@@ -327,9 +307,7 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
 
     ov_pipe.start_chat(system_message)
 
-    images = []
-    for link in iteration_images[0]:
-        images.append(get_image_by_link(link))
+    images = iteration_images[0]
 
     result_from_streamer = []
     res = ov_pipe.generate(
@@ -341,14 +319,10 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
     assert res.texts[0] == "".join(result_from_streamer)
 
     for image_set in iteration_images[1:]:
-        images = []
-        for link in image_set:
-            images.append(get_image_by_link(link))
-
         result_from_streamer = []
         res = ov_pipe.generate(
             prompts[1],
-            images=images,
+            images=image_set,
             generation_config=generation_config,
             streamer=streamer,
         )
@@ -375,22 +349,20 @@ def test_vlm_get_tokenizer(cache, backend):
     ],
 )
 @pytest.mark.parametrize("backend", attention_backend)
-def test_sampling(config, backend):
+def test_sampling(config, backend, cat_tensor):
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
-    image = get_image_by_link(image_links[0])
     pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
-    pipe.generate(prompts[0], image=image, generation_config=config)
+    pipe.generate(prompts[0], image=cat_tensor, generation_config=config)
 
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("backend", attention_backend)
-def test_perf_metrics(cache, backend):
+def test_perf_metrics(backend, cat_tensor):
     import numpy as np
     from time import perf_counter_ns
 
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
 
-    images = [get_image_by_link(image_links[0])]
     image_tokens_num = 54  # the number of tokens into which this test image is encoded
     max_new_tokens = 30
 
@@ -399,7 +371,7 @@ def test_perf_metrics(cache, backend):
     start_generate = perf_counter_ns()
     result = pipe.generate(
         prompts[0],
-        images=images,
+        images=[cat_tensor],
         generation_config=GenerationConfig(max_new_tokens=max_new_tokens),
     )
     generate_time = (perf_counter_ns() - start_generate) / 1_000_000.0
@@ -455,7 +427,7 @@ def test_perf_metrics(cache, backend):
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
-def test_vlm_npu_no_exception(model_id, backend):
+def test_vlm_npu_no_exception(model_id, backend, cat_tensor, handwritten_tensor, car_tensor):
     unsupported_models = {
         "katuni4ka/tiny-random-internvl2",
         "katuni4ka/tiny-random-gemma3",
@@ -477,18 +449,23 @@ def test_vlm_npu_no_exception(model_id, backend):
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
 
-    for link in image_links_for_testing[2]:
-        image = get_image_by_link(link)
+    for image in cat_tensor, handwritten_tensor, car_tensor:
         ov_pipe.generate(
             prompts[0], images=[image], generation_config=generation_config
         )
 
 
+@pytest.fixture(scope="module", params=[
+    ["cat_tensor"], []
+])
+def image_sequence(request):
+    return [request.getfixturevalue(image) for image in request.param]
+
+
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
-@pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_images, backend):
+def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_sequence, backend):
     callback_questions = [
         "Explain in details 1+1=",
         "Why is the Sun yellow?",
@@ -514,34 +491,30 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
     generation_config.ignore_eos = True
 
-    images = []
-    for link in iteration_images:
-        images.append(get_image_by_link(link))
-
     results_with_cancel = ""
     ov_pipe.start_chat()
     results_with_cancel += ov_pipe.generate(
-        callback_questions[0], images=images, generation_config=generation_config
+        callback_questions[0], images=image_sequence, generation_config=generation_config
     ).texts[0]
     # doesn't add to results_with_cancel as it should be complitely removed from the history
     ov_pipe.generate(
         callback_questions[1],
-        images=images,
+        images=image_sequence,
         generation_config=generation_config,
         streamer=streamer,
     )
     results_with_cancel += ov_pipe.generate(
-        callback_questions[2], images=images, generation_config=generation_config
+        callback_questions[2], images=image_sequence, generation_config=generation_config
     ).texts[0]
     ov_pipe.finish_chat()
 
     results = ""
     ov_pipe.start_chat()
     results += ov_pipe.generate(
-        callback_questions[0], images=images, generation_config=generation_config
+        callback_questions[0], images=image_sequence, generation_config=generation_config
     ).texts[0]
     results += ov_pipe.generate(
-        callback_questions[2], images=images, generation_config=generation_config
+        callback_questions[2], images=image_sequence, generation_config=generation_config
     ).texts[0]
     ov_pipe.finish_chat()
 
@@ -550,10 +523,10 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
     results = ""
     ov_pipe.start_chat()
     results += ov_pipe.generate(
-        callback_questions[0], images=images, generation_config=generation_config
+        callback_questions[0], images=image_sequence, generation_config=generation_config
     ).texts[0]
     results += ov_pipe.generate(
-        callback_questions[2], images=images, generation_config=generation_config
+        callback_questions[2], images=image_sequence, generation_config=generation_config
     ).texts[0]
     ov_pipe.finish_chat()
 
@@ -562,7 +535,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("backend", attention_backend)
-def test_start_chat_clears_history(backend):
+def test_start_chat_clears_history(backend, image_sequence):
     callback_questions = [
         "Why is the Sun yellow?"
     ]
@@ -571,26 +544,22 @@ def test_start_chat_clears_history(backend):
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
 
-    images = []
-    for link in image_links_for_testing[1]:
-        images.append(get_image_by_link(link))
-
     results_first_generate = ""
     ov_pipe.start_chat()
     results_first_generate += ov_pipe.generate(
-        callback_questions[0], images=images, generation_config=generation_config
+        callback_questions[0], images=image_sequence, generation_config=generation_config
     ).texts[0]
 
     results_second_generate = ""
     ov_pipe.start_chat()
     results_second_generate += ov_pipe.generate(
-        callback_questions[0], images=images, generation_config=generation_config
+        callback_questions[0], images=image_sequence, generation_config=generation_config
     ).texts[0]
 
     assert results_first_generate == results_second_generate
 
 @pytest.mark.precommit
-def test_start_chat_clears_history_cb_api():
+def test_start_chat_clears_history_cb_api(image_sequence):
     callback_questions = [
         "Why is the Sun yellow?"
     ]
@@ -599,20 +568,16 @@ def test_start_chat_clears_history_cb_api():
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 30
 
-    images = []
-    for link in image_links_for_testing[1]:
-        images.append(get_image_by_link(link))
-
     results_first_generate = ""
     ov_pipe.start_chat("You are helpful assistant.")
     results_first_generate = ov_pipe.generate(
-        [callback_questions[0]], images=[images], generation_config=[generation_config]
+        [callback_questions[0]], images=[image_sequence], generation_config=[generation_config]
     )[0].texts[0]
 
     results_second_generate = ""
     ov_pipe.start_chat("You are helpful assistant.")
     results_second_generate += ov_pipe.generate(
-        [callback_questions[0]], images=[images], generation_config=[generation_config]
+        [callback_questions[0]], images=[image_sequence], generation_config=[generation_config]
     )[0].texts[0]
 
     assert results_first_generate == results_second_generate
@@ -620,9 +585,8 @@ def test_start_chat_clears_history_cb_api():
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
-@pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_images, backend):
+def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, image_sequence, backend):
     callback_questions = [
         "Why is the Sun yellow?",
         "1+1=",
@@ -650,14 +614,10 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_im
     generation_config.ignore_eos = True
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
 
-    images = []
-    for link in iteration_images:
-        images.append(get_image_by_link(link))
-
     ov_pipe.start_chat()
     _ = ov_pipe.generate(
         callback_questions[0],
-        images=images,
+        images=image_sequence,
         generation_config=generation_config,
         streamer=streamer,
     )
@@ -666,7 +626,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_im
     streamer_generation_result = ""
     _ = ov_pipe.generate(
         callback_questions[0],
-        images=images,
+        images=image_sequence,
         generation_config=generation_config,
         streamer=streamer,
     )
@@ -696,19 +656,11 @@ def generate(vlm, requests):
     return answers
 
 
-@functools.lru_cache(maxsize=1)
-def requests():
+@pytest.fixture(scope="module")
+def conversation_requests(cat_tensor, car_tensor, handwritten_tensor):
     return [
-        (
-            "Describe",
-            [
-                get_image_by_link(image_links[0]),
-            ],
-        ),
-        (
-            "How many images are there?",
-            [get_image_by_link(image_links[1]), get_image_by_link(image_links[2])],
-        ),
+        ("Describe", [cat_tensor]),
+        ("How many images are there?", [car_tensor, handwritten_tensor]),
     ]
 
 
@@ -756,7 +708,7 @@ class TestImageTags:
         [((model_id, tag), model_id) for model_id, tag in tag_inserted_by_template],
         indirect=["model_and_tag"],
     )
-    def test_representation(self, model_and_tag, model_id):
+    def test_representation(self, model_and_tag, model_id, cat_tensor):
         vlm, tag = model_and_tag
         generation_config = vlm.get_generation_config()
         generation_config.max_new_tokens = 30
@@ -783,12 +735,10 @@ class TestImageTags:
             ],
             add_generation_prompt=True,
         )
-        image = get_image_by_link(image_links[0])
-
         def workaround_inconsistent_inference():
-            automatic_tags = vlm.generate(prompt, images=[image])
+            automatic_tags = vlm.generate(prompt, images=[cat_tensor])
             reference_tags = vlm.generate(
-                templated_prompt, images=[image], apply_chat_template=False
+                templated_prompt, images=[cat_tensor], apply_chat_template=False
             )
             assert automatic_tags.texts == reference_tags.texts
             assert automatic_tags.scores == reference_tags.scores
@@ -796,20 +746,20 @@ class TestImageTags:
         retry(workaround_inconsistent_inference)
 
     @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
-    def test_prepend_native(self, model_and_tag):
+    def test_prepend_native(self, model_and_tag, conversation_requests):
         vlm, tag = model_and_tag
 
         def workaround_inconsistent_inference():
-            answers = generate(vlm, requests())
+            answers = generate(vlm, conversation_requests)
 
             vlm.start_chat()
             native_tag0 = vlm.generate(
-                tag(0) + requests()[0][0], images=requests()[0][1]
+                tag(0) + conversation_requests[0][0], images=conversation_requests[0][1]
             )
             assert native_tag0.texts == answers[0].texts
             assert native_tag0.scores == answers[0].scores
             native_tags1 = vlm.generate(
-                tag(1) + tag(2) + requests()[1][0], images=requests()[1][1]
+                tag(1) + tag(2) + conversation_requests[1][0], images=conversation_requests[1][1]
             )
             assert native_tags1.texts == answers[1].texts
             assert native_tags1.scores == answers[1].scores
@@ -818,21 +768,21 @@ class TestImageTags:
         retry(workaround_inconsistent_inference)
 
     @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
-    def test_prepend_universal(self, model_and_tag):
+    def test_prepend_universal(self, model_and_tag, conversation_requests):
         vlm, _ = model_and_tag
 
         def workaround_inconsistent_inference():
-            answers = generate(vlm, requests())
+            answers = generate(vlm, conversation_requests)
 
             vlm.start_chat()
             universal_tag0 = vlm.generate(
-                "<ov_genai_image_0>" + requests()[0][0], images=requests()[0][1]
+                "<ov_genai_image_0>" + conversation_requests[0][0], images=conversation_requests[0][1]
             )
             assert universal_tag0.texts == answers[0].texts
             assert universal_tag0.scores == answers[0].scores
             universal_tags1 = vlm.generate(
-                "<ov_genai_image_1><ov_genai_image_2>" + requests()[1][0],
-                images=requests()[1][1],
+                "<ov_genai_image_1><ov_genai_image_2>" + conversation_requests[1][0],
+                images=conversation_requests[1][1],
             )
             assert universal_tags1.texts == answers[1].texts
             assert universal_tags1.scores == answers[1].scores
@@ -841,7 +791,7 @@ class TestImageTags:
         retry(workaround_inconsistent_inference)
 
     @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
-    def test_append(self, model_and_tag):
+    def test_append(self, model_and_tag, conversation_requests):
         vlm, tag = model_and_tag
         generation_config = vlm.get_generation_config()
         generation_config.max_new_tokens = 30
@@ -850,22 +800,22 @@ class TestImageTags:
         def workaround_inconsistent_inference():
             vlm.start_chat()
             native_tag0 = vlm.generate(
-                requests()[0][0] + tag(0), images=requests()[0][1]
+                conversation_requests[0][0] + tag(0), images=conversation_requests[0][1]
             )
             native_tags1 = vlm.generate(
-                requests()[1][0] + tag(1) + tag(2), images=requests()[1][1]
+                conversation_requests[1][0] + tag(1) + tag(2), images=conversation_requests[1][1]
             )
             vlm.finish_chat()
 
             vlm.start_chat()
             universal_tag0 = vlm.generate(
-                requests()[0][0] + "<ov_genai_image_0>", images=requests()[0][1]
+                conversation_requests[0][0] + "<ov_genai_image_0>", images=conversation_requests[0][1]
             )
             assert universal_tag0.texts == native_tag0.texts
             assert universal_tag0.scores == native_tag0.scores
             universal_tags1 = vlm.generate(
-                requests()[1][0] + "<ov_genai_image_1><ov_genai_image_2>",
-                images=requests()[1][1],
+                conversation_requests[1][0] + "<ov_genai_image_1><ov_genai_image_2>",
+                images=conversation_requests[1][1],
             )
             assert universal_tags1.texts == native_tags1.texts
             assert universal_tags1.scores == native_tags1.scores
@@ -874,18 +824,16 @@ class TestImageTags:
         retry(workaround_inconsistent_inference)
 
     @pytest.mark.parametrize("model_and_tag", image_id_ignorant, indirect=True)
-    def test_same_reference(self, model_and_tag):
+    def test_same_reference(self, model_and_tag, cat_image):
         vlm, _ = model_and_tag
         generation_config = vlm.get_generation_config()
         generation_config.max_new_tokens = 30
         vlm.set_generation_config(generation_config)
 
         def workaround_inconsistent_inference():
-            image = get_image_by_link(image_links[0])
-
-            one_image = vlm.generate("<ov_genai_image_0>" * 2, images=[image])
+            one_image = vlm.generate("<ov_genai_image_0>" * 2, images=[cat_image])
             two_images = vlm.generate(
-                "<ov_genai_image_0><ov_genai_image_1>", images=[image, image]
+                "<ov_genai_image_0><ov_genai_image_1>", images=[cat_image, cat_image]
             )
             assert one_image.texts == two_images.texts
             assert one_image.scores == two_images.scores
@@ -893,16 +841,15 @@ class TestImageTags:
         retry(workaround_inconsistent_inference)
 
     @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
-    def test_older(self, model_and_tag):
+    def test_older(self, model_and_tag, car_image):
         vlm, _ = model_and_tag
         generation_config = vlm.get_generation_config()
         generation_config.max_new_tokens = 30
         vlm.set_generation_config(generation_config)
-        images = [get_image_by_link(image_links[1])]
         vlm.start_chat()
-        vlm.generate("", images=images)
+        vlm.generate("", images=[car_image])
         with pytest.raises(RuntimeError):
-            vlm.generate("<ov_genai_image_0>", images=images)
+            vlm.generate("<ov_genai_image_0>", images=[car_image])
 
     @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
     def test_missing_universal(self, model_and_tag):
@@ -916,23 +863,31 @@ class TestImageTags:
         with pytest.raises(RuntimeError):
             vlm.generate(tag(0))
 
+
+@pytest.fixture(scope="module")
+def cat_image_336x336(cat_image):
+    return cat_image.resize((336, 336))
+
+
+@pytest.fixture(scope="module")
+def cat_image_32x32(cat_image):
+    return cat_image.resize((32, 32))
+
+
 @pytest.mark.precommit
 @pytest.mark.parametrize(
-    "model_id, image_link, target_size, backend",
+    "model_id, image_name, backend",
     [
-        pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
-        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "SDPA"),  # TODO: use fixture indirect=True
+        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "PA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
     ],
 )
-def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size, backend):
-    import numpy as np
-
-    resized_image = get_pil_image_by_link(image_link, target_size=target_size)
-    resized_image_tensor = openvino.Tensor(np.array(resized_image))
+def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, backend):
+    resized_image = request.getfixturevalue(image_name)
 
     prompt = "Describe this image."
     max_new_tokens = 100
@@ -965,7 +920,7 @@ def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size
 
     # Run the model with GenAI
     vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-    genai_output = vlm.generate(prompt, images=[resized_image_tensor], max_new_tokens=max_new_tokens)
+    genai_output = vlm.generate(prompt, images=[openvino.Tensor(resized_image)], max_new_tokens=max_new_tokens)
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text

@@ -66,3 +66,5 @@ If the `CLEANUP_CACHE` environment variable is set, all downloaded and converted
 ```sh
 CLEANUP_CACHE=1 python -m pytest tests/python_tests -m samples
 ```
+
+Test images are saved to pytest's default cache dir. It can be changed with `--override-ini cache_dir=new_path`. `-p no:cacheprovider` disables the cache.

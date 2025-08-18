@@ -24,6 +24,7 @@ env:
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/
+  PYTEST_CACHE: C:/mount/caches/pytest
   ARTIFACTS_SHARE: '/mount/build-artifacts'
   BASE_PRODUCT_TYPE: public_windows_vs2022
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
@@ -615,7 +616,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 240
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
+            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py --override-ini cache_dir=${{ env.PYTEST_CACHE }}'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 180
           - name: 'GGUF Reader tests'
