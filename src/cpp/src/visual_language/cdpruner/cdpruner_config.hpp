@@ -12,7 +12,7 @@ namespace ov::genai::cdpruner {
 /// @brief Configuration structure for CDPruner algorithm
 struct Config {
     /// @brief Percentage of visual tokens to retain after pruning (0-100)
-    size_t visual_tokens_percentage = 50;
+    size_t viusal_tokens_retain_percentage = 50;
     
     /// @brief Weight for balancing relevance vs diversity (0.0 to 1.0)
     float relevance_weight = 0.5f;
@@ -41,7 +41,7 @@ struct Config {
     /// @param other The other Config to compare with
     /// @return true if all configuration parameters are equal, false otherwise
     bool operator==(const Config& other) const {
-        return visual_tokens_percentage == other.visual_tokens_percentage &&
+        return viusal_tokens_retain_percentage == other.viusal_tokens_retain_percentage &&
                std::abs(relevance_weight - other.relevance_weight) < 1e-6f && enable_pruning == other.enable_pruning &&
                device == other.device && pruning_debug_mode == other.pruning_debug_mode &&
                std::abs(numerical_threshold - other.numerical_threshold) < 1e-9f &&

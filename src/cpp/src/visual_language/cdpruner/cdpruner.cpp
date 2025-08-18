@@ -19,7 +19,7 @@ CDPruner::CDPruner(const Config& config)
 
     if (m_config.pruning_debug_mode) {
         std::cout << "CDPruner initialized with configuration:" << std::endl;
-        std::cout << "  visual_tokens_percentage: " << m_config.visual_tokens_percentage << "%" << std::endl;
+        std::cout << "  viusal_tokens_retain_percentage: " << m_config.viusal_tokens_retain_percentage << "%" << std::endl;
         std::cout << "  relevance_weight: " << m_config.relevance_weight << std::endl;
         std::cout << "  use_negative_relevance: " << (m_config.use_negative_relevance ? "true" : "false") << std::endl;
         std::cout << "  enable_pruning: " << (m_config.enable_pruning ? "true" : "false") << std::endl;
@@ -42,11 +42,11 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 
     // Calculate actual number of tokens to keep based on percentage
     size_t total_tokens = visual_features.get_shape()[1];
-    size_t num_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * m_config.visual_tokens_percentage / 100.0));
+    size_t num_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * m_config.viusal_tokens_retain_percentage / 100.0));
     
-    if (m_config.visual_tokens_percentage == 0 || num_tokens_to_keep >= total_tokens) {
+    if (m_config.viusal_tokens_retain_percentage == 0 || num_tokens_to_keep >= total_tokens) {
         if (m_config.pruning_debug_mode) {
-            std::cout << "Warning: visual_tokens_percentage is 0 or results in keeping all tokens. "
+            std::cout << "Warning: viusal_tokens_retain_percentage is 0 or results in keeping all tokens. "
                       << "Returning all tokens without pruning." << std::endl;
         }
         return create_all_tokens_selection(visual_features);
@@ -192,7 +192,7 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features,
     size_t feature_dim = visual_shape[2];
     
     // Calculate actual number of tokens to keep based on percentage
-    size_t num_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * m_config.visual_tokens_percentage / 100.0));
+    size_t num_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * m_config.viusal_tokens_retain_percentage / 100.0));
     
     auto text_shape = text_features.get_shape();
     size_t text_tokens = text_shape[0];
@@ -208,7 +208,7 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features,
     std::cout << "  Text feature dimension: " << text_feature_dim << std::endl;
     
     std::cout << "Pruning Configuration:" << std::endl;
-    std::cout << "  Visual tokens percentage: " << m_config.visual_tokens_percentage << "%" << std::endl;
+    std::cout << "  Visual tokens percentage: " << m_config.viusal_tokens_retain_percentage << "%" << std::endl;
     std::cout << "  Target vision tokens (after pruning): " << num_tokens_to_keep << std::endl;
     std::cout << "  Relevance weight: " << m_config.relevance_weight << std::endl;
     std::cout << "  Use negative relevance: " << (m_config.use_negative_relevance ? "true (CLIP/LLaVA mode)" : "false (standard mode)") << std::endl;
@@ -281,7 +281,7 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features,
 
 float CDPruner::compute_pruning_ratio() const {
     // Return the percentage as a ratio (30% -> 0.30)
-    return m_config.visual_tokens_percentage / 100.0f;
+    return m_config.viusal_tokens_retain_percentage / 100.0f;
 }
 
 size_t CDPruner::get_default_token_count() const {
@@ -297,8 +297,8 @@ void CDPruner::validate_config(const Config& config) {
     if (!config.enable_pruning)
         return;
 
-    if (config.visual_tokens_percentage < 0 || config.visual_tokens_percentage > 100) {
-        throw std::invalid_argument("visual_tokens_percentage must be between 1 and 100");
+    if (config.viusal_tokens_retain_percentage < 0 || config.viusal_tokens_retain_percentage > 100) {
+        throw std::invalid_argument("viusal_tokens_retain_percentage must be between 1 and 100");
     }
     
     if (config.relevance_weight < 0.0f || config.relevance_weight > 1.0f) {
@@ -329,7 +329,7 @@ bool CDPruner::update_config(const Config& new_config) {
 
         if (m_config.pruning_debug_mode) {
             std::cout << "CDPruner configuration updated successfully:" << std::endl;
-            std::cout << "  visual_tokens_percentage: " << m_config.visual_tokens_percentage << "%" << std::endl;
+            std::cout << "  viusal_tokens_retain_percentage: " << m_config.viusal_tokens_retain_percentage << "%" << std::endl;
             std::cout << "  relevance_weight: " << m_config.relevance_weight << std::endl;
             std::cout << "  enable_pruning: " << (m_config.enable_pruning ? "true" : "false") << std::endl;
         }
@@ -364,7 +364,7 @@ void CDPruner::validate_input_tensors(const ov::Tensor& visual_features,
     }
     
     // Calculate actual token count based on percentage
-    size_t num_tokens_to_keep = static_cast<size_t>(std::round(visual_shape[1] * m_config.visual_tokens_percentage / 100.0));
+    size_t num_tokens_to_keep = static_cast<size_t>(std::round(visual_shape[1] * m_config.viusal_tokens_retain_percentage / 100.0));
     
     // Check if percentage would result in zero tokens
     if (num_tokens_to_keep == 0) {
@@ -400,11 +400,11 @@ void CDPruner::print_selection_statistics(const ov::Tensor& visual_features,
     auto shape = visual_features.get_shape();
     size_t batch_size = shape[0];
     size_t total_tokens = shape[1];
-    size_t selected_token_count = static_cast<size_t>(std::round(total_tokens * m_config.visual_tokens_percentage / 100.0));
+    size_t selected_token_count = static_cast<size_t>(std::round(total_tokens * m_config.viusal_tokens_retain_percentage / 100.0));
     
     std::cout << "Selection Statistics:" << std::endl;
     std::cout << "  Total tokens: " << total_tokens << std::endl;
-    std::cout << "  Selected tokens: " << selected_token_count << " (" << m_config.visual_tokens_percentage << "%)" << std::endl;
+    std::cout << "  Selected tokens: " << selected_token_count << " (" << m_config.viusal_tokens_retain_percentage << "%)" << std::endl;
     std::cout << "  Pruning ratio: " << (1.0f - static_cast<float>(selected_token_count) / total_tokens) * 100.0f << "%" << std::endl;
     
     for (size_t b = 0; b < batch_size && b < 3; ++b) { // Show first 3 batches max

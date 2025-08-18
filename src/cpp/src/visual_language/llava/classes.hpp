@@ -60,7 +60,7 @@ public:
     EncodedImage encode_with_pruning(
         const ov::Tensor& image,
         const std::string& text_prompt,
-        const size_t visual_tokens_percentage,
+        const size_t viusal_tokens_retain_percentage,
         const ov::AnyMap& config_map = {}) override;
 };
 

@@ -76,7 +76,7 @@ public:
     void finish_chat();
 
     // set CDPruner setting
-    virtual void set_visual_token_pruning_config(size_t visual_tokens_percentage,
+    virtual void set_visual_token_pruning_config(size_t viusal_tokens_retain_percentage,
                                                  float relevance_weight,
                                                  bool enable_pruning,
                                                  bool pruning_debug_mode = false);
@@ -138,7 +138,7 @@ private:
             return m_tokenizer;
         }
 
-        virtual void set_visual_token_pruning_config(size_t visual_tokens_percentage,
+        virtual void set_visual_token_pruning_config(size_t viusal_tokens_retain_percentage,
                                                      float relevance_weight,
                                                      bool enable_pruning,
                                                      bool pruning_debug_mode) {
@@ -146,7 +146,7 @@ private:
                 return;
             auto pruner_config = m_vision_encoder->get_pruning_config();
             if (pruner_config.has_value()) {
-                pruner_config->visual_tokens_percentage = visual_tokens_percentage;
+                pruner_config->viusal_tokens_retain_percentage = viusal_tokens_retain_percentage;
                 pruner_config->relevance_weight = relevance_weight;
                 pruner_config->enable_pruning = enable_pruning;
                 pruner_config->pruning_debug_mode = pruning_debug_mode;

@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) try {
     std::string image_file = argv[2];
     std::string device = argc > 3 ? argv[3] : "CPU";
     bool enable_cdpruner = argc > 4 ? (std::string(argv[4]) == "true" || std::string(argv[4]) == "1") : false;
-    size_t visual_tokens_percentage = argc > 5 ? std::stoul(argv[5]) : 30;
+    size_t viusal_tokens_retain_percentage = argc > 5 ? std::stoul(argv[5]) : 30;
     bool pruning_debug_mode = argc > 6 ? (std::string(argv[6]) == "true" || std::string(argv[6]) == "1") : false;
 
     std::vector<ov::Tensor> rgbs = utils::load_images(image_file);
@@ -37,9 +37,9 @@ int main(int argc, char* argv[]) try {
     generation_config.max_new_tokens = 100;
     // Configure CDPruner if requested
     if (enable_cdpruner) {
-        std::cout << "Enabling CDPruner with keeping " << visual_tokens_percentage << "% visual tokens" << std::endl;
+        std::cout << "Enabling CDPruner with keeping " << viusal_tokens_retain_percentage << "% visual tokens" << std::endl;
         generation_config.enable_pruning = enable_cdpruner;
-        generation_config.visual_tokens_percentage = visual_tokens_percentage;
+        generation_config.viusal_tokens_retain_percentage = viusal_tokens_retain_percentage;
         generation_config.pruning_debug_mode = pruning_debug_mode;
     }
 
