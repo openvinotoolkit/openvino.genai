@@ -295,7 +295,7 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
     }
 }
 
-ov::Core singleton_core() {
+ov::Core& singleton_core() {
     static ov::Core core;
     return core;
 }
@@ -473,7 +473,12 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
     for (const auto& cfg : supported_properties) {
         if (cfg == ov::supported_properties)
             continue;
-        auto prop = compiled_Model.get_property(cfg);
+        ov::Any prop;
+        try {
+            prop = compiled_Model.get_property(cfg);
+        } catch (const ov::Exception& e) {
+            continue;  // NPU: Unsupported configuration key: EXECUTION_MODE_HINT
+        }
         if (cfg == ov::device::properties) {
             auto devices_properties = prop.as<ov::AnyMap>();
             for (auto& item : devices_properties) {
@@ -487,12 +492,17 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
     }
 
-    ov::Core core;
     std::vector<std::string> exeTargets;
     exeTargets = compiled_Model.get_property(ov::execution_devices);
     std::cout << "EXECUTION_DEVICES:" << std::endl;
-    for (const auto& device : exeTargets) {
-        std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
+    for (const auto& device : exeTargets) {`
+        std::string full_name;
+        try {
+            full_name = singleton_core().get_property(device, ov::device::full_name);
+        } catch (const ov::Exception& e) {
+            continue;
+        }
+        std::cout << " " << device << ": " << full_name << std::endl;
     }
 }
 
