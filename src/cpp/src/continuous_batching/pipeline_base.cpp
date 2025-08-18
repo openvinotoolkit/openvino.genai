@@ -166,7 +166,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     const auto& generation_config = sampling_params[0];
     // Set visual token pruning configuration
-    m_inputs_embedder->set_visual_token_pruning_config(generation_config.visual_tokens_percentage,
+    m_inputs_embedder->set_visual_token_pruning_config(generation_config.viusal_tokens_retain_percentage,
                                                        generation_config.relevance_weight,
                                                        generation_config.enable_pruning,
                                                        generation_config.pruning_debug_mode);

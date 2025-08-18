@@ -265,7 +265,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id)
         .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
         .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
-        .def_readwrite("visual_tokens_percentage", &GenerationConfig::visual_tokens_percentage)
+        .def_readwrite("viusal_tokens_retain_percentage", &GenerationConfig::viusal_tokens_retain_percentage)
         .def_readwrite("relevance_weight", &GenerationConfig::relevance_weight)
         .def_readwrite("enable_pruning", &GenerationConfig::enable_pruning)
         .def_readwrite("pruning_debug_mode", &GenerationConfig::pruning_debug_mode)

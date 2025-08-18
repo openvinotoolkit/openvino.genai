@@ -43,7 +43,7 @@ def main():
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
     parser.add_argument("--enable_pruning", action="store_true", default=False, help="Enable pruning for the model")
-    parser.add_argument("--visual_tokens_percentage", type=int, help="Percentage of visual tokens to keep during pruning")
+    parser.add_argument("--viusal_tokens_retain_percentage", type=int, help="Percentage of visual tokens to keep during pruning")
     parser.add_argument("--pruning_debug_mode", action="store_true", help="Enable debugging mode for pruning")
     parser.add_argument("--relevance_weight", type=float, help="Relevance weight for the model")
 
@@ -74,8 +74,8 @@ def main():
     config.max_new_tokens = args.max_new_tokens
     config.enable_pruning = args.enable_pruning
     if config.enable_pruning:
-        if args.visual_tokens_percentage is not None:
-            config.visual_tokens_percentage = args.visual_tokens_percentage
+        if args.viusal_tokens_retain_percentage is not None:
+            config.viusal_tokens_retain_percentage = args.viusal_tokens_retain_percentage
         if args.relevance_weight is not None:
             config.relevance_weight = args.relevance_weight
         if args.pruning_debug_mode:
