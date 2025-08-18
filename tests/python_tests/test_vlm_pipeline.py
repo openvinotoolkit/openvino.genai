@@ -878,7 +878,7 @@ def cat_image_32x32(cat_image):
 @pytest.mark.parametrize(
     "model_id, image_name, backend",
     [
-        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "SDPA"),  # TODO: use fixture indirect=True
+        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "PA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
