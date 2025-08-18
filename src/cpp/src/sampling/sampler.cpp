@@ -995,7 +995,7 @@ size_t Sampler::select_best_continuation_path(const std::vector<std::vector<int6
 int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
                                          const ov::Tensor& main_model_logits,
                                          LogitProcessor& logit_processor,
-                                         size_t& accepted_tokens_count,
+                                         size_t& generated_tokens_count,
                                          size_t& max_removed_tokens,
                                          size_t& num_tokens_to_process,
                                          bool do_sample) {
@@ -1026,6 +1026,7 @@ int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
                                                   main_model_logits,
                                                   logit_processor,
                                                   do_sample);
+    generated_tokens_count = validation_result.accepted_path_length;
     std::cout << "seq group" << seq_group->get_request_id() << " accepted: " << validation_result.accepted_path_length << std::endl;
 
     if (!validation_result.is_path_accepted) {
@@ -1059,6 +1060,7 @@ int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
     // Add the bonus token with updated probabilities
     selected_sequence->append_token(validation_result.extra_sampled_token.m_index, validation_result.extra_sampled_token.m_log_prob);
     logit_processor.register_new_generated_token(validation_result.extra_sampled_token.m_index);
+    generated_tokens_count++;
     return validation_result.accepted_path_id;
 }
 
@@ -1124,16 +1126,8 @@ void Sampler::TopKSelector::finalize_eagle2_candidates(SamplerOutput& sampler_ou
             if (generated_ids.size() < path.size()) {
                 continue;  // cannot match if generated ids are shorter than path
             }
-            bool is_exact_match = true;
-            auto start_idx = generated_ids.size() - path.size();
-            for (size_t j = 0; j < path.size(); ++j) {
-                if (generated_ids[start_idx + j] != path[j]) {
-                    is_exact_match = false;
-                    break;
-                }
-            }
 
-            if (is_exact_match) {
+            if (std::search(generated_ids.begin(), generated_ids.end(), path.begin(), path.end()) != generated_ids.end()) {
                 seq->set_status(SequenceStatus::RUNNING);
                 used_sequences.push_back(seq);
                 used_sequence_ids.insert(seq->get_id());
@@ -1197,9 +1191,12 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
         std::vector<Token> tokens = log_softmax(logits, beam.m_global_beam_idx);
 
         // sort tokens
-        std::sort(tokens.begin(), tokens.end(), [](Token left, Token right) {
-            return left.m_log_prob > right.m_log_prob;  // Most probable tokens in front
-        });
+        std::partial_sort(tokens.begin(),
+                          tokens.begin() + m_parameters.eagle_branching_factor,
+                          tokens.end(),
+                          [](const Token& a, const Token& b) {
+                              return a.m_log_prob > b.m_log_prob;
+                          });
 
         size_t add_count = 0;
         for (Token token : tokens) {
@@ -1555,12 +1552,12 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             uint64_t request_id = sequence_group->get_request_id();
             std::lock_guard<std::mutex> lock(m_beam_search_info_mutex);
             if (m_top_k_selector_info.find(request_id) == m_top_k_selector_info.end()) {
-                m_top_k_selector_info.emplace(request_id, TopKSelector(sequence_group, m_d2t->get_tensor_view()));
+                ov::Tensor empty_tensor;
+                m_top_k_selector_info.emplace(request_id, TopKSelector(sequence_group, (m_d2t ? m_d2t->get_tensor_view() : empty_tensor)));
             }
             topk_searcher = &m_top_k_selector_info.at(request_id);
         }
-            topk_searcher->select_top_k(sequence_group_logits, sg_sampling_info.sampler_output);
-    
+        topk_searcher->select_top_k(sequence_group_logits, sg_sampling_info.sampler_output);
     } else if (sampling_params.is_beam_search()) {
         uint64_t request_id = sequence_group->get_request_id();
 

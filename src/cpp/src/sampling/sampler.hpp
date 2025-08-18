@@ -163,7 +163,7 @@ public:
         SequenceGroup::Ptr seq_group,
         const ov::Tensor& main_model_logits,
         LogitProcessor& logit_processor,
-        size_t& accepted_tokens_count,
+        size_t& generated_tokens_count,
         size_t& max_removed_tokens,
         size_t& num_tokens_to_process,
         bool do_sample = false);

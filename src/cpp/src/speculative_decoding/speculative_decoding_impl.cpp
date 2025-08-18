@@ -774,6 +774,8 @@ void ContinuousBatchingPipeline::EagleDecodingImpl::step() {
             (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
     }
 
+    step_timer.end();
+
     // update perf metrics
     const auto num_generated_tokens = m_main_pipeline->get_processed_tokens_per_iteration();
     if (num_generated_tokens > 0) {
@@ -782,16 +784,20 @@ void ContinuousBatchingPipeline::EagleDecodingImpl::step() {
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_duration);
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_duration);
         raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());
-
         raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
+
+        auto main_model_gen_duration = main_timer.get_duration_microsec();
+        auto m_main_pipeline_metrics = m_main_pipeline->get_metrics();
+        main_raw_perf_counters.m_durations.push_back(MicroSeconds(main_model_gen_duration));
+        main_raw_perf_counters.m_inference_durations[0] = MicroSeconds(m_main_pipeline_metrics.inference_duration);
+        main_raw_perf_counters.m_batch_sizes.push_back(num_generated_tokens); // or should be processed + generated
+        m_sd_metrics.update_generated_len(num_generated_tokens);
     }
 
     if (main_generated_requests.empty() && utils::env_setup_for_print_debug_info()) {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
-
-    step_timer.end();
 }
 
 ov::Tensor ContinuousBatchingPipeline::EagleDecodingImpl::update_main_input_ids(const ov::Tensor& original_input_ids) {
@@ -837,7 +843,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer) {
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-    m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+    m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 
     OPENVINO_ASSERT(!has_non_finished_requests(),
                     "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use "
@@ -919,7 +925,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
 
     std::vector<EncodedGenerationResult> results;
     results.reserve(all_requests.size());
-    //m_perf_metrics.draft_model_metrics.raw_metrics = m_draft_pipeline->raw_perf_metrics;
+
+    m_perf_metrics.draft_model_metrics.raw_metrics = m_draft_pipeline->raw_perf_metrics;
     generate_timer.end();
 
     for (size_t request_id = 0; request_id < all_requests.size(); ++request_id) {
@@ -957,11 +964,11 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
         m_perf_metrics.evaluate_statistics(generate_timer.get_start_time());
 
         result.perf_metrics = m_perf_metrics;
+        result.extended_perf_metrics = std::make_shared<SDPerModelsPerfMetrics>(m_perf_metrics);
         results.push_back(std::move(result));
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
-    generate_timer.end();
     return results;
 }
 

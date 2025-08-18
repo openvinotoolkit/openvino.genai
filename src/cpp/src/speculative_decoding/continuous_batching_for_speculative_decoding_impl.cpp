@@ -752,8 +752,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::multist
     while (to_generate) {
         generated_tokens_cnt++;
         step_count++;
-
+        ManualTimer multistep_timer("speculative_decoding: multistep()");
+        multistep_timer.start();
         step();
+        multistep_timer.end();
+
+        const auto num_generated_tokens = get_processed_tokens_per_iteration();
+        auto pipeline_metrics = get_metrics();
+        if (num_generated_tokens > 0) {
+            auto generation_duration = multistep_timer.get_duration_microsec();
+            raw_perf_metrics.m_durations.emplace_back(generation_duration);
+            raw_perf_metrics.m_inference_durations[0] = MicroSeconds(pipeline_metrics.inference_duration);
+            raw_perf_metrics.m_batch_sizes.emplace_back(num_generated_tokens);
+        }
+
         m_model_runner->set_hidden_state_import_needed(false);
         to_generate = false;
         /*if (step_count >= depth + 1) {
