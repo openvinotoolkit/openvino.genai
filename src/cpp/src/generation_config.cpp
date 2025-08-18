@@ -233,7 +233,7 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     }
 }
 bool GenerationConfig::is_eagle_tree() const {
-    return eagle_depth > 0 && eagle_tree_width > 0;
+    return eagle_tree_params.tree_depth > 0;
 }
 bool GenerationConfig::is_greedy_decoding() const {
     return !do_sample && !is_beam_search() && !is_eagle_tree();

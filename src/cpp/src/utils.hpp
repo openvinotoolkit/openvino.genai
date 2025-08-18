@@ -10,7 +10,6 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/core.hpp"
-
 #include "openvino/genai/generation_handle.hpp"
 #include "visual_language/processor_config.hpp"
 

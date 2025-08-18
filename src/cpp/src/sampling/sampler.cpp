@@ -1075,16 +1075,18 @@ Sampler::TopKSelector::TopKSelector(SequenceGroup::Ptr sequence_group, ov::Tenso
         m_parameters{m_sequence_group->get_sampling_parameters()},
         m_d2t(d2t? d2t.data<int64_t>() : nullptr) {
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1); // for eagle, support 1 running seq at the very beginning
-    //m_tree_layers.resize(m_parameters.eagle_depth + 1); // +1 for root layer
-    //m_tree_layers[0].push_back(Beam(*sequence_group)[0]);
-    m_beams.reserve(m_parameters.eagle_branching_factor);
-    auto beam = Beam((*sequence_group)[0]);
-    beam.m_node_id = 0; // root node
-    beam.m_score = 0.0f;
-    beam.m_token_id = -1;
-    m_beams.push_back(beam);
-    m_tree_layer_counter = 0;
-    m_eagle2_candidate_graph = std::make_shared<Eagle2CandidateGraph>(beam, m_parameters.eagle_final_candidates, m_parameters.eagle_depth);
+    tree_reset(m_sequence_group);
+}
+
+void Sampler::TopKSelector::tree_reset(SequenceGroup::Ptr& sequence_group) {
+    m_beams.reserve(m_parameters.eagle_tree_params.branching_factor);
+    Beam root_beam((*m_sequence_group)[0]);
+    root_beam.m_score = 0.0f;
+    m_eagle2_candidate_graph = std::make_shared<Eagle2CandidateGraph>(root_beam,
+                                                                        m_parameters.eagle_tree_params.total_tokens,
+                                                                        m_parameters.eagle_tree_params.tree_depth);
+    m_beams.push_back(root_beam);
+
 }
 
 void Sampler::TopKSelector::finalize_eagle2_candidates(SamplerOutput& sampler_output) {
@@ -1146,19 +1148,15 @@ void Sampler::TopKSelector::finalize_eagle2_candidates(SamplerOutput& sampler_ou
             remaining_retrieve_indices.push_back(path);
         }
     }
-    /*for (const auto& path : remaining_retrieve_indices) {
-        Sequence::Ptr new_sequence = m_sequence_group->fork_sequence((*m_sequence_group)[0]);
-        new_sequence->set_status(SequenceStatus::RUNNING);
-        //new_sequence->set_generated_ids(path);
-        //new_sequence->set_generated_log_probs(std::vector<float>(path.size(), 0.0f)); // initialize log probs to 0
-        used_sequences.push_back(new_sequence);
-    }*/
+    for (const auto& path : remaining_retrieve_indices) {
+        // find best matching sequence in the remaining caching sequences
+    }
 
     pad_sequence_lengths(m_sequence_group);
     // drop all waiting sequences
     auto seqs = m_sequence_group->get_sequences();
     for (auto& seq : seqs) {
-        if (seq->is_waiting()) {
+        if (seq->is_caching()) { // remaining cached sequences can be now released
             sampler_output.m_dropped_sequences.push_back(seq->get_id());
             m_sequence_group->remove_sequence(seq->get_id());
         }
@@ -1169,11 +1167,7 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
     // parent sequence ID -> number of child sequences
     std::map<uint64_t, uint64_t> parent_2_num_childs_map;
     if (m_tree_layer_counter == 0 && m_beams.empty()) {
-        Beam root_beam((*m_sequence_group)[0]);
-        m_eagle2_candidate_graph = std::make_shared<Eagle2CandidateGraph>(root_beam,
-                                                                          m_parameters.eagle_final_candidates,
-                                                                          m_parameters.eagle_depth);
-        m_beams.push_back(root_beam);
+        tree_reset(m_sequence_group);
     }
 
     for (Beam& beam : m_beams) {
@@ -1196,7 +1190,7 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
 
     std::vector<Beam> candidates;
     std::vector<Beam> child_beams;                                       // beams for next execution in step()
-    candidates.reserve(m_parameters.eagle_tree_width * m_beams.size());  // num_beams for each beam
+    candidates.reserve(m_parameters.eagle_tree_params.branching_factor * m_beams.size());  // num_beams for each beam
     m_tree_layer_counter++;
     for (const Beam& beam : m_beams) {
         // do not need log softmax to match paper?
@@ -1214,7 +1208,7 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
             new_candidate.m_token_id = (token.m_index + (m_d2t? m_d2t[token.m_index] : 0));
             m_eagle2_candidate_graph->add_candidate(new_candidate, beam.m_node_id);
             candidates.push_back(new_candidate);
-            if (++add_count == m_parameters.eagle_branching_factor) {
+            if (++add_count == m_parameters.eagle_tree_params.branching_factor) {
                 break;
             }
         }
@@ -1227,7 +1221,7 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
     // size_t next_layer_size = std::min(candidates.size(),
     // m_parameters.eagle_tree_width);
 
-    for (size_t cand_idx = 0; cand_idx < m_parameters.eagle_branching_factor; ++cand_idx) {
+    for (size_t cand_idx = 0; cand_idx < m_parameters.eagle_tree_params.branching_factor; ++cand_idx) {
         Beam& candidate = candidates[cand_idx];
 
         parent_2_num_childs_map[candidate.m_sequence->get_id()] += 1;
@@ -1261,9 +1255,7 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
         size_t num_childs = parent_2_num_childs_map[beam.m_sequence->get_id()];
         if (num_childs == 0) {
             // do not drop, keep for further trace back
-            beam.m_sequence->set_status(SequenceStatus::WAITING);
-            sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
-            m_sequence_group->remove_sequence(beam.m_sequence->get_id());
+            beam.m_sequence->set_status(SequenceStatus::CACHING);
         }
     }
 
@@ -1271,9 +1263,9 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
     m_beams = child_beams;
 
     // finalize the candidates after depth of iterations of draft pipeline
-    if (m_tree_layer_counter == m_parameters.eagle_depth) {
+    if (m_tree_layer_counter == m_parameters.eagle_tree_params.tree_depth + 1) { // to match paper
         for (auto& iter : m_sequence_group->get_running_sequences()) {
-            iter->set_status(SequenceStatus::WAITING);
+            iter->set_status(SequenceStatus::CACHING);
         }
         finalize_eagle2_candidates(sampler_output);
         m_tree_layer_counter = 0;  // reset counter
@@ -1406,7 +1398,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         if (sampling_params.is_greedy_decoding() && sequence_group->get_num_tokens_to_validate() == 0) {
             OPENVINO_ASSERT(num_running_sequences == 1);
         }
-        if (is_validation_mode_enabled && num_running_sequences > 1 ) {
+        if (is_validation_mode_enabled && num_generated_tokens_to_validate > 0 ) {
             // trigger group validation for eagle mode
             auto selected_path = validate_eagle2_candidates(sequence_group,
                                        sequence_group_logits,

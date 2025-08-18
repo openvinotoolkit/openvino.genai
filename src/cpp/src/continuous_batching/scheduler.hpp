@@ -347,7 +347,7 @@ private:
             // Question: do we need to schedule preeempted first as it's done in vLLM?
             // Answer: preempted sequences have low priority, so they should be after "running" ones. So, here we
             //         keep latencies for sequence groups of high priority
-            if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
+            if (sequence_group->can_generate_tokens() && (!sequence_group->is_waiting() || sequence_group->is_caching()) && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 OPENVINO_ASSERT(num_running_seqs);

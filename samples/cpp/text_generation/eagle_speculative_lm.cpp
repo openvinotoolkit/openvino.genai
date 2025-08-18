@@ -22,7 +22,9 @@ int main(int argc, char* argv[]) try {
     ov::genai::GenerationConfig config = ov::genai::greedy();
     config.max_new_tokens = 100;
     // Eagle specific parameters
-    config.eagle_model = true;
+    config.eagle_tree_params.branching_factor = 8; // Number of candidate tokens to consider at each level
+    config.eagle_tree_params.tree_depth = 3; // How deep to explore the token tree
+    config.eagle_tree_params.total_tokens = 16; // Total number of tokens to generate in eagle tree
     config.num_return_sequences = 1; // only support 1
 
     //config.eagle_tree_width = 3;    // Number of candidate tokens to consider at each level
@@ -33,7 +35,7 @@ int main(int argc, char* argv[]) try {
         main_model_path,
         main_device,
         ov::genai::draft_model(eagle_model_path, eagle_device),
-        std::pair<std::string, ov::Any>("eagle_mode", ov::Any("EAGLE2"))  // Specify eagle2 mode for draft model
+        std::pair<std::string, ov::Any>("eagle_mode", ov::Any("EAGLE3"))  // Specify eagle3 mode for draft model
     );
     // Setup performance measurement
     auto start_time = std::chrono::high_resolution_clock::now();

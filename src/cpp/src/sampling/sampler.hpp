@@ -178,6 +178,12 @@ public:
     // pair with map with backend name and corresponding compiler init time, and vector of compile times for each concrete grammar
     std::pair<std::map<std::string, float>, std::vector<float>> get_structured_output_times();
     void clear_structured_output_compile_times();
+    TopKSelector* get_top_k_selector(uint64_t request_id) {
+        /*if (m_top_k_selector_info.find(request_id) == m_top_k_selector_info.end()) {
+            OPENVINO_ASSERT(false, "TopKSelector for request_id " + std::to_string(request_id) + " is not initialized");
+        }*/
+        return &m_top_k_selector_info.at(request_id);
+    };
 };
 
 class Sampler::GroupBeamSearcher {
@@ -244,7 +250,7 @@ class Sampler::TopKSelector {
             return m_sequence->get_generated_len();
         }
     };
-
+    void tree_reset(SequenceGroup::Ptr& sequence_group);
     static bool greater(const Beam& left, const Beam& right) {
         return left.m_score > right.m_score;
     }

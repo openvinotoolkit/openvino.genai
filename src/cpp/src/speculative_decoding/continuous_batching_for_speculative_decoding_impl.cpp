@@ -579,6 +579,7 @@ UpdateRequestResult ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodi
     // hidden state
     // m_model_runner->set_hidden_state(request_id, candidates.begin()->first, hidden_state);
     UpdateRequestResult result{0, 0};
+    size_t adjust_len = 0;
     for (auto& request : m_requests) {
         if (request_id != request->get_request_id()) {
             continue;
@@ -624,8 +625,7 @@ UpdateRequestResult ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodi
                     return true;
                 }
                 for (const auto& running_sequence : running_sequences) {
-                    size_t sequence_group_id = running_sequence->get_grouped_id();
-                    
+                    size_t sequence_group_id = running_sequence->get_grouped_id();                   
                     auto candidate_it = candidates.find(sequence_group_id);
                     
                     const auto& running_generated_ids = running_sequence->get_generated_ids();
@@ -644,6 +644,7 @@ UpdateRequestResult ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodi
                 pause_due_to_main_not_validated = true;
                 return false;
             };
+            
             if (main_validation_finished()) { // update draft only after main validation is done
                 auto selected_beam = candidates.begin();
                 auto& logit_processor = m_sampler->get_logit_processor(request_id);
@@ -667,7 +668,7 @@ UpdateRequestResult ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodi
                     // update ov::Tensor
                     ov::Tensor updated_hidden_state =
                         truncate_hidden_state_from_end(hidden_state, result.removed_tokens_cnt);
-
+                    adjust_len = request->get_sampling_parameters().eagle_tree_params.tree_depth + 2 - hidden_state.get_shape()[0];
                     m_model_runner->set_initial_hidden_state(request_id,
                                                             //running_sequence->get_grouped_id(),
                                                             updated_hidden_state);
@@ -695,7 +696,7 @@ UpdateRequestResult ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodi
                                     : 0;
             if (generated_len > 0 && validate_length > 0) {
                 // processed token number in draft
-                request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1 -
+                request->update_processed_tokens_num(num_processed_tokens - (result.removed_tokens_cnt + adjust_len) + 1 -
                                                     validate_length + 1);
             }
             if (validate_length == 0 && result.inserted_tokens_cnt > 0 && result.removed_tokens_cnt == 0) {
@@ -746,6 +747,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::multist
     bool to_generate = true;
     size_t generated_tokens_cnt = 0;
     size_t step_count = 0;
+    auto depth = m_requests[0]->get_sampling_parameters().eagle_tree_params.tree_depth;
     // cycle to generate several tokens per one iteration for speculative decoding case
     while (to_generate) {
         generated_tokens_cnt++;
@@ -754,6 +756,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::multist
         step();
         m_model_runner->set_hidden_state_import_needed(false);
         to_generate = false;
+        /*if (step_count >= depth + 1) {
+            for (auto& request : m_requests) {
+                auto top_k = m_sampler->get_top_k_selector(request->get_request_id());
+                top_k->finalize_eagle2_candidates();
+            }
+        }*/
         for (auto& request : m_requests) {
             const auto& sampling_params = request->get_sampling_parameters();
             if (0) {  //! sampling_params.is_assisting_generation()) {
@@ -767,7 +775,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl::multist
                 request->pause_generation(true);
             }  // else if (is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
                // request->pause_generation(true);
-            else if (sampling_params.eagle_depth > 0 && step_count >= sampling_params.eagle_depth) {
+            else if (sampling_params.eagle_tree_params.tree_depth > 0 && step_count >= sampling_params.eagle_tree_params.tree_depth + 1) {
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();

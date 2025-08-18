@@ -874,19 +874,18 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         auto new_input_ids = input_ids[request_id]; //update_main_input_ids(input_ids[request_id]);
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+        auto main_sampling_params = sampling_params[request_id];
+        // clear eagle tree parameters for main pipeline
+        if (main_sampling_params.is_eagle_tree()) {
+            main_sampling_params.eagle_tree_params = {};
+        }
         main_generations.push_back(
-            m_main_pipeline->add_request(request_id, new_input_ids, sampling_params[request_id]));
+            m_main_pipeline->add_request(request_id, new_input_ids, main_sampling_params));
 
         auto draft_sampling_params = sampling_params[request_id];
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
         draft_sampling_params.stop_strings = {};
-        draft_sampling_params.eagle_total_tokens = 5;
-        draft_sampling_params.eagle_branching_factor = 3;
-        draft_sampling_params.eagle_depth = 2;             // hard code to test now
-        draft_sampling_params.eagle_tree_width = 10;       // for eagle model, draft model use beam search for multiple
-                                                           // tokens generation for now, will be updated to top-k later
-        draft_sampling_params.eagle_final_candidates = 8;  // hard code to test now
 
         // remove first token from input_ids to create draft_input_ids
         ov::Tensor draft_input_ids = create_draft_input_ids(new_input_ids);

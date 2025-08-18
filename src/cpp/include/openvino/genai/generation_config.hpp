@@ -205,13 +205,15 @@ public:
     size_t max_ngram_size = 0;
 
     // eagle parameters for assisting generation
-    bool eagle_model = false;
-    size_t eagle_tree_width = 0; // maximum number of candidate tokens at each level of eagle tree
-    size_t eagle_branching_factor = 0; // Number of branches to explore at each level
-    size_t eagle_depth = 0; // How deep to look ahead, eagle tree depth
-    size_t eagle_total_tokens = 0; // Total number of tokens to generate in eagle tree
-    size_t eagle_final_candidates = 0; // Number of final candidates to return from eagle tree each time
-    size_t eagle_layer_decay = 0; // Decay factor for layer weights in eagle tree
+    struct eagle_params {
+        // eagle/model/cnets.py
+        // total_tokens = self.total_tokens
+        // depth = self.depth
+        // top_k = self.top_k
+        size_t branching_factor = 1; // top-k
+        size_t tree_depth = 0; // How deep to look ahead, eagle tree depth, draft will run depth + 1(tree init) levels
+        size_t total_tokens = 1; // Total number of tokens to generate in eagle tree
+    } eagle_tree_params;
     // Structured output parameters
     std::optional<StructuredOutputConfig> structured_output_config;
 

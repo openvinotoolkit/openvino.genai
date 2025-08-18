@@ -19,7 +19,8 @@ enum class SequenceStatus {
     RUNNING = 0,
     FINISHED = 1,
     OUT_OF_MEMORY = 2,
-    WAITING = 3
+    WAITING = 3,
+    CACHING = 4 // Sequence is waiting for top-k to be finialized
 };
 
 enum class SequenceGroupType {
@@ -115,6 +116,10 @@ public:
 
     bool is_waiting() const {
         return m_status == SequenceStatus::WAITING;
+    }
+
+    bool is_caching() const {
+        return m_status == SequenceStatus::CACHING;
     }
 
     void set_status(SequenceStatus status) {
@@ -680,6 +685,15 @@ public:
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
                 return true;
+            }
+        }
+        return m_is_gen_paused;
+    }
+
+    bool is_caching() const {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_caching()) {
+                return true; // in the middle of drafting stage
             }
         }
         return m_is_gen_paused;
