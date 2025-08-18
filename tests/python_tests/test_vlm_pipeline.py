@@ -1,6 +1,30 @@
 # Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+"""
+Fixture hierarchy
+cat_image ─────────┬─── cat_image_336x336
+    |              │
+cat_tensor         └─── cat_image_32x32
+    │
+    ├──── iteration_images
+    │          │
+    │          ├─── cat_tensor
+    │          ├─── car_tensor
+    │          └─── handwritten_tensor
+    │
+    ├──── image_sequence
+    │
+    └──── conversation_requests
+                │
+                ├─── cat_tensor
+                ├─── car_tensor
+                └─── handwritten_tensor
+car_tensor
+handwritten_tensor
+model_and_tag
+"""
+
 import openvino_tokenizers
 import openvino
 import PIL
@@ -89,24 +113,24 @@ def download_image(link):
     return PIL.Image.open(requests.get(link, stream=True).raw).convert("RGB")
 
 
-def cache_or_download_image(pytestconfig, link, file_name):
+def from_cache_or_download(pytestconfig, link, file_name):
     try:
         image_path = pytestconfig.cache.mkdir("images") / file_name
-        if image_path.exists():
-            image = PIL.Image.open(image_path).convert("RGB")
-        else:
-            image = download_image(link)
-            image.save(image_path)
-        return image
     except AttributeError:
         # Cache is disabled with -p no:cacheprovider
         return download_image(link)
+    if image_path.exists():
+        image = PIL.Image.open(image_path)
+    else:
+        image = download_image(link)
+        image.save(image_path)
+    return image
 
 
 @pytest.fixture(scope="module")
 def cat_image(pytestconfig):
     cat_url = "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11"
-    return cache_or_download_image(pytestconfig, cat_url, "cat.jpg")
+    return from_cache_or_download(pytestconfig, cat_url, "cat.jpg")
 
 
 @pytest.fixture(scope="module")
@@ -117,13 +141,13 @@ def cat_tensor(cat_image):
 @pytest.fixture(scope="module")
 def car_tensor(pytestconfig):
     car_url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg"
-    return openvino.Tensor(cache_or_download_image(pytestconfig, car_url, "car.jpg"))
+    return openvino.Tensor(from_cache_or_download(pytestconfig, car_url, "car.jpg"))
 
 
 @pytest.fixture(scope="module")
 def handwritten_tensor(pytestconfig):
     handwritten_url = "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350"
-    return openvino.Tensor(cache_or_download_image(pytestconfig, handwritten_url, "handwritten.png"))
+    return openvino.Tensor(from_cache_or_download(pytestconfig, handwritten_url, "handwritten.png"))
 
 
 model_ids = [
@@ -824,16 +848,16 @@ class TestImageTags:
         retry(workaround_inconsistent_inference)
 
     @pytest.mark.parametrize("model_and_tag", image_id_ignorant, indirect=True)
-    def test_same_reference(self, model_and_tag, cat_image):
+    def test_same_reference(self, model_and_tag, cat_tensor):
         vlm, _ = model_and_tag
         generation_config = vlm.get_generation_config()
         generation_config.max_new_tokens = 30
         vlm.set_generation_config(generation_config)
 
         def workaround_inconsistent_inference():
-            one_image = vlm.generate("<ov_genai_image_0>" * 2, images=[cat_image])
+            one_image = vlm.generate("<ov_genai_image_0>" * 2, images=[cat_tensor])
             two_images = vlm.generate(
-                "<ov_genai_image_0><ov_genai_image_1>", images=[cat_image, cat_image]
+                "<ov_genai_image_0><ov_genai_image_1>", images=[cat_tensor, cat_tensor]
             )
             assert one_image.texts == two_images.texts
             assert one_image.scores == two_images.scores
@@ -841,15 +865,15 @@ class TestImageTags:
         retry(workaround_inconsistent_inference)
 
     @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
-    def test_older(self, model_and_tag, car_image):
+    def test_older(self, model_and_tag, car_tensor):
         vlm, _ = model_and_tag
         generation_config = vlm.get_generation_config()
         generation_config.max_new_tokens = 30
         vlm.set_generation_config(generation_config)
         vlm.start_chat()
-        vlm.generate("", images=[car_image])
+        vlm.generate("", images=[car_tensor])
         with pytest.raises(RuntimeError):
-            vlm.generate("<ov_genai_image_0>", images=[car_image])
+            vlm.generate("<ov_genai_image_0>", images=[car_tensor])
 
     @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
     def test_missing_universal(self, model_and_tag):
