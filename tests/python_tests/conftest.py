@@ -20,13 +20,13 @@ def setup_and_teardown():
 
     yield
 
-    if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
+    if os.environ.get("CLEANUP_CACHE", "false").lower() != "false":
         if os.path.exists(ov_cache_models_dir):
             logger.info(f"Removing temporary directory: {ov_cache_models_dir}")
             shutil.rmtree(ov_cache_models_dir)
         else:
             logger.info(
-                f"Skipping cleanup of temporary directory: {ov_cache_models_dir}"
+                f"Skipped temporary directory cleanup because it doesn't exist: {ov_cache_models_dir}"
             )
 
 
