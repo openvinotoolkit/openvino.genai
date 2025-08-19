@@ -1,19 +1,18 @@
-import addon from '../dist/addon.js';
+import addon from "../dist/addon.js";
 
-import assert from 'node:assert';
-import { describe, it, before, after } from 'node:test';
-import { models } from './models.js';
+import assert from "node:assert";
+import { describe, it, before, after } from "node:test";
+import { models } from "./models.js";
 
-const MODEL_PATH = process.env.MODEL_PATH
-  || `./tests/models/${models.LLM.split('/')[1]}`;
+const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
 
-describe('bindings', () => {
+describe("bindings", () => {
   let pipeline = null;
 
   before((_, done) => {
     pipeline = new addon.LLMPipeline();
 
-    pipeline.init(MODEL_PATH, 'CPU', (err) => {
+    pipeline.init(MODEL_PATH, "CPU", (err) => {
       if (err) {
         console.error(err);
         process.exit(1);
@@ -41,19 +40,23 @@ describe('bindings', () => {
     });
   });
 
-  it('should generate string result', (_, done) => {
-    let output = '';
+  it("should generate string result", (_, done) => {
+    let output = "";
 
-    pipeline.generate('Continue: 1 2 3', (isDone, chunk) => {
-      if (!isDone) {
-        output += chunk;
+    pipeline.generate(
+      "Continue: 1 2 3",
+      (isDone, chunk) => {
+        if (!isDone) {
+          output += chunk;
 
-        return;
-      }
+          return;
+        }
 
-      assert.ok(output.length > 0);
-      done();
-    // eslint-disable-next-line camelcase
-    }, { temperature: '0', max_new_tokens: '4' });
+        assert.ok(output.length > 0);
+        done();
+        // eslint-disable-next-line camelcase
+      },
+      { temperature: "0", max_new_tokens: "4" },
+    );
   });
 });

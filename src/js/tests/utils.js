@@ -1,16 +1,16 @@
-import { bootstrap } from 'global-agent';
-import { promises as fs } from 'node:fs';
-import { listFiles, downloadFile } from '@huggingface/hub';
+import { bootstrap } from "global-agent";
+import { promises as fs } from "node:fs";
+import { listFiles, downloadFile } from "@huggingface/hub";
 
-const BASE_DIR = './tests/models/';
+const BASE_DIR = "./tests/models/";
 
 bootstrap();
 
 export async function dowloadModel(repo) {
   console.log(`Downloading model '${repo}'`);
 
-  const fetch = await import('node-fetch');
-  const modelName = repo.split('/')[1];
+  const fetch = await import("node-fetch");
+  const modelName = repo.split("/")[1];
   const destDir = `${BASE_DIR}${modelName}`;
 
   await fs.mkdir(destDir, { recursive: true });

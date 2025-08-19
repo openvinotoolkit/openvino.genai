@@ -1,45 +1,26 @@
-import globals from 'globals';
-import pluginJs from '@eslint/js';
-import tseslint from 'typescript-eslint';
+import globals from "globals";
+import eslint from "@eslint/js";
+import prettierConfig from "eslint-plugin-prettier/recommended";
+import tseslint from "typescript-eslint";
 
 export default [
-  pluginJs.configs.recommended,
   {
-    ignores: [ 'types/', 'dist/' ],
+    ignores: ["types/", "dist/"],
   },
+  eslint.configs.recommended,
   {
-    files: ['**/*.{js,mjs,cjs,ts}'],
+    files: ["**/*.{js,mjs,cjs,ts}"],
     languageOptions: {
       globals: globals.node,
       parser: tseslint.parser,
     },
+  },
+  {
     rules: {
-      'semi': ['error'],
-      'no-var': ['error'],
-      'max-len': ['error', { 'ignoreUrls': true }],
-      'eol-last': ['error'],
-      'indent': ['error', 2],
-      'camelcase': ['error'],
-      'semi-spacing': ['error'],
-      'arrow-spacing': ['error'],
-      'comma-spacing': ['error'],
-      'no-multi-spaces': ['error'],
-      'quotes': ['error', 'single'],
-      'no-trailing-spaces': ['error'],
-      'space-before-blocks': ['error'],
-      'newline-before-return': ['error'],
-      'comma-dangle': ['error', 'always-multiline'],
-      'space-before-function-paren': ['error', {
-        named: 'never',
-        anonymous: 'never',
-        asyncArrow: 'always',
-      }],
-      'key-spacing': ['error', { beforeColon: false }],
-      'no-multiple-empty-lines': ['error', { max: 1, maxBOF: 0, maxEOF: 0 }],
-      'keyword-spacing': ['error', { overrides: { catch: { after: false } } }],
-      'prefer-destructuring': ['error', { object: true, array: false }],
-      'no-explicit-any': 0,
-      'no-unused-vars': ['error', { args: 'none' } ],
+      "no-var": ["error"],
+      camelcase: ["error"],
+      "prefer-destructuring": ["error", { object: true, array: false }],
     },
   },
+  prettierConfig,
 ] satisfies tseslint.ConfigArray;
