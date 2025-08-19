@@ -91,7 +91,7 @@ if(ENABLE_XGRAMMAR)
         set(XGRAMMAR_BUILD_CXX_TESTS OFF CACHE BOOL "Build CXX tests" FORCE)
         set(XGRAMMAR_ENABLE_CPPTRACE OFF CACHE BOOL "Enable CPPTrace" FORCE)
         set(XGRAMMAR_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA" FORCE)
-
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "Disable LTO for xgrammar" FORCE)
         add_subdirectory("${xgrammar_SOURCE_DIR}" "${xgrammar_BINARY_DIR}" EXCLUDE_FROM_ALL)
         if(MSVC)
             # Suppress C4146 warning for MSVC compiler
