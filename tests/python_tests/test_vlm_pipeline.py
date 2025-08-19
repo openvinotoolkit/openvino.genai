@@ -359,7 +359,7 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_get_tokenizer(cache, backend):
+def test_vlm_get_tokenizer(backend):
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
     pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     tokenizer = pipe.get_tokenizer()
