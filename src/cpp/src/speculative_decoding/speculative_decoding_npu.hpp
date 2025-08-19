@@ -1,15 +1,16 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <openvino/genai/generation_handle.hpp>
-#include <openvino/genai/speculative_decoding/perf_metrics.hpp>
+
+#include "speculative_decoding_metrics.hpp"
 #include "llm/pipeline_base.hpp"
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
+#include <openvino/genai/perf_metrics.hpp>
+#include <openvino/genai/speculative_decoding/perf_metrics.hpp>
 
 namespace ov {
 namespace genai {
-constexpr size_t BATCH_SIZE = 1;
 
 class LLMInferWrapper {
 public:
@@ -31,7 +32,7 @@ public:
 
     bool can_infer(const std::size_t prompt_len = 0);
 
-    int64_t infer_next(int64_t out_token);
+    int64_t infer_next(int64_t out_token, bool skip_perf_stat = false);
 
     std::vector<int64_t> infer_next_return_all(const std::vector<int64_t> tokens);
 
@@ -51,7 +52,14 @@ public:
 
     void reset_state();
 
+    void release_memory();
+
+public:
+    ov::genai::RawPerfMetrics raw_perf_metrics;
+
 private:
+    static constexpr std::size_t BATCH_SIZE = 1;
+
     void set_already_allocated_input_for_1_token();
 
     std::variant<int64_t, std::vector<int64_t>> sample_tokens(
@@ -70,21 +78,11 @@ private:
     int64_t last_token = -1;
     ov::genai::utils::KVAxesPosition m_kv_pos;
     ov::InferRequest m_request;
-    // Separate metrics?
 
     // Data placeholder for 1-token inference:
     int64_t m_new_input_token = -1;
     int64_t m_new_position_id = -1;
     std::vector<int64_t> m_new_atten_mask_data;
-};
-
-// FIXME: Do we need this?
-struct SpeculativeConfig {
-    void update_candidate_strategy(const size_t num_matches);
-
-    std::size_t max_seq_length = SIZE_MAX;
-    std::size_t num_pred_tokens = 5;
-    const std::size_t max_pred_tokens = 10;
 };
 
 class SpeculativeLLMPipelineNPU : public ov::genai::LLMPipelineImplBase {
@@ -113,12 +111,16 @@ public:
     ~SpeculativeLLMPipelineNPU();
 
 private:
-    uint32_t m_max_prompt_len = 0u;
-    uint32_t m_kvcache_total = 0u;
+    void update_candidate_strategy(const std::size_t matches_num);
+
+private:
     std::unique_ptr<LLMInferWrapper> m_draft_request;
     std::unique_ptr<LLMInferWrapper> m_main_request;
-    SpeculativeConfig m_speculative_config;
-    ov::genai::SDPerModelsPerfMetrics m_perf_metrics;
+    std::size_t m_candidates_num = 5;
+    const std::size_t m_max_candidates_num = 10;
+
+    ov::genai::SpeculativeDecodingMetrics m_sd_metrics;
+    ov::genai::SDPerModelsPerfMetrics m_sd_perf_metrics;
 
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
