@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
+#include <iostream>
+#include <iomanip>
 
 namespace ov::genai::cdpruner {
 
@@ -81,7 +83,64 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
         // Update marginal gains by subtracting the squared new orthogonal vector
         // di2s -= square(eis)
         update_marginal_gains(t, best_idx, cis, di2s);
-        
+
+        // Debug output: print updated conditional kernel matrix after each selection
+        if (m_config.pruning_debug_mode && t < 10) {
+            std::cout << "=== After selecting token " << best_idx << " (iteration " << t << ") ===" << std::endl;
+            std::cout << "Updated conditional kernel matrix for batch " << batch_idx << ":" << std::endl;
+
+            // Print the kernel matrix (limited to first 10x10 elements for large matrices)
+            const float* kernel_data = kernel.data<const float>();
+            size_t print_size = std::min(total_tokens, static_cast<size_t>(10));
+            
+            if (total_tokens > 10) {
+                std::cout << "(Showing first " << print_size << "x" << print_size << " elements of " 
+                          << total_tokens << "x" << total_tokens << " matrix)" << std::endl;
+            }
+            
+            for (size_t i = 0; i < print_size; ++i) {
+                for (size_t j = 0; j < print_size; ++j) {
+                    size_t idx = batch_idx * total_tokens * total_tokens + i * total_tokens + j;
+                    std::cout << std::fixed << std::setprecision(4) << kernel_data[idx] << "\t";
+                }
+                if (total_tokens > 10) {
+                    std::cout << "...";
+                }
+                std::cout << std::endl;
+            }
+            if (total_tokens > 10) {
+                std::cout << "..." << std::endl;
+            }
+
+            // Print current selected indices
+            std::cout << "Selected tokens so far: [";
+            for (size_t i = 0; i < selected_indices.size(); ++i) {
+                if (i > 0)
+                    std::cout << ", ";
+                std::cout << selected_indices[i];
+            }
+            std::cout << "]" << std::endl;
+
+            // Print current marginal gains (di2s) - limited to first 10 elements
+            std::cout << "Current marginal gains: [";
+            const float* di2s_data_debug = di2s.data<const float>();
+            size_t print_gains_size = std::min(total_tokens, static_cast<size_t>(10));
+            
+            for (size_t i = 0; i < print_gains_size; ++i) {
+                if (i > 0)
+                    std::cout << ", ";
+                if (di2s_data_debug[i] == -std::numeric_limits<float>::infinity()) {
+                    std::cout << "-inf";
+                } else {
+                    std::cout << std::fixed << std::setprecision(4) << di2s_data_debug[i];
+                }
+            }
+            if (total_tokens > 10) {
+                std::cout << ", ... (" << (total_tokens - 10) << " more elements)";
+            }
+            std::cout << "]" << std::endl << std::endl;
+        }
+
         // Set the selected token's gain to negative infinity to prevent re-selection
         di2s_data[best_idx] = -std::numeric_limits<float>::infinity();
     }
