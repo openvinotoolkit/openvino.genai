@@ -6,7 +6,7 @@ numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"
 einops==0.8.1  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
-diffusers==0.34.0 # For image generation pipelines
+diffusers==0.35.0 # For image generation pipelines
 timm==1.0.19  # For exporting InternVL2
 # torchvision for visual language models
 torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
