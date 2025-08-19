@@ -109,14 +109,14 @@ public:
     /// @param image An image to infer embeddings for. Image shape must be
     /// [1CHW]. Only batch 1 is supported.
     /// @param text_prompt Text prompt to compute relevance against visual tokens.
-    /// @param viusal_tokens_retain_percentage Percentage of visual tokens to retain after pruning (1-100).
+    /// @param visual_tokens_retain_percentage Percentage of visual tokens to retain after pruning (1-100).
     /// @param config_map A config or its members values to follow
     /// instead of the config obtained in constructors.
     /// @return Resulting embeddings for the selected visual tokens.
     virtual EncodedImage encode_with_pruning(
         const ov::Tensor& image,
         const std::string& text_prompt,
-        const size_t viusal_tokens_retain_percentage,
+        const size_t visual_tokens_retain_percentage,
         const ov::AnyMap& config_map = {}) {
         // Default implementation: fallback to original encode method for backward compatibility
         return encode(image, config_map);

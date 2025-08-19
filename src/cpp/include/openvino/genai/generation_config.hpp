@@ -272,7 +272,7 @@ operator|(const StructuredOutputConfig::CompoundGrammar& lhs,
  * @param rng_seed initializes random generator.
  *
  * CDPruner configuration:
- * @param viusal_tokens_retain_percentage the percentage of visual tokens to keep.
+ * @param visual_tokens_retain_percentage the percentage of visual tokens to keep.
  * @param relevance_weight the weight of relevance for visual tokens.
  * @param enable_pruning whether to enable pruning.
  * @param pruning_debug_mode whether to enable pruning debug mode.
@@ -328,7 +328,7 @@ public:
     size_t rng_seed = 0;
 
     // CDPruner config
-    size_t viusal_tokens_retain_percentage = 50;
+    size_t visual_tokens_retain_percentage = 50;
     float relevance_weight = 0.5f;
     bool enable_pruning = false;
     bool pruning_debug_mode = false;
@@ -405,7 +405,7 @@ static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
 static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
 static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
 
-static constexpr ov::Property<size_t> viusal_tokens_retain_percentage{"viusal_tokens_retain_percentage"};
+static constexpr ov::Property<size_t> visual_tokens_retain_percentage{"visual_tokens_retain_percentage"};
 static constexpr ov::Property<float> relevance_weight{"relevance_weight"};
 static constexpr ov::Property<bool> enable_pruning{"enable_pruning"};
 static constexpr ov::Property<bool> pruning_debug_mode{"pruning_debug_mode"};

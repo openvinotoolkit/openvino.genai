@@ -269,7 +269,7 @@ EncodedImage VisionEncoderLLaVA::encode(const ov::Tensor& image, const ov::AnyMa
 EncodedImage VisionEncoderLLaVA::encode_with_pruning(
     const ov::Tensor& image,
     const std::string& text_prompt,
-    const size_t viusal_tokens_retain_percentage,
+    const size_t visual_tokens_retain_percentage,
     const ov::AnyMap& config_map) {
     
     // First, get the full visual features using the standard encode method
@@ -280,20 +280,20 @@ EncodedImage VisionEncoderLLaVA::encode_with_pruning(
         return full_encoded_image;
     }
 
-    // Validate viusal_tokens_retain_percentage parameter
+    // Validate visual_tokens_retain_percentage parameter
     auto visual_shape = full_encoded_image.resized_source.get_shape();
     if (visual_shape.size() != 3) {
         throw std::invalid_argument("Invalid visual features shape for pruning");
     }
     
     size_t total_visual_tokens = visual_shape[1];
-    if (viusal_tokens_retain_percentage == 0 || viusal_tokens_retain_percentage >= 100) {
+    if (visual_tokens_retain_percentage == 0 || visual_tokens_retain_percentage >= 100) {
         // If invalid percentage, return full features
         return full_encoded_image;
     }
     
     // Calculate actual token count from percentage
-    size_t num_visual_tokens = static_cast<size_t>(std::round(total_visual_tokens * viusal_tokens_retain_percentage / 100.0));
+    size_t num_visual_tokens = static_cast<size_t>(std::round(total_visual_tokens * visual_tokens_retain_percentage / 100.0));
     
     // If requested tokens equals total tokens, no pruning needed
     if (num_visual_tokens >= total_visual_tokens) {
@@ -312,8 +312,8 @@ EncodedImage VisionEncoderLLaVA::encode_with_pruning(
 
         // Update CDPruner configuration with the requested percentage
         auto current_config = get_pruning_config();
-        if (current_config.has_value() && current_config->viusal_tokens_retain_percentage != viusal_tokens_retain_percentage) {
-            current_config->viusal_tokens_retain_percentage = viusal_tokens_retain_percentage;
+        if (current_config.has_value() && current_config->visual_tokens_retain_percentage != visual_tokens_retain_percentage) {
+            current_config->visual_tokens_retain_percentage = visual_tokens_retain_percentage;
             set_pruning_config(current_config.value());
         }
 
@@ -432,7 +432,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
     auto current_pruning_config = m_vision_encoder->get_pruning_config();
     bool use_pruning = current_pruning_config->enable_pruning;
     std::string text_prompt;
-    size_t viusal_tokens_retain_percentage = current_pruning_config->use_negative_relevance; // default percentage value
+    size_t visual_tokens_retain_percentage = current_pruning_config->use_negative_relevance; // default percentage value
     
     try {
         auto prompt_it = vision_config.find("text_prompt");
@@ -457,7 +457,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
                 auto llava_encoder = dynamic_cast<VisionEncoderLLaVA*>(m_vision_encoder.get());
                 if (llava_encoder) {
                     EncodedImage pruned_image = llava_encoder->encode_with_pruning(
-                        image, text_prompt, viusal_tokens_retain_percentage, vision_config
+                        image, text_prompt, visual_tokens_retain_percentage, vision_config
                     );
                     embeds.emplace_back(std::move(pruned_image));
                 } else {

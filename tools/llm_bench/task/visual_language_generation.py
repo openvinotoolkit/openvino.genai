@@ -224,8 +224,8 @@ def run_visual_language_generation_genai(
     # Configure CDPruner
     gen_config.enable_pruning = bool(args.get('enable_pruning', False))
     if gen_config.enable_pruning:
-        if args.get('viusal_tokens_retain_percentage') is not None:
-            gen_config.viusal_tokens_retain_percentage = args['viusal_tokens_retain_percentage']
+        if args.get('visual_tokens_retain_percentage') is not None:
+            gen_config.visual_tokens_retain_percentage = args['visual_tokens_retain_percentage']
         if args.get('relevance_weight') is not None:
             gen_config.relevance_weight = args['relevance_weight']
         if args.get('pruning_debug_mode') is not None:

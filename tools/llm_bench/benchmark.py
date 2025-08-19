@@ -108,7 +108,7 @@ def get_argprser():
     parser.add_argument('-bs', '--batch_size', type=int, default=1, required=False, help='Batch size value')
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
     parser.add_argument('--enable_pruning', action='store_true', default=False, help='Enable pruning for the model')
-    parser.add_argument('--viusal_tokens_retain_percentage', type=int, help='Percentage of visual tokens to keep during pruning')
+    parser.add_argument('--visual_tokens_retain_percentage', type=int, help='Percentage of visual tokens to keep during pruning')
     parser.add_argument('--pruning_debug_mode', action='store_true', help='Enable debugging mode for pruning')
     parser.add_argument('--relevance_weight', type=float, help='Relevance weight for the model')
     parser.add_argument(
