@@ -114,17 +114,19 @@ def download_image(link):
 
 
 def from_cache_or_download(pytestconfig, link, file_name):
-    try:
-        image_path = pytestconfig.cache.mkdir("images") / file_name
-    except AttributeError:
-        # Cache is disabled with -p no:cacheprovider
-        return download_image(link)
-    if image_path.exists():
-        image = PIL.Image.open(image_path)
-    else:
-        image = download_image(link)
-        image.save(image_path)
-    return image
+    def implementation():
+        try:
+            image_path = pytestconfig.cache.mkdir("images") / file_name
+        except AttributeError:
+            # Cache is disabled with -p no:cacheprovider
+            return download_image(link)
+        if image_path.exists():
+            image = PIL.Image.open(image_path)
+        else:
+            image = download_image(link)
+            image.save(image_path)
+        return image
+    return retry(implementation, PIL.UnidentifiedImageError)
 
 
 @pytest.fixture(scope="module")
@@ -660,12 +662,12 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, image_sequen
     assert res_first == res_second
 
 
-def retry(func):
+def retry(func, exception_type=AssertionError):
     max_retries = 20
     for idx in range(max_retries):
         try:
             return func()
-        except AssertionError:
+        except exception_type:
             if idx == max_retries - 1:
                 raise
 
