@@ -84,34 +84,35 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
         // di2s -= square(eis)
         update_marginal_gains(t, best_idx, cis, di2s);
 
+        // Debug output: print cis matrix content
+        if (m_config.pruning_debug_mode && t < 10) {
+            std::cout << "=== CIS Matrix Content after iteration " << t << " ===" << std::endl;
+            std::cout << "CIS matrix shape: [" << (t+1) << ", " << total_tokens << "]" << std::endl;
+            
+            const float* cis_data_debug = cis.data<const float>();
+            size_t print_tokens = std::min(total_tokens, static_cast<size_t>(10));
+            
+            // Print each orthogonal vector (each row of cis) - only first 10 elements
+            for (size_t row = 0; row <= t; ++row) {
+                std::cout << "cis[" << row << "] (orthogonal vector for selected token " 
+                          << selected_indices[row] << "): [";
+                
+                for (size_t col = 0; col < print_tokens; ++col) {
+                    if (col > 0) std::cout << ", ";
+                    size_t idx = row * total_tokens + col;
+                    std::cout << std::fixed << std::setprecision(4) << cis_data_debug[idx];
+                }
+                
+                if (total_tokens > 10) {
+                    std::cout << ", ... (" << (total_tokens - 10) << " more)";
+                }
+                std::cout << "]" << std::endl;
+            }
+            std::cout << std::endl;
+        }
+
         // Debug output: print updated conditional kernel matrix after each selection
         if (m_config.pruning_debug_mode && t < 10) {
-            std::cout << "=== After selecting token " << best_idx << " (iteration " << t << ") ===" << std::endl;
-            std::cout << "Updated conditional kernel matrix for batch " << batch_idx << ":" << std::endl;
-
-            // Print the kernel matrix (limited to first 10x10 elements for large matrices)
-            const float* kernel_data = kernel.data<const float>();
-            size_t print_size = std::min(total_tokens, static_cast<size_t>(10));
-            
-            if (total_tokens > 10) {
-                std::cout << "(Showing first " << print_size << "x" << print_size << " elements of " 
-                          << total_tokens << "x" << total_tokens << " matrix)" << std::endl;
-            }
-            
-            for (size_t i = 0; i < print_size; ++i) {
-                for (size_t j = 0; j < print_size; ++j) {
-                    size_t idx = batch_idx * total_tokens * total_tokens + i * total_tokens + j;
-                    std::cout << std::fixed << std::setprecision(4) << kernel_data[idx] << "\t";
-                }
-                if (total_tokens > 10) {
-                    std::cout << "...";
-                }
-                std::cout << std::endl;
-            }
-            if (total_tokens > 10) {
-                std::cout << "..." << std::endl;
-            }
-
             // Print current selected indices
             std::cout << "Selected tokens so far: [";
             for (size_t i = 0; i < selected_indices.size(); ++i) {
