@@ -9,10 +9,8 @@ export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
  */
 export enum PoolingType {
   /** First token embeddings */
-  // eslint-disable-next-line no-unused-vars
   CLS,
   /** The average of all token embeddings */
-  // eslint-disable-next-line no-unused-vars
   MEAN,
 }
 export type TextEmbeddingConfig = {

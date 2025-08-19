@@ -1,4 +1,3 @@
-/* eslint-disable max-len */
 import util from "node:util";
 import addon from "../addon.js";
 import { GenerationConfig, StreamingStatus } from "../utils.js";

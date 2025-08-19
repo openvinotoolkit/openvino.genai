@@ -23,7 +23,6 @@ describe("module", async () => {
   await it("should generate non empty string", async () => {
     const result = await pipeline.generate(
       "Type something in English",
-      // eslint-disable-next-line camelcase
       { temperature: "0", max_new_tokens: "4" },
       () => {},
     );
@@ -109,7 +108,6 @@ describe("generation parameters validation", () => {
 
   it("should perform generation with default options", async () => {
     try {
-      // eslint-disable-next-line camelcase
       await pipeline.generate("prompt", { max_new_tokens: 1 });
     } catch (error) {
       assert.fail(error);
@@ -119,14 +117,12 @@ describe("generation parameters validation", () => {
   });
 
   it("should return a string as generation result", async () => {
-    // eslint-disable-next-line camelcase
     const reply = await pipeline.generate("prompt", { max_new_tokens: 1 });
 
     assert.strictEqual(typeof reply, "string");
   });
 
   it("should call generationCallback with string chunk", async () => {
-    // eslint-disable-next-line camelcase
     await pipeline.generate("prompt", { max_new_tokens: 1 }, (chunk) => {
       assert.strictEqual(typeof chunk, "string");
     });

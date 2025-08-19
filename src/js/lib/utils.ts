@@ -1,4 +1,3 @@
-/* eslint-disable max-len, no-unused-vars */
 export enum StreamingStatus {
   RUNNING,
   STOP,
