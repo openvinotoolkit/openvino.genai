@@ -6,7 +6,7 @@ const BASE_DIR = "./tests/models/";
 
 bootstrap();
 
-export async function dowloadModel(repo) {
+export async function downloadModel(repo) {
   console.log(`Downloading model '${repo}'`);
 
   const fetch = await import("node-fetch");
