@@ -12,7 +12,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     const std::string models_path = argv[1], prompt = argv[2];
     const std::string image_path = (argc > 3) ? argv[3] : "";
-    const std::string device = "GPU";  // GPU can be used as well
+    const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::Image2ImagePipeline pipe(models_path, device);
     ov::Tensor generated_image;
