@@ -1,5 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-diffusers==0.34.0
+diffusers==0.35.0
 optimum-intel==1.25.2
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"
