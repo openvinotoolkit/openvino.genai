@@ -26,6 +26,13 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
             return compiled_model.create_infer_request();
         });
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
+
+    // [CDPruner] Initialize CDPruner with hardcoded configuration
+    ov::genai::cdpruner::Config cdpruner_config;
+    cdpruner_config.enable_pruning = true;       // Enable pruning functionality
+    cdpruner_config.device = device;             // Use same device as the model
+    cdpruner_config.pruning_debug_mode = false;  // Disable debug output for production
+    m_cdpruner = std::make_unique<ov::genai::cdpruner::CDPruner>(cdpruner_config);
 }
 
 VisionEncoder::VisionEncoder(
