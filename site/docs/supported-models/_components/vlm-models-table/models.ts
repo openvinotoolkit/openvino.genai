@@ -91,6 +91,7 @@ export const VLM_MODELS: VLMModelType[] = [
         links: [
           'https://huggingface.co/microsoft/Phi-4-multimodal-instruct',
         ],
+        notesLink: '#phi4mm-notes'
       },
     ],
   },
