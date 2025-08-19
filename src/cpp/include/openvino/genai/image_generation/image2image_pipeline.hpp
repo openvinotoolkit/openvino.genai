@@ -143,6 +143,13 @@ public:
         return generate(positive_prompt, initial_image, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
+            const std::string& positive_prompt,
+            Properties&&... properties) {
+        return generate(positive_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
     ov::Tensor decode(const ov::Tensor latent);
 
     ImageGenerationPerfMetrics get_performance_metrics();
