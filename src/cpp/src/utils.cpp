@@ -495,7 +495,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
     std::vector<std::string> exeTargets;
     exeTargets = compiled_Model.get_property(ov::execution_devices);
     std::cout << "EXECUTION_DEVICES:" << std::endl;
-    for (const auto& device : exeTargets) {`
+    for (const auto& device : exeTargets) {
         std::string full_name;
         try {
             full_name = singleton_core().get_property(device, ov::device::full_name);
