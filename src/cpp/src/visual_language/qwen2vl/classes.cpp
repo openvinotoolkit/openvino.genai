@@ -17,6 +17,7 @@
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/round.hpp"
 #include "openvino/op/transpose.hpp"
+#include "openvino/op/tile.hpp"
 
 #include "visual_language/vl_sdpa_transformations.hpp"
 
