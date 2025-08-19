@@ -24,7 +24,7 @@ def main():
     device = 'CPU'  # GPU can be used as well
     pipe = openvino_genai.Image2ImagePipeline(args.model_dir, device)
 
-    if args.image is None:
+    if args.image:
         image = read_image(args.image)
         image_tensor = pipe.generate(args.prompt, image,
             strength=0.8 # controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
