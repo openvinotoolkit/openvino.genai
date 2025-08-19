@@ -81,6 +81,7 @@ USE_CASES = {
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5', "stable-code"],
     'text_gen': [
+        'arcee',
         'decoder',
         't5',
         'falcon',
