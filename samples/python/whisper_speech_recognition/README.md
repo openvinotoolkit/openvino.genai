@@ -6,10 +6,11 @@ This example showcases inference of speech recognition Whisper Models. The appli
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model and downgrade `transformers` to 4.52.4. `WhisperPipeline` is going to fail with `Check '!self_attn_nodes.empty()' failed.` if the model is converted with `transformers==4.53.3`.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install transformers==4.52.4
 ```
 
 Then, run the export with Optimum CLI:
