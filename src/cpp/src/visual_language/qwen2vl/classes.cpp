@@ -21,11 +21,6 @@
 
 #include "visual_language/vl_sdpa_transformations.hpp"
 
-namespace ov {
-    class Node;
-    void disable_fp16_compression(const std::shared_ptr<Node>& node);
-}
-
 namespace ov::genai {
 
 namespace {
@@ -78,13 +73,10 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     attrs.antialias = true;
     attrs.align_corners = true;
     auto img_resized = std::make_shared<ov::op::v0::Interpolate>(img_trans, resize_target_shape, attrs);
-    ov::disable_fp16_compression(img_resized);
     auto img_resized_rnd = std::make_shared<ov::op::v5::Round>(img_resized, ov::op::v5::Round::RoundMode::HALF_TO_EVEN);
     auto resized_images_f32_planar = std::make_shared<ov::op::v0::Clamp>(img_resized_rnd, 0, 255);
     auto resized_images_m = std::make_shared<ov::op::v1::Subtract>(resized_images_f32_planar, image_mean);
-    ov::disable_fp16_compression(resized_images_m);
     auto resized_images_s = std::make_shared<ov::op::v1::Multiply>(resized_images_m, image_scale);
-    ov::disable_fp16_compression(resized_images_s);
     auto temporal_images = std::make_shared<ov::op::v0::Tile>(resized_images_s, broadcast_shape);
     auto reshaped_8d = std::make_shared<ov::op::v1::Reshape>(temporal_images, temp_shape8d, true);
     auto transposed_8d = std::make_shared<ov::op::v1::Transpose>(reshaped_8d, 
