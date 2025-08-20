@@ -486,6 +486,27 @@ public:
         return running_seqs;
     }
 
+    std::vector<Sequence::Ptr> get_caching_sequences() {
+        std::vector<Sequence::Ptr> caching_seqs;
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_caching()) {
+                caching_seqs.emplace_back(m_sequences[seq_id]);
+            }
+        }
+
+        return caching_seqs;
+    }
+
+    std::vector<Sequence::CPtr> get_caching_sequences() const {
+        std::vector<Sequence::CPtr> caching_seqs;
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_caching()) {
+                caching_seqs.emplace_back(m_sequences[seq_id]);
+            }
+        }
+
+        return caching_seqs;
+    }
     uint64_t get_request_id() const {
         return m_request_id;
     }

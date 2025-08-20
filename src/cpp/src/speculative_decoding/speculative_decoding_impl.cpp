@@ -381,7 +381,7 @@ void extract_hidden_state_generic(std::shared_ptr<ov::Model>& model,
         ov::pass::Manager pm;
         /*if idx==len(self.layers)-3 or idx==len(self.layers)//2 or idx==2:
             all_hidden_states += (hidden_states,)*/
-        std::vector<int> layers = {2, 16, 31}; // need to add check, only support positive values
+        std::vector<int> layers = {2, 16, 29}; // need to add check, only support positive values
         pm.register_pass<EagleModelTransform>(layers);
         pm.run_passes(model);
     } else {
