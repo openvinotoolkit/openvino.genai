@@ -12,7 +12,7 @@ import pytest
 import pathlib
 
 
-pytestmark = pytest.mark.xfail("transformers==4.53.3 isn't supported yet. Ticket 171934", raises=RuntimeError)
+pytestmark = pytest.mark.xfail(reason="transformers==4.53.3 isn't supported yet. Ticket 171934", raises=RuntimeError)
 
 
 # This test suite is designed specifically to validate the functionality 
