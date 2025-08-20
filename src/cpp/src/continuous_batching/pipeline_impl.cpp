@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <thread>
+#include <optional>
 
 #include "openvino/genai/text_streamer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
@@ -44,7 +45,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
-    utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation);
+    bool allow_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
+    utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation, allow_xattention);
     utils::apply_gather_before_matmul_transformation(model);
 
     initialize_pipeline(model, scheduler_config, device, properties);
@@ -91,7 +93,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
-        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
+        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
     // Extract sampler_num_threads property if exists and remove it from properties
@@ -136,6 +138,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
 
     // Scheduler and Model Runner instantiation
+    bool is_use_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
     bool is_use_cache_eviction = scheduler_config.use_cache_eviction;
     if (is_use_cache_eviction) {
         const auto& eviction_config = scheduler_config.cache_eviction_config;
@@ -148,14 +151,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        /* collect_attention_scores = */ true,
                                                        /* is_use_per_layer_cache_control = */ true,
                                                        /* is_use_rotation_inputs = */ is_apply_rotation,
-                                                       /* is_aggregate_attention_scores = */ true);
+                                                       /* is_aggregate_attention_scores = */ true,
+                                                       is_use_xattention);
         if (eviction_config.apply_rotation) {
             _prepare_rotation_data_storage(normalized_config, cache_manager->get_v_head_size(0));
         }
     } else {
         m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
         m_model_runner =
-            std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
+            std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers,
+                                                       /* collect_attention_scores = */ false,
+                                                       /* is_use_per_layer_cache_control = */ false,
+                                                       /* is_use_rotation_inputs = */ false,
+                                                       /* is_aggregate_attention_scores = */ false,
+                                                       is_use_xattention);
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
@@ -200,9 +209,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_prepare_rotation_data_
 }
 
 GenerationHandle
-ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
-                                                               const ov::Tensor& input_ids,
-                                                               ov::genai::GenerationConfig sampling_params) {
+ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    ov::genai::GenerationConfig sampling_params,
+    std::optional<ov::Tensor> token_type_ids) {
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params.stop_token_ids.empty())
         sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
@@ -210,8 +221,15 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     if (sampling_params.eos_token_id == -1)
         sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params.validate();
+    size_t prompt_len;
+    if (input_ids.get_shape().size() > 1) {
+        prompt_len = input_ids.get_shape()[1];
+    } else {
+        prompt_len = input_ids.get_size();
+    }
+    OPENVINO_ASSERT(sampling_params.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
 
-    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
+    auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, token_type_ids);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
@@ -223,7 +241,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     }
 
     return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
-};
+}
 
 GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
@@ -312,7 +330,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     // evict unimportant blocks from KV cache, if requested
     const auto& sched_config = m_scheduler->get_config();
     if (sched_config.use_cache_eviction) {
-        _maybe_evict_cache_blocks(sched_config);
+        _maybe_evict_cache_blocks(sched_config, scheduler_output);
     }
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -384,7 +402,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std:
 std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
-                                                             const StreamerVariant& streamer) {
+                                                             const StreamerVariant& streamer,
+                                                             const std::optional<std::vector<ov::Tensor>> token_type_ids) {
+
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
     generate_timer.start();
@@ -413,7 +433,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        generations.push_back(add_request(request_id, input_ids[request_id], sampling_params[request_id]));
+        bool has_valid_token = token_type_ids.has_value() && request_id < token_type_ids->size();
+        generations.push_back(
+            add_request(request_id, input_ids[request_id], sampling_params[request_id], has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt)
+        );
     }
 
     auto all_requests = get_awaiting_requests(); // we need to store all requests to get results from them once generation has finished
@@ -421,11 +444,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     GenerationHandle& generation = generations.at(0);
 
     streamer_ptr->start();
-
+    m_sampler->clear_structured_output_compile_times();
     while (has_non_finished_requests()) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
+            
             // During prefill step (or steps if max_batch_size < prompt_len) we don't generate new tokens,
             // but still inference took place, so we need to add this time to the total inference duration.
             raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
@@ -442,6 +466,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             std::rethrow_exception(std::current_exception());
         }
         stream_tokens(streamer_ptr, generation);
+    }
+
+    auto times = m_sampler->get_structured_output_times();
+    perf_metrics.grammar_compiler_init_times = times.first;
+    for (const auto& t: times.second) {
+        raw_perf_counters.m_grammar_compile_times.emplace_back(t);
     }
 
     // waiting for competion of streaming
@@ -625,7 +655,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
 }
 
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config) {
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output) {
     std::unordered_map<SequenceGroup::Ptr, size_t> seq_group_to_num_blocks_evicted_map;
     auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
 
@@ -643,7 +673,19 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
             m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_block_size, num_decoder_layers, MAX_POOL_WINDOW_SIZE);
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
-        cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
+        std::set<size_t> skip_set;
+        if (scheduler_output.m_apply_sparse_attention_mask) {
+            const auto& skip_map = scheduler_output.m_sparse_attention_skipped_logical_blocks;
+            auto it = skip_map.find(seq_id);
+            if (it != skip_map.end()) {
+                skip_set = it->second;
+            }
+        }
+
+        if (skip_set.empty()) {
+            // For now, will only register token scores from the dense attention stages
+            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set, scheduler_output.m_score_aggregation_windows.at(seq_id));
+        }
 
         auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
         OPENVINO_ASSERT(seq_group_ptr_it != m_requests.end(), "could not find sequence group with sequence ", seq_id);

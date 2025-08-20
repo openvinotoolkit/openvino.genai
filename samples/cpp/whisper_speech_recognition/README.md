@@ -31,7 +31,7 @@ Output:
 timestamps: [0, 2] text:  How are you doing today?
 ```
 
-See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models-whisper-based) for more details.
 
 # Whisper pipeline usage
 

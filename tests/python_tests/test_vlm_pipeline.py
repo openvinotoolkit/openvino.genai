@@ -51,6 +51,8 @@ def get_ov_model(model_id):
         )
     else:
         tokenizer = processor.tokenizer
+        if tokenizer.chat_template is None:
+            tokenizer.chat_template = processor.chat_template
     tokenizer.save_pretrained(model_dir)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
         tokenizer, with_detokenizer=True
@@ -70,6 +72,7 @@ def get_ov_model(model_id):
     )
     if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
         processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
+    processor.audio_tokenizer = None
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
     return model_dir
@@ -101,11 +104,24 @@ model_ids = [
     "katuni4ka/tiny-random-internvl2",
     "katuni4ka/tiny-random-qwen2vl",
     "katuni4ka/tiny-random-qwen2.5-vl",
+    "katuni4ka/tiny-random-gemma3",
 ]
+
+# On macOS, transformers<4.52 is required, but this causes gemma3 to fail
+GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
+
+if sys.platform == "darwin":
+    model_ids = [
+        pytest.param(
+            model_id,
+            marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)
+        ) if "gemma3" in model_id else model_id
+        for model_id in model_ids
+    ]
 
 attention_backend = ["PA", "SDPA"]
 
-
+@functools.lru_cache()
 def get_pil_image_by_link(link, target_size=None):
     """
     Get PIL image by link.
@@ -133,7 +149,6 @@ def get_image_by_link(link):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_pipeline(model_id, backend):
@@ -170,7 +185,6 @@ configs = [
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", configs)
 def test_vlm_continuous_batching_generate_vs_add_request(config):
     scheduler_config = SchedulerConfig()
@@ -225,7 +239,6 @@ def test_vlm_continuous_batching_generate_vs_add_request(config):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("config", configs)
 def test_vlm_continuous_batching_vs_stateful(config):
     scheduler_config = SchedulerConfig()
@@ -274,7 +287,6 @@ def test_vlm_continuous_batching_vs_stateful(config):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 @pytest.mark.parametrize(
@@ -346,7 +358,6 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_get_tokenizer(cache, backend):
     models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
@@ -356,7 +367,6 @@ def test_vlm_get_tokenizer(cache, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "config",
     [
@@ -373,7 +383,6 @@ def test_sampling(config, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("backend", attention_backend)
 def test_perf_metrics(cache, backend):
     import numpy as np
@@ -440,7 +449,6 @@ def test_perf_metrics(cache, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
 @pytest.mark.skipif(
@@ -450,6 +458,7 @@ def test_perf_metrics(cache, backend):
 def test_vlm_npu_no_exception(model_id, backend):
     unsupported_models = {
         "katuni4ka/tiny-random-internvl2",
+        "katuni4ka/tiny-random-gemma3",
     }
 
     if model_id in unsupported_models:
@@ -476,7 +485,6 @@ def test_vlm_npu_no_exception(model_id, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
@@ -553,7 +561,64 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_i
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
+@pytest.mark.parametrize("backend", attention_backend)
+def test_start_chat_clears_history(backend):
+    callback_questions = [
+        "Why is the Sun yellow?"
+    ]
+    models_path = get_ov_model(model_ids[0])
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+
+    images = []
+    for link in image_links_for_testing[1]:
+        images.append(get_image_by_link(link))
+
+    results_first_generate = ""
+    ov_pipe.start_chat()
+    results_first_generate += ov_pipe.generate(
+        callback_questions[0], images=images, generation_config=generation_config
+    ).texts[0]
+
+    results_second_generate = ""
+    ov_pipe.start_chat()
+    results_second_generate += ov_pipe.generate(
+        callback_questions[0], images=images, generation_config=generation_config
+    ).texts[0]
+
+    assert results_first_generate == results_second_generate
+
+@pytest.mark.precommit
+def test_start_chat_clears_history_cb_api():
+    callback_questions = [
+        "Why is the Sun yellow?"
+    ]
+    models_path = get_ov_model(model_ids[0])
+    ov_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+
+    images = []
+    for link in image_links_for_testing[1]:
+        images.append(get_image_by_link(link))
+
+    results_first_generate = ""
+    ov_pipe.start_chat("You are helpful assistant.")
+    results_first_generate = ov_pipe.generate(
+        [callback_questions[0]], images=[images], generation_config=[generation_config]
+    )[0].texts[0]
+
+    results_second_generate = ""
+    ov_pipe.start_chat("You are helpful assistant.")
+    results_second_generate += ov_pipe.generate(
+        [callback_questions[0]], images=[images], generation_config=[generation_config]
+    )[0].texts[0]
+
+    assert results_first_generate == results_second_generate
+
+
+@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
 @pytest.mark.parametrize("backend", attention_backend)
@@ -652,6 +717,7 @@ tag_inserted_by_template = [
     ("katuni4ka/tiny-random-llava-next", lambda idx: "<image>"),
     ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
     ("katuni4ka/tiny-random-qwen2.5-vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
+    ("katuni4ka/tiny-random-gemma3", lambda idx: "<start_of_image>"),
 ]
 
 image_id_ignorant =  tag_inserted_by_template + [
@@ -672,13 +738,18 @@ models_to_tag = image_id_ignorant + [
 @pytest.fixture(scope="module")
 def model_and_tag(request):
     model_id, tag = request.param
+    if sys.platform == "darwin" and "gemma3" in model_id:
+        pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
     model = get_ov_model(model_id)
-    vlm = VLMPipeline(model, "CPU")
+    backend = "PA"
+    # TODO Remove when PA will be enabled for gemma3
+    if model_id == "katuni4ka/tiny-random-gemma3":
+        backend = "SDPA"
+    vlm = VLMPipeline(model, "CPU", ATTENTION_BACKEND=backend)
     return vlm, tag
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 class TestImageTags:
     @pytest.mark.parametrize(
         "model_and_tag, model_id",
@@ -845,16 +916,16 @@ class TestImageTags:
         with pytest.raises(RuntimeError):
             vlm.generate(tag(0))
 
-
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "model_id, image_link, target_size, backend",
     [
         pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2vl", image_links[0], (336, 336), "PA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316"))
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", image_links[0], (336, 336), "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "SDPA"),
+        pytest.param("katuni4ka/tiny-random-gemma3", image_links[0], (32, 32), "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
     ],
 )
 def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size, backend):
@@ -880,6 +951,11 @@ def test_vlm_pipeline_match_optimum_preresized(model_id, image_link, target_size
             ],
         }
     ]
+
+    # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
+    if model.config.model_type == "gemma3":
+        processor.tokenizer.add_bos_token = False
+
     templated_prompt = processor.apply_chat_template(conversation,add_generation_prompt=True)
     inputs = processor(text=[templated_prompt], images=[resized_image], padding=True, return_tensors="pt")
     output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens)

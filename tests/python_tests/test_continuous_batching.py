@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from shutil import rmtree
 
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model, GenerationFinishReason
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
@@ -43,16 +43,6 @@ def test_e2e_precommit(model_id):
     generate_and_compare(prompts=prompts,
                          generation_config=generation_configs,
                          model=model_id,
-                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
-
-
-@pytest.mark.nightly
-@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
-def test_e2e_nightly(model_id):
-    prompts, generation_config = get_test_dataset()
-    generate_and_compare(prompts=prompts,
-                         generation_config=generation_config,
-                         model=model_id, 
                          pipeline_type=PipelineType.CONTINUOUS_BATCHING)
 
 
@@ -162,7 +152,7 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: dict, pip
 generation_configs = [
     dict(do_sample=False, max_new_tokens=20),
     dict(do_sample=True, max_new_tokens=20, temperature=0.7),
-    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0, repetition_penalty=1.0)
+    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0, repetition_penalty=1.0),
 ]
 questions = [
     '1+1=',
@@ -196,6 +186,28 @@ def test_continuous_batching_add_request_health_check(model_id, generation_confi
         for output in outputs:
             assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
 
+invalid_generation_configs = [
+    dict(max_length=1, ignore_eos=True) # max_length smaller than number of prompt tokens, generation should stop right away
+]
+@pytest.mark.parametrize("generation_config_kwargs", invalid_generation_configs)
+@pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("pipeline_type", [PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING,])
+@pytest.mark.precommit
+def test_continuous_batching_add_request_fails(model_id, generation_config_kwargs: dict, pipeline_type):
+    _, _, models_path = download_and_convert_model(model_id)
+
+    cb_pipe = create_ov_cb_pipeline(models_path, pipeline_type=pipeline_type)
+
+    generation_config = GenerationConfig(**generation_config_kwargs)
+
+    if generation_config.is_beam_search() and pipeline_type != PipelineType.CONTINUOUS_BATCHING:
+        pytest.skip("Assisted generation does not support beam search")
+
+    generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
+    handles = []
+    for idx, question in enumerate(questions):
+        with pytest.raises(RuntimeError):
+            handle = cb_pipe.add_request(idx, question, generation_config=generation_config)
 
 #
 # Stress tests to check OOM case
@@ -462,3 +474,57 @@ def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_c
         raise RuntimeError(f"{pipeline_type} is unknown pipeline type!")
     return pipe, prompt, generation_config
 
+
+def run_extended_perf_metrics_collection(model_id, generation_config: GenerationConfig, prompt: str, pipeline_type: PipelineType):
+    _, _, model_path = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type)
+    return ov_pipe.generate([prompt], generation_config).extended_perf_metrics
+
+
+@pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.SPECULATIVE_DECODING])
+@pytest.mark.precommit
+def test_speculative_decoding_extended_perf_metrics(pipeline_type):
+    import time
+    start_time = time.perf_counter()
+    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5)
+    extended_perf_metrics = run_extended_perf_metrics_collection(model_id, generation_config, "Why is the Sun yellow?", pipeline_type)
+    total_time = (time.perf_counter() - start_time) * 1000
+
+    if (pipeline_type == PipelineType.SPECULATIVE_DECODING):
+        assert not extended_perf_metrics is None
+        assert not extended_perf_metrics.main_model_metrics is None
+        assert not extended_perf_metrics.draft_model_metrics is None
+
+        assert extended_perf_metrics.get_num_accepted_tokens() > 0
+
+        num_generated_tokens_main = extended_perf_metrics.main_model_metrics.get_num_generated_tokens()
+        assert num_generated_tokens_main > 0 and num_generated_tokens_main <= generation_config.max_new_tokens
+
+        # max num_generated_tokens for draft model will be reached if it will generate num_assistant_tokens at each step
+        # plus fist token, which was generated by main model
+        num_generated_tokens_draft = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+        assert num_generated_tokens_draft > 0 and num_generated_tokens_draft < ((generation_config.max_new_tokens - 1) * generation_config.num_assistant_tokens + 1)
+
+        total_iteration_number_main = len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations)
+        assert total_iteration_number_main > 0 and total_iteration_number_main <= generation_config.max_new_tokens
+
+        total_iteration_number_draft = len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations)
+        assert total_iteration_number_draft > 0 and total_iteration_number_draft < ((generation_config.max_new_tokens - 1) * generation_config.num_assistant_tokens + 1)
+
+        for model_metrics in [extended_perf_metrics.main_model_metrics, extended_perf_metrics.draft_model_metrics]:
+            mean_ttst, std_ttst = model_metrics.get_ttst()
+            assert (mean_ttst, std_ttst) == (model_metrics.get_ttst().mean, model_metrics.get_ttst().std)
+            assert mean_ttst > 0 and mean_ttst < model_metrics.get_ttft().mean
+            assert std_ttst == 0
+
+            mean_latency, std_latency = model_metrics.get_latency()
+            assert (mean_latency, std_latency) == (model_metrics.get_latency().mean, model_metrics.get_latency().std)
+            assert mean_latency > 0 and mean_latency < 1000.0
+
+            mean_gen_duration, std_gen_duration = model_metrics.get_generate_duration()
+            assert (mean_gen_duration, std_gen_duration) == (model_metrics.get_generate_duration().mean, model_metrics.get_generate_duration().std)
+            assert mean_gen_duration > 0 and mean_gen_duration < total_time
+            assert std_gen_duration == 0
+    else:
+        assert extended_perf_metrics is None

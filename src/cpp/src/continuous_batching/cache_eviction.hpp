@@ -11,8 +11,110 @@
 #include "openvino/openvino.hpp"
 #include "continuous_batching/attention_output.hpp"
 #include "openvino/genai/cache_eviction.hpp"
+#include "continuous_batching/kvcrush.hpp"
 
 namespace ov::genai {
+
+/**
+ * @brief Keeps track of the accumulated token scores across model inferences and their lifetime.
+ */
+class EvictionScoreManager {
+public:
+    EvictionScoreManager() = default;
+    EvictionScoreManager(const EvictionScoreManager& rhs) = default;
+    EvictionScoreManager& operator=(const EvictionScoreManager& rhs) = default;
+
+    /**
+     * Constructs an EvictionScoreManager.
+     * @param block_size Block size of the KV cache to evict from.
+     * @param num_decoder_layers Number of independent KV caches (each corresponding to a single attention layer) in the underlying LLM.
+     * @param max_pool_window_size Window size for the max pooling step applied to the newly registered scores before aggregation.
+     * @param aggregation_mode Aggregation mode for the scores across register calls.
+     * @param ignore_first_n_blocks Number of blocks from the beginning of the per-token score vector, the scores for which will
+     * be disregarded and never aggregated.
+     * @param snapkv_window_size Window size for the SnapKV algorithm in effect. If non-zero, then by the start of the generation phase
+     * for the tracked sequence (when the total number of `num_snapkv_scores` passed to each `register_new_token_scores` call reaches
+     * the `snapkv_window_size`) the internal occurence counters will be:
+     * `| S | S | ... | S | S - 1 | S - 2 | ... | 2 | 1 |`,
+     * where `S` is equal to `snapkv_window_size`. In contrast, if this is set to 0, then the initial counter state would be
+     * `| L | L - 1 | ... | 2 | 1 |`,
+     * where L is the prompt size of the sequence in tokens.
+     */
+    explicit EvictionScoreManager(size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size, AggregationMode aggregation_mode, size_t ignore_first_n_blocks = 0, size_t snapkv_window_size = 0) : m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), m_scores(num_decoder_layers), m_cache_counter(num_decoder_layers), m_max_pool_window_size(max_pool_window_size), m_aggregation_mode(aggregation_mode), m_ignore_first_n_blocks(ignore_first_n_blocks), m_snapkv_window_size(snapkv_window_size), m_num_registered_snapkv_aggregated_scores(0) {}
+
+    /**
+     * Registers new token scores and aggregates them internally as necessary. The token scores provided may be corresponding not to all
+     * tokens in the current sequence length, in which case the set of logical block indices must be provided for which the score entries
+     * are missing.
+     *
+     * @param attention_scores_for_all_decoder_layers A vector of ov::Tensor, each ov::Tensor corresponding to the per-token attention
+     * scores in a corresponding decoder layer.
+     * @param skipped_logical_block_ids Logical block indices which had been skipped during inference call that produced the new scores, and
+     * which are missing from the new scores.
+     * @param num_snapkv_scores Number of latest token scores that were aggregated together when computing the registered score. If SnapKV is not used, this should be set to 0.
+     */
+    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers, const std::set<size_t>& skipped_logical_block_ids, size_t num_snapkv_scores = 0);
+
+    /**
+     * Removes the scores from tracking for given block indices and given decoder layer.
+     *
+     * @param evicted_block_indices A vector of logical block indices, the scores for which should be removed from tracking.
+     * @param decoder_layer_idx The index of the decoder layer for which the block scores must be removed.
+     */
+    void remove_scores(const std::vector<std::size_t>& evicted_block_indices, size_t decoder_layer_idx);
+
+    /**
+     * Adds two vectors of different length, treating the shorter one as values from which certain block-sized chunks had been
+     * skipped on purpose and which should not impact the final sum.
+     *
+     * @param dst The destination vector.
+     * @param src The source vector. Must be shorter by N * B values than dst, where N is the size of the skipped logical block ID set,
+     * and B is the block size.
+     * @param skipped_logical_block_ids The set of logical block IDs that had been "skipped" from the src values.
+     */
+    void add_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids) const;
+
+    /**
+     * @param layer_idx The decoder layer index.
+     * @return Current length of the tracked scores in tokens for this decoder layer.
+     */
+    size_t get_current_scores_length_in_tokens(size_t layer_idx) const;
+
+    /**
+     * @return Current scores for all decoder layers (0-th dimension) and tokens (1-st dimension).
+     */
+    const std::vector<std::vector<double>>& get_scores() const;
+
+    /**
+     * @return Current token occurence counters for all decoder layers (0-th dimension) and tokens (1-st dimension).
+     */
+    const std::vector<std::vector<size_t>>& get_counters() const;
+
+private:
+    std::size_t m_block_size;
+    std::size_t m_num_decoder_layers;
+    std::vector<std::vector<double>> m_scores;
+    std::vector<std::vector<size_t>> m_cache_counter;
+    std::size_t m_max_pool_window_size;
+    AggregationMode m_aggregation_mode;
+    std::size_t m_ignore_first_n_blocks;
+    std::size_t m_snapkv_window_size;
+    std::size_t m_num_registered_snapkv_aggregated_scores;
+};
+
+class SnapKVScoreAggregationCalculator {
+public:
+    SnapKVScoreAggregationCalculator() = default;
+    SnapKVScoreAggregationCalculator(const SnapKVScoreAggregationCalculator& rhs) = default;
+    SnapKVScoreAggregationCalculator& operator=(const SnapKVScoreAggregationCalculator& rhs) = default;
+    SnapKVScoreAggregationCalculator(size_t snapkv_window_size) : m_snapkv_window_size(snapkv_window_size) {}
+
+    size_t get_num_token_scores_to_aggregate(size_t prompt_len, size_t num_scheduled_tokens, size_t num_processed_tokens);
+
+private:
+    size_t m_snapkv_window_size;
+
+};
 
 /**
  * @brief Determines blocks to be evicted from the KV cache of a sequence based on the importance score calculated from the
@@ -83,9 +185,13 @@ public:
      * the tokens' lifetime in the KV cache and of the accumulated importance score of each token.
      * @param attention_scores_for_all_decoder_layers A vector with a size equal to the configured num_decoder_layers, where each entry is a
      * vector of per-token attention scores calculated within this layer.
+     * @param skipped_logical_block_ids The set of logical indices that have been skipped from the scores as part of the sparse attention prefill process
+     * @param num_snapkv_scores The number of SnapKV-aggregated scores in this score chunk. Set to 0 if SnapKV is not used
+     * (i.e. eviction_config.snapkv_window_size == 0)
      */
-    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers);
+    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers, const std::set<size_t>& skipped_logical_block_ids, size_t num_snapkv_scores = 0);
 
+    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_across_decoder_layers_for_current_sequence, size_t num_snapkv_scores = 0);
     /**
      * Returns the per-layer sets of logical block indices that should be evicted according to the internally computed importance scores
      * and removes the corresponding blocks from the internal algorithm tracking.
@@ -110,13 +216,14 @@ private:
     void remove_scores_of_evicted_blocks(const std::vector<std::size_t>& evicted_block_indices, size_t decoder_layer_idx);
 
     CacheEvictionConfig m_eviction_config;
+    KVCrushAlgorithm m_kvcrush_algo;
     std::size_t m_block_size;
     std::size_t m_num_evicted_tokens = 0;
     std::size_t m_num_decoder_layers;
-    std::size_t m_max_pool_window_size;
-    std::vector<std::vector<double>> m_scores;
-    std::vector<std::vector<size_t>> m_cache_counter;
+    EvictionScoreManager m_score_manager;
 };
+
+
 
 /**
  * @brief Computes, based on the logical indices of the blocks to be evicted, the rotation coefficients for the

@@ -37,8 +37,30 @@ def main():
 
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.
-    pipe.generate(args.prompt, config, streamer)
+    res = pipe.generate([args.prompt], config, streamer)
     print()
+    if (res.extended_perf_metrics):
+        main_model_metrics = res.extended_perf_metrics.main_model_metrics
+        print(f"MAIN MODEL")
+        print(f"  Generate time: {main_model_metrics.get_generate_duration().mean:.2f} ms" )
+        print(f"  TTFT: {main_model_metrics.get_ttft().mean:.2f} ± {main_model_metrics.get_ttft().std:.2f} ms" )
+        print(f"  TTST: {main_model_metrics.get_ttst().mean:.2f} ± {main_model_metrics.get_ttst().std:.2f} ms/token")
+        print(f"  TPOT: {main_model_metrics.get_tpot().mean:.2f} ± {main_model_metrics.get_tpot().std:.2f} ms/iteration")
+        print(f"  AVG Latency: {main_model_metrics.get_latency().mean:.2f} ± {main_model_metrics.get_latency().std:.2f} ms/token")
+        print(f"  Num generated token: {main_model_metrics.get_num_generated_tokens()} tokens")
+        print(f"  Total iteration number: {len(main_model_metrics.raw_metrics.m_durations)}")
+        print(f"  Num accepted token: {res.extended_perf_metrics.get_num_accepted_tokens()} tokens")
+
+        draft_model_metrics = res.extended_perf_metrics.draft_model_metrics
+        print(f"DRAFT MODEL" )
+        print(f"  Generate time: {draft_model_metrics.get_generate_duration().mean:.2f} ms" )
+        print(f"  TTFT: {draft_model_metrics.get_ttft().mean:.2f} ms")
+        print(f"  TTST: {draft_model_metrics.get_ttst().mean:.2f} ms/token")
+        print(f"  TPOT: {draft_model_metrics.get_tpot().mean:.2f} ± {draft_model_metrics.get_tpot().std:.2f} ms/token")
+        print(f"  AVG Latency: {draft_model_metrics.get_latency().mean:.2f} ± {draft_model_metrics.get_latency().std:.2f} ms/iteration")
+        print(f"  Num generated token: {draft_model_metrics.get_num_generated_tokens()} tokens")
+        print(f"  Total iteration number: {len(draft_model_metrics.raw_metrics.m_durations)}")
+        print()
 
 if '__main__' == __name__:
     main()

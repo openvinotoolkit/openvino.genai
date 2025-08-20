@@ -30,7 +30,7 @@ if(UNIX AND NOT (APPLE OR ANDROID OR CYGWIN))
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2025.3.0.0
+        VERSION 2025.4.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
@@ -52,17 +52,19 @@ if(NOT CMAKE_CROSSCOMPILING)
 endif()
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
-find_package(OpenVINODeveloperPackage ${OpenVINOGenAI_VERSION} QUIET
+set(OV_COMPATIBILITY_VERSION ${OpenVINOGenAI_VERSION_MAJOR}.${OpenVINOGenAI_VERSION_MINOR}.${OpenVINOGenAI_VERSION_PATCH})
+find_package(OpenVINODeveloperPackage ${OV_COMPATIBILITY_VERSION} QUIET
              COMPONENTS Runtime Threading
              PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
-    find_package(OpenVINO ${OpenVINOGenAI_VERSION} REQUIRED
+    find_package(OpenVINO ${OV_COMPATIBILITY_VERSION} REQUIRED
                  COMPONENTS Runtime Threading
                  PATHS "${OpenVINO_DIR_PY}")
 endif()
 
 include(cmake/features.cmake)
 include(cmake/version.cmake)
+include(cmake/vs_version.cmake)
 
 if(ENABLE_PYTHON)
     # the following two calls are required for cross-compilation
@@ -93,10 +95,10 @@ add_subdirectory(src)
 if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/samples" AND ENABLE_SAMPLES)
     add_subdirectory(samples)
 endif()
-if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tools/continuous_batching")
+if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tools/continuous_batching" AND ENABLE_TOOLS)
     add_subdirectory(tools/continuous_batching)
 endif()
-if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tests/cpp")
+if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tests/cpp" AND ENABLE_TESTS)
     add_subdirectory(tests/cpp)
 endif()
 
@@ -110,6 +112,13 @@ set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 set(CPACK_COMPONENTS_ALL core_genai core_genai_dev core_c_genai core_c_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_docs)
 if(ENABLE_PYTHON)
     list(APPEND CPACK_COMPONENTS_ALL pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
+    if(NOT ENABLE_GIL_PYTHON_API)
+        if(Python3_VERSION VERSION_LESS "3.13")
+            message(FATAL_ERROR "Disabling GIL requires Python >= 3.13, but found Python ${Python3_VERSION}")
+        else()
+            set(Python3_FIND_ABI "ANY" "ANY" "ANY" "ON")
+        endif()
+    endif()
 endif()
 if(ENABLE_JS)
     list(APPEND CPACK_COMPONENTS_ALL genai_node_addon)

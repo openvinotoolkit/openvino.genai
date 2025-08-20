@@ -6,7 +6,7 @@ import pytest
 import sys
 import json
 
-from conftest import SAMPLES_PY_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -39,7 +39,7 @@ class Transaction(BaseModel):
     ("Generate json of one car and 1 transaction.", {"person": 0, "car": 1, "transaction": 1}),
     ("Generate 10000 horses.",  {"person": 0, "car": 0, "transaction": 0}),
 ])
-def test_structured_output_sample(convert_model, prompt, expected_quantities):
+def test_python_structured_output_sample(convert_model, prompt, expected_quantities):
     py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/structured_output_generation.py")
     py_command = [sys.executable, py_script, convert_model]
 
@@ -83,3 +83,27 @@ def test_structured_output_sample(convert_model, prompt, expected_quantities):
     assert items_new_count == expected_quantities, (
         f"Expected item counts {expected_quantities}, but got {items_new_count}"
     )
+
+# TinyLlama-1.1B-Chat-v1.0 is a bit dummy in math,
+# It generate wrong answers even for simplest equations like 8x + 7 = -23. 
+# But here we just check that the structured output gives output in expected format.
+@pytest.mark.llm
+@pytest.mark.samples
+@pytest.mark.parametrize("convert_model", ["TinyLlama-1.1B-Chat-v1.0"], indirect=True)
+@pytest.mark.parametrize("prompt,final_answer", [
+    ("Solve the equation 8x + 7 = -23 step by step.", "x = 7 or x = 8"),
+    ("Solve the equation 18x + 7 - 8 = 0 step by step.", "x = 0 or x = -3"),
+])
+def test_cpp_structured_output_sample(convert_model, prompt, final_answer):
+    cpp_sample = os.path.join(SAMPLES_CPP_DIR, "structured_output_generation")
+    cpp_command = [cpp_sample, convert_model]
+
+    user_input = prompt + "\n"
+    cpp_result = run_sample(cpp_command, user_input)
+    output = cpp_result.stdout
+    
+    res_json = json.loads(output.split('> ')[1].replace('\'', '"').replace('\n----------\n',''))
+    assert 'steps' in res_json and len(res_json['steps']) > 0
+    assert 'explanation' in res_json['steps'][0]
+    assert 'output' in res_json['steps'][0]
+    assert res_json['final_answer'] == final_answer

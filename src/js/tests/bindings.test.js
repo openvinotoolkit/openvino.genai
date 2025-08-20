@@ -5,7 +5,7 @@ import { describe, it, before, after } from 'node:test';
 import { models } from './models.js';
 
 const MODEL_PATH = process.env.MODEL_PATH
-  || `./tests/models/${models[0].split('/')[1]}`;
+  || `./tests/models/${models.LLM.split('/')[1]}`;
 
 describe('bindings', () => {
   let pipeline = null;

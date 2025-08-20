@@ -10,6 +10,10 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 
 ## Getting Started
 
+* [Introduction to OpenVINO™ GenAI](https://openvinotoolkit.github.io/openvino.genai/docs/getting-started/introduction)
+* [Install OpenVINO™ GenAI](https://openvinotoolkit.github.io/openvino.genai/docs/getting-started/installation)
+* [Build OpenVINO™ GenAI](./src/docs/BUILD.md)
+
 Please follow the following blogs to setup your first hands-on experience with C++ and Python samples.
 
 * [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
@@ -79,6 +83,20 @@ import openvino_genai
 #Will run model on CPU, GPU or NPU are possible options
 pipe = openvino_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
 print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
+```
+
+### Run generation using LLMPipeline API in JavaScript
+
+```js
+import { LLMPipeline } from 'openvino-genai-node';
+
+main();
+
+async function main() {
+    const pipe = await LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU");
+    const result = await pipe.generate("The Sun is yellow because", { 'max_new_tokens': 100 });
+    console.log(result);
+}
 ```
 
 ### Run generation using LLMPipeline in C++
@@ -471,6 +489,25 @@ query = "The Sun is yellow because"
 query_embedding = pipeline.embed_query(query)
 ```
 
+### Compute embeddings using TextEmbeddingPipeline API in JavaScript
+
+```js
+import { TextEmbeddingPipeline } from 'openvino-genai-node';
+
+main();
+
+async function main() {
+    const pipeline = await TextEmbeddingPipeline("./BAAI/bge-small-en-v1.5", "CPU")
+
+    const documents = ["Document 1", "Document 2"];
+    const embeddings = await pipeline.embedDocuments(documents);
+
+    const query = "The Sun is yellow because";
+    const query_embedding = await pipeline.embedQuery(query);
+}
+
+```
+
 ### Compute embeddings using TextEmbeddingPipeline API in C++
 
 ```cpp
@@ -491,7 +528,7 @@ int main(int argc, char* argv[]) {
 
 ## Additional materials
 
-- [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
+- [List of supported models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/)
 - [OpenVINO Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html)
 - [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 

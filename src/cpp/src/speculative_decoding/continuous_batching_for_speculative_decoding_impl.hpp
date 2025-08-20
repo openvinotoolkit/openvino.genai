@@ -33,6 +33,8 @@ public:
 
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
+    RawPerfMetrics raw_perf_metrics;
+
 protected:
     void finish_request(SequenceGroup::Ptr request);
     void _pull_awaiting_requests() override {};

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 from tqdm import tqdm
 
-from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode
+from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode, SparseAttentionMode, KVCrushAnchorPointMode, KVCrushConfig
 
 from utils.ov_genai_pipelines import PipelineType, generate_and_compare
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
@@ -49,6 +49,27 @@ class CacheOptTestStruct:
 SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
 LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.NORM_SUM)
 
+# KVCrush test configurations
+KVCRUSH_SNAPKV_BASELINE_CONFIG = CacheEvictionConfig(
+    start_size=32, 
+    recent_size=128, 
+    max_cache_size=512, 
+    aggregation_mode=AggregationMode.NORM_SUM,
+    apply_rotation=False,
+    snapkv_window_size=8,
+    kvcrush_config=KVCrushConfig(budget=0)
+)
+
+KVCRUSH_TEST_CONFIG = CacheEvictionConfig(
+    start_size=32, 
+    recent_size=128, 
+    max_cache_size=480, 
+    aggregation_mode=AggregationMode.NORM_SUM,
+    apply_rotation=False,
+    snapkv_window_size=8,
+    kvcrush_config=KVCrushConfig(budget=1, anchor_point_mode=KVCrushAnchorPointMode.ALTERNATE)
+)
+
 
 @pytest.mark.precommit
 @pytest.mark.skipif(
@@ -84,10 +105,9 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
                        avg_cache_usage_optimization_ratio=1.1),
 
     ], ids=lambda x: x.test_id)
-@pytest.mark.parametrize("enable_prefix_caching", [True, False],
-                                                  ids=["with_prefix_caching", "no_prefix_caching"])  # prefix caching shouldn't impact similarity
 @pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
-def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, enable_prefix_caching, apply_rotation):
+@pytest.mark.parametrize("use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]) # sparse attn should not degrade similarity too much
+def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention):
     import whowhatbench
 
     seqs_per_request = 32
@@ -103,7 +123,9 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, enabl
     if scheduler_config_opt.use_cache_eviction:
         scheduler_config_opt.cache_eviction_config = test_struct.cache_eviction_config
         scheduler_config_opt.cache_eviction_config.apply_rotation = apply_rotation
-    scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
+    scheduler_config_opt.use_sparse_attention = use_sparse_attention
+    if use_sparse_attention:
+        scheduler_config_opt.sparse_attention_config.num_last_dense_tokens_in_prefill = 10
 
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     _, tokenizer, models_path = download_and_convert_model(model_id)
@@ -189,15 +211,19 @@ class LongBenchTestData:
     avg_cache_usage_optimization_ratio: float
 
 
-@pytest.mark.nightly
-@pytest.mark.parametrize("device", ["CPU", "GPU"])
+@dataclass
+class KVCrushTestData:
+    subset: str
+
+
+@pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("samsum", 4, 1.6, 3.3),
+    LongBenchTestData("samsum", 4, 1.6, 2.5),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
-    LongBenchTestData("qasper", 5.8, 1.7, 3.6),
-])
-def test_optimized_generation_longbench(device, test_struct):
+], ids=["samsum", "trec"])
+def test_optimized_generation_longbench(test_struct):
     seqs_per_request = 32
+    device = "CPU"
     num_kv_blocks = 1000 if device == "CPU" else 500
     model_id = "Qwen/Qwen2-0.5B-Instruct"
     _, _, models_path = download_and_convert_model(model_id)
@@ -205,8 +231,9 @@ def test_optimized_generation_longbench(device, test_struct):
 
     scheduler_config_opt = get_scheduler_config(num_kv_blocks)
     scheduler_config_opt.use_cache_eviction = True
-    if scheduler_config_opt.use_cache_eviction:
-        scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+    scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+
+    scheduler_config_opt.use_sparse_attention = True
 
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
@@ -219,7 +246,7 @@ def test_optimized_generation_longbench(device, test_struct):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]')
+    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]', trust_remote_code=True)
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []
@@ -265,3 +292,75 @@ def test_optimized_generation_longbench(device, test_struct):
     assert ref_score - score <= test_struct.threshold
     assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
     assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("device", ["CPU"])
+@pytest.mark.parametrize("test_struct", [
+    KVCrushTestData(subset="samsum"),
+    KVCrushTestData(subset="trec"),
+], ids=["samsum", "trec"])
+def test_kvcrush_vs_snapkv_baseline(device, test_struct):
+    """Test that KVCrush performs equal or better than SnapKV baseline on LongBench datasets."""
+    seqs_per_request = 32
+    num_kv_blocks = 1000 if device == "CPU" else 500
+    model_id = "Qwen/Qwen2-0.5B-Instruct"
+    _, _, models_path = download_and_convert_model(model_id)
+
+    # Setup baseline and KVCrush configurations
+    scheduler_config_baseline = get_scheduler_config(num_kv_blocks)
+    scheduler_config_baseline.use_cache_eviction = True
+    scheduler_config_baseline.cache_eviction_config = KVCRUSH_SNAPKV_BASELINE_CONFIG
+
+    scheduler_config_kvcrush = get_scheduler_config(num_kv_blocks)
+    scheduler_config_kvcrush.use_cache_eviction = True
+    scheduler_config_kvcrush.cache_eviction_config = KVCRUSH_TEST_CONFIG
+
+    model_cb_baseline = ContinuousBatchingPipeline(models_path, scheduler_config_baseline, device, {}, get_default_llm_properties())
+    model_cb_kvcrush = ContinuousBatchingPipeline(models_path, scheduler_config_kvcrush, device, {}, get_default_llm_properties())
+
+    model_name = "/".join(models_path.parts[-2:])
+    subset = test_struct.subset
+    max_new_tokens = dataset2maxlen[subset]
+
+    generation_config = GenerationConfig()
+    generation_config.num_return_sequences = 1
+    generation_config.max_new_tokens = max_new_tokens
+    generation_config.apply_chat_template = False
+
+    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]')
+    with tqdm(total=len(data)) as progress_bar:
+        batch = []
+        baseline_answers = []
+        kvcrush_answers = []
+        for p_idx, data_sample in enumerate(data):
+            prompt = preprocess_prompt(data_sample, subset, model_name)
+            progress_bar.update(1)
+            batch.append(prompt)
+            baseline_answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+            kvcrush_answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+
+            if len(batch) == seqs_per_request or p_idx == len(data) - 1:
+                baseline_batch = model_cb_baseline.generate(
+                    batch, [generation_config] * len(batch)
+                )
+                kvcrush_batch = model_cb_kvcrush.generate(
+                    batch, [generation_config] * len(batch)
+                )
+                for i, (baseline_output, kvcrush_output) in enumerate(zip(baseline_batch, kvcrush_batch), start=p_idx-len(batch)+1):
+                    baseline_answers[i]["pred"] = post_process_pred(baseline_output.m_generation_ids[0], subset, model_name)
+                    kvcrush_answers[i]["pred"] = post_process_pred(kvcrush_output.m_generation_ids[0], subset, model_name)
+                batch.clear()
+
+    baseline_score = evaluate(baseline_answers, subset)
+    kvcrush_score = evaluate(kvcrush_answers, subset)
+
+    print(f"Baseline (SnapKV) score: {baseline_score}")
+    print(f"KVCrush score: {kvcrush_score}")
+
+    assert kvcrush_score >= baseline_score, f"KVCrush score ({kvcrush_score}) is worse than baseline ({baseline_score}) on {subset} dataset"
+
+    del model_cb_baseline
+    del model_cb_kvcrush
+    import gc
+    gc.collect()

@@ -7,6 +7,7 @@
 #include "continuous_batching/pipeline_impl.hpp"
 #include "speculative_decoding/continuous_batching_for_speculative_decoding_impl.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
+#include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 
 namespace ov::genai {
 
@@ -39,7 +40,7 @@ protected:
     std::shared_ptr<ContinuousBatchingForSpeculativeDecodingImpl> m_main_pipeline, m_draft_pipeline;
     // Metrics
     SpeculativeDecodingMetrics m_sd_metrics;
-    PerfMetrics m_perf_metrics;
+    ov::genai::SDPerModelsPerfMetrics m_perf_metrics;
 
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
@@ -54,7 +55,8 @@ public:
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
-                                 ov::genai::GenerationConfig sampling_params) override;
+                                 ov::genai::GenerationConfig sampling_params,
+                                 std::optional<ov::Tensor> token_type_ids = std::nullopt) override;
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  ov::genai::GenerationConfig sampling_params) override;
@@ -66,7 +68,8 @@ public:
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) override;
+             const StreamerVariant& streamer,
+             std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt) override;
 
     SpeculativeDecodingMetrics get_speculative_decoding_metrics();
 };

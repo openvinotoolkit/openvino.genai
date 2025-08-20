@@ -44,7 +44,8 @@ def parse_args():
     parser.add_argument(
         "--omit-chat-template",
         action="store_true",
-        help="Do not apply the default chat template if it's present.",
+        help="Do not apply the default chat template if it's present for LLMs."
+        " The flag is ignored for VLMs because they depend on the chat template to merge images and text.",
     )
     parser.add_argument(
         "--gt-data",
@@ -173,6 +174,25 @@ def parse_args():
         default=42,
         help="Text-to-image specific parameter that defines the seed value.",
     )
+    parser.add_argument(
+        "--adapters",
+        type=str,
+        nargs='*',
+        default=None,
+        help="LoRA adapters.",
+    )
+    parser.add_argument(
+        "--alphas",
+        type=float,
+        nargs='*',
+        default=None,
+        help="Weights for LoRA adapters.",
+    )
+    parser.add_argument(
+        "--long-prompt",
+        action='store_true',
+        help="LLMPipeline specific parameter that defines the use of a long context prompt",
+    )
 
     return parser.parse_args()
 
@@ -182,7 +202,11 @@ def check_args(args):
         raise ValueError("Wether --base-model or --gt-data should be provided")
     if args.target_model is None and args.gt_data is None and args.target_data:
         raise ValueError(
-            "Wether --target-model, --target-data or --gt-data should be provided")
+            "Whether --target-model, --target-data or --gt-data should be provided")
+    if args.adapters is not None and args.alphas is not None and len(args.adapters) != len(args.alphas):
+        raise ValueError(
+            "If --adapters is provided and --alphas is provided, they should have the same length."
+        )
 
 
 def load_prompts(args):
@@ -404,6 +428,7 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
+                long_prompt=args.long_prompt,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -530,6 +555,12 @@ def main():
     kwargs = {}
     if args.cb_config:
         kwargs["cb_config"] = read_cb_config(args.cb_config)
+    if args.adapters is not None:
+        kwargs["adapters"] = args.adapters
+        if args.alphas is not None:
+            kwargs["alphas"] = args.alphas
+        else:
+            kwargs["alphas"] = [1.0] * len(args.adapters)
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
@@ -579,7 +610,7 @@ def main():
             if not os.path.exists(args.output):
                 os.mkdir(args.output)
             df = pd.DataFrame(all_metrics_per_question)
-            df.to_csv(os.path.join(args.output, "metrics_per_qustion.csv"))
+            df.to_csv(os.path.join(args.output, "metrics_per_question.csv"))
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))

@@ -55,7 +55,7 @@ Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples
 
 GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
 
-See https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md for the list of supported models.
+Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#large-language-models-llms) for more details.
 
 Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples
 ```sh
@@ -157,6 +157,16 @@ This sample demonstrates greedy decoding using Low-Rank Adaptation (LoRA) fine-t
   python lora_greedy_causal_lm.py model_dir adapter_safetensors_file prompt
   ```
 
+> [!NOTE]
+> ### LoRA `alpha` interpretation in OpenVINO GenAI
+> The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.
+>
+> In this context, the `alpha` value already includes:
+> - normalization by LoRA rank (`alpha / rank`)
+> - any user-defined scaling factor (`weight`)
+>
+> This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
+
 ### 8. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
 - **Description:** 
 LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly. 
@@ -225,6 +235,66 @@ Recommended models: meta-llama/Llama-3.2-1B-Instruct, meta-llama/Llama-3.2-8B-In
 
 **Note:**  
 Structured output enforcement guarantees correct JSON formatting, but does not ensure the factual correctness or sensibility of the content. The model may generate implausible or nonsensical data, such as `{"name": "John", "age": 200000}` or `{"model": "AbrakaKadabra9999######4242"}`. These are valid JSONs but may not make sense. For best results, use the latest or fine-tuned models for this task to improve the quality and relevance of the generated output.
+
+
+### 12. Tool Calling with Structural Tags Sample (`structural_tags_generation`)
+- **Description:**
+  Structural tags is a technique that allows to switch from regular sampling to structural output generation and back during the text generation.
+  If during the sampling process the model produces a trigger string, it switches to structured mode and generates output according to a JSON schema defined by the tag. After that the model switches back to regular sampling mode.
+  This is useful for generating function calls or other structured outputs that need to follow a specific format.
+
+  This sample demonstrates how to use OpenVINO GenAI to generate structured tool calls from natural language prompts using structural tags. 
+  The model is guided to output function calls in a specific format, enabling integration with external tools: 
+  - Weather API 
+  - Currency exchange APIs
+
+  The system message instructs the model to call tools using a strict format:
+  ```
+  <function="function_name">
+  {"argument1": "value1", ...}
+  </function>
+  ```
+  The sample includes schemas for each tool, and the model is prompted to use them for tool calling. There are two model calls - with and without structural tags. 
+  You can compare the results to see how the model generates structured outputs when using structural tags.
+  If there is no prompt provided, the sample will use the default prompt: `"What is the weather in London today and in Paris yesterday, and how many pounds can I get for 100 euros?"`
+
+- **Main Feature:** Structured tool call generation with LLM using schema enforcement with structural tags.
+- **Run Command:**
+  ```bash
+  python structural_tags_generation.py model_dir [--prompt "Your prompt here"]
+  ```
+  After running, the script will print the generated text output with and without structural tags, and display the parsed tool calls.
+
+**Note:**  
+This approach is useful for building LLM-powered agents that interact with external APIs or services in a controlled, structured way. 
+For best results, use models fine-tuned for function calling and adapt structural tags according to the model function call template.
+If the model does not generate trigger strings there will be no structural constraints during the generation. 
+The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other models may not produce the expected results or might require different system prompt.
+
+
+### 13. Compound Grammar Generation Sample (`compound_grammar_generation`)
+- **Description:**
+  This sample demonstrates advanced structured output generation using compound grammars in OpenVINO GenAI.
+  It showcases how to combine multiple grammar types - Regex, JSONSchema and EBNF - using Union (`|`) and Concat (`+`) operations to strictly control LLM output.
+  It features multi-turn chat, switching grammar constraints between turns (e.g., "yes"/"no" answers and structured tool calls).
+  Union (`|`) operation allows the model to choose which grammar to use during generation. 
+  In the sample it is used to combine two regex grammars for `"yes"` or `"no"` answer.
+  Concat (`+`) operation allows to start with one grammar and continue with another. 
+  In the sample it used to create a `phi-4-mini-instruct` style tool calling answer - `functools[{tool_1_json}, ...]` - by combining regex and JSON schema grammars.
+
+- **Main Features:**
+  - Create grammar building blocks: Regex, JSONSchema, EBNF grammar
+  - Combine grammars with Concat (`+`) and Union (`|`) operations
+  - Multi-turn chat with grammar switching
+  - Structured tool calling using Pydantic schemas
+- **Run Command:**
+  ```bash
+  python compound_grammar_generation.py model_dir
+  ```
+- **Notes:**
+  This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation.
+  The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
+
 
 ## Troubleshooting
 

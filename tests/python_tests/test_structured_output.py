@@ -33,18 +33,23 @@ structured_id_models = [
 ]
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_scheme", [
     ("Generate a json about a person.", Person), 
     ("Generate a json about a transaction.", Transaction),
     ("Generate a json about a REST API response.", RESTAPIResponse)
 ])
-def test_structured_output_generation(ov_pipe, prompt_and_scheme):
+@pytest.mark.parametrize("use_compound_grammar", [True, False])
+def test_structured_output_generation(ov_pipe, prompt_and_scheme, use_compound_grammar):
     prompt, SchemeType = prompt_and_scheme
 
     structured_output_config = ov_genai.StructuredOutputConfig()
-    structured_output_config.json_schema = json.dumps(SchemeType.model_json_schema())
+    if use_compound_grammar:
+        structured_output_config.compound_grammar = structured_output_config.JSONSchema(
+            json.dumps(SchemeType.model_json_schema())
+        )
+    else:
+        structured_output_config.json_schema = json.dumps(SchemeType.model_json_schema())
 
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 100
@@ -57,7 +62,6 @@ def test_structured_output_generation(ov_pipe, prompt_and_scheme):
 
 
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_regex", [
     ("Generate a json about a person.", r'^\{"city":"(Dublin|Dubai|Munich)"\}$'),
@@ -65,10 +69,16 @@ def test_structured_output_generation(ov_pipe, prompt_and_scheme):
     ("Generate an email.", r'^[a-zA-Z0-9._%+-]{1,64}@[a-z]{1,64}\.[a-z]{1,10}$'),
     ("Generate a json about a REST API response.", r'^\{"status":"(success|error)"\}$'),
 ])
-def test_structured_regex(ov_pipe, prompt_and_regex):
+@pytest.mark.parametrize("use_compound_grammar", [True, False])
+def test_structured_regex(ov_pipe, prompt_and_regex, use_compound_grammar):
     prompt, regex_str = prompt_and_regex
     structured_output_config = ov_genai.StructuredOutputConfig()
-    structured_output_config.regex = regex_str
+    if use_compound_grammar:
+        structured_output_config.compound_grammar = structured_output_config.Regex(
+            regex_str
+        )
+    else:
+        structured_output_config.regex = regex_str
 
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 100
@@ -78,7 +88,6 @@ def test_structured_regex(ov_pipe, prompt_and_regex):
     assert re.match(regex_str, res_str), f"Output {res_str} does not match regex {regex_str}"
    
 @pytest.mark.precommit
-@pytest.mark.nightly
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_ebnf", [
     # EBNF grammar for generating a date in the format YYYY-MM-DD
@@ -94,10 +103,16 @@ def test_structured_regex(ov_pipe, prompt_and_regex):
         """
     ),
 ])
-def test_structured_ebnf(ov_pipe, prompt_and_ebnf):
+@pytest.mark.parametrize("use_compound_grammar", [True, False])
+def test_structured_ebnf(ov_pipe, prompt_and_ebnf, use_compound_grammar):
     prompt, ebnf_grammar = prompt_and_ebnf
     structured_output_config = ov_genai.StructuredOutputConfig()
-    structured_output_config.grammar = ebnf_grammar
+    if use_compound_grammar:
+        structured_output_config.compound_grammar = structured_output_config.EBNF(
+            ebnf_grammar
+        )
+    else:
+        structured_output_config.grammar = ebnf_grammar
 
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 100
@@ -109,3 +124,37 @@ def test_structured_ebnf(ov_pipe, prompt_and_ebnf):
     # Currently there is not general way to validate EBNF output,
     # so we will just check if it matches the expected date format.
     assert re.match(r"^\d{4}-\d{2}-\d{2}$", res_str), f"Output {res_str} does not match date format"
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    "ov_pipe", [model_id for model_id in structured_id_models if "random" not in model_id], indirect=True
+)
+@pytest.mark.parametrize("prompt_and_structural_tag", [
+    (
+        "Repeat the word 'function'",
+        ov_genai.StructuralTagItem(
+            begin="function",
+            schema=json.dumps(RESTAPIResponse.model_json_schema()),
+            end="</function>"
+        )
+    ),
+])
+def test_structural_tags(ov_pipe, prompt_and_structural_tag):
+    prompt, structural_tag = prompt_and_structural_tag
+    structured_output_config = ov_genai.StructuredOutputConfig(
+        structural_tags_config=ov_genai.StructuralTagsConfig(
+            structural_tags=[structural_tag],
+            triggers=["function"],
+        )
+    )
+    gen_config = ov_genai.GenerationConfig()
+    gen_config.max_new_tokens = 100
+    gen_config.do_sample = False
+    gen_config.structured_output_config = structured_output_config
+
+    res_str = ov_pipe.generate(prompt, generation_config=gen_config)
+
+    match = re.search(rf"{structural_tag.begin}(.*?){structural_tag.end}", res_str)
+    assert match, f"Output `{res_str}` does not contain structural tag {structural_tag.begin}...{structural_tag.end}"
+    RESTAPIResponse.model_validate_json(match.group(1))

@@ -24,7 +24,7 @@ huggingface-cli download <model> --local-dir <output_folder>
 
 Compile GenAI JavaScript bindings archive first using the instructions in [../../../src/js/README.md](../../../src/js/README.md#build-bindings).
 
-Run `npm install` in current folder and then the examples will be ready to run.
+Run `npm install` and the examples will be ready to run.
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.
 
@@ -73,6 +73,16 @@ Recommended models: meta-llama/Llama-2-7b-hf, etc
 - **Run Command:**
   ```bash
   node multinomial_causal_lm.js model_dir prompt
+  ```
+
+### 5. LLM ReAct Agent Sample (`react_sample`)
+- **Description:**
+Interactive ReAct Agent powered by OpenVINO.
+Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
+- **Main Feature:** Real-time reasoning-action from user's input.
+- **Run Command:**
+  ```bash
+  node react_sample.js model_dir
   ```
 
 ### Troubleshooting

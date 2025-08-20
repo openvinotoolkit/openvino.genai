@@ -26,11 +26,56 @@ namespace genai {
 enum class StopCriteria { EARLY, HEURISTIC, NEVER };
 
 
+/**
+ * @brief StructuralTagItem is used to define a structural tag with its properties.
+ * @param begin the string that marks the beginning of the structural tag.
+ * @param schema JSON schema that defines the structure of the tag.
+ * @param end the string that marks the end of the structural tag.
+ */
+struct OPENVINO_GENAI_EXPORTS StructuralTagItem {
+    StructuralTagItem() = default;
+    StructuralTagItem(const ov::AnyMap& properties);
+    void update_config(const ov::AnyMap& properties);
+    std::string to_string() const;
+
+    std::string begin;
+    std::string schema;
+    std::string end;
+};
+
+/**
+ * @brief Configures structured output generation by combining regular sampling with structural tags.
+ *
+ * When the model generates a trigger string, it switches to structured output mode and produces output
+ * based on the defined structural tags. Afterward, regular sampling resumes.
+ *
+ * Example:
+ *   - Trigger "<func=" activates tags with begin "<func=sum>" or "<func=multiply>".
+ *
+ * Note:
+ *   - Simple triggers like "<" may activate structured output unexpectedly if present in regular text.
+ *   - Very specific or long triggers may be difficult for the model to generate, so structured output may not be triggered.
+ *
+ * @param structural_tags List of StructuralTagItem objects defining structural tags.
+ * @param triggers List of strings that trigger structured output generation. Triggers may match the beginning or part of a tag's begin string.
+ */
+struct OPENVINO_GENAI_EXPORTS StructuralTagsConfig {
+public:
+    StructuralTagsConfig() = default;
+    StructuralTagsConfig(const ov::AnyMap& properties);
+    void update_config(const ov::AnyMap& properties);
+    std::string to_string() const;
+
+    std::vector<StructuralTagItem> structural_tags;
+    std::vector<std::string> triggers;
+};
+
 /* 
 * Structured output parameters:
 * @param json_schema if set, the output will be a JSON string constrained by the specified json_schema.
 * @param regex if set, the output will be constrained by specified regex.
 * @param grammar if set, the output will be constrained by specified EBNF grammar.
+* @param structural_tags_config if set, the output could contain substrings constrained by the specified structural tags.
 * @param backend if set, the structured output generation will use specified backend, currently only "xgrammar" is supported.
 * 
 * If several parameters are set, e.g. json_schema and regex, then an error will be thrown when validating the configuration.
@@ -45,13 +90,139 @@ public:
     */
     StructuredOutputConfig(const ov::AnyMap& properties);
     StructuredOutputConfig() = default;
+
+    // base grammar types for compound grammar construction
+    struct Regex {
+        std::string value;
+
+        Regex() = default;
+        Regex(const std::string& regex) : value(regex) {}
+        std::string to_string() const {
+            return "Regex(\"" + value + "\")";
+        }
+        bool operator==(const Regex& other) const {
+            return value == other.value;
+        }
+    };
+
+    struct JSONSchema {
+        std::string value;
+
+        JSONSchema() = default;
+        JSONSchema(const std::string& schema) : value(schema) {}
+        std::string to_string() const {
+            return "JSONSchema(\"" + value + "\")";
+        }
+        bool operator==(const JSONSchema& other) const {
+            return value == other.value;
+        }
+    };
+
+    struct EBNF {
+        std::string value;
+
+        EBNF() = default;
+        EBNF(const std::string& grammar) : value(grammar) {}
+        std::string to_string() const {
+            return "EBNF(\"" + value + "\")";
+        }
+        bool operator==(const EBNF& other) const {
+            return value == other.value;
+        }
+    };
+
+    // compound grammar types
+    struct Concat;
+    struct Union;
+
+    using CompoundGrammar = std::variant<
+        Regex,
+        JSONSchema,
+        EBNF,
+        std::shared_ptr<Concat>,
+        std::shared_ptr<Union>
+    >;
+
+    // compound grammar types - Concat and Union are used to combine multiple grammars into one
+    // Concat combines two grammars in sequence, e.g. "A B" means A followed by B
+    struct Concat {
+        CompoundGrammar left;
+        CompoundGrammar right;
+
+        Concat() = default;
+        Concat(CompoundGrammar left, CompoundGrammar right) : left(std::move(left)), right(std::move(right)) {};
+        std::string to_string() const {
+            return "Concat(" + std::visit([](const auto& g) -> std::string {
+                if constexpr (std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Concat>> ||
+                              std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Union>>) {
+                    return g ? g->to_string() : "null";
+                } else {
+                    return g.to_string();
+                }
+            }, left) + ", " +
+            std::visit([](const auto& g) -> std::string {
+                if constexpr (std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Concat>> ||
+                              std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Union>>) {
+                    return g ? g->to_string() : "null";
+                } else {
+                    return g.to_string();
+                }
+            }, right) + ")";
+        }
+        bool operator==(const Concat& other) const {
+            return left == other.left && right == other.right;
+        }
+    };
+
+    // Union combines two grammars in parallel, e.g. "A | B" means either A or B
+    struct Union {
+        CompoundGrammar left;
+        CompoundGrammar right;
+
+        Union() = default;
+        Union(CompoundGrammar left, CompoundGrammar right) : left(std::move(left)), right(std::move(right)) {};
+        std::string to_string() const {
+            return "Union(" + std::visit([](const auto& g) -> std::string {
+                if constexpr (std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Concat>> ||
+                              std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Union>>) {
+                    return g ? g->to_string() : "null";
+                } else {
+                    return g.to_string();
+                }
+            }, left) + ", " +
+            std::visit([](const auto& g) -> std::string {
+                if constexpr (std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Concat>> ||
+                              std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Union>>) {
+                    return g ? g->to_string() : "null";
+                } else {
+                    return g.to_string();
+                }
+            }, right) + ")";
+        }
+        bool operator==(const Union& other) const {
+            return left == other.left && right == other.right;
+        }
+    };
+
     std::optional<std::string> json_schema;
     std::optional<std::string> regex;
     std::optional<std::string> grammar;
+    std::optional<StructuralTagsConfig> structural_tags_config;
+    std::optional<CompoundGrammar> compound_grammar;
     std::optional<std::string> backend;
     void validate() const;
+    void validate(Tokenizer& tokenizer) const;
     void update_config(const ov::AnyMap& properties);
 };
+
+
+OPENVINO_GENAI_EXPORTS std::shared_ptr<StructuredOutputConfig::Concat>
+operator+(const StructuredOutputConfig::CompoundGrammar& lhs,
+          const StructuredOutputConfig::CompoundGrammar& rhs);
+
+OPENVINO_GENAI_EXPORTS std::shared_ptr<StructuredOutputConfig::Union>
+operator|(const StructuredOutputConfig::CompoundGrammar& lhs,
+          const StructuredOutputConfig::CompoundGrammar& rhs);
 
 /**
  * @brief Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
@@ -109,9 +280,7 @@ public:
  * 
  * @param apply_chat_template whether or not to apply chat_template for non-chat scenarios
  */
-
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
-
 public:
     GenerationConfig() = default;
     explicit GenerationConfig(const std::filesystem::path& json_path);
@@ -164,6 +333,7 @@ public:
 
     // set to true if chat template should be applied for non-chat scenarios, set to false otherwise
     bool apply_chat_template = true;
+
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
