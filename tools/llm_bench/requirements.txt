@@ -16,3 +16,4 @@ timm
 tiktoken
 librosa # For Whisper
 matplotlib
+jinja2>=3.1.0

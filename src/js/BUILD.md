@@ -1,4 +1,4 @@
-## Build OpenVINO™ GenAI Node.js bindings (preview)
+## Build OpenVINO™ GenAI Node.js bindings
 
 1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build).
 In this step, we need to build the OpenVINO Runtime that is required for OpenVINO GenAI. We don't need to configure any environment variables to create JS buildings here. 

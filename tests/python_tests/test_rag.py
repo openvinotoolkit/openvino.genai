@@ -264,6 +264,11 @@ def test_embedding_constructors(download_and_convert_embeddings_models):
 )
 @pytest.mark.precommit
 def test_embed_documents(download_and_convert_embeddings_models, dataset_documents, config):
+    if (sys.platform == "linux"
+            and "bge-small-en-v1.5" in str(download_and_convert_embeddings_models)
+            and config.normalize
+            and config.pooling_type == TextEmbeddingPipeline.PoolingType.CLS):
+        pytest.xfail("Random segmentation fault. Ticket 172306")
     _, _, models_path = download_and_convert_embeddings_models
     run_text_embedding_pipeline_with_ref(models_path, dataset_documents, config, "embed_documents")
 

@@ -26,15 +26,16 @@ class TestPromptLookupDecodingLM:
         indirect=["convert_model"],
     )
     def test_prompt_lookup_decoding_lm(self, convert_model, sample_args):      
+        # Test CPP sample
+        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'prompt_lookup_decoding_lm')
+        cpp_command =[cpp_sample, convert_model, sample_args]
+        cpp_result = run_sample(cpp_command)
+
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/prompt_lookup_decoding_lm.py")
         py_command = [sys.executable, py_script, convert_model, sample_args]
         py_result = run_sample(py_command)
 
-        # Test CPP sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'prompt_lookup_decoding_lm')
-        cpp_command =[cpp_sample, convert_model, sample_args]
-        cpp_result = run_sample(cpp_command)
         
         # Greedy decoding
         cpp_sample_ref = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
