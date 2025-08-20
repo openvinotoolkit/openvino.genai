@@ -476,7 +476,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         ov::Any prop;
         try {
             prop = compiled_Model.get_property(cfg);
-        } catch (const ov::Exception& e) {
+        } catch (const ov::Exception&) {
             continue;  // NPU: Unsupported configuration key: EXECUTION_MODE_HINT. Ticket 172485
         }
         if (cfg == ov::device::properties) {
@@ -499,7 +499,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         std::string full_name;
         try {
             full_name = singleton_core().get_property(device, ov::device::full_name);
-        } catch (const ov::Exception& e) {
+        } catch (const ov::Exception&) {
             continue;  // NPU: No available devices. Ticket 172485
         }
         std::cout << " " << device << ": " << full_name << std::endl;
