@@ -111,21 +111,23 @@ public:
         return 1;
     }
 
-    void allocate_cache_if_needed(size_t num_kv_blocks) {
-        if (m_num_allocated_kv_blocks >= num_kv_blocks) {
+    void change_cache_size_if_needed(size_t new_num_kv_blocks, size_t num_kv_blocks_to_copy = 0) {
+        if (num_kv_blocks_to_copy == 0 && m_num_allocated_kv_blocks >= new_num_kv_blocks) {
             return;
         }
-        std::cout << "Allocate kv-cache: " << num_kv_blocks <<std::endl;
+        // if num_kv_blocks_to_copy > 0 and m_num_allocated_kv_blocks >= new_num_kv_blocks than kv-cache will be reduced
+        std::cout << "Allocate kv-cache: " << new_num_kv_blocks <<std::endl;
+        // TODO: check num_kv_blocks_to_copy < new_num_kv_blocks
         size_t prev_blocks_num = m_num_allocated_kv_blocks;
-        m_num_allocated_kv_blocks = num_kv_blocks;
+        m_num_allocated_kv_blocks = new_num_kv_blocks;
 
         ov::Coordinate start_key{0,0,0,0};
         ov::Coordinate start_value{0,0,0,0};
 
         if (m_context) {// Allocate KV caches
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
-                ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], num_kv_blocks);
-                ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], num_kv_blocks);
+                ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], new_num_kv_blocks);
+                ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], new_num_kv_blocks);
 
                 ov::Tensor key_cache = m_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_cache_shape);
                 ov::Tensor value_cache = m_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_cache_shape);
@@ -134,6 +136,11 @@ public:
                     if (prev_blocks_num > 0) {
                         ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
                         ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
+
+                        if (num_kv_blocks_to_copy > 0) {
+                            end_key = set_kv_blocks(m_key_cache[decoder_layer_id].get_shape(), num_kv_blocks_to_copy);
+                            end_value = set_kv_blocks(m_value_cache[decoder_layer_id].get_shape(), num_kv_blocks_to_copy);
+                        }
 
                         // copy current cache data
                         ov::RemoteTensor dst_key_roi(key_cache, start_key, end_key);
@@ -153,8 +160,8 @@ public:
             }
         } else {
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
-                ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], num_kv_blocks);
-                ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], num_kv_blocks);
+                ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], new_num_kv_blocks);
+                ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], new_num_kv_blocks);
 
                 ov::element::Type key_precision = get_key_cache_precision(decoder_layer_id);
                 ov::element::Type value_precision = get_value_cache_precision(decoder_layer_id);
@@ -170,6 +177,11 @@ public:
                 if (m_key_cache.size() > decoder_layer_id && prev_blocks_num > 0) {
                     ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
                     ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
+
+                    if (num_kv_blocks_to_copy > 0) {
+                        end_key = set_kv_blocks(m_key_cache[decoder_layer_id].get_shape(), num_kv_blocks_to_copy);
+                        end_value = set_kv_blocks(m_value_cache[decoder_layer_id].get_shape(), num_kv_blocks_to_copy);
+                    }
                     // copy current cache data
                     if (key_precision == ov::element::u4) {
                         size_t key_stride = std::accumulate(end_key.begin(), end_key.end(), 1, std::multiplies<size_t>());
@@ -179,7 +191,8 @@ public:
                         key_roi_size_byte = m_key_cache[decoder_layer_id].get_byte_size();
                         ov::Tensor dst_key_roi(key_cache, start_key, end_key);
                         key_cache_roi_end = static_cast<unsigned char*>(key_cache.data()) + key_roi_size_byte;
-                        m_key_cache[decoder_layer_id].copy_to(dst_key_roi);
+                        ov::Tensor src_value_roi(m_key_cache[decoder_layer_id], start_value, end_value);
+                        src_value_roi.copy_to(dst_key_roi);
                     }
 
                     if (value_precision == ov::element::u4) {
@@ -190,7 +203,8 @@ public:
                         value_roi_size_byte = m_value_cache[decoder_layer_id].get_byte_size();
                         value_cache_roi_end = static_cast<unsigned char*>(value_cache.data()) + value_roi_size_byte;
                         ov::Tensor dst_value_roi(value_cache, start_value, end_value);
-                        m_value_cache[decoder_layer_id].copy_to(dst_value_roi);
+                        ov::Tensor src_value_roi(m_value_cache[decoder_layer_id], start_value, end_value);
+                        src_value_roi.copy_to(dst_value_roi);
                     }
                 }
 
