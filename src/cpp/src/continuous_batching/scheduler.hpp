@@ -533,7 +533,13 @@ private:
         // total device memory in bytes
         auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
 
-        return total_device_memory - used_device_mem;
+        // max allocatable memory size on GPU
+        auto max_alloc_memory_size = core.get_property(device, ov::intel_gpu::device_max_alloc_mem_size);
+
+        // Total KV-cache size if a single tensor is limited by 'device_max_alloc_mem_size' property
+        auto max_allocatable_kv_cache = max_alloc_memory_size * m_cache_manager->get_num_decoder_layers() * 2;
+
+        return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
     }
 
     void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
