@@ -92,7 +92,7 @@ endif()
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
-if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/samples" AND ENABLE_SAMPLES)
+if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/samples")
     add_subdirectory(samples)
 endif()
 if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tools/continuous_batching" AND ENABLE_TOOLS)
