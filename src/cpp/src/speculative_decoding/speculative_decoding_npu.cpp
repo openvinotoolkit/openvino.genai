@@ -347,16 +347,16 @@ SpeculativeLLMPipelineNPU::SpeculativeLLMPipelineNPU(
     }
     m_draft_request = std::make_unique<LLMInferWrapper>(draft_model_desc_copy);
 
-    // Main model (which is bigger, more accurate but slower)
-    auto main_model_desc_copy = main_model_desc;
-    if (main_model_desc_copy.device == "NPU") {
-        main_model_desc_copy.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = 16;
-    }
-    m_main_request = std::make_unique<LLMInferWrapper>(main_model_desc_copy);
-   
     auto requested_candidates_num = main_model_desc.generation_config.num_assistant_tokens;
     m_candidates_num = (requested_candidates_num != 0) ? requested_candidates_num : 5;
 
+    // Main model (which is bigger, more accurate but slower)
+    auto main_model_desc_copy = main_model_desc;
+    if (main_model_desc_copy.device == "NPU") {
+        main_model_desc_copy.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = m_max_candidates_num + 1;
+    }
+    m_main_request = std::make_unique<LLMInferWrapper>(main_model_desc_copy);
+   
     m_sd_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
 }
 
