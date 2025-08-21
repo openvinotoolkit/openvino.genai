@@ -226,6 +226,8 @@ public:
                         auto shape = stored_hidden_state.get_shape();
                         if (shape.size() >= 2) {
                             hidden_size = shape[shape.size() - 1];
+                            if (!m_is_hidden_state_import_needed)
+                                hidden_size /= 3;
                             break;
                         }
                     }
@@ -455,9 +457,28 @@ public:
             m_request.set_tensor("inputs_embeds", inputs_embeds);
         }
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
-            try {
-                m_request.set_tensor("target_hidden_state_input", hidden_state_input);
-            } catch (const ov::Exception& e) {
+            if (m_is_hidden_state_import_needed) {
+                try {
+                    m_request.set_tensor("target_hidden_state_input", hidden_state_input);
+                    auto shape = hidden_state_input.get_shape();
+                    shape[-1] = shape [-1]/3;
+                    ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
+                    auto fake_data = fake_tensor.data<float>();
+                    std::memset(fake_data, 0, fake_tensor.get_byte_size());
+                    m_request.set_tensor("internal_hidden_state_input", fake_tensor);
+                } catch (const ov::Exception& e) {
+                }
+            } else {
+                try {
+                    m_request.set_tensor("internal_hidden_state_input", hidden_state_input);
+                    auto shape = hidden_state_input.get_shape();
+                    shape[-1] = shape [-1] * 3;
+                    ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
+                    auto fake_data = fake_tensor.data<float>();
+                    std::memset(fake_data, 0, fake_tensor.get_byte_size());
+                    m_request.set_tensor("target_hidden_state_input", fake_tensor);
+                } catch (const ov::Exception& e) {
+                }
             }
         }
         // typical LLM parameters

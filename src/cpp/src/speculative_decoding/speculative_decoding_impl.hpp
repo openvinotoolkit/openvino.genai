@@ -139,19 +139,33 @@ class EagleBaseTransform : public ov::pass::MatcherPass {
 public:
     using NodePtr = std::shared_ptr<ov::Node>;
     OPENVINO_MATCHER_PASS_RTTI("EagleBaseTransform");
-    EagleBaseTransform(const std::vector<int>& layers, std::vector<std::shared_ptr<ov::op::v0::Result>>& results);
+    EagleBaseTransform(std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params, std::vector<std::shared_ptr<ov::op::v0::Result>>& results, const std::string& eagle_version = "EAGLE3");
 
     ~EagleBaseTransform() = default;
 
 private:
-    bool apply(NodePtr node, std::vector<std::shared_ptr<ov::op::v0::Result>>& results);
+    bool apply(NodePtr node, std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params, std::vector<std::shared_ptr<ov::op::v0::Result>>& results);
     size_t applied = 0;
+    std::string m_eagle_version;
     std::shared_ptr<ov::Node> find_last_hidden_node(const std::shared_ptr<ov::Node>& start_node);
     std::shared_ptr<ov::Node> find_last_hidden_node(const std::shared_ptr<ov::Node>& start_node, 
                                                    std::set<ov::Node*>& visited_nodes);
-    std::vector<int> m_layers; // layers to be abstracted
+    std::shared_ptr<ov::Node> find_last_residual_node(const std::shared_ptr<ov::Node>& start_node);
+    std::shared_ptr<ov::Node> find_last_residual_node(const std::shared_ptr<ov::Node>& start_node, 
+                                                               std::set<ov::Node*>& visited_nodes);
 };
+class EagleInputTransform : public ov::pass::MatcherPass { // eagle3 specific for draft model
+public:
+    using NodePtr = std::shared_ptr<ov::Node>;
+    OPENVINO_MATCHER_PASS_RTTI("EagleInputTransform");
+    EagleInputTransform(std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params);
 
+    ~EagleInputTransform() = default;
+
+private:
+    bool apply(NodePtr node, std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params);
+    size_t applied = 0;
+};
 class Eagle3Transform : public ov::pass::MatcherPass {
 public:
     using NodePtr = std::shared_ptr<ov::Node>;
@@ -168,12 +182,14 @@ private:
 
 class EagleModelTransform : public ov::pass::ModelPass {
 public:
-    EagleModelTransform(const std::vector<int>& layer_ids);
+    EagleModelTransform(const std::vector<int>& layer_ids, const std::string& eagle_version = "EAGLE3");
     bool run_on_model(const std::shared_ptr<Model>& model) override;
 
 private:
     const std::vector<int> m_layer_ids;
+    std::string m_eagle_version;
     std::vector<std::shared_ptr<ov::op::v0::Result>> m_new_results;
+    std::vector<std::shared_ptr<ov::op::v0::Parameter>> m_new_parameters;
     std::vector<Output<Node>> m_hidden_layer_outputs;
 };
 }

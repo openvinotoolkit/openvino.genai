@@ -711,6 +711,11 @@ void adjust_sequence_to_match_path(Sequence::Ptr sequence,
         }
     }*/
 }
+Token Sampler::_greedy_sample_with_batch_idx(ov::Tensor logits, size_t batch_idx, size_t token_idx) {
+    auto logit = _get_logit_vector(logits, batch_idx, token_idx);
+    return _greedy_sample(logit, 0);
+}
+
 Eagle2ValidationResult Sampler::validate_eagle2_tree(const std::vector<std::vector<int64_t>>& candidate_paths,
                                                      const std::vector<std::vector<float>>& candidate_log_probs,
                                                      const std::vector<int> beam_id,
@@ -722,9 +727,59 @@ Eagle2ValidationResult Sampler::validate_eagle2_tree(const std::vector<std::vect
     if (candidate_paths.empty()) {
         return result;
     }
-
+    auto logit_shape = main_model_logits.get_shape();
+    // find the tokens with maximum probability in the main model logits
+    std::vector<std::vector<int64_t>> main_results(logit_shape[0], std::vector<int64_t>(0));
+    for (size_t b = 0; b < logit_shape[0]; ++b) {
+        for (size_t s = logit_shape[1] - 1; s > 0; --s) {
+            main_results[b].push_back(_greedy_sample_with_batch_idx(main_model_logits, b, s).m_index);
+        }
+    }
+    auto create_validate_mask = [] (
+        const std::vector<std::vector<int64_t>>& a, 
+        const std::vector<std::vector<int64_t>>& b) {
+        
+        std::vector<std::vector<bool>> mask(a.size());
+        
+        for (size_t i = 0; i < a.size(); ++i) {
+            if (a[i].size() != b[i].size()) {
+                throw std::invalid_argument("Rows must have the same number of columns");
+            }
+            
+            mask[i].resize(a[i].size());
+            
+            for (size_t j = 0; j < a[i].size(); ++j) {
+                mask[i][j] = (a[i][j] == b[i][j]) ? 1 : 0;
+            }
+        }
+        
+        return mask;
+    };
+    size_t max_count = 0;
+    size_t max_row = 0;
+    auto mask = create_validate_mask(candidate_paths, main_results);
+    for (size_t i = 0; i < mask.size(); ++i) {
+        size_t count = 0;
+        for (bool value : mask[i]) {
+            if (value) {
+                count++;
+            } else {
+                break;
+            }
+        }
+        if (count > max_count) {
+            max_count = count; // number of max accepted
+            max_row = i; // best beam id
+        }
+    }
+    result.accepted_path_length = max_count;
+    auto num_tokens_to_process = candidate_paths[0].size();
+    result.extra_sampled_token = _greedy_sample_with_batch_idx(main_model_logits, beam_id[max_row], (num_tokens_to_process - max_count));
+    result.accepted_path_id = beam_id[max_row];
+    result.is_path_accepted = (result.accepted_path_length > 0);
+    return result;
     // Find the longest common prefix among all candidate paths
-    size_t max_common_prefix = 0;
+    /*size_t max_common_prefix = 0;
     if (candidate_paths.size() > 1) {
         max_common_prefix = find_common_prefix_length(candidate_paths); // the first one is generated from main
     } else {
@@ -837,7 +892,7 @@ Eagle2ValidationResult Sampler::validate_eagle2_tree(const std::vector<std::vect
             }
         }
     }
-
+    
     // Generate one additional token if no rejection occurred
     if (result.accepted_path_length == num_tokens_to_process) {
         size_t next_pos = result.accepted_path_length;
@@ -862,7 +917,7 @@ Eagle2ValidationResult Sampler::validate_eagle2_tree(const std::vector<std::vect
     }
     result.accepted_path_id = beam_id[best_path_idx];
     result.is_path_accepted = (result.accepted_path_length > 0);
-    return result;
+    return result;*/
 }
 
 // Helper function to find common prefix length among multiple paths
@@ -1020,7 +1075,7 @@ int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
             OPENVINO_THROW("should not be here");
         } (running_sequence->get_id()));
     }
-    std::cout << "candidate_tokens size: " << candidate_tokens[0].size() << std::endl;
+    //std::cout << "candidate_tokens number : " << candidate_tokens.size() << "candidate token length: " << candidate_tokens[0].size() <<std::endl;
     auto validation_result = validate_eagle2_tree(candidate_tokens,
                                                   candidate_log_probs,
                                                   beam_idxs,
@@ -1028,7 +1083,7 @@ int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
                                                   logit_processor,
                                                   do_sample);
     generated_tokens_count = validation_result.accepted_path_length;
-    std::cout << "seq group" << seq_group->get_request_id() << " accepted: " << validation_result.accepted_path_length << std::endl;
+    //std::cout << "seq group" << seq_group->get_request_id() << " accepted: " << validation_result.accepted_path_length << std::endl;
 
     if (!validation_result.is_path_accepted) {
         // return false;
