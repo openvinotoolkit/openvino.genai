@@ -20,7 +20,6 @@ else()
     message(STATUS "Reusing outer project's pybind11 target")
 endif()
 
-
 file(GLOB python_sources "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 set(TARGET_NAME py_openvino_genai)
