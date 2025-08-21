@@ -12,10 +12,14 @@ if (NOT TARGET pybind11::pybind11)
         URL_HASH SHA256=453b1a3e2b266c3ae9da872411cadb6d693ac18063bd73226d96cfb7015a200c
     )
     FetchContent_GetProperties(pybind11)
-    FetchContent_Populate(pybind11)
+    
     # search for FindPython3.cmake instead of legacy modules
     set(PYBIND11_FINDPYTHON ON)
-    add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
+    
+    if(NOT pybind11_POPULATED)
+        FetchContent_Populate(pybind11)
+        add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
+    endif()
 else()
     message(STATUS "Reusing outer project's pybind11 target")
 endif()
