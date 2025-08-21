@@ -10,6 +10,7 @@
 #include <pybind11/functional.h>
 #include <pybind11/numpy.h>
 
+#include "bindings_utils.hpp"
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "openvino/genai/image_generation/image2image_pipeline.hpp"
 #include "openvino/genai/image_generation/inpainting_pipeline.hpp"
@@ -21,6 +22,7 @@
 
 namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
+namespace common_utils = ov::genai::common_bindings::utils;
 
 using namespace pybind11::literals;
 using ov::genai::ImageGenerationPerfMetrics;
@@ -320,13 +322,13 @@ void init_image_generation_pipelines(py::module_& m) {
     py::class_<RawImageGenerationPerfMetrics>(m, "RawImageGenerationPerfMetrics", raw_image_generation_perf_metrics_docstring)
         .def(py::init<>())
         .def_property_readonly("unet_inference_durations", [](const RawImageGenerationPerfMetrics &rw) {
-            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::unet_inference_durations);
+            return common_utils::get_ms(rw, &RawImageGenerationPerfMetrics::unet_inference_durations);
         })
         .def_property_readonly("transformer_inference_durations", [](const RawImageGenerationPerfMetrics &rw) { 
-            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::transformer_inference_durations);
+            return common_utils::get_ms(rw, &RawImageGenerationPerfMetrics::transformer_inference_durations);
         })
         .def_property_readonly("iteration_durations", [](const RawImageGenerationPerfMetrics &rw) { 
-            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::iteration_durations); 
+            return common_utils::get_ms(rw, &RawImageGenerationPerfMetrics::iteration_durations); 
         });
 
     py::class_<ImageGenerationPerfMetrics>(m, "ImageGenerationPerfMetrics", image_generation_perf_metrics_docstring)

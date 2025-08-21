@@ -272,6 +272,30 @@ If the model does not generate trigger strings there will be no structural const
 The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 
+### 13. Compound Grammar Generation Sample (`compound_grammar_generation`)
+- **Description:**
+  This sample demonstrates advanced structured output generation using compound grammars in OpenVINO GenAI.
+  It showcases how to combine multiple grammar types - Regex, JSONSchema and EBNF - using Union (`|`) and Concat (`+`) operations to strictly control LLM output.
+  It features multi-turn chat, switching grammar constraints between turns (e.g., "yes"/"no" answers and structured tool calls).
+  Union (`|`) operation allows the model to choose which grammar to use during generation. 
+  In the sample it is used to combine two regex grammars for `"yes"` or `"no"` answer.
+  Concat (`+`) operation allows to start with one grammar and continue with another. 
+  In the sample it used to create a `phi-4-mini-instruct` style tool calling answer - `functools[{tool_1_json}, ...]` - by combining regex and JSON schema grammars.
+
+- **Main Features:**
+  - Create grammar building blocks: Regex, JSONSchema, EBNF grammar
+  - Combine grammars with Concat (`+`) and Union (`|`) operations
+  - Multi-turn chat with grammar switching
+  - Structured tool calling using Pydantic schemas
+- **Run Command:**
+  ```bash
+  python compound_grammar_generation.py model_dir
+  ```
+- **Notes:**
+  This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation.
+  The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
+
+
 ## Troubleshooting
 
 ### Unicode characters encoding error on Windows

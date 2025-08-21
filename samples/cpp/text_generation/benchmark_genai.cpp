@@ -62,19 +62,23 @@ int main(int argc, char* argv[]) try {
 
     std::cout << ov::get_openvino_version() << std::endl;
 
-    ov::genai::LLMPipeline pipe(models_path, device, ov::genai::scheduler_config(scheduler_config));
+    std::unique_ptr<ov::genai::LLMPipeline> pipe;
+    if (device == "NPU")
+        pipe = std::make_unique<ov::genai::LLMPipeline>(models_path, device);
+    else
+        pipe = std::make_unique<ov::genai::LLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
 
-    auto input_data = pipe.get_tokenizer().encode(prompt);
+    auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
     std::cout << "Prompt token size:" << prompt_token_size << std::endl;
 
     for (size_t i = 0; i < num_warmup; i++)
-        pipe.generate(prompt, config);
+        pipe->generate(prompt, config);
 
-    ov::genai::DecodedResults res = pipe.generate(prompt, config);
+    ov::genai::DecodedResults res = pipe->generate(prompt, config);
     ov::genai::PerfMetrics metrics = res.perf_metrics;
     for (size_t i = 0; i < num_iter - 1; i++) {
-        res = pipe.generate(prompt, config);
+        res = pipe->generate(prompt, config);
         metrics = metrics + res.perf_metrics;
     }
 

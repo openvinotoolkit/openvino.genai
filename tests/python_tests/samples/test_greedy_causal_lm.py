@@ -24,17 +24,17 @@ class TestGreedyCausalLM:
     def test_sample_greedy_causal_lm(self, request, convert_model, sample_args):
         prompt = sample_args
         
-        # Python test
-        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
-        py_command = [sys.executable, py_script, convert_model, prompt]
-        py_result = run_sample(py_command)
-        py_predictions = py_result.stdout
-
         # C++ test
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
         cpp_command = [cpp_sample, convert_model, prompt]
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
+
+        # Python test
+        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
+        py_command = [sys.executable, py_script, convert_model, prompt]
+        py_result = run_sample(py_command)
+        py_predictions = py_result.stdout
 
         # Test C sample
         c_sample = os.path.join(SAMPLES_C_DIR, "greedy_causal_lm_c")

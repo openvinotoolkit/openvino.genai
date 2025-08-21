@@ -35,7 +35,9 @@ def generation_config_to_hf(
     # generic parameters
     kwargs['max_length'] = generation_config.max_length
     # has higher priority than 'max_length'
-    kwargs['max_new_tokens'] = generation_config.max_new_tokens
+    SIZE_MAX = 2**64 - 1
+    if generation_config.max_new_tokens != SIZE_MAX:
+        kwargs['max_new_tokens'] = generation_config.max_new_tokens
     kwargs['min_new_tokens'] = generation_config.min_new_tokens
     if generation_config.stop_strings:
         kwargs['stop_strings'] = generation_config.stop_strings
@@ -207,10 +209,7 @@ def download_and_convert_embeddings_models(request):
 @pytest.fixture()
 def download_and_convert_rerank_model(request):
     model_id = request.param
-    opt_model, hf_tokenizer, models_path = _download_and_convert_model(model_id, OVModelForSequenceClassification)
-    ov_tokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=False, number_of_inputs=2)
-    save_model(ov_tokenizer, models_path / "openvino_tokenizer.xml")
-    return opt_model, hf_tokenizer, models_path
+    return _download_and_convert_model(model_id, OVModelForSequenceClassification)
 
 
 def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):

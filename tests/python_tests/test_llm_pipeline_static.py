@@ -169,7 +169,7 @@ def test_multinomial_sampling(generation_config, config, model_id):
 def test_length_properties_set_no_exception(config, model_id):
     _, _, model_path = download_and_convert_model(model_id)
     # NB: Check it doesn't throw any exception
-    pipeline_config = { "MAX_PROMPT_LEN": 128, "MIN_RESPONSE_LEN": 64 }
+    pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= config
     pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
 
@@ -255,7 +255,7 @@ def test_terminate_by_max_number_of_tokens(config, model_id):
 def test_terminate_by_out_of_memory(config, model_id):
     _, _, model_path = download_and_convert_model(model_id)
     prompt = 'The Sun is yellow because'
-    pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
+    pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= config
     kv_cache_size = pipeline_config['MAX_PROMPT_LEN'] + pipeline_config['MIN_RESPONSE_LEN']
 

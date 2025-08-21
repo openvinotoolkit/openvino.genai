@@ -10,6 +10,7 @@
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 #include "py_utils.hpp"
+#include "bindings_utils.hpp"
 
 namespace py = pybind11;
 
@@ -22,6 +23,7 @@ using ov::genai::SDPerfMetrics;
 using ov::genai::SDPerModelsPerfMetrics;
 
 namespace pyutils = ov::genai::pybind::utils;
+namespace common_utils = ov::genai::common_bindings::utils;
 
 namespace {
 
@@ -153,54 +155,38 @@ auto sd_per_models_perf_metrics_docstring = R"(
     :type get_num_accepted_tokens: int
 )";
 
-template <typename T, typename U>
-std::vector<double> timestamp_to_ms(const T& instance, U T::*member) {
-    // Converts c++ duration to double so that it can be used in Python.
-    // Use double instead of float bacuse timestamp in ms contains 14 digits
-    // while float only allows to store ~7 significant digits.
-    // And the current timestamp (number of secs from 1970) is already 11 digits.
-    std::vector<double> res;
-    const auto& timestamps = instance.*member;
-    res.reserve(timestamps.size());
-    std::transform(timestamps.begin(), timestamps.end(), std::back_inserter(res),
-                   [](const auto& timestamp) { 
-                        return std::chrono::duration<double, std::milli>(timestamp.time_since_epoch()).count(); 
-                    });
-    return res;
-}
-
 } // namespace
 
 void init_perf_metrics(py::module_& m) {
     py::class_<RawPerfMetrics>(m, "RawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
         .def_property_readonly("generate_durations", [](const RawPerfMetrics &rw) {
-            return pyutils::get_ms(rw, &RawPerfMetrics::generate_durations);
+            return common_utils::get_ms(rw, &RawPerfMetrics::generate_durations);
         })
         .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
-            return pyutils::get_ms(rw, &RawPerfMetrics::tokenization_durations);
+            return common_utils::get_ms(rw, &RawPerfMetrics::tokenization_durations);
         })
         .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
-            return pyutils::get_ms(rw, &RawPerfMetrics::detokenization_durations); 
+            return common_utils::get_ms(rw, &RawPerfMetrics::detokenization_durations); 
         })
         .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) {
-            return pyutils::get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
+            return common_utils::get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
         })
         .def_property_readonly("m_new_token_times", [](const RawPerfMetrics &rw) {
-            return timestamp_to_ms(rw, &RawPerfMetrics::m_new_token_times);
+            return common_utils::timestamp_to_ms(rw, &RawPerfMetrics::m_new_token_times);
         })
         .def_property_readonly("token_infer_durations", [](const RawPerfMetrics &rw) {
-            return pyutils::get_ms(rw, &RawPerfMetrics::m_token_infer_durations);
+            return common_utils::get_ms(rw, &RawPerfMetrics::m_token_infer_durations);
         })
         .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes)
         .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) {
-            return pyutils::get_ms(rw, &RawPerfMetrics::m_durations);
+            return common_utils::get_ms(rw, &RawPerfMetrics::m_durations);
         })
         .def_property_readonly("inference_durations", [](const RawPerfMetrics &rw) {
-            return pyutils::get_ms(rw, &RawPerfMetrics::m_inference_durations);
+            return common_utils::get_ms(rw, &RawPerfMetrics::m_inference_durations);
         })
         .def_property_readonly("grammar_compile_times", [](const RawPerfMetrics &rw) {
-            return pyutils::get_ms(rw, &RawPerfMetrics::m_grammar_compile_times);
+            return common_utils::get_ms(rw, &RawPerfMetrics::m_grammar_compile_times);
         });
 
     py::class_<SummaryStats>(m, "SummaryStats")

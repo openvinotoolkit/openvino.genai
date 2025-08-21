@@ -188,6 +188,11 @@ def parse_args():
         default=None,
         help="Weights for LoRA adapters.",
     )
+    parser.add_argument(
+        "--long-prompt",
+        action='store_true',
+        help="LLMPipeline specific parameter that defines the use of a long context prompt",
+    )
 
     return parser.parse_args()
 
@@ -423,6 +428,7 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
+                long_prompt=args.long_prompt,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -604,7 +610,7 @@ def main():
             if not os.path.exists(args.output):
                 os.mkdir(args.output)
             df = pd.DataFrame(all_metrics_per_question)
-            df.to_csv(os.path.join(args.output, "metrics_per_qustion.csv"))
+            df.to_csv(os.path.join(args.output, "metrics_per_question.csv"))
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
