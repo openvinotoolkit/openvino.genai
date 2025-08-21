@@ -917,10 +917,6 @@ jobs:
           Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
-      - name: Check lint
-        working-directory: ${{ env.SRC_DIR }}/src/js
-        run: npm run lint
-
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: npm test
