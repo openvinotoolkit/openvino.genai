@@ -10,8 +10,9 @@ from utils.hugging_face import download_and_convert_embeddings_models, download_
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
-from typing import Literal
+from typing import Literal, Union
 import sys
+import platform
 
 EMBEDDINGS_TEST_MODELS = [
     "BAAI/bge-small-en-v1.5",
@@ -83,6 +84,9 @@ def run_text_embedding_genai(
 
     pipeline = TextEmbeddingPipeline(models_path, "CPU", config)
 
+    if config.batch_size:
+        documents = documents[: config.batch_size]
+
     if task == "embed_documents":
         return pipeline.embed_documents(documents)
     else:
@@ -116,10 +120,25 @@ def run_text_embedding_langchain(
     ov_embeddings.embed_instruction = config.embed_instruction or ""
     ov_embeddings.query_instruction = config.query_instruction or ""
 
+    if config.batch_size:
+        documents = documents[: config.batch_size]
+
     if task == "embed_documents":
         return ov_embeddings.embed_documents(documents)
     else:
         return ov_embeddings.embed_query(documents[0])
+
+
+EmbeddingResult = Union[list[list[float]], list[list[int]], list[float], list[int]]
+MAX_EMBEDDING_ERROR = 2e-6
+
+
+def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):
+    np_result_1 = np.array(result_1)
+    np_result_2 = np.array(result_2)
+
+    max_error = np.abs(np_result_1 - np_result_2).max()
+    assert max_error < MAX_EMBEDDING_ERROR, f"Max error: {max_error} is greater than allowed {MAX_EMBEDDING_ERROR}"
 
 
 def run_text_embedding_pipeline_with_ref(
@@ -131,12 +150,7 @@ def run_text_embedding_pipeline_with_ref(
     genai_result = run_text_embedding_genai(models_path, documents, config, task)
     langchain_result = run_text_embedding_langchain(models_path, documents, config, task)
 
-    np_genai_result = np.array(genai_result)
-    np_langchain_result = np.array(langchain_result)
-
-    max_error = np.abs(np_genai_result - np_langchain_result).max()
-    print(f"Max error: {max_error}")
-    assert np.abs(np_genai_result - np_langchain_result).max() < 2e-6, f"Max error: {max_error}"
+    validate_embedding_results(genai_result, langchain_result)
 
 
 def assert_rerank_results(result_1: list[tuple[int, float]], result_2: list[tuple[int, float]]):
@@ -284,6 +298,86 @@ def test_embed_documents(download_and_convert_embeddings_models, dataset_documen
 def test_embed_query(download_and_convert_embeddings_models, dataset_documents, config):
     _, _, models_path = download_and_convert_embeddings_models
     run_text_embedding_pipeline_with_ref(models_path, dataset_documents[:1], config, "embed_query")
+
+
+@pytest.fixture(scope="module")
+def dataset_embeddings_genai_default_config_refs(download_and_convert_embeddings_models, dataset_documents):
+    _, _, models_path = download_and_convert_embeddings_models
+    return run_text_embedding_genai(models_path, dataset_documents, None, "embed_documents")
+
+
+@pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextEmbeddingPipeline.Config(batch_size=4),
+        TextEmbeddingPipeline.Config(max_length=50),
+        TextEmbeddingPipeline.Config(max_length=50, batch_size=3),
+        TextEmbeddingPipeline.Config(max_length=50, pad_to_max_length=True),
+        TextEmbeddingPipeline.Config(batch_size=3, pad_to_max_length=True),
+        TextEmbeddingPipeline.Config(max_length=50, pad_to_max_length=True, batch_size=4),
+        TextEmbeddingPipeline.Config(max_length=64, pad_to_max_length=True, batch_size=1),
+    ],
+)
+@pytest.mark.precommit
+def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
+    _, _, models_path = download_and_convert_embeddings_models
+
+    docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
+    result = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
+
+    refs_to_validate = dataset_embeddings_genai_default_config_refs[: config.batch_size] if config.batch_size else dataset_embeddings_genai_default_config_refs
+    validate_embedding_results(refs_to_validate, result)
+
+
+@pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextEmbeddingPipeline.Config(batch_size=0),
+        # more than documents in dataset (9)
+        TextEmbeddingPipeline.Config(batch_size=10),
+        TextEmbeddingPipeline.Config(max_length=0),
+        # more than model's max_position_embeddings (4096)
+        TextEmbeddingPipeline.Config(max_length=4097),
+    ],
+)
+@pytest.mark.xfail()
+@pytest.mark.precommit
+def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
+    _, _, models_path = download_and_convert_embeddings_models
+
+    docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
+    result = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
+
+    refs_to_validate = dataset_embeddings_genai_default_config_refs[: config.batch_size] if config.batch_size else dataset_embeddings_genai_default_config_refs
+    validate_embedding_results(refs_to_validate, result)
+
+
+@pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextEmbeddingPipeline.Config(max_length=64, pad_to_max_length=True, batch_size=1),
+        TextEmbeddingPipeline.Config(max_length=50, pad_to_max_length=True, batch_size=4),
+    ],
+)
+@pytest.mark.precommit
+@pytest.mark.skipif(
+    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
+    reason="NPU plugin is available only on Linux and Windows x86_64",
+)
+def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
+    _, _, models_path = download_and_convert_embeddings_models
+
+    NPU_FALLBACK_PROPERTIES = {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
+
+    pipeline = TextEmbeddingPipeline(models_path, "NPU", config, **NPU_FALLBACK_PROPERTIES)
+    docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
+    result = pipeline.embed_documents(docs_to_embed)
+
+    refs_to_validate = dataset_embeddings_genai_default_config_refs[: config.batch_size] if config.batch_size else dataset_embeddings_genai_default_config_refs
+    validate_embedding_results(refs_to_validate, result)
 
 
 @pytest.mark.parametrize("download_and_convert_rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
