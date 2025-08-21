@@ -223,7 +223,6 @@ void init_generation_config(py::module_& m) {
                 pyutils::py_obj_to_compound_grammar(right)
             );
         }, "Concat combines two grammars sequentially, e.g. \"A B\" means A followed by B")
-        .def("__init__", [](py::object /*self*/, py::object /*left*/, py::object /*right*/) {})
         .def_readwrite("left", &StructuredOutputConfig::Concat::left)
         .def_readwrite("right", &StructuredOutputConfig::Concat::right)
         .def("__repr__", [](const StructuredOutputConfig::Concat& self) { return self.to_string(); });
@@ -236,7 +235,6 @@ void init_generation_config(py::module_& m) {
                 pyutils::py_obj_to_compound_grammar(right)
             );
         }, "Union combines two grammars in parallel, e.g. \"A | B\" means either A or B")
-        .def("__init__", [](py::object /*self*/, py::object /*left*/, py::object /*right*/) {})
         .def_readwrite("left", &StructuredOutputConfig::Union::left)
         .def_readwrite("right", &StructuredOutputConfig::Union::right)
         .def("__repr__", [](const StructuredOutputConfig::Union& self) { return self.to_string(); });
