@@ -41,8 +41,8 @@ private:
     /// @brief Compute negative mean across the last dimension
     /// @param relevance_matrix Input relevance matrix [B, N, M]
     /// @return Mean relevance scores [B, N]
-    ov::Tensor compute_negative_mean(const ov::Tensor& relevance_matrix);
-    
+    ov::Tensor compute_mean(const ov::Tensor& relevance_matrix, bool use_negative = false);
+
     Config m_config;
 };
 
