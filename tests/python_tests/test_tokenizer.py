@@ -135,8 +135,8 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
     # load hf_tokenizer only to apply chat template to ov_tokenizer later
     _, hf_tokenizer = ov_hf_tokenizers
 
-    if type(tokenizer_config["chat_template"]) is dict:
-        tokenizer_config["chat_template"] = tokenizer_config["chat_template"].get("default")
+    if isinstance(tokenizer_config["chat_template"], dict):
+        tokenizer_config["chat_template"] = tokenizer_config["chat_template"]["default"]
 
     hf_full_history_str = hf_tokenizer.apply_chat_template(
         conversation, add_generation_prompt=False, tokenize=False, **tokenizer_config
