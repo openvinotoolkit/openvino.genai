@@ -100,6 +100,14 @@ export type GenericGenerationConfig = {
     stop_token_ids?: Set<number>
 }
 
+export type DecodedResultsConfig = {
+    /** a helper option to get DecodedResult from LLMPipeline and keep backward compability.
+     * If set to true, LLMPipeline.generate() will return DecodedResults object instead of string.
+     * If set to false, LLMPipeline.generate() will return default value.
+     */
+    return_decoded_results?: boolean
+}
+
 /** Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
  * and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
  * be used while greedy and beam search parameters will not affect decoding at all.
@@ -107,4 +115,5 @@ export type GenericGenerationConfig = {
 export type GenerationConfig = GenericGenerationConfig
     & BeamSearchGenerationConfig
     & RandomSamplingsGenerationConfig
-    & AssistingGenerationConfig;
+    & AssistingGenerationConfig
+    & DecodedResultsConfig;
