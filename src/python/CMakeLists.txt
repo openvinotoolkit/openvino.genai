@@ -13,13 +13,13 @@ if (NOT TARGET pybind11::pybind11)
     )
     FetchContent_GetProperties(pybind11)
     FetchContent_Populate(pybind11)
+    # search for FindPython3.cmake instead of legacy modules
+    set(PYBIND11_FINDPYTHON ON)
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
 else()
     message(STATUS "Reusing outer project's pybind11 target")
 endif()
 
-# search for FindPython3.cmake instead of legacy modules
-set(PYBIND11_FINDPYTHON ON)
 
 file(GLOB python_sources "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
