@@ -104,7 +104,7 @@ def test_text_output_directory(tmp_path):
         tmp_path,
     ])
     assert "Metrics for model" in output
-    assert (tmp_path / "metrics_per_qustion.csv").exists()
+    assert (tmp_path / "metrics_per_question.csv").exists()
     assert (tmp_path / "metrics.csv").exists()
     assert (tmp_path / "target.csv").exists()
 
@@ -157,7 +157,7 @@ def test_text_language(tmp_path):
 hf_model_scope = [
     (model_id),
 ]
-if sys.platform != 'darwin':
+if sys.platform != 'darwin' and sys.platform != 'win32':
     hf_model_scope += [
         (gptq_model_id),
         (awq_model_id),
