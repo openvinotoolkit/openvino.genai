@@ -450,7 +450,7 @@ class Sampler::TopKSelector {
             }
         }
     };
-    size_t m_tree_layer_counter;
+    size_t m_tree_layer_counter = 0;
     SequenceGroup::Ptr m_sequence_group;
     std::shared_ptr<Eagle2CandidateGraph> m_eagle2_candidate_graph;
     std::vector<Beam> m_beams;
