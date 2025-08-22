@@ -57,7 +57,8 @@ class ModelRunner {
     ov::Tensor m_cached_subsequence_begins;
     ov::Tensor m_cached_block_indices_begins;
     ov::Tensor m_cached_max_context_len;
-
+    ov::Tensor m_cached_score_aggregation_window;
+    ov::Tensor m_cached_token_type_ids;
 public:
     /**
      * Constructs the ModelRunner.
@@ -170,7 +171,7 @@ public:
                                                         {total_num_tokens, hidden_size}, ov::element::f32);
         ov::Tensor position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", 
                                                        {total_num_tokens}, ov::element::i64);
-        
+
         // PA specific parameters
         ov::Tensor past_lens = _get_or_resize_tensor(m_cached_past_lens, "past_lens", 
                                                     {batch_size_in_sequences}, ov::element::i32);
@@ -181,8 +182,10 @@ public:
         ov::Tensor max_context_len = _get_or_resize_tensor(m_cached_max_context_len, "max_context_len", 
                                                           {}, ov::element::i32);
 
-        ov::Tensor score_aggregation_window(ov::element::i32, {batch_size_in_sequences});
-
+        ov::Tensor token_type_ids = _get_or_resize_tensor(m_cached_token_type_ids, "token_type_ids",
+                                                     {1, total_num_tokens}, ov::element::i64);
+        ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
+                                                     {batch_size_in_sequences}, ov::element::i32);
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
 
@@ -313,7 +316,6 @@ public:
                         token_type_ids_data += num_scheduled_tokens;
                 }
 
-
                 if (m_is_aggregate_attention_scores) {
                     size_t seq_id = sequence->get_id();
                     auto it = scheduler_output.m_score_aggregation_windows.find(seq_id);
@@ -335,15 +337,12 @@ public:
             }
             sequence_group->set_output_seq_len(matmul_gathering_is_available ? output_seq_len : num_scheduled_tokens);
         }
-
-        // Note: No need to call set_tensor() for cached tensors as they are already bound to the request
-        // The tensors we're using are pre-allocated and directly obtained from m_request.get_tensor()
         
-        // For validation, we can optionally verify that the tensors are properly bound:
-        // OPENVINO_ASSERT(input_ids.data() == m_request.get_tensor("input_ids").data(), 
-        //                 "input_ids tensor should be the same as the one in the request");
-
+        if (sequence_group_type == SequenceGroupType::EMBEDDINGS && have_token_type_ids && !m_cached_token_type_ids) {
+            m_request.set_tensor("token_type_ids", token_type_ids);
+        }
         _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_skipped_blocks_map);
+
         // Note: For tensor optimization, these tensors are pre-allocated, but we still need to set them
         // when they're not managed through the cached tensor system (fallback mode)
         if (!m_cached_block_indices_begins || !m_cached_max_context_len) {
@@ -371,10 +370,9 @@ public:
                 ov::Tensor gather_indices(ov::element::i64, {gather_indices_values.size()});
                 std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
                 m_request.set_tensor("sampled_tokens_indices", gather_indices);
-            }
         }
 
-        if (m_is_aggregate_attention_scores) {
+        if (m_is_aggregate_attention_scores && !m_cached_score_aggregation_window) {
             m_request.set_tensor("score_aggregation_window", score_aggregation_window);
         }
 
@@ -394,6 +392,7 @@ public:
         // return logits
         return m_request.get_tensor("logits");
     }
+}
 
     void append_embeddings(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
@@ -416,6 +415,7 @@ public:
         float *generated_ids_embeds_data = nullptr;
 
         ov::Tensor generated_ids = ov::Tensor(ov::element::i64, {1, num_generated_ids_without_embeddings});
+
         int64_t *generated_ids_data = generated_ids.data<int64_t>();
         size_t pos = 0;
         for (size_t i = 0; i < num_sequence_groups; ++i) {
@@ -464,10 +464,14 @@ private:
             m_cached_subsequence_begins = m_request.get_tensor("subsequence_begins");
             m_cached_block_indices_begins = m_request.get_tensor("block_indices_begins");
             m_cached_max_context_len = m_request.get_tensor("max_context_len");
+            if(m_is_aggregate_attention_scores)
+            {
+                m_cached_score_aggregation_window = m_request.get_tensor("score_aggregation_window");
+            }
+            m_cached_token_type_ids = m_request.get_tensor("token_type_ids");
         } catch (const ov::Exception&) {
             // If pre-allocated tensors don't exist or are not accessible,
-            // we'll fall back to the original method
-            // This shouldn't happen in continuous batching models, but it's a safety net
+            // we'll fall back to the original method in _get_or_resize_tensor()
         }
     }
 
@@ -479,24 +483,22 @@ private:
         if (!cached_tensor || 
             cached_tensor.get_shape().empty() || 
             ov::shape_size(cached_tensor.get_shape()) < ov::shape_size(required_shape)) {
-            
+
             try {
                 // Try to get the tensor from the model and set its shape
                 cached_tensor = m_request.get_tensor(tensor_name);
                 cached_tensor.set_shape(required_shape);
             } catch (const ov::Exception&) {
-                // If tensor doesn't exist in the model, create a regular tensor
-                // This is a fallback that shouldn't happen in continuous batching
+                // If tensor doesn't exist, create a regular tensor
                 cached_tensor = ov::Tensor(element_type, required_shape);
             }
         } else {
             // Resize existing tensor
             cached_tensor.set_shape(required_shape);
         }
-        
+
         return cached_tensor;
     }
-
     // Fills indices for sequences in the order defined by scheduler_output
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
