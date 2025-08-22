@@ -26,7 +26,6 @@ namespace ov::genai {
 namespace {
 
 // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
-// std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
 const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
 
 std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org,
