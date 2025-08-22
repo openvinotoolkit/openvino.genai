@@ -332,6 +332,7 @@ public:
     float relevance_weight = 0.5f;
     bool enable_pruning = false;
     bool pruning_debug_mode = false;
+    bool use_ops_model = false;
 
     // Assisting generation parameters
     float assistant_confidence_threshold = 0.f;

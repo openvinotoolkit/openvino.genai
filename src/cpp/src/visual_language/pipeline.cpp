@@ -195,7 +195,8 @@ public:
         m_inputs_embedder->set_visual_token_pruning_config(generation_config.visual_tokens_retain_percentage,
                                                            generation_config.relevance_weight,
                                                            generation_config.enable_pruning,
-                                                           generation_config.pruning_debug_mode);
+                                                           generation_config.pruning_debug_mode,
+                                                           generation_config.use_ops_model);
 
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs, vision_config);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);

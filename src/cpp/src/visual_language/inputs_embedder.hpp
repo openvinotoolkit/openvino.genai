@@ -79,7 +79,8 @@ public:
     virtual void set_visual_token_pruning_config(size_t visual_tokens_retain_percentage,
                                                  float relevance_weight,
                                                  bool enable_pruning,
-                                                 bool pruning_debug_mode = false);
+                                                 bool pruning_debug_mode = false,
+                                                 bool use_ops_model = false);
     virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
         const std::string& prompt,
         size_t base_id,
@@ -141,7 +142,8 @@ private:
         virtual void set_visual_token_pruning_config(size_t visual_tokens_retain_percentage,
                                                      float relevance_weight,
                                                      bool enable_pruning,
-                                                     bool pruning_debug_mode) {
+                                                     bool pruning_debug_mode,
+                                                     bool use_ops_model = false) {
             if (!m_vision_encoder)
                 return;
             auto pruner_config = m_vision_encoder->get_pruning_config();
@@ -150,6 +152,7 @@ private:
                 pruner_config->relevance_weight = relevance_weight;
                 pruner_config->enable_pruning = enable_pruning;
                 pruner_config->pruning_debug_mode = pruning_debug_mode;
+                pruner_config->use_ops_model = use_ops_model;
             }
             m_vision_encoder->set_pruning_config(pruner_config.value());
         }
