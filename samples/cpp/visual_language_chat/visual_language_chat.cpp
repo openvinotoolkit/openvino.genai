@@ -11,7 +11,7 @@ bool print_subword(std::string&& subword) {
 
 int main(int argc, char* argv[]) try {
     if (3 > argc || argc > 7) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE> [<DEVICE>] [<ENABLE_CDPRUNER>] [<NUM_VISUAL_TOKENS>] [<PRUNING_DEBUG_MODE>]");
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE> [<DEVICE>] [<ENABLE_CDPRUNER>] [<VISUAL_RETAIN_TOKENS_PERCENTAGE>] [<PRUNING_DEBUG_MODE>]");
     }
 
     std::string model_dir = argv[1];
@@ -29,6 +29,11 @@ int main(int argc, char* argv[]) try {
     if (device == "GPU") {
         enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
     }
+
+    if (enable_cdpruner) {
+        enable_compile_cache.insert({"ATTENTION_BACKEND", "PA"});
+        std::cout << "Setting ATTENTION_BACKEND to PA" << std::endl;
+    }
     
     // Initialize VLMPipeline with cache configuration if needed
     ov::genai::VLMPipeline pipe(model_dir, device, enable_compile_cache);
@@ -42,7 +47,6 @@ int main(int argc, char* argv[]) try {
         generation_config.visual_tokens_retain_percentage = visual_tokens_retain_percentage;
         generation_config.pruning_debug_mode = pruning_debug_mode;
     }
-
 
     std::string prompt;
 

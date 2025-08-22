@@ -20,6 +20,9 @@ int main(int argc, char* argv[]) try {
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
+    ("cdp,enable_cdpruner", "Enable CDPruner for visual token pruning", cxxopts::value<bool>()->default_value("false"))
+    ("vtrp,visual_tokens_retain_percentage", "Percentage of visual tokens to retain when CDPruner is enabled", cxxopts::value<size_t>()->default_value("30"))
+    ("pdm,pruning_debug_mode", "Enable pruning debug mode", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -57,11 +60,22 @@ int main(int argc, char* argv[]) try {
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
+    bool enable_cdpruner = result["enable_cdpruner"].as<bool>();
+    size_t visual_tokens_retain_percentage = result["visual_tokens_retain"].as<size_t>();
+    bool pruning_debug_mode = result["pruning_debug_mode"].as<bool>();
     std::vector<ov::Tensor> images = utils::load_images(image_path);
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
     config.ignore_eos = true;
+    
+    // Configure CDPruner if requested
+    if (enable_cdpruner) {
+        std::cout << "Enabling CDPruner with keeping " << visual_tokens_retain_percentage << "% visual tokens" << std::endl;
+        config.enable_pruning = enable_cdpruner;
+        config.visual_tokens_retain_percentage = visual_tokens_retain_percentage;
+        config.pruning_debug_mode = pruning_debug_mode;
+    }
 
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.enable_prefix_caching = false;
@@ -69,12 +83,22 @@ int main(int argc, char* argv[]) try {
 
     std::cout << ov::get_openvino_version() << std::endl;
 
+    // Setup cache configuration for CDPruner if needed
+    ov::AnyMap properties = {};
+    if (enable_cdpruner) {
+        properties.insert({"ATTENTION_BACKEND", "PA"});
+        std::cout << "Setting ATTENTION_BACKEND to PA for CDPruner" << std::endl;
+    }
+
     std::unique_ptr<ov::genai::VLMPipeline> pipe;
-    if (device == "NPU")
+    if (device == "NPU") {
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
-    else
+    } else {
         // Setting of Scheduler config will trigger usage of ContinousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
-        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
+        // Combine scheduler config and compile cache properties
+        properties.insert(ov::genai::scheduler_config(scheduler_config));
+        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, properties);
+    }
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
