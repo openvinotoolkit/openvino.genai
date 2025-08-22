@@ -46,12 +46,12 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
         m_requests_initialized = true;
 
         if (m_config.pruning_debug_mode) {
-            std::cout << "ConditionalKernelBuilder: InferRequests initialized for device " << m_config.device
+            std::cout << "[CDPruner] ConditionalKernelBuilder: InferRequests initialized for device " << m_config.device
                       << std::endl;
         }
     } catch (const std::exception& e) {
         if (m_config.pruning_debug_mode) {
-            std::cout << "ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " << e.what()
+            std::cout << "[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " << e.what()
                       << std::endl;
         }
         m_requests_initialized = false;
@@ -69,12 +69,6 @@ ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, co
     size_t num_tokens = visual_shape[1];
     size_t feature_dim = visual_shape[2];
 
-    std::cout << "\n==== Kernel Build Performance Analysis ====" << std::endl;
-    std::cout << "Kernel Build Breakdown via " << (m_config.use_ops_model ? "OV Model: " : "Traditional Pipeline:")
-              << std::endl;
-    std::cout << "Input tensors: visual_features[" << batch_size << ", " << num_tokens << ", " << feature_dim << "]"
-              << std::endl;
-
     ov::Tensor conditional_kernel;
     if (m_config.use_ops_model) {
         conditional_kernel = build_with_ov_model(visual_features, input_param);
@@ -82,7 +76,6 @@ ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, co
         conditional_kernel = build_with_normal_pipeline(visual_features, input_param);
     }
 
-    std::cout << "==========================================\n" << std::endl;
     return conditional_kernel;
 }
 
@@ -104,8 +97,9 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
         throw std::invalid_argument("Visual features and text features must have consistent batch size, token "
                                     "count, and feature dimension");
     }
-    std::cout << "Input tensors: text_features[" << text_features.get_shape()[0] << ", " << text_features.get_shape()[1]
-              << "]" << std::endl;
+    if (m_config.pruning_debug_mode) {
+        std::cout << "  Text input: [" << text_features.get_shape()[0] << ", " << text_features.get_shape()[1] << "]" << std::endl;
+    }
 
     auto kernel_build_start = std::chrono::high_resolution_clock::now();
     ov::Tensor conditional_kernel = compute_conditional_kernel_gpu(visual_features, text_features);
@@ -113,14 +107,10 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
     auto kernel_build_duration =
         std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
 
-    // Print performance breakdown
-    std::cout << "Total conditional kernel matrix build time: " << kernel_build_duration.count() << " us ("
-              << (kernel_build_duration.count() / 1000.0) << " ms)" << std::endl;
-
-    // Performance metrics
-    std::cout << "Total conditional kernel matrix build throughput: "
-              << (static_cast<double>(total_operations) / kernel_build_duration.count() * 1000000) << " ops/sec"
-              << std::endl;
+    if (m_config.pruning_debug_mode) {
+        std::cout << " Kernel computation: " << (kernel_build_duration.count() / 1000.0) << " ms ("
+                  << (static_cast<double>(total_operations) / kernel_build_duration.count() * 1000000) << " ops/sec)" << std::endl;
+    }
 
     return conditional_kernel;
 }
@@ -137,8 +127,10 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
         throw std::invalid_argument("Relevance scores must be 2D tensor [B, N]");
     }
     auto relevance_shape = relevance_scores.get_shape();
-    std::cout << "Input tensors: relevance_scores[" << relevance_shape[0] << ", " << relevance_shape[1] << "]"
-              << std::endl;
+    if (m_config.pruning_debug_mode) {
+        std::cout << "[CDPruner] Input tensors: relevance_scores[" << relevance_shape[0] << ", " << relevance_shape[1] << "]"
+                  << std::endl;
+    }
 
     // Check shape consistency
     if (relevance_shape[0] != batch_size || relevance_shape[1] != num_tokens) {
@@ -178,26 +170,28 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
     auto total_kernel_duration =
         std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
 
-    // Print performance breakdown
-    std::cout << "  L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim
-              << "]: " << normalize_duration.count() << " us ("
-              << (static_cast<double>(normalize_duration.count()) / total_kernel_duration.count() * 100) << "%)"
-              << std::endl;
-    std::cout << "  Similarity matrix [" << batch_size << ", " << num_tokens << ", " << num_tokens
-              << "]: " << similarity_duration.count() << " us ("
-              << (static_cast<double>(similarity_duration.count()) / total_kernel_duration.count() * 100) << "%)"
-              << std::endl;
-    std::cout << "  Conditional kernel [" << batch_size << ", " << num_tokens << ", " << num_tokens
-              << "]: " << conditional_duration.count() << " us ("
-              << (static_cast<double>(conditional_duration.count()) / total_kernel_duration.count() * 100) << "%)"
-              << std::endl;
+    // Print performance breakdown only in debug mode
+    if (m_config.pruning_debug_mode) {
+        std::cout << "[CDPruner]   L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim
+                  << "]: " << normalize_duration.count() << " us ("
+                  << (static_cast<double>(normalize_duration.count()) / total_kernel_duration.count() * 100) << "%)"
+                  << std::endl;
+        std::cout << "[CDPruner]   Similarity matrix [" << batch_size << ", " << num_tokens << ", " << num_tokens
+                  << "]: " << similarity_duration.count() << " us ("
+                  << (static_cast<double>(similarity_duration.count()) / total_kernel_duration.count() * 100) << "%)"
+                  << std::endl;
+        std::cout << "[CDPruner]   Conditional kernel [" << batch_size << ", " << num_tokens << ", " << num_tokens
+                  << "]: " << conditional_duration.count() << " us ("
+                  << (static_cast<double>(conditional_duration.count()) / total_kernel_duration.count() * 100) << "%)"
+                  << std::endl;
 
-    std::cout << "Total kernel build time: " << total_kernel_duration.count() << " us ("
-              << (total_kernel_duration.count() / 1000.0) << " ms)" << std::endl;
-    // Performance metrics
-    std::cout << "Kernel build throughput: "
-              << (static_cast<double>(total_operations) / total_kernel_duration.count() * 1000000) << " ops/sec"
-              << std::endl;
+        std::cout << "[CDPruner] Total kernel build time: " << total_kernel_duration.count() << " us ("
+                  << (total_kernel_duration.count() / 1000.0) << " ms)" << std::endl;
+        // Performance metrics
+        std::cout << "[CDPruner] Kernel build throughput: "
+                  << (static_cast<double>(total_operations) / total_kernel_duration.count() * 1000000) << " ops/sec"
+                  << std::endl;
+    }
 
     return conditional_kernel;
 }

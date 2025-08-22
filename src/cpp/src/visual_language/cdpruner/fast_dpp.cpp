@@ -86,15 +86,15 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
 
         // Debug output: print cis matrix content
         if (m_config.pruning_debug_mode && t < 10) {
-            std::cout << "=== CIS Matrix Content after iteration " << t << " ===" << std::endl;
-            std::cout << "CIS matrix shape: [" << (t+1) << ", " << total_tokens << "]" << std::endl;
+            std::cout << "[CDPruner] === CIS Matrix Content after iteration " << t << " ===" << std::endl;
+            std::cout << "[CDPruner] CIS matrix shape: [" << (t+1) << ", " << total_tokens << "]" << std::endl;
             
             const float* cis_data_debug = cis.data<const float>();
             size_t print_tokens = std::min(total_tokens, static_cast<size_t>(10));
             
             // Print each orthogonal vector (each row of cis) - only first 10 elements
             for (size_t row = 0; row <= t; ++row) {
-                std::cout << "cis[" << row << "] (orthogonal vector for selected token " 
+                std::cout << "[CDPruner] cis[" << row << "] (orthogonal vector for selected token " 
                           << selected_indices[row] << "): [";
                 
                 for (size_t col = 0; col < print_tokens; ++col) {
@@ -114,7 +114,7 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
         // Debug output: print updated conditional kernel matrix after each selection
         if (m_config.pruning_debug_mode && t < 10) {
             // Print current selected indices
-            std::cout << "Selected tokens so far: [";
+            std::cout << "[CDPruner] Selected tokens so far: [";
             for (size_t i = 0; i < selected_indices.size(); ++i) {
                 if (i > 0)
                     std::cout << ", ";
@@ -123,7 +123,7 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
             std::cout << "]" << std::endl;
 
             // Print current marginal gains (di2s) - limited to first 10 elements
-            std::cout << "Current marginal gains: [";
+            std::cout << "[CDPruner] Current marginal gains: [";
             const float* di2s_data_debug = di2s.data<const float>();
             size_t print_gains_size = std::min(total_tokens, static_cast<size_t>(10));
             
