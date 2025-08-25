@@ -42,6 +42,23 @@ ov::InferRequest init_model(ov::CompiledModel& compiled) {
     }
 }
 
+void reshape_to_static_encoder(std::shared_ptr<ov::Model> model, const size_t feature_size) {
+    std::map<std::string, ov::PartialShape> new_shapes;
+    for (auto input : model->inputs()) {
+        const auto& input_name = input.get_any_name();
+        ov::PartialShape new_shape;
+        if (input_name.find("input_features") != std::string::npos) {
+            const auto& partial_shape = input.get_partial_shape();
+            OPENVINO_ASSERT(partial_shape.size() >= 3);
+            new_shape = partial_shape;
+            new_shape[0] = 1;  // batch_dim
+            new_shape[1] = feature_size;
+        }
+        new_shapes.emplace(input_name, new_shape);
+    }
+    model->reshape(new_shapes);
+}
+
 }  // namespace
 
 namespace ov {
@@ -55,13 +72,20 @@ public:
         : WhisperPipelineImplBase{models_path},
           m_sampler(m_tokenizer) {
         ov::Core core = utils::singleton_core();
+        ov::CompiledModel compiled_model;
+        if (device == "NPU") {
+            auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties);
+            // NB: only batch_size == 1 is supported now for NPU
+            reshape_to_static_encoder(encoder_model, m_feature_extractor.feature_size);
+            compiled_model = core.compile_model(encoder_model, "NPU", properties);
+        } else {
+            compiled_model = core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
+        }
 
-        ov::CompiledModel compiled_model =
-            core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper encoder model");
         m_encoder = init_model(compiled_model);
 
-        m_decoder = WhisperDecoder::from_path(models_path, device, properties);
+        m_decoder = WhisperDecoder::from_path(models_path, device, properties, m_encoder.get_compiled_model().output("last_hidden_state").get_partial_shape());
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -154,7 +178,7 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
                                             const std::string& device,
                                             const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
-    if (device == "NPU") {
+    if (device == "NPU" && properties.count("STATIC_PIPELINE")) {
         m_impl = std::make_unique<StaticWhisperPipeline>(models_path, properties);
     } else {
         m_impl = std::make_unique<WhisperPipelineStatefulImpl>(models_path, device, properties);
