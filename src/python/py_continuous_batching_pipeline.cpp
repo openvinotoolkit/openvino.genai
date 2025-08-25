@@ -302,7 +302,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
              py::arg("rng_seed") = 0)
         .def_readwrite("budget", &KVCrushConfig::budget)
         .def_readwrite("anchor_point_mode", &KVCrushConfig::anchor_point_mode)
-        .def_readwrite("rng_seed", &KVCrushConfig::rng_seed);
+        .def_readwrite("rng_seed", &KVCrushConfig::rng_seed)
+        .def("to_string", &KVCrushConfig::to_string);
 
     py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
             .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode, bool apply_rotation,
@@ -328,7 +329,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def("get_start_size", &CacheEvictionConfig::get_start_size)
             .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
             .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
-            .def("get_evictable_size", &CacheEvictionConfig::get_evictable_size);
+            .def("get_evictable_size", &CacheEvictionConfig::get_evictable_size)
+            .def("to_string", &CacheEvictionConfig::to_string);
 
     py::enum_<SparseAttentionMode>(m, "SparseAttentionMode",
                             R"(Represents the mode of sparse attention applied during generation.
@@ -356,7 +358,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readwrite("num_retained_recent_tokens_in_cache", &SparseAttentionConfig::num_retained_recent_tokens_in_cache)
             .def_readwrite("xattention_threshold", &SparseAttentionConfig::xattention_threshold)
             .def_readwrite("xattention_block_size", &SparseAttentionConfig::xattention_block_size)
-            .def_readwrite("xattention_stride", &SparseAttentionConfig::xattention_stride);
+            .def_readwrite("xattention_stride", &SparseAttentionConfig::xattention_stride)
+            .def("to_string", &SparseAttentionConfig::to_string);
 
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
         .def(py::init<>())
@@ -369,7 +372,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("use_cache_eviction", &SchedulerConfig::use_cache_eviction)
         .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config)
         .def_readwrite("use_sparse_attention", &SchedulerConfig::use_sparse_attention)
-        .def_readwrite("sparse_attention_config", &SchedulerConfig::sparse_attention_config);
+        .def_readwrite("sparse_attention_config", &SchedulerConfig::sparse_attention_config)
+        .def("to_string", &SchedulerConfig::to_string);
 
     py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)
             .def(py::init<>())
