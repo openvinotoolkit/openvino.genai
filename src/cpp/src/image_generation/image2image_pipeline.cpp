@@ -195,6 +195,11 @@ ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov:
     return m_impl->generate(positive_prompt, initial_image, {}, properties);
 }
 
+ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
+    std::cerr << "[ WARNING ] Initial image is not provided, using empty tensor and run Text 2 Image pipeline." << "\n";
+    return m_impl->generate(positive_prompt, {}, {}, properties);
+}
+
 ov::Tensor Image2ImagePipeline::decode(const ov::Tensor latent) {
     return m_impl->decode(latent);
 }

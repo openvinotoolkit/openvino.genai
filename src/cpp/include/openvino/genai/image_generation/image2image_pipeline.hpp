@@ -133,12 +133,21 @@ public:
      */
     ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties = {});
 
+    ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties = {});
+
     template <typename... Properties>
     ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
             const std::string& positive_prompt,
             ov::Tensor initial_image,
             Properties&&... properties) {
         return generate(positive_prompt, initial_image, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
+            const std::string& positive_prompt,
+            Properties&&... properties) {
+        return generate(positive_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
     ov::Tensor decode(const ov::Tensor latent);
