@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -359,7 +359,8 @@ class CacheEvictionConfig:
     """
     aggregation_mode: AggregationMode
     apply_rotation: bool
-    def __init__(self, start_size: typing.SupportsInt, recent_size: typing.SupportsInt, max_cache_size: typing.SupportsInt, aggregation_mode: AggregationMode, apply_rotation: bool = False, snapkv_window_size: typing.SupportsInt = 8) -> None:
+    kvcrush_config: KVCrushConfig
+    def __init__(self, start_size: typing.SupportsInt, recent_size: typing.SupportsInt, max_cache_size: typing.SupportsInt, aggregation_mode: AggregationMode, apply_rotation: bool = False, snapkv_window_size: typing.SupportsInt = 8, kvcrush_config: typing.Any = None) -> None:
         ...
     def get_evictable_size(self) -> int:
         ...
@@ -1445,6 +1446,86 @@ class InpaintingPipeline:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
+class KVCrushAnchorPointMode:
+    """
+    Represents the anchor point types for KVCrush cache eviction
+                      :param KVCrushAnchorPointMode.RANDOM: Random binary vector will be used as anchor point
+                      :param KVCrushAnchorPointMode.ZEROS: Vector of all zeros will be used as anchor point
+                      :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
+                      :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
+                      :param KVCrushAnchorPointMode.ALTERNATE: Alternating 0s and 1s will be used as anchor point
+    
+    Members:
+    
+      RANDOM
+    
+      ZEROS
+    
+      ONES
+    
+      MEAN
+    
+      ALTERNATE
+    """
+    ALTERNATE: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ALTERNATE: 4>
+    MEAN: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.MEAN: 3>
+    ONES: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ONES: 2>
+    RANDOM: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.RANDOM: 0>
+    ZEROS: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ZEROS: 1>
+    __members__: typing.ClassVar[dict[str, KVCrushAnchorPointMode]]  # value = {'RANDOM': <KVCrushAnchorPointMode.RANDOM: 0>, 'ZEROS': <KVCrushAnchorPointMode.ZEROS: 1>, 'ONES': <KVCrushAnchorPointMode.ONES: 2>, 'MEAN': <KVCrushAnchorPointMode.MEAN: 3>, 'ALTERNATE': <KVCrushAnchorPointMode.ALTERNATE: 4>}
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class KVCrushConfig:
+    """
+    Configuration for KVCrush cache eviction algorithm
+    """
+    anchor_point_mode: KVCrushAnchorPointMode
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Default constructor
+        """
+    @typing.overload
+    def __init__(self, budget: typing.SupportsInt, anchor_point_mode: KVCrushAnchorPointMode = ..., rng_seed: typing.SupportsInt = 0) -> None:
+        """
+        Constructor with budget, anchor point mode, and RNG seed
+        """
+    @property
+    def budget(self) -> int:
+        ...
+    @budget.setter
+    def budget(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def rng_seed(self) -> int:
+        ...
+    @rng_seed.setter
+    def rng_seed(self, arg0: typing.SupportsInt) -> None:
+        ...
 class LLMPipeline:
     """
     This class is used for generation with LLMs
@@ -2497,10 +2578,78 @@ class StructuredOutputConfig:
         Structured output parameters:
         json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
         regex:          if set, the output will be constraint by specified regex.
-        grammar:        if set, the output will be constraint by specified grammar.
+        grammar:        if set, the output will be constraint by specified EBNF grammar.
         structural_tags_config: if set, the output will be constraint by specified structural tags configuration.
-    
+        compound_grammar:
+            if set, the output will be constraint by specified compound grammar.
+            Compound grammar is a combination of multiple grammars that can be used to generate structured outputs.
+            It allows for more complex and flexible structured output generation.
+            The compound grammar a Union or Concat of several grammars, where each grammar can be a JSON schema, regex, EBNF, Union or Concat.
     """
+    class Concat:
+        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | ...
+        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | ...
+        @staticmethod
+        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Concat:
+            """
+            Concat combines two grammars sequentially, e.g. "A B" means A followed by B
+            """
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __or__(self, arg0: typing.Any) -> ...:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class EBNF:
+        value: str
+        def __add__(self, arg0: typing.Any) -> ...:
+            ...
+        def __init__(self, arg0: str) -> None:
+            """
+            EBNF grammar building block for compound grammar configuration.
+            """
+        def __or__(self, arg0: typing.Any) -> ...:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class JSONSchema:
+        value: str
+        def __add__(self, arg0: typing.Any) -> ...:
+            ...
+        def __init__(self, arg0: str) -> None:
+            """
+            JSON schema building block for compound grammar configuration.
+            """
+        def __or__(self, arg0: typing.Any) -> ...:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class Regex:
+        value: str
+        def __add__(self, arg0: typing.Any) -> ...:
+            ...
+        def __init__(self, arg0: str) -> None:
+            """
+            Regex building block for compound grammar configuration.
+            """
+        def __or__(self, arg0: typing.Any) -> ...:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class Union:
+        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        @staticmethod
+        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Union:
+            """
+            Union combines two grammars in parallel, e.g. "A | B" means either A or B
+            """
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
     @typing.overload
     def __init__(self) -> None:
         """
@@ -2512,6 +2661,14 @@ class StructuredOutputConfig:
         Constructor that initializes the structured output configuration with kwargs.
         """
     def __repr__(self) -> str:
+        ...
+    @property
+    def compound_grammar(self) -> ... | ... | ... | ... | ... | None:
+        """
+        Compound grammar for structured output generation
+        """
+    @compound_grammar.setter
+    def compound_grammar(self, arg0: ... | ... | ... | ... | ... | None) -> None:
         ...
     @property
     def grammar(self) -> str | None:
@@ -2811,6 +2968,13 @@ class TextEmbeddingPipeline:
         Attributes:
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
+            pad_to_max_length (bool, optional):
+                If 'True', model input tensors are padded to the maximum length.
+            batch_size (int, optional):
+                Batch size for the embedding model.
+                Useful for database population. If set, the pipeline will fix model shape for inference optimization.
+                Number of documents passed to pipeline should be equal to batch_size.
+                For query embeddings, batch_size should be set to 1 or not set.
             pooling_type (TextEmbeddingPipeline.PoolingType, optional):
                 Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
             normalize (bool, optional):
@@ -2822,6 +2986,7 @@ class TextEmbeddingPipeline:
         """
         embed_instruction: str | None
         normalize: bool
+        pad_to_max_length: bool | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload
@@ -2829,6 +2994,16 @@ class TextEmbeddingPipeline:
             ...
         @typing.overload
         def __init__(self, **kwargs) -> None:
+            ...
+        def validate(self) -> None:
+            """
+            Checks that are no conflicting parameters. Raises exception if config is invalid.
+            """
+        @property
+        def batch_size(self) -> int | None:
+            ...
+        @batch_size.setter
+        def batch_size(self, arg0: typing.SupportsInt | None) -> None:
             ...
         @property
         def max_length(self) -> int | None:
@@ -3095,6 +3270,10 @@ class Tokenizer:
     def set_chat_template(self, chat_template: str) -> None:
         """
         Override a chat_template read from tokenizer_config.json.
+        """
+    def supports_paired_input(self) -> bool:
+        """
+        Returns true if the tokenizer supports paired input, false otherwise.
         """
 class TorchGenerator(CppStdGenerator):
     """

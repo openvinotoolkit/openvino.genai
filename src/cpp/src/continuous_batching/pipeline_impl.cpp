@@ -221,6 +221,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     if (sampling_params.eos_token_id == -1)
         sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params.validate();
+    size_t prompt_len;
+    if (input_ids.get_shape().size() > 1) {
+        prompt_len = input_ids.get_shape()[1];
+    } else {
+        prompt_len = input_ids.get_size();
+    }
+    OPENVINO_ASSERT(sampling_params.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
 
     auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, token_type_ids);
 
@@ -673,7 +680,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
 
         if (skip_set.empty()) {
             // For now, will only register token scores from the dense attention stages
-            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set);
+            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set, scheduler_output.m_score_aggregation_windows.at(seq_id));
         }
 
         auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });

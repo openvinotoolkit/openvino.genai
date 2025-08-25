@@ -60,3 +60,40 @@ It can be enabled by setting the `CacheEvictionConfig.apply_rotation` field to `
 * Cache rotation is only targeted for the regular, linear LLaMa-like RoPE application and may degrade accuracy on models that use other RoPE schemes.
 
 * Cache rotation is currently only supported for the models with uniform V embedding sizes across the layers.
+
+## (Optional) KVCrush
+
+KVCrush enhances the standard H2O/SnapKV eviction by selecting the most representative blocks from the evictable area using clustering analysis, rather than simply evicting the low score blocks.
+
+### Algorithm Overview
+
+1. **Indicator Creation**: Generate binary indicators for tokens based on importance scores
+2. **Anchor Point Generation**: Create reference patterns using configurable modes
+3. **Distance Calculation**: Measure Hamming distance between block patterns and the anchor point
+4. **Representative Selection**: Select blocks to best represent context diversity
+
+### Configuration
+Setup KVCrush config parameters and pass it  to ```CacheEvictionConfig```. Sample code to allocate KVCrush a budget of 2 blocks and use MEAN anchor mode is following.
+```cpp
+const ov::genai::CacheEvictionConfig EXAMPLE_CACHE_EVICTION_CONFIG =
+    {32, 32, 192, ov::genai::AggregationMode::NORM_SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)};
+```
+```python
+CacheEvictionConfig(
+        start_size=32, 
+        recent_size=128, 
+        max_cache_size=448, 
+        aggregation_mode=AggregationMode.NORM_SUM,
+        apply_rotation=False,
+        snapkv_window_size=8,
+        kvcrush_config=KVCrushConfig(budget=2, anchor_point_mode=KVCrushAnchorPointMode.MEAN)
+    )
+```
+
+**Anchor Point Modes:**
+- `RANDOM`: Random binary pattern
+- `ZEROS`: All zeros pattern  
+- `ONES`: All ones pattern
+- `MEAN`: Mean of indicators across blocks
+- `ALTERNATE`: Alternating 0-1 pattern
+

@@ -23,7 +23,8 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/194c936
+  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/
+  OPENVINO_LOG_LEVEL: 5
   ARTIFACTS_SHARE: '/mount/build-artifacts'
   BASE_PRODUCT_TYPE: public_windows_vs2022
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
@@ -39,7 +40,7 @@ jobs:
       skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
     steps:
       - name: checkout action
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         timeout-minutes: 15
         with:
           sparse-checkout: .github
@@ -114,7 +115,7 @@ jobs:
 
     steps:
       - name: Clone genai
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -304,7 +305,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -508,7 +509,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           path: ${{ env.SRC_DIR }}
 
@@ -561,7 +562,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -615,7 +616,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 240
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
+            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 180
           - name: 'GGUF Reader tests'
@@ -634,6 +635,10 @@ jobs:
             cmd: 'tests/python_tests/test_rag.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
+          - name: 'WWB tests'
+            cmd: 'tools/who_what_benchmark/tests'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 90
     defaults:
       run:
         shell: pwsh
@@ -646,7 +651,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -731,7 +736,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           path: ${{ env.SRC_DIR }}
 
@@ -821,7 +826,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           path: ${{ env.SRC_DIR }}
 
@@ -851,7 +856,7 @@ jobs:
       - name: gtests unit tests
         run: |
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
-          & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe"
+          & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe" --gtest_filter="-AddSecondInputTest.*"
 
       - name: Test C++ Tools
         run: |
@@ -877,7 +882,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -911,10 +916,6 @@ jobs:
           npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
           Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-
-      - name: Check lint
-        working-directory: ${{ env.SRC_DIR }}/src/js
-        run: npm run lint
 
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js

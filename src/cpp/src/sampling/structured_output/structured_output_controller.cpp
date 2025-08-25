@@ -29,18 +29,14 @@ void StructuredOutputController::set_default_backend(const std::string& name) {
     get_default_backend_name() = name;
 }
 
-StructuredOutputController::StructuredOutputController(const ov::genai::Tokenizer& tokenizer,
+StructuredOutputController::StructuredOutputController(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl,
                                                        std::optional<int> vocab_size)
-    : m_tokenizer(tokenizer), m_vocab_size(vocab_size) {}
+    : m_tokenizer_impl(tokenizer_impl), m_vocab_size(vocab_size) {}
 
-std::shared_ptr<LogitTransformers::ILogitTransformer>
-StructuredOutputController::get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) {
-    auto& guided_gen_config = sampling_parameters.structured_output_config;
-    if (!guided_gen_config.has_value()) {
-        OPENVINO_THROW("Structured output is not enabled in the provided GenerationConfig.");
-    }
-    std::string backend_name = (*guided_gen_config).backend.value_or(get_default_backend_name());
-    
+void StructuredOutputController::validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) {
+    OPENVINO_ASSERT(structured_output_config.has_value());
+    std::string backend_name = structured_output_config.value().backend.value_or(get_default_backend_name());
+
     std::unique_lock<std::mutex> lock(m_mutex);
 
     // Check if backend already instantiated
@@ -52,10 +48,29 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
         if (factory_it == registry.end()) {
             OPENVINO_THROW("Structured output backend not found: " + backend_name);
         }
+        // Create the backend instance and store it
+        m_impls[backend_name] = factory_it->second(m_tokenizer_impl, m_vocab_size);
+        impl_it = m_impls.find(backend_name);
+    }
+    impl_it->second->validate_grammar(structured_output_config);
+}
+
+std::shared_ptr<LogitTransformers::ILogitTransformer> StructuredOutputController::get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) {
+    OPENVINO_ASSERT(sampling_parameters.structured_output_config.has_value());
+    std::string backend_name = sampling_parameters.structured_output_config.value().backend.value_or(get_default_backend_name());
+    std::unique_lock<std::mutex> lock(m_mutex);
+    auto impl_it = m_impls.find(backend_name);
+    if (impl_it == m_impls.end()) {
+        // Backend not instantiated yet, create it
+        auto& registry = get_backend_registry();
+        auto factory_it = registry.find(backend_name);
+        if (factory_it == registry.end()) {
+            OPENVINO_THROW("Structured output backend not found: " + backend_name);
+        }
 
         // Create the backend instance and store it
         const auto start = std::chrono::steady_clock::now();
-        m_impls[backend_name] = factory_it->second(m_tokenizer, m_vocab_size);
+        m_impls[backend_name] = factory_it->second(m_tokenizer_impl, m_vocab_size);
         impl_it = m_impls.find(backend_name);
         const auto end = std::chrono::steady_clock::now();
         m_init_grammar_compiler_times[backend_name] = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
@@ -63,10 +78,10 @@ StructuredOutputController::get_logits_transformer(const ov::genai::GenerationCo
 
     // Use the instantiated backend
     const auto start = std::chrono::steady_clock::now();
-    auto res = impl_it->second->get_logits_transformer(sampling_parameters);
+    auto logit_transformer = impl_it->second->get_logits_transformer(sampling_parameters);
     const auto end = std::chrono::steady_clock::now();
     m_grammar_compile_times.emplace_back(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
-    return res;
+    return logit_transformer;
 }
 
 std::pair<std::map<std::string, float>, std::vector<float>> StructuredOutputController::get_times() const {

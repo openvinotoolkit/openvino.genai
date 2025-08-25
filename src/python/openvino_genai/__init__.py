@@ -96,7 +96,9 @@ from .py_openvino_genai import (
     CacheEvictionConfig,
     AggregationMode,
     SparseAttentionMode,
-    SparseAttentionConfig
+    SparseAttentionConfig,
+    KVCrushAnchorPointMode,
+    KVCrushConfig
 )
 
 # RAG

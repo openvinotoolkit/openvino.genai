@@ -610,7 +610,7 @@ def main():
             if not os.path.exists(args.output):
                 os.mkdir(args.output)
             df = pd.DataFrame(all_metrics_per_question)
-            df.to_csv(os.path.join(args.output, "metrics_per_qustion.csv"))
+            df.to_csv(os.path.join(args.output, "metrics_per_question.csv"))
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
