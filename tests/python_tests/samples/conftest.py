@@ -33,6 +33,11 @@ MODELS = {
         "name": "HuggingFaceTB/SmolLM2-135M",
         "convert_args": ['--trust-remote-code']
     },
+    "SmolLM2-135M-GGUF": {
+        "name": "prithivMLmods/SmolLM2-135M-GGUF",
+        "gguf_filename": "SmolLM2-135M.F16.gguf",
+        "convert_args": ['--trust-remote-code']
+    },
     "SmolLM2-360M": {
         "name": "HuggingFaceTB/SmolLM2-360M",
         "convert_args": ['--trust-remote-code']
@@ -45,8 +50,18 @@ MODELS = {
         "name": "Qwen/Qwen2.5-0.5B-Instruct",
         "convert_args": ['--trust-remote-code']
     },
+    "Qwen2.5-0.5B-Instruct-GGUF": {
+        "name": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+        "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
+        "convert_args": ['--trust-remote-code']
+    },
     "Qwen2-0.5B-Instruct": {
         "name": "Qwen/Qwen2-0.5B-Instruct",
+        "convert_args": ['--trust-remote-code']
+    },
+    "Qwen2-0.5B-Instruct-GGUF": {
+        "name": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+        "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
         "convert_args": ['--trust-remote-code']
     },
     "phi-1_5": {
@@ -184,30 +199,40 @@ def convert_model(request):
     models_cache = request.config.cache.get("MODELS_DIR", None)
     model_id = request.param
     model_name = MODELS[model_id]["name"]
+    model_gguf_filename = MODELS[model_id].get("gguf_filename", "")
     model_cache = os.path.join(models_cache, model_id)
     model_path = os.path.join(model_cache, model_name)
     model_args = MODELS[model_id]["convert_args"]
     logger.info(f"Preparing model: {model_name}")
-    # Convert the model if not already converted
     if not os.path.exists(model_path):
-        logger.info(f"Converting model: {model_name}")
         sub_env=os.environ.copy()
-        command = [
-            "optimum-cli", "export", "openvino",
-            "--model", model_name, 
-            model_path
-        ]
-        if model_args:
-            command.extend(model_args)
-        logger.info(f"Conversion command: {' '.join(command)}")
-        try:
-            retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
-        except subprocess.CalledProcessError as error:
-            logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
-            raise
-
-    yield model_path
-
+        # Dowload the GGUF model if not already downloaded
+        if model_gguf_filename:
+            command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", model_path]
+            logger.info(f"Downloading command: {' '.join(command)}")
+            try:
+                retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
+            except subprocess.CalledProcessError as error:
+                logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+                raise
+        # Convert the model if not already converted
+        else:
+            command = [
+                "optimum-cli", "export", "openvino",
+                "--model", model_name, 
+                model_path
+            ]
+            if model_args:
+                command.extend(model_args)
+            logger.info(f"Conversion command: {' '.join(command)}")
+            try:
+                retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
+            except subprocess.CalledProcessError as error:
+                logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+                raise
+    
+    yield os.path.join(model_path, model_gguf_filename)
+    
     # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(model_cache):

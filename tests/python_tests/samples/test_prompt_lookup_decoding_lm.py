@@ -22,6 +22,7 @@ class TestPromptLookupDecodingLM:
         "convert_model, sample_args",
         [
             pytest.param("Qwen2.5-0.5B-Instruct", test_prompt),
+            pytest.param("Qwen2.5-0.5B-Instruct-GGUF", test_prompt),
         ],
         indirect=["convert_model"],
     )
