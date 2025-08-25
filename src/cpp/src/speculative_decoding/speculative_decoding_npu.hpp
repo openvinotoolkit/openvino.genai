@@ -14,7 +14,7 @@ namespace genai {
 
 class LLMInferWrapper {
 public:
-    LLMInferWrapper::LLMInferWrapper(const ov::genai::ModelDesc& model_desc);
+    LLMInferWrapper(const ov::genai::ModelDesc& model_desc);
 
     std::string device() const;
 

@@ -634,6 +634,10 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         }
 
         auto mismatched_candidates = candidates.size() - accepted_tokens_number;
+
+        auto& main_perf_gen_tokens = m_main_request->raw_perf_metrics.m_batch_sizes.back();
+        main_perf_gen_tokens -= mismatched_candidates;
+
         std::vector<int64_t> validated_tokens(ref_tokens.begin(), ref_tokens.end() - mismatched_candidates);
         out_token = validated_tokens.back();
     
