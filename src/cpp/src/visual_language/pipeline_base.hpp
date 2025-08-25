@@ -4,6 +4,7 @@
 #pragma once
 
 #include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/generation_config.hpp"
 #include "utils.hpp"
 
 using namespace ov::genai;
@@ -52,7 +53,7 @@ public:
             }
         }
 
-        ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
+        ov::genai::OptionalGenerationConfig config_arg = ov::genai::utils::get_config_from_map(config_map);
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
         config.update_generation_config(config_map);
 
@@ -60,7 +61,7 @@ public:
             prompt,
             rgbs,
             config,
-            utils::get_streamer_from_map(config_map)
+            ov::genai::utils::get_streamer_from_map(config_map)
         );
     }
 
@@ -75,6 +76,18 @@ public:
     virtual GenerationConfig get_generation_config() const = 0;
 
     virtual void set_generation_config(const GenerationConfig& new_config) = 0;
+
+    virtual void set_visual_token_pruning_config(
+        size_t num_visual_tokens,
+        float relevance_weight,
+        bool enable_pruning
+    ) = 0;
+
+    virtual ov::AnyMap get_visual_token_pruning_config() const = 0;
+
+    virtual void set_visual_token_pruning_enabled(bool enable) = 0;
+
+    virtual bool is_visual_token_pruning_enabled() const = 0;
 
     void set_load_time(float load_time_ms) {
         m_load_time_ms = load_time_ms;

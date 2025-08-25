@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Intel Corporation
+﻿// Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "load_image.hpp"
@@ -10,45 +10,70 @@ bool print_subword(std::string&& subword) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc < 3 || argc > 4) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE>");
+    if (3 > argc || argc > 6) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE> [<DEVICE>] [<ENABLE_CDPRUNER>] [<NUM_VISUAL_TOKENS>]");
     }
 
-    std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
+    std::string model_dir = argv[1];
+    std::string image_file = argv[2];
+    std::string device = argc > 3 ? argv[3] : "CPU";
+    bool enable_cdpruner = argc > 4 ? (std::string(argv[4]) == "true" || std::string(argv[4]) == "1") : false;
+    size_t num_visual_tokens = argc > 5 ? std::stoul(argv[5]) : 64;
+
+    std::vector<ov::Tensor> rgbs = utils::load_images(image_file);
 
     // GPU and NPU can be used as well.
     // Note: If NPU is selected, only language model will be run on NPU
-    std::string device = (argc == 4) ? argv[3] : "CPU";
     ov::AnyMap enable_compile_cache;
     if (device == "GPU") {
-        // Cache compiled models on disk for GPU to save time on the
-        // next run. It's not beneficial for CPU.
         enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
     }
-    ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
+    
+    // Initialize VLMPipeline with cache configuration if needed
+    ov::genai::VLMPipeline pipe(model_dir, device, enable_compile_cache);
+    
+    // Configure CDPruner if requested
+    if (enable_cdpruner) {
+        std::cout << "Enabling CDPruner with " << num_visual_tokens << " visual tokens" << std::endl;
+        pipe.set_visual_token_pruning_config(
+            num_visual_tokens,  // num_visual_tokens
+            0.5f,              // relevance_weight  
+            true               // enable_pruning
+        );
+        
+        // Print current configuration
+        auto config = pipe.get_visual_token_pruning_config();
+        std::cout << "CDPruner configuration:" << std::endl;
+        std::cout << "  - Enabled: " << (pipe.is_visual_token_pruning_enabled() ? "true" : "false") << std::endl;
+        std::cout << "  - Num visual tokens: " << config["num_visual_tokens"].as<size_t>() << std::endl;
+        std::cout << "  - Relevance weight: " << config["relevance_weight"].as<float>() << std::endl;
+    } else {
+        std::cout << "CDPruner is disabled" << std::endl;
+        pipe.set_visual_token_pruning_enabled(false);
+    }
 
     ov::genai::GenerationConfig generation_config;
-    generation_config.max_new_tokens = 100;
+    generation_config.max_new_tokens = 3000;
 
-    std::string prompt;
+    std::string prompt = "describe this image in details";
 
     pipe.start_chat();
-    std::cout << "question:\n";
+    //std::cout << "question:\n";
 
-    std::getline(std::cin, prompt);
+    //std::getline(std::cin, prompt);
     pipe.generate(prompt,
                   ov::genai::images(rgbs),
                   ov::genai::generation_config(generation_config),
                   ov::genai::streamer(print_subword));
-    std::cout << "\n----------\n"
-        "question:\n";
-    while (std::getline(std::cin, prompt)) {
-        pipe.generate(prompt,
-                      ov::genai::generation_config(generation_config),
-                      ov::genai::streamer(print_subword));
-        std::cout << "\n----------\n"
-            "question:\n";
-    }
+    //std::cout << "\n----------\n"
+    //    "question:\n";
+    //while (std::getline(std::cin, prompt)) {
+    //    pipe.generate(prompt,
+    //                  ov::genai::generation_config(generation_config),
+    //                  ov::genai::streamer(print_subword));
+    //    std::cout << "\n----------\n"
+    //        "question:\n";
+    //}
     pipe.finish_chat();
 } catch (const std::exception& error) {
     try {

@@ -100,6 +100,25 @@ public:
     /// its slices.
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
 
+    /// @brief Compute embeddings of an image with token pruning based on text relevance.
+    /// This method enables CDPruner functionality to reduce visual tokens while maintaining
+    /// semantic relevance to the given text prompt.
+    /// @param image An image to infer embeddings for. Image shape must be
+    /// [1CHW]. Only batch 1 is supported.
+    /// @param text_prompt Text prompt to compute relevance against visual tokens.
+    /// @param num_visual_tokens Number of visual tokens to select after pruning.
+    /// @param config_map A config or its members values to follow
+    /// instead of the config obtained in constructors.
+    /// @return Resulting embeddings for the selected visual tokens.
+    virtual EncodedImage encode_with_pruning(
+        const ov::Tensor& image,
+        const std::string& text_prompt,
+        const size_t num_visual_tokens,
+        const ov::AnyMap& config_map = {}) {
+        // Default implementation: fallback to original encode method for backward compatibility
+        return encode(image, config_map);
+    }
+
     /// @brief Gets processor config
     /// @return Processor config
     ProcessorConfig get_processor_config() const;
