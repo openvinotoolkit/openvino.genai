@@ -42,7 +42,6 @@ def get_chat_templates():
         "alexsobolev/IcaroLM",  # jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'value'
         "AliAbdelrasheed/maqa_llama_4bit",  # jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'from'
         "stephenlzc/Mistral-7B-v0.3-Chinese-Chat-uncensored",  # jinja2.exceptions.UndefinedError: 'system_message' is undefined
-        # TODO: Need to support chat templates in more models: CVS-145963
     }
 
     from data.tokenizer_configs import get_tokenizer_configs
@@ -135,6 +134,9 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
     tokenizer_config = chat_config[1]
     # load hf_tokenizer only to apply chat template to ov_tokenizer later
     _, hf_tokenizer = ov_hf_tokenizers
+
+    if isinstance(tokenizer_config["chat_template"], dict):
+        tokenizer_config["chat_template"] = tokenizer_config["chat_template"]["default"]
 
     hf_full_history_str = hf_tokenizer.apply_chat_template(
         conversation, add_generation_prompt=False, tokenize=False, **tokenizer_config
