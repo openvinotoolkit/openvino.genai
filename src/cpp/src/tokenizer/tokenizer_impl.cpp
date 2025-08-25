@@ -273,7 +273,9 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
     std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
     auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-    if (is_gguf_model(models_path)) {
+    
+    is_gguf_model = ov::genai::is_gguf_model(models_path);
+    if (is_gguf_model) {
         std::map<std::string, GGUFMetaData> tokenizer_config{};
         std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
             create_tokenizer_from_config(m_shared_object_ov_tokenizers, models_path);
@@ -374,6 +376,9 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
 
     // Saving IR version was added only in 24.5, so if it's missing, then it's older than 24.5
     m_older_than_24_5 = !(ov_tokenizer ? ov_tokenizer : ov_detokenizer)->has_rt_info("openvino_tokenizers_version");
+    
+    // gguf models are always newer than 24.5 despite the fact they don't hold rt_info with 'openvino_tokenizers_version'
+    m_older_than_24_5 &= !is_gguf_model;
 
     if (ov_tokenizer) {
         ov::pass::Manager manager;

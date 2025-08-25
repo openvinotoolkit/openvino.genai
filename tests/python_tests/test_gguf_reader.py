@@ -97,6 +97,10 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
+
+    ov_pipe_gguf.get_tokenizer().get_eos_token() == hf_tokenizer.eos_token
+    ov_pipe_gguf.get_tokenizer().get_bos_token() == hf_tokenizer.bos_token
+
     del ov_pipe_gguf
     gc.collect()
 
