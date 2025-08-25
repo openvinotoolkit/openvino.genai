@@ -27,4 +27,4 @@ soundfile==0.13.1
 datasets==3.6.0
 rouge==1.0.1
 # - microsoft/Phi-4-multimodal-instruct
-peft==0.17.0
+peft==0.17.1
