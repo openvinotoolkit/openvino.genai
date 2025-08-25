@@ -27,9 +27,10 @@ async function main() {
         'num_beam_groups': 3,
         'num_beams': numBeams,
         'diversity_penalty': 1,
-        'num_return_sequences': numBeams
+        'num_return_sequences': numBeams,
+        'return_decoded_results': true,
 
     };
     const beams = await pipe.generate(prompts, config);
-    console.log(beams);
+    console.log(beams.toString());
 }
