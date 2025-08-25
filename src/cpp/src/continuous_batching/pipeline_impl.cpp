@@ -48,8 +48,24 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     bool allow_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
     utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation, allow_xattention);
     utils::apply_gather_before_matmul_transformation(model);
+    
+    utils::SharedOptional<const ov::AnyMap> properties_with_new_signature(properties);
+    // Create model transform signature combining boolean options and transformations
+    std::string model_transform_signature = "paged_attention_" + 
+                                           std::string(is_need_per_layer_cache_control ? "per_layer_cache" : "no_per_layer_cache") + "_" +
+                                           std::string(allow_cache_rotation ? "cache_rotation" : "no_cache_rotation") + "_" +
+                                           std::string(allow_xattention ? "xattention" : "no_xattention") + "_" +
+                                           "gather_before_matmul";
+    
+    // Set the model transform signature in properties
+    std::string existing_signature = "";
+    auto signature_it = properties.find(ov::hint::model_transform_signature.name());
+    if (signature_it != properties.end()) {
+        existing_signature = signature_it->second.as<std::string>() + "_";
+    }
+    properties_with_new_signature.fork()[ov::hint::model_transform_signature.name()] = existing_signature + model_transform_signature;
 
-    initialize_pipeline(model, scheduler_config, device, properties);
+    initialize_pipeline(model, scheduler_config, device, *properties_with_new_signature);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
@@ -95,6 +111,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
+        filtered_properties.fork().erase(ov::hint::model_transform_signature.name()); // remove signature from properties, as it is not valid anymore
     }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
