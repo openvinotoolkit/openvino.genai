@@ -373,7 +373,7 @@ jobs:
     strategy:
       matrix:
         build-type: [Release]
-    needs: [openvino_download, genai_build_wheel, genai_build_cmake]
+    needs: [openvino_download, genai_build_wheel, genai_build_cmake, genai_build_nodejs]
     timeout-minutes: 10
     defaults:
       run:
@@ -389,6 +389,7 @@ jobs:
       CPACK_PACKAGE: ${{ github.workspace }}/ov_genai.tar.gz
       WHEEL_PACKAGE: ${{ github.workspace }}/wheels
       MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
+      NODEJS_PACKAGE: ${{ github.workspace }}/genai_nodejs_bindings
 
     steps:
       - name: Download genai package
@@ -404,7 +405,7 @@ jobs:
       - name: Download manifest and wheels
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
-          pattern: '{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},manifest_${{ matrix.build-type }}}'
+          pattern: '{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},manifest_${{ matrix.build-type }},genai_nodejs_bindings}'
           path: ${{ github.workspace }}
           merge-multiple: true
 
@@ -417,6 +418,7 @@ jobs:
             ${{ env.CPACK_PACKAGE }}
             ${{ env.WHEEL_PACKAGE }}
             ${{ env.MANIFEST_PATH }}
+            ${{ env.NODEJS_PACKAGE }}
           storage_dir: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
           storage_root: ${{ env.ARTIFACTS_SHARE }}
           product_name: ${{ github.event.repository.name }}
@@ -575,7 +577,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_manylinux_2_28
-    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_tests_wheel]
+    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_tests_wheel, genai_nodejs_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
