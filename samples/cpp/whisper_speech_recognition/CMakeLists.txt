@@ -25,15 +25,10 @@ if(NOT TARGET dr_libs)
     FetchContent_MakeAvailable(dr_libs)
 endif()
 
-add_executable(whisper_speech_recognition whisper_speech_recognition.cpp audio_utils.cpp)
-target_link_libraries(whisper_speech_recognition PRIVATE openvino::genai)
-target_include_directories(whisper_speech_recognition PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
-set_target_properties(whisper_speech_recognition PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
+ov_add_sample(
+        NAME whisper_speech_recognition
+        SOURCES whisper_speech_recognition.cpp audio_utils.cpp
+        DEPENDENCIES openvino::genai
+        INCLUDE_DIRECTORIES "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>"
+)
 target_compile_features(whisper_speech_recognition PRIVATE cxx_std_11)
-
-install(TARGETS whisper_speech_recognition
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
