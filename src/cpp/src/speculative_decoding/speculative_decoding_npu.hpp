@@ -40,15 +40,7 @@ public:
 
     std::size_t get_num_processed_tokens() const;
 
-    ov::genai::GenerationHandle create_generation_handle();
-
-    void remove_last_generated_tokens(const std::size_t tokens_to_remove); 
-
     void trim_kv_cache(const std::size_t tokens_to_remove);
-
-    ov::genai::EncodedResults finalize();
-
-    ov::genai::GenerationStatus get_generation_status() const;
 
     void reset_state();
 
