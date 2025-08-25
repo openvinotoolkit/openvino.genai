@@ -19,13 +19,6 @@ enum class AggregationMode {
                 * of a given token in cache */
 };
 
-namespace {
-const std::unordered_map<AggregationMode, std::string> AggregationModeToString = {
-    {AggregationMode::SUM, "SUM"},
-    {AggregationMode::NORM_SUM, "NORM_SUM"},
-};
-} // anonymous namespace
-
 /**
  * @brief Represents the mode of how anchor points are formed in KVCrush Cache eviction algorithm
  */
@@ -72,6 +65,22 @@ public:
     size_t rng_seed = 0;
     std::size_t get_budget() const {
         return budget;
+    }
+
+    std::string to_string() const {
+        static const std::unordered_map<KVCrushAnchorPointMode, std::string> kv_crush_anchor_point_mode_to_string = {
+            {KVCrushAnchorPointMode::RANDOM, "RANDOM"}
+        };
+
+        std::ostringstream oss;
+        oss << "KVCrushConfig { " << "\n";
+        oss << "  budget: " << budget << "\n";
+        oss << "  rng_seed: " << rng_seed << "\n";
+        if (kv_crush_anchor_point_mode_to_string.count(anchor_point_mode) > 0) {
+            oss << "  anchor_point_mode: " << kv_crush_anchor_point_mode_to_string.at(anchor_point_mode) << "\n";
+        }
+        oss << " }";
+        return oss.str();
     }
 };
 
@@ -130,15 +139,23 @@ public:
     }
 
     std::string to_string() const {
+        static const std::unordered_map<AggregationMode, std::string> aggregation_mode_to_string = {
+            {AggregationMode::SUM, "SUM"},
+            {AggregationMode::NORM_SUM, "NORM_SUM"},
+        };
+
         std::ostringstream oss;
         oss << "CacheEvictionConfig { " << "\n";
         oss << "  start_size: " << m_start_size << "\n";
         oss << "  recent_size: " << m_recent_size << "\n";
         oss << "  max_cache_size: " << m_max_cache_size << "\n";
         oss << "  evictable_size: " << m_evictable_size << "\n";
-        oss << "  aggregation_mode: " << AggregationModeToString.at(aggregation_mode) << "\n";
+        if (aggregation_mode_to_string.count(aggregation_mode) > 0) {
+            oss << "  aggregation_mode: " << aggregation_mode_to_string.at(aggregation_mode) << "\n";
+        }
         oss << "  apply_rotation: " << std::boolalpha << apply_rotation << "\n";
         oss << "  snapkv_window_size: " << snapkv_window_size << "\n";
+        oss << kvcrush_config.to_string() << "\n";
         oss << " }";
         return oss.str();
     }

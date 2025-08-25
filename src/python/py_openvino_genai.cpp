@@ -34,6 +34,7 @@ void init_perf_metrics(py::module_& m);
 void init_tokenizer(py::module_& m);
 void init_streamers(py::module_& m);
 void init_generation_config(py::module_& m);
+void init_scheduler_config(py::module_& m);
 
 void init_continuous_batching_pipeline(py::module_& m);
 void init_llm_pipeline(py::module_& m);
@@ -114,6 +115,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def_readonly("extended_perf_metrics", &EncodedResults::extended_perf_metrics);
 
     init_lora_adapter(m);
+    init_scheduler_config(m);
     init_generation_config(m);
     init_tokenizer(m);
     init_streamers(m);

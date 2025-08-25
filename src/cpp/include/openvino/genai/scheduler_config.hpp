@@ -74,6 +74,13 @@ struct SchedulerConfig {
                max_num_seqs == other.max_num_seqs && enable_prefix_caching == other.enable_prefix_caching;
     }
 
+    /**
+     * Returns a human-readable string representation of the SchedulerConfig.
+     * The output is a multi-line string listing each configuration field and its value.
+     * This is useful for debugging, logging, or inspecting the current configuration.
+     *
+     * @return A string describing the current SchedulerConfig in a readable format.
+     */
     std::string to_string() const {
         std::ostringstream oss;
         oss << "SchedulerConfig { " << std::endl; 
