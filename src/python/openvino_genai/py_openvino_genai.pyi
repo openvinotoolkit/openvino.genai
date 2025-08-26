@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -2587,8 +2587,8 @@ class StructuredOutputConfig:
             The compound grammar a Union or Concat of several grammars, where each grammar can be a JSON schema, regex, EBNF, Union or Concat.
     """
     class Concat:
-        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | ...
-        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | ...
+        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
         @staticmethod
         def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Concat:
             """
@@ -2596,43 +2596,43 @@ class StructuredOutputConfig:
             """
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
-        def __or__(self, arg0: typing.Any) -> ...:
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class EBNF:
         value: str
-        def __add__(self, arg0: typing.Any) -> ...:
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
             """
             EBNF grammar building block for compound grammar configuration.
             """
-        def __or__(self, arg0: typing.Any) -> ...:
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class JSONSchema:
         value: str
-        def __add__(self, arg0: typing.Any) -> ...:
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
             """
             JSON schema building block for compound grammar configuration.
             """
-        def __or__(self, arg0: typing.Any) -> ...:
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class Regex:
         value: str
-        def __add__(self, arg0: typing.Any) -> ...:
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
             """
             Regex building block for compound grammar configuration.
             """
-        def __or__(self, arg0: typing.Any) -> ...:
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
@@ -2663,12 +2663,12 @@ class StructuredOutputConfig:
     def __repr__(self) -> str:
         ...
     @property
-    def compound_grammar(self) -> ... | ... | ... | ... | ... | None:
+    def compound_grammar(self) -> openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None:
         """
         Compound grammar for structured output generation
         """
     @compound_grammar.setter
-    def compound_grammar(self, arg0: ... | ... | ... | ... | ... | None) -> None:
+    def compound_grammar(self, arg0: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None) -> None:
         ...
     @property
     def grammar(self) -> str | None:
@@ -2968,13 +2968,6 @@ class TextEmbeddingPipeline:
         Attributes:
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
-            pad_to_max_length (bool, optional):
-                If 'True', model input tensors are padded to the maximum length.
-            batch_size (int, optional):
-                Batch size for the embedding model.
-                Useful for database population. If set, the pipeline will fix model shape for inference optimization.
-                Number of documents passed to pipeline should be equal to batch_size.
-                For query embeddings, batch_size should be set to 1 or not set.
             pooling_type (TextEmbeddingPipeline.PoolingType, optional):
                 Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
             normalize (bool, optional):
@@ -2986,7 +2979,6 @@ class TextEmbeddingPipeline:
         """
         embed_instruction: str | None
         normalize: bool
-        pad_to_max_length: bool | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload
@@ -2994,16 +2986,6 @@ class TextEmbeddingPipeline:
             ...
         @typing.overload
         def __init__(self, **kwargs) -> None:
-            ...
-        def validate(self) -> None:
-            """
-            Checks that are no conflicting parameters. Raises exception if config is invalid.
-            """
-        @property
-        def batch_size(self) -> int | None:
-            ...
-        @batch_size.setter
-        def batch_size(self, arg0: typing.SupportsInt | None) -> None:
             ...
         @property
         def max_length(self) -> int | None:
