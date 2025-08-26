@@ -194,6 +194,9 @@ def load_text2image_model(
         logger.info("Using OpenVINO GenAI API")
         model = load_text2image_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_hf:
+        if kwargs['empty_adapters']:
+            raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
+
         from diffusers import DiffusionPipeline
         logger.info("Using HF Transformers API")
         try:
