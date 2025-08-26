@@ -528,7 +528,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-64gb
+    runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -567,7 +567,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # JS pacakges uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
+      # JS packages uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
       # Here we emulate the installation of the openvino-node package from NPM. The latest
       # release of the openvino-node package is installed, and we need to update the binaries
       # in the node_modules/openvino-node/bin directory to work correctly with GenAI
