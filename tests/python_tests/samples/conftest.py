@@ -60,8 +60,8 @@ MODELS = {
         "convert_args": ['--trust-remote-code']
     },
     "Qwen2-0.5B-Instruct-GGUF": {
-        "name": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
-        "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
+        "name": "Qwen/Qwen2-0.5B-Instruct-GGUF",
+        "gguf_filename": "qwen2-0_5b-instruct-q4_0.gguf",
         "convert_args": ['--trust-remote-code']
     },
     "phi-1_5": {
@@ -206,7 +206,7 @@ def convert_model(request):
     logger.info(f"Preparing model: {model_name}")
     if not os.path.exists(model_path):
         sub_env=os.environ.copy()
-        # Dowload the GGUF model if not already downloaded
+        # Download the GGUF model if not already downloaded
         if model_gguf_filename:
             command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", model_path]
             logger.info(f"Downloading command: {' '.join(command)}")
@@ -231,7 +231,10 @@ def convert_model(request):
                 logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
                 raise
     
-    yield os.path.join(model_path, model_gguf_filename)
+    if model_gguf_filename:
+        yield os.path.join(model_path, model_gguf_filename)
+    else:
+        yield model_path
     
     # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
