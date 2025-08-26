@@ -188,24 +188,31 @@ void FastGreedyDPP::update_orthogonal_vector(const ov::Tensor& kernel, size_t ba
     // Get the normalization factor
     float norm_factor = std::sqrt(di2s_data[selected_idx] + m_config.numerical_threshold);
     
-    // Compute the new orthogonal vector for each token
+    std::vector<float> projections(total_tokens, 0.0f);
+    
+    // First compute all projections by iterating prev_t in outer loop
+    for (size_t prev_t = 0; prev_t < iteration; ++prev_t) {
+        // Load cis[prev_t, selected_idx] once per iteration (not per token!)
+        size_t cis_selected_idx = prev_t * total_tokens + selected_idx;
+        float cis_selected_val = cis_data[cis_selected_idx];
+        
+        // Inner loop: accumulate projection for each token j
+        for (size_t j = 0; j < total_tokens; ++j) {
+            size_t cis_j_idx = prev_t * total_tokens + j;
+            projections[j] += cis_selected_val * cis_data[cis_j_idx];
+        }
+    }
+    
+    // Finally compute the orthogonalized vector for each token
+    size_t base_kernel_offset = batch_idx * total_tokens * total_tokens + selected_idx * total_tokens;
     for (size_t j = 0; j < total_tokens; ++j) {
         // Get kernel[batch_idx, selected_idx, j]
-        size_t kernel_idx = batch_idx * total_tokens * total_tokens + selected_idx * total_tokens + j;
+        size_t kernel_idx = base_kernel_offset + j;
         float kernel_val = kernel_data[kernel_idx];
         
-        // Subtract the projection onto previously selected vectors
-        // sum(cis[:iteration, selected_idx] * cis[:iteration, j])
-        float projection = 0.0f;
-        for (size_t prev_t = 0; prev_t < iteration; ++prev_t) {
-            size_t cis_selected_idx = prev_t * total_tokens + selected_idx;
-            size_t cis_j_idx = prev_t * total_tokens + j;
-            projection += cis_data[cis_selected_idx] * cis_data[cis_j_idx];
-        }
-        
-        // Store the orthogonalized vector element
+        // Store the orthogonalized vector element using pre-computed projection
         size_t cis_current_idx = iteration * total_tokens + j;
-        cis_data[cis_current_idx] = (kernel_val - projection) / norm_factor;
+        cis_data[cis_current_idx] = (kernel_val - projections[j]) / norm_factor;
     }
 }
 
