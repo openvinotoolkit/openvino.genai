@@ -18,6 +18,7 @@ concurrency:
 env:
   PYTHON_VERSION: '3.11'
   OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+  TARGET_BRANCH: ${{ inputs.target-branch || github.base_ref || github.event.merge_group.base_ref || github.ref }}
   CMAKE_CXX_COMPILER_LAUNCHER: sccache
   CMAKE_C_COMPILER_LAUNCHER: sccache
   SCCACHE_IGNORE_SERVER_IO_ERROR: 1
@@ -345,7 +346,7 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
-      - name: Build GenAI Node.js bindings
+      - name: Cmake GenAI Node.js bindings
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           /usr/bin/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
@@ -353,12 +354,16 @@ jobs:
             -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF -DENABLE_SAMPLES=OFF \
             -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
             -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
-          /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
         env:
           CXXFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
           CFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
           LDFLAGS: "-fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
+      
+      - name: Build GenAI Node.js bindings
+        run: /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+
+      - name: Install GenAI Node.js bindings
+        run: /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
 
       - name: Upload Node.js bindings Build Package
         if: always()
@@ -547,6 +552,7 @@ jobs:
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
+          ref: ${{ env.TARGET_BRANCH }}
 
       - name: Download OpenVINO Artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
