@@ -1075,7 +1075,7 @@ int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
             OPENVINO_THROW("should not be here");
         } (running_sequence->get_id()));
     }
-    //std::cout << "candidate_tokens number : " << candidate_tokens.size() << "candidate token length: " << candidate_tokens[0].size() <<std::endl;
+    // std::cout << "candidate_tokens number : " << candidate_tokens.size() << "candidate token length: " << candidate_tokens[0].size() <<std::endl;
     auto validation_result = validate_eagle2_tree(candidate_tokens,
                                                   candidate_log_probs,
                                                   beam_idxs,
@@ -1083,7 +1083,7 @@ int Sampler::validate_eagle2_candidates(SequenceGroup::Ptr seq_group,
                                                   logit_processor,
                                                   do_sample);
     generated_tokens_count = validation_result.accepted_path_length;
-    //std::cout << "seq group" << seq_group->get_request_id() << " accepted: " << validation_result.accepted_path_length << std::endl;
+    // std::cout << "seq group" << seq_group->get_request_id() << " accepted: " << validation_result.accepted_path_length << std::endl;
 
     if (!validation_result.is_path_accepted) {
         // return false;
@@ -1141,7 +1141,7 @@ void Sampler::TopKSelector::tree_reset(SequenceGroup::Ptr& sequence_group) {
     Beam root_beam((*m_sequence_group)[0]);
     root_beam.m_score = 0.0f;
     m_eagle2_candidate_graph = std::make_shared<Eagle2CandidateGraph>(root_beam,
-                                                                        m_parameters.eagle_tree_params.total_tokens,
+                                                                        m_parameters.eagle_tree_params.total_tokens - 1,
                                                                         m_parameters.eagle_tree_params.tree_depth);
     m_beams.push_back(root_beam);
 
@@ -1234,9 +1234,7 @@ void Sampler::TopKSelector::finalize_eagle2_candidates(SamplerOutput& sampler_ou
             remaining_retrieve_indices.push_back(path);
         }
     }
-    if (remaining_retrieve_indices.size() + used_sequences.size() != retrieve_indices.size()) {
-        std::cout << "break" << std::endl;
-    }
+
     std::map<uint64_t, uint64_t> child_2_parent_map;;
     for (int i = 0; i < remaining_retrieve_indices.size(); ++i) {
         const auto& path = remaining_retrieve_indices[i];
