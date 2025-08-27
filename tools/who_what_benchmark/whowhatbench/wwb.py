@@ -213,6 +213,9 @@ def check_args(args):
         raise ValueError(
             "If --adapters is provided and --alphas is provided, they should have the same length."
         )
+    if args.hf and args.empty_adapters:
+            raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
+
 
 
 def load_prompts(args):
