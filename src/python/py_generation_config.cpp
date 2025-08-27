@@ -247,7 +247,6 @@ void init_generation_config(py::module_& m) {
             }
         );
 
-
     // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
