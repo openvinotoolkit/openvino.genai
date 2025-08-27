@@ -24,6 +24,7 @@ env:
   HF_HOME: ~/.cache/hf
   OV_CACHE: ~/.cache/ov_cache/194c936
   CLEANUP_CACHE: 1
+  OPENVINO_LOG_LEVEL: 5
 
 jobs:
   smart_ci:
@@ -440,6 +441,10 @@ jobs:
           #   cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
           #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
           #   timeout: 180
+          - name: 'LLM & VLM'
+            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py -p no:cacheprovider'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
+            timeout: 180
           - name: 'GGUF Reader tests'
             cmd: 'tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
@@ -457,6 +462,10 @@ jobs:
             cmd: 'tests/python_tests/test_rag.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
+          - name: 'WWB tests'
+            cmd: 'tools/who_what_benchmark/tests'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 90
     defaults:
       run:
         shell: bash
