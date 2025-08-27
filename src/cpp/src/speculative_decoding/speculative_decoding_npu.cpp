@@ -32,7 +32,14 @@ void update_perf_metrics(ov::genai::RawPerfMetrics& raw_perf_counters, const flo
     raw_perf_counters.m_new_token_times.emplace_back(new_token_time);
     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
 }
-} // anonymous namespace
+
+// FIXME: Should we update infer duraion?
+void update_perf_metrics(ov::genai::RawPerfMetrics& raw_perf_counters,
+                         const float token_duration, const std::size_t num_generated_tokens) {
+    raw_perf_counters.m_durations.emplace_back(token_duration);
+    raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
+}
+}// anonymous namespace
 
 namespace ov {
 namespace genai {
@@ -125,10 +132,7 @@ int64_t LLMInferWrapper::infer_first(const ov::Tensor &input_ids,
     last_token = std::get<int64_t>(sample_tokens(get_logits(), 1u));
 
     infer_first_timer.end();
-    auto generation_duration = infer_first_timer.get_duration_microsec();
-    raw_perf_metrics.m_durations.emplace_back(generation_duration);
-    raw_perf_metrics.m_batch_sizes.emplace_back(BATCH_SIZE);
-
+    update_perf_metrics(raw_perf_metrics, infer_first_timer.get_duration_microsec(), BATCH_SIZE);
     return last_token;
 }
 
@@ -177,9 +181,8 @@ int64_t LLMInferWrapper::infer_next(int64_t token, bool skip_perf_stat) {
 
     infer_next_timer.end();
     if (!skip_perf_stat) {
-        auto generation_duration = infer_next_timer.get_duration_microsec();
-        raw_perf_metrics.m_durations.emplace_back(generation_duration);
-        raw_perf_metrics.m_batch_sizes.emplace_back(BATCH_SIZE);
+        update_perf_metrics(
+            raw_perf_metrics, infer_next_timer.get_duration_microsec(), BATCH_SIZE);
     }
 
     return last_token;
@@ -230,10 +233,8 @@ std::vector<int64_t> LLMInferWrapper::infer_next_return_all(const std::vector<in
     last_token = sampled_tokens.back();
 
     infer_next_return_all_timer.end();
-    auto generation_duration = infer_next_return_all_timer.get_duration_microsec();
-    raw_perf_metrics.m_durations.emplace_back(generation_duration);
-    raw_perf_metrics.m_batch_sizes.emplace_back(tokens_size);
-
+    update_perf_metrics(
+        raw_perf_metrics, infer_next_return_all_timer.get_duration_microsec(), tokens_size);
     return sampled_tokens;
 }
 
@@ -344,6 +345,9 @@ SpeculativeLLMPipelineNPU::SpeculativeLLMPipelineNPU(
     auto draft_model_desc_copy = draft_model_desc;
     if (draft_model_desc_copy.device.empty()) {
         draft_model_desc_copy.device = main_model_desc.device;
+    }
+    if (draft_model_desc_copy.properties.empty()) {
+        draft_model_desc_copy.properties = main_model_desc.properties;
     }
     m_draft_request = std::make_unique<LLMInferWrapper>(draft_model_desc_copy);
 
@@ -591,8 +595,11 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
             candidates.push_back(candidate);
         }
 
-        // Dirty hack to update inference duration of token, that was calculated on
-        // { draft_prefix_token, out_token }
+        // Dirty hack to update inference duration of token, that was calculated after inference
+        // on draft_prefix_token.
+        // As we are inferring on draft_prefix_token just to update KV-Cache and are not interested
+        // in predicted token output, then we accumulating this inference's duration with the one
+        // of the next token (which are interested in):
         if (draft_prefix_token != -1) {
             auto token_to_hack_it = m_draft_request->raw_perf_metrics.m_durations.end() - candidates_to_generate;
             (*token_to_hack_it) += ov::genai::MicroSeconds(draft_prefix_timer.get_duration_microsec());
@@ -634,10 +641,6 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         }
 
         auto mismatched_candidates = candidates.size() - accepted_tokens_number;
-
-        auto& main_perf_gen_tokens = m_main_request->raw_perf_metrics.m_batch_sizes.back();
-        main_perf_gen_tokens -= mismatched_candidates;
-
         std::vector<int64_t> validated_tokens(ref_tokens.begin(), ref_tokens.end() - mismatched_candidates);
         out_token = validated_tokens.back();
     
@@ -651,6 +654,8 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         }
         update_candidate_strategy(accepted_tokens_number);
 
+        auto& main_perf_generated_tokens = m_main_request->raw_perf_metrics.m_batch_sizes.back();
+        main_perf_generated_tokens -= mismatched_candidates;
         m_sd_metrics.update_acceptance_rate(0 /* request_id */, (accepted_tokens_number /  candidates_to_generate) * 100);
         m_sd_metrics.update_draft_accepted_tokens(0 /* request_id */, accepted_tokens_number);
         if (utils::env_setup_for_print_debug_info()) {
@@ -671,14 +676,16 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         streamer_ptr->end();
     }
 
-    // Reset all states.
-    m_candidates_num = 5;
-    requested_candidates_num = config.num_assistant_tokens;
-    if (requested_candidates_num != 0) {
-        m_candidates_num = requested_candidates_num;
+    // If not chat conversation, then reset all states.
+    if (!m_is_chat_conversation) {
+        m_candidates_num = 5;
+        requested_candidates_num = config.num_assistant_tokens;
+        if (requested_candidates_num != 0) {
+            m_candidates_num = requested_candidates_num;
+        }
+        m_draft_request->reset_state();
+        m_main_request->reset_state();
     }
-    m_draft_request->reset_state();
-    m_main_request->reset_state();
 
     generate_timer.end();
     // If is called without tokenization then that stat will not be reported.
@@ -708,6 +715,8 @@ void SpeculativeLLMPipelineNPU::start_chat(const std::string& system_message) {
 void SpeculativeLLMPipelineNPU::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
+    m_draft_request->reset_state();
+    m_main_request->reset_state();
 };
 
 SpeculativeLLMPipelineNPU::~SpeculativeLLMPipelineNPU() {
