@@ -117,7 +117,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
-        def default_gen_image_fn(model, prompt, num_inference_steps, *, generator=None, **kwargs):
+        def default_gen_image_fn(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
             with torch.no_grad():
                 output = model(
                     prompt,

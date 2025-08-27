@@ -191,13 +191,13 @@ def parse_args():
     parser.add_argument(
         "--long-prompt",
         action='store_true',
-        help="LLMPipeline specific parameter that defines the use of a long context prompt",
+        help="LLMPipeline specific parameter that defines the use of a long context prompt.",
     )
 
     parser.add_argument(
         "--empty_adapters",
         action="store_true",
-        help="Inference without adapters",
+        help="Inference with empty adapters. Applicable for GenAI only.",
     )
 
     return parser.parse_args()
