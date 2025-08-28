@@ -4,6 +4,7 @@
 #include <atomic>
 #include <thread>
 #include <optional>
+#include <sys/sysinfo.h>
 
 #include "openvino/genai/text_streamer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
@@ -23,6 +24,25 @@ ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model)
     }
 
     return ir_kv_cache_precision;
+}
+
+size_t get_free_memory_size_bytes() {
+#if !defined(_WIN32)
+    std::string token;
+    std::ifstream file("/proc/meminfo");
+    while(file >> token) {
+        if(token == "MemFree:") {
+            size_t mem;
+            if(file >> mem) {
+                return mem * 1024;
+            } else {
+                return std::numeric_limits<size_t>::max();
+            }
+        }
+        file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+ #endif
+    return std::numeric_limits<size_t>::max();
 }
 
 } // namespace
@@ -125,9 +145,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
 
     // Scheduler configuration
     SchedulerConfig normalized_config = scheduler_config;
+    size_t free_mem_size = get_free_memory_size_bytes();
     if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
         size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
+        OPENVINO_ASSERT(size_in_bytes <= free_mem_size, "Requested KV-cache size is larger than available memory size on the system.");
         normalized_config.num_kv_blocks = size_in_bytes / cache_manager->get_block_size_in_bytes();
+    }
+    if (normalized_config.num_kv_blocks > 0) {
+        size_t size_in_bytes = cache_manager->get_block_size_in_bytes() * normalized_config.num_kv_blocks;
+        OPENVINO_ASSERT(size_in_bytes <= free_mem_size, "Requested number of KV-blocks require more memory than available on the system.");
     }
 
     bool can_use_partial_preemption = true;
