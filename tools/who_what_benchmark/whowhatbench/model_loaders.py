@@ -63,15 +63,21 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
+    adapter_config = openvino_genai.AdapterConfig()
+    if "adapters" in kwargs and kwargs["adapters"] is not None:
+        for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
+            ov_adapter = openvino_genai.Adapter(adapter)
+            adapter_config.add(ov_adapter, alpha)
+
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, **ov_config)
+        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, adapters=adapter_config, scheduler_config=scheduler_config, **ov_config)
     else:
         logger.info("Using OpenVINO GenAI LLMPipeline API")
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, **ov_config)
+        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, adapters=adapter_config, **ov_config)
 
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
@@ -87,7 +93,7 @@ def load_text_llamacpp_pipeline(model_dir):
     return model
 
 
-def load_text_hf_pipeline(model_id, device):
+def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {}
 
     if not torch.cuda.is_available or device.lower() == "cpu":
@@ -119,6 +125,26 @@ def load_text_hf_pipeline(model_id, device):
                 model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
             )
 
+    if 'adapters' in kwargs and kwargs['adapters'] is not None:
+        adapters = kwargs["adapters"]
+        alphas = kwargs.get("alphas", None)
+
+        from peft import PeftModel
+        adapter_names = ["adapter_0"]
+        model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
+
+        for idx, adapter in enumerate(adapters[1:], start=1):
+            model.load_adapter(adapter, adapter_name=f"adapter_{idx}")
+            adapter_names.append(f"adapter_{idx}")
+
+        if alphas is not None:
+            assert len(alphas) == len(adapter_names), "`alphas` must be the same length as `adapters`"
+            model.add_weighted_adapter([f"adapter_{idx}" for idx in range(len(kwargs['adapters']))], alphas, "merged_lora")
+        else:
+            model.add_weighted_adapter([f"adapter_{idx}" for idx in range(len(kwargs['adapters']))], "merged_lora")
+
+        model.set_adapter("merged_lora")
+
     model.eval()
     return model
 
@@ -128,7 +154,7 @@ def load_text_model(
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
-        model = load_text_hf_pipeline(model_id, device)
+        model = load_text_hf_pipeline(model_id, device, **kwargs)
     elif use_genai:
         model = load_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_llamacpp:
