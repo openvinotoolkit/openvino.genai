@@ -53,7 +53,7 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
 KVCRUSH_SNAPKV_BASELINE_CONFIG = CacheEvictionConfig(
     start_size=32, 
     recent_size=128, 
-    max_cache_size=512, 
+    max_cache_size=1024, 
     aggregation_mode=AggregationMode.NORM_SUM,
     apply_rotation=False,
     snapkv_window_size=8,
@@ -63,13 +63,18 @@ KVCRUSH_SNAPKV_BASELINE_CONFIG = CacheEvictionConfig(
 KVCRUSH_TEST_CONFIG = CacheEvictionConfig(
     start_size=32, 
     recent_size=128, 
-    max_cache_size=480, 
+    max_cache_size=960, 
     aggregation_mode=AggregationMode.NORM_SUM,
     apply_rotation=False,
     snapkv_window_size=8,
-    kvcrush_config=KVCrushConfig(budget=1, anchor_point_mode=KVCrushAnchorPointMode.ALTERNATE)
+    kvcrush_config=KVCrushConfig(budget=2, anchor_point_mode=KVCrushAnchorPointMode.MEAN)
 )
 
+OPTIMAL_KVCRUSH_CONFIGS = {
+    "samsum": (768, 8, KVCrushAnchorPointMode.ALTERNATE),
+    "trec": (960, 2, KVCrushAnchorPointMode.ALTERNATE), 
+    "qasper": (960, 2, KVCrushAnchorPointMode.ALTERNATE)
+}
 
 @pytest.mark.precommit
 @pytest.mark.skipif(
@@ -214,7 +219,7 @@ class LongBenchTestData:
 @dataclass
 class KVCrushTestData:
     subset: str
-
+    test_mode: str  # "default" or "optimal"
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", [
@@ -294,12 +299,13 @@ def test_optimized_generation_longbench(test_struct):
     assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
 
 
-@pytest.mark.nightly
+@pytest.mark.precommit
 @pytest.mark.parametrize("device", ["CPU"])
 @pytest.mark.parametrize("test_struct", [
-    KVCrushTestData(subset="samsum"),
-    KVCrushTestData(subset="trec"),
-], ids=["samsum", "trec"])
+    KVCrushTestData(subset="samsum", test_mode="optimal"),
+    KVCrushTestData(subset="trec", test_mode="optimal"),
+    KVCrushTestData(subset="qasper", test_mode="optimal"),
+], ids=["samsum", "trec", "qasper"])
 def test_kvcrush_vs_snapkv_baseline(device, test_struct):
     """Test that KVCrush performs equal or better than SnapKV baseline on LongBench datasets."""
     seqs_per_request = 32
@@ -314,7 +320,20 @@ def test_kvcrush_vs_snapkv_baseline(device, test_struct):
 
     scheduler_config_kvcrush = get_scheduler_config(num_kv_blocks)
     scheduler_config_kvcrush.use_cache_eviction = True
-    scheduler_config_kvcrush.cache_eviction_config = KVCRUSH_TEST_CONFIG
+    if test_struct.test_mode == "optimal" and test_struct.subset in OPTIMAL_KVCRUSH_CONFIGS:
+        max_cache_size, budget, anchor_mode = OPTIMAL_KVCRUSH_CONFIGS[test_struct.subset]
+        config = CacheEvictionConfig(
+            start_size=32, 
+            recent_size=128, 
+            max_cache_size=max_cache_size,
+            aggregation_mode=AggregationMode.NORM_SUM,
+            apply_rotation=False,
+            snapkv_window_size=8,
+            kvcrush_config=KVCrushConfig(budget=budget, anchor_point_mode=anchor_mode)
+        )
+    else:
+        config = KVCRUSH_TEST_CONFIG
+    scheduler_config_kvcrush.cache_eviction_config = config
 
     model_cb_baseline = ContinuousBatchingPipeline(models_path, scheduler_config_baseline, device, {}, get_default_llm_properties())
     model_cb_kvcrush = ContinuousBatchingPipeline(models_path, scheduler_config_kvcrush, device, {}, get_default_llm_properties())
