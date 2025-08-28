@@ -81,7 +81,7 @@ auto perf_metrics_docstring = R"(
     - Time to initialize grammar compiler for each backend, ms
     - Time to compile grammar, ms
 
-    Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+    Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
     If mean and std were already calculated, getters return cached values.
 
     :param get_load_time: Returns the load time in milliseconds.

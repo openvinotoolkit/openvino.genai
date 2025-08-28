@@ -78,8 +78,8 @@ export type SummaryStats = {
     - Number of tokens in the input prompt
     - Time to initialize grammar compiler for each backend, ms
     - Time to compile grammar, ms
- * Preferable way to access metrics is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
- * If mean and std were already calculated getters return cached values.
+ * Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from rawMetrics and return pairs.
+ * If mean and std were already calculated, getter methods return cached values.
  */
 export interface PerfMetrics {
   /** Returns the load time in milliseconds. */
