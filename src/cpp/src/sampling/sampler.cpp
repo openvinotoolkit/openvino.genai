@@ -728,7 +728,7 @@ Eagle2ValidationResult Sampler::validate_eagle2_tree(const std::vector<std::vect
         return result;
     }
     auto logit_shape = main_model_logits.get_shape();
-#if 1
+#if 1 // optimize branch
     std::map<size_t, size_t> main_results;
     size_t seq_idx = 0;
     for (size_t b = 0; b < logit_shape[0]; b++) {
@@ -1375,6 +1375,10 @@ void Sampler::TopKSelector::finalize_eagle2_candidates(SamplerOutput& sampler_ou
 void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput& sampler_output) {
     // parent sequence ID -> number of child sequences
     std::map<uint64_t, uint64_t> parent_2_num_childs_map;
+    ov::Shape shape = logits.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3);
+    size_t batch = shape[0], seq_len = shape[1], vocab_size = shape[2];
+
     if (m_tree_layer_counter == 0 && m_beams.empty()) {
         tree_reset(m_sequence_group);
     }
@@ -1392,6 +1396,7 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
             }
             OPENVINO_THROW("Internal error in beam search: should not be here");
         }(parent_seq_id);
+        OPENVINO_ASSERT(beam.m_global_beam_idx < batch, "Logits batch size doesn't match the number of beams");
 
         // zero out all parent forks counts
         parent_2_num_childs_map[parent_seq_id] = 0;
@@ -1402,6 +1407,45 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
     candidates.reserve(m_parameters.eagle_tree_params.branching_factor * m_beams.size());  // num_beams for each beam
     m_tree_layer_counter++;
     for (const Beam& beam : m_beams) {
+#if 1 // optimize branch
+        size_t batch_offset = beam.m_global_beam_idx * seq_len * vocab_size;
+        size_t sequence_offset = (seq_len - 1) * vocab_size;
+        const float* beam_logits = logits.data<const float>() + batch_offset + sequence_offset;
+        float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
+        float log_sum = std::log(std::accumulate(
+            beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
+                return accumulated + std::exp(to_add - max_logit);
+        }));
+
+        // sort and find the topK
+        using Pair = std::pair<float, size_t>;
+        auto cmp = [](const Pair& a, const Pair& b) { return a.first > b.first; };
+        std::priority_queue<Pair, std::vector<Pair>, decltype(cmp)> minHeap(cmp);
+
+        for (size_t i = 0; i < vocab_size; ++i) {
+            if (minHeap.size() < m_parameters.eagle_tree_params.branching_factor) {
+                minHeap.emplace(beam_logits[i], i);
+            } else if (beam_logits[i] > minHeap.top().first) {
+                minHeap.pop();
+                minHeap.emplace(beam_logits[i], i);
+            }
+        }
+        // output topK of the logits (Ascending order)
+        std::vector<Pair> result;
+        while (!minHeap.empty()) {
+            result.push_back(minHeap.top());
+            minHeap.pop();
+        }
+        // calculate topK's log_prob and token_id
+        for (auto it = result.rbegin(); it != result.rend(); ++it) {
+            Beam new_candidate = beam;
+            new_candidate.m_log_prob = it->first - max_logit - log_sum;
+            new_candidate.m_score += new_candidate.m_log_prob;
+            new_candidate.m_token_id = (it->second + (m_d2t? m_d2t[it->second] : 0));
+            m_eagle2_candidate_graph->add_candidate(new_candidate, beam.m_node_id);
+            candidates.push_back(new_candidate);
+        }
+#else
         // do not need log softmax to match paper?
         std::vector<Token> tokens = log_softmax(logits, beam.m_global_beam_idx);
 
@@ -1424,6 +1468,7 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
                 break;
             }
         }
+#endif
     }
 
     // Sample 2 * group_size highest score tokens to get at least 1 non EOS token per beam
