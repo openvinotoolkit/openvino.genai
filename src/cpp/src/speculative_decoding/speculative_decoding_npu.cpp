@@ -198,8 +198,10 @@ int64_t LLMInferWrapper::infer_next(int64_t token, bool append_perf_stat) {
             infer_next_timer.get_duration_microsec(),
             BATCH_SIZE);
     } else {
-        raw_perf_metrics.m_durations.back() += infer_next_timer.get_duration_microsec();
-        raw_perf_metrics.m_inference_durations[0] += ov::genai::PerfMetrics::get_microsec(infer_end - infer_start);
+        raw_perf_metrics.m_durations.back() +=
+            ov::genai::MicroSeconds(infer_next_timer.get_duration_microsec());
+        raw_perf_metrics.m_inference_durations[0] += 
+            ov::genai::MicroSeconds(ov::genai::PerfMetrics::get_microsec(infer_end - infer_start));
     }
 
     return last_token;
@@ -353,7 +355,7 @@ SpeculativeLLMPipelineNPU::SpeculativeLLMPipelineNPU(
         // this model update will be reflected in draft_model_desc
         utils::apply_slice_before_matmul_transformation(draft_model);
     }
-   
+
     // Main and Draft model can have different tokenizers
     // to do: support retokenization: 154103
     ov::genai::Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
@@ -522,8 +524,16 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     utils::initialize_position_ids(position_ids, attention_mask);
 
     // To collect KV-cache for the prompt and to get the next token, run the very first infer request
-    // for draft and main models:
+    // for main and draft models:
+    ManualTimer first_token_timer("Speculative decode: first token timer");
+    first_token_timer.start();
+
     auto out_token = m_main_request->infer_first(input_ids, attention_mask, position_ids);
+
+    first_token_timer.end();
+    update_perf_metrics(raw_perf_counters, first_token_timer.get_duration_microsec(),
+                        first_token_timer.get_end_time(), 1u);
+
     m_draft_request->infer_first(input_ids, attention_mask, position_ids);
 
     // logits shape is [BATCH_SIZE, seq_len, vocab_size]
@@ -541,6 +551,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     auto streaming_status = stream_generated_tokens(streamer_ptr, std::vector<int64_t> {out_token});
     results.tokens[0].push_back(out_token);
 
+    // first token?
     /* Speculative decoding works the following way. The draft model predicts the next K
        tokens one by one in an autoregressive manner, while the main model validates these
        predictions and corrects them if necessary. We go through each predicted token, and
@@ -668,7 +679,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
 
         auto& main_perf_generated_tokens = m_main_request->raw_perf_metrics.m_batch_sizes.back();
         main_perf_generated_tokens -= mismatched_candidates;
-        m_sd_metrics.update_draft_generated_token_len(candidates_to_generate);
+        m_sd_metrics.update_draft_generated_len(0 /* request_id */, candidates_to_generate);
         m_sd_metrics.update_acceptance_rate(0 /* request_id */, (accepted_tokens_number /  candidates_to_generate) * 100);
         m_sd_metrics.update_draft_accepted_tokens(0 /* request_id */, accepted_tokens_number);
         m_sd_metrics.update_generated_len(validated_tokens.size());
@@ -718,6 +729,11 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
 
     return results;
 }
+
+ov::genai::SpeculativeDecodingMetrics
+SpeculativeLLMPipelineNPU::get_speculative_decoding_metrics() const {
+    return m_sd_metrics;
+};
 
 void SpeculativeLLMPipelineNPU::start_chat(const std::string& system_message) {
     if (!system_message.empty()) {
