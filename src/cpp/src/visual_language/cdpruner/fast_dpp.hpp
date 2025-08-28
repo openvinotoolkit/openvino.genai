@@ -87,12 +87,10 @@ private:
     /**
      * @brief Update marginal gains after selecting a token
      * @param iteration Current iteration
-     * @param selected_idx Newly selected token index
      * @param cis Orthogonalized vectors [T, N]
      * @param di2s Diagonal scores to update [N]
      */
-    void update_marginal_gains(size_t iteration, size_t selected_idx, 
-                             const ov::Tensor& cis, ov::Tensor& di2s);
+    void update_marginal_gains(size_t iteration, const ov::Tensor& cis, ov::Tensor& di2s);
 
     Config m_config;
 };

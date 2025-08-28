@@ -82,7 +82,7 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
         
         // Update marginal gains by subtracting the squared new orthogonal vector
         // di2s -= square(eis)
-        update_marginal_gains(t, best_idx, cis, di2s);
+        update_marginal_gains(t, cis, di2s);
 
         // Debug output: print cis matrix content
         if (m_config.pruning_debug_mode && t < 10) {
@@ -216,8 +216,7 @@ void FastGreedyDPP::update_orthogonal_vector(const ov::Tensor& kernel, size_t ba
     }
 }
 
-void FastGreedyDPP::update_marginal_gains(size_t iteration, size_t selected_idx, 
-                                        const ov::Tensor& cis, ov::Tensor& di2s) {
+void FastGreedyDPP::update_marginal_gains(size_t iteration, const ov::Tensor& cis, ov::Tensor& di2s) {
     // This implements: di2s -= square(eis)
     // where eis is the newly computed orthogonal vector cis[iteration, :]
     
