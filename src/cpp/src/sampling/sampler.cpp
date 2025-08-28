@@ -1474,7 +1474,10 @@ void Sampler::TopKSelector::select_top_k(const ov::Tensor& logits, SamplerOutput
     // Sample 2 * group_size highest score tokens to get at least 1 non EOS token per beam
     // OPENVINO_ASSERT(candidates.size() >= 2 * group_size, "No beams left to search");
 
-    std::sort(candidates.begin(), candidates.begin() + m_parameters.eagle_tree_params.branching_factor, greater);  // select top k of cumulative probs
+    std::partial_sort(candidates.begin(),
+                      candidates.begin() + m_parameters.eagle_tree_params.branching_factor,
+                      candidates.end(),
+                      greater);  // select top k of cumulative probs
     // leave the last cycle of beam selection to candidate finalization stage
     if (m_tree_layer_counter < m_parameters.eagle_tree_params.tree_depth + 1) {
         for (size_t cand_idx = 0; cand_idx < m_parameters.eagle_tree_params.branching_factor; ++cand_idx) {
