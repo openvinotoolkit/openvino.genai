@@ -100,6 +100,9 @@ public:
 
     void finish_chat() override;
 
+    ov::genai::SpeculativeDecodingMetrics
+    get_speculative_decoding_metrics() const;
+
     ~SpeculativeLLMPipelineNPU();
 
 private:
