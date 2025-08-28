@@ -177,42 +177,38 @@ void FastGreedyDPP::update_orthogonal_vector(const ov::Tensor& kernel, size_t ba
                                            size_t iteration, ov::Tensor& cis, const ov::Tensor& di2s) {
     // This implements the key DPP orthogonalization step:
     // eis = (kernel[batch, selected_idx] - sum(cis[:iteration] * cis[:iteration, selected_idx])) / sqrt(di2s[selected_idx])
-    
     auto kernel_shape = kernel.get_shape();
     size_t total_tokens = kernel_shape[1];
     
     const float* kernel_data = kernel.data<const float>();
     const float* di2s_data = di2s.data<const float>();
     float* cis_data = cis.data<float>();
-    
+
     // Get the normalization factor
     float norm_factor = std::sqrt(di2s_data[selected_idx] + m_config.numerical_threshold);
-    
-    std::vector<float> projections(total_tokens, 0.0f);
-    
-    // First compute all projections by iterating prev_t in outer loop
+    float inv_norm = 1.0f / norm_factor;
+
+    size_t base_kernel_offset = batch_idx * total_tokens * total_tokens + selected_idx * total_tokens;
+    const float* kernel_row = kernel_data + base_kernel_offset;
+
+    float* cis_out = cis_data + iteration * total_tokens;
+
+    std::memcpy(cis_out, kernel_row, total_tokens * sizeof(float));
+
     for (size_t prev_t = 0; prev_t < iteration; ++prev_t) {
-        // Load cis[prev_t, selected_idx] once per iteration (not per token!)
-        size_t cis_selected_idx = prev_t * total_tokens + selected_idx;
-        float cis_selected_val = cis_data[cis_selected_idx];
-        
-        // Inner loop: accumulate projection for each token j
+        const float* cis_prev_row = cis_data + prev_t * total_tokens;
+        float cis_sel = cis_prev_row[selected_idx];
+
+        if (cis_sel == 0.0f)
+            continue;
+
         for (size_t j = 0; j < total_tokens; ++j) {
-            size_t cis_j_idx = prev_t * total_tokens + j;
-            projections[j] += cis_selected_val * cis_data[cis_j_idx];
+            cis_out[j] -= cis_sel * cis_prev_row[j];
         }
     }
-    
-    // Finally compute the orthogonalized vector for each token
-    size_t base_kernel_offset = batch_idx * total_tokens * total_tokens + selected_idx * total_tokens;
+
     for (size_t j = 0; j < total_tokens; ++j) {
-        // Get kernel[batch_idx, selected_idx, j]
-        size_t kernel_idx = base_kernel_offset + j;
-        float kernel_val = kernel_data[kernel_idx];
-        
-        // Store the orthogonalized vector element using pre-computed projection
-        size_t cis_current_idx = iteration * total_tokens + j;
-        cis_data[cis_current_idx] = (kernel_val - projections[j]) / norm_factor;
+        cis_out[j] *= inv_norm;
     }
 }
 
