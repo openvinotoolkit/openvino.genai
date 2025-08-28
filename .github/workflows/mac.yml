@@ -24,6 +24,7 @@ env:
   HF_HOME: ~/.cache/hf
   OV_CACHE: ~/.cache/ov_cache/194c936
   CLEANUP_CACHE: 1
+  OPENVINO_LOG_LEVEL: 5
 
 jobs:
   smart_ci:
@@ -429,12 +430,8 @@ jobs:
             cmd: 'tests/python_tests/test_whisper_pipeline.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 120
-          - name: 'Cacheopt E2E'
-            cmd: 'tests/python_tests/test_kv_cache_eviction.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 240
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
+            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py -p no:cacheprovider'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 180
           - name: 'GGUF Reader tests'

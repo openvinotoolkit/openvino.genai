@@ -64,6 +64,10 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
+    # llama-3-8b-instruct's generation_config.json has 4096 max_length.
+    # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
+    # Override it to preserve max_new_tokens.
+    max_length = 2**64 - 1
     start = time.perf_counter()
     if streaming:
         if args['infer_count'] is not None and args['end_token_stopping'] is False:
@@ -72,6 +76,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             result = model.generate(
                 **input_data,
                 max_new_tokens=int(max_gen_tokens),
+                max_length=max_length,
                 num_beams=args['num_beams'],
                 use_cache=True,
                 eos_token_id=None,
@@ -83,6 +88,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             result = model.generate(
                 **input_data,
                 max_new_tokens=int(max_gen_tokens),
+                max_length=max_length,
                 num_beams=args['num_beams'],
                 use_cache=True,
                 do_sample=False,
@@ -96,6 +102,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             result = model.generate(
                 **input_data,
                 max_new_tokens=int(max_gen_tokens),
+                max_length=max_length,
                 num_beams=args['num_beams'],
                 use_cache=True,
                 eos_token_id=None,
@@ -106,6 +113,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             result = model.generate(
                 **input_data,
                 max_new_tokens=int(max_gen_tokens),
+                max_length=max_length,
                 num_beams=args['num_beams'],
                 use_cache=True,
                 do_sample=False,
@@ -259,6 +267,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         log.info(out_str)
     gen_config = model.get_generation_config()
     gen_config.max_new_tokens = max_gen_tokens
+    # llama-3-8b-instruct's generation_config.json has 4096 max_length.
+    # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
+    # Override it to preserve max_new_tokens.
+    gen_config.max_length = 2**64 - 1
     gen_config.ignore_eos = True
     gen_config.rng_seed = args["seed"]
     gen_config.num_beams = args["num_beams"]
@@ -440,6 +452,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     gen_config = model.get_generation_config()
     gen_config.rng_seed = args["seed"]
     gen_config.max_new_tokens = max_gen_tokens
+    gen_config.max_length = 2**64 - 1
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
     if gen_config.num_beams > 1:
