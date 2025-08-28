@@ -4,7 +4,10 @@
 #include <atomic>
 #include <thread>
 #include <optional>
+
+#if !defined(_WIN32)
 #include <sys/sysinfo.h>
+#endif
 
 #include "openvino/genai/text_streamer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
@@ -41,7 +44,7 @@ size_t get_free_memory_size_bytes() {
         }
         file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
     }
- #endif
+#endif
     return std::numeric_limits<size_t>::max();
 }
 
