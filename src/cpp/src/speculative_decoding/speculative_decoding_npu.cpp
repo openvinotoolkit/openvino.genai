@@ -33,10 +33,12 @@ void update_perf_metrics(ov::genai::RawPerfMetrics& raw_perf_counters, const flo
     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
 }
 
-// FIXME: Should we update infer duraion?
 void update_perf_metrics(ov::genai::RawPerfMetrics& raw_perf_counters,
-                         const float token_duration, const std::size_t num_generated_tokens) {
+                         const float inference_duration,
+                         const float token_duration,
+                         const std::size_t num_generated_tokens) {
     raw_perf_counters.m_durations.emplace_back(token_duration);
+    raw_perf_counters.m_inference_durations[0] += ov::genai::MicroSeconds(inference_duration);
     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
 }
 }// anonymous namespace
@@ -60,6 +62,7 @@ namespace genai {
         // utils::apply_gather_before_matmul_transformation(model_desc.model);
         m_request = ov::genai::utils::singleton_core().compile_model(model_desc.model, m_device, m_properties).create_infer_request();
     }
+    raw_perf_metrics.m_inference_durations =  {{ ov::genai::MicroSeconds(0.0f) }};
 }
 
 std::string LLMInferWrapper::device() const {
@@ -117,7 +120,10 @@ int64_t LLMInferWrapper::infer_first(const ov::Tensor &input_ids,
         m_request.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     }
 
+    const auto infer_start = std::chrono::steady_clock::now();
     m_request.infer();
+    const auto infer_end = std::chrono::steady_clock::now();
+
     m_num_processed_tokens = input_ids.get_shape()[1];
     m_first_prompt_len = m_num_processed_tokens;
 
@@ -132,7 +138,9 @@ int64_t LLMInferWrapper::infer_first(const ov::Tensor &input_ids,
     last_token = std::get<int64_t>(sample_tokens(get_logits(), 1u));
 
     infer_first_timer.end();
-    update_perf_metrics(raw_perf_metrics, infer_first_timer.get_duration_microsec(), BATCH_SIZE);
+    update_perf_metrics(raw_perf_metrics,
+         ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
+         infer_first_timer.get_duration_microsec(), BATCH_SIZE);
     return last_token;
 }
 
@@ -159,7 +167,7 @@ bool LLMInferWrapper::can_infer(const std::size_t prompt_len) {
     return true;
 }
 
-int64_t LLMInferWrapper::infer_next(int64_t token, bool skip_perf_stat) {
+int64_t LLMInferWrapper::infer_next(int64_t token, bool append_perf_stat) {
     OPENVINO_ASSERT(m_num_processed_tokens > 0, "infer_next() can be called only after infer_first()!");
 
     ManualTimer infer_next_timer("infer_next()");
@@ -172,7 +180,9 @@ int64_t LLMInferWrapper::infer_next(int64_t token, bool skip_perf_stat) {
     m_new_atten_mask_data.push_back(1);
     m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,m_new_atten_mask_data.size()}, (void*)&m_new_atten_mask_data[0]));
 
+    const auto infer_start = std::chrono::steady_clock::now();
     m_request.infer();
+    const auto infer_end = std::chrono::steady_clock::now();
 
     m_num_processed_tokens += 1u;
 
@@ -180,9 +190,16 @@ int64_t LLMInferWrapper::infer_next(int64_t token, bool skip_perf_stat) {
     last_token = std::get<int64_t>(sample_tokens(get_logits(), 1u));
 
     infer_next_timer.end();
-    if (!skip_perf_stat) {
+    // prepend perf stat
+    if (!append_perf_stat) {
         update_perf_metrics(
-            raw_perf_metrics, infer_next_timer.get_duration_microsec(), BATCH_SIZE);
+            raw_perf_metrics,
+            ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
+            infer_next_timer.get_duration_microsec(),
+            BATCH_SIZE);
+    } else {
+        raw_perf_metrics.m_durations.back() += infer_next_timer.get_duration_microsec();
+        raw_perf_metrics.m_inference_durations[0] += ov::genai::PerfMetrics::get_microsec(infer_end - infer_start);
     }
 
     return last_token;
@@ -213,7 +230,9 @@ std::vector<int64_t> LLMInferWrapper::infer_next_return_all(const std::vector<in
               m_num_processed_tokens);
     m_request.set_tensor("position_ids", new_position_ids);
 
+    const auto infer_start = std::chrono::steady_clock::now();
     m_request.infer();
+    const auto infer_end = std::chrono::steady_clock::now();
 
     m_num_processed_tokens += tokens_size;
 
@@ -234,7 +253,8 @@ std::vector<int64_t> LLMInferWrapper::infer_next_return_all(const std::vector<in
 
     infer_next_return_all_timer.end();
     update_perf_metrics(
-        raw_perf_metrics, infer_next_return_all_timer.get_duration_microsec(), tokens_size);
+        raw_perf_metrics, ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
+        infer_next_return_all_timer.get_duration_microsec(), tokens_size);
     return sampled_tokens;
 }
 
@@ -273,6 +293,7 @@ void LLMInferWrapper::trim_kv_cache(const size_t tokens_to_remove) {
 }
 
 void LLMInferWrapper::reset_state() {
+    raw_perf_metrics.m_inference_durations =  {{ ov::genai::MicroSeconds(0.0f) }};
     return m_request.reset_state();
 }
 
@@ -581,30 +602,21 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
             candidates_can_be_generated);
         candidates.reserve(candidates_to_generate);
 
-        ManualTimer draft_prefix_timer("Draft model: prefix token inference");
         // If draft_prefix_token is present, run an infer on it to collect KV cache for it
-        if (draft_prefix_token != -1) {
-            draft_prefix_timer.start();
-            m_draft_request->infer_next(draft_prefix_token, true);
-            draft_prefix_timer.end();
+        const bool draft_prefix_exists = (draft_prefix_token != -1);
+        if (draft_prefix_exists) {
+            m_draft_request->infer_next(draft_prefix_token);
         }
+        // Note: If `draft_prefix_exists == true`, then we append performance metrics of
+        // newly generated candidate to the previously generated token on draft prefix prompt,
+        // as we are only interested in one output from these two inference operations.
+        int64_t candidate = m_draft_request->infer_next(out_token, draft_prefix_exists); 
+        candidates.push_back(candidate);
 
-        int64_t candidate = out_token;
-        for (size_t i = 0; i < candidates_to_generate; i++) {
+        for (size_t i = 1; i < candidates_to_generate; i++) {
             candidate = m_draft_request->infer_next(candidate);
             candidates.push_back(candidate);
         }
-
-        // Dirty hack to update inference duration of token, that was calculated after inference
-        // on draft_prefix_token.
-        // As we are inferring on draft_prefix_token just to update KV-Cache and are not interested
-        // in predicted token output, then we accumulating this inference's duration with the one
-        // of the next token (which are interested in):
-        if (draft_prefix_token != -1) {
-            auto token_to_hack_it = m_draft_request->raw_perf_metrics.m_durations.end() - candidates_to_generate;
-            (*token_to_hack_it) += ov::genai::MicroSeconds(draft_prefix_timer.get_duration_microsec());
-        }
-
         draft_prefix_token = candidates.back();
 
         candidates_timer.end();

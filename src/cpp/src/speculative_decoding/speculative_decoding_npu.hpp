@@ -32,7 +32,7 @@ public:
 
     bool can_infer(const std::size_t prompt_len = 0);
 
-    int64_t infer_next(int64_t out_token, bool skip_perf_stat = false);
+    int64_t infer_next(int64_t out_token, bool append_perf_stat = false);
 
     std::vector<int64_t> infer_next_return_all(const std::vector<int64_t> tokens);
 
