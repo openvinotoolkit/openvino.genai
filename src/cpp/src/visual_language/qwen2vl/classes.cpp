@@ -28,71 +28,149 @@ namespace {
 // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
 const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
 
-std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org,
-                                                       const ov::Tensor& image_mean_tensor,
-                                                       const ov::Tensor& image_scale_tensor) {
-    auto raw_images = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
-    auto resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
-    auto broadcast_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
-    auto temp_shape8d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{8});
-    auto temp_shape4d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
-    auto last_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
-
-    raw_images->set_friendly_name("raw_images");
-    raw_images->output(0).get_tensor().set_names({"raw_images"});
-
-    resize_target_shape->set_friendly_name("resize_target_shape");
-    resize_target_shape->output(0).get_tensor().set_names({"resize_target_shape"});
-
-    broadcast_shape->set_friendly_name("broadcast_shape");
-    broadcast_shape->output(0).get_tensor().set_names({"broadcast_shape"});
-
-    temp_shape8d->set_friendly_name("temp_shape8d");
-    temp_shape8d->output(0).get_tensor().set_names({"temp_shape8d"});
-    temp_shape4d->set_friendly_name("temp_shape4d");
-    temp_shape4d->output(0).get_tensor().set_names({"temp_shape4d"});
-    last_shape->set_friendly_name("last_shape");
-    last_shape->output(0).get_tensor().set_names({"last_shape"});
-    auto image_mean = std::make_shared<ov::op::v0::Constant>(image_mean_tensor);
-    auto image_scale = std::make_shared<ov::op::v0::Constant>(image_scale_tensor);
-    auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(raw_images, ov::element::f32);
+std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {
+    auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(input, ov::element::f32);
     auto img_trans = std::make_shared<ov::op::v1::Transpose>(
         raw_images_f32,
         std::make_shared<ov::op::v0::Constant>(ov::element::i32, Shape{4}, std::vector<int32_t>{0, 3, 1, 2}));
+    return img_trans;
+}
 
-    ov::op::v0::Interpolate::Attributes attrs = {};
-    attrs.axes = {2, 3};
-    attrs.mode = "cubic";
-    attrs.antialias = true;
-    attrs.align_corners = true;
-    auto img_resized = std::make_shared<ov::op::v0::Interpolate>(img_trans, resize_target_shape, attrs);
-    auto img_resized_rnd = std::make_shared<ov::op::v5::Round>(img_resized, ov::op::v5::Round::RoundMode::HALF_TO_EVEN);
-    auto resized_images_f32_planar = std::make_shared<ov::op::v0::Clamp>(img_resized_rnd, 0, 255);
-    auto resized_images_m = std::make_shared<ov::op::v1::Subtract>(resized_images_f32_planar, image_mean);
-    auto resized_images_s = std::make_shared<ov::op::v1::Multiply>(resized_images_m, image_scale);
-    auto temporal_images = std::make_shared<ov::op::v0::Tile>(resized_images_s, broadcast_shape);
-    auto reshaped_8d = std::make_shared<ov::op::v1::Reshape>(temporal_images, temp_shape8d, true);
-    auto transposed_8d = std::make_shared<ov::op::v1::Transpose>(
-        reshaped_8d,
-        std::make_shared<ov::op::v0::Constant>(ov::element::i32,
-                                               Shape{8},
-                                               std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7}));
-    auto reshaped_4d = std::make_shared<ov::op::v1::Reshape>(transposed_8d, temp_shape4d, true);
-    auto transposed_4d = std::make_shared<ov::op::v1::Transpose>(
-        reshaped_4d,
+/**
+ * Creates a bicubic resize operation using OpenVINO nodes
+ * @param input The input tensor node to resize
+ * @param target_size Node containing the target width and height [height, width]
+ * @return Node representing the resized tensor
+ */
+std::shared_ptr<ov::Node> create_bicubic_resize(std::shared_ptr<ov::Node> input,
+                                                const std::shared_ptr<ov::Node>& target_size) {
+    // Create axes for height and width dimensions (assuming NCHW layout)
+    auto axes = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {2, 3});
+
+    // Configure interpolation attributes for bicubic resize
+    ov::op::v11::Interpolate::InterpolateAttrs attrs;
+    attrs.mode = ov::op::v11::Interpolate::InterpolateMode::CUBIC;
+    attrs.shape_calculation_mode = ov::op::v11::Interpolate::ShapeCalcMode::SIZES;
+    attrs.coordinate_transformation_mode = ov::op::v11::Interpolate::CoordinateTransformMode::PYTORCH_HALF_PIXEL;
+    attrs.cube_coeff = -0.75f;  // Standard bicubic coefficient
+    attrs.nearest_mode = ov::op::v11::Interpolate::NearestMode::ROUND_PREFER_FLOOR;
+    attrs.pads_begin = {0, 0};
+    attrs.pads_end = {0, 0};
+    attrs.antialias = false;
+
+    // Create interpolate operation
+    auto interpolate = std::make_shared<ov::op::v11::Interpolate>(input, target_size, axes, attrs);
+
+    return interpolate;
+}
+
+/**
+ * Creates a normalization operation using OpenVINO nodes
+ * @param input The input tensor node to normalize (uint8 format)
+ * @param mean Node containing the mean values for each channel
+ * @param std Node containing the standard deviation values for each channel
+ * @return Node representing the normalized tensor
+ */
+std::shared_ptr<ov::Node> create_normalization(std::shared_ptr<ov::Node> input,
+                                               const std::shared_ptr<ov::Node>& mean,
+                                               const std::shared_ptr<ov::Node>& std) {
+    // clamp to 0 ~ 255
+    auto image_clamp = std::make_shared<ov::op::v0::Clamp>(input, 0, 255);
+    // Subtract mean
+    auto mean_subtracted = std::make_shared<ov::op::v1::Subtract>(image_clamp, mean);
+
+    // Divide by std
+    auto normalized = std::make_shared<ov::op::v1::Multiply>(mean_subtracted, std);
+
+    return normalized;
+}
+
+/**
+ * @brief Creates a node that reshapes and transposes the input tensor to match the
+ *        functionality of reshape_image_patches.
+ * @param input The input node to reshape and transpose.
+ * @param reshape_shape A constant node containing the target shape dimensions.
+ * @return A node representing the reshaped and transposed tensor.
+ */
+std::shared_ptr<ov::Node> create_transpose_patches(std::shared_ptr<ov::Node> input,
+                                                   const std::shared_ptr<ov::Node>& reshape_dims,
+                                                   const std::shared_ptr<ov::Node>& transpose_order) {
+    // Reshape input to the required dimensions
+    auto reshaped = std::make_shared<ov::op::v1::Reshape>(input, reshape_dims, true);
+
+    // Transpose the reshaped tensor
+    auto transposed = std::make_shared<ov::op::v1::Transpose>(reshaped, transpose_order);
+
+    return transposed;
+}
+
+std::shared_ptr<ov::Node> create_flatten_patches(std::shared_ptr<ov::Node> input,
+                                                 const std::shared_ptr<ov::Node>& flatten_shape) {
+    // Reshape (flatten) the input tensor
+    auto flattened = std::make_shared<ov::op::v1::Reshape>(input, flatten_shape, true);
+
+    return flattened;
+}
+
+std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org,
+                                                       const ov::Tensor& image_mean_tensor,
+                                                       const ov::Tensor& image_scale_tensor) {
+    auto input_images = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+    auto resize_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
+    auto tile_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
+    auto reshape_shape8d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{8});
+    auto reshape_shape4d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
+    auto reshape_shape2d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
+
+    input_images->set_friendly_name("input_images");
+    input_images->output(0).get_tensor().set_names({"input_images"});
+
+    resize_shape->set_friendly_name("resize_shape");
+    resize_shape->output(0).get_tensor().set_names({"resize_shape"});
+
+    tile_shape->set_friendly_name("tile_shape");
+    tile_shape->output(0).get_tensor().set_names({"tile_shape"});
+
+    reshape_shape8d->set_friendly_name("reshape_shape8d");
+    reshape_shape8d->output(0).get_tensor().set_names({"reshape_shape8d"});
+    reshape_shape4d->set_friendly_name("reshape_shape4d");
+    reshape_shape4d->output(0).get_tensor().set_names({"reshape_shape4d"});
+    reshape_shape2d->set_friendly_name("reshape_shape2d");
+    reshape_shape2d->output(0).get_tensor().set_names({"reshape_shape2d"});
+    auto image_mean = std::make_shared<ov::op::v0::Constant>(image_mean_tensor);
+    auto image_scale = std::make_shared<ov::op::v0::Constant>(image_scale_tensor);
+    auto img_f32_nchw = create_f32_nchw_input(input_images);
+
+    auto img_resized = create_bicubic_resize(img_f32_nchw, resize_shape);
+
+    auto img_normalized = create_normalization(img_resized, image_mean, image_scale);
+
+    auto temporal_images = std::make_shared<ov::op::v0::Tile>(img_normalized, tile_shape);
+
+    auto img_8d =
+        create_transpose_patches(temporal_images,
+                                 reshape_shape8d,
+                                 std::make_shared<ov::op::v0::Constant>(ov::element::i32,
+                                                                        Shape{8},
+                                                                        std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7}));
+
+    auto img_4d = create_transpose_patches(
+        img_8d,
+        reshape_shape4d,
         std::make_shared<ov::op::v0::Constant>(ov::element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3}));
-    auto reshaped_to_2d = std::make_shared<ov::op::v1::Reshape>(transposed_4d, last_shape, true);
+
+    auto img_2d = create_flatten_patches(img_4d, reshape_shape2d);
 
     auto params_org = model_org->get_parameters();
     OPENVINO_ASSERT(params_org.size() == 1);
 
-    ov::replace_node(params_org[0], reshaped_to_2d);
+    ov::replace_node(params_org[0], img_2d);
 
     auto results = model_org->get_results();
 
     return std::make_shared<ov::Model>(
         results,
-        ov::ParameterVector{raw_images, resize_target_shape, broadcast_shape, temp_shape8d, temp_shape4d, last_shape});
+        ov::ParameterVector{input_images, resize_shape, tile_shape, reshape_shape8d, reshape_shape4d, reshape_shape2d});
 }
 } // namespace
 
@@ -461,7 +539,7 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
         config.max_pixels
     );
 
-    ov::Tensor raw_images(ov::element::u8, image_shape, image.data<uint8_t>());
+    ov::Tensor input_images(ov::element::u8, image_shape, image.data<uint8_t>());
 
     uint64_t a_target_shape[2] = {target_image_size.height, target_image_size.width};
     ov::Tensor target_shape(ov::element::i64, ov::Shape{2}, a_target_shape);
@@ -490,17 +568,17 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
         config.patch_size * config.patch_size
     };
     uint64_t last_output_shape[2] = {grid_t * grid_h * grid_w, channel * temporal_patch_size * config.patch_size * config.patch_size};
-    ov::Tensor broadcast_shape(ov::element::i64, ov::Shape{4}, a_broadcast_shape);
-    ov::Tensor temp_shape8d(ov::element::i64, ov::Shape{8}, a_temp_shape8d);
-    ov::Tensor temp_shape4d(ov::element::i64, ov::Shape{4}, a_temp_shape4d);
-    ov::Tensor last_shape(ov::element::i64, ov::Shape{2}, last_output_shape);
+    ov::Tensor tile_shape(ov::element::i64, ov::Shape{4}, a_broadcast_shape);
+    ov::Tensor reshape_shape8d(ov::element::i64, ov::Shape{8}, a_temp_shape8d);
+    ov::Tensor reshape_shape4d(ov::element::i64, ov::Shape{4}, a_temp_shape4d);
+    ov::Tensor reshape_shape2d(ov::element::i64, ov::Shape{2}, last_output_shape);
 
-    encoder.set_tensor("raw_images", raw_images);
-    encoder.set_tensor("resize_target_shape", target_shape);
-    encoder.set_tensor("broadcast_shape", broadcast_shape);
-    encoder.set_tensor("temp_shape8d", temp_shape8d);
-    encoder.set_tensor("temp_shape4d", temp_shape4d);
-    encoder.set_tensor("last_shape", last_shape);
+    encoder.set_tensor("input_images", input_images);
+    encoder.set_tensor("resize_shape", target_shape);
+    encoder.set_tensor("tile_shape", tile_shape);
+    encoder.set_tensor("reshape_shape8d", reshape_shape8d);
+    encoder.set_tensor("reshape_shape4d", reshape_shape4d);
+    encoder.set_tensor("reshape_shape2d", reshape_shape2d);
 
     encoder.infer();
 
