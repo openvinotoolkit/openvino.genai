@@ -183,7 +183,6 @@ void FastGreedyDPP::update_orthogonal_vector(const ov::Tensor& kernel, size_t ba
     const float* kernel_data = kernel.data<const float>();
     const float* di2s_data = di2s.data<const float>();
     float* cis_data = cis.data<float>();
-
     // Get the normalization factor
     float norm_factor = std::sqrt(di2s_data[selected_idx] + m_config.numerical_threshold);
     float inv_norm = 1.0f / norm_factor;
@@ -202,7 +201,20 @@ void FastGreedyDPP::update_orthogonal_vector(const ov::Tensor& kernel, size_t ba
         if (cis_sel == 0.0f)
             continue;
 
-        for (size_t j = 0; j < total_tokens; ++j) {
+        // Manual loop unrolling, improve cache hit rate
+        size_t j = 0;
+        const size_t unroll_size = 4;
+        const size_t unroll_limit = (total_tokens / unroll_size) * unroll_size;
+        
+        for (; j < unroll_limit; j += unroll_size) {
+            cis_out[j]     -= cis_sel * cis_prev_row[j];
+            cis_out[j + 1] -= cis_sel * cis_prev_row[j + 1];
+            cis_out[j + 2] -= cis_sel * cis_prev_row[j + 2];
+            cis_out[j + 3] -= cis_sel * cis_prev_row[j + 3];
+        }
+        
+        // Process remaining elements
+        for (; j < total_tokens; ++j) {
             cis_out[j] -= cis_sel * cis_prev_row[j];
         }
     }
