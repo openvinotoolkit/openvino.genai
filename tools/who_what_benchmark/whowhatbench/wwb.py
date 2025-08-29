@@ -6,6 +6,8 @@ import os
 
 from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
+from openvino import get_version
+import openvino_genai
 
 import pandas as pd
 from datasets import load_dataset
@@ -344,7 +346,6 @@ def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question,
 def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
     kwargs = {}
     if empty_adapters:
-        import openvino_genai
         kwargs["adapters"] = openvino_genai.AdapterConfig()
 
     if model.resolution is not None and model.resolution[0] is not None:
@@ -567,6 +568,8 @@ def read_cb_config(path):
 def main():
     args = parse_args()
     check_args(args)
+
+    print(f'openvino runtime version: {get_version()}, genai version: {openvino_genai.__version__}')
 
     kwargs = {}
     if args.cb_config:
