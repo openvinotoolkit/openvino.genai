@@ -5,7 +5,10 @@
 #include <thread>
 #include <optional>
 
-#if !defined(_WIN32)
+#ifdef __APPLE__
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#elif !defined(_WIN32)
 #include <sys/sysinfo.h>
 #endif
 
@@ -29,12 +32,20 @@ ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model)
     return ir_kv_cache_precision;
 }
 
-size_t get_free_memory_size_bytes() {
+size_t get_memory_size_bytes() {
+#ifdef __APPLE__ 
+    int64_t memsize;
+    size_t len = sizeof(memsize);
+    if (sysctlbyname("hw.memsize", &memsize, &len, NULL, 0) == 0) {
+        return memsize;
+    }
+#endif 
+
 #if !defined(_WIN32)
     std::string token;
     std::ifstream file("/proc/meminfo");
     while(file >> token) {
-        if(token == "MemFree:") {
+        if(token == "MemTotal:") {
             size_t mem;
             if(file >> mem) {
                 return mem * 1024;
@@ -148,15 +159,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
 
     // Scheduler configuration
     SchedulerConfig normalized_config = scheduler_config;
-    size_t free_mem_size = get_free_memory_size_bytes();
+    size_t total_mem_size = get_memory_size_bytes();
     if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
         size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
-        OPENVINO_ASSERT(size_in_bytes <= free_mem_size, "Requested KV-cache size is larger than available memory size on the system.");
+        OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested KV-cache size is larger than available memory size on the system.");
         normalized_config.num_kv_blocks = size_in_bytes / cache_manager->get_block_size_in_bytes();
     }
     if (normalized_config.num_kv_blocks > 0) {
         size_t size_in_bytes = cache_manager->get_block_size_in_bytes() * normalized_config.num_kv_blocks;
-        OPENVINO_ASSERT(size_in_bytes <= free_mem_size, "Requested number of KV-blocks require more memory than available on the system.");
+        OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested number of KV-blocks require more memory than available on the system.");
     }
 
     bool can_use_partial_preemption = true;
