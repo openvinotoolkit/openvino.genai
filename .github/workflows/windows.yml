@@ -728,7 +728,6 @@ jobs:
       run:
         shell: pwsh
     runs-on: ${{ matrix.test.runner }}
-    runs-on: ${{ matrix.test.runner }}
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
