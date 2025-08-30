@@ -267,9 +267,13 @@ def load_tokenizer(args):
                 args.target_model, trust_remote_code=False
             )
         except Exception:
-            tokenizer = AutoTokenizer.from_pretrained(
-                args.target_model, trust_remote_code=True
-            )
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    args.target_model, trust_remote_code=True
+                )
+            except Exception:
+                logger.error(f"Cannot load the tokenizer for model type \"{args.model_type}\" from {args.target_model}")
+                raise
 
     return tokenizer
 
