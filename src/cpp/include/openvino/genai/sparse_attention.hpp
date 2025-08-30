@@ -78,6 +78,42 @@ public:
      *  M time to be calculated, then the importance score calculation would be taking `M / xattention_stride` time as
      *  overhead. */
     size_t xattention_stride = 8;
+
+    /**
+     * @brief Returns a string representation of the SparseAttentionConfig.
+     *
+     * The returned string contains the values of all configuration fields in a human-readable format, e.g.:
+     * SparseAttentionConfig {
+     *   sparseAttentionMode: TRISHAPE
+     *   num_last_dense_tokens_in_prefill: 100
+     *   num_retained_start_tokens_in_cache: 128
+     *   num_retained_recent_tokens_in_cache: 1920
+     *   xattention_threshold: 0.8
+     *   xattention_block_size: 64
+     *   xattention_stride: 8
+     * }
+     *
+     * @return A string describing the current configuration.
+     */
+    std::string to_string() const {
+        static const std::unordered_map<SparseAttentionMode, std::string> sparse_attention_mode_to_string = {
+            {SparseAttentionMode::TRISHAPE, "TRISHAPE"},
+			{SparseAttentionMode::XATTENTION, "XATTENTION"},
+        };
+        std::ostringstream oss;
+        oss << "SparseAttentionConfig { " << "\n";
+        if (sparse_attention_mode_to_string.count(mode) > 0) {
+            oss << "  sparseAttentionMode: " << sparse_attention_mode_to_string.at(mode) << "\n";
+        }
+        oss << "  num_last_dense_tokens_in_prefill: " << num_last_dense_tokens_in_prefill << "\n";
+        oss << "  num_retained_start_tokens_in_cache: " << num_retained_start_tokens_in_cache << "\n";
+        oss << "  num_retained_recent_tokens_in_cache: " << num_retained_recent_tokens_in_cache << "\n";
+        oss << "  xattention_threshold: " << xattention_threshold << "\n";
+        oss << "  xattention_block_size: " << xattention_block_size << "\n";
+        oss << "  xattention_stride: " << xattention_stride << "\n";
+        oss << " }";
+        return oss.str();
+    }
 };
 
 }  // namespace ov::genai
