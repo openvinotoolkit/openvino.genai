@@ -541,6 +541,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      OPENVINO_LOG_LEVEL: 1 # Debugging information doesn't guarantee stable results
 
     steps:
       - name: Clone openvino.genai
