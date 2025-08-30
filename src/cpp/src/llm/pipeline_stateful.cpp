@@ -255,6 +255,9 @@ EncodedResults StatefulLLMPipeline::generate(
 
     size_t real_input_ids_size = input_ids.get_shape().at(1);
 
+    if (is_chat_conversation && m_use_full_chat_history)
+        m_kv_cache_state.reset_state();
+
     // Tail of previous output in chat mode is missing in KV cache.
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
         ov::Tensor new_chat_tokens = ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data()};
