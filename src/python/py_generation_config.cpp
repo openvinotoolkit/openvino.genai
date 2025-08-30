@@ -178,25 +178,12 @@ void init_generation_config(py::module_& m) {
             }
         );
 
-    auto structured_output_config = py::class_<StructuredOutputConfig>(m, "StructuredOutputConfig", structured_output_config_docstring)
-        .def(py::init<>(), "Default constructor for StructuredOutputConfig")
-        .def(py::init([](py::kwargs kwargs) {
-            return StructuredOutputConfig(pyutils::kwargs_to_any_map(kwargs));
-        }), "Constructor that initializes the structured output configuration with kwargs.")
-        .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
-        .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
-        .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation")
-        .def_readwrite("structural_tags_config", &StructuredOutputConfig::structural_tags_config, "Configuration for structural tags in structured output generation")
-        .def_readwrite("compound_grammar", &StructuredOutputConfig::compound_grammar, "Compound grammar for structured output generation")
-        .def("__repr__",
-            [](const StructuredOutputConfig &self) {
-                return "StructuredOutputConfig(json_schema=" + py::repr(py::cast(self.json_schema)).cast<std::string>() +
-                       ", regex=" + py::repr(py::cast(self.regex)).cast<std::string>() +
-                       ", grammar=" + py::repr(py::cast(self.grammar)).cast<std::string>() +
-                       ", structural_tags_config=" + py::repr(py::cast(self.structural_tags_config)).cast<std::string>() +
-                       ", compound_grammar=" + py::repr(py::cast(self.compound_grammar)).cast<std::string>() + ")";
-            }
-        );
+    // Declaration should go ahead of definition of exact fields, if we don't do that and define right away
+    // pybind11-stubgen generates not accurate signatures and shows warning/errors
+    // because Concat/Union/StructuredOutputConfig use EBNF/JSONSchema/etc. which are not defined yet.
+    auto structured_output_config = py::class_<StructuredOutputConfig>(m, "StructuredOutputConfig", structured_output_config_docstring);
+    auto concat = py::class_<StructuredOutputConfig::Concat, std::shared_ptr<StructuredOutputConfig::Concat>>(structured_output_config, "Concat");
+    auto union_ = py::class_<StructuredOutputConfig::Union, std::shared_ptr<StructuredOutputConfig::Union>>(structured_output_config, "Union");
 
     auto regex = py::class_<StructuredOutputConfig::Regex>(structured_output_config, "Regex")
         .def(py::init<const std::string&>(), "Regex building block for compound grammar configuration.")
@@ -216,7 +203,7 @@ void init_generation_config(py::module_& m) {
         .def("__repr__", [](const StructuredOutputConfig::EBNF& self) { return self.to_string(); });
     add_grammar_operators(ebnf);
 
-    auto concat = py::class_<StructuredOutputConfig::Concat, std::shared_ptr<StructuredOutputConfig::Concat>>(structured_output_config, "Concat")
+    concat
         .def_static("__new__", [](py::object cls, py::object left, py::object right) {
             return std::make_shared<StructuredOutputConfig::Concat>(
                 pyutils::py_obj_to_compound_grammar(left),
@@ -228,7 +215,7 @@ void init_generation_config(py::module_& m) {
         .def("__repr__", [](const StructuredOutputConfig::Concat& self) { return self.to_string(); });
     add_grammar_operators(concat);
 
-    auto union_ = py::class_<StructuredOutputConfig::Union, std::shared_ptr<StructuredOutputConfig::Union>>(structured_output_config, "Union")
+    union_
         .def_static("__new__", [](py::object cls, py::object left, py::object right) {
             return std::make_shared<StructuredOutputConfig::Union>(
                 pyutils::py_obj_to_compound_grammar(left),
@@ -239,6 +226,26 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("right", &StructuredOutputConfig::Union::right)
         .def("__repr__", [](const StructuredOutputConfig::Union& self) { return self.to_string(); });
     add_grammar_operators(union_);
+
+    structured_output_config
+        .def(py::init<>(), "Default constructor for StructuredOutputConfig")
+        .def(py::init([](py::kwargs kwargs) {
+            return StructuredOutputConfig(pyutils::kwargs_to_any_map(kwargs));
+        }), "Constructor that initializes the structured output configuration with kwargs.")
+        .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
+        .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
+        .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation")
+        .def_readwrite("structural_tags_config", &StructuredOutputConfig::structural_tags_config, "Configuration for structural tags in structured output generation")
+        .def_readwrite("compound_grammar", &StructuredOutputConfig::compound_grammar, "Compound grammar for structured output generation")
+        .def("__repr__",
+            [](const StructuredOutputConfig &self) {
+                return "StructuredOutputConfig(json_schema=" + py::repr(py::cast(self.json_schema)).cast<std::string>() +
+                       ", regex=" + py::repr(py::cast(self.regex)).cast<std::string>() +
+                       ", grammar=" + py::repr(py::cast(self.grammar)).cast<std::string>() +
+                       ", structural_tags_config=" + py::repr(py::cast(self.structural_tags_config)).cast<std::string>() +
+                       ", compound_grammar=" + py::repr(py::cast(self.compound_grammar)).cast<std::string>() + ")";
+            }
+        );
 
     // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
