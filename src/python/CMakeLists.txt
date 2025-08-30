@@ -36,13 +36,17 @@ endif()
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai)
 target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.." "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src") # for tokenizer/tokenizers_path.hpp
 set_target_properties(${TARGET_NAME} PROPERTIES
-    ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
-    LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
+    ARCHIVE_OUTPUT_DIRECTORY "$<1:${GENAI_ARCHIVE_OUTPUT_DIRECTORY}>"
+    LIBRARY_OUTPUT_DIRECTORY "$<1:${GENAI_LIBRARY_OUTPUT_DIRECTORY}>"
 )
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
-          "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.pyi"
-          "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi"
-     DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
+
+add_custom_command(
+    TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.pyi"
+        "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi"
+        "${GENAI_LIBRARY_OUTPUT_DIRECTORY}")
 
 if(OpenVINODeveloperPackage_FOUND)
     # TODO: commit changes separately
