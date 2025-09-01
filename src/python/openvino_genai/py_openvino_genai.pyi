@@ -558,20 +558,24 @@ class ExtendedPerfMetrics:
     
         Holds performance metrics for each generate call.
     
-        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        PerfMetrics holds the following metrics with mean and standard deviations:
         - Time To the First Token (TTFT), ms
         - Time per Output Token (TPOT), ms/token
+        - Inference time per Output Token (IPOT), ms/token
         - Generate total duration, ms
+        - Inference duration, ms
         - Tokenization duration, ms
         - Detokenization duration, ms
         - Throughput, tokens/s
     
-        Additional fields include:
+        Additional metrics include:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Time to initialize grammar compiler for each backend, ms
+        - Time to compile grammar, ms
     
-        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
     
         :param get_load_time: Returns the load time in milliseconds.
@@ -589,8 +593,14 @@ class ExtendedPerfMetrics:
         :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
         :type get_tpot: MeanStdPair
     
+        :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
+        :type get_ipot: MeanStdPair
+    
         :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
         :type get_throughput: MeanStdPair
+    
+        :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
+        :type get_inference_duration: MeanStdPair
     
         :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
         :type get_generate_duration: MeanStdPair
@@ -1716,20 +1726,24 @@ class PerfMetrics:
     
         Holds performance metrics for each generate call.
     
-        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        PerfMetrics holds the following metrics with mean and standard deviations:
         - Time To the First Token (TTFT), ms
         - Time per Output Token (TPOT), ms/token
+        - Inference time per Output Token (IPOT), ms/token
         - Generate total duration, ms
+        - Inference duration, ms
         - Tokenization duration, ms
         - Detokenization duration, ms
         - Throughput, tokens/s
     
-        Additional fields include:
+        Additional metrics include:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Time to initialize grammar compiler for each backend, ms
+        - Time to compile grammar, ms
     
-        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
     
         :param get_load_time: Returns the load time in milliseconds.
@@ -1747,8 +1761,14 @@ class PerfMetrics:
         :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
         :type get_tpot: MeanStdPair
     
+        :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
+        :type get_ipot: MeanStdPair
+    
         :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
         :type get_throughput: MeanStdPair
+    
+        :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
+        :type get_inference_duration: MeanStdPair
     
         :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
         :type get_generate_duration: MeanStdPair
@@ -2596,8 +2616,6 @@ class StructuredOutputConfig:
             """
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
-        def __init__(self, arg0: typing.Any, arg1: typing.Any) -> None:
-            ...
         def __or__(self, arg0: typing.Any) -> ...:
             ...
         def __repr__(self) -> str:
@@ -2647,8 +2665,6 @@ class StructuredOutputConfig:
             Union combines two grammars in parallel, e.g. "A | B" means either A or B
             """
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
-            ...
-        def __init__(self, arg0: typing.Any, arg1: typing.Any) -> None:
             ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
@@ -2972,6 +2988,13 @@ class TextEmbeddingPipeline:
         Attributes:
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
+            pad_to_max_length (bool, optional):
+                If 'True', model input tensors are padded to the maximum length.
+            batch_size (int, optional):
+                Batch size for the embedding model.
+                Useful for database population. If set, the pipeline will fix model shape for inference optimization.
+                Number of documents passed to pipeline should be equal to batch_size.
+                For query embeddings, batch_size should be set to 1 or not set.
             pooling_type (TextEmbeddingPipeline.PoolingType, optional):
                 Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
             normalize (bool, optional):
@@ -2983,6 +3006,7 @@ class TextEmbeddingPipeline:
         """
         embed_instruction: str | None
         normalize: bool
+        pad_to_max_length: bool | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload
@@ -2990,6 +3014,16 @@ class TextEmbeddingPipeline:
             ...
         @typing.overload
         def __init__(self, **kwargs) -> None:
+            ...
+        def validate(self) -> None:
+            """
+            Checks that are no conflicting parameters. Raises exception if config is invalid.
+            """
+        @property
+        def batch_size(self) -> int | None:
+            ...
+        @batch_size.setter
+        def batch_size(self, arg0: typing.SupportsInt | None) -> None:
             ...
         @property
         def max_length(self) -> int | None:
