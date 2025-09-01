@@ -600,7 +600,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_merger_model.xml");
     utils::request_vl_sdpa_transformations(model);
 
-    auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
+    auto compiled_model = utils::singleton_core().compile_model(model, "CPU");
 
     m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
     ov::genai::utils::print_compiled_model_properties(compiled_model,
@@ -627,10 +627,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
     utils::request_vl_sdpa_transformations(model);
 
-    auto compiled_model = utils::singleton_core().compile_model(model,
-        device,
-        device_config
-    );
+    auto compiled_model = utils::singleton_core().compile_model(model, "CPU");
 
     m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
     ov::genai::utils::print_compiled_model_properties(compiled_model,
