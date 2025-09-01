@@ -77,9 +77,9 @@ private:
     std::vector<int64_t> m_new_atten_mask_data;
 };
 
-class SpeculativeLLMPipelineNPU : public ov::genai::LLMPipelineImplBase {
+class StatefulSpeculativeLLMPipeline : public ov::genai::LLMPipelineImplBase {
 public:
-    SpeculativeLLMPipelineNPU(
+    StatefulSpeculativeLLMPipeline(
     const ov::genai::ModelDesc& main_model_desc, 
     const ov::genai::ModelDesc& draft_model_desc
     );
@@ -103,7 +103,7 @@ public:
     ov::genai::SpeculativeDecodingMetrics
     get_speculative_decoding_metrics() const;
 
-    ~SpeculativeLLMPipelineNPU();
+    ~StatefulSpeculativeLLMPipeline();
 
 private:
     void update_candidate_strategy(const std::size_t matches_num);
