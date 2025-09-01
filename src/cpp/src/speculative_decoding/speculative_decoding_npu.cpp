@@ -551,7 +551,11 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     auto streaming_status = stream_generated_tokens(streamer_ptr, std::vector<int64_t> {out_token});
     results.tokens[0].push_back(out_token);
 
-    // first token?
+    // Creating timers for performance metrics calculation:
+    ManualTimer iteration_timer("Speculative decode: infer iteration");
+    ManualTimer candidates_timer("Draft model: candidates generation");
+    ManualTimer main_timer("Main model");
+
     /* Speculative decoding works the following way. The draft model predicts the next K
        tokens one by one in an autoregressive manner, while the main model validates these
        predictions and corrects them if necessary. We go through each predicted token, and
@@ -569,11 +573,9 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     // So it will get into the context too.
     int64_t draft_prefix_token = -1;
     while (m_main_request->can_infer() && (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
-        ManualTimer iteration_timer("Speculative decode: infer iteration");
         iteration_timer.start();
 
         // Phase 1: Generation of candidates with the draft model.
-        ManualTimer candidates_timer("Draft model: candidates generation");
         candidates_timer.start();
 
         std::vector<int64_t> candidates;
@@ -593,7 +595,6 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
             // KVCache capacity to sequentially infer them:
             if (remainder > 0 && m_main_request->can_infer(remainder)) {
                 for (std::size_t i = 0; i < remainder; ++i) {
-                    ManualTimer main_timer("Main model: inference of the remainder");
                     main_timer.start();
                     out_token = m_main_request->infer_next(out_token);
                     main_timer.end();
@@ -604,6 +605,9 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
                     iteration_timer.end();
                     auto iteration_duration = iteration_timer.get_duration_microsec();
                     update_perf_metrics(raw_perf_counters, iteration_duration, main_timer.get_end_time(), 1u);
+
+                    main_timer.clear();
+                    iteration_timer.clear();
                     iteration_timer.start();
                 }
             }
@@ -632,6 +636,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
 
         candidates_timer.end();
         m_sd_metrics.draft_duration += candidates_timer.get_duration();
+        candidates_timer.clear();
 
         // Phase 2. Main inference.
         // For the main network, candidates_size + 1 tokens will be fed at once in a
@@ -643,7 +648,6 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         // prompt. In that tensor, for each token `t` of the input prompt it contains
         // distribution (over the vocabulary) for the next possible token that is
         // generated based on subsequence [first token,...,`t`] of the input prompt.
-        ManualTimer main_timer("Main model: inference on candidates");
         main_timer.start();
 
         std::vector<int64_t> input_for_main(candidates.begin(), candidates.end());
@@ -652,6 +656,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
 
         main_timer.end();
         m_sd_metrics.main_duration += main_timer.get_duration();
+        main_timer.clear();
 
         // Phase 3. Validation of candidates by output of main model:
         size_t accepted_tokens_number = 0u;
@@ -694,6 +699,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         iteration_timer.end();
         auto iteration_duration = iteration_timer.get_duration_microsec();
         update_perf_metrics(raw_perf_counters, iteration_duration, main_timer.get_end_time(), validated_tokens.size());
+        iteration_timer.clear();
     }
 
     m_streaming_was_cancelled = (streaming_status == ov::genai::StreamingStatus::CANCEL);
@@ -727,6 +733,11 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
     results.perf_metrics = m_sd_perf_metrics;
     results.extended_perf_metrics = std::make_shared<SDPerModelsPerfMetrics>(m_sd_perf_metrics);
 
+    // Reset all timers.
+    generate_timer.clear();
+    iteration_timer.clear();
+    candidates_timer.clear();
+    main_timer.clear();
     return results;
 }
 
