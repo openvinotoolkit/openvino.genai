@@ -7,7 +7,6 @@ import argparse
 import logging as log
 import llm_bench_utils.model_utils
 from openvino import get_version
-import openvino_genai;
 import torch
 import traceback
 from llm_bench_utils.memory_monitor import MemMonitorWrapper
@@ -247,7 +246,10 @@ def main():
 
     out_str = 'Model path={}'.format(model_path)
     if framework == 'ov':
-        out_str += ', openvino runtime version: {}, genai version: {}'.format(get_version(), openvino_genai.__version__)
+        out_str += ', openvino runtime version: {}'.format(get_version())
+        if not model_args['optimum']:
+             import openvino_genai
+             out_str += ', genai version: {}'.format(openvino_genai.__version__)
         if model_args['config'].get('PREC_BF16') and model_args['config']['PREC_BF16'] is True:
             log.warning('[Warning] Param bf16/prec_bf16 only work for framework pt. It will be disabled.')
         if 'cpu' in args.device.lower():

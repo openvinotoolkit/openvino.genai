@@ -6,8 +6,6 @@ import os
 
 from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
-from openvino import get_version
-import openvino_genai
 
 import pandas as pd
 from datasets import load_dataset
@@ -569,7 +567,16 @@ def main():
     args = parse_args()
     check_args(args)
 
-    print(f'openvino runtime version: {get_version()}, genai version: {openvino_genai.__version__}')
+    version_str = f'openvino runtime version: {ov.get_version()}'
+    if args.genai:
+        try:
+            import openvino_genai
+        except ImportError:
+            logger.error(
+                "Failed to import openvino_genai package. Please install it.")
+            exit(-1)
+        version_str += f', genai version: {openvino_genai.__version__}'
+    logger.info(version_str)
 
     kwargs = {}
     if args.cb_config:
