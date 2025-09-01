@@ -52,6 +52,7 @@ void StructuredOutputController::validate_grammar(const std::optional<Structured
         m_impls[backend_name] = factory_it->second(m_tokenizer_impl, m_vocab_size);
         impl_it = m_impls.find(backend_name);
     }
+    lock.unlock();
     impl_it->second->validate_grammar(structured_output_config);
 }
 
@@ -76,10 +77,12 @@ std::shared_ptr<LogitTransformers::ILogitTransformer> StructuredOutputController
         m_init_grammar_compiler_times[backend_name] = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     }
 
+    lock.unlock();
     // Use the instantiated backend
     const auto start = std::chrono::steady_clock::now();
     auto logit_transformer = impl_it->second->get_logits_transformer(sampling_parameters);
     const auto end = std::chrono::steady_clock::now();
+    lock.lock();
     m_grammar_compile_times.emplace_back(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
     return logit_transformer;
 }
