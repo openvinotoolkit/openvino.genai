@@ -344,6 +344,7 @@ def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question,
 def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
     kwargs = {}
     if empty_adapters:
+        import openvino_genai
         kwargs["adapters"] = openvino_genai.AdapterConfig()
 
     if model.resolution is not None and model.resolution[0] is not None:
