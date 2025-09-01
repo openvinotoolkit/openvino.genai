@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <algorithm>
 
 namespace ov::genai::cdpruner {
 
@@ -108,36 +109,112 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
             if (m_config.pruning_debug_mode) {
                 std::cout << "[CDPruner] Step 1: Computing relevance scores..." << std::endl;
             }
-            auto relevance_start = std::chrono::high_resolution_clock::now();
-            ov::Tensor relevance_scores = m_relevance_calc.compute(visual_features, text_features);
-            auto relevance_end = std::chrono::high_resolution_clock::now();
             
+            // Split visual tokens into two groups: first 50% and last 50%
+            auto visual_shape = visual_features.get_shape();
+            size_t batch_size = visual_shape[0];
+            size_t total_visual_tokens = visual_shape[1];
+            size_t feature_dim = visual_shape[2];
+            
+            size_t split_point = total_visual_tokens / 2;
+            size_t first_half_size = split_point;
+            size_t second_half_size = total_visual_tokens - split_point;
+            
+            if (m_config.pruning_debug_mode) {
+                std::cout << "[CDPruner] Splitting " << total_visual_tokens << " visual tokens into groups: "
+                          << first_half_size << " + " << second_half_size << std::endl;
+            }
+            
+            // Create tensor views for first and second halves without copying data
+            const float* visual_data = visual_features.data<const float>();
+            
+            // Create tensor views pointing to specific regions of original data
+            ov::Tensor visual_first_half(ov::element::f32, {batch_size, first_half_size, feature_dim}, 
+                                         const_cast<float*>(visual_data));
+            ov::Tensor visual_second_half(ov::element::f32, {batch_size, second_half_size, feature_dim}, 
+                                         const_cast<float*>(visual_data + batch_size * first_half_size * feature_dim));
+            
+            auto relevance_start = std::chrono::high_resolution_clock::now();
+            
+            // Step 1: Compute relevance scores for both halves
+            if (m_config.pruning_debug_mode) {
+                std::cout << "[CDPruner] Step 1a: Computing relevance scores for first half..." << std::endl;
+            }
+            ov::Tensor relevance_scores_first = m_relevance_calc.compute(visual_first_half, text_features);
+            
+            if (m_config.pruning_debug_mode) {
+                std::cout << "[CDPruner] Step 1b: Computing relevance scores for second half..." << std::endl;
+            }
+            ov::Tensor relevance_scores_second = m_relevance_calc.compute(visual_second_half, text_features);
+            
+            auto relevance_end = std::chrono::high_resolution_clock::now();
             auto relevance_duration = std::chrono::duration_cast<std::chrono::microseconds>(relevance_end - relevance_start);
             
             if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   Relevance computation took: " << relevance_duration.count() << " us" << std::endl;
+                std::cout << "[CDPruner]   Split relevance computation took: " << relevance_duration.count() << " us" << std::endl;
             }
             
-            // Step 2: Build conditional kernel matrix
+            // Step 2: Build conditional kernel matrices for both halves
             if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner] Step 2: Building conditional kernel matrix..." << std::endl;
+                std::cout << "[CDPruner] Step 2a: Building kernel matrix for first half..." << std::endl;
             }
             auto kernel_start = std::chrono::high_resolution_clock::now();
-            ov::Tensor kernel_matrix = m_kernel_builder.build(visual_features, relevance_scores);
-            auto kernel_end = std::chrono::high_resolution_clock::now();
+            ov::Tensor kernel_matrix_first = m_kernel_builder.build(visual_first_half, relevance_scores_first);
             
+            if (m_config.pruning_debug_mode) {
+                std::cout << "[CDPruner] Step 2b: Building kernel matrix for second half..." << std::endl;
+            }
+            ov::Tensor kernel_matrix_second = m_kernel_builder.build(visual_second_half, relevance_scores_second);
+            
+            auto kernel_end = std::chrono::high_resolution_clock::now();
             auto kernel_duration = std::chrono::duration_cast<std::chrono::microseconds>(kernel_end - kernel_start);
 
             if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   Kernel building took: " << kernel_duration.count() << " us" << std::endl;
+                std::cout << "[CDPruner]   Split kernel building took: " << kernel_duration.count() << " us" << std::endl;
             }
 
-            // Step 3: Select tokens using fast greedy DPP
+            // Step 3: Select tokens using DPP for both halves
             if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner] Step 3: Selecting tokens using DPP..." << std::endl;
+                std::cout << "[CDPruner] Step 3: Selecting tokens using split DPP..." << std::endl;
             }
             auto dpp_start = std::chrono::high_resolution_clock::now();
-            selected_tokens = m_dpp_selector.select(kernel_matrix, num_tokens_to_keep);
+            
+            // Distribute tokens to keep between both halves
+            size_t tokens_first_half = num_tokens_to_keep / 2;
+            size_t tokens_second_half = num_tokens_to_keep - tokens_first_half;
+            
+            if (m_config.pruning_debug_mode) {
+                std::cout << "[CDPruner]   Selecting " << tokens_first_half << " tokens from first half, "
+                          << tokens_second_half << " tokens from second half" << std::endl;
+            }
+            
+            // DPP selection for first half
+            auto selected_first_batches = m_dpp_selector.select(kernel_matrix_first, tokens_first_half);
+            std::vector<size_t> selected_first = selected_first_batches[0]; // Take first batch
+            
+            // DPP selection for second half  
+            auto selected_second_batches = m_dpp_selector.select(kernel_matrix_second, tokens_second_half);
+            std::vector<size_t> selected_second = selected_second_batches[0]; // Take first batch
+            
+            // Merge results: adjust indices for second half
+            std::vector<size_t> merged_selection;
+            merged_selection.reserve(selected_first.size() + selected_second.size());
+            
+            // Add first half selections (indices unchanged)
+            for (size_t idx : selected_first) {
+                merged_selection.push_back(idx);
+            }
+            
+            // Add second half selections (adjust indices by split_point)
+            for (size_t idx : selected_second) {
+                merged_selection.push_back(idx + split_point);
+            }
+            
+            // Sort final result to maintain order
+            std::sort(merged_selection.begin(), merged_selection.end());
+            
+            // Store result for this batch
+            selected_tokens.push_back(merged_selection);
             auto dpp_end = std::chrono::high_resolution_clock::now();
 
             auto dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
