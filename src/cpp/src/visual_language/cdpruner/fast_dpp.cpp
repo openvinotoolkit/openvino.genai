@@ -198,7 +198,7 @@ void FastGreedyDPP::update_orthogonal_vector(const ov::Tensor& kernel, size_t ba
         const float* cis_prev_row = cis_data + prev_t * total_tokens;
         float cis_sel = cis_prev_row[selected_idx];
 
-        if (cis_sel == 0.0f)
+        if (std::abs(cis_sel) < 1e-10f)
             continue;
 
         // Manual loop unrolling, improve cache hit rate
@@ -219,6 +219,7 @@ void FastGreedyDPP::update_orthogonal_vector(const ov::Tensor& kernel, size_t ba
         }
     }
 
+    // Process remaining elements
     for (size_t j = 0; j < total_tokens; ++j) {
         cis_out[j] *= inv_norm;
     }
