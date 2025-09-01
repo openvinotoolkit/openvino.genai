@@ -224,6 +224,13 @@ describe("LLMPipeline.generate()", () => {
     );
     assert.strictEqual(detokenizationDuration.std, 0);
 
+    assert.ok(typeof perfMetrics.getGrammarCompilerInitTimes() === "object");
+    const grammarCompileTime = perfMetrics.getGrammarCompileTime();
+    assert.ok(typeof grammarCompileTime.mean === "number");
+    assert.ok(typeof grammarCompileTime.std === "number");
+    assert.ok(typeof grammarCompileTime.min === "number");
+    assert.ok(typeof grammarCompileTime.max === "number");
+
     // assert that calculating statistics manually from the raw counters
     // we get the same restults as from PerfMetrics
     assert.strictEqual(
@@ -247,6 +254,7 @@ describe("LLMPipeline.generate()", () => {
     assert.ok(perfMetrics.rawMetrics.batchSizes.length > 0);
     assert.ok(perfMetrics.rawMetrics.durations.length > 0);
     assert.ok(perfMetrics.rawMetrics.inferenceDurations.length > 0);
+    assert.ok(perfMetrics.rawMetrics.grammarCompileTimes.length === 0);
   });
 });
 
