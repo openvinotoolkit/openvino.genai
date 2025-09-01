@@ -1,7 +1,7 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "speculative_decoding_npu.hpp"
+#include "speculative_decoding_stateful.hpp"
 #include "continuous_batching/timer.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/core/parallel.hpp"
@@ -342,7 +342,7 @@ std::variant<int64_t, std::vector<int64_t>>
     }
 }
 
-SpeculativeLLMPipelineNPU::SpeculativeLLMPipelineNPU(
+StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
     const ov::genai::ModelDesc& main_model_desc, 
     const ov::genai::ModelDesc& draft_model_desc
 ) : LLMPipelineImplBase(main_model_desc.tokenizer, main_model_desc.generation_config) {
@@ -387,12 +387,12 @@ SpeculativeLLMPipelineNPU::SpeculativeLLMPipelineNPU(
     m_sd_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
 }
 
-DecodedResults SpeculativeLLMPipelineNPU::generate(
+DecodedResults StatefulSpeculativeLLMPipeline::generate(
     StringInputs inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
-    ManualTimer generate_timer("SpeculativeLLMPipelineNPU::generate()");
+    ManualTimer generate_timer("StatefulSpeculativeLLMPipeline::generate()");
     generate_timer.start();
     ManualTimer encode_timer("Encode");
     encode_timer.start();
@@ -459,11 +459,11 @@ DecodedResults SpeculativeLLMPipelineNPU::generate(
     return decoded_results;
 }
 
-EncodedResults SpeculativeLLMPipelineNPU::generate(
+EncodedResults StatefulSpeculativeLLMPipeline::generate(
     const EncodedInputs& inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer) {
-    ManualTimer generate_timer("SpeculativeLLMPipelineNPU::generate()");
+    ManualTimer generate_timer("StatefulSpeculativeLLMPipeline::generate()");
     generate_timer.start();
 
     ov::Tensor input_ids;
@@ -656,7 +656,6 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
 
         main_timer.end();
         m_sd_metrics.main_duration += main_timer.get_duration();
-        main_timer.clear();
 
         // Phase 3. Validation of candidates by output of main model:
         size_t accepted_tokens_number = 0u;
@@ -700,6 +699,7 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
         auto iteration_duration = iteration_timer.get_duration_microsec();
         update_perf_metrics(raw_perf_counters, iteration_duration, main_timer.get_end_time(), validated_tokens.size());
         iteration_timer.clear();
+        main_timer.clear();
     }
 
     m_streaming_was_cancelled = (streaming_status == ov::genai::StreamingStatus::CANCEL);
@@ -742,30 +742,30 @@ EncodedResults SpeculativeLLMPipelineNPU::generate(
 }
 
 ov::genai::SpeculativeDecodingMetrics
-SpeculativeLLMPipelineNPU::get_speculative_decoding_metrics() const {
+StatefulSpeculativeLLMPipeline::get_speculative_decoding_metrics() const {
     return m_sd_metrics;
 };
 
-void SpeculativeLLMPipelineNPU::start_chat(const std::string& system_message) {
+void StatefulSpeculativeLLMPipeline::start_chat(const std::string& system_message) {
     if (!system_message.empty()) {
         m_history.push_back({{"role", "system"}, {"content", system_message}});
     }
     m_is_chat_conversation = true;
 };
 
-void SpeculativeLLMPipelineNPU::finish_chat() {
+void StatefulSpeculativeLLMPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
     m_draft_request->reset_state();
     m_main_request->reset_state();
 };
 
-SpeculativeLLMPipelineNPU::~SpeculativeLLMPipelineNPU() {
+StatefulSpeculativeLLMPipeline::~StatefulSpeculativeLLMPipeline() {
     m_main_request->release_memory();
     m_draft_request->release_memory();
 }
 
-void SpeculativeLLMPipelineNPU::update_candidate_strategy(const std::size_t matches_num) {
+void StatefulSpeculativeLLMPipeline::update_candidate_strategy(const std::size_t matches_num) {
     // Dynamically adjust number of generated candidates based on number of matches,
     // we want to balance the benefits of getting candidates tokens correct with the
     // cost of forecasting incorrect candidates tokens.
