@@ -276,6 +276,7 @@ def main():
         memory_monitor.create_monitors()
         if args.memory_consumption_dir:
             memory_monitor.set_dir(args.memory_consumption_dir)
+        memory_monitor.log_curent_memory_data(prefix="Start")
     try:
         if model_args['use_case'] in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
