@@ -12,7 +12,7 @@
 #include "llm/pipeline_stateful.hpp"
 #include "llm/pipeline_continuous_batching_adapter.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
-#include "llm/pipeline_stateful_npu.hpp"
+#include "speculative_decoding/speculative_decoding_stateful.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -60,6 +60,51 @@ std::pair<std::string, Any> draft_model(
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
+// NOTE: Should be used only when NPU device is requested
+// either for main model or for draft model if last exists.
+class StatefulNPUPipelineCreator {
+public:
+static std::unique_ptr<LLMPipelineImplBase> create(
+    const std::filesystem::path& models_path,
+    const ov::genai::Tokenizer& tokenizer,
+    const std::string& device,
+    const ov::AnyMap& properties) {
+    return create(
+        ov::genai::utils::read_model(models_path, properties),
+        tokenizer,
+        device,
+        properties,
+        utils::from_config_json_if_exists(models_path));
+}
+
+static std::unique_ptr<LLMPipelineImplBase> create(
+    const std::filesystem::path& models_path,
+    const std::string& device,
+    const ov::AnyMap& plugin_config) {
+    return create(models_path, Tokenizer(models_path, plugin_config), device, plugin_config);
+}
+
+static std::unique_ptr<LLMPipelineImplBase> create(
+    const std::shared_ptr<ov::Model>& model,
+    const ov::genai::Tokenizer& tokenizer,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config) {
+
+    auto properties_without_draft_model = properties;
+    auto draft_model_descr = ov::genai::utils::extract_draft_model_from_config(properties_without_draft_model);
+    if (draft_model_descr.model != nullptr) {
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
+        OPENVINO_ASSERT((draft_model_descr.device == "NPU") || (main_model_descr.device == "NPU"));
+        return std::make_unique<StatefulSpeculativeLLMPipeline>(main_model_descr, draft_model_descr);
+    }
+
+    OPENVINO_ASSERT(device == "NPU");
+    return std::make_unique<StatefulLLMPipeline>(model, tokenizer, device,
+        properties_without_draft_model, generation_config);
+}
+};
+
 // Public LLMPipeline
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -81,7 +126,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
     if (ov::genai::utils::is_npu_requested(device, properties)) {
-        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(models_path, tokenizer, device, properties);
+        m_pimpl = StatefulNPUPipelineCreator::create(models_path, tokenizer, device, properties);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -116,12 +161,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
     if (ov::genai::utils::is_npu_requested(device, properties)) {
-        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(models_path, device, properties);
+        m_pimpl = StatefulNPUPipelineCreator::create(models_path, device, properties);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
-
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
@@ -155,12 +199,12 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
     if (ov::genai::utils::is_npu_requested(device, properties)) {
-        m_pimpl = std::make_unique<StatefulLLMPipelineNPU>(
-                utils::singleton_core().read_model(model_str, weights_tensor),
-                tokenizer,
-                device,
-                properties,
-                generation_config);
+        m_pimpl = StatefulNPUPipelineCreator::create(
+            utils::singleton_core().read_model(model_str, weights_tensor),
+            tokenizer,
+            device,
+            properties,
+            generation_config);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());

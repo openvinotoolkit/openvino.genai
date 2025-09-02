@@ -120,6 +120,8 @@ ProcessorConfig from_any_map(
 
 ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config);
 
+ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
+
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
