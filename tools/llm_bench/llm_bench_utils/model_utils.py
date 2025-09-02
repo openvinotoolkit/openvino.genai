@@ -222,9 +222,6 @@ def analyze_args(args):
     if model_args['vocoder_path'] and not Path(model_args['vocoder_path']).exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect vocoder path:{model_args["vocoder_path"]}')
 
-    model_args['cache_eviction_config'] = get_config(args.cache_eviction_config) if args.cache_eviction_config else None
-    model_args['sparse_attention_config'] = get_config(args.sparse_attention_config) if args.sparse_attention_config else None
-
     return model_path, model_framework, model_args, model_name
 
 
