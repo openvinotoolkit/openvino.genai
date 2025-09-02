@@ -105,7 +105,7 @@ public:
             }
         }
 
-        m_cache_manager->change_cache_size_if_needed(m_block_manager->get_total_number_of_kv_blocks());
+        m_cache_manager->allocate_cache_if_needed(m_block_manager->get_total_number_of_kv_blocks());
         _clear_waiting_sequences(sequence_groups);
         scheduler_output.m_cache_usage = m_block_manager->get_used_percentage();
 
@@ -114,7 +114,6 @@ public:
         m_cache_manager->copy_blocks(block_copy_map);
         copy_blocks_timer.end();
 
-       // std::cout << "blocks: " <<m_block_manager->num_free_blocks() << "/" << m_block_manager->get_total_number_of_kv_blocks() << ", " << m_block_manager->get_used_percentage() <<std::endl;
         return scheduler_output;
     }
 
