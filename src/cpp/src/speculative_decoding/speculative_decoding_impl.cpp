@@ -815,7 +815,8 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
 GenerationHandle ContinuousBatchingPipeline::EagleDecodingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
-    ov::genai::GenerationConfig sampling_params) {
+    ov::genai::GenerationConfig sampling_params,
+    std::optional<ov::Tensor> token_type_ids) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
@@ -973,7 +974,8 @@ ov::Tensor ContinuousBatchingPipeline::EagleDecodingImpl::create_draft_input_ids
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingImpl::generate(
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer) {
+    const StreamerVariant& streamer,
+    std::optional<std::vector<ov::Tensor>> token_type_ids) {
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 
