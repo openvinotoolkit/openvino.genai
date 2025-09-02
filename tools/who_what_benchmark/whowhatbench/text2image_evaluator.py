@@ -43,6 +43,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         gen_image_fn=None,
         seed=42,
         is_genai=False,
+        empty_adapters=False,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -61,6 +62,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         self.gt_dir = os.path.dirname(gt_data)
         self.generation_fn = gen_image_fn
         self.is_genai = is_genai
+        self.empty_adapters = empty_adapters
 
         if base_model:
             base_model.resolution = self.resolution
@@ -115,7 +117,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
-        def default_gen_image_fn(model, prompt, num_inference_steps, generator=None):
+        def default_gen_image_fn(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
             with torch.no_grad():
                 output = model(
                     prompt,
@@ -161,7 +163,8 @@ class Text2ImageEvaluator(BaseEvaluator):
                 model,
                 prompt,
                 self.num_inference_steps,
-                generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng
+                generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
+                empty_adapters=self.empty_adapters,
             )
             image_path = os.path.join(image_dir, f"{i}.png")
             image.save(image_path)

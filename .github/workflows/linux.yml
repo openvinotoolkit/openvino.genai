@@ -879,7 +879,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@v5
+        uses: actions/checkout@v5.0.0
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive

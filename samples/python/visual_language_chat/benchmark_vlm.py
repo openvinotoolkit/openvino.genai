@@ -56,7 +56,7 @@ def main():
     if len(prompt) == 0:
         raise RuntimeError(f'Prompt is empty!')
 
-    print(f'openvino runtime version: {get_version()}')
+    print(f'openvino runtime version: {get_version()}, genai version: {ov_genai.__version__}')
 
     # Perf metrics is stored in VLMDecodedResults.
     # In order to get VLMDecodedResults instead of a string input should be a list.
