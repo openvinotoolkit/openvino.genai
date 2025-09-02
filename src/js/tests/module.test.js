@@ -31,6 +31,15 @@ describe("module", async () => {
     assert.strictEqual(typeof result, "string");
   });
 
+  await it("test SchedulerConfig", async () => {
+    const schedulerConfig = {
+      max_num_batched_tokens: 32,
+      enable_prefix_caching: false,
+    };
+
+    assert.ok(await LLMPipeline(MODEL_PATH, "CPU", { schedulerConfig: schedulerConfig }));
+  });
+
   it("should include tokenizer", async () => {
     const tokenizer = pipeline.getTokenizer();
     assert.strictEqual(typeof tokenizer, "object");

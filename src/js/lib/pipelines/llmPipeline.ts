@@ -1,6 +1,6 @@
 import util from "node:util";
 import addon from "../addon.js";
-import { GenerationConfig, StreamingStatus } from "../utils.js";
+import { GenerationConfig, StreamingStatus, SchedulerConfig } from "../utils.js";
 
 export type ResolveFunction = (arg: { value: string; done: boolean }) => void;
 export type Options = {
@@ -129,12 +129,18 @@ export class LLMPipeline {
   modelPath: string | null = null;
   device: string | null = null;
   pipeline: any | null = null;
+  properties: { schedulerConfig?: SchedulerConfig } = {};
   isInitialized = false;
   isChatStarted = false;
 
-  constructor(modelPath: string, device: string) {
+  constructor(
+    modelPath: string,
+    device: string,
+    properties: { schedulerConfig?: SchedulerConfig },
+  ) {
     this.modelPath = modelPath;
     this.device = device;
+    this.properties = properties;
   }
 
   async init() {
@@ -143,7 +149,7 @@ export class LLMPipeline {
     this.pipeline = new addon.LLMPipeline();
 
     const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
-    const result = await initPromise(this.modelPath, this.device);
+    const result = await initPromise(this.modelPath, this.device, this.properties);
 
     this.isInitialized = true;
 
