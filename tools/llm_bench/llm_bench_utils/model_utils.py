@@ -202,9 +202,10 @@ def analyze_args(args):
     if args.cb_config:
         cb_config = get_config(args.cb_config)
     model_args["cb_config"] = cb_config
-    if args.draft_model and (args.device == "NPU" or model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
-        log.warning("Speculative Decoding is supported only with Page Attention Backend and not supported for NPU device")
-        args.draft_model = None
+    if args.draft_model:
+        if (args.draft_device != "NPU" and args.device != "NPU" and model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
+            log.warning("Speculative Decoding is supported only with Page Attention Backend for non-NPU devices")
+            args.draft_model = None
     model_args['draft_model'] = args.draft_model
     model_args['draft_device'] = args.draft_device
     draft_cb_config = None

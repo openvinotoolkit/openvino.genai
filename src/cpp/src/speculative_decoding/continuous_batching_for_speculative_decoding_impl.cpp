@@ -320,7 +320,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
         if (num_generated_tokens > 0) {
             auto generation_duration = multistep_timer.get_duration_microsec();
             raw_perf_metrics.m_durations.emplace_back(generation_duration);
-            raw_perf_metrics.m_inference_durations[0] = MicroSeconds(pipeline_metrics.inference_duration);
+            raw_perf_metrics.m_inference_durations[0] += MicroSeconds(pipeline_metrics.inference_duration);
             raw_perf_metrics.m_batch_sizes.emplace_back(num_generated_tokens);
         }
 
