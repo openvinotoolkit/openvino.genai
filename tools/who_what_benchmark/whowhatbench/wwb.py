@@ -188,6 +188,17 @@ def parse_args():
         default=None,
         help="Weights for LoRA adapters.",
     )
+    parser.add_argument(
+        "--long-prompt",
+        action='store_true',
+        help="LLMPipeline specific parameter that defines the use of a long context prompt.",
+    )
+
+    parser.add_argument(
+        "--empty_adapters",
+        action="store_true",
+        help="Inference with empty adapters. Applicable for GenAI only.",
+    )
 
     return parser.parse_args()
 
@@ -202,6 +213,8 @@ def check_args(args):
         raise ValueError(
             "If --adapters is provided and --alphas is provided, they should have the same length."
         )
+    if args.hf and args.empty_adapters:
+        raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
 
 
 def load_prompts(args):
@@ -328,7 +341,12 @@ def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question,
         return text
 
 
-def genai_gen_image(model, prompt, num_inference_steps, generator=None):
+def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
+    kwargs = {}
+    if empty_adapters:
+        import openvino_genai
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
+
     if model.resolution is not None and model.resolution[0] is not None:
         image_tensor = model.generate(
             prompt,
@@ -336,12 +354,14 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
             height=model.resolution[1],
             num_inference_steps=num_inference_steps,
             generator=generator,
+            **kwargs,
         )
     else:
         image_tensor = model.generate(
             prompt,
             num_inference_steps=num_inference_steps,
             generator=generator,
+            **kwargs,
         )
     image = Image.fromarray(image_tensor.data[0])
     return image
@@ -423,6 +443,7 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
+                long_prompt=args.long_prompt,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -432,6 +453,7 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 resolution=(args.image_size, args.image_size),
                 num_inference_steps=args.num_inference_steps,
+                empty_adapters=args.empty_adapters,
                 gen_image_fn=genai_gen_image if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
@@ -556,6 +578,8 @@ def main():
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
 
+    kwargs["empty_adapters"] = args.empty_adapters
+
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
     else:
@@ -604,7 +628,7 @@ def main():
             if not os.path.exists(args.output):
                 os.mkdir(args.output)
             df = pd.DataFrame(all_metrics_per_question)
-            df.to_csv(os.path.join(args.output, "metrics_per_qustion.csv"))
+            df.to_csv(os.path.join(args.output, "metrics_per_question.csv"))
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))

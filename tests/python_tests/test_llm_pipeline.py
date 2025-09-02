@@ -754,7 +754,6 @@ test_cases = [
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.precommit
-@pytest.mark.nightly
 def test_perf_metrics_with_structured_output(generation_config, prompt):
     class Person(BaseModel):
         name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
@@ -804,7 +803,7 @@ def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
     generation_config = ov_genai.GenerationConfig()
     generation_config.max_new_tokens = 10
     if stop_str:    
-        generation_config.stop_strings = {" the"}
+        generation_config.stop_strings = {" the", "Prom"}
         generation_config.include_stop_str_in_output = False
 
     _ = generate_and_compare(model=model_id,

@@ -91,6 +91,18 @@ image = pipe.generate(
 
 LoRA adapters can be connected to the pipeline and modify generated images to have certain style, details or quality. Adapters are supported in Safetensors format and can be downloaded from public sources like [Civitai](https://civitai.com) or [HuggingFace](https://huggingface.co/models) or trained by the user. Adapters compatible with a base model should be used only. A weighted blend of multiple adapters can be applied by specifying multiple adapter files with corresponding alpha parameters in command line. Check `lora_text2image.py` source code to learn how to enable adapters and specify them in each `generate` call.
 
+> [!NOTE]
+> ### LoRA `alpha` interpretation in OpenVINO GenAI
+> The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.
+>
+> In this context, the `alpha` value already includes:
+> - normalization by LoRA rank (`alpha / rank`)
+> - any user-defined scaling factor (`weight`)
+>
+> This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
+
+### Example: Running with a LoRA Adapter
+
 Here is an example how to run the sample with a single adapter. First download adapter file from https://civitai.com/models/67927/soulcard page manually and save it as `soulcard.safetensors`. Or download it from command line:
 
 `wget -O soulcard.safetensors https://civitai.com/api/download/models/72591`

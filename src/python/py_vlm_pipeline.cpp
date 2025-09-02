@@ -14,9 +14,11 @@
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
+#include "bindings_utils.hpp"
 
 namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
+namespace common_utils = ov::genai::common_bindings::utils;
 
 
 auto vlm_generate_docstring = R"(
@@ -37,6 +39,7 @@ auto vlm_generate_docstring = R"(
     Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
     Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+    gemma-3-4b-it: <start_of_image>
     If the prompt doesn't contain image tags, but images are
     provided, the tags are prepended to the prompt.
 
@@ -73,6 +76,7 @@ auto vlm_generate_kwargs_docstring = R"(
     Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
     Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+    gemma-3-4b-it: <start_of_image>
     If the prompt doesn't contain image tags, but images are
     provided, the tags are prepended to the prompt.
 
@@ -139,7 +143,7 @@ void init_vlm_pipeline(py::module_& m) {
     py::class_<ov::genai::VLMRawPerfMetrics>(m, "VLMRawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
         .def_property_readonly("prepare_embeddings_durations", [](const ov::genai::VLMRawPerfMetrics& rw) {
-            return pyutils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::prepare_embeddings_durations);
+            return common_utils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::prepare_embeddings_durations);
         });
 
     py::class_<ov::genai::VLMPerfMetrics, ov::genai::PerfMetrics>(m, "VLMPerfMetrics", perf_metrics_docstring)

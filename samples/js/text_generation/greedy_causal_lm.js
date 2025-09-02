@@ -25,8 +25,11 @@ async function main() {
     const device = 'CPU'; // GPU can be used as well
     const pipe = await LLMPipeline(modelPath, device);
 
-    const config = { 'max_new_tokens': 100 };
+    const config = {
+        'max_new_tokens': 100,
+        'return_decoded_results': true,
+    };
     const result = await pipe.generate(prompt, config);
 
-    console.log(result);
+    console.log(result.toString());
 }
