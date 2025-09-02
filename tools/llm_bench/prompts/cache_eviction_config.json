@@ -1,0 +1,9 @@
+{
+    "start_size": 32,
+    "recent_size": 32,
+    "max_cache_size": 128,
+    "aggregation_mode": "NORM_SUM",
+    "apply_rotation": false,
+    "snapkv_window_size": 8,
+    "kvcrush_config": {"budget": 0, "anchor_point_mode": "RANDOM", "rng_seed": 0}
+}

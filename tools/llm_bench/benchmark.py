@@ -204,6 +204,9 @@ def get_argprser():
                         help="Path to .bin or .pt file with speaker embeddings for text to speech scenarios")
     parser.add_argument("--vocoder_path", type=str, default=None,
                         help="Path to vocoder  for text to speech scenarios")
+    parser.add_argument("-cev_config", "--cache_eviction_config", required=False, default=None, help="Path to file with Cache Eviction config or dict")
+    parser.add_argument("-satn_config", "--sparse_attention_config", required=False, default=None,
+                        help="Path to file with Sparse Attention config settings or dict")
     return parser.parse_args()
 
 
