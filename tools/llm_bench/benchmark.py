@@ -247,6 +247,9 @@ def main():
     out_str = 'Model path={}'.format(model_path)
     if framework == 'ov':
         out_str += ', openvino runtime version: {}'.format(get_version())
+        if not model_args['optimum']:
+            import openvino_genai
+            out_str += ', genai version: {}'.format(openvino_genai.__version__)
         if model_args['config'].get('PREC_BF16') and model_args['config']['PREC_BF16'] is True:
             log.warning('[Warning] Param bf16/prec_bf16 only work for framework pt. It will be disabled.')
         if 'cpu' in args.device.lower():
@@ -276,6 +279,7 @@ def main():
         memory_monitor.create_monitors()
         if args.memory_consumption_dir:
             memory_monitor.set_dir(args.memory_consumption_dir)
+        memory_monitor.log_curent_memory_data(prefix="Start")
     try:
         if model_args['use_case'] in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](

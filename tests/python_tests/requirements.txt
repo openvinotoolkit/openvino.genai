@@ -9,8 +9,8 @@ hf_transfer==0.1.9
 gguf==0.17.1
 
 # rag requirements
-langchain_community==0.3.27
-langchain-core==0.3.74
+langchain_community==0.3.29
+langchain-core==0.3.75
 
 # requirements for specific models
 # - Qwen/Qwen-7B
