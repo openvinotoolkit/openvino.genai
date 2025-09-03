@@ -1,6 +1,7 @@
 import util from "node:util";
 import addon from "../addon.js";
-import { GenerationConfig, StreamingStatus, SchedulerConfig } from "../utils.js";
+import { SchedulerConfig } from "../schedulerConfig.js";
+import { GenerationConfig, StreamingStatus } from "../utils.js";
 
 export type ResolveFunction = (arg: { value: string; done: boolean }) => void;
 export type Options = {

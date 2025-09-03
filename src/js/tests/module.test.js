@@ -1,4 +1,4 @@
-import { LLMPipeline } from "../dist/index.js";
+import { LLMPipeline, SchedulerConfig } from "../dist/index.js";
 
 import assert from "node:assert/strict";
 import { describe, it, before, after } from "node:test";
@@ -34,10 +34,17 @@ describe("module", async () => {
   await it("test SchedulerConfig", async () => {
     const schedulerConfig = {
       max_num_batched_tokens: 32,
-      enable_prefix_caching: false,
     };
-
     assert.ok(await LLMPipeline(MODEL_PATH, "CPU", { schedulerConfig: schedulerConfig }));
+
+    const schedulerConfigClass = new SchedulerConfig();
+    schedulerConfigClass.max_num_batched_tokens = 64;
+    assert.ok(await LLMPipeline(MODEL_PATH, "CPU", { schedulerConfig: schedulerConfigClass }));
+
+    const schedulerConfigPartial = new SchedulerConfig({
+      max_num_batched_tokens: 32,
+    });
+    assert.ok(await LLMPipeline(MODEL_PATH, "CPU", { schedulerConfig: schedulerConfigPartial }));
   });
 
   it("should include tokenizer", async () => {

@@ -1,13 +1,13 @@
 import { LLMPipeline as LLM } from "./pipelines/llmPipeline.js";
 import { TextEmbeddingPipeline as Embedding } from "./pipelines/textEmbeddingPipeline.js";
-import { SchedulerConfig } from "./utils.js";
+import { SchedulerConfig } from "./schedulerConfig.js";
 
 class PipelineFactory {
   static async LLMPipeline(modelPath: string, device: string): Promise<any>;
   static async LLMPipeline(
     modelPath: string,
     device: string,
-    { schedulerConfig }: { schedulerConfig: SchedulerConfig },
+    { schedulerConfig }: { schedulerConfig?: SchedulerConfig },
   ): Promise<any>;
   static async LLMPipeline(modelPath: string, device: string = "CPU", properties?: object) {
     const pipeline = new LLM(modelPath, device, properties || {});
@@ -24,5 +24,6 @@ class PipelineFactory {
 
 export const { LLMPipeline, TextEmbeddingPipeline } = PipelineFactory;
 export { DecodedResults } from "./pipelines/llmPipeline.js";
+export { SchedulerConfig } from "./schedulerConfig.js";
 export * from "./utils.js";
 export * from "./addon.js";
