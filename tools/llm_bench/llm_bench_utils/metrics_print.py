@@ -6,7 +6,7 @@ import logging as log
 
 def print_metrics(
         iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
-        stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None, text_emb=None, latency_unit=None, tts=None
+        stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None, text_emb=None, latency_unit=None, tts=None, cb_metric=None
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -65,6 +65,11 @@ def print_metrics(
         )
         if len(tms_infer) == 0:
             log.warning(f'{prefix} No hook data output for first infer latency and other infers latency')
+    if cb_metric and "avg_cache_usage" in cb_metric and "max_cache_usage" in cb_metric:
+        log.info(
+            f'Running average of the KV cache usage {cb_metric["avg_cache_usage"]:.2f}%, '
+            f'max KV cache usage: {cb_metric["max_cache_usage"]:.2f}%',
+        )
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx)
     if whisper is not None:

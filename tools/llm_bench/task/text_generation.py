@@ -207,6 +207,56 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         bench_hook.clear_time_infer_list()
 
 
+def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_data, batch_size):
+    import openvino_genai
+    import openvino as ov
+    cb_pipeline = isinstance(model, openvino_genai.ContinuousBatchingPipeline)
+    if cb_pipeline:
+        input_data = [ov.Tensor([input]) for input in input_data.input_ids.data]
+        gen_config = [gen_config] * batch_size
+
+    start = time.perf_counter()
+    if streaming:
+        text_print_streamer = get_genai_chunk_streamer()(model.get_tokenizer(), tokens_len)
+
+        def token_printer():
+            # Getting next elements from iterable will be blocked until a new token is available.
+            for word in text_print_streamer:
+                print(word, end='', flush=True)
+        printer_thread = threading.Thread(target=token_printer, daemon=True)
+        printer_thread.start()
+        if (empty_lora and (gen_config.adapters is not None)):
+            generation_result = model.generate(
+                input_data,
+                gen_config,
+                streamer=text_print_streamer,
+                adapters=openvino_genai.AdapterConfig()
+            )
+        else:
+            generation_result = model.generate(
+                input_data,
+                gen_config,
+                streamer=text_print_streamer
+            )
+        printer_thread.join()
+    else:
+        if (empty_lora and (gen_config.adapters is not None)):
+            generation_result = model.generate(input_data, gen_config, adapters=openvino_genai.AdapterConfig())
+        else:
+            generation_result = model.generate(input_data, gen_config)
+    end = time.perf_counter()
+    generated_tokens = []
+    if cb_pipeline:
+        for res in generation_result:
+            generated_tokens.append(res.m_generation_ids[0])
+        generated_tokens = np.array(generated_tokens)
+    else:
+        generated_tokens = np.array(generation_result.tokens)
+
+    perf_metrics = generation_result[0].perf_metrics if cb_pipeline else generation_result.perf_metrics
+    return generated_tokens, perf_metrics, start - end
+
+
 def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index,
                               streamer, tokens_len, streaming, model_precision, proc_id, mem_consumption):
     input_text_list = [input_text] * args['batch_size']
@@ -244,7 +294,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             "Enabled input prompt permutations. It means that generated results may vary on different steps. "
             "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
         )
-        from openvino_genai import TokenizedInputs
+        from openvino_genai import TokenizedInputs, GenerationConfig
         import openvino as ov
 
         input_ids = input_data.input_ids.data
@@ -265,7 +315,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         if args['infer_count'] is not None:
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
-    gen_config = model.get_generation_config()
+    gen_config = model.get_generation_config() if hasattr(model, 'get_generation_config') else GenerationConfig()
     gen_config.max_new_tokens = max_gen_tokens
     # llama-3-8b-instruct's generation_config.json has 4096 max_length.
     # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
@@ -296,41 +346,8 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
         config_info += f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
         log.info(config_info)
-    start = time.perf_counter()
-    if streaming:
-        text_print_streamer = get_genai_chunk_streamer()(model.get_tokenizer(), tokens_len)
-
-        def token_printer():
-            # Getting next elements from iterable will be blocked until a new token is available.
-            for word in text_print_streamer:
-                print(word, end='', flush=True)
-        printer_thread = threading.Thread(target=token_printer, daemon=True)
-        printer_thread.start()
-        if (args['empty_lora'] and (gen_config.adapters is not None)):
-            import openvino_genai
-            generation_result = model.generate(
-                input_data,
-                gen_config,
-                streamer=text_print_streamer,
-                adapters=openvino_genai.AdapterConfig()
-            )
-        else:
-            generation_result = model.generate(
-                input_data,
-                gen_config,
-                streamer=text_print_streamer
-            )
-        printer_thread.join()
-    else:
-        if (args['empty_lora'] and (gen_config.adapters is not None)):
-            import openvino_genai
-            generation_result = model.generate(input_data, gen_config, adapters=openvino_genai.AdapterConfig())
-        else:
-            generation_result = model.generate(input_data, gen_config)
-    end = time.perf_counter()
-    generated_tokens = np.array(generation_result.tokens)
-
-    perf_metrics = generation_result.perf_metrics
+    generated_tokens, perf_metrics, generation_time = genai_generate(streaming, model, tokens_len, gen_config,
+                                                                     args["empty_lora"], input_data, args['batch_size'])
     if streaming:
         tokenization_time.append(np.mean(perf_metrics.raw_metrics.detokenization_durations) / 1000)
         generated_text = tokenizer.decode(generated_tokens)
@@ -343,8 +360,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
         max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
-
-    generation_time = end - start
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
@@ -376,6 +391,11 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     inference_durations = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
+    cache_usage = None
+    if hasattr(model, 'get_metrics'):
+        pipeline_metrics = model.get_metrics()
+        if hasattr(pipeline_metrics, 'avg_cache_usage') and hasattr(pipeline_metrics, 'max_cache_usage'):
+            cache_usage = {"avg_cache_usage": pipeline_metrics.avg_cache_usage, "max_cache_usage": pipeline_metrics.max_cache_usage}
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=num_input_tokens * args['batch_size'],
@@ -400,7 +420,8 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         warm_up=(num == 0),
         tokenization_time=tokenization_time,
         batch_size=args['batch_size'],
-        prompt_idx=prompt_index
+        prompt_idx=prompt_index,
+        cb_metric=cache_usage
     )
     if num > 0 and not enable_prompt_permutations:
         prev_md5 = md5_list[num - 1][prompt_index]
