@@ -223,28 +223,27 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
                 std::cout << "[CDPruner]   DPP selection took: " << dpp_duration.count() << " us" << std::endl;
             }
         }
-
         // Overall timing summary
         auto overall_end = std::chrono::high_resolution_clock::now();
         auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(overall_end - overall_start);
 
-        if (m_config.pruning_debug_mode) {
-            std::cout << "\n+--- CDPruner Performance Summary ----------------------+" << std::endl;
-            std::cout << "[CDPruner] Computation mode: "
-                      << (m_config.use_ops_model ? (std::string("OV Model by ") + m_config.device)
-                                                 : "Traditional Step-by-Step by CPU")
-                      << std::endl;
-            std::cout << "[CDPruner] Total processing time: " << total_duration.count() << " us (" << (total_duration.count() / 1000.0)
-                      << " ms)" << std::endl;
+        std::cout << "\n+--- CDPruner Performance Summary ----------------------+" << std::endl;
+        std::cout << "[CDPruner] Computation mode: "
+                  << (m_config.use_ops_model ? (std::string("OV Model by ") + m_config.device)
+                                             : "Traditional Step-by-Step by CPU")
+                  << std::endl;
+        std::cout << "[CDPruner] Total processing time: " << total_duration.count() << " us (" << (total_duration.count() / 1000.0)
+                  << " ms)" << std::endl;
 
-            // Performance metrics
-            size_t total_input_tokens = visual_shape[0] * visual_shape[1];
-            size_t total_output_tokens = visual_shape[0] * num_tokens_to_keep;
-            std::cout << "[CDPruner] Performance Metrics:" << std::endl;
-            std::cout << "[CDPruner]   Overall throughput: " << (static_cast<double>(total_input_tokens) / total_duration.count() * 1000000) << " input tokens/sec" << std::endl;
-            std::cout << "[CDPruner]   Pruning efficiency: " << (static_cast<double>(total_output_tokens) / total_duration.count() * 1000000) << " output tokens/sec" << std::endl;
-            std::cout << "[CDPruner]   Pruning ratio: " << (1.0 - static_cast<double>(num_tokens_to_keep) / visual_shape[1]) * 100 << "%" << std::endl;
-            std::cout << "+----------------------------------------------------------+" << std::endl;
+        // Performance metrics
+        size_t total_input_tokens = visual_shape[0] * visual_shape[1];
+        size_t total_output_tokens = visual_shape[0] * num_tokens_to_keep;
+        std::cout << "[CDPruner] Performance Metrics:" << std::endl;
+        std::cout << "[CDPruner]   Overall throughput: " << (static_cast<double>(total_input_tokens) / total_duration.count() * 1000000) << " input tokens/sec" << std::endl;
+        std::cout << "[CDPruner]   Pruning efficiency: " << (static_cast<double>(total_output_tokens) / total_duration.count() * 1000000) << " output tokens/sec" << std::endl;
+        std::cout << "[CDPruner]   Pruning ratio: " << (1.0 - static_cast<double>(num_tokens_to_keep) / visual_shape[1]) * 100 << "%" << std::endl;
+        std::cout << "+----------------------------------------------------------+" << std::endl;
+        if (m_config.pruning_debug_mode) {
             print_selection_statistics(visual_features, selected_tokens);
         }
         

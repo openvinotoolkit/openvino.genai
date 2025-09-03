@@ -161,8 +161,8 @@ size_t FastGreedyDPP::argmax(const ov::Tensor& scores) {
     }
     
     size_t best_idx = 0;
-    float best_value = data[0];
-    
+    float best_value = -std::numeric_limits<float>::infinity();
+
     for (size_t i = 1; i < size; ++i) {
         if (data[i] > best_value) {
             best_value = data[i];
@@ -231,8 +231,11 @@ void FastGreedyDPP::update_marginal_gains(size_t iteration, const ov::Tensor& ci
         
         size_t cis_idx = iteration * total_tokens + j;
         float eis_j = cis_data[cis_idx];
-        
         // Subtract the squared orthogonal component
+        if (std::isnan(eis_j)) {
+            di2s_data[j] = -std::numeric_limits<float>::max();
+            continue;
+        }
         di2s_data[j] -= eis_j * eis_j;
     }
 }
