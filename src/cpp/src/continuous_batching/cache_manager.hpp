@@ -283,6 +283,7 @@ public:
             m_key_cache[decoder_layer_id] = ov::Tensor();
             m_value_cache[decoder_layer_id] = ov::Tensor();
         }
+        m_num_allocated_kv_blocks = 0;
     }
 };
 
