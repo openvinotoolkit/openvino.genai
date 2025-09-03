@@ -1153,7 +1153,7 @@ public:
     }
 
     void clear() {
-        // KV-cache should not be cleared in prefix caching is enabled
+        // KV-cache should not be cleared if prefix caching is enabled
         OPENVINO_ASSERT(m_enable_prefix_caching == false);
 
         m_allocator.clear();
