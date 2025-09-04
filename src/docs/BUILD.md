@@ -247,6 +247,12 @@ After setting up your environment, use the following commands to configure addit
     ```sh
     cmake -DENABLE_PYTHON_BINDINGS=OFF -S ./ -B ./build/
     ```
+- **Experimental free threaded Python build:**
+    To build the Python bindings with experimental free threaded Python support, add the following flag to your `cmake` command:
+    ```sh
+    cmake -DENABLE_GIL_PYTHON_API=OFF -S ./ -B ./build/
+    ```
+    This disables the Global Interpreter Lock (GIL) in the Python API, enabling free threading. Note that this feature is experimental and may not be fully supported in all environments.
 
 ### Install OpenVINO GenAI From Source
 

@@ -62,6 +62,8 @@ public:
  */
 class StructuredOutputController {
     std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> m_logits_transformer;
+    
+    const std::unique_ptr<IStructuredOutputImpl>& get_backend(const std::string& backend_name);
 public:
     using BackendFactory = std::function<std::unique_ptr<ov::genai::IStructuredOutputImpl>(
         const ov::genai::Tokenizer::TokenizerImpl&, std::optional<int>)>;

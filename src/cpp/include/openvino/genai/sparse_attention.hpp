@@ -40,7 +40,7 @@ public:
           xattention_stride(xattention_stride_) {}
 
     /**  Sparse attention mode to be applied. */
-    SparseAttentionMode mode;
+    SparseAttentionMode mode = SparseAttentionMode::TRISHAPE;
 
     /** TRISHAPE and XATTENTION modes - Number of tokens from the end of the prompt for which full attention across previous KV
      * cache contents will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention
