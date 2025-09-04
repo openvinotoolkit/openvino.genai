@@ -228,11 +228,10 @@ public:
             const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
 
             if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                //TODO: won't work for multiple prompts
                 std::optional<int64_t> rope_delta;
-                ov::Coordinate start_pos{0,0,position_idx};
                 ov::Tensor tensor_tmp;
                 std::tie(tensor_tmp, rope_delta) = m_inputs_embedder->get_position_ids(hidden_size, sequence_group->get_num_processed_tokens());
-                //TODO: won't work for multiple prompts
                 position_ids = ov::Tensor(ov::element::i64, tensor_tmp.get_shape());
                 tensor_tmp.copy_to(position_ids);
             }
@@ -326,7 +325,6 @@ public:
                         *score_aggregation_window_data = 1;
                     }
                 }
-                position_idx += num_scheduled_tokens;
                 position_ids_data += num_scheduled_tokens;
                 past_lens_data += 1;
                 subsequence_begins_data += 1;
