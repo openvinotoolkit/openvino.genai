@@ -164,7 +164,7 @@ class MemoryMonitor:
             memory_values = _subtract_first_element(list(memory_values))
 
         # Convert to target memory unit
-        memory_values = list(map(partial(_cast_bytes_to, memory_unit=self.memory_unit), memory_values))
+        memory_values = list(map(partial(cast_bytes_to, memory_unit=self.memory_unit), memory_values))
 
         return time_values, memory_values
 
@@ -241,16 +241,25 @@ class MemoryMonitor:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
 
+    @staticmethod
+    def get_system_memory():
+        return psutil.virtual_memory().total - psutil.virtual_memory().available
+
+    @staticmethod
+    def get_rss_memory(include_child_processes=True):
+        bytes_used = psutil.Process().memory_info().rss
+        if include_child_processes:
+            for child_process in psutil.Process().children(recursive=True):
+                bytes_used += psutil.Process(child_process.pid).memory_info().rss
+        return bytes_used
+
     def _monitor_memory(self):
         while not self._monitoring_thread_should_stop:
             _last_measurement_time = time.perf_counter()
             if self.memory_type == MemoryType.RSS:
-                bytes_used = psutil.Process().memory_info().rss
-                if self.include_child_processes:
-                    for child_process in psutil.Process().children(recursive=True):
-                        bytes_used += psutil.Process(child_process.pid).memory_info().rss
+                bytes_used = MemoryMonitor.get_rss_memory(self.include_child_processes)
             elif self.memory_type == MemoryType.SYSTEM:
-                bytes_used = psutil.virtual_memory().total - psutil.virtual_memory().available
+                bytes_used = MemoryMonitor.get_system_memory()
             else:
                 raise Exception("Unknown memory type to log")
             if self._monitoring_thread_should_stop:
@@ -398,8 +407,12 @@ class MemMonitorWrapper():
                f"system memory increase {comment}: {max_sys_increase:.2f}{self.memory_unit.value}")
         log.info(msg)
 
+    def log_curent_memory_data(self, prefix=""):
+        log.info(f"{prefix} RSS memory {cast_bytes_to(MemoryMonitor.get_rss_memory(), self.memory_unit):.2f}{self.memory_unit.value}, "
+                 f"{prefix} system memory {cast_bytes_to(MemoryMonitor.get_system_memory(), self.memory_unit):.2f}{self.memory_unit.value}")
 
-def _cast_bytes_to(bytes, memory_unit, round_to_int=False):
+
+def cast_bytes_to(bytes, memory_unit, round_to_int=False):
     memory_unit_divisors = {
         MemoryUnit.B: 1,
         MemoryUnit.KiB: 2**10,

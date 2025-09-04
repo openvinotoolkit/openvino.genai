@@ -24,6 +24,9 @@ public:
     Napi::Value get_tokenization_duration(const Napi::CallbackInfo& info);
     Napi::Value get_detokenization_duration(const Napi::CallbackInfo& info);
 
+    Napi::Value get_grammar_compiler_init_times(const Napi::CallbackInfo& info);
+    Napi::Value get_grammar_compile_time(const Napi::CallbackInfo& info);
+
     Napi::Value get_raw_metrics(const Napi::CallbackInfo& info);
 
 private:
