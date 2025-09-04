@@ -266,7 +266,7 @@ for (auto& thread : threads) {
 
 ### Image Generation Pipeline reuse
 
-To extend pipeline's capability, we do have an interface to allow specific image generation pipeline to reuse models from another image generation pipeline which already load the models, and below table shows the support scope.
+To extend pipeline's capability, we do have an interface to allow a specific image generation pipeline to reuse models from another image generation pipeline which have already loaded the models, and below table shows the support scope.
 
 | Image Generation pipeline | Model can be reused from |
 |:---|:---|
@@ -274,7 +274,7 @@ To extend pipeline's capability, we do have an interface to allow specific image
 | `Image2ImagePipeline` | `InpaintingPipeline` |
 | `InpaintingPipeline` | `Image2ImagePipeline` |
 
-Here in this example shows how `Text2ImagePipeline` reuse models from `Image2ImagePipeline` and execute different pipeline depends on initial image whether is provided.
+This example shows how `Text2ImagePipeline` reuses models from `Image2ImagePipeline` and execute different pipeline depending on whether an initial image is provided.
 
 ```cpp
 ov::genai::Image2ImagePipeline img2img_pipe(models_path, device);

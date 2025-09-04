@@ -241,7 +241,7 @@ Generate iteration number:3, for one iteration, generate avg time: 84372.34 ms, 
 
 ### Image Generation Pipeline reuse
 
-To extend pipeline's capability, we do have an interface to allow specific image generation pipeline to reuse models from another image generation pipeline which already load the models, and below table shows the support scope.
+To extend pipeline's capability, we do have an interface to allow a specific image generation pipeline to reuse models from another image generation pipeline which have already loaded the models, and below table shows the support scope.
 
 | Image Generation pipeline | Model can be reused from |
 |:---|:---|
@@ -249,11 +249,11 @@ To extend pipeline's capability, we do have an interface to allow specific image
 | `Image2ImagePipeline` | `InpaintingPipeline` |
 | `InpaintingPipeline` | `Image2ImagePipeline` |
 
-Here in this example shows how `Text2ImagePipeline` reuse models from `Image2ImagePipeline` and execute different pipeline depends on initial image whether is provided.
+This example shows how `Text2ImagePipeline` reuses models from `Image2ImagePipeline` and execute different pipeline depending on whether an initial image is provided.
 
 ```py
 img2img_pipe = openvino_genai.Image2ImagePipeline(models_path, device)
-text2img_pipe = openvino_genaiText2ImagePipeline(img2img_pipe)
+text2img_pipe = openvino_genai.Text2ImagePipeline(img2img_pipe)
 
 
 if image_path:
