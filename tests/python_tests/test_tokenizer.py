@@ -14,7 +14,7 @@ from openvino_tokenizers import convert_tokenizer
 from transformers import AutoTokenizer
 
 from utils.constants import get_disabled_mmap_ov_config
-from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
+from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model, load_hf_tokenizer_from_gguf
 from utils.network import retry_request
 from utils.tokenizers import delete_rt_info, model_tmp_path
 
