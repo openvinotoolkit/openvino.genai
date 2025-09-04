@@ -20,7 +20,19 @@ EMBEDDINGS_TEST_MODELS = [
 ]
 
 RERANK_TEST_MODELS = [
-    "cross-encoder/ms-marco-TinyBERT-L2-v2",  # sigmoid applied
+    "cross-encoder/ms-marco-MiniLM-L2-v2",
+    "cross-encoder/ms-marco-MiniLM-L4-v2",
+    "cross-encoder/ms-marco-MiniLM-L6-v2",
+    "cross-encoder/ms-marco-MiniLM-L12-v2",
+    "cross-encoder/ms-marco-TinyBERT-L2-v2",
+    "tomaarsen/reranker-MiniLM-L12-gooaq-bce",
+    "BAAI/bge-reranker-v2-m3",
+    "BAAI/bge-reranker-base",
+    "tomaarsen/reranker-ModernBERT-base-gooaq-bce",
+    "tomaarsen/reranker-ModernBERT-large-gooaq-bce",
+    "Alibaba-NLP/gte-reranker-modernbert-base",
+    "answerdotai/ModernBERT-base"
+    # "cross-encoder/ms-marco-TinyBERT-L2-v2",  # sigmoid applied
     # "answerdotai/ModernBERT-base",  # 2 classes output, softmax applied. Skip until langchain OpenVINORerank supports it.
 ]
 
