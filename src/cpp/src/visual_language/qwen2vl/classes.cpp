@@ -468,7 +468,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderQwen2VL::normalize_pro
     }
     return {std::move(unified_prompt), std::move(images_sequence)};
 }
-
+TokenIds g_input_ids;
 ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
     std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
@@ -480,6 +480,13 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     }
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
+
+    // copy to global.
+    const size_t input_ids_len = input_ids.get_shape().at(1);
+    g_input_ids.resize(input_ids_len);
+    const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    std::copy_n(input_ids_data, input_ids_len, g_input_ids.data());
+
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);

@@ -31,6 +31,27 @@ public:
         m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
     };
 
+    PromptLookupImpl(const std::shared_ptr<ov::Model>& model,
+                     std::shared_ptr<InputsEmbedder> embedder,
+                     const Tokenizer& tokenizer,
+                     const SchedulerConfig& scheduler_config,
+                     const std::string& device,
+                     const ov::AnyMap& properties,
+                     const ov::genai::GenerationConfig& generation_config) {
+        m_tokenizer = tokenizer;
+        m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model,
+                                                                             embedder,
+                                                                             tokenizer,
+                                                                             scheduler_config,
+                                                                             device,
+                                                                             properties,
+                                                                             generation_config);
+        m_inputs_embedder = embedder;
+        // m_model_runner->set_embedding_model(embedder->get_embedding_model());
+        m_model_input_type = ModelInputType::EMBEDDINGS;
+    };
+
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  ov::genai::GenerationConfig sampling_params,

@@ -30,7 +30,7 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
 
         // find ngram match in input_ids
         size_t ngram_i = 0;
-        for (size_t input_i = 0; input_i < input_length - ngram_size; input_i++) {
+        for (int32_t input_i = 0; input_i < static_cast<int32_t>(input_length) - ngram_size; input_i++) {
             if (ngram[ngram_i] != input_ids[input_i]) {
                 ngram_i = 0;
                 continue;
@@ -53,10 +53,13 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
 
     return std::vector<int64_t>{};
 }
-
+extern TokenIds g_input_ids;
 void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates() {
     for (auto& request : m_requests) {
-        const auto prompt = request->get_prompt_ids();
+        auto prompt = request->get_prompt_ids();
+        if (g_input_ids.size() > 0 && prompt.size() == 0)
+            prompt = g_input_ids;
+
         size_t max_validation_len = 0;
         for (auto& running_sequence : request->get_running_sequences()) {
             const auto generated_tokens = running_sequence->get_generated_ids();
@@ -74,6 +77,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
                 min_num_assistant_tokens = std::min(sampling_params.num_assistant_tokens, left_generated_len);
             }
             TokenIds candidates = generate_candidates(full_input_ids, min_num_assistant_tokens, sampling_params.max_ngram_size);
+
+            if (candidates.size() < sampling_params.num_assistant_tokens) {
+                auto token_sz = candidates.size();
+                for (int ci = 0; ci < sampling_params.num_assistant_tokens - token_sz; ci ++) {
+                    // last token?
+                    candidates.push_back(15000);
+                }
+            }
 
             if (!candidates.empty()) {
                 for (const auto& candidate : candidates) {
