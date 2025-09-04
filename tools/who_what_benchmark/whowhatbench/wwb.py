@@ -568,6 +568,17 @@ def main():
     args = parse_args()
     check_args(args)
 
+    version_str = f'openvino runtime version: {ov.get_version()}'
+    if args.genai:
+        try:
+            import openvino_genai
+        except ImportError:
+            logger.error(
+                "Failed to import openvino_genai package. Please install it.")
+            exit(-1)
+        version_str += f', genai version: {openvino_genai.__version__}'
+    logger.info(version_str)
+
     kwargs = {}
     if args.cb_config:
         kwargs["cb_config"] = read_cb_config(args.cb_config)

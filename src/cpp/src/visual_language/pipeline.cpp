@@ -177,7 +177,7 @@ public:
         generation_config.validate();
 
         if (m_is_npu) {
-            OPENVINO_ASSERT(rgbs.size() == 1u, "Currently only batch size equal to 1 is supported for NPU device!");
+            OPENVINO_ASSERT(rgbs.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
             OPENVINO_ASSERT(generation_config.is_greedy_decoding() || generation_config.is_multinomial(),
                 "Currently only greedy and multinomial decoding are supported for NPU device!");
             OPENVINO_ASSERT(generation_config.num_return_sequences == 1u,
@@ -358,7 +358,7 @@ public:
 // TODO: remove it when QWEN ticket-167316/GEMMA3 ticket-171180 is fixed
 bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::QWEN2_VL || 
+    return vlm_config.model_type == VLMModelType::QWEN2_VL ||
            vlm_config.model_type == VLMModelType::QWEN2_5_VL ||
            vlm_config.model_type == VLMModelType::GEMMA3;
 }

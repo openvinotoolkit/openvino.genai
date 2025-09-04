@@ -558,20 +558,24 @@ class ExtendedPerfMetrics:
     
         Holds performance metrics for each generate call.
     
-        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        PerfMetrics holds the following metrics with mean and standard deviations:
         - Time To the First Token (TTFT), ms
         - Time per Output Token (TPOT), ms/token
+        - Inference time per Output Token (IPOT), ms/token
         - Generate total duration, ms
+        - Inference duration, ms
         - Tokenization duration, ms
         - Detokenization duration, ms
         - Throughput, tokens/s
     
-        Additional fields include:
+        Additional metrics include:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Time to initialize grammar compiler for each backend, ms
+        - Time to compile grammar, ms
     
-        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
     
         :param get_load_time: Returns the load time in milliseconds.
@@ -589,8 +593,14 @@ class ExtendedPerfMetrics:
         :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
         :type get_tpot: MeanStdPair
     
+        :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
+        :type get_ipot: MeanStdPair
+    
         :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
         :type get_throughput: MeanStdPair
+    
+        :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
+        :type get_inference_duration: MeanStdPair
     
         :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
         :type get_generate_duration: MeanStdPair
@@ -1716,20 +1726,24 @@ class PerfMetrics:
     
         Holds performance metrics for each generate call.
     
-        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        PerfMetrics holds the following metrics with mean and standard deviations:
         - Time To the First Token (TTFT), ms
         - Time per Output Token (TPOT), ms/token
+        - Inference time per Output Token (IPOT), ms/token
         - Generate total duration, ms
+        - Inference duration, ms
         - Tokenization duration, ms
         - Detokenization duration, ms
         - Throughput, tokens/s
     
-        Additional fields include:
+        Additional metrics include:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Time to initialize grammar compiler for each backend, ms
+        - Time to compile grammar, ms
     
-        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
     
         :param get_load_time: Returns the load time in milliseconds.
@@ -1747,8 +1761,14 @@ class PerfMetrics:
         :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
         :type get_tpot: MeanStdPair
     
+        :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
+        :type get_ipot: MeanStdPair
+    
         :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
         :type get_throughput: MeanStdPair
+    
+        :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
+        :type get_inference_duration: MeanStdPair
     
         :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
         :type get_generate_duration: MeanStdPair
@@ -2587,8 +2607,8 @@ class StructuredOutputConfig:
             The compound grammar a Union or Concat of several grammars, where each grammar can be a JSON schema, regex, EBNF, Union or Concat.
     """
     class Concat:
-        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | ...
-        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | ...
+        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
         @staticmethod
         def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Concat:
             """
@@ -2596,43 +2616,43 @@ class StructuredOutputConfig:
             """
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
-        def __or__(self, arg0: typing.Any) -> ...:
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class EBNF:
         value: str
-        def __add__(self, arg0: typing.Any) -> ...:
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
             """
             EBNF grammar building block for compound grammar configuration.
             """
-        def __or__(self, arg0: typing.Any) -> ...:
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class JSONSchema:
         value: str
-        def __add__(self, arg0: typing.Any) -> ...:
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
             """
             JSON schema building block for compound grammar configuration.
             """
-        def __or__(self, arg0: typing.Any) -> ...:
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class Regex:
         value: str
-        def __add__(self, arg0: typing.Any) -> ...:
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
             """
             Regex building block for compound grammar configuration.
             """
-        def __or__(self, arg0: typing.Any) -> ...:
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
@@ -2663,12 +2683,12 @@ class StructuredOutputConfig:
     def __repr__(self) -> str:
         ...
     @property
-    def compound_grammar(self) -> ... | ... | ... | ... | ... | None:
+    def compound_grammar(self) -> openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None:
         """
         Compound grammar for structured output generation
         """
     @compound_grammar.setter
-    def compound_grammar(self, arg0: ... | ... | ... | ... | ... | None) -> None:
+    def compound_grammar(self, arg0: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None) -> None:
         ...
     @property
     def grammar(self) -> str | None:
