@@ -10,7 +10,74 @@
 #include <iostream>
 #include <iomanip>
 
+// SIMD headers
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
+
 namespace ov::genai::cdpruner {
+
+// SIMD optimized vector subtraction: out[i] -= scalar * in[i]
+inline void simd_vector_sub_scalar_mul(float* out, const float* in, float scalar, size_t size) {
+    size_t i = 0;
+
+#ifdef __AVX__
+    // AVX: Process 8 floats at a time
+    const __m256 scalar_vec = _mm256_set1_ps(scalar);
+    for (; i + 8 <= size; i += 8) {
+        __m256 out_vec = _mm256_loadu_ps(&out[i]);
+        __m256 in_vec = _mm256_loadu_ps(&in[i]);
+        __m256 mul_result = _mm256_mul_ps(scalar_vec, in_vec);
+        __m256 result = _mm256_sub_ps(out_vec, mul_result);
+        _mm256_storeu_ps(&out[i], result);
+    }
+#elif defined(__SSE2__)
+    // SSE2: Process 4 floats at a time
+    const __m128 scalar_vec = _mm_set1_ps(scalar);
+    for (; i + 4 <= size; i += 4) {
+        __m128 out_vec = _mm_loadu_ps(&out[i]);
+        __m128 in_vec = _mm_loadu_ps(&in[i]);
+        __m128 mul_result = _mm_mul_ps(scalar_vec, in_vec);
+        __m128 result = _mm_sub_ps(out_vec, mul_result);
+        _mm_storeu_ps(&out[i], result);
+    }
+#endif
+
+    // Process remaining elements with scalar code
+    for (; i < size; ++i) {
+        out[i] -= scalar * in[i];
+    }
+}
+
+// SIMD optimized vector multiplication by scalar: out[i] *= scalar
+inline void simd_vector_mul_scalar(float* out, float scalar, size_t size) {
+    size_t i = 0;
+
+#ifdef __AVX__
+    // AVX: Process 8 floats at a time
+    const __m256 scalar_vec = _mm256_set1_ps(scalar);
+    for (; i + 8 <= size; i += 8) {
+        __m256 out_vec = _mm256_loadu_ps(&out[i]);
+        __m256 result = _mm256_mul_ps(out_vec, scalar_vec);
+        _mm256_storeu_ps(&out[i], result);
+    }
+#elif defined(__SSE2__)
+    // SSE2: Process 4 floats at a time
+    const __m128 scalar_vec = _mm_set1_ps(scalar);
+    for (; i + 4 <= size; i += 4) {
+        __m128 out_vec = _mm_loadu_ps(&out[i]);
+        __m128 result = _mm_mul_ps(out_vec, scalar_vec);
+        _mm_storeu_ps(&out[i], result);
+    }
+#endif
+
+    // Process remaining elements with scalar code
+    for (; i < size; ++i) {
+        out[i] *= scalar;
+    }
+}
 
 FastGreedyDPP::FastGreedyDPP(const Config& config) : m_config(config) {
     // Constructor implementation
@@ -32,6 +99,21 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel,
     
     if (num_tokens > total_tokens) {
         throw std::invalid_argument("Cannot select more tokens than available");
+    }
+    
+    // Debug output: report which SIMD instruction set is being used
+    {
+        static bool simd_logged = false;
+        if (!simd_logged) {
+#ifdef __AVX__
+            std::cout << "[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)" << std::endl;
+#elif defined(__SSE2__)
+            std::cout << "[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)" << std::endl;
+#else
+            std::cout << "[CDPruner] Using scalar operations (no SIMD acceleration)" << std::endl;
+#endif
+            simd_logged = true;
+        }
     }
     
     std::vector<std::vector<size_t>> batch_results(batch_size);
@@ -201,15 +283,12 @@ void FastGreedyDPP::update_orthogonal_vector(const ov::Tensor& kernel, size_t ba
         if (std::abs(cis_sel) < 1e-10f)
             continue;
 
-        for (size_t j = 0; j < total_tokens; ++j) {
-            cis_out[j] -= cis_sel * cis_prev_row[j];
-        }
+        // SIMD optimized vector subtraction: cis_out[j] -= cis_sel * cis_prev_row[j]
+        simd_vector_sub_scalar_mul(cis_out, cis_prev_row, cis_sel, total_tokens);
     }
 
-    // Process remaining elements
-    for (size_t j = 0; j < total_tokens; ++j) {
-        cis_out[j] *= inv_norm;
-    }
+    // SIMD optimized vector multiplication: cis_out[j] *= inv_norm
+    simd_vector_mul_scalar(cis_out, inv_norm, total_tokens);
 }
 
 void FastGreedyDPP::update_marginal_gains(size_t iteration, const ov::Tensor& cis, ov::Tensor& di2s) {
