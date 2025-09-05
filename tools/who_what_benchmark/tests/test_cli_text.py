@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+import platform
 import pandas as pd
 import pytest
 import logging
@@ -49,6 +50,7 @@ def teardown_module():
     shutil.rmtree(tmp_dir)
 
 
+@pytest.mark.skipif((sys.platform == "darwin") and (platform.machine() in ('arm', 'armv7l', 'aarch64', 'arm64', 'ARM64')), reason='173169')
 def test_text_target_model():
     run_wwb([
         "--base-model",

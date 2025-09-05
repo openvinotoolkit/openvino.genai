@@ -3,6 +3,7 @@
 
 
 import pytest
+import platform
 import torch
 import gc
 import sys
@@ -112,6 +113,8 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", [{"gguf_model_id": "Qwen/Qwen3-0.6B-GGUF", "gguf_filename": "Qwen3-0.6B-Q8_0.gguf"}])
+@pytest.mark.xfail(condition=(sys.platform == "darwin" and platform.machine() in ('arm', 'armv7l',
+                                                                                  'aarch64', 'arm64', 'ARM64')), reason="Ticket - 172335")
 @pytest.mark.precommit
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
