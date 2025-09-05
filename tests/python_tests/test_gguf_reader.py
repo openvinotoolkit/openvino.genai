@@ -76,6 +76,9 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model, prom
     gguf_filename = model_ids["gguf_filename"]
     dynamic_quantization_group_size = model_ids["dynamic_quantization_group_size"]
 
+    if "sammysun0711" in gguf_model_id and "<|endoftext|>" in prompt:
+        pytest.skip(reason="Prompts to test special tokens for this model fail on HF side")
+    
     opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
     hf_tokenizer = load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename)
     gc.collect()

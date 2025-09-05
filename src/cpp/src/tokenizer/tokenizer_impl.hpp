@@ -35,7 +35,6 @@ public:
     std::shared_ptr<void> m_shared_object_ov_tokenizers = nullptr;
     bool is_paired_input = false;
     bool m_older_than_24_5 = false;
-    bool m_is_gguf_model = false;
     int64_t m_pad_token_id = -1;
     int64_t m_bos_token_id = -1;
     int64_t m_eos_token_id = -1;

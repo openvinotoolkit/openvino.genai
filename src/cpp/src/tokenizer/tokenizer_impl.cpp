@@ -4,6 +4,7 @@
 #include "tokenizer/tokenizer_impl.hpp"
 #include "add_second_input_pass.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
+#include "openvino/genai/version.hpp"
 
 namespace ov {
 namespace genai {
@@ -274,8 +275,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
     auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
     
-    m_is_gguf_model = ov::genai::is_gguf_model(models_path);
-    if (m_is_gguf_model) {
+    if (ov::genai::is_gguf_model(models_path)) {
         std::map<std::string, GGUFMetaData> tokenizer_config{};
         std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
             create_tokenizer_from_config(m_shared_object_ov_tokenizers, models_path);
@@ -295,6 +295,8 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         if (!m_chat_template.empty()) {
             m_chat_template = patch_gguf_chat_template(m_chat_template);
         }
+        ov_tokenizer->set_rt_info("openvino_genai_version", ov::genai::get_version().buildNumber);
+        ov_detokenizer->set_rt_info("openvino_genai_version", ov::genai::get_version().buildNumber);
 
         if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(models_path);
@@ -374,12 +376,13 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
     auto core = get_core_singleton();
     std::string device = "CPU";  // only CPU is supported for now
 
-    // Saving IR version was added only in 24.5, so if it's missing, then it's older than 24.5
-    m_older_than_24_5 = !(ov_tokenizer ? ov_tokenizer : ov_detokenizer)->has_rt_info("openvino_tokenizers_version");
-    
-    // gguf models are always newer than 24.5 despite the fact they don't hold rt_info with 'openvino_tokenizers_version'
-    if (m_is_gguf_model) {
+    // Save openvino GenAI runtime version was added in 25.4 for GGUF models,
+    // if we have it in ov::Model, then it's newer than 24.5 we don't need to check 'openvino_tokenizers' version.
+    if (!(ov_tokenizer ? ov_tokenizer : ov_detokenizer)->has_rt_info("openvino_genai_version")) {
         m_older_than_24_5 = false;
+    } else {
+        // Saving IR version was added only in 24.5, so if it's missing, then it's older than 24.5
+        m_older_than_24_5 = !(ov_tokenizer ? ov_tokenizer : ov_detokenizer)->has_rt_info("openvino_tokenizers_version");
     }
 
     if (ov_tokenizer) {
