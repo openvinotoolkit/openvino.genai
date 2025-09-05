@@ -110,10 +110,10 @@ Napi::Value LLMPipelineWrapper::init(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     const std::string model_path = info[0].ToString();
     const std::string device = info[1].ToString();
-    // const auto& properties = js_to_cpp<ov::AnyMap>(info.Env(), info[2]);
-    Napi::Function callback = info[2].As<Napi::Function>();
+    const auto& properties = js_to_cpp<ov::AnyMap>(info.Env(), info[2]);
+    Napi::Function callback = info[3].As<Napi::Function>();
 
-    InitWorker* asyncWorker = new InitWorker(callback, this->pipe, model_path, device);
+    InitWorker* asyncWorker = new InitWorker(callback, this->pipe, model_path, device, properties);
     asyncWorker->Queue();
 
     return info.Env().Undefined();

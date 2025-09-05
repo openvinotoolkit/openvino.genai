@@ -23,9 +23,8 @@ class PipelineFactory {
         "The second argument must be a device string. If you want to pass LLMPipelineProperties, please use the third argument.",
       );
     }
-    if (properties === undefined) properties = {};
 
-    const pipeline = new LLM(modelPath, device);
+    const pipeline = new LLM(modelPath, device, properties);
     await pipeline.init();
     return pipeline;
   }

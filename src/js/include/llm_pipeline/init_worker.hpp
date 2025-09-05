@@ -10,8 +10,8 @@ public:
     InitWorker(Function& callback,
                std::shared_ptr<ov::genai::LLMPipeline>& pipe,
                const std::string model_path,
-               std::string device //,ov::AnyMap properties
-            );
+               std::string device,
+               ov::AnyMap properties);
     virtual ~InitWorker() {}
 
     void Execute() override;
@@ -21,5 +21,5 @@ private:
     std::shared_ptr<ov::genai::LLMPipeline>& pipe;
     std::string model_path;
     std::string device;
-    // ov::AnyMap properties;
+    ov::AnyMap properties;
 };

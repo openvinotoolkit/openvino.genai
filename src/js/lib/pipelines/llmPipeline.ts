@@ -163,7 +163,7 @@ export class LLMPipeline {
     this.pipeline = new addon.LLMPipeline();
 
     const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
-    const result = await initPromise(this.modelPath, this.device); // , this.properties);
+    const result = await initPromise(this.modelPath, this.device, this.properties);
 
     this.isInitialized = true;
 
