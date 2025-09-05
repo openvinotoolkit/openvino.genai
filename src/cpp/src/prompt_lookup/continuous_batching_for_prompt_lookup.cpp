@@ -30,7 +30,7 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
 
         // find ngram match in input_ids
         size_t ngram_i = 0;
-        for (size_t input_i = 0; input_i < input_length - ngram_size; input_i++) {
+        for (int32_t input_i = 0; input_i < static_cast<int32_t>(input_length) - ngram_size; input_i++) {
             if (ngram[ngram_i] != input_ids[input_i]) {
                 ngram_i = 0;
                 continue;
@@ -56,7 +56,14 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
 
 void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates() {
     for (auto& request : m_requests) {
-        const auto prompt = request->get_prompt_ids();
+        auto prompt = request->get_prompt_ids();
+        if (prompt.size() == 0) {
+            auto type_ids = request->get_token_type_ids();
+            if (type_ids.has_value()) {
+                prompt = *type_ids;
+            }
+        }
+
         size_t max_validation_len = 0;
         for (auto& running_sequence : request->get_running_sequences()) {
             const auto generated_tokens = running_sequence->get_generated_ids();
@@ -74,6 +81,18 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
                 min_num_assistant_tokens = std::min(sampling_params.num_assistant_tokens, left_generated_len);
             }
             TokenIds candidates = generate_candidates(full_input_ids, min_num_assistant_tokens, sampling_params.max_ngram_size);
+
+            // Padding to candidate token,
+            // Avoid shape checking and increasing the amount of computation when the shape changes.
+            if (candidates.size() < sampling_params.num_assistant_tokens) {
+                if (full_input_ids.size() > 0) {
+                    auto token_sz = candidates.size();
+                    for (int ci = 0; ci < sampling_params.num_assistant_tokens - token_sz; ci++) {
+                        // Padding with last token.
+                        candidates.push_back(full_input_ids.back());
+                    }
+                }
+            }
 
             if (!candidates.empty()) {
                 for (const auto& candidate : candidates) {

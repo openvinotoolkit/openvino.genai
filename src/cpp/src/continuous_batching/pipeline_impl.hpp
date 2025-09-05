@@ -129,6 +129,8 @@ public:
 
     bool has_non_finished_requests() override;
 
+    virtual void generate_candidates();
+
     void step() override;
 
     std::vector<EncodedGenerationResult>

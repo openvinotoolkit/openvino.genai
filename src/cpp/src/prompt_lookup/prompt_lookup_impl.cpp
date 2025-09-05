@@ -39,11 +39,6 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
     ManualTimer step_timer("prompt_lookup_decoding: step()");
     step_timer.start();
 
-    ManualTimer candidates_timer("prompt_lookup_decoding: generate_candidates()");
-    candidates_timer.start();
-    m_pipeline->generate_candidates();
-    candidates_timer.end();
-    m_sd_metrics.draft_duration += candidates_timer.get_duration();
     auto generated_len_before = m_pipeline->get_generated_request_len();
 
     ManualTimer main_timer("prompt_lookup_decoding: pipeline: step()");
@@ -121,7 +116,13 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
         OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
-        generations.push_back(m_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
+
+        bool has_valid_token = token_type_ids.has_value() && request_id < token_type_ids->size();
+        generations.push_back(m_pipeline->add_request(
+            request_id,
+            input_ids[request_id],
+            sampling_params[request_id],
+            has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt));
     }
     auto all_requests = m_pipeline->get_awaiting_requests();
 
