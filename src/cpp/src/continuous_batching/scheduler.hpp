@@ -391,6 +391,9 @@ private:
                 // allocate new slots
                 std::map<size_t, std::list<size_t>> copy_blocks_map = m_block_manager->append_slots(sequence_group);
 
+                // extra steps for validation mode to make sure we have enough blocks to hold all the scheduled tokens
+                if (sequence_group->get_num_tokens_to_validate())
+                    m_block_manager->allocate_slots_for_validation(sequence_group);
                 // add information to scheduler_output
                 {
                     auto request_id = sequence_group->get_request_id();

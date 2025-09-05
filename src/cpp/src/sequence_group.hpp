@@ -598,7 +598,7 @@ public:
         m_num_validation_tokens = k;
     }
 
-    size_t get_num_tokens_to_validate() {
+    size_t get_num_tokens_to_validate() const {
         return m_num_validation_tokens;
     }
     
@@ -678,6 +678,19 @@ public:
      */
     size_t get_num_logical_blocks() const {
         return (get_context_len() - get_num_evicted_tokens() + m_block_size - 1) / m_block_size;
+    }
+
+    /**
+     * @return The number of logical KV cache blocks required to host 1 extra token in this sequence group, taking into account previous token evictions.
+     */
+    size_t get_num_logical_blocks_for_1_generation() const {
+        return (get_context_len() - get_num_evicted_tokens() - get_num_tokens_to_validate() + m_block_size - 1) / m_block_size;
+    }
+    /**
+     * @return The number of logical KV cache blocks required to host validation tokens in this sequence group, taking into account previous token evictions.
+     */
+    size_t get_num_logical_blocks_for_validation_tokens() const {
+        return (get_context_len() - get_num_evicted_tokens() - 1 + m_block_size - 1) / m_block_size;
     }
 
     // requires number of physical blocks for next generation
