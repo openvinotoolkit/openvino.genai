@@ -1,3 +1,8 @@
+// Copyright (C) 2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+import { SchedulerConfig } from "./schedulerConfig.js";
+
 export enum StreamingStatus {
   RUNNING,
   STOP,
@@ -116,3 +121,7 @@ export type GenerationConfig = GenericGenerationConfig &
   RandomSamplingsGenerationConfig &
   AssistingGenerationConfig &
   DecodedResultsConfig;
+
+export type LLMPipelineProperties = {
+  schedulerConfig?: SchedulerConfig;
+};

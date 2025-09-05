@@ -78,7 +78,11 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
 
     for (uint32_t i = 0; i < keys.Length(); ++i) {
         const std::string& key_name = keys.Get(i).ToString();
-        result_map[key_name] = js_to_cpp<ov::Any>(env, object.Get(key_name));
+        if (key_name == "schedulerConfig") {
+            result_map["scheduler_config"] = js_to_cpp<ov::genai::SchedulerConfig>(env, object.Get(key_name));
+        } else {
+            result_map[key_name] = js_to_cpp<ov::Any>(env, object.Get(key_name));
+        }
     }
 
     return result_map;
@@ -155,6 +159,28 @@ ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, c
 }
 
 template <>
+ov::genai::SchedulerConfig js_to_cpp<ov::genai::SchedulerConfig>(const Napi::Env& env, const Napi::Value& value) {
+    ov::genai::SchedulerConfig config;
+    OPENVINO_ASSERT(value.IsObject(), "SchedulerConfig must be a JS object");
+    auto obj = value.As<Napi::Object>();
+
+    if (obj.Has("max_num_batched_tokens")) {
+        config.max_num_batched_tokens = obj.Get("max_num_batched_tokens").ToNumber().Uint32Value();
+    }
+    if (obj.Has("num_kv_blocks")) {
+        config.num_kv_blocks = obj.Get("num_kv_blocks").ToNumber().Uint32Value();
+    }
+    if (obj.Has("cache_size")) {
+        config.cache_size = obj.Get("cache_size").ToNumber().Uint32Value();
+    }
+    if (obj.Has("dynamic_split_fuse")) {
+        config.dynamic_split_fuse = obj.Get("dynamic_split_fuse").ToBoolean().Value();
+    }
+
+    return config;
+}
+
+template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& env, const ov::genai::EmbeddingResult embedding_result) {
     return std::visit(overloaded {
         [env](std::vector<float> embed_vector) -> Napi::Value {
@@ -183,14 +209,17 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& 
 }
 
 template <>
-Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env& env, const ov::genai::EmbeddingResults embedding_result) {
-    return std::visit([env](auto& embed_vector) {
-        auto js_result = Napi::Array::New(env, embed_vector.size());
-        for (auto i = 0; i < embed_vector.size(); i++) {
-            js_result[i] = cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(env, embed_vector[i]);
-        }
-        return js_result;
-    }, embedding_result);
+Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env& env,
+                                                                const ov::genai::EmbeddingResults embedding_result) {
+    return std::visit(
+        [env](auto& embed_vector) {
+            auto js_result = Napi::Array::New(env, embed_vector.size());
+            for (auto i = 0; i < embed_vector.size(); i++) {
+                js_result[i] = cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(env, embed_vector[i]);
+            }
+            return js_result;
+        },
+        embedding_result);
 }
 
 template <>
