@@ -673,6 +673,10 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderPhi3V::normalize_promp
 }
 
 ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
+    return get_inputs_embeds_with_token_type_ids(image_prompt, images, metrics, recalculate_merged_embeddings, image_sequence).first;
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderPhi3V::get_inputs_embeds_with_token_type_ids(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
     size_t base_id = m_tokens_per_images.size();
     std::vector<ov::Tensor> images_features_proj;
     for (const ov::genai::EncodedImage& encoded_image : images) {
@@ -737,7 +741,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
     if (!m_is_chat_conversation) {
         m_tokens_per_images.clear();
     }
-    return inputs_embeds;
+    return {inputs_embeds, new_merged_tokens};
 }
 
 void InputsEmbedderPhi3V::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {

@@ -48,7 +48,6 @@ public:
                                                                              properties,
                                                                              generation_config);
         m_inputs_embedder = embedder;
-        // m_model_runner->set_embedding_model(embedder->get_embedding_model());
         m_model_input_type = ModelInputType::EMBEDDINGS;
     };
 

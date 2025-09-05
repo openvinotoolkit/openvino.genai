@@ -259,7 +259,11 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderInternVLChat::normaliz
     return {std::move(unified_prompt), std::move(images_sequence)};
 }
 
-ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
+    return get_inputs_embeds_with_token_type_ids(image_prompt, images, metrics, recalculate_merged_embeddings, image_sequence).first;
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderInternVLChat::get_inputs_embeds_with_token_type_ids(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     size_t searched_pos = 0;
@@ -276,7 +280,7 @@ ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& unif
     if (images.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
-        return inputs_embeds;
+        return {inputs_embeds, input_ids};
     }
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_image_context_token = m_tokenizer.encode(image_context_token, ov::genai::add_special_tokens(false)).input_ids;
@@ -284,7 +288,7 @@ ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& unif
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_context_token_id = encoded_image_context_token.data<int64_t>()[encoded_image_context_token.get_size() - 1];
-    return merge_text_and_image_embeddings_internvl(input_ids, text_embeds, image_embeds, image_context_token_id);
+    return {merge_text_and_image_embeddings_internvl(input_ids, text_embeds, image_embeds, image_context_token_id), input_ids};
 }
 
 } // namespace ov::genai
