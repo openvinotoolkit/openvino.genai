@@ -12,15 +12,20 @@ class PipelineFactory {
     device: string,
     properties?: LLMPipelineProperties,
   ): Promise<any>;
-  static async LLMPipeline(modelPath: string, device?: string, properties: LLMPipelineProperties = {}) {
+  static async LLMPipeline(
+    modelPath: string,
+    device?: string,
+    properties: LLMPipelineProperties = {},
+  ) {
     if (device === undefined) device = "CPU";
     if (typeof device !== "string") {
       throw new Error(
         "The second argument must be a device string. If you want to pass LLMPipelineProperties, please use the third argument.",
       );
     }
+    if (properties === undefined) properties = {};
 
-    const pipeline = new LLM(modelPath, device, properties);
+    const pipeline = new LLM(modelPath, device);
     await pipeline.init();
     return pipeline;
   }
