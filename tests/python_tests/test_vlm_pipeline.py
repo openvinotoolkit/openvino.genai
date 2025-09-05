@@ -489,6 +489,30 @@ def image_sequence(request):
 
 
 @pytest.mark.precommit
+@pytest.mark.skipif(
+    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
+    reason="NPU plugin is available only on Linux and Windows x86_64",
+)
+def test_vlm_npu_no_image():
+    models_path = get_ov_model(model_ids[0])
+    properties = {
+        "DEVICE_PROPERTIES": {
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
+        }
+    }
+
+    ov_pipe = VLMPipeline(models_path, "NPU", config=properties)
+
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    ov_pipe.generate(
+        prompts[0], generation_config=generation_config
+    )
+
+
+@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_sequence, backend):
