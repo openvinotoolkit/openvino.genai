@@ -144,14 +144,14 @@ export class DecodedResults {
 }
 
 export class LLMPipeline {
-  modelPath: string | null = null;
-  device: string | null = null;
+  modelPath: string;
+  device: string;
   pipeline: any | null = null;
-  properties: LLMPipelineProperties = {};
+  properties: LLMPipelineProperties;
   isInitialized = false;
   isChatStarted = false;
 
-  constructor(modelPath: string, device: string, properties: LLMPipelineProperties = {}) {
+  constructor(modelPath: string, device: string, properties: LLMPipelineProperties) {
     this.modelPath = modelPath;
     this.device = device;
     this.properties = properties;
