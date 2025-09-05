@@ -70,6 +70,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 
     try {
         std::vector<std::vector<size_t>> selected_tokens;
+        std::chrono::microseconds dpp_duration{0}; // Initialize DPP timing variable
 
         if (m_config.pruning_debug_mode) {
             std::cout << "\n+--- CDPruner Processing Steps ----------------------+" << std::endl;
@@ -101,7 +102,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
             selected_tokens = m_dpp_selector.select(kernel_matrix, num_tokens_to_keep);
             auto dpp_end = std::chrono::high_resolution_clock::now();
 
-            auto dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
+            dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
 
             if (m_config.pruning_debug_mode) {
                 std::cout << "[CDPruner]   DPP selection took: " << dpp_duration.count() << " us" << std::endl;
@@ -230,7 +231,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
             selected_tokens.push_back(merged_selection);
             auto dpp_end = std::chrono::high_resolution_clock::now();
 
-            auto dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
+            dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
             
             if (m_config.pruning_debug_mode) {
                 std::cout << "[CDPruner]   DPP selection took: " << dpp_duration.count() << " us" << std::endl;
@@ -252,6 +253,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         size_t total_input_tokens = visual_shape[0] * visual_shape[1];
         size_t total_output_tokens = visual_shape[0] * num_tokens_to_keep;
         std::cout << "[CDPruner] Performance Metrics:" << std::endl;
+        std::cout << "[CDPruner]   DPP selection time: " << dpp_duration.count() << " us (" << (dpp_duration.count() / 1000.0) << " ms)" << std::endl;
         std::cout << "[CDPruner]   Overall throughput: " << (static_cast<double>(total_input_tokens) / total_duration.count() * 1000000) << " input tokens/sec" << std::endl;
         std::cout << "[CDPruner]   Pruning efficiency: " << (static_cast<double>(total_output_tokens) / total_duration.count() * 1000000) << " output tokens/sec" << std::endl;
         std::cout << "[CDPruner]   Pruning ratio: " << (1.0 - static_cast<double>(num_tokens_to_keep) / visual_shape[1]) * 100 << "%" << std::endl;
