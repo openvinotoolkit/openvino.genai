@@ -628,7 +628,6 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_pro
     return {std::move(unified_prompt), std::move(image_sequence)};
 }
 
-
 ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
     std::string unk64;
     ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
@@ -636,6 +635,7 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_p
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor inputs_embeds = m_embedding->infer(req, encoded_input);
+
     OPENVINO_ASSERT(
         m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
         "Unexpected embedding size"
