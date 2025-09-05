@@ -105,7 +105,7 @@ private:
         utils::KVCacheState m_kv_cache_state;
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
-        // When enable prompt lookup, prompt token type is need.
+        // When enable prompt lookup, prompt token ids are required to generate condidate.
         bool m_prompt_lookup = false;
         virtual ~IInputsEmbedder() = default;
 

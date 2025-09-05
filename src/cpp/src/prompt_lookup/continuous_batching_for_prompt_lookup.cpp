@@ -82,11 +82,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
             }
             TokenIds candidates = generate_candidates(full_input_ids, min_num_assistant_tokens, sampling_params.max_ngram_size);
 
+            // Padding to candidate token,
+            // Avoid shape checking and increasing the amount of computation when the shape changes.
             if (candidates.size() < sampling_params.num_assistant_tokens) {
-                auto token_sz = candidates.size();
-                for (int ci = 0; ci < sampling_params.num_assistant_tokens - token_sz; ci ++) {
-                    // last token?
-                    candidates.push_back(15000);
+                if (full_input_ids.size() > 0) {
+                    auto token_sz = candidates.size();
+                    for (int ci = 0; ci < sampling_params.num_assistant_tokens - token_sz; ci++) {
+                        // Padding with last token.
+                        candidates.push_back(full_input_ids.back());
+                    }
                 }
             }
 
