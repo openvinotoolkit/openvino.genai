@@ -143,7 +143,6 @@ std::string join_special_tokens(const std::vector<std::string>& special_tokens) 
             oss << "|";
         oss << quote_meta(special_tokens[i]);
     }
-    std::cout << oss.str() << std::endl;
     return oss.str();
 }
 
