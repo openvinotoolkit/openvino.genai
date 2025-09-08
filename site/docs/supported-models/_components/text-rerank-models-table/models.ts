@@ -27,16 +27,7 @@ export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
       {
         links: [
           'https://huggingface.co/BAAI/bge-reranker-v2-m3',
-          'https://huggingface.co/BAAI/bge-reranker-base',
         ],
-      },
-    ],
-  },
-  {
-    architecture: 'GemmaForCausalLM',
-    models: [
-      {
-        links: ['https://huggingface.co/BAAI/bge-reranker-v2-gemma'],
       },
     ],
   },
@@ -49,14 +40,6 @@ export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
           'https://huggingface.co/tomaarsen/reranker-ModernBERT-large-gooaq-bce',
           'https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base',
         ],
-      },
-    ],
-  },
-  {
-    architecture: 'ModernBertForMaskedLM',
-    models: [
-      {
-        links: ['https://huggingface.co/answerdotai/ModernBERT-base'],
       },
     ],
   },

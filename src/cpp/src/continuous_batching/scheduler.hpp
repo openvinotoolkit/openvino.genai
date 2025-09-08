@@ -29,7 +29,7 @@ class Scheduler {
 
     // Dynamic KV-cache allocation params
     size_t m_kv_blocks_initial_multiplier = 2;
-    const float m_cache_growth_factor = 2; // commmon values 1.5 or 2
+    const float m_cache_growth_num_tokens = 256; // Number of tokens by which KV-cache is increased
 
     std::shared_ptr<CacheManager> m_cache_manager;
 
@@ -160,6 +160,12 @@ public:
 
     void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free) {
         m_block_manager->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
+    }
+
+    void clear_kv_cache() {
+        OPENVINO_ASSERT(m_config.enable_prefix_caching == false, "KV-cache should not be cleared if prefix caching is enabled.");
+        m_cache_manager->clear();
+        m_block_manager->clear();
     }
 
 private:
@@ -566,7 +572,7 @@ private:
         }
         auto device = m_cache_manager->get_device();
         size_t current_num_of_kv_blocks = m_block_manager->get_total_number_of_kv_blocks();
-        size_t new_blocks_num = current_num_of_kv_blocks * m_cache_growth_factor;
+        size_t new_blocks_num = current_num_of_kv_blocks + std::ceil(m_cache_growth_num_tokens / get_block_size());
 
         if (device.find("GPU") == std::string::npos) {
             m_block_manager->increase_kv_blocks_number(new_blocks_num);

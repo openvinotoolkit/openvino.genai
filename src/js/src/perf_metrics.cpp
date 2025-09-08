@@ -1,8 +1,8 @@
 #include "include/perf_metrics.hpp"
 
+#include "bindings_utils.hpp"
 #include "include/addon.hpp"
 #include "include/helper.hpp"
-#include "bindings_utils.hpp"
 
 using ov::genai::common_bindings::utils::get_ms;
 using ov::genai::common_bindings::utils::timestamp_to_ms;
@@ -27,6 +27,8 @@ Napi::Function PerfMetricsWrapper::get_class(Napi::Env env) {
             InstanceMethod("getGenerateDuration", &PerfMetricsWrapper::get_generate_duration),
             InstanceMethod("getTokenizationDuration", &PerfMetricsWrapper::get_tokenization_duration),
             InstanceMethod("getDetokenizationDuration", &PerfMetricsWrapper::get_detokenization_duration),
+            InstanceMethod("getGrammarCompilerInitTimes", &PerfMetricsWrapper::get_grammar_compiler_init_times),
+            InstanceMethod("getGrammarCompileTime", &PerfMetricsWrapper::get_grammar_compile_time),
             InstanceAccessor<&PerfMetricsWrapper::get_raw_metrics>("rawMetrics"),
         });
 }
@@ -59,6 +61,15 @@ Napi::Object create_mean_std_pair(Napi::Env env, const ov::genai::MeanStdPair& p
     Napi::Object obj = Napi::Object::New(env);
     obj.Set("mean", Napi::Number::New(env, pair.mean));
     obj.Set("std", Napi::Number::New(env, pair.std));
+    return obj;
+}
+
+Napi::Object create_summary_stats(Napi::Env env, const ov::genai::SummaryStats& stats) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("mean", Napi::Number::New(env, stats.mean));
+    obj.Set("std", Napi::Number::New(env, stats.std));
+    obj.Set("min", Napi::Number::New(env, stats.min));
+    obj.Set("max", Napi::Number::New(env, stats.max));
     return obj;
 }
 
@@ -96,6 +107,16 @@ Napi::Value PerfMetricsWrapper::get_tokenization_duration(const Napi::CallbackIn
     VALIDATE_ARGS_COUNT(info, 0, "getTokenizationDuration()");
     return create_mean_std_pair(info.Env(), _metrics.get_tokenization_duration());
 }
+
+Napi::Value PerfMetricsWrapper::get_grammar_compiler_init_times(const Napi::CallbackInfo& info) {
+    VALIDATE_ARGS_COUNT(info, 0, "getGrammarCompilerInitTimes()");
+    return cpp_map_to_js_object(info.Env(), _metrics.get_grammar_compiler_init_times());
+}
+
+Napi::Value PerfMetricsWrapper::get_grammar_compile_time(const Napi::CallbackInfo& info) {
+    VALIDATE_ARGS_COUNT(info, 0, "getGrammarCompileTime()");
+    return create_summary_stats(info.Env(), _metrics.get_grammar_compile_time());
+};
 
 Napi::Value PerfMetricsWrapper::get_detokenization_duration(const Napi::CallbackInfo& info) {
     VALIDATE_ARGS_COUNT(info, 0, "getDetokenizationDuration()");
