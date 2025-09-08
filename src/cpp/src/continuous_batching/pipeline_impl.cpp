@@ -520,6 +520,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     OPENVINO_ASSERT(results.size() == input_ids.size());
 
     generate_timer.end();
+    
+    const auto& scheduler_config = m_scheduler->get_config();
+    // Clear KV-cache in case of dynamic cache allocation and no prefix caching
+    if (!scheduler_config.enable_prefix_caching && scheduler_config.cache_size == 0 && scheduler_config.num_kv_blocks == 0) {
+        m_scheduler->clear_kv_cache();
+    }
     return results;
 }
 

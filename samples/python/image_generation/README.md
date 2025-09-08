@@ -238,3 +238,26 @@ Test finish, load time: 9356.00 ms
 Warmup number:1, first generate warmup time:85008.00 ms, infer warmup time:84999.88 ms
 Generate iteration number:3, for one iteration, generate avg time: 84372.34 ms, infer avg time:84363.95 ms, all text encoders infer avg time:76.67 ms, vae encoder infer avg time:0.00 ms, vae decoder infer avg time:4470.33 ms
 ```
+
+### Image Generation Pipeline reuse
+
+To extend the pipeline's capabilities, we provide an interface that allows a specific image generation pipeline to reuse models from another pipeline that has already loaded them. The table below shows the support scope.
+
+| Image Generation pipeline | Model can be reused from |
+|:---|:---|
+| `Text2ImagePipeline` | `Image2ImagePipeline` or `InpaintingPipeline` |
+| `Image2ImagePipeline` | `InpaintingPipeline` |
+| `InpaintingPipeline` | `Image2ImagePipeline` |
+
+This example shows how `Text2ImagePipeline` reuses models from `Image2ImagePipeline` and executes a different pipeline depending on whether an initial image is provided.
+
+```py
+img2img_pipe = openvino_genai.Image2ImagePipeline(models_path, device)
+text2img_pipe = openvino_genai.Text2ImagePipeline(img2img_pipe)
+
+if image_path:
+   image = read_image(image_path)
+   image_tensor = img2img_pipe.generate(prompt, image, strength=0.8)
+else:
+   image_tensor = text2img_pipe.generate(prompt, strength=1.0)
+```
