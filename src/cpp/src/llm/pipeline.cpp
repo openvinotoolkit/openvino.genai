@@ -60,9 +60,7 @@ std::pair<std::string, Any> draft_model(
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
-// NOTE: Should be used only when NPU device is requested
-// either for main model or for draft model if last exists.
-class StatefulNPUPipelineCreator {
+class StatefulPipeline {
 public:
 static std::unique_ptr<LLMPipelineImplBase> create(
     const std::filesystem::path& models_path,
@@ -95,11 +93,9 @@ static std::unique_ptr<LLMPipelineImplBase> create(
     auto draft_model_descr = ov::genai::utils::extract_draft_model_from_config(properties_without_draft_model);
     if (draft_model_descr.model != nullptr) {
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
-        OPENVINO_ASSERT((draft_model_descr.device == "NPU") || (main_model_descr.device == "NPU"));
         return std::make_unique<StatefulSpeculativeLLMPipeline>(main_model_descr, draft_model_descr);
     }
 
-    OPENVINO_ASSERT(device == "NPU");
     return std::make_unique<StatefulLLMPipeline>(model, tokenizer, device,
         properties_without_draft_model, generation_config);
 }
@@ -126,7 +122,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
     if (ov::genai::utils::is_npu_requested(device, properties)) {
-        m_pimpl = StatefulNPUPipelineCreator::create(models_path, tokenizer, device, properties);
+        m_pimpl = StatefulPipeline::create(models_path, tokenizer, device, properties);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -145,7 +141,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr) {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
+        m_pimpl = StatefulPipeline::create(models_path, tokenizer, device, properties);
     }
 
     m_pimpl->save_load_time(start_time);
@@ -161,7 +157,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
     if (ov::genai::utils::is_npu_requested(device, properties)) {
-        m_pimpl = StatefulNPUPipelineCreator::create(models_path, device, properties);
+        m_pimpl = StatefulPipeline::create(models_path, device, properties);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -180,7 +176,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr) {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
+        m_pimpl = StatefulPipeline::create(models_path, device, properties);
     }
 
     m_pimpl->save_load_time(start_time);
@@ -199,7 +195,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
     if (ov::genai::utils::is_npu_requested(device, properties)) {
-        m_pimpl = StatefulNPUPipelineCreator::create(
+        m_pimpl = StatefulPipeline::create(
             utils::singleton_core().read_model(model_str, weights_tensor),
             tokenizer,
             device,
@@ -225,7 +221,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr) {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(
+        m_pimpl = StatefulPipeline::create(
             utils::singleton_core().read_model(model_str, weights_tensor),
             tokenizer,
             device,
