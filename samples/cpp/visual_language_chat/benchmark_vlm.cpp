@@ -68,12 +68,13 @@ int main(int argc, char* argv[]) try {
     std::unique_ptr<ov::genai::VLMPipeline> pipe;
     if (device == "NPU")
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
-    else
+    else {
         // Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
         ov::genai::SchedulerConfig scheduler_config;
         scheduler_config.enable_prefix_caching = false;
         scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
+    }
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
