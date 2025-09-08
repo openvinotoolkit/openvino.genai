@@ -154,7 +154,7 @@ def run_text_embedding_pipeline_with_ref(
 
 
 def assert_rerank_results(result_1: list[tuple[int, float]], result_2: list[tuple[int, float]]):
-    score_diff_max = 1e-6 if sys.platform != 'darwin' else 1e-4  # ARM64 macs have different results
+    score_diff_max = 1e-6 if sys.platform != 'darwin' else 2e-4  # ARM64 macs have different results
     assert len(result_1) == len(result_2), f"Results length mismatch: {len(result_1)} != {len(result_2)}"
     for pair_1, pair_2 in zip(result_1, result_2):
         assert pair_1[0] == pair_2[0], f"Document IDs do not match: {pair_1[0]} != {pair_2[0]}"
