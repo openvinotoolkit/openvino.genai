@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--enable_pruning", action="store_true", default=False, help="Enable pruning for the model")
     parser.add_argument("--visual_tokens_retain_percentage", type=int, help="Percentage of visual tokens to keep during pruning")
     parser.add_argument("--pruning_debug_mode", action="store_true", help="Enable debugging mode for pruning")
+    parser.add_argument("--pruning_use_ops", action="store_true", default=False, help="Use OpenVINO ops for pruning computation")
     parser.add_argument("--relevance_weight", type=float, help="Relevance weight for the model")
 
     args = parser.parse_args()
@@ -81,8 +82,11 @@ def main():
             config.relevance_weight = args.relevance_weight
         if args.pruning_debug_mode:
             config.pruning_debug_mode = args.pruning_debug_mode
+        if args.pruning_use_ops:
+            config.use_ops_model = args.pruning_use_ops
         print(f'CDPruner config: Percentage of visual tokens to keep - {config.visual_tokens_retain_percentage}%')
         print(f'CDPruner config: Pruning debug mode - {config.pruning_debug_mode}')
+        print(f'CDPruner config: Use OpenVINO ops - {config.use_ops_model}')
 
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)

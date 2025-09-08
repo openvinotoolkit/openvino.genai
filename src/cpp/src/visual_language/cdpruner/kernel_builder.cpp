@@ -25,22 +25,14 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
             // Compile and create infer request for conditional kernel model
             auto kernel_model = create_conditional_kernel_model();
             ov::CompiledModel compiled_kernel_model;
-            if (m_config.device == "GPU") {
-                compiled_kernel_model = core.compile_model(kernel_model, "GPU");
-            } else {
-                compiled_kernel_model = core.compile_model(kernel_model, "CPU");
-            }
+            compiled_kernel_model = core.compile_model(kernel_model, m_config.device);
             m_conditional_kernel_infer_request = compiled_kernel_model.create_infer_request();
         }
 
         // Always compile similarity matrix model for potential GPU acceleration
         auto similarity_model = create_similarity_matrix_model();
         ov::CompiledModel compiled_similarity_model;
-        if (m_config.device == "GPU") {
-            compiled_similarity_model = core.compile_model(similarity_model, "GPU");
-        } else {
-            compiled_similarity_model = core.compile_model(similarity_model, "CPU");
-        }
+        compiled_similarity_model = core.compile_model(similarity_model, m_config.device);
         m_similarity_infer_request = compiled_similarity_model.create_infer_request();
 
         m_requests_initialized = true;

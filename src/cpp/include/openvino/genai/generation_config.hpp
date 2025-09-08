@@ -410,6 +410,7 @@ static constexpr ov::Property<size_t> visual_tokens_retain_percentage{"visual_to
 static constexpr ov::Property<float> relevance_weight{"relevance_weight"};
 static constexpr ov::Property<bool> enable_pruning{"enable_pruning"};
 static constexpr ov::Property<bool> pruning_debug_mode{"pruning_debug_mode"};
+static constexpr ov::Property<bool> use_ops_model{"use_ops_model"};
 
 extern OPENVINO_GENAI_EXPORTS ov::Property<size_t> rng_seed;
 
