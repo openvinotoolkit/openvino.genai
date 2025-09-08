@@ -44,16 +44,18 @@ size_t get_memory_size_bytes() {
 #if !defined(_WIN32)
     std::string token;
     std::ifstream file("/proc/meminfo");
-    while(file >> token) {
-        if(token == "MemTotal:") {
-            size_t mem;
-            if(file >> mem) {
-                return mem * 1024;
-            } else {
-                return std::numeric_limits<size_t>::max();
+    if(file.is_open()) {
+        while(file >> token) {
+            if(token == "MemTotal:") {
+                size_t mem;
+                if(file >> mem) {
+                    return mem * 1024;
+                } else {
+                    return std::numeric_limits<size_t>::max();
+                }
             }
+            file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
-        file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
     }
 #endif
     return std::numeric_limits<size_t>::max();
