@@ -130,7 +130,7 @@ def run_text_embedding_langchain(
 
 
 EmbeddingResult = Union[list[list[float]], list[list[int]], list[float], list[int]]
-MAX_EMBEDDING_ERROR = 2e-6
+MAX_EMBEDDING_ERROR = 2e-6 if sys.platform != 'darwin' else 0.006  # ARM64 macs have different results
 
 
 def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):

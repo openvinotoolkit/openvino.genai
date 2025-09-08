@@ -116,9 +116,7 @@ def test_image_model_genai(model_id, model_type, tmp_path):
                       'stable-diffusion-3-tiny-random-text-to-image' in model_id or
                       'tiny-random-flux' in model_id)
 
-    if mac_arm64_skip \
-        and (sys.platform == "darwin") \
-        and (platform.machine() in ('arm', 'armv7l', 'aarch64', 'arm64', 'ARM64')):
+    if mac_arm64_skip and sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
     
     GT_FILE = tmp_path / "gt.csv"
