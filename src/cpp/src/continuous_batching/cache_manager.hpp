@@ -204,7 +204,7 @@ public:
                 }
             }
         }
-        catch (std::exception& e) {
+        catch (ov::Exception& e) {
             if (std::string(e.what()).find("bad allocation") != std::string::npos) {
                 OPENVINO_THROW("Requested KV-cache size is larger than available memory size on the system.");
             } else {
