@@ -129,7 +129,7 @@ public:
                 ov::Tensor key_cache = m_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_cache_shape);
                 ov::Tensor value_cache = m_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_cache_shape);
 
-                if (m_key_cache.size() > decoder_layer_id) {
+                if (m_key_cache.size() > decoder_layer_id && m_key_cache[decoder_layer_id]) {
                     ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
                     ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
 
@@ -164,7 +164,7 @@ public:
                 size_t key_roi_size_byte = 0;
                 size_t value_roi_size_byte = 0;
 
-                if (m_key_cache.size() > decoder_layer_id) {
+                if (m_key_cache.size() > decoder_layer_id && m_key_cache[decoder_layer_id]) {
                     ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
                     ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
                     // copy current cache data
@@ -276,6 +276,14 @@ public:
                 }
             }
         }
+    }
+
+    void clear() {
+        for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
+            m_key_cache[decoder_layer_id] = ov::Tensor();
+            m_value_cache[decoder_layer_id] = ov::Tensor();
+        }
+        m_num_allocated_kv_blocks = 0;
     }
 };
 
