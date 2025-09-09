@@ -72,6 +72,7 @@ def main():
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)
     else:
+        # Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
         scheduler_config = ov_genai.SchedulerConfig()
         scheduler_config.enable_prefix_caching = False
         scheduler_config.max_num_batched_tokens = sys.maxsize
