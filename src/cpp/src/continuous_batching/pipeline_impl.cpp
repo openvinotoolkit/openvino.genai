@@ -32,6 +32,7 @@ ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model)
     return ir_kv_cache_precision;
 }
 
+// Returns available RAM memory on system if possible, otherwise returns std::numeric_limits<std::streamsize>::max()
 size_t get_available_cpu_memory() {
 #ifdef __APPLE__ 
     int64_t memsize;
