@@ -23,9 +23,7 @@ void test_load_unet_from_ir(const std::filesystem::path& models_path, const std:
 }
 
 void test_load_unet_from_blob(const std::filesystem::path& models_path, const std::string& device) {
-    ov::AnyMap import_blob_properties{
-        {ov::genai::blob_path.name(), (models_path / "blobs" / "unet").string()},
-    };
+    ov::AnyMap import_blob_properties{{ov::genai::blob_path.name(), models_path / "blobs" / "unet"}};
 
     auto duration = std::chrono::milliseconds::zero();
     for (size_t i = 0; i < NUMBER_OF_RUNS; i++) {
@@ -51,9 +49,7 @@ void test_load_full_pipe_from_ir(const std::filesystem::path& models_path, const
 }
 
 void test_load_full_pipe_from_blob(const std::filesystem::path& models_path, const std::string& device) {
-    ov::AnyMap import_blob_properties{
-        {ov::genai::blob_path.name(), (models_path / "blobs").string()},
-    };
+    ov::AnyMap import_blob_properties{{ov::genai::blob_path.name(), models_path / "blobs"}};
 
     auto duration = std::chrono::milliseconds::zero();
     for (size_t i = 0; i < NUMBER_OF_RUNS; i++) {
@@ -79,6 +75,12 @@ int32_t main(int32_t argc, char* argv[]) try {
     {
         auto pipe = ov::genai::Text2ImagePipeline(models_path, device);
         pipe.export_model(models_path / "blobs");
+
+        // unet model saved at:
+        // models_path/ 
+        // └── blobs/
+        //     └── unet/
+        //         └── openvino_model.blob
 
         // another approach can be the use of export_blob property
         // ov::AnyMap import_blob_properties{
