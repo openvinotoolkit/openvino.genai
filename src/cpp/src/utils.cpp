@@ -642,13 +642,6 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
             OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
         }
     }
-    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
-        if (is_paged_attention_available()) {
-            return true;
-        } else {
-            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
-        }
-    }
 
     auto prompt_lookup_prop = properties.find("prompt_lookup");
     if (prompt_lookup_prop != properties.end() && prompt_lookup_prop->second.as<bool>() == true) {

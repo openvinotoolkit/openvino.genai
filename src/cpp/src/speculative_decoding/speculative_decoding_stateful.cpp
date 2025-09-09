@@ -369,7 +369,7 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
     if (draft_model_desc_copy.device.empty()) {
         draft_model_desc_copy.device = main_model_desc.device;
     }
-    if (draft_model_desc_copy.properties.empty()) {
+    if (draft_model_desc_copy.properties.empty() && (draft_model_desc_copy.device == main_model_desc.device)) {
         draft_model_desc_copy.properties = main_model_desc.properties;
     }
     m_draft_request = std::make_unique<LLMInferWrapper>(draft_model_desc_copy);
