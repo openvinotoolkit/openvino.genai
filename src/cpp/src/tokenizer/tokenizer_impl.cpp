@@ -379,7 +379,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
     // Save openvino GenAI runtime version was added in 25.4 for GGUF models,
     // if we have it in ov::Model, then it's newer than 24.5 we don't need to check 'openvino_tokenizers' version.
     if (!(ov_tokenizer ? ov_tokenizer : ov_detokenizer)->has_rt_info("openvino_genai_version")) {
-        m_older_than_24_5 = false;
+        m_older_than_24_5 = true;
     } else {
         // Saving IR version was added only in 24.5, so if it's missing, then it's older than 24.5
         m_older_than_24_5 = !(ov_tokenizer ? ov_tokenizer : ov_detokenizer)->has_rt_info("openvino_tokenizers_version");
