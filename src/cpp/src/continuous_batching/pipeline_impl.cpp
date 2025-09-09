@@ -32,7 +32,7 @@ ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model)
     return ir_kv_cache_precision;
 }
 
-size_t get_memory_size_bytes() {
+size_t get_available_cpu_memory() {
 #ifdef __APPLE__ 
     int64_t memsize;
     size_t len = sizeof(memsize);
@@ -161,7 +161,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
 
     // Scheduler configuration
     SchedulerConfig normalized_config = scheduler_config;
-    size_t total_mem_size = get_memory_size_bytes();
+    size_t total_mem_size;
+    if (execution_device.find("GPU") != std::string::npos) {
+        total_mem_size = utils::get_available_gpu_memory(execution_device, m_num_decoder_layers);
+    } else {
+        total_mem_size = get_available_cpu_memory();
+    }
     if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
         size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
         OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested KV-cache size is larger than available memory size on the system.");
