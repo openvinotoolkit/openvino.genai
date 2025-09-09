@@ -625,6 +625,9 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
+          echo $DYLD_LIBRARY_PATH
+          echo $LD_LIBRARY_PATH
+          echo $PKG_CONFIG_PATH
           python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"

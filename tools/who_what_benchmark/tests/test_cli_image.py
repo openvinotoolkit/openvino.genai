@@ -69,6 +69,8 @@ def get_similarity(output: str) -> float:
     ],
 )
 def test_image_model_types(model_id, model_type, backend, tmp_path):
+    if 'tiny-stable-diffusion-torch' in model_id and sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
     wwb_args = [
         "--base-model",
         model_id,
@@ -112,7 +114,8 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.xfail("Segfault. Ticket 170877")
     
     mac_arm64_skip = ('stable-diffusion-xl-image-to-image' in model_id or
-                      'stable-diffusion-3-tiny-random-image-to-image' in model_id or
+                      'stable-diffusion-3-tiny-random' in model_id or
+                      'tiny-random-stable-diffusion' in model_id or
                       'stable-diffusion-3-tiny-random-text-to-image' in model_id or
                       'tiny-random-flux' in model_id)
 
