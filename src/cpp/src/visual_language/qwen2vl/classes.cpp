@@ -470,7 +470,23 @@ ov::Tensor merge_text_and_image_embeddings(
     
 } // namespace qwen2vl_utils
 
-std::unique_ptr<CircularBufferQueue<ov::InferRequest>> VisionEncoderQwen2VL::create_ireq(ov::CompiledModel& compiled_model) {
+std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_vision_encoder_ireq(
+    const std::shared_ptr<ov::Model>& model_org,
+    const ProcessorConfig& processor_config,
+    const std::string& device,
+    const ov::AnyMap& config) {
+    std::vector<float> a_image_mean(processor_config.image_mean.begin(), processor_config.image_mean.end());
+    std::vector<float> a_image_scale(processor_config.image_std.begin(), processor_config.image_std.end());
+    for (auto& v : a_image_mean)
+        v *= 255.0f;
+    for (auto& v : a_image_scale)
+        v = 1.0f / (v * 255.0f);
+
+    ov::Tensor image_mean(ov::element::f32, {1, a_image_mean.size(), 1, 1}, a_image_mean.data());
+    ov::Tensor image_scale(ov::element::f32, {1, a_image_scale.size(), 1, 1}, a_image_scale.data());
+
+    auto model = patch_preprocess_into_model(model_org, image_mean, image_scale);
+    auto compiled_model = utils::singleton_core().compile_model(model, device, config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     return std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -483,20 +499,8 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_di
                                            const std::string& device,
                                            const ov::AnyMap properties)
     : VisionEncoder(model_dir, device, properties) {
-    std::vector<float> a_image_mean(m_processor_config.image_mean.begin(), m_processor_config.image_mean.end());
-    std::vector<float> a_image_scale(m_processor_config.image_std.begin(), m_processor_config.image_std.end());
-    for (auto& v : a_image_mean)
-        v *= 255.0f;
-    for (auto& v : a_image_scale)
-        v = 1.0f / (v * 255.0f);
-
-    ov::Tensor image_mean(ov::element::f32, ov::Shape{1, a_image_mean.size(), 1, 1}, a_image_mean.data());
-    ov::Tensor image_scale(ov::element::f32, ov::Shape{1, a_image_scale.size(), 1, 1}, a_image_scale.data());
-
     auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
-    auto model = patch_preprocess_into_model(model_org, image_mean, image_scale);
-    auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
-    m_ireq_queue_vision_encoder = create_ireq(compiled_model);
+    m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
 }
 
 VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
@@ -504,22 +508,10 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : VisionEncoder(models_map, config_dir_path, device, device_config) {
-    const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_embeddings").first;
-    const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_embeddings").second;
-    std::vector<float> a_image_mean(m_processor_config.image_mean.begin(), m_processor_config.image_mean.end());
-    std::vector<float> a_image_scale(m_processor_config.image_std.begin(), m_processor_config.image_std.end());
-    for (auto& v : a_image_mean)
-        v *= 255.0f;
-    for (auto& v : a_image_scale)
-        v = 1.0f / (v * 255.0f);
-
-    ov::Tensor image_mean(ov::element::f32, ov::Shape{1, a_image_mean.size(), 1, 1}, a_image_mean.data());
-    ov::Tensor image_scale(ov::element::f32, ov::Shape{1, a_image_scale.size(), 1, 1}, a_image_scale.data());
+    const auto& [vision_encoder_model, vision_encoder_weights] =
+        utils::get_model_weights_pair(models_map, "vision_embeddings");
     auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
-    auto model = patch_preprocess_into_model(model_org, image_mean, image_scale);
-
-    auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
-    m_ireq_queue_vision_encoder = create_ireq(compiled_model);
+    m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, device_config);
 }
 
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
