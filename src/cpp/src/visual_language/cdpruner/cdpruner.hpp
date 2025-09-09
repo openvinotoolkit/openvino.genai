@@ -8,6 +8,7 @@
 #include "relevance_calculator.hpp"
 #include "kernel_builder.hpp"
 #include "fast_dpp.hpp"
+#include <chrono>
 #include <vector>
 #include <iostream>
 
@@ -120,6 +121,22 @@ private:
      * @throws std::invalid_argument if configuration is invalid
      */
     void validate_config(const Config& config);
+    
+    /**
+     * @brief Helper function to perform parallel DPP selection on two kernel matrices
+     * @param kernel_matrix_first First half kernel matrix
+     * @param kernel_matrix_second Second half kernel matrix  
+     * @param num_tokens_to_keep Total number of tokens to keep
+     * @param split_point Index where tokens are split between halves
+     * @param dpp_duration Output parameter for DPP timing
+     * @return Merged selection indices
+     */
+    std::vector<size_t> perform_parallel_dpp_selection(
+        const ov::Tensor& kernel_matrix_first, 
+        const ov::Tensor& kernel_matrix_second,
+        size_t num_tokens_to_keep,
+        size_t split_point,
+        std::chrono::microseconds& dpp_duration);
     
     /**
      * @brief Validate input tensor shapes and types

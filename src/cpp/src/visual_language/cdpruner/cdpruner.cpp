@@ -23,6 +23,75 @@ CDPruner::CDPruner(const Config& config)
     validate_config(config);
 }
 
+// Helper function to perform parallel DPP selection on two kernel matrices
+std::vector<size_t> CDPruner::perform_parallel_dpp_selection(
+    const ov::Tensor& kernel_matrix_first, 
+    const ov::Tensor& kernel_matrix_second,
+    size_t num_tokens_to_keep,
+    size_t split_point,
+    std::chrono::microseconds& dpp_duration) {
+    
+    auto dpp_start = std::chrono::high_resolution_clock::now();
+    
+    // Distribute tokens to keep between both halves
+    size_t tokens_first_half = num_tokens_to_keep / 2;
+    size_t tokens_second_half = num_tokens_to_keep - tokens_first_half;
+    
+    if (m_config.pruning_debug_mode) {
+        std::cout << "[CDPruner] Step 3: Selecting tokens using parallel DPP..." << std::endl;
+        std::cout << "[CDPruner]   Selecting " << tokens_first_half << " tokens from first half, "
+                  << tokens_second_half << " tokens from second half in parallel" << std::endl;
+    }
+    
+    // Launch parallel tasks for DPP selection
+    std::future<std::vector<std::vector<size_t>>> dpp_first_future = std::async(std::launch::async, [&]() {
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[CDPruner] Thread 1: DPP selection for first half..." << std::endl;
+        }
+        return m_dpp_selector.select(kernel_matrix_first, tokens_first_half);
+    });
+    
+    std::future<std::vector<std::vector<size_t>>> dpp_second_future = std::async(std::launch::async, [&]() {
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[CDPruner] Thread 2: DPP selection for second half..." << std::endl;
+        }
+        return m_dpp_selector.select(kernel_matrix_second, tokens_second_half);
+    });
+    
+    // Wait for both DPP selections to complete
+    auto selected_first_batches = dpp_first_future.get();
+    auto selected_second_batches = dpp_second_future.get();
+    
+    std::vector<size_t> selected_first = selected_first_batches[0]; // Take first batch
+    std::vector<size_t> selected_second = selected_second_batches[0]; // Take first batch
+    
+    // Merge results: adjust indices for second half
+    std::vector<size_t> merged_selection;
+    merged_selection.reserve(selected_first.size() + selected_second.size());
+    
+    // Add first half selections (indices unchanged)
+    for (size_t idx : selected_first) {
+        merged_selection.push_back(idx);
+    }
+    
+    // Add second half selections (adjust indices by split_point)
+    for (size_t idx : selected_second) {
+        merged_selection.push_back(idx + split_point);
+    }
+    
+    // Sort final result to maintain order
+    std::sort(merged_selection.begin(), merged_selection.end());
+    
+    auto dpp_end = std::chrono::high_resolution_clock::now();
+    dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
+
+    if (m_config.pruning_debug_mode) {
+        std::cout << "[CDPruner]   DPP selection took: " << dpp_duration.count() << " us" << std::endl;
+    }
+    
+    return merged_selection;
+}
+
 std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visual_features, 
                                                         const ov::Tensor& text_features) {
     // Input validation
@@ -63,255 +132,185 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
             std::cout << "\n+--- CDPruner Processing Steps ----------------------+" << std::endl;
         }
 
+        // Get input dimensions for processing decision
+        auto visual_shape = visual_features.get_shape();
+        size_t batch_size = visual_shape[0];
+        size_t total_visual_tokens = visual_shape[1];
+        size_t feature_dim = visual_shape[2];
+        
+        // Decision: split tokens only if total count exceeds threshold
+        const size_t SPLIT_THRESHOLD = 2000;
+        bool use_splitting = total_visual_tokens > SPLIT_THRESHOLD;
+        
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[CDPruner] Total visual tokens: " << total_visual_tokens << std::endl;
+            std::cout << "[CDPruner] Split threshold: " << SPLIT_THRESHOLD << std::endl;
+            std::cout << "[CDPruner] Using " << (use_splitting ? "split processing" : "single processing") << std::endl;
+        }
+        
+        size_t split_point = 0;
+        size_t first_half_size = 0;
+        size_t second_half_size = 0;
+        
+        if (use_splitting) {
+            split_point = total_visual_tokens / 2;
+            first_half_size = split_point;
+            second_half_size = total_visual_tokens - split_point;
+            
+            if (m_config.pruning_debug_mode) {
+                std::cout << "[CDPruner] Splitting " << total_visual_tokens << " visual tokens into groups: "
+                          << first_half_size << " + " << second_half_size << std::endl;
+            }
+        }
+        
+        // Create tensor views based on splitting decision
+        const float* visual_data = visual_features.data<const float>();
+        ov::Tensor visual_first_half, visual_second_half;
+        
+        if (use_splitting) {
+            // Create tensor views for first and second halves without copying data
+            visual_first_half = ov::Tensor(ov::element::f32, {batch_size, first_half_size, feature_dim}, 
+                                         const_cast<float*>(visual_data));
+            visual_second_half = ov::Tensor(ov::element::f32, {batch_size, second_half_size, feature_dim}, 
+                                          const_cast<float*>(visual_data + batch_size * first_half_size * feature_dim));
+        } else {
+            // Use the entire visual features tensor without splitting
+            visual_first_half = visual_features;
+        }
+
+        // Build kernel matrices using different approaches
+        ov::Tensor kernel_matrix_first, kernel_matrix_second;
+        
         if (m_config.use_ops_model) {
-            // New OpenVINO ops model approach with visual token splitting
-            
-            // Split visual tokens into two groups: first 50% and last 50%
-            auto visual_shape = visual_features.get_shape();
-            size_t batch_size = visual_shape[0];
-            size_t total_visual_tokens = visual_shape[1];
-            size_t feature_dim = visual_shape[2];
-            
-            size_t split_point = total_visual_tokens / 2;
-            size_t first_half_size = split_point;
-            size_t second_half_size = total_visual_tokens - split_point;
-            
+            // OpenVINO ops model approach
             if (m_config.pruning_debug_mode) {
                 std::cout << "[CDPruner] Step 1-2: Computing kernel matrices using ov model on device: "
                           << m_config.device << "..." << std::endl;
-                std::cout << "[CDPruner] Splitting " << total_visual_tokens << " visual tokens into groups: "
-                          << first_half_size << " + " << second_half_size << std::endl;
             }
-            
-            // Create tensor views for first and second halves without copying data
-            const float* visual_data = visual_features.data<const float>();
-            
-            // Create tensor views pointing to specific regions of original data
-            ov::Tensor visual_first_half(ov::element::f32, {batch_size, first_half_size, feature_dim}, 
-                                         const_cast<float*>(visual_data));
-            ov::Tensor visual_second_half(ov::element::f32, {batch_size, second_half_size, feature_dim}, 
-                                         const_cast<float*>(visual_data + batch_size * first_half_size * feature_dim));
             
             auto computation_start = std::chrono::high_resolution_clock::now();
             
-            // Step 1-2: Build kernel matrices sequentially (due to single InferRequest object)
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   Building kernel matrix for first half..." << std::endl;
+            if (use_splitting) {
+                if (m_config.pruning_debug_mode) {
+                    std::cout << "[CDPruner]   Building kernel matrix for first half..." << std::endl;
+                }
+                kernel_matrix_first = m_kernel_builder.build(visual_first_half, text_features);
+                
+                if (m_config.pruning_debug_mode) {
+                    std::cout << "[CDPruner]   Building kernel matrix for second half..." << std::endl;
+                }
+                kernel_matrix_second = m_kernel_builder.build(visual_second_half, text_features);
+            } else {
+                if (m_config.pruning_debug_mode) {
+                    std::cout << "[CDPruner]   Building single kernel matrix for all tokens..." << std::endl;
+                }
+                kernel_matrix_first = m_kernel_builder.build(visual_first_half, text_features);
             }
-            auto kernel_matrix_first = m_kernel_builder.build(visual_first_half, text_features);
-            
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   Building kernel matrix for second half..." << std::endl;
-            }
-            auto kernel_matrix_second = m_kernel_builder.build(visual_second_half, text_features);
             
             auto computation_end = std::chrono::high_resolution_clock::now();
-            auto computation_duration =
-                std::chrono::duration_cast<std::chrono::microseconds>(computation_end - computation_start);
+            auto computation_duration = std::chrono::duration_cast<std::chrono::microseconds>(computation_end - computation_start);
 
             if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   Kernel building via ov model took: " << computation_duration.count() << " us"
-                          << std::endl;
-            }
-
-            // Step 3: Select tokens using parallel DPP
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner] Step 3: Selecting tokens using parallel DPP..." << std::endl;
-            }
-            auto dpp_start = std::chrono::high_resolution_clock::now();
-            
-            // Distribute tokens to keep between both halves
-            size_t tokens_first_half = num_tokens_to_keep / 2;
-            size_t tokens_second_half = num_tokens_to_keep - tokens_first_half;
-            
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   Selecting " << tokens_first_half << " tokens from first half, "
-                          << tokens_second_half << " tokens from second half in parallel" << std::endl;
-            }
-            
-            // Launch parallel tasks for DPP selection
-            std::future<std::vector<std::vector<size_t>>> dpp_first_future = std::async(std::launch::async, [&]() {
-                if (m_config.pruning_debug_mode) {
-                    std::cout << "[CDPruner] Thread 1: DPP selection for first half..." << std::endl;
-                }
-                return m_dpp_selector.select(kernel_matrix_first, tokens_first_half);
-            });
-            
-            std::future<std::vector<std::vector<size_t>>> dpp_second_future = std::async(std::launch::async, [&]() {
-                if (m_config.pruning_debug_mode) {
-                    std::cout << "[CDPruner] Thread 2: DPP selection for second half..." << std::endl;
-                }
-                return m_dpp_selector.select(kernel_matrix_second, tokens_second_half);
-            });
-            
-            // Wait for both DPP selections to complete
-            auto selected_first_batches = dpp_first_future.get();
-            auto selected_second_batches = dpp_second_future.get();
-            
-            std::vector<size_t> selected_first = selected_first_batches[0]; // Take first batch
-            std::vector<size_t> selected_second = selected_second_batches[0]; // Take first batch
-            
-            // Merge results: adjust indices for second half
-            std::vector<size_t> merged_selection;
-            merged_selection.reserve(selected_first.size() + selected_second.size());
-            
-            // Add first half selections (indices unchanged)
-            for (size_t idx : selected_first) {
-                merged_selection.push_back(idx);
-            }
-            
-            // Add second half selections (adjust indices by split_point)
-            for (size_t idx : selected_second) {
-                merged_selection.push_back(idx + split_point);
-            }
-            
-            // Sort final result to maintain order
-            std::sort(merged_selection.begin(), merged_selection.end());
-            
-            // Store result for this batch
-            selected_tokens.push_back(merged_selection);
-            
-            auto dpp_end = std::chrono::high_resolution_clock::now();
-            dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
-
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   DPP selection took: " << dpp_duration.count() << " us" << std::endl;
+                std::cout << "[CDPruner]   Kernel building via ov model took: " << computation_duration.count() << " us" << std::endl;
             }
         } else {
-            // Original step-by-step approach
-            
-            // Split visual tokens into two groups: first 50% and last 50%
-            auto visual_shape = visual_features.get_shape();
-            size_t batch_size = visual_shape[0];
-            size_t total_visual_tokens = visual_shape[1];
-            size_t feature_dim = visual_shape[2];
-            
-            size_t split_point = total_visual_tokens / 2;
-            size_t first_half_size = split_point;
-            size_t second_half_size = total_visual_tokens - split_point;
-            
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner] Splitting " << total_visual_tokens << " visual tokens into groups: "
-                          << first_half_size << " + " << second_half_size << std::endl;
-            }
-            
-            // Create tensor views for first and second halves without copying data
-            const float* visual_data = visual_features.data<const float>();
-            
-            // Create tensor views pointing to specific regions of original data
-            ov::Tensor visual_first_half(ov::element::f32, {batch_size, first_half_size, feature_dim}, 
-                                         const_cast<float*>(visual_data));
-            ov::Tensor visual_second_half(ov::element::f32, {batch_size, second_half_size, feature_dim}, 
-                                         const_cast<float*>(visual_data + batch_size * first_half_size * feature_dim));
-            
+            // Traditional step-by-step approach
             auto relevance_start = std::chrono::high_resolution_clock::now();
             
-            // Step 1: Compute relevance scores sequentially
             if (m_config.pruning_debug_mode) {
                 std::cout << "[CDPruner] Step 1: Computing relevance scores..." << std::endl;
             }
             
-            // Compute relevance scores for first half
-            ov::Tensor relevance_scores_first = m_relevance_calc.compute(visual_first_half, text_features);
-            
-            // Compute relevance scores for second half
-            ov::Tensor relevance_scores_second = m_relevance_calc.compute(visual_second_half, text_features);
-            
-            auto relevance_end = std::chrono::high_resolution_clock::now();
-            auto relevance_duration = std::chrono::duration_cast<std::chrono::microseconds>(relevance_end - relevance_start);
-            
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   Relevance computation took: " << relevance_duration.count() << " us" << std::endl;
-            }
-            
-            // Step 2: Build conditional kernel matrices sequentially
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner] Step 2: Building kernel matrices..." << std::endl;
-            }
-            auto kernel_start = std::chrono::high_resolution_clock::now();
-            
-            // Build kernel matrix for first half
-            ov::Tensor kernel_matrix_first = m_kernel_builder.build(visual_first_half, relevance_scores_first);
-            
-            // Build kernel matrix for second half
-            ov::Tensor kernel_matrix_second = m_kernel_builder.build(visual_second_half, relevance_scores_second);
-            
-            auto kernel_end = std::chrono::high_resolution_clock::now();
-            auto kernel_duration = std::chrono::duration_cast<std::chrono::microseconds>(kernel_end - kernel_start);
+            if (use_splitting) {
+                // Compute relevance scores for both halves
+                ov::Tensor relevance_scores_first = m_relevance_calc.compute(visual_first_half, text_features);
+                ov::Tensor relevance_scores_second = m_relevance_calc.compute(visual_second_half, text_features);
+                
+                auto relevance_end = std::chrono::high_resolution_clock::now();
+                auto relevance_duration = std::chrono::duration_cast<std::chrono::microseconds>(relevance_end - relevance_start);
+                
+                if (m_config.pruning_debug_mode) {
+                    std::cout << "[CDPruner]   Relevance computation took: " << relevance_duration.count() << " us" << std::endl;
+                }
+                
+                if (m_config.pruning_debug_mode) {
+                    std::cout << "[CDPruner] Step 2: Building kernel matrices..." << std::endl;
+                }
+                auto kernel_start = std::chrono::high_resolution_clock::now();
+                
+                // Build kernel matrices using relevance scores
+                kernel_matrix_first = m_kernel_builder.build(visual_first_half, relevance_scores_first);
+                kernel_matrix_second = m_kernel_builder.build(visual_second_half, relevance_scores_second);
+                
+                auto kernel_end = std::chrono::high_resolution_clock::now();
+                auto kernel_duration = std::chrono::duration_cast<std::chrono::microseconds>(kernel_end - kernel_start);
 
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   Kernel building took: " << kernel_duration.count() << " us" << std::endl;
-            }
+                if (m_config.pruning_debug_mode) {
+                    std::cout << "[CDPruner]   Kernel building took: " << kernel_duration.count() << " us" << std::endl;
+                }
+            } else {
+                // Process entire tensor without splitting
+                ov::Tensor relevance_scores = m_relevance_calc.compute(visual_first_half, text_features);
+                
+                auto relevance_end = std::chrono::high_resolution_clock::now();
+                auto relevance_duration = std::chrono::duration_cast<std::chrono::microseconds>(relevance_end - relevance_start);
+                
+                if (m_config.pruning_debug_mode) {
+                    std::cout << "[CDPruner]   Relevance computation took: " << relevance_duration.count() << " us" << std::endl;
+                }
+                
+                if (m_config.pruning_debug_mode) {
+                    std::cout << "[CDPruner] Step 2: Building single kernel matrix..." << std::endl;
+                }
+                auto kernel_start = std::chrono::high_resolution_clock::now();
+                
+                // Build single kernel matrix using relevance scores
+                kernel_matrix_first = m_kernel_builder.build(visual_first_half, relevance_scores);
+                
+                auto kernel_end = std::chrono::high_resolution_clock::now();
+                auto kernel_duration = std::chrono::duration_cast<std::chrono::microseconds>(kernel_end - kernel_start);
 
-            // Step 3: Select tokens using parallel DPP only
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner] Step 3: Selecting tokens using parallel DPP..." << std::endl;
+                if (m_config.pruning_debug_mode) {
+                    std::cout << "[CDPruner]   Kernel building took: " << kernel_duration.count() << " us" << std::endl;
+                }
             }
+        }
+
+        // DPP selection step based on splitting decision
+        std::vector<size_t> merged_selection;
+        
+        if (use_splitting) {
+            // Use parallel DPP selection for split processing
+            merged_selection = perform_parallel_dpp_selection(
+                kernel_matrix_first, kernel_matrix_second, 
+                num_tokens_to_keep, split_point, dpp_duration);
+        } else {
+            // Direct DPP selection for single tensor processing
             auto dpp_start = std::chrono::high_resolution_clock::now();
             
-            // Distribute tokens to keep between both halves
-            size_t tokens_first_half = num_tokens_to_keep / 2;
-            size_t tokens_second_half = num_tokens_to_keep - tokens_first_half;
-            
             if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   Selecting " << tokens_first_half << " tokens from first half, "
-                          << tokens_second_half << " tokens from second half in parallel" << std::endl;
+                std::cout << "[CDPruner] Step 3: Selecting " << num_tokens_to_keep 
+                          << " tokens using single DPP..." << std::endl;
             }
             
-            // Launch parallel tasks for DPP selection
-            std::future<std::vector<std::vector<size_t>>> dpp_first_future = std::async(std::launch::async, [&]() {
-                if (m_config.pruning_debug_mode) {
-                    std::cout << "[CDPruner] Thread 1: DPP selection for first half..." << std::endl;
-                }
-                return m_dpp_selector.select(kernel_matrix_first, tokens_first_half);
-            });
+            auto selected_batches = m_dpp_selector.select(kernel_matrix_first, num_tokens_to_keep);
+            merged_selection = selected_batches[0]; // Take first batch
             
-            std::future<std::vector<std::vector<size_t>>> dpp_second_future = std::async(std::launch::async, [&]() {
-                if (m_config.pruning_debug_mode) {
-                    std::cout << "[CDPruner] Thread 2: DPP selection for second half..." << std::endl;
-                }
-                return m_dpp_selector.select(kernel_matrix_second, tokens_second_half);
-            });
-            
-            // Wait for both DPP selections to complete
-            auto selected_first_batches = dpp_first_future.get();
-            auto selected_second_batches = dpp_second_future.get();
-            
-            std::vector<size_t> selected_first = selected_first_batches[0]; // Take first batch
-            std::vector<size_t> selected_second = selected_second_batches[0]; // Take first batch
-            
-            // Merge results: adjust indices for second half
-            std::vector<size_t> merged_selection;
-            merged_selection.reserve(selected_first.size() + selected_second.size());
-            
-            // Add first half selections (indices unchanged)
-            for (size_t idx : selected_first) {
-                merged_selection.push_back(idx);
-            }
-            
-            // Add second half selections (adjust indices by split_point)
-            for (size_t idx : selected_second) {
-                merged_selection.push_back(idx + split_point);
-            }
-            
-            // Sort final result to maintain order
-            std::sort(merged_selection.begin(), merged_selection.end());
-            
-            // Store result for this batch
-            selected_tokens.push_back(merged_selection);
             auto dpp_end = std::chrono::high_resolution_clock::now();
-
             dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
             
             if (m_config.pruning_debug_mode) {
-                std::cout << "[CDPruner]   DPP selection took: " << dpp_duration.count() << " us" << std::endl;
+                std::cout << "[CDPruner]   Single DPP selection took: " << dpp_duration.count() << " us" << std::endl;
             }
         }
+        
+        // Store result for this batch
+        selected_tokens.push_back(merged_selection);
         // Overall timing summary
         auto overall_end = std::chrono::high_resolution_clock::now();
         auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(overall_end - overall_start);
 
-        std::cout << "\n+--- CDPruner Performance Summary ----------------------+" << std::endl;
+        std::cout << "\n+--- CDPruner Performance Summary -------------------------+" << std::endl;
         std::cout << "[CDPruner] Computation mode: "
                   << (m_config.use_ops_model ? (std::string("OV Model by ") + m_config.device)
                                              : "Traditional Step-by-Step by CPU")
@@ -370,7 +369,7 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features,
     size_t tokens_removed = total_tokens - num_tokens_to_keep;
     
     // Print consolidated CDPruner overview
-    std::cout << "\n+--- CDPruner Processing Overview -----------------------+" << std::endl;
+    std::cout << "\n+--- CDPruner Processing Overview -------------------------+" << std::endl;
     std::cout << "[CDPruner] Input:  Vision[" << total_tokens << " tokens x " << feature_dim << "D] + Text[" << text_tokens << " tokens x " << text_feature_dim << "D]" << std::endl;
     std::cout << "[CDPruner] Config: Keep " << m_config.visual_tokens_retain_percentage << "% (" << num_tokens_to_keep << "/" << total_tokens << " tokens) | Weight=" << m_config.relevance_weight;
     std::cout << " | " << (m_config.use_ops_model ? "OpenVINO-OPs" : "Traditional") << std::endl;
