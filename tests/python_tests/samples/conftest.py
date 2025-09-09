@@ -194,7 +194,7 @@ def setup_and_teardown(request, tmp_path_factory):
 
 
 def download_gguf_model(model, model_path):
-    """Download the GGUF model using huggingface-cli and return the actual model path."""
+    """Download the GGUF model using huggingface-cli."""
     sub_env=os.environ.copy()
     model_name = model["name"]
     model_gguf_filename = model["gguf_filename"]
@@ -205,10 +205,9 @@ def download_gguf_model(model, model_path):
     except subprocess.CalledProcessError as error:
         logger.error(f"huggingface-cli returned {error.returncode}. Output:\n{error.output}")
         raise
-    return os.path.join(model_path, model_gguf_filename)
 
 def optimum_cli_convert(model, model_path):
-    """Convert the model using optimum-cli and return the actual model path."""
+    """Convert the model using optimum-cli."""
     sub_env=os.environ.copy()
     model_name = model["name"]
     model_args = model["convert_args"]
@@ -225,7 +224,6 @@ def optimum_cli_convert(model, model_path):
     except subprocess.CalledProcessError as error:
         logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
         raise
-    return model_path
 
 @pytest.fixture(scope="session")
 def convert_model(request):
@@ -240,11 +238,15 @@ def convert_model(request):
     if not os.path.exists(model_path):
         if "gguf_filename" in model:
             # Download the GGUF model if not already downloaded
-            yield download_gguf_model(MODELS[model_id], model_path)
+            download_gguf_model(MODELS[model_id], model_path)
         else:
             # Convert the model if not already converted
-            yield optimum_cli_convert(MODELS[model_id], model_path)
-    
+            optimum_cli_convert(MODELS[model_id], model_path)
+
+    if "gguf_filename" in model:
+        model_path = os.path.join(model_path, model["gguf_filename"])
+    yield model_path
+
     # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(model_cache):
