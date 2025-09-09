@@ -9,7 +9,7 @@ sidebar_position: 2
 The cache eviction algorithm is designed to manage KV (Key-Value) cache memory for large language models (LLMs) during text generation. It determines which blocks of tokens should be evicted from the KV cache based on importance scores calculated from attention scores across different attention layers.
 
 The cache eviction algorithm allows for average and maximum KV cache consumption savings since it effectively imposes a configurable hard limit on the amount of KV cache blocks that each sequence can occupy.
-A fixed, relatively small value of KV cache block limit means that there is less compute spent on generating next token, when compared to the no-eviction case where the entire KV cache history of the sequence, including prompt tokens, would have to be processed; token latency would also remains stable.
+A fixed, relatively small value of KV cache block limit means that there is less compute spent on generating next token, when compared to the no-eviction case where the entire KV cache history of the sequence, including prompt tokens, would have to be processed; token latency would also remain stable.
 This effect only comes into play during the generation stage and is most noticeable for longer generation lengths. 
 
 No eviction is done during prefill stage, therefore no speedups would be achieved during the prefill using cache eviction alone and the reduction in maximum KV cache consumption over the entire generation process is limited from below by the amount of KV cache blocks occupied by the full prompt. To achieve prefill stage speedup, the [sparse attention prefill algorithms](./sparse-attention-prefill.md) can be used, either separately or along with cache eviction.
