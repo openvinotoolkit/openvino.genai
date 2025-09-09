@@ -245,7 +245,7 @@ size_t FastGreedyDPP::argmax(const ov::Tensor& scores) {
     size_t best_idx = 0;
     float best_value = -std::numeric_limits<float>::infinity();
 
-    for (size_t i = 1; i < size; ++i) {
+    for (size_t i = 0; i < size; ++i) {
         if (data[i] > best_value) {
             best_value = data[i];
             best_idx = i;

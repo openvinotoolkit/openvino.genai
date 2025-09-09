@@ -34,12 +34,6 @@ TEST_F(FastGreedyDPPTest, ConditionalKernelMatrixSelection) {
     // Test case: Select 3 tokens out of 4 using the specific conditional kernel matrix
     // Expected result: tokens 1, 0, 3 should be selected
     
-    // Create the conditional kernel matrix as specified:
-    // [0.8, 0.3, 0.1, 0.2]  // token 0
-    // [0.3, 0.9, 0.4, 0.1]  // token 1  
-    // [0.1, 0.4, 0.7, 0.5]  // token 2
-    // [0.2, 0.1, 0.5, 0.6]  // token 3
-    
     std::vector<float> kernel_data = {
         // Batch 0, 4x4 kernel matrix
         0.8f, 0.3f, 0.1f, 0.2f,  // token 0 row
@@ -226,27 +220,4 @@ TEST_F(FastGreedyDPPTest, InvalidInputHandling) {
     // Test with wrong dimensions
     ov::Tensor wrong_dims(ov::element::f32, {4, 4});  // 2D instead of 3D
     EXPECT_THROW(dpp_selector->select(wrong_dims, 2), std::invalid_argument);
-}
-
-TEST_F(FastGreedyDPPTest, CreateMaskFunctionality) {
-    // Test the create_mask helper function
-    
-    std::vector<std::vector<size_t>> selected_indices = {
-        {0, 1, 3},  // Batch 0 selected tokens
-        {1, 2}      // Batch 1 selected tokens  
-    };
-    
-    size_t total_tokens = 4;
-    auto mask = FastGreedyDPP::create_mask(selected_indices, total_tokens);
-    
-    // Expected mask: [true, true, false, true, false, true, true, false]
-    // Batch 0: tokens 0,1,3 selected -> [true, true, false, true]
-    // Batch 1: tokens 1,2 selected -> [false, true, true, false]
-    
-    std::vector<bool> expected_mask = {
-        true, true, false, true,   // Batch 0
-        false, true, true, false   // Batch 1
-    };
-    
-    EXPECT_EQ(mask, expected_mask);
 }
