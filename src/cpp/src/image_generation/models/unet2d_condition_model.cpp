@@ -36,9 +36,20 @@ UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir
 
 UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir,
                                            const std::string& device,
-                                           const ov::AnyMap& properties) :
-    UNet2DConditionModel(root_dir) {
-    compile(device, properties);
+                                           const ov::AnyMap& properties)
+    : m_config(root_dir / "config.json") {
+    m_vae_scale_factor = get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
+
+    const auto [properties_without_blob, blob_config] = utils::extract_blob_properties(properties);
+    const auto& [blob_path, export_blob] = blob_config;
+
+    if (blob_path) {
+        import_model(*blob_path, device, properties_without_blob);
+        return;
+    }
+
+    m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
+    compile(device, properties_without_blob);
 }
 
 UNet2DConditionModel::UNet2DConditionModel(const std::string& model,
@@ -113,6 +124,24 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
     return *this;
 }
 
+void UNet2DConditionModel::import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!m_impl, "Model has been already compiled. Cannot re-compile already compiled model");
+
+    if (device == "NPU") {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceStaticBS1>();
+    } else {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
+    }
+
+    std::optional<AdapterConfig> adapters;
+    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
+        adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("lora_unet"));
+        m_adapter_controller = AdapterController(m_model, *adapters, device);
+    }
+    m_impl->import_model(blob_path, device, *filtered_properties);
+}
+
 void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
     OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
     m_impl->set_hidden_states(tensor_name, encoder_hidden_states);
@@ -128,6 +157,11 @@ void UNet2DConditionModel::set_adapters(const std::optional<AdapterConfig>& adap
 ov::Tensor UNet2DConditionModel::infer(ov::Tensor sample, ov::Tensor timestep) {
     OPENVINO_ASSERT(m_impl, "UNet model must be compiled first. Cannot infer non-compiled model");
     return m_impl->infer(sample, timestep);
+}
+
+void UNet2DConditionModel::export_model(const std::filesystem::path& blob_path) {
+    OPENVINO_ASSERT(m_impl, "UNet model must be compiled first. Cannot infer non-compiled model");
+    m_impl->export_model(blob_path);
 }
 
 } // namespace genai

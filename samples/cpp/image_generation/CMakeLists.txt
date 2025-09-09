@@ -38,6 +38,22 @@ install(TARGETS text2image
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create main sample executable
+
+add_executable(text2image_export_import text2image_export_import.cpp imwrite.cpp)
+
+target_include_directories(text2image_export_import PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(text2image_export_import PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(text2image_export_import PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS text2image_export_import
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # create text2image concurrent sample executable
 
 add_executable(text2image_concurrency text2image_concurrency.cpp imwrite.cpp)

@@ -156,6 +156,34 @@ public:
         return out_sample;
     }
 
+    virtual void export_model(const std::filesystem::path& blob_path) override {
+        OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
+                        "UNet model must be compiled first");
+        OPENVINO_ASSERT(m_requests.size() > 0, "UNet model must have at least one infer request");
+        auto compiled_model = m_requests[0].get_compiled_model();
+        utils::export_model(compiled_model, blob_path / "openvino_model.blob");
+    }
+
+    virtual void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties) override {
+        auto compiled_model = utils::import_model(blob_path / "openvino_model.blob", device, properties);
+
+        OPENVINO_ASSERT(!compiled_model.get_runtime_model()->is_dynamic(),
+                        "UNetInferenceStaticBS1::import_model: model must be static. Please use UNetInferenceDynamic instead.");
+        
+        // we'll create a separate infer request for each batch.
+
+        // todo: preserve original model batch size during export/import
+        m_native_batch_size = compiled_model.input("sample").get_shape()[0];
+        m_requests.resize(m_native_batch_size);
+
+        // todo: check that input batch is 1
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
+
+        for (int i = 0; i < m_native_batch_size; i++) {
+            m_requests[i] = compiled_model.create_infer_request();
+        }
+    }
+
 private:
     std::vector<ov::InferRequest> m_requests;
     size_t m_native_batch_size = 0;

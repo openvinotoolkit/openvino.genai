@@ -80,7 +80,10 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
-        auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
+        const auto [properties_without_blob, blob_config] = utils::extract_blob_properties(properties);
+        const auto& [blob_path, export_blob] = blob_config;
+
+        auto updated_properties = update_adapters_in_properties(properties_without_blob, &DiffusionPipeline::derived_adapters);
         // updated_properies are for passing to the pipeline subcomponents only, not for the generation config
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
@@ -107,7 +110,11 @@ public:
 
         const std::string unet = data["unet"][1].get<std::string>();
         if (unet == "UNet2DConditionModel") {
+            if (blob_path.has_value()) {
+                updated_properties.fork()[ov::genai::blob_path.name()] = blob_path.value() / "unet";
+            }
             m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet", device, *updated_properties);
+            updated_properties.fork().erase(ov::genai::blob_path.name());
         } else {
             OPENVINO_THROW("Unsupported '", unet, "' UNet type");
         }
@@ -378,6 +385,10 @@ public:
             m_clip_text_encoder_with_projection->set_adapters(adapters);
             m_unet->set_adapters(adapters);
         }
+    }
+
+    void export_model(const std::filesystem::path& export_path) override {
+        m_unet->export_model(export_path / "unet");
     }
 
 private:
