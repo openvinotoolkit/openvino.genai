@@ -752,7 +752,6 @@ std::pair<ov::AnyMap, std::pair<std::optional<std::filesystem::path>, bool>> ext
     auto export_blob_it = properties.find(ov::genai::export_blob.name());
     if (export_blob_it != properties.end()) {
         export_blob = export_blob_it->second.as<bool>();
-        // todo: test this assertion
         OPENVINO_ASSERT(!export_blob || blob_path.has_value(), "BLOB_PATH property must be set if EXPORT_BLOB is true");
         properties.erase(export_blob_it);
     }
@@ -770,16 +769,12 @@ ov::CompiledModel import_model(const std::filesystem::path& blob_path,
     // }
 
     ov::Tensor blob_tensor = ov::read_tensor_data(blob_path);
-    // ov::Tensor blob_tensor = ov::read_tensor_data(blob_path / "openvino_model.blob");
     return ov::genai::utils::singleton_core().import_model(blob_tensor, device, properties);
 }
 
 void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path& blob_path) {
-    // const std::filesystem::path model_blob_path = fs_blob_path / "openvino_model.blob";
     OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
 
-
-    // create path if does not exist
     std::filesystem::create_directories(blob_path.parent_path());
 
     std::ofstream out(blob_path, std::ios::out | std::ios::binary);
