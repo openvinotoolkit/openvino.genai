@@ -50,10 +50,10 @@ huggingface-cli download <model> --local-dir <output_folder>
 
 ### Using GGUF models
 
-To run any samples with a GGUF model, simply provide the path to the .gguf file in the `model_dir` parameter.
+To run any samples with a GGUF model, simply provide the path to the .gguf file via the `model_dir` parameter.
 
-This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM, Qwen2.5. For other models 
-and architectures, we still recommend converting the model to the IR format, using the optimum-intel tool.
+This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models 
+and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
 
 ## Sample Descriptions
 ### Common information
@@ -148,7 +148,7 @@ This approach reduces the need for multiple infer requests to the main model, en
 
 Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/speculative-sampling) that provides an example of LLM-powered text generation in Python.
 
-Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model, etc. The GGUF model is not supported as a draft model.
+Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model. Note that GGUF models are not supported as draft models.
 - **Main Feature:** Reduces latency while generating high-quality text.
 - **Run Command:**
   ```bash

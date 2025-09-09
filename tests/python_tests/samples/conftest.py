@@ -193,53 +193,62 @@ def setup_and_teardown(request, tmp_path_factory):
             logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
 
 
+def download_gguf_model(model, model_path):
+    """Download the GGUF model using huggingface-cli and return the actual model path."""
+    sub_env=os.environ.copy()
+    model_name = model["name"]
+    model_gguf_filename = model["gguf_filename"]
+    command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", model_path]
+    logger.info(f"Downloading command: {' '.join(command)}")
+    try:
+        retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
+    except subprocess.CalledProcessError as error:
+        logger.error(f"huggingface-cli returned {error.returncode}. Output:\n{error.output}")
+        raise
+    return os.path.join(model_path, model_gguf_filename)
+
+def optimum_cli_convert(model, model_path):
+    """Convert the model using optimum-cli and return the actual model path."""
+    sub_env=os.environ.copy()
+    model_name = model["name"]
+    model_args = model["convert_args"]
+    command = [
+        "optimum-cli", "export", "openvino",
+        "--model", model_name, 
+        model_path
+    ]
+    if model_args:
+        command.extend(model_args)
+    logger.info(f"Conversion command: {' '.join(command)}")
+    try:
+        retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
+    except subprocess.CalledProcessError as error:
+        logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+        raise
+    return model_path
+
 @pytest.fixture(scope="session")
 def convert_model(request):
     """Fixture to convert the model once for the session."""
     models_cache = request.config.cache.get("MODELS_DIR", None)
     model_id = request.param
-    model_name = MODELS[model_id]["name"]
-    model_gguf_filename = MODELS[model_id].get("gguf_filename", "")
+    model = MODELS[model_id]
+    model_name = model["name"]
     model_cache = os.path.join(models_cache, model_id)
     model_path = os.path.join(model_cache, model_name)
-    model_args = MODELS[model_id]["convert_args"]
     logger.info(f"Preparing model: {model_name}")
     if not os.path.exists(model_path):
-        sub_env=os.environ.copy()
-        # Download the GGUF model if not already downloaded
-        if model_gguf_filename:
-            command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", model_path]
-            logger.info(f"Downloading command: {' '.join(command)}")
-            try:
-                retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
-            except subprocess.CalledProcessError as error:
-                logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
-                raise
-        # Convert the model if not already converted
+        if "gguf_filename" in model:
+            # Download the GGUF model if not already downloaded
+            yield download_gguf_model(MODELS[model_id], model_path)
         else:
-            command = [
-                "optimum-cli", "export", "openvino",
-                "--model", model_name, 
-                model_path
-            ]
-            if model_args:
-                command.extend(model_args)
-            logger.info(f"Conversion command: {' '.join(command)}")
-            try:
-                retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
-            except subprocess.CalledProcessError as error:
-                logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
-                raise
-    
-    if model_gguf_filename:
-        yield os.path.join(model_path, model_gguf_filename)
-    else:
-        yield model_path
+            # Convert the model if not already converted
+            yield optimum_cli_convert(MODELS[model_id], model_path)
     
     # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(model_cache):
-            logger.info(f"Removing converted model: {model_cache}")
+            logger.info(f"Removing cached model: {model_cache}")
             shutil.rmtree(model_cache)
 
 @pytest.fixture(scope="session")
