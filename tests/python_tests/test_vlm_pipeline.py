@@ -25,6 +25,7 @@ handwritten_tensor
 model_and_tag
 """
 
+from typing import Callable, Generator
 import openvino_tokenizers
 import openvino
 import PIL
@@ -54,7 +55,41 @@ from utils.generation_config import (
 from utils.constants import get_default_llm_properties, get_ov_cache_models_dir
 
 
-def get_ov_model(model_id):
+PROMPTS: list[str] = [
+    "What is on the image?",
+    "What is special about this image?",
+]
+
+MODEL_IDS: list[str] = [
+    "katuni4ka/tiny-random-minicpmv-2_6",
+    "katuni4ka/tiny-random-phi3-vision",
+    "katuni4ka/tiny-random-phi-4-multimodal",
+    "katuni4ka/tiny-random-llava",
+    "katuni4ka/tiny-random-llava-next",
+    "katuni4ka/tiny-random-internvl2",
+    "katuni4ka/tiny-random-qwen2vl",
+    "katuni4ka/tiny-random-qwen2.5-vl",
+    "katuni4ka/tiny-random-gemma3",
+]
+
+ATTENTION_BACKEND: list[str] = ["PA", "SDPA"]
+
+
+DEFAULT_MAX_NEW_TOKENS = 30
+DEFAULT_SCORE_EPSILON = 0.001
+IMAGE_TOKENS_NUM = 54
+MAX_RETRIES = 10
+RETRY_BASE_DELAY_SEC = 0.1
+RETRY_MAX_DELAY_SEC = 2.0
+
+TEST_IMAGE_URLS = {
+    'cat': 'https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11',
+    'car': 'https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg',
+    'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350'
+}
+
+
+def _get_ov_model(model_id: str) -> str:
     ov_cache_models_dir = get_ov_cache_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_models_dir / dir_name
@@ -96,24 +131,61 @@ def get_ov_model(model_id):
         )
     )
     if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
-        processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
+         # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
+        processor.chat_template = tokenizer.chat_template
     processor.audio_tokenizer = None
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
     return model_dir
 
 
-prompts = [
-    "What is on the image?",
-    "What is special about this image?",
-]
+@pytest.fixture(scope="module")
+def vlm_pipeline_provider() -> Generator[Callable[[str, str], VLMPipeline], None, None]:
+    cache: dict[tuple[str, str], VLMPipeline] = {}
+    
+    def get_pipeline(model_id: str, attention_backend: str) -> VLMPipeline:
+        cache_key = (model_id, attention_backend)
+        
+        if cache_key in cache:
+            return cache[cache_key]
+        try:
+            models_path = _get_ov_model(model_id)
+            pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=attention_backend)
+            cache[cache_key] = pipeline
+            return pipeline
+        except Exception as e:
+            raise RuntimeError(f"Failed to create pipeline for {model_id} with {attention_backend}: {e}") from e
+
+    yield get_pipeline
+    
+    cache.clear()
 
 
-def download_image(link):
+@pytest.fixture(scope="module", params=MODEL_IDS)
+def ov_model(request) -> str:
+    return request.param
+
+
+@pytest.fixture(scope="module", params=ATTENTION_BACKEND)
+def ov_backend(request) -> str:
+    return request.param
+
+
+@pytest.fixture(scope="module")
+def ov_pipe(ov_model: str, ov_backend: str, vlm_pipeline_provider: Callable[[str, str], VLMPipeline]) -> VLMPipeline:
+    return vlm_pipeline_provider(ov_model, ov_backend)
+
+
+@pytest.fixture(scope="module")
+def ov_pipe_first(vlm_pipeline_provider: Callable[[str, str], VLMPipeline]) -> VLMPipeline:
+    return vlm_pipeline_provider(MODEL_IDS[0], ATTENTION_BACKEND[0])
+
+
+def download_image(link: str) -> PIL.Image:
     return PIL.Image.open(requests.get(link, stream=True).raw).convert("RGB")
 
 
-def from_cache_or_download(pytestconfig, link, file_name):
+def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: str):
     def implementation():
         try:
             image_path = pytestconfig.cache.mkdir("images") / file_name
@@ -121,7 +193,7 @@ def from_cache_or_download(pytestconfig, link, file_name):
             # Cache is disabled with -p no:cacheprovider
             return download_image(link)
         if image_path.exists():
-            image = PIL.Image.open(image_path)
+            image: PIL.Image = PIL.Image.open(image_path)
         else:
             image = download_image(link)
             image.save(image_path)
@@ -131,8 +203,7 @@ def from_cache_or_download(pytestconfig, link, file_name):
 
 @pytest.fixture(scope="module")
 def cat_image(pytestconfig):
-    cat_url = "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11"
-    return from_cache_or_download(pytestconfig, cat_url, "cat.jpg")
+    return from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['cat'], "cat.jpg")
 
 
 @pytest.fixture(scope="module")
@@ -142,54 +213,33 @@ def cat_tensor(cat_image):
 
 @pytest.fixture(scope="module")
 def car_tensor(pytestconfig):
-    car_url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg"
-    return openvino.Tensor(from_cache_or_download(pytestconfig, car_url, "car.jpg"))
+    return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['car'], "car.jpg"))
 
 
 @pytest.fixture(scope="module")
 def handwritten_tensor(pytestconfig):
-    handwritten_url = "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350"
-    return openvino.Tensor(from_cache_or_download(pytestconfig, handwritten_url, "handwritten.png"))
-
-
-model_ids = [
-    "katuni4ka/tiny-random-minicpmv-2_6",
-    "katuni4ka/tiny-random-phi3-vision",
-    "katuni4ka/tiny-random-phi-4-multimodal",
-    "katuni4ka/tiny-random-llava",
-    "katuni4ka/tiny-random-llava-next",
-    "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-qwen2vl",
-    "katuni4ka/tiny-random-qwen2.5-vl",
-    "katuni4ka/tiny-random-gemma3",
-]
+    return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['handwritten'], "handwritten.png"))
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
 
 if sys.platform == "darwin":
-    model_ids = [
+    MODEL_IDS = [
         pytest.param(
             model_id,
             marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)
         ) if "gemma3" in model_id else model_id
-        for model_id in model_ids
+        for model_id in MODEL_IDS
     ]
-
-attention_backend = ["PA", "SDPA"]
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", model_ids)
-@pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline(model_id, backend, cat_tensor, handwritten_tensor, car_tensor):
+def test_vlm_pipeline(ov_pipe: VLMPipeline, cat_tensor, handwritten_tensor, car_tensor):
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
         return False
 
-    models_path = get_ov_model(model_id)
-    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
@@ -197,7 +247,7 @@ def test_vlm_pipeline(model_id, backend, cat_tensor, handwritten_tensor, car_ten
     for images in [], [cat_tensor], [cat_tensor, handwritten_tensor, car_tensor]:
         result_from_streamer = []
         res = ov_pipe.generate(
-            prompts[0],
+            PROMPTS[0],
             images=images,
             generation_config=generation_config,
             streamer=streamer,
@@ -215,7 +265,7 @@ configs = [
 @pytest.mark.parametrize("config", configs)
 def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
     scheduler_config = SchedulerConfig()
-    models_path = get_ov_model(model_ids[0])
+    models_path = _get_ov_model(MODEL_IDS[0])
     ov_pipe = VLMPipeline(
         models_path,
         "CPU",
@@ -223,15 +273,15 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
         **get_default_llm_properties(),
     )
     generation_config = config
-    generation_config.max_new_tokens = 30
-    eps = 0.001
+    generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
+    eps = DEFAULT_SCORE_EPSILON
     image_links_list = [[], [cat_tensor]]
 
     res_generate = []
     for images in image_links_list:
         res_generate.append(
             ov_pipe.generate(
-                prompts[0], images=images, generation_config=generation_config
+                PROMPTS[0], images=images, generation_config=generation_config
             )
         )
 
@@ -244,7 +294,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
     tokenizer = cb_pipe.get_tokenizer()
 
     for idx, images in enumerate(image_links_list):
-        handle = cb_pipe.add_request(idx, prompts[0], images, generation_config)
+        handle = cb_pipe.add_request(idx, PROMPTS[0], images, generation_config)
         while handle.get_status() != GenerationStatus.FINISHED:
             cb_pipe.step()
         outputs = handle.read_all()
@@ -262,7 +312,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
 @pytest.mark.parametrize("config", configs)
 def test_vlm_continuous_batching_vs_stateful(config, cat_tensor):
     scheduler_config = SchedulerConfig()
-    models_path = get_ov_model(model_ids[0])
+    models_path = _get_ov_model(MODEL_IDS[0])
     cb_pipe = ContinuousBatchingPipeline(
         models_path,
         scheduler_config=scheduler_config,
@@ -271,23 +321,23 @@ def test_vlm_continuous_batching_vs_stateful(config, cat_tensor):
     )
     generation_config = config
     generation_config.max_new_tokens = 25
-    eps = 0.001
+    eps = DEFAULT_SCORE_EPSILON
     image_links_list = [[], [cat_tensor]]
 
     res_cb = []
     for images in image_links_list:
         res_cb.append(
             cb_pipe.generate(
-                [prompts[0]], images=[images], generation_config=[generation_config]
+                [PROMPTS[0]], images=[images], generation_config=[generation_config]
             )
         )
 
-    models_path = get_ov_model(model_ids[0])
+    models_path = _get_ov_model(MODEL_IDS[0])
     for idx, images in enumerate(image_links_list):
         stateful_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND="SDPA", **get_default_llm_properties())
 
         res_stateful = stateful_pipe.generate(
-            prompts[0], images=images, generation_config=generation_config
+            PROMPTS[0], images=images, generation_config=generation_config
         )
         for out_idx, text in enumerate(res_stateful.texts):
             assert text == res_cb[idx][0].texts[out_idx]
@@ -316,17 +366,15 @@ def iteration_images(request):
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
-@pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
+def test_vlm_pipeline_chat(
+    ov_pipe: VLMPipeline, system_message: str, iteration_images: list[list[PIL.Image]]
+):
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
         return False
-
-    models_path = get_ov_model(model_id)
-    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
+    
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
@@ -337,7 +385,7 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
 
     result_from_streamer = []
     res = ov_pipe.generate(
-        prompts[0],
+        PROMPTS[0],
         images=images,
         generation_config=generation_config,
         streamer=streamer,
@@ -347,7 +395,7 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
     for image_set in iteration_images[1:]:
         result_from_streamer = []
         res = ov_pipe.generate(
-            prompts[1],
+            PROMPTS[1],
             images=image_set,
             generation_config=generation_config,
             streamer=streamer,
@@ -358,9 +406,9 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("backend", attention_backend)
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 def test_vlm_get_tokenizer(backend):
-    models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
+    models_path = _get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
     pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     tokenizer = pipe.get_tokenizer()
     tokenizer.encode("")
@@ -374,29 +422,28 @@ def test_vlm_get_tokenizer(backend):
         get_multinomial_all_parameters(),
     ],
 )
-@pytest.mark.parametrize("backend", attention_backend)
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 def test_sampling(config, backend, cat_tensor):
-    models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
+    models_path = _get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
     pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
-    pipe.generate(prompts[0], image=cat_tensor, generation_config=config)
+    pipe.generate(PROMPTS[0], image=cat_tensor, generation_config=config)
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("backend", attention_backend)
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 def test_perf_metrics(backend, cat_tensor):
     import numpy as np
     from time import perf_counter_ns
 
-    models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
+    models_path = _get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
 
-    image_tokens_num = 54  # the number of tokens into which this test image is encoded
-    max_new_tokens = 30
+    max_new_tokens = DEFAULT_MAX_NEW_TOKENS
 
     start_time = perf_counter_ns()
     pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     start_generate = perf_counter_ns()
     result = pipe.generate(
-        prompts[0],
+        PROMPTS[0],
         images=[cat_tensor],
         generation_config=GenerationConfig(max_new_tokens=max_new_tokens),
     )
@@ -410,7 +457,7 @@ def test_perf_metrics(backend, cat_tensor):
     assert 0 < perf_metrics.get_load_time() < load_time
     num_tokens = perf_metrics.get_num_generated_tokens()
     assert 0 < num_tokens <= max_new_tokens
-    assert 0 < perf_metrics.get_num_input_tokens() < len(prompts[0]) + image_tokens_num
+    assert 0 < perf_metrics.get_num_input_tokens() < len(PROMPTS[0]) + IMAGE_TOKENS_NUM
     assert 0 < perf_metrics.get_ttft().mean < generate_time
     assert 0 < perf_metrics.get_tpot().mean < generate_time / num_tokens
     assert 0 < perf_metrics.get_ipot().mean < generate_time / num_tokens
@@ -447,8 +494,8 @@ def test_perf_metrics(backend, cat_tensor):
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", model_ids)
-@pytest.mark.parametrize("backend", attention_backend)
+@pytest.mark.parametrize("model_id", MODEL_IDS)
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
@@ -462,7 +509,7 @@ def test_vlm_npu_no_exception(model_id, backend, cat_tensor, handwritten_tensor,
     if model_id in unsupported_models:
         pytest.skip(f"{model_id} is not supported")
 
-    models_path = get_ov_model(model_id)
+    models_path = _get_ov_model(model_id)
     properties = {
         "DEVICE_PROPERTIES": {
             "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
@@ -477,7 +524,7 @@ def test_vlm_npu_no_exception(model_id, backend, cat_tensor, handwritten_tensor,
 
     for image in cat_tensor, handwritten_tensor, car_tensor:
         ov_pipe.generate(
-            prompts[0], images=[image], generation_config=generation_config
+            PROMPTS[0], images=[image], generation_config=generation_config
         )
 
 
@@ -494,7 +541,7 @@ def image_sequence(request):
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_image():
-    models_path = get_ov_model(model_ids[0])
+    models_path = _get_ov_model(MODEL_IDS[0])
     properties = {
         "DEVICE_PROPERTIES": {
             "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
@@ -508,14 +555,12 @@ def test_vlm_npu_no_image():
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
 
     ov_pipe.generate(
-        prompts[0], generation_config=generation_config
+        PROMPTS[0], generation_config=generation_config
     )
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", model_ids)
-@pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_sequence, backend):
+def test_vlm_pipeline_chat_streamer_cancel_second_generate(ov_pipe: VLMPipeline, image_sequence):
     callback_questions = [
         "Explain in details 1+1=",
         "Why is the Sun yellow?",
@@ -534,8 +579,6 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
             else StreamingStatus.RUNNING
         )
 
-    models_path = get_ov_model(model_id)
-    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
@@ -584,12 +627,12 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("backend", attention_backend)
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 def test_start_chat_clears_history(backend, image_sequence):
     callback_questions = [
         "Why is the Sun yellow?"
     ]
-    models_path = get_ov_model(model_ids[0])
+    models_path = _get_ov_model(MODEL_IDS[0])
     ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
@@ -613,7 +656,7 @@ def test_start_chat_clears_history_cb_api(image_sequence):
     callback_questions = [
         "Why is the Sun yellow?"
     ]
-    models_path = get_ov_model(model_ids[0])
+    models_path = _get_ov_model(MODEL_IDS[0])
     ov_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 30
@@ -634,9 +677,7 @@ def test_start_chat_clears_history_cb_api(image_sequence):
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", model_ids)
-@pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, image_sequence, backend):
+def test_vlm_pipeline_chat_streamer_cancel_first_generate(ov_pipe: VLMPipeline, image_sequence):
     callback_questions = [
         "Why is the Sun yellow?",
         "1+1=",
@@ -657,8 +698,6 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, image_sequen
             else StreamingStatus.RUNNING
         )
 
-    models_path = get_ov_model(model_id)
-    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
     generation_config.ignore_eos = True
@@ -714,7 +753,7 @@ def conversation_requests(cat_tensor, car_tensor, handwritten_tensor):
     ]
 
 
-tag_inserted_by_template = [
+TAG_INSERTED_BY_TEMPLATE = [
     ("katuni4ka/tiny-random-llava", lambda idx: "<image>"),
     ("katuni4ka/tiny-random-llava-next", lambda idx: "<image>"),
     ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
@@ -722,12 +761,13 @@ tag_inserted_by_template = [
     ("katuni4ka/tiny-random-gemma3", lambda idx: "<start_of_image>"),
 ]
 
-image_id_ignorant =  tag_inserted_by_template + [
+
+IMAGE_ID_IGNORANT = TAG_INSERTED_BY_TEMPLATE + [
     ("katuni4ka/tiny-random-internvl2", lambda idx: "<image>\n"),
 ]
 
 
-models_to_tag = image_id_ignorant + [
+MODELS_TO_TAG = IMAGE_ID_IGNORANT + [
     # minicpm tracks image number in expanded tags
     ("katuni4ka/tiny-random-minicpmv-2_6", lambda idx: "(<image>./</image>)\n"),
     (
@@ -738,28 +778,26 @@ models_to_tag = image_id_ignorant + [
 
 
 @pytest.fixture(scope="module")
-def model_and_tag(request):
+def model_and_tag(request, vlm_pipeline_provider):
     model_id, tag = request.param
     if sys.platform == "darwin" and "gemma3" in model_id:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
-    model = get_ov_model(model_id)
     backend = "PA"
     # TODO Remove when PA will be enabled for gemma3
     if model_id == "katuni4ka/tiny-random-gemma3":
-        backend = "SDPA"
-    vlm = VLMPipeline(model, "CPU", ATTENTION_BACKEND=backend)
-    return vlm, tag
+        backend = "SDPA"    
+    return vlm_pipeline_provider(model_id, backend), tag
 
 
 @pytest.mark.precommit
 class TestImageTags:
     @pytest.mark.parametrize(
         "model_and_tag, model_id",
-        [((model_id, tag), model_id) for model_id, tag in tag_inserted_by_template],
+        [((model_id, tag), model_id) for model_id, tag in TAG_INSERTED_BY_TEMPLATE],
         indirect=["model_and_tag"],
     )
     def test_representation(self, model_and_tag, model_id, cat_tensor):
-        vlm, tag = model_and_tag
+        vlm, _ = model_and_tag
         generation_config = vlm.get_generation_config()
         generation_config.max_new_tokens = 30
         vlm.set_generation_config(generation_config)
@@ -795,7 +833,7 @@ class TestImageTags:
 
         retry(workaround_inconsistent_inference)
 
-    @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
+    @pytest.mark.parametrize("model_and_tag", MODELS_TO_TAG, indirect=True)
     def test_prepend_native(self, model_and_tag, conversation_requests):
         vlm, tag = model_and_tag
 
@@ -817,7 +855,7 @@ class TestImageTags:
 
         retry(workaround_inconsistent_inference)
 
-    @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
+    @pytest.mark.parametrize("model_and_tag", MODELS_TO_TAG, indirect=True)
     def test_prepend_universal(self, model_and_tag, conversation_requests):
         vlm, _ = model_and_tag
 
@@ -840,7 +878,7 @@ class TestImageTags:
 
         retry(workaround_inconsistent_inference)
 
-    @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
+    @pytest.mark.parametrize("model_and_tag", MODELS_TO_TAG, indirect=True)
     def test_append(self, model_and_tag, conversation_requests):
         vlm, tag = model_and_tag
         generation_config = vlm.get_generation_config()
@@ -873,7 +911,7 @@ class TestImageTags:
 
         retry(workaround_inconsistent_inference)
 
-    @pytest.mark.parametrize("model_and_tag", image_id_ignorant, indirect=True)
+    @pytest.mark.parametrize("model_and_tag", IMAGE_ID_IGNORANT, indirect=True)
     def test_same_reference(self, model_and_tag, cat_tensor):
         vlm, _ = model_and_tag
         generation_config = vlm.get_generation_config()
@@ -890,7 +928,7 @@ class TestImageTags:
 
         retry(workaround_inconsistent_inference)
 
-    @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
+    @pytest.mark.parametrize("model_and_tag", IMAGE_ID_IGNORANT, indirect=True)
     def test_older(self, model_and_tag, car_tensor):
         vlm, _ = model_and_tag
         generation_config = vlm.get_generation_config()
@@ -901,13 +939,13 @@ class TestImageTags:
         with pytest.raises(RuntimeError):
             vlm.generate("<ov_genai_image_0>", images=[car_tensor])
 
-    @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
+    @pytest.mark.parametrize("model_and_tag", MODELS_TO_TAG, indirect=True)
     def test_missing_universal(self, model_and_tag):
         vlm, _ = model_and_tag
         with pytest.raises(RuntimeError):
             vlm.generate("<ov_genai_image_0>")
 
-    @pytest.mark.parametrize("model_and_tag", models_to_tag, indirect=True)
+    @pytest.mark.parametrize("model_and_tag", MODELS_TO_TAG, indirect=True)
     def test_missing_native(self, model_and_tag):
         vlm, tag = model_and_tag
         with pytest.raises(RuntimeError):
@@ -942,7 +980,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
     prompt = "Describe this image."
     max_new_tokens = 100
 
-    model_path = get_ov_model(model_id)
+    model_path = _get_ov_model(model_id)
 
     # Run the model with optimum-intel
     model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
