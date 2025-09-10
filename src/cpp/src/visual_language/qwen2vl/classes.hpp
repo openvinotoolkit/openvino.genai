@@ -20,7 +20,7 @@ public:
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
     EncodedImage encode_with_imagepreprocess_cpp(const ov::Tensor& image, const ov::AnyMap& config_map);
     EncodedImage encode_with_imagepreprocess_ov(const ov::Tensor& image, const ov::AnyMap& config_map);
-    bool is_use_ov_image_preprocess = true; // default use ov image preprocess, control by env IMAGE_PREPROCESS=CPP to use cpp image preprocess
+    bool use_ov_image_preprocess = true; // default use ov image preprocess, control by env IMAGE_PREPROCESS=CPP to use cpp image preprocess
 };
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
