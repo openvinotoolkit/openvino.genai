@@ -501,9 +501,9 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_di
     : VisionEncoder(model_dir, device, properties) {
     const char* env = std::getenv("IMAGE_PREPROCESS");
     if (env && std::string(env) == "CPP") {
-        is_use_ov_image_preprocess = false;
+        use_ov_image_preprocess = false;
     }
-    if (is_use_ov_image_preprocess) {
+    if (use_ov_image_preprocess) {
         auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
         m_ireq_queue_vision_encoder =
             create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
@@ -517,9 +517,9 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
     : VisionEncoder(models_map, config_dir_path, device, properties) {
     const char* env = std::getenv("IMAGE_PREPROCESS");
     if (env && std::string(env) == "CPP") {
-        is_use_ov_image_preprocess = false;
+        use_ov_image_preprocess = false;
     }
-    if (is_use_ov_image_preprocess) {
+    if (use_ov_image_preprocess) {
         const auto& [vision_encoder_model, vision_encoder_weights] =
             utils::get_model_weights_pair(models_map, "vision_embeddings");
         auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
@@ -670,7 +670,7 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const ov::Tens
 }
 
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    if (is_use_ov_image_preprocess == false) {
+    if (use_ov_image_preprocess == false) {
         return encode_with_imagepreprocess_cpp(image, config_map);
     }
     return encode_with_imagepreprocess_ov(image, config_map);
