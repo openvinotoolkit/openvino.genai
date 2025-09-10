@@ -295,8 +295,8 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         if (!m_chat_template.empty()) {
             m_chat_template = patch_gguf_chat_template(m_chat_template);
         }
-        ov_tokenizer->set_rt_info("openvino_genai_version", ov::genai::get_version().buildNumber);
-        ov_detokenizer->set_rt_info("openvino_genai_version", ov::genai::get_version().buildNumber);
+        ov_tokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
+        ov_detokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
 
         if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(models_path);
