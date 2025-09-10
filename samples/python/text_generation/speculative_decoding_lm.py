@@ -20,7 +20,7 @@ def main():
 
     # User can run main and draft model on different devices.
     # Please, set device for main model in `openvino_genai.LLMPipeline` constructor and in openvino_genai.draft_model` for draft.
-    main_device = 'CPU'  # GPU can be used as well
+    main_device = 'CPU'  # GPU or NPU can be used as well
     draft_device = 'CPU'
 
     draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
