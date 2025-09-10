@@ -83,7 +83,7 @@ struct SchedulerConfig {
      */
     std::string to_string() const {
         std::ostringstream oss;
-        oss << "SchedulerConfig { " << std::endl; 
+        oss << "SchedulerConfig { \n";
         oss << "  max_num_batched_tokens: " << max_num_batched_tokens << "\n";
         oss << "  num_kv_blocks: " << num_kv_blocks << "\n";
         oss << "  cache_size: " << cache_size << "\n";

@@ -98,7 +98,7 @@ public:
     std::string to_string() const {
         static const std::unordered_map<SparseAttentionMode, std::string> sparse_attention_mode_to_string = {
             {SparseAttentionMode::TRISHAPE, "TRISHAPE"},
-			{SparseAttentionMode::XATTENTION, "XATTENTION"},
+            {SparseAttentionMode::XATTENTION, "XATTENTION"},
         };
         std::ostringstream oss;
         oss << "SparseAttentionConfig { " << "\n";

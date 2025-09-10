@@ -69,7 +69,11 @@ public:
 
     std::string to_string() const {
         static const std::unordered_map<KVCrushAnchorPointMode, std::string> kv_crush_anchor_point_mode_to_string = {
-            {KVCrushAnchorPointMode::RANDOM, "RANDOM"}
+            {KVCrushAnchorPointMode::RANDOM, "RANDOM"},
+            {KVCrushAnchorPointMode::ZEROS, "ZEROS"},
+            {KVCrushAnchorPointMode::ONES, "ONES"},
+            {KVCrushAnchorPointMode::MEAN, "MEAN"},
+            {KVCrushAnchorPointMode::ALTERNATE, "ALTERNATE"},
         };
 
         std::ostringstream oss;
