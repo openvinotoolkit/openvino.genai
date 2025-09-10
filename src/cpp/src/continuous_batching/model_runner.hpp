@@ -165,27 +165,26 @@ public:
         }
 
         // Use cached pre-allocated tensors instead of creating new ones
-        ov::Tensor input_ids = _get_or_resize_tensor(m_cached_input_ids, "input_ids", 
-                                                     {total_num_tokens}, ov::element::i64);
-        ov::Tensor inputs_embeds = _get_or_resize_tensor(m_cached_inputs_embeds, "inputs_embeds", 
-                                                        {total_num_tokens, hidden_size}, ov::element::f32);
-        ov::Tensor position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", 
-                                                       {total_num_tokens}, ov::element::i64);
+        ov::Tensor input_ids = _get_or_resize_tensor(m_cached_input_ids, "input_ids", {total_num_tokens}, ov::element::i64);
+        ov::Tensor inputs_embeds = _get_or_resize_tensor(m_cached_inputs_embeds, "inputs_embeds",
+            {total_num_tokens, hidden_size}, ov::element::f32);
+        ov::Tensor position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids",
+            {total_num_tokens}, ov::element::i64);
 
         // PA specific parameters
-        ov::Tensor past_lens = _get_or_resize_tensor(m_cached_past_lens, "past_lens", 
-                                                    {batch_size_in_sequences}, ov::element::i32);
+        ov::Tensor past_lens = _get_or_resize_tensor(m_cached_past_lens, "past_lens",
+            {batch_size_in_sequences}, ov::element::i32);
         ov::Tensor subsequence_begins = _get_or_resize_tensor(m_cached_subsequence_begins, "subsequence_begins", 
-                                                            {batch_size_in_sequences + 1}, ov::element::i32);
+            {batch_size_in_sequences + 1}, ov::element::i32);
         ov::Tensor block_indices_begins = _get_or_resize_tensor(m_cached_block_indices_begins, "block_indices_begins", 
-                                                              {batch_size_in_sequences + 1}, ov::element::i32);
+            {batch_size_in_sequences + 1}, ov::element::i32);
         ov::Tensor max_context_len = _get_or_resize_tensor(m_cached_max_context_len, "max_context_len", 
-                                                          {}, ov::element::i32);
+            {}, ov::element::i32);
 
         ov::Tensor token_type_ids = _get_or_resize_tensor(m_cached_token_type_ids, "token_type_ids",
-                                                     {1, total_num_tokens}, ov::element::i64);
+            {1, total_num_tokens}, ov::element::i64);
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
-                                                     {batch_size_in_sequences}, ov::element::i32);
+            {batch_size_in_sequences}, ov::element::i32);
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
 
@@ -464,7 +463,7 @@ private:
             m_cached_subsequence_begins = m_request.get_tensor("subsequence_begins");
             m_cached_block_indices_begins = m_request.get_tensor("block_indices_begins");
             m_cached_max_context_len = m_request.get_tensor("max_context_len");
-            if(m_is_aggregate_attention_scores)
+            if (m_is_aggregate_attention_scores)
             {
                 m_cached_score_aggregation_window = m_request.get_tensor("score_aggregation_window");
             }
