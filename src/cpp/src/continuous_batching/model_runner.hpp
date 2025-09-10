@@ -344,11 +344,12 @@ public:
 
         // Note: For tensor optimization, these tensors are pre-allocated, but we still need to set them
         // when they're not managed through the cached tensor system (fallback mode)
-        if (!m_cached_block_indices_begins || !m_cached_max_context_len) {
+        if (!m_cached_block_indices_begins) {
             m_request.set_tensor("block_indices_begins", block_indices_begins);
+        }
+        if (!m_cached_max_context_len) {
             m_request.set_tensor("max_context_len", max_context_len);
         }
-
         if (m_is_use_rotation_inputs) {
             m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
             _set_cache_rotation_coefficients(sequence_groups, scheduler_output);
@@ -488,7 +489,10 @@ private:
                 cached_tensor = m_request.get_tensor(tensor_name);
                 cached_tensor.set_shape(required_shape);
             } catch (const ov::Exception&) {
-                // If tensor doesn't exist, create a regular tensor
+                // If tensor doesn't exist, create a regular tensor. 
+                // 2 cases may run into here and need fall back to default constuction method:
+                // #1. if an ireq doesn't have a name, the corresponding tensor isn't going to be used.
+                // #2. _init_cached_tensors() still has global try catch. If one of the names fail, the following names won't be initialized.
                 cached_tensor = ov::Tensor(element_type, required_shape);
             }
         } else {
