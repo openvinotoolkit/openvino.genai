@@ -138,7 +138,10 @@ public:
                     ov::RemoteTensor dst_value_roi(value_cache, start_value, end_value);
                     dst_key_roi.copy_from(m_key_cache[decoder_layer_id]);
                     dst_value_roi.copy_from(m_value_cache[decoder_layer_id]);
+                }
 
+                // set new cache tensors
+                if (m_key_cache.size() > decoder_layer_id) {
                     m_key_cache[decoder_layer_id] = key_cache;
                     m_value_cache[decoder_layer_id] = value_cache;
                 } else {
