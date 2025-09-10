@@ -4,10 +4,10 @@
 import logging as log
 
 
-def print_metrics(
-        iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
-        stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None, text_emb=None, latency_unit=None, tts=None, cb_metric=None
-):
+def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
+                  stable_diffusion=None, tokenization_time=None, batch_size=1,
+                  prompt_idx=-1, whisper=None, text_emb=None, latency_unit=None,
+                  tts=None, cb_metric=None, text_rerank=None):
     iter_str = str(iter_num)
     if warm_up:
         iter_str = 'warm-up'
@@ -42,15 +42,21 @@ def print_metrics(
         iter_data['other_tokens_avg_latency'] = sum(tms[1:]) / (len(tms) - 1) * 1000 if len(tms) > 1 else -1
         first_token_latency = 'NA' if iter_data['first_token_latency'] == -1 else f"{iter_data['first_token_latency']:.2f} ms"
         other_token_latency = 'NA' if iter_data['other_tokens_avg_latency'] == -1 else f"{iter_data['other_tokens_avg_latency']:.2f} ms/{latency_unit}"
-        if text_emb is None:
+        if text_emb is not None:
             log.info(
-                f'{prefix} First token latency: {first_token_latency}, '
-                f'other tokens latency: {other_token_latency}, len of input tokens: {iter_data["input_size"]} * {batch_size}',
+                f"{prefix} First iteration latency: {first_token_latency}, "
+                f'other iterations latency: {other_token_latency}, len of input tokens: {iter_data["input_size"]} * {batch_size}',
+            )
+        elif text_rerank is not None:
+            log.info(
+                f"{prefix} First iteration latency: {first_token_latency}, "
+                f'other iteration latency: {other_token_latency}, len of input tokens: {iter_data["input_size"]}, '
+                f'texts number: {text_rerank.get("texts_num", -1)}',
             )
         else:
             log.info(
-                f'{prefix} First iteration latency: {first_token_latency}, '
-                f'other iterations latency: {other_token_latency}, len of input tokens: {iter_data["input_size"]} * {batch_size}',
+                f"{prefix} First token latency: {first_token_latency}, "
+                f'other tokens latency: {other_token_latency}, len of input tokens: {iter_data["input_size"]} * {batch_size}',
             )
         if len(tms) == 0:
             log.warning(f'{prefix} No hook data output for first token latency and other tokens latency')
