@@ -499,22 +499,108 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_di
                                            const std::string& device,
                                            const ov::AnyMap properties)
     : VisionEncoder(model_dir, device, properties) {
-    auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
-    m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
+    const char* env = std::getenv("IMAGE_PREPROCESS");
+    if (env && std::string(env) == "CPP") {
+        is_use_ov_image_preprocess = false;
+    }
+    if (is_use_ov_image_preprocess) {
+        auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
+        m_ireq_queue_vision_encoder =
+            create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
+    }
 }
 
 VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
                                            const std::filesystem::path& config_dir_path,
                                            const std::string& device,
-                                           const ov::AnyMap device_config)
-    : VisionEncoder(models_map, config_dir_path, device, device_config) {
-    const auto& [vision_encoder_model, vision_encoder_weights] =
-        utils::get_model_weights_pair(models_map, "vision_embeddings");
-    auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
-    m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, device_config);
+                                           const ov::AnyMap properties)
+    : VisionEncoder(models_map, config_dir_path, device, properties) {
+    const char* env = std::getenv("IMAGE_PREPROCESS");
+    if (env && std::string(env) == "CPP") {
+        is_use_ov_image_preprocess = false;
+    }
+    if (is_use_ov_image_preprocess) {
+        const auto& [vision_encoder_model, vision_encoder_weights] =
+            utils::get_model_weights_pair(models_map, "vision_embeddings");
+        auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
+        m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
+    }
 }
 
-EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+// keep both implementations for comparison and testing, here is the cpp version
+EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+    ov::InferRequest& encoder = infer_request_guard.get();
+    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ov::Shape image_shape = image.get_shape();
+    auto original_height = image_shape.at(1);
+    auto original_width = image_shape.at(2);
+    ImageSize target_image_size = qwen2_vl_utils::smart_resize(
+        original_height, 
+        original_width, 
+        config.patch_size * config.merge_size,
+        config.min_pixels,
+        config.max_pixels
+    );
+
+    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
+    clip_image_u8 resized_image;
+    bicubic_resize(input_image, resized_image, target_image_size.width, target_image_size.height);
+
+    clip_ctx ctx;
+    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
+    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
+    clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
+
+    ov::Tensor patches = clip_image_f32_to_tensor(normalized_image);
+
+    // For single patch tile it to match temporal_patch_size
+    if (patches.get_shape().at(0) == 1) {
+        auto orig_shape = patches.get_shape();
+        ov::Tensor tiled_patches(patches.get_element_type(),
+                                    {config.temporal_patch_size, orig_shape.at(1), orig_shape.at(2), orig_shape.at(3)});
+
+        for (size_t i = 0; i < config.temporal_patch_size; i++) {
+            std::memcpy(
+                tiled_patches.data<float>() + i * patches.get_byte_size() / sizeof(float),
+                patches.data<float>(),
+                patches.get_byte_size()
+            );
+        }
+        patches = std::move(tiled_patches);
+    }
+
+    auto patches_shape = patches.get_shape();
+    size_t channel = patches_shape.at(1);
+
+    size_t grid_t = patches_shape.at(0) / config.temporal_patch_size;
+    size_t grid_h = target_image_size.height / config.patch_size;
+    size_t grid_w = target_image_size.width / config.patch_size;
+
+    ov::Tensor reshaped_patches = qwen2_vl_utils::reshape_image_patches(
+        patches, grid_t, grid_h, grid_w, channel, config.temporal_patch_size, config.patch_size, config.merge_size
+    );
+    ov::Tensor transposed_patches = qwen2_vl_utils::transpose_image_patches(reshaped_patches);
+
+    ov::Shape flattened_patches_shape{
+        grid_t * grid_h * grid_w,
+        channel * config.temporal_patch_size * config.patch_size * config.patch_size
+    };
+    ov::Tensor flattened_patches(transposed_patches.get_element_type(), flattened_patches_shape);
+    std::memcpy(flattened_patches.data(), transposed_patches.data(), transposed_patches.get_byte_size());
+
+    encoder.set_tensor("hidden_states", flattened_patches);
+    encoder.infer();
+
+    const ov::Tensor& infer_output = encoder.get_output_tensor();
+    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
+    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+    ImageSize resized_source_size{grid_h, grid_w};
+    return {std::move(image_features), resized_source_size};
+}
+
+// keep both implementations for comparison and testing, here is the ov version
+EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
@@ -581,6 +667,13 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     ImageSize resized_source_size{grid_h, grid_w};
 
     return {std::move(image_features), resized_source_size};
+}
+
+EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    if (is_use_ov_image_preprocess == false) {
+        return encode_with_imagepreprocess_cpp(image, config_map);
+    }
+    return encode_with_imagepreprocess_ov(image, config_map);
 }
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
