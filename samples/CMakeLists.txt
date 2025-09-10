@@ -2,30 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-if (NOT GENAI_SAMPLES_ARCHIVE_OUTPUT_DIRECTORY)
-    if (CMAKE_ARCHIVE_OUTPUT_DIRECTORY)
-        set (GENAI_SAMPLES_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}/samples/")
-    else()
-        set (GENAI_SAMPLES_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/samples/")
-    endif()
-endif()
-
-if (NOT GENAI_SAMPLES_LIBRARY_OUTPUT_DIRECTORY)
-    if (CMAKE_LIBRARY_OUTPUT_DIRECTORY)
-        set (GENAI_SAMPLES_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/samples/")
-    else()
-        set (GENAI_SAMPLES_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/samples/")
-    endif()
-endif()
-
-if (NOT GENAI_SAMPLES_RUNTIME_OUTPUT_DIRECTORY)
-    if (CMAKE_RUNTIME_OUTPUT_DIRECTORY)
-        set (GENAI_SAMPLES_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/samples/")
-    else()
-        set (GENAI_SAMPLES_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/samples/")
-    endif()
-endif()
-
 function(_add_sample)
     set(options
         ADD_CLANG_FORMAT              # Enables code style checks for the target

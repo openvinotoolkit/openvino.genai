@@ -97,58 +97,6 @@ function(_add_target)
 endfunction()
 
 #[[
-function to create CMake target and setup its options in a declarative style. The target is built into openvino_genai directory.
-Example:
-genai_add_target(
-   NAME core_lib
-   ADD_CLANG_FORMAT
-   TYPE <SHARED / STATIC / EXECUTABLE>
-   ROOT ${CMAKE_CURRENT_SOURCE_DIR}
-   ADDITIONAL_SOURCE_DIRS
-        /some/additional/sources
-   SOURCES
-        /some/specific/source.cpp
-   EXCLUDED_SOURCE_PATHS
-        ${CMAKE_CURRENT_SOURCE_DIR}/unnecessary_sources/
-   INCLUDES
-        ${SDL_INCLUDES}
-        /some/specific/path
-   LINK_LIBRARIES
-        link_dependencies
-   DEPENDENCIES
-        dependencies
-        openvino::important_plugin
-   OBJECT_FILES
-        object libraries
-   DEFINES
-        DEF1 DEF2
-   LINK_FLAGS
-        flag1 flag2
-)
-#]]
-function(genai_add_target)
-    set(options)
-    set(oneValueRequiredArgs
-        NAME # name of target
-        )
-    set(multiValueArgs
-        )
-    cmake_parse_arguments(ARG "${options}" "${oneValueRequiredArgs}" "${multiValueArgs}" ${ARGN} )
-
-    if (NOT ARG_NAME)
-        message(SEND_ERROR "Target name was not specified")
-    endif()
-
-    _add_target(${ARGV})
-
-    set_target_properties(${ARG_NAME} PROPERTIES
-        ARCHIVE_OUTPUT_DIRECTORY "${GENAI_ARCHIVE_OUTPUT_DIRECTORY}"
-        LIBRARY_OUTPUT_DIRECTORY "${GENAI_LIBRARY_OUTPUT_DIRECTORY}"
-        RUNTIME_OUTPUT_DIRECTORY "${GENAI_RUNTIME_OUTPUT_DIRECTORY}"
-    )
-endfunction()
-
-#[[
 function to create CMake target and setup its options in a declarative style. The target is built into tools directory.
 Example:
 genai_add_tool_target(
