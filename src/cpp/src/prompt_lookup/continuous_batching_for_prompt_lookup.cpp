@@ -87,8 +87,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
             // Avoid shape checking and increasing the amount of computation when the shape changes.
             if (candidates.size() < sampling_params.num_assistant_tokens) {
                 if (full_input_ids.size() > 0) {
-                    auto token_sz = candidates.size();
-                    for (int ci = 0; ci < sampling_params.num_assistant_tokens - token_sz; ci++) {
+                    int token_sz = static_cast<int>(candidates.size());
+                    for (int ci = 0; ci < static_cast<int>(sampling_params.num_assistant_tokens) - token_sz; ci++) {
                         // Padding with last token.
                         candidates.push_back(full_input_ids.back());
                     }
