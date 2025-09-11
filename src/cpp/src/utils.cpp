@@ -86,12 +86,15 @@ void update_npu_config(ov::AnyMap& config,
     update_config(config, {"NPUW_LLM_MAX_PROMPT_LEN", kv_desc.max_prompt_len});
     update_config(config, {"NPUW_LLM_MIN_RESPONSE_LEN", kv_desc.min_response_len});
 
-    rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
-    rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
     rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
+    rename_key(config, "SHARED_HEAD_CONFIG", "NPUW_LLM_SHARED_HEAD_CONFIG"); 
+    
+    rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
+    rename_key(config, "++SHARED_HEAD_CONFIG", "++NPUW_LLM_SHARED_HEAD_CONFIG");
 }
 
 inline bool is_paged_attention_available() {
@@ -292,7 +295,7 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
     }
 }
 
-ov::Core singleton_core() {
+ov::Core& singleton_core() {
     static ov::Core core;
     return core;
 }
@@ -470,7 +473,12 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
     for (const auto& cfg : supported_properties) {
         if (cfg == ov::supported_properties)
             continue;
-        auto prop = compiled_Model.get_property(cfg);
+        ov::Any prop;
+        try {
+            prop = compiled_Model.get_property(cfg);
+        } catch (const ov::Exception&) {
+            continue;  // NPU: Unsupported configuration key: EXECUTION_MODE_HINT. Ticket 172485
+        }
         if (cfg == ov::device::properties) {
             auto devices_properties = prop.as<ov::AnyMap>();
             for (auto& item : devices_properties) {
@@ -484,12 +492,17 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
     }
 
-    ov::Core core;
     std::vector<std::string> exeTargets;
     exeTargets = compiled_Model.get_property(ov::execution_devices);
     std::cout << "EXECUTION_DEVICES:" << std::endl;
     for (const auto& device : exeTargets) {
-        std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
+        std::string full_name;
+        try {
+            full_name = singleton_core().get_property(device, ov::device::full_name);
+        } catch (const ov::Exception&) {
+            continue;  // NPU: No available devices. Ticket 172485
+        }
+        std::cout << " " << device << ": " << full_name << std::endl;
     }
 }
 
@@ -645,6 +658,50 @@ void release_core_plugin(const std::string& device) {
         // Note: in a theory it can throw an exception when 2 different pipelines are created from
         // different threads and then both of them unload plugin for 'device' from ov::Core
     }
+}
+
+ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id) {
+    auto text_embeds_shape = text_embeds.get_shape();
+    size_t text_embeds_seq_length = text_embeds_shape[1];
+    size_t hidden_size = text_embeds_shape[2];
+
+    const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    int token_offset = text_embeds_seq_length - 1;
+    auto text_embeds_data = text_embeds.data<float>();
+    const float* text_embeds_end = text_embeds_data + text_embeds_seq_length * hidden_size;
+
+    // Copy in reversed order because a tokenizer may truncate the input removing the prefix.
+    for (auto image_embed_it = image_embeds.rbegin(); image_embed_it != image_embeds.rend(); ++image_embed_it) {
+        for (; token_offset != -1; --token_offset) {
+            if (input_ids_data[token_offset] == image_token_id) {
+                break;
+            }
+        }
+        if (token_offset == -1) {
+            break;
+        }
+        int changed_token_offset = token_offset;
+        for (; changed_token_offset != -1; --changed_token_offset) {
+            if (input_ids_data[changed_token_offset] != image_token_id) {
+                break;
+            }
+        }
+        size_t n_tokens = std::min(image_embed_it->get_shape().at(1), size_t(token_offset - changed_token_offset));
+        size_t n_floats = n_tokens * hidden_size;
+        auto text_embeds_idx = text_embeds_data + (changed_token_offset + 1) * hidden_size;
+        OPENVINO_ASSERT(text_embeds_idx + n_floats <= text_embeds_end);
+        std::copy_n(
+            image_embed_it->data<const float>() + image_embed_it->get_size() - n_floats,
+            n_floats,
+            text_embeds_idx
+        );
+        token_offset -= n_tokens + 1;
+    }
+    // text_embeds is bound to infer request that can be used by another thread after leaving embeddings calculation scope
+    // so we need to return a copy to make sure data does not get corrupted
+    ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+    std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+    return inputs_embeds;
 }
 
 }  // namespace utils

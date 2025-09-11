@@ -16,6 +16,7 @@
 #include "visual_language/llava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
+#include "visual_language/gemma3/classes.hpp"
 
 #include "utils.hpp"
 
@@ -109,7 +110,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
             encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
         } else {
-            encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+            encoded_input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true)).input_ids;
         }
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
@@ -176,6 +177,25 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string&
     return get_inputs_embeds(prompt, encode_images(images), metrics, true, image_sequence);
 }
 
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    ov::genai::VLMPerfMetrics& metrics,
+    const std::vector<size_t>& image_sequence) {
+    return get_inputs_embeds_with_token_type_ids(prompt, encode_images(images), metrics, true, image_sequence);
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
+    const std::string& prompt,
+    const std::vector<EncodedImage>& images,
+    VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence) {
+    OPENVINO_THROW("This model does not support token_type_ids.");
+}
+
+bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
+
 /// Public InputsEmbedder class
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
@@ -199,6 +219,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen2VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN2_5_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
+        m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config); 
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -227,6 +249,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen2VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN2_5_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
+        m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config); 
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -238,6 +262,29 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
 
 ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
     return m_impl->get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    VLMPerfMetrics& metrics,
+    const std::vector<size_t>& image_sequence) {
+    return m_impl->get_inputs_embeds_with_token_type_ids(
+        prompt, images, metrics, image_sequence);
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
+    const std::string& prompt,
+    const std::vector<EncodedImage>& images,
+    VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence) {
+    return m_impl->get_inputs_embeds_with_token_type_ids(
+        prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
+}
+
+bool InputsEmbedder::has_token_type_ids() const {
+    return m_impl->has_token_type_ids();
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {

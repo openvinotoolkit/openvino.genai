@@ -12,8 +12,6 @@
 #include "openvino/core/parallel.hpp"
 #include "openvino/genai/text_streamer.hpp"
 
-#include <jinja2cpp/user_callable.h>
-
 namespace {
 
 template <typename T>

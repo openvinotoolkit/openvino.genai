@@ -42,7 +42,8 @@ def get_ov_cache_dir(temp_dir=TemporaryDirectory()):
         ov_cache = os.path.join(os.environ["OV_CACHE"], date_subfolder)
         try:
             optimum_intel_version = metadata.version("optimum-intel")
-            ov_cache = os.path.join(ov_cache, optimum_intel_version)
+            transformers_version = metadata.version("transformers")
+            ov_cache = os.path.join(ov_cache, f"optimum-intel-{optimum_intel_version}_transformers-{transformers_version}")
         except metadata.PackageNotFoundError:
             pass
     else:

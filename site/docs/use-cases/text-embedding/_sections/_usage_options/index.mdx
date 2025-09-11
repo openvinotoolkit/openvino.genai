@@ -1,0 +1,57 @@
+## Additional Usage Options
+
+:::tip
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/rag) text embedding samples.
+:::
+
+### Pooling Strategies
+
+Text embedding models support different pooling strategies to aggregate token embeddings into a single vector:
+
+- `CLS`: Use the first token embedding (default for many models)
+- `MEAN`: Average all token embeddings
+
+You can set the pooling strategy via the `pooling_type` parameter.
+
+### L2 Normalization
+
+L2 normalization can be applied to the output embeddings for improved retrieval performance. Enable it with the `normalize` parameter.
+
+### Query and Embed Instructions
+
+Some models support special instructions for queries and documents. Use `query_instruction` and `embed_instruction` to provide these if needed.
+
+### Example: Custom Configuration
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+        pipeline = ov_genai.TextEmbeddingPipeline(
+            models_path,
+            "CPU",
+            pooling_type=ov_genai.TextEmbeddingPipeline.PoolingType.MEAN,
+            normalize=True,
+            query_instruction="Represent this sentence for searching relevant passages: ",
+            embed_instruction="Represent this passage for retrieval: "
+        )
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include "openvino/genai/rag/text_embedding_pipeline.hpp"
+        ov::genai::TextEmbeddingPipeline pipeline(
+            models_path,
+            "CPU",
+            ov::genai::pooling_type(ov::genai::TextEmbeddingPipeline::PoolingType::MEAN),
+            ov::genai::normalize(true),
+            ov::genai::query_instruction("Represent this sentence for searching relevant passages: "),
+            ov::genai::embed_instruction("Represent this passage for retrieval: ")
+        );
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+:::info
+For the full list of configuration options, see the [TextEmbeddingPipeline API Reference](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.TextEmbeddingPipeline.html).
+:::

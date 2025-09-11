@@ -4,27 +4,37 @@
 
 include(FetchContent)
 
-FetchContent_Declare(
-    pybind11
-    URL https://github.com/pybind/pybind11/archive/refs/tags/v3.0.0.tar.gz
-    URL_HASH SHA256=453b1a3e2b266c3ae9da872411cadb6d693ac18063bd73226d96cfb7015a200c
-)
-FetchContent_GetProperties(pybind11)
-# search for FindPython3.cmake instead of legacy modules
-set(PYBIND11_FINDPYTHON ON)
-
-if(NOT pybind11_POPULATED)
-    FetchContent_Populate(pybind11)
-    add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
+# OpenVINO uses pybind11, and they can conflict.
+if (NOT TARGET pybind11::pybind11)
+    FetchContent_Declare(
+        pybind11
+        URL https://github.com/pybind/pybind11/archive/refs/tags/v3.0.0.tar.gz
+        URL_HASH SHA256=453b1a3e2b266c3ae9da872411cadb6d693ac18063bd73226d96cfb7015a200c
+    )
+    FetchContent_GetProperties(pybind11)
+    
+    # search for FindPython3.cmake instead of legacy modules
+    set(PYBIND11_FINDPYTHON ON)
+    
+    if(NOT pybind11_POPULATED)
+        FetchContent_Populate(pybind11)
+        add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
+    endif()
+else()
+    message(STATUS "Reusing outer project's pybind11 target")
 endif()
 
 file(GLOB python_sources "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 set(TARGET_NAME py_openvino_genai)
 pybind11_add_module(${TARGET_NAME} ${python_sources})
+if(NOT ENABLE_GIL_PYTHON_API)
+    # disable GIL for free-threaded python build
+    target_compile_definitions(${TARGET_NAME} PRIVATE Py_GIL_DISABLED=1)
+endif()
 
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai)
-target_include_directories(${TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src") # for tokenizer/tokenizers_path.hpp
+target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.." "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src") # for tokenizer/tokenizers_path.hpp
 set_target_properties(${TARGET_NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"

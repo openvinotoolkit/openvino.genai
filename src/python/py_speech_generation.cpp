@@ -91,8 +91,6 @@ SpeechGenerationConfig update_speech_generation_config_from_kwargs(const SpeechG
 }  // namespace
 
 void init_speech_generation_pipeline(py::module_& m) {
-    m.doc() = "Pybind11 binding for Text-to-speech Pipeline";
-
     // Binding for SpeechGenerationConfig
     py::class_<SpeechGenerationConfig, GenerationConfig>(m,
                                                          "SpeechGenerationConfig",

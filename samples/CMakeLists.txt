@@ -2,15 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-add_subdirectory(cpp/text_generation)
-add_subdirectory(cpp/image_generation)
-add_subdirectory(cpp/video_generation)
-add_subdirectory(cpp/speech_generation)
-add_subdirectory(cpp/visual_language_chat)
-add_subdirectory(cpp/whisper_speech_recognition)
-add_subdirectory(cpp/rag)
-add_subdirectory(c/text_generation)
-add_subdirectory(c/whisper_speech_recognition)
+if(ENABLE_SAMPLES)
+    add_subdirectory(cpp/text_generation)
+    add_subdirectory(cpp/image_generation)
+    add_subdirectory(cpp/video_generation)
+    add_subdirectory(cpp/speech_generation)
+    add_subdirectory(cpp/visual_language_chat)
+    add_subdirectory(cpp/whisper_speech_recognition)
+    add_subdirectory(cpp/rag)
+    add_subdirectory(c/text_generation)
+    add_subdirectory(c/whisper_speech_recognition)
+endif()
 
 install(FILES
         deployment-requirements.txt
