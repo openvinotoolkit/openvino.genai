@@ -23,6 +23,7 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
     }
 
     const size_t input_length = input_ids.size();
+    max_ngram_size = std::min(max_ngram_size, input_length);
 
     for (int32_t ngram_size = max_ngram_size; ngram_size > 0; ngram_size--) {
         // extract last ngram_size tokens as search ngram
@@ -31,7 +32,7 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
         // find ngram match in input_ids
         size_t ngram_i = 0;
         for (int32_t input_i = 0; input_i < static_cast<int32_t>(input_length) - ngram_size; input_i++) {
-            if (ngram[ngram_i] != input_ids[input_i]) {
+            if (!std::equal(ngram.begin() + ngram_i, ngram.end(), input_ids.begin() + input_i)) {
                 ngram_i = 0;
                 continue;
             }
