@@ -22,6 +22,13 @@ class TestPromptLookupDecodingLM:
         "convert_model, sample_args",
         [
             pytest.param("Qwen2.5-0.5B-Instruct", test_prompt),
+            pytest.param("Qwen2.5-0.5B-Instruct-GGUF", test_prompt, marks=pytest.mark.skipif(
+                sys.platform in ("win32", "darwin"),
+                reason=(
+                    "doesn't work on win due to CVS-173467,"
+                    "AssertionError on mac due to CVS-173468"
+                ),
+            )),
         ],
         indirect=["convert_model"],
     )

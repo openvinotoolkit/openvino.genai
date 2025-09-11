@@ -732,6 +732,9 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      # The debug logging includes messages about the time it takes to read the GGUF model.
+      # These messages differ from run to run, so we cannot compare the results of the CPP, Python, and JavaScript parts.
+      OPENVINO_LOG_LEVEL: 1
 
     steps:
       - name: Clone openvino.genai
