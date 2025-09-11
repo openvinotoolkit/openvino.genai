@@ -61,15 +61,24 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
 @pytest.mark.parametrize("enable_save_ov_model", [False, True])
+@pytest.mark.parametrize("prompt", [
+    'Why is the Sun yellow?', 
+    # To check that special tokens are handled correctly.
+    '<|endoftext|> <|im_end|>', 
+    '<|endoftext|><|endoftext|><|im_end|>', 
+    '<|endoftext|> Why the Sky is Blue? <|im_end|>',
+])
 @pytest.mark.precommit
-def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
+def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model, prompt):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
     dynamic_quantization_group_size = model_ids["dynamic_quantization_group_size"]
-    prompt = 'Why is the Sun yellow?'
 
+    if gguf_model_id == "sammysun0711/tiny-random-deepseek-distill-qwen-gguf" and "<|endoftext|>" in prompt:
+        pytest.skip(reason="Prompts to test special tokens for this model fail on HF side")
+    
     opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
     hf_tokenizer = load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename)
     gc.collect()
@@ -97,6 +106,11 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model):
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
+    
+    # Check that eos_token, bos_token string representations are loaded correctly from gguf file
+    assert ov_pipe_gguf.get_tokenizer().get_eos_token() == hf_tokenizer.decode([ov_pipe_gguf.get_tokenizer().get_eos_token_id()])
+    assert ov_pipe_gguf.get_tokenizer().get_bos_token() == hf_tokenizer.decode([ov_pipe_gguf.get_tokenizer().get_bos_token_id()])
+
     del ov_pipe_gguf
     gc.collect()
 
@@ -129,7 +143,7 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # <think>\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color.
     # Prompt after applying chat template is identical between HF and GenAI, so the issue is not in chat template.
     # TODO: Investigate output difference for GGUF models. Ticket: TBD
-    res_string_input_1 = "</im_start>\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color."
+    res_string_input_1 = "\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color. I remember"
 
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
