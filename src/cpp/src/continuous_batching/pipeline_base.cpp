@@ -166,11 +166,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     const auto& generation_config = sampling_params[0];
     // Set visual token pruning configuration
-    m_inputs_embedder->set_visual_token_pruning_config(generation_config.visual_tokens_retain_percentage,
+    m_inputs_embedder->set_visual_token_pruning_config(generation_config.pruning_ratio,
                                                        generation_config.relevance_weight,
-                                                       generation_config.enable_pruning,
-                                                       generation_config.pruning_debug_mode,
-                                                       generation_config.use_ops_model);
+                                                       generation_config.pruning_debug_mode);
 
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");

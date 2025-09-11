@@ -42,10 +42,8 @@ def main():
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
-    parser.add_argument("--enable_pruning", action="store_true", default=False, help="Enable pruning for the model")
-    parser.add_argument("--visual_tokens_retain_percentage", type=int, help="Percentage of visual tokens to keep during pruning")
+    parser.add_argument("--pruning_ratio", type=int, default=0, help="Percentage of visual tokens to prune (0 to disable)")
     parser.add_argument("--pruning_debug_mode", action="store_true", help="Enable debugging mode for pruning")
-    parser.add_argument("--pruning_use_ops", action="store_true", default=False, help="Use OpenVINO ops for pruning computation")
     parser.add_argument("--relevance_weight", type=float, help="Relevance weight for the model")
 
     args = parser.parse_args()
@@ -73,20 +71,14 @@ def main():
 
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
-    config.enable_pruning = args.enable_pruning
-    print(f'CDPruner config: Enable pruning - {config.enable_pruning}')
-    if config.enable_pruning:
-        if args.visual_tokens_retain_percentage is not None:
-            config.visual_tokens_retain_percentage = args.visual_tokens_retain_percentage
+    config.pruning_ratio = args.pruning_ratio if args.pruning_ratio is not None else 0
+    print(f'CDPruner config: Pruning ratio - {config.pruning_ratio}% (0 means disabled)')
+    if config.pruning_ratio > 0:
         if args.relevance_weight is not None:
             config.relevance_weight = args.relevance_weight
         if args.pruning_debug_mode:
             config.pruning_debug_mode = args.pruning_debug_mode
-        if args.pruning_use_ops:
-            config.use_ops_model = args.pruning_use_ops
-        print(f'CDPruner config: Percentage of visual tokens to keep - {config.visual_tokens_retain_percentage}%')
         print(f'CDPruner config: Pruning debug mode - {config.pruning_debug_mode}')
-        print(f'CDPruner config: Use OpenVINO ops - {config.use_ops_model}')
 
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)

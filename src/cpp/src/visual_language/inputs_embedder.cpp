@@ -336,16 +336,12 @@ void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
 }
 
-void InputsEmbedder::set_visual_token_pruning_config(size_t visual_tokens_retain_percentage,
+void InputsEmbedder::set_visual_token_pruning_config(size_t pruning_ratio,
                                                      float relevance_weight,
-                                                     bool enable_pruning,
-                                                     bool pruning_debug_mode,
-                                                     bool use_ops_model) {
-    return m_impl->set_visual_token_pruning_config(visual_tokens_retain_percentage,
+                                                     bool pruning_debug_mode) {
+    return m_impl->set_visual_token_pruning_config(pruning_ratio,
                                                    relevance_weight,
-                                                   enable_pruning,
-                                                   pruning_debug_mode,
-                                                   use_ops_model);
+                                                   pruning_debug_mode);
 }
 
 std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(

@@ -20,10 +20,8 @@ int main(int argc, char* argv[]) try {
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("cdp,enable_cdpruner", "Enable CDPruner for visual token pruning", cxxopts::value<bool>()->default_value("false"))
-    ("vtrp,visual_tokens_retain_percentage", "Percentage of visual tokens to retain when CDPruner is enabled", cxxopts::value<size_t>()->default_value("30"))
+    ("pr,pruning_ratio", "Percentage of visual tokens to prune when CDPruner is enabled", cxxopts::value<size_t>()->default_value("50"))
     ("pdm,pruning_debug_mode", "Enable pruning debug mode", cxxopts::value<bool>()->default_value("false"))
-    ("uom,use_ops_model", "Use OpenVINO ops model for CDPruner computation", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -61,28 +59,19 @@ int main(int argc, char* argv[]) try {
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
-    bool enable_cdpruner = result["enable_cdpruner"].as<bool>();
-    size_t visual_tokens_retain_percentage = result["visual_tokens_retain_percentage"].as<size_t>();
+    size_t pruning_ratio = result["pruning_ratio"].as<size_t>();
     bool pruning_debug_mode = result["pruning_debug_mode"].as<bool>();
-    bool use_ops_model = result["use_ops_model"].as<bool>();
     std::vector<ov::Tensor> images = utils::load_images(image_path);
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
     config.ignore_eos = true;
     
+    config.pruning_ratio = pruning_ratio;
     // Configure CDPruner if requested
-    if (enable_cdpruner) {
-        std::cout << "[CDPruner] Enabling CDPruner with keeping " << visual_tokens_retain_percentage << "% visual tokens" << std::endl;
-        config.enable_pruning = enable_cdpruner;
-        config.visual_tokens_retain_percentage = visual_tokens_retain_percentage;
+    if (pruning_ratio > 0 && pruning_ratio < 100) {
+        std::cout << "[CDPruner] Enabling CDPruner with pruning ratio " << pruning_ratio << "% visual tokens" << std::endl;
         config.pruning_debug_mode = pruning_debug_mode;
-        config.use_ops_model = use_ops_model;
-        if (use_ops_model) {
-            std::cout << "[CDPruner] Using OpenVINO ops model for CDPruner computation" << std::endl;
-        } else {
-            std::cout << "[CDPruner] Using traditional step-by-step computation for CDPruner" << std::endl;
-        }
     }
 
     ov::genai::SchedulerConfig scheduler_config;
@@ -93,7 +82,7 @@ int main(int argc, char* argv[]) try {
 
     // Setup cache configuration for CDPruner if needed
     ov::AnyMap properties = {};
-    if (enable_cdpruner) {
+    if (pruning_ratio > 0 && pruning_ratio < 100) {
         properties.insert({"ATTENTION_BACKEND", "PA"});
         std::cout << "[CDPruner] Setting ATTENTION_BACKEND to PA for CDPruner" << std::endl;
     }

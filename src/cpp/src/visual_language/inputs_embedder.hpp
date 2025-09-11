@@ -76,11 +76,9 @@ public:
     void finish_chat();
 
     // set CDPruner setting
-    virtual void set_visual_token_pruning_config(size_t visual_tokens_retain_percentage,
+    virtual void set_visual_token_pruning_config(size_t pruning_ratio,
                                                  float relevance_weight,
-                                                 bool enable_pruning,
-                                                 bool pruning_debug_mode = false,
-                                                 bool use_ops_model = false);
+                                                 bool pruning_debug_mode = false);
     virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
         const std::string& prompt,
         size_t base_id,
@@ -139,20 +137,16 @@ private:
             return m_tokenizer;
         }
 
-        virtual void set_visual_token_pruning_config(size_t visual_tokens_retain_percentage,
+        virtual void set_visual_token_pruning_config(size_t pruning_ratio,
                                                      float relevance_weight,
-                                                     bool enable_pruning,
-                                                     bool pruning_debug_mode,
-                                                     bool use_ops_model = false) {
+                                                     bool pruning_debug_mode) {
             if (!m_vision_encoder)
                 return;
             auto pruner_config = m_vision_encoder->get_pruning_config();
             if (pruner_config.has_value()) {
-                pruner_config->visual_tokens_retain_percentage = visual_tokens_retain_percentage;
+                pruner_config->pruning_ratio = pruning_ratio;
                 pruner_config->relevance_weight = relevance_weight;
-                pruner_config->enable_pruning = enable_pruning;
                 pruner_config->pruning_debug_mode = pruning_debug_mode;
-                pruner_config->use_ops_model = use_ops_model;
             }
             m_vision_encoder->set_pruning_config(pruner_config.value());
         }

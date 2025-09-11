@@ -10,17 +10,15 @@ bool print_subword(std::string&& subword) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (3 > argc || argc > 8) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE> [<DEVICE>] [<ENABLE_CDPRUNER>] [<VISUAL_RETAIN_TOKENS_PERCENTAGE>] [<PRUNING_DEBUG_MODE>] [<USE_OPS_MODEL>]");
+    if (3 > argc || argc > 6) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE> [<DEVICE>] [<PRUNING_RATIO>] [<PRUNING_DEBUG_MODE>]");
     }
 
     std::string model_dir = argv[1];
     std::string image_file = argv[2];
     std::string device = argc > 3 ? argv[3] : "CPU";
-    bool enable_cdpruner = argc > 4 ? (std::string(argv[4]) == "true" || std::string(argv[4]) == "1") : false;
-    size_t visual_tokens_retain_percentage = argc > 5 ? std::stoul(argv[5]) : 30;
-    bool pruning_debug_mode = argc > 6 ? (std::string(argv[6]) == "true" || std::string(argv[6]) == "1") : false;
-    bool use_ops_model = argc > 7 ? (std::string(argv[7]) == "true" || std::string(argv[7]) == "1") : false;
+    size_t pruning_ratio = argc > 4 ? std::stoul(argv[4]) : 0;  // 0 means disabled
+    bool pruning_debug_mode = argc > 5 ? (std::string(argv[5]) == "true" || std::string(argv[5]) == "1") : false;
 
     std::vector<ov::Tensor> rgbs = utils::load_images(image_file);
 
@@ -31,7 +29,7 @@ int main(int argc, char* argv[]) try {
         enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
     }
 
-    if (enable_cdpruner) {
+    if (pruning_ratio > 0) {
         enable_compile_cache.insert({"ATTENTION_BACKEND", "PA"});
         std::cout << "[CDPruner] Setting ATTENTION_BACKEND to PA" << std::endl;
     }
@@ -41,16 +39,11 @@ int main(int argc, char* argv[]) try {
     
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
+    generation_config.pruning_ratio = pruning_ratio;
     // Configure CDPruner if requested
-    if (enable_cdpruner) {
-        std::cout << "[CDPruner] Enabling CDPruner with keeping " << visual_tokens_retain_percentage << "% visual tokens" << std::endl;
-        generation_config.enable_pruning = enable_cdpruner;
-        generation_config.visual_tokens_retain_percentage = visual_tokens_retain_percentage;
+    if (pruning_ratio > 0) {
+        std::cout << "[CDPruner] Enabling CDPruner with " << pruning_ratio << "% visual token pruning" << std::endl;
         generation_config.pruning_debug_mode = pruning_debug_mode;
-        generation_config.use_ops_model = use_ops_model;
-        if (use_ops_model) {
-            std::cout << "[CDPruner] Using OpenVINO ops model for CDPruner computation" << std::endl;
-        }
     }
 
     std::string prompt;

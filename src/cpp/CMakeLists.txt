@@ -9,6 +9,19 @@ list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
 
 include(FetchContent)
 
+# OpenCL support for CDPruner DPP acceleration - reuse OpenVINO's ENABLE_SYSTEM_OPENCL
+if(ENABLE_SYSTEM_OPENCL)
+    # Try to find OpenCL since ENABLE_SYSTEM_OPENCL is ON
+    find_package(OpenCL QUIET)
+    if(TARGET OpenCL::OpenCL)
+        message(STATUS "OpenCL found via OpenVINO configuration - enabling CDPruner DPP acceleration")
+    else()
+        message(STATUS "ENABLE_SYSTEM_OPENCL is ON but OpenCL::OpenCL target not found - CDPruner will use CPU-only DPP")
+    endif()
+else()
+    message(STATUS "ENABLE_SYSTEM_OPENCL is OFF - CDPruner will use CPU-only DPP implementation")
+endif()
+
 if(NOT TARGET nlohmann_json)
     FetchContent_Declare(nlohmann_json
         URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
@@ -143,6 +156,12 @@ target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SO
 
 target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json minja)
 
+# Add OpenCL support if enabled via OpenVINO configuration
+if(ENABLE_SYSTEM_OPENCL AND TARGET OpenCL::OpenCL)
+    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_OPENCL_DPP)
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE OpenCL::OpenCL)
+endif()
+
 target_compile_features(${TARGET_NAME_OBJ} PRIVATE cxx_std_17)
 
 target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE openvino_genai_EXPORTS)
@@ -178,6 +197,11 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json minja ${CMAKE_DL_LIBS})
+
+# Add OpenCL support if enabled via OpenVINO configuration
+if(ENABLE_SYSTEM_OPENCL AND TARGET OpenCL::OpenCL)
+    target_link_libraries(${TARGET_NAME} PRIVATE OpenCL::OpenCL)
+endif()
 
 if(ENABLE_XGRAMMAR)
     target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)

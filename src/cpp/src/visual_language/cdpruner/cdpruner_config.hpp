@@ -12,13 +12,10 @@ namespace ov::genai::cdpruner {
 /// @brief Configuration structure for CDPruner algorithm
 struct Config {
     /// @brief Percentage of visual tokens to retain after pruning (0-100)
-    size_t visual_tokens_retain_percentage = 50;
-    
+    size_t pruning_ratio = 50;
+
     /// @brief Weight for balancing relevance vs diversity (0.0 to 1.0)
     float relevance_weight = 0.5f;
-    
-    /// @brief Whether to enable pruning functionality
-    bool enable_pruning = true;
     
     /// @brief Device to run CDPruner computations on
     std::string device = "CPU";
@@ -33,19 +30,29 @@ struct Config {
     /// This is needed for CLIP-based models (like LLaVA) due to counterintuitive similarity values
     bool use_negative_relevance = false;
 
-    /// @brief Whether to use OpenVINO ops model for computation
-    /// When true, uses integrated OpenVINO ops model for relevance and kernel computation
-    /// When false, uses traditional step-by-step computation pipeline
-    bool use_ops_model = false;
+    /// @brief Whether to use OpenCL kernel for DPP computation
+    /// When true, uses OpenCL GPU acceleration for DPP selection
+    /// When false, uses traditional CPU-based DPP algorithm
+    bool use_cl_kernel = true;
+
+    /// @brief OpenCL kernel file path for DPP computation
+    /// Only used when use_cl_kernel is true
+    std::string cl_kernel_path = "/home/ywang2/openvino.genai/src/cpp/src/visual_language/cdpruner/dpp_kernel_split.cl";
+    
+    /// @brief Threshold for splitting large kernel matrices (internal use only)
+    /// When visual tokens exceed this threshold, the kernel matrix will be split
+    /// for parallel processing. This parameter is not exposed in public API.
+    size_t split_threshold = 2000;
+    
     /// @brief Compare two Config structures for equality
     /// @param other The other Config to compare with
     /// @return true if all configuration parameters are equal, false otherwise
     bool operator==(const Config& other) const {
-        return visual_tokens_retain_percentage == other.visual_tokens_retain_percentage &&
-               std::abs(relevance_weight - other.relevance_weight) < 1e-6f && enable_pruning == other.enable_pruning &&
+        return pruning_ratio == other.pruning_ratio &&
+               std::abs(relevance_weight - other.relevance_weight) < 1e-6f &&
                device == other.device && pruning_debug_mode == other.pruning_debug_mode &&
                std::abs(numerical_threshold - other.numerical_threshold) < 1e-9f &&
-               use_negative_relevance == other.use_negative_relevance && use_ops_model == other.use_ops_model;
+               use_negative_relevance == other.use_negative_relevance;
     }
 
     /// @brief Compare two Config structures for inequality

@@ -9,6 +9,16 @@
 #include <stdexcept>
 #include <iostream>
 #include <iomanip>
+#include <fstream>
+#include <sstream>
+#include <cstring>
+#include <future>
+#include <chrono>
+
+#ifdef ENABLE_OPENCL_DPP
+#include <map>
+#include <memory>
+#endif
 
 // SIMD headers
 #ifdef _MSC_VER
@@ -96,35 +106,274 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel,
     if (shape[1] != shape[2]) {
         throw std::invalid_argument("Kernel matrix must be square [B, N, N]");
     }
-    
+
     if (num_tokens > total_tokens) {
-        throw std::invalid_argument("Cannot select more tokens than available");
+        throw std::invalid_argument("Cannot select more tokens [" + std::to_string(num_tokens) + "] than available [" +
+                                    std::to_string(total_tokens) + "]");
     }
-    
-    // Debug output: report which SIMD instruction set is being used
-    {
-        static bool simd_logged = false;
-        if (!simd_logged) {
-#ifdef __AVX__
-            std::cout << "[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)" << std::endl;
-#elif defined(__SSE2__)
-            std::cout << "[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)" << std::endl;
-#else
-            std::cout << "[CDPruner] Using scalar operations (no SIMD acceleration)" << std::endl;
-#endif
-            simd_logged = true;
+
+#ifdef ENABLE_OPENCL_DPP
+    // Try OpenCL GPU acceleration if enabled and available
+    if (m_config.use_cl_kernel) {
+        // Initialize OpenCL DPP if not already done
+        if (!m_opencl_dpp) {
+            m_opencl_dpp = std::make_unique<OpenCLDPP>(m_config);
+        }
+        
+        // Use OpenCL if available
+        if (m_opencl_dpp && m_opencl_dpp->is_available()) {
+            return select_opencl_internal(kernel, num_tokens);
+        } else {
+            if (m_config.pruning_debug_mode) {
+                std::cout << "[FastGreedyDPP] OpenCL not available, falling back to CPU implementation" << std::endl;
+            }
         }
     }
+#endif
     
-    std::vector<std::vector<size_t>> batch_results(batch_size);
+    // Use CPU implementation
+    return select_cpu_internal(kernel, num_tokens);
+}
+
+// Parallel DPP selection on two kernel matrices 
+std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel_matrix_first, 
+                                                       const ov::Tensor& kernel_matrix_second,
+                                                       size_t num_tokens_to_keep,
+                                                       size_t split_point) {
     
-    // Process each batch independently
-    for (size_t b = 0; b < batch_size; ++b) {
-        batch_results[b] = select_single_batch(kernel, b, num_tokens);
+    // Distribute tokens to keep between both halves
+    size_t tokens_first_half = num_tokens_to_keep / 2;
+    size_t tokens_second_half = num_tokens_to_keep - tokens_first_half;
+    
+    if (m_config.pruning_debug_mode) {
+        std::cout << "[FastGreedyDPP] Step 3: Selecting tokens using parallel DPP..." << std::endl;
+        std::cout << "[FastGreedyDPP]   Selecting " << tokens_first_half << " tokens from first half, "
+                  << tokens_second_half << " tokens from second half in parallel" << std::endl;
+    }
+#ifdef ENABLE_OPENCL_DPP
+    // Check if OpenCL DPP is enabled and available
+    if (m_config.use_cl_kernel) {
+        return select_parallel_opencl(kernel_matrix_first, kernel_matrix_second,
+                                     tokens_first_half, tokens_second_half, split_point);
+    }
+#endif
+    // Fallback to parallel CPU processing
+    return this->select_parallel_cpu(kernel_matrix_first, kernel_matrix_second,
+                                    tokens_first_half, tokens_second_half, split_point);
+}
+
+// Parallel CPU DPP selection on split matrices
+std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_cpu(const ov::Tensor& kernel_matrix_first,
+                                                                    const ov::Tensor& kernel_matrix_second,
+                                                                    size_t tokens_first_half,
+                                                                    size_t tokens_second_half,
+                                                                    size_t split_point) {
+    if (m_config.pruning_debug_mode) {
+        std::cout << "[FastGreedyDPP] Using parallel CPU DPP processing..." << std::endl;
+    }
+    
+    // Launch parallel tasks for DPP selection
+    std::future<std::vector<std::vector<size_t>>> dpp_first_future = std::async(std::launch::async, [&]() {
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[FastGreedyDPP] Thread 1: DPP selection for first half..." << std::endl;
+        }
+        return this->select_cpu_internal(kernel_matrix_first, tokens_first_half);
+    });
+    
+    std::future<std::vector<std::vector<size_t>>> dpp_second_future = std::async(std::launch::async, [&]() {
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[FastGreedyDPP] Thread 2: DPP selection for second half..." << std::endl;
+        }
+        return this->select_cpu_internal(kernel_matrix_second, tokens_second_half);
+    });
+    
+    // Wait for both DPP selections to complete
+    auto selected_first_batches = dpp_first_future.get();
+    auto selected_second_batches = dpp_second_future.get();
+    
+    // Process all batches, not just the first one
+    std::vector<std::vector<size_t>> batch_results;
+    
+    // Ensure both have same number of batches
+    size_t num_batches = std::min(selected_first_batches.size(), selected_second_batches.size());
+    batch_results.reserve(num_batches);
+    
+    for (size_t batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
+        const auto& selected_first = selected_first_batches[batch_idx];
+        const auto& selected_second = selected_second_batches[batch_idx];
+        
+        std::vector<size_t> merged_selection;
+        merged_selection.reserve(selected_first.size() + selected_second.size());
+        
+        // Add first half selections (indices unchanged)
+        for (size_t idx : selected_first) {
+            merged_selection.push_back(idx);
+        }
+        
+        // Add second half selections (adjust indices by split_point)
+        for (size_t idx : selected_second) {
+            merged_selection.push_back(idx + split_point);
+        }
+        
+        // Sort final result to maintain order
+        std::sort(merged_selection.begin(), merged_selection.end());
+        
+        batch_results.push_back(std::move(merged_selection));
     }
     
     return batch_results;
 }
+
+#ifdef ENABLE_OPENCL_DPP
+// Parallel OpenCL DPP selection on split matrices
+std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov::Tensor& kernel_matrix_first,
+                                                                       const ov::Tensor& kernel_matrix_second,
+                                                                       size_t tokens_first_half,
+                                                                       size_t tokens_second_half,
+                                                                       size_t split_point) {
+    if (m_config.pruning_debug_mode) {
+        std::cout << "[FastGreedyDPP] Using OpenCL DPP for merged batch processing..." << std::endl;
+    }
+    
+    // Initialize OpenCL DPP if not already done
+    if (!m_opencl_dpp) {
+        m_opencl_dpp = std::make_unique<OpenCLDPP>(m_config);
+    }
+    
+    // Verify OpenCL is available
+    if (!m_opencl_dpp || !m_opencl_dpp->is_available()) {
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[FastGreedyDPP] OpenCL not available, falling back to CPU parallel processing" << std::endl;
+        }
+        return select_parallel_cpu(kernel_matrix_first, kernel_matrix_second, 
+                                  tokens_first_half, tokens_second_half, split_point);
+    }
+    
+    // Get tensor shapes: [B, tokens/2, tokens/2]
+    auto first_shape = kernel_matrix_first.get_shape();
+    auto second_shape = kernel_matrix_second.get_shape();
+    
+    // Verify shapes are compatible
+    if (first_shape.size() != 3 || second_shape.size() != 3) {
+        throw std::invalid_argument("Input kernel matrices must be 3D tensors with shape [B, tokens, tokens]");
+    }
+    if (first_shape[1] != first_shape[2] || second_shape[1] != second_shape[2]) {
+        throw std::invalid_argument("Kernel matrices must be square");
+    }
+    if (first_shape[0] != second_shape[0]) {
+        throw std::invalid_argument("Kernel matrices must have the same batch size");
+    }
+    
+    size_t original_batch_size = first_shape[0];
+    size_t first_tokens = first_shape[1];
+    size_t second_tokens = second_shape[1];
+    size_t num_tokens_to_keep = tokens_first_half + tokens_second_half;
+    ov::Tensor merged_kernel;
+    
+    // Check if both matrices have the same token size
+    if (first_tokens == second_tokens) {
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[FastGreedyDPP] Matrices have same token size, creating merged tensor..." << std::endl;
+        }
+        
+        // Create merged tensor with shape [original_batch_size, 2, tokens, tokens]
+        merged_kernel = ov::Tensor(ov::element::f32, {original_batch_size, 2, first_tokens, first_tokens});
+        float* merged_data = merged_kernel.data<float>();
+        
+        const float* first_data = kernel_matrix_first.data<const float>();
+        const float* second_data = kernel_matrix_second.data<const float>();
+        
+        size_t matrix_size = first_tokens * first_tokens;
+        size_t matrix_size_bytes = matrix_size * sizeof(float);
+        
+        // Copy data for each original batch
+        for (size_t b = 0; b < original_batch_size; ++b) {
+            // Copy first half: merged[b][0] = first[b]
+            size_t first_src_offset = b * matrix_size;
+            size_t first_dst_offset = b * 2 * matrix_size + 0 * matrix_size;
+            std::memcpy(merged_data + first_dst_offset, first_data + first_src_offset, matrix_size_bytes);
+            
+            // Copy second half: merged[b][1] = second[b]
+            size_t second_src_offset = b * matrix_size;
+            size_t second_dst_offset = b * 2 * matrix_size + 1 * matrix_size;
+            std::memcpy(merged_data + second_dst_offset, second_data + second_src_offset, matrix_size_bytes);
+        }
+        
+    } else {
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[FastGreedyDPP] Matrices have different token sizes, padding to max size..." << std::endl;
+        }
+        
+        // Create merged tensor with padding for different sizes
+        size_t max_tokens = std::max(first_tokens, second_tokens);
+        merged_kernel = ov::Tensor(ov::element::f32, {original_batch_size, 2, max_tokens, max_tokens});
+        float* merged_data = merged_kernel.data<float>();
+        
+        // Initialize with zeros
+        std::memset(merged_data, 0, merged_kernel.get_byte_size());
+        
+        const float* first_data = kernel_matrix_first.data<const float>();
+        const float* second_data = kernel_matrix_second.data<const float>();
+        
+        // Copy data for each original batch with padding
+        for (size_t b = 0; b < original_batch_size; ++b) {
+            // Copy first matrix with padding
+            for (size_t i = 0; i < first_tokens; ++i) {
+                size_t src_offset = b * first_tokens * first_tokens + i * first_tokens;
+                size_t dst_offset = b * 2 * max_tokens * max_tokens + 0 * max_tokens * max_tokens + i * max_tokens;
+                std::memcpy(merged_data + dst_offset, first_data + src_offset, first_tokens * sizeof(float));
+            }
+            
+            // Copy second matrix with padding
+            for (size_t i = 0; i < second_tokens; ++i) {
+                size_t src_offset = b * second_tokens * second_tokens + i * second_tokens;
+                size_t dst_offset = b * 2 * max_tokens * max_tokens + 1 * max_tokens * max_tokens + i * max_tokens;
+                std::memcpy(merged_data + dst_offset, second_data + src_offset, second_tokens * sizeof(float));
+            }
+        }
+    }
+    
+    // Use DPP selector with merged tensor
+    // Process each batch individually
+    std::vector<std::vector<size_t>> batch_results;
+    batch_results.reserve(original_batch_size);
+    
+    // The merged_kernel has shape [original_batch_size, 2, max_tokens, max_tokens] representing two halves
+    // Extract each batch and process separately
+    size_t max_tokens = (first_tokens == second_tokens) ? first_tokens : std::max(first_tokens, second_tokens);
+    const float* merged_data = merged_kernel.data<const float>();
+    for (size_t batch_idx = 0; batch_idx < original_batch_size; ++batch_idx) {
+        // Extract single batch matrix with shape [2, max_tokens, max_tokens]
+        ov::Tensor single_batch_kernel(ov::element::f32, {2, max_tokens, max_tokens});
+        float* single_batch_data = single_batch_kernel.data<float>();
+        
+        // Copy data for this batch: [2, max_tokens, max_tokens]
+        size_t batch_matrix_size = 2 * max_tokens * max_tokens;
+        size_t batch_offset = batch_idx * batch_matrix_size;
+        std::memcpy(single_batch_data, merged_data + batch_offset, batch_matrix_size * sizeof(float));
+        
+        // Call select_opencl_internal with single batch matrix
+        auto selected_tokens= m_opencl_dpp->select(single_batch_kernel, num_tokens_to_keep);
+
+        std::vector<size_t> merged_selection;
+
+        // convert splited selected_batches to merged_selection
+        for (int idx = 0; idx < selected_tokens.size(); ++idx) {
+            if (idx < num_tokens_to_keep / 2) {
+                merged_selection.push_back(selected_tokens[idx]);
+            } else {
+                merged_selection.push_back(selected_tokens[idx] + split_point);
+            }
+        }
+        
+        // Sort final result to maintain order
+        std::sort(merged_selection.begin(), merged_selection.end());
+        batch_results.push_back(std::move(merged_selection));
+    }
+    
+    return batch_results;
+}
+#endif
 
 std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel, size_t batch_idx, size_t num_tokens) {
     auto shape = kernel.get_shape();
@@ -228,11 +477,75 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
         di2s_data[best_idx] = -std::numeric_limits<float>::infinity();
     }
     
-    // Sort the selected indices for deterministic output
-    std::sort(selected_indices.begin(), selected_indices.end());
-    
     return selected_indices;
 }
+
+// Internal CPU-only DPP selection (no OpenCL checks)
+std::vector<std::vector<size_t>> FastGreedyDPP::select_cpu_internal(const ov::Tensor& kernel, size_t num_tokens) {
+    auto shape = kernel.get_shape();
+    size_t batch_size = shape[0];
+    
+    // Debug output: report which SIMD instruction set is being used
+    {
+        static bool simd_logged = false;
+        if (!simd_logged) {
+#ifdef __AVX__
+            std::cout << "[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)" << std::endl;
+#elif defined(__SSE2__)
+            std::cout << "[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)" << std::endl;
+#else
+            std::cout << "[CDPruner] Using scalar operations (no SIMD acceleration)" << std::endl;
+#endif
+            simd_logged = true;
+        }
+    }
+    
+    std::vector<std::vector<size_t>> batch_results(batch_size);
+    
+    // Process each batch independently
+    for (size_t b = 0; b < batch_size; ++b) {
+        batch_results[b] = select_single_batch(kernel, b, num_tokens);
+    }
+    
+    return batch_results;
+}
+
+#ifdef ENABLE_OPENCL_DPP
+// Internal OpenCL-only DPP selection (no fallback)
+std::vector<std::vector<size_t>> FastGreedyDPP::select_opencl_internal(const ov::Tensor& kernel, size_t num_tokens) {
+    auto shape = kernel.get_shape();
+    size_t batch_size = shape[0];
+    
+    std::vector<std::vector<size_t>> batch_results(batch_size);
+    
+    // Process each batch independently, similar to CPU version
+    for (size_t b = 0; b < batch_size; ++b) {
+        batch_results[b] = select_single_batch_opencl(kernel, b, num_tokens);
+    }
+    
+    return batch_results;
+}
+
+// Single batch OpenCL selection (similar to select_single_batch for CPU)
+std::vector<size_t> FastGreedyDPP::select_single_batch_opencl(const ov::Tensor& kernel, size_t batch_idx, size_t num_tokens) {
+    // Extract single batch kernel matrix for OpenCL processing
+    auto shape = kernel.get_shape();
+    size_t total_tokens = shape[1];
+    
+    // Create a single batch tensor [1, total_tokens, total_tokens]
+    ov::Tensor single_batch_kernel(ov::element::f32, {1, total_tokens, total_tokens});
+    float* single_batch_data = single_batch_kernel.data<float>();
+    const float* kernel_data = kernel.data<const float>();
+    
+    // Copy the specific batch data
+    size_t batch_matrix_size = total_tokens * total_tokens;
+    size_t batch_offset = batch_idx * batch_matrix_size;
+    std::memcpy(single_batch_data, kernel_data + batch_offset, batch_matrix_size * sizeof(float));
+    
+    // Call OpenCL DPP with single batch
+    return m_opencl_dpp->select(single_batch_kernel, num_tokens);
+}
+#endif
 
 size_t FastGreedyDPP::argmax(const ov::Tensor& scores) {
     const float* data = scores.data<const float>();
@@ -368,4 +681,291 @@ float FastGreedyDPP::compute_determinant_approximation(const ov::Tensor& kernel,
     return det_approx;
 }
 
-} // namespace ov::genai::cdpruner 
+} // namespace ov::genai::cdpruner
+
+// ================================ OpenCL Implementation ================================
+
+#ifdef ENABLE_OPENCL_DPP
+
+namespace ov::genai::cdpruner {
+
+/**
+ * @brief OpenCL context and state management
+ */
+struct OpenCLDPP::OpenCLState {
+    cl::Context context;
+    cl::CommandQueue queue;
+    cl::Device device;
+    cl::Program program;
+    std::map<std::string, cl::Kernel> kernels;
+    bool initialized = false;
+    
+    cl::Kernel get_kernel(const std::string& name) {
+        auto it = kernels.find(name);
+        if (it != kernels.end()) {
+            return it->second;
+        }
+        
+        // Create kernel if not exists
+        cl::Kernel kernel(program, name.c_str());
+        kernels[name] = kernel;
+        return kernel;
+    }
+};
+
+OpenCLDPP::OpenCLDPP(const Config& config) : m_config(config), m_state(std::make_unique<OpenCLState>()) {
+    m_initialized = initialize_opencl();
+}
+
+OpenCLDPP::~OpenCLDPP() {
+    cleanup_opencl();
+}
+
+std::vector<size_t> OpenCLDPP::select(const ov::Tensor& kernel, size_t num_tokens) {
+    if (!m_initialized) {
+        throw std::runtime_error("OpenCL DPP not initialized");
+    }
+    
+    // Validate input tensor
+    auto shape = kernel.get_shape();
+    if (shape.size() != 3) {
+        throw std::invalid_argument("Kernel must be 3D tensor [B, N, N]");
+    }
+    
+    size_t batch_size = shape[0];
+    if (batch_size > 2) {
+        throw std::invalid_argument("Batch size must be 1 for single batch or 2 for split matrix");
+    }
+    size_t total_tokens = shape[1];
+    
+    if (shape[1] != shape[2]) {
+        throw std::invalid_argument("Kernel matrix must be square [B, N, N]");
+    }
+
+    if (num_tokens / batch_size > total_tokens) {
+        throw std::invalid_argument("Cannot select more tokens [" + std::to_string(num_tokens / batch_size) + "] than available [" +
+                                    std::to_string(total_tokens) + "]");
+    }
+
+    // Use OpenCL DPP implementation directly with ov::Tensor
+    auto opencl_results = run_dpp_split_kernel_impl(kernel, num_tokens);
+    
+    return opencl_results;
+}
+
+bool OpenCLDPP::initialize_opencl() {
+    try {
+        std::vector<cl::Platform> platforms;
+        cl::Platform::get(&platforms);
+        
+        if (platforms.empty()) {
+            if (m_config.pruning_debug_mode) {
+                std::cerr << "[OpenCLDPP] No OpenCL platforms found" << std::endl;
+            }
+            return false;
+        }
+        
+        // Use default device
+        m_state->device = cl::Device::getDefault();
+        m_state->context = cl::Context(m_state->device);
+        m_state->queue = cl::CommandQueue(m_state->context, m_state->device);
+        
+        if (m_config.pruning_debug_mode) {
+            std::string device_name;
+            m_state->device.getInfo(CL_DEVICE_NAME, &device_name);
+            std::cout << "[OpenCLDPP] Using OpenCL device: " << device_name << std::endl;
+        }
+        
+        return load_and_compile_kernels();
+    } catch (const std::exception& e) {
+        if (m_config.pruning_debug_mode) {
+            std::cerr << "[OpenCLDPP] OpenCL initialization failed: " << e.what() << std::endl;
+        }
+        return false;
+    }
+}
+
+bool OpenCLDPP::load_and_compile_kernels() {
+    try {
+        if (m_config.cl_kernel_path.empty()) {
+            if (m_config.pruning_debug_mode) {
+                std::cerr << "[OpenCLDPP] Kernel path not specified" << std::endl;
+            }
+            return false;
+        }
+        
+        // Load kernel source from file
+        std::ifstream kernel_file(m_config.cl_kernel_path);
+        if (!kernel_file.is_open()) {
+            if (m_config.pruning_debug_mode) {
+                std::cerr << "[OpenCLDPP] Failed to open kernel file: " << m_config.cl_kernel_path << std::endl;
+            }
+            return false;
+        }
+        
+        std::string kernel_source((std::istreambuf_iterator<char>(kernel_file)),
+                                  std::istreambuf_iterator<char>());
+        kernel_file.close();
+        
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[OpenCLDPP] Loaded kernel source (" << kernel_source.length() << " chars) from: " 
+                      << m_config.cl_kernel_path << std::endl;
+        }
+        
+        // Compile program
+        cl::Program::Sources sources;
+        sources.push_back({kernel_source.c_str(), kernel_source.length()});
+        
+        m_state->program = cl::Program(m_state->context, sources);
+        cl_int result = m_state->program.build({m_state->device});
+        
+        if (result != CL_SUCCESS) {
+            // Get build log for debugging
+            std::string build_log;
+            m_state->program.getBuildInfo(m_state->device, CL_PROGRAM_BUILD_LOG, &build_log);
+            if (m_config.pruning_debug_mode) {
+                std::cerr << "[OpenCLDPP] Kernel compilation failed with error: " << result << std::endl;
+                std::cerr << "[OpenCLDPP] Build log: " << build_log << std::endl;
+            }
+            return false;
+        }
+        
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[OpenCLDPP] Kernel compilation successful" << std::endl;
+        }
+        
+        return true;
+    } catch (const std::exception& e) {
+        if (m_config.pruning_debug_mode) {
+            std::cerr << "[OpenCLDPP] Kernel compilation failed: " << e.what() << std::endl;
+        }
+        return false;
+    }
+}
+
+void OpenCLDPP::cleanup_opencl() {
+    // Cleanup is handled automatically by cl::* destructors
+}
+
+std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kernel, size_t selected_token_num) {
+    float numerical_threshold = m_config.numerical_threshold;
+    
+    // Get tensor dimensions from ov::Tensor
+    auto shape = kernel.get_shape();
+    size_t batch_size = shape[0];
+    size_t total_tokens_num = shape[1];
+
+    bool need_adjustment = selected_token_num % 2 != 0;
+    selected_token_num += need_adjustment;
+    selected_token_num = selected_token_num / batch_size;
+
+    std::vector<int> output_ids(selected_token_num * batch_size, -1);
+    
+    // Prepare initial diagonal values from ov::Tensor
+    std::vector<float> vec_di2s(total_tokens_num * batch_size);
+    const float* kernel_data = kernel.data<const float>();
+    
+    for (size_t b = 0; b < batch_size; b++) {
+        size_t offset_base = b * total_tokens_num * total_tokens_num;
+        for (size_t i = 0; i < total_tokens_num; i++) {
+            // Access diagonal elements from ov::Tensor data
+            size_t offset = offset_base + i * total_tokens_num + i;
+            vec_di2s[b * total_tokens_num + i] = kernel_data[offset];
+        }
+    }
+    
+    // Create OpenCL buffers
+    cl::Buffer buffer_mat(m_state->context, CL_MEM_READ_ONLY, kernel.get_byte_size());
+    cl::Buffer buffer_di2s(m_state->context, CL_MEM_READ_WRITE, 
+                          sizeof(float) * total_tokens_num * batch_size);
+    cl::Buffer buffer_cis(m_state->context, CL_MEM_READ_WRITE, 
+                         sizeof(float) * selected_token_num * total_tokens_num * batch_size);
+    cl::Buffer buffer_output_ids(m_state->context, CL_MEM_READ_WRITE, 
+                                sizeof(int) * selected_token_num * batch_size);
+    cl::Buffer buffer_best_id(m_state->context, CL_MEM_READ_WRITE, sizeof(int) * batch_size);
+    
+    // Use merged kernel approach (ENABLE_KERNEL_MERGE = 1)
+    auto merged_kernel = m_state->get_kernel("dpp_impl");
+    cl::NDRange gws = cl::NDRange(batch_size, (total_tokens_num + 15) / 16 * 16, 1);
+    cl::NDRange lws = cl::NDRange(1, std::min(total_tokens_num, static_cast<size_t>(16)), 1);
+    
+    // Set kernel arguments
+    merged_kernel.setArg(0, buffer_mat);
+    merged_kernel.setArg(1, static_cast<int>(total_tokens_num));
+    merged_kernel.setArg(2, buffer_best_id);
+    // arg 3 will be set in the loop (iteration)
+    merged_kernel.setArg(4, buffer_cis);
+    merged_kernel.setArg(5, buffer_di2s);
+    merged_kernel.setArg(6, numerical_threshold);
+    merged_kernel.setArg(7, static_cast<int>(selected_token_num));
+    merged_kernel.setArg(8, buffer_output_ids);
+    merged_kernel.setArg(9, sizeof(float) * lws[1], nullptr); // local memory for reduction
+    merged_kernel.setArg(10, sizeof(int) * lws[1], nullptr);   // local memory for argmax
+    
+    if (m_config.pruning_debug_mode) {
+        std::cout << "[OpenCLDPP] Global work size: [" << gws[0] << ", " << gws[1] << ", " << gws[2] << "]" << std::endl;
+        std::cout << "[OpenCLDPP] Local work size: [" << lws[0] << ", " << lws[1] << ", " << lws[2] << "]" << std::endl;
+        std::cout << "[OpenCLDPP] Selected tokens per batch: " << selected_token_num << std::endl;
+    }
+    
+    // Initialize buffers
+    m_state->queue.enqueueWriteBuffer(buffer_di2s, CL_TRUE, 0, 
+                                    sizeof(float) * total_tokens_num * batch_size, vec_di2s.data());
+    m_state->queue.enqueueWriteBuffer(buffer_mat, CL_TRUE, 0, 
+                                    kernel.get_byte_size(), kernel_data);
+    
+    // Main DPP algorithm loop using OpenCL kernels
+    std::vector<cl::Event> eventList;
+    for (size_t t = 0; t < selected_token_num; ++t) {
+        cl::Event event;
+        
+        // Set current iteration
+        merged_kernel.setArg(3, static_cast<int>(t));
+        
+        // Execute the merged kernel (combines argmax, update orthogonal vector, and update marginal gains)
+        m_state->queue.enqueueNDRangeKernel(merged_kernel, cl::NullRange, gws, lws, &eventList, &event);
+        eventList.push_back(event);
+    }
+    
+    // Wait for all kernels to complete
+    m_state->queue.finish();
+    
+    // Read back results
+    m_state->queue.enqueueReadBuffer(buffer_output_ids, CL_TRUE, 0, 
+                                   sizeof(int) * selected_token_num * batch_size, output_ids.data());
+    
+    if (m_config.pruning_debug_mode) {
+        std::cout << "[OpenCLDPP] DPP selection completed with " << selected_token_num * batch_size << " tokens" << std::endl;
+        
+        // Print first few selected token IDs for debugging
+        std::cout << "[OpenCLDPP] Selected tokens (first batch): [";
+        size_t print_count = std::min(selected_token_num * batch_size, static_cast<size_t>(10));
+        for (size_t i = 0; i < print_count; ++i) {
+            if (i > 0) std::cout << ", ";
+            std::cout << output_ids[i];
+        }
+        if (selected_token_num * batch_size > 10) {
+            std::cout << ", ... (" << (selected_token_num * batch_size - 10) << " more)";
+        }
+        std::cout << "]" << std::endl;
+    }
+    
+    // Adjust the result if we had to make token count even for OpenCL
+    if (need_adjustment) {
+        // Remove the last one token from the last batch to match original request
+        output_ids.erase(output_ids.begin() + selected_token_num - need_adjustment);
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[OpenCLDPP] Adjusted result: removed 1 token from last batch to match original request of " 
+                      << selected_token_num * batch_size - 1 << " total tokens" << std::endl;
+        }
+    }
+    std::vector<size_t> results;
+    for (auto id : output_ids)
+        results.push_back(id);
+    
+    return results;
+}
+
+} // namespace ov::genai::cdpruner
+
+#endif // ENABLE_OPENCL_DPP 

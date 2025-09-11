@@ -21,13 +21,11 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
     try {
         ov::Core core;
 
-        if (m_config.use_ops_model) {
-            // Compile and create infer request for conditional kernel model
-            auto kernel_model = create_conditional_kernel_model();
-            ov::CompiledModel compiled_kernel_model;
-            compiled_kernel_model = core.compile_model(kernel_model, m_config.device);
-            m_conditional_kernel_infer_request = compiled_kernel_model.create_infer_request();
-        }
+        // Compile and create infer request for conditional kernel model
+        auto kernel_model = create_conditional_kernel_model();
+        ov::CompiledModel compiled_kernel_model;
+        compiled_kernel_model = core.compile_model(kernel_model, m_config.device);
+        m_conditional_kernel_infer_request = compiled_kernel_model.create_infer_request();
 
         // Always compile similarity matrix model for potential GPU acceleration
         auto similarity_model = create_similarity_matrix_model();
@@ -62,9 +60,13 @@ ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, co
     size_t feature_dim = visual_shape[2];
 
     ov::Tensor conditional_kernel;
-    if (m_config.use_ops_model) {
+    try {
         conditional_kernel = build_with_ov_model(visual_features, input_param);
-    } else {
+    } catch (const std::exception& e) {
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: " << e.what()
+                      << std::endl;
+        }
         conditional_kernel = build_with_normal_pipeline(visual_features, input_param);
     }
 
