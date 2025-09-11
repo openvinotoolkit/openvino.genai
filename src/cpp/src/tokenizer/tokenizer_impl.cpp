@@ -54,6 +54,15 @@ void parse_chat_template_from_file(const std::filesystem::path& path, std::strin
     if (!std::filesystem::exists(path)) {
         return;
     }
+
+    if (path.extension() == ".jinja") {
+        std::ifstream file(path);
+        if (file) {
+            value.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        }
+        return;
+    }
+
     auto json_data = nlohmann::json::parse(std::ifstream{path});
     if (!json_data.contains("chat_template")) {
         return;
@@ -335,6 +344,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     parse_chat_template_from_file(models_path / "tokenizer_config.json", m_chat_template);
     parse_chat_template_from_file(models_path / "processor_config.json", m_chat_template);
     parse_chat_template_from_file(models_path / "chat_template.json", m_chat_template);
+    parse_chat_template_from_file(models_path / "chat_template.jinja", m_chat_template);
     m_original_chat_template = m_chat_template;
     setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
 }
