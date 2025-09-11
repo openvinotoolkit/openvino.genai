@@ -14,6 +14,8 @@ class ManualTimer {
 public:
     ManualTimer(const std::string& title) :
         m_total(0.),
+        m_start(std::chrono::steady_clock::duration::zero()),
+        m_end(std::chrono::steady_clock::duration::zero()),
         m_title(title) {
     }
 
@@ -40,6 +42,14 @@ public:
 
     float get_duration_microsec() const {
         return m_total;
+    }
+
+    void clear() {
+        m_total = 0.0;
+        m_start = std::chrono::steady_clock::time_point(
+            std::chrono::steady_clock::duration::zero());
+        m_end = std::chrono::steady_clock::time_point(
+            std::chrono::steady_clock::duration::zero());
     }
 
     ~ManualTimer() {

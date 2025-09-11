@@ -219,7 +219,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
         auto m_main_pipeline_metrics = m_main_pipeline->get_metrics();
         main_raw_perf_counters.m_durations.push_back(MicroSeconds(main_duration));
-        main_raw_perf_counters.m_inference_durations[0] = MicroSeconds(m_main_pipeline_metrics.inference_duration);
+        main_raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_main_pipeline_metrics.inference_duration);
         main_raw_perf_counters.m_batch_sizes.push_back(num_generated_tokens); // or should be processed + generated
         m_sd_metrics.update_generated_len(num_generated_tokens);
     }
