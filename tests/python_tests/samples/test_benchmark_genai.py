@@ -48,7 +48,7 @@ class TestBenchmarkGenAI:
         ],
         indirect=["convert_model"],
     )
-    def test_cpp_sample_benchmark_genai(self, convert_model, prompt, sample_args):
+    def test_c_sample_benchmark_genai(self, convert_model, prompt, sample_args):
         # Test C sample
         c_sample = os.path.join(SAMPLES_C_DIR, 'benchmark_genai_c')
         c_command =[c_sample, '-m', convert_model, '-p', f'"{prompt}"'] + sample_args
