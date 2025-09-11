@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import sys
 import datasets
 import pytest
@@ -9,12 +10,14 @@ from pathlib import Path
 from typing import Optional
 from tqdm import tqdm
 
+from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode, SparseAttentionMode, KVCrushAnchorPointMode, KVCrushConfig
 
 from utils.ov_genai_pipelines import PipelineType, generate_and_compare
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+from utils.milebench import MileBenchDataset, Eval
 from utils.constants import get_default_llm_properties
-from utils.hugging_face import download_and_convert_model
+from utils.hugging_face import download_and_convert_model, _download_and_convert_model
 from data.test_dataset import get_test_dataset
 
 
@@ -199,7 +202,7 @@ def test_dynamic_memory_allocation(params):
 
 
 @dataclass
-class LongBenchTestData:
+class BenchmarkTestData:
     subset: str
     threshold: float
     max_cache_usage_optimization_ratio: float
@@ -208,8 +211,8 @@ class LongBenchTestData:
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("samsum", 4, 1.6, 2.5),
-    LongBenchTestData("trec", 3.2, 2.0, 3.3),
+    BenchmarkTestData("samsum", 4, 1.6, 2.5),
+    BenchmarkTestData("trec", 3.2, 2.0, 3.3),
 ], ids=["samsum", "trec"])
 def test_optimized_generation_longbench(test_struct):
     seqs_per_request = 32
@@ -360,3 +363,107 @@ def test_kvcrush_vs_snapkv_baseline(subset):
     del model_cb_kvcrush
     import gc
     gc.collect()
+
+
+MILEBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=64, max_cache_size=352, aggregation_mode=AggregationMode.SUM)
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    ("test_struct", "download_test_content"), [
+    (BenchmarkTestData("DocVQA", 0.001, 2.60, 2.47), "MileBench_part1.tar.gz"),
+    (BenchmarkTestData("MMCoQA", 0.001, 3.75, 4.55), "MileBench_part2.tar.gz"),
+    ],
+    indirect=["download_test_content"],
+    ids=["DocVQA", "MMCoQA"],
+)
+def test_optimized_generation_milebench(test_struct, download_test_content):
+    seqs_per_request = 16
+    device = "CPU"
+    num_kv_blocks = 500
+    model_id = "Qwen/Qwen2-VL-2B-Instruct"
+    _, _, models_path = _download_and_convert_model(model_id, OVModelForVisualCausalLM)
+    scheduler_config = get_scheduler_config(num_kv_blocks)
+
+    scheduler_config_opt = get_scheduler_config(num_kv_blocks)
+    scheduler_config_opt.use_cache_eviction = True
+    if scheduler_config_opt.use_cache_eviction:
+        eviction_config = CacheEvictionConfig(
+            start_size=32,
+            recent_size=64,
+            max_cache_size=224,
+            aggregation_mode=AggregationMode.SUM,
+            snapkv_window_size=8,
+        )
+        scheduler_config_opt.cache_eviction_config = eviction_config
+
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, properties=get_default_llm_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, properties=get_default_llm_properties())
+
+    generation_config = GenerationConfig()  # expecting default greedy sampling
+    generation_config.num_return_sequences = 1
+    generation_config.max_new_tokens = 64  # change to 512 for full evaluation
+    generation_config.do_sample = False
+    generation_config.apply_chat_template = False
+
+    subset = test_struct.subset
+    data = MileBenchDataset(
+        data_dir=download_test_content,
+        subset=subset,
+        subset_size=seqs_per_request,
+    )
+
+    with tqdm(total=len(data)) as progress_bar:
+        prompts, images = [], []
+        answers = []
+        ref_answers = []
+        for p_idx, data_sample in enumerate(data):
+            prompt = data_sample["prompt"]
+            image = data_sample["images"]
+
+            progress_bar.update(1)
+            prompts.append(prompt)
+            images.append(image)
+            answers.append({"gt_answer": data_sample["gt_answer"], "choice_list": data_sample["choice_list"]})
+            ref_answers.append({"gt_answer": data_sample["gt_answer"], "choice_list": data_sample["choice_list"]})
+
+            if len(prompts) == seqs_per_request or p_idx == len(data) - 1:
+                ans_batch = model_cb_opt.generate(
+                    prompts, images=images, generation_config=[generation_config] * len(prompts),
+                )
+                ref_ans_batch = model_cb_noopt.generate(
+                    prompts, images=images, generation_config=[generation_config] * len(prompts),
+                )
+
+                for i, (opt_output, ref_output) in enumerate(zip(ans_batch, ref_ans_batch), start=p_idx-len(prompts)+1):
+                    answers[i]["pred"] = opt_output.texts[0]
+                    ref_answers[i]["pred"] = ref_output.texts[0]
+                prompts.clear()
+                images.clear()
+
+    question_type = data.annotation['meta_data']['question_type']
+    scorer = Eval()
+
+    score = scorer.evaluate(answers, subset, question_type)
+    print(f"Score: {score}")
+
+    ref_score = scorer.evaluate(ref_answers, subset, question_type)
+    print(f"Reference score: {ref_score}")
+
+    pipeline_opt_metrics = model_cb_opt.get_metrics()
+    pipeline_noopt_metrics = model_cb_noopt.get_metrics()
+
+    print(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
+    print(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
+    max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
+    avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
+    print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
+
+    del model_cb_opt
+    del model_cb_noopt
+    import gc
+    gc.collect()
+
+    assert ref_score - score <= test_struct.threshold
+    assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
+    assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
