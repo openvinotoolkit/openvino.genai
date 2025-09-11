@@ -25,8 +25,8 @@ class TestPromptLookupDecodingLM:
             pytest.param("Qwen2.5-0.5B-Instruct-GGUF", test_prompt, marks=pytest.mark.skipif(
                 sys.platform in ("win32", "darwin"),
                 reason=(
-                    "doesn't work on win due to UnicodeDecodeError, "
-                    "AssertionError on mac (Greedy and speculative decoding results don't match)"
+                    "doesn't work on win due to CVS-173467,"
+                    "AssertionError on mac due to CVS-173468"
                 ),
             )),
         ],

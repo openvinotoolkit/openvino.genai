@@ -46,7 +46,7 @@ class TestBeamSearchCausalLM:
     @pytest.mark.parametrize("convert_model",
         [
             "SmolLM2-135M",
-            pytest.param("SmolLM2-135M-GGUF", marks=pytest.mark.skip(reason="UnicodeDecodeError: 'utf-8' codec can't decode byte 0xe5")),
+            pytest.param("SmolLM2-135M-GGUF", marks=pytest.mark.skip(reason="Linux and mac failed with chinese input due to CVS-173471, Windows due to CVS-173467")),
         ], indirect=True)
     @pytest.mark.parametrize("sample_args",
         [
