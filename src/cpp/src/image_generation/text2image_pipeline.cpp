@@ -232,5 +232,9 @@ Text2ImagePipeline Text2ImagePipeline::clone() {
     return pipe;
 }
 
+void Text2ImagePipeline::export_model(const std::filesystem::path& export_dir) {
+    m_impl->export_model(export_dir);
+}
+
 }  // namespace genai
 }  // namespace ov
