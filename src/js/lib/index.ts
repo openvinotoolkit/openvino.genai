@@ -38,6 +38,5 @@ class PipelineFactory {
 
 export const { LLMPipeline, TextEmbeddingPipeline } = PipelineFactory;
 export { DecodedResults } from "./pipelines/llmPipeline.js";
-export { SchedulerConfig } from "./schedulerConfig.js";
 export * from "./utils.js";
 export * from "./addon.js";
