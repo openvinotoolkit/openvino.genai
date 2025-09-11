@@ -8,6 +8,7 @@ import openvino as ov
 import logging as log
 import time
 import json
+import copy
 import types
 from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
@@ -19,7 +20,8 @@ from llm_bench_utils.config_class import (
     IMAGE_GEN_CLS,
     INPAINTING_IMAGE_GEN_CLS,
     IMAGE_TO_IMAGE_GEN_CLS,
-    TEXT_TO_SPEECH_VOCODER_CLS
+    TEXT_TO_SPEECH_VOCODER_CLS,
+    PA_ATTENTION_BACKEND
 )
 from transformers import pipeline
 import queue
@@ -167,17 +169,47 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
 
 
-def get_scheduler_config_genai(user_config, config_name="CB config"):
+def get_scheduler_config_genai(config_data, config_name="CB config"):
     import openvino_genai
+    user_config = copy.deepcopy(config_data)
 
     scheduler_config = openvino_genai.SchedulerConfig()
     if user_config:
         log.info(f"Scheduler parameters for {config_name}:\n{user_config}")
 
+        if 'cache_eviction_config' in user_config.keys():
+            cache_eviction_kwargs = user_config.pop('cache_eviction_config')
+            if "aggregation_mode" in cache_eviction_kwargs.keys():
+                cache_eviction_kwargs["aggregation_mode"] = getattr(openvino_genai.AggregationMode, cache_eviction_kwargs["aggregation_mode"])
+
+            if "kvcrush_config" in cache_eviction_kwargs.keys() and isinstance(cache_eviction_kwargs["kvcrush_config"], dict):
+                crush_config_kwargs = cache_eviction_kwargs["kvcrush_config"]
+                if "anchor_point_mode" in crush_config_kwargs.keys():
+                    crush_config_kwargs['anchor_point_mode'] = getattr(openvino_genai.KVCrushAnchorPointMode, crush_config_kwargs['anchor_point_mode'])
+                cache_eviction_kwargs["kvcrush_config"] = openvino_genai.KVCrushConfig(**crush_config_kwargs)
+
+            scheduler_config.use_cache_eviction = True
+            scheduler_config.cache_eviction_config = openvino_genai.CacheEvictionConfig(**cache_eviction_kwargs)
+            log.info("Cache Eviction mode ON")
+
+        if 'sparse_attention_config' in user_config.keys():
+            sparse_attention_kwargs = user_config.pop('sparse_attention_config')
+            if "mode" in sparse_attention_kwargs.keys():
+                sparse_attention_kwargs["mode"] = getattr(openvino_genai.SparseAttentionMode, sparse_attention_kwargs["mode"])
+
+            scheduler_config.use_sparse_attention = True
+            scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(**sparse_attention_kwargs)
+            log.info("Sparse Attention mode ON")
+
         for param, value in user_config.items():
             setattr(scheduler_config, param, value)
 
     return scheduler_config
+
+
+def cb_pipeline_required(args):
+    return args['config'].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND and args.get("cb_config") is not None and\
+        (args["cb_config"].get("cache_eviction_config") is not None or args["cb_config"].get("sparse_attention_config") is not None)
 
 
 def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, **kwargs):
@@ -191,12 +223,12 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, *
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
+    config = {}
     draft_model_path = kwargs.get("draft_model", '')
     cb_config = kwargs.get("cb_config")
     use_streamer_metrics = False
     if cb_config is not None:
-        ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
-
+        config["scheduler_config"] = get_scheduler_config_genai(cb_config)
         version = get_version_in_format_to_pars(openvino_genai.get_version())
         use_streamer_metrics = parse(version) < parse("2025.0.0") or (draft_model_path and parse(version) < parse("2025.1.0"))
 
@@ -205,23 +237,28 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, *
             raise RuntimeError(f'==Failure ==: draft model by path:{draft_model_path} is not exists')
         log.info("Speculative Decoding is activated")
         draft_device = kwargs.get('draft_device', None) or device
-        draft_model_load_kwargs = {'scheduler_config': get_scheduler_config_genai(kwargs.get("draft_cb_config"), "draft CB config")}\
+        draft_model_load_kwargs = {'scheduler_config': get_scheduler_config_genai(kwargs.get("draft_cb_config"), config_name="draft CB config")}\
             if kwargs.get("draft_cb_config") is not None else {}
-        ov_config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
+        config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
 
     if kwargs.get('max_ngram_size') and kwargs.get('num_assistant_tokens'):
         log.info("Prompt Lookup decoding is activated")
-        ov_config['prompt_lookup'] = True
+        config['prompt_lookup'] = True
         use_streamer_metrics = True
 
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None))
     if adapter_config:
-        ov_config['adapters'] = adapter_config
+        config['adapters'] = adapter_config
 
     if kwargs.get("mem_consumption"):
         memory_monitor.start()
     start = time.perf_counter()
-    llm_pipe = openvino_genai.LLMPipeline(model_path, device.upper(), **ov_config)
+    if cb_pipeline_required(kwargs):
+        ov_config.pop("ATTENTION_BACKEND", None)
+        log.info("Pipeline will be initialized with ContinuousBatchingPipeline")
+        llm_pipe = openvino_genai.ContinuousBatchingPipeline(model_path, device=device.upper(), properties=ov_config, **config)
+    else:
+        llm_pipe = openvino_genai.LLMPipeline(model_path, device.upper(), **config, **ov_config)
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     if kwargs.get("mem_consumption"):

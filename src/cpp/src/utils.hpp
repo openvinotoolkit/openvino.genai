@@ -256,6 +256,8 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
 
 ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id);
 
+size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers);
+
 // Extracts and removes blob import/export related properties from the provided map.
 std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties);
 
