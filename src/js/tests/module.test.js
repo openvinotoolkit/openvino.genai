@@ -7,7 +7,30 @@ import { hrtime } from "node:process";
 
 const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
 
-describe("module", async () => {
+describe("LLMPipeline construction", async () => {
+  await it("test LLMPipeline(modelPath)", async () => {
+    const pipe = await LLMPipeline(MODEL_PATH);
+    assert.strictEqual(typeof pipe, "object");
+  });
+
+  await it("test error LLMPipeline(modelPath, LLMPipelineProperties)", async () => {
+    // Test for JS. In TS it won't be possible to call LLMPipeline with wrong types.
+    await assert.rejects(async () => await LLMPipeline(MODEL_PATH, {}), {
+      name: "Error",
+      message:
+        "The second argument must be a device string. If you want to pass LLMPipelineProperties, please use the third argument.",
+    });
+  });
+
+  await it("test SchedulerConfig", async () => {
+    const schedulerConfig = {
+      max_num_batched_tokens: 32,
+    };
+    assert.ok(await LLMPipeline(MODEL_PATH, "CPU", { schedulerConfig: schedulerConfig }));
+  });
+});
+
+describe("LLMPipeline methods", async () => {
   let pipeline = null;
 
   await before(async () => {

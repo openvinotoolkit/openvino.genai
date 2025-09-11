@@ -1,5 +1,10 @@
 #include "include/helper.hpp"
 
+namespace {
+constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
+constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
+}  // namespace
+
 ov::AnyMap to_anyMap(const Napi::Env& env, const Napi::Value& val) {
     ov::AnyMap properties;
     if (!val.IsObject()) {
@@ -78,7 +83,11 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
 
     for (uint32_t i = 0; i < keys.Length(); ++i) {
         const std::string& key_name = keys.Get(i).ToString();
-        result_map[key_name] = js_to_cpp<ov::Any>(env, object.Get(key_name));
+        if (key_name == JS_SCHEDULER_CONFIG_KEY) {
+            result_map[CPP_SCHEDULER_CONFIG_KEY] = js_to_cpp<ov::genai::SchedulerConfig>(env, object.Get(key_name));
+        } else {
+            result_map[key_name] = js_to_cpp<ov::Any>(env, object.Get(key_name));
+        }
     }
 
     return result_map;
@@ -155,42 +164,69 @@ ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, c
 }
 
 template <>
-Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& env, const ov::genai::EmbeddingResult embedding_result) {
-    return std::visit(overloaded {
-        [env](std::vector<float> embed_vector) -> Napi::Value {
-            auto vector_size = embed_vector.size();
-            auto buffer = Napi::ArrayBuffer::New(env, vector_size * sizeof(float));
-            std::memcpy(buffer.Data(), embed_vector.data(), vector_size * sizeof(float));
-            Napi::Value typed_array = Napi::Float32Array::New(env, vector_size, buffer, 0);
-            return typed_array;
-        }, 
-        [env](std::vector<int8_t> embed_vector) -> Napi::Value {
-            auto buffer_size = embed_vector.size();
-            auto buffer = Napi::ArrayBuffer::New(env, buffer_size * sizeof(int8_t));
-            std::memcpy(buffer.Data(), embed_vector.data(), buffer_size * sizeof(int8_t));
-            Napi::Value typed_array = Napi::Int8Array::New(env, buffer_size, buffer, 0);
-            return typed_array;
-        },
-        [env](std::vector<uint8_t> embed_vector) -> Napi::Value {
-            auto buffer_size = embed_vector.size();
-            auto buffer = Napi::ArrayBuffer::New(env, buffer_size * sizeof(uint8_t));
-            std::memcpy(buffer.Data(), embed_vector.data(), buffer_size * sizeof(uint8_t));
-            Napi::Value typed_array = Napi::Uint8Array::New(env, buffer_size, buffer, 0);
-            return typed_array;
-        },
-        [env](auto& args) -> Napi::Value { OPENVINO_THROW("Unsupported type for EmbeddingResult."); }
-    }, embedding_result);
+ov::genai::SchedulerConfig js_to_cpp<ov::genai::SchedulerConfig>(const Napi::Env& env, const Napi::Value& value) {
+    ov::genai::SchedulerConfig config;
+    OPENVINO_ASSERT(value.IsObject(), "SchedulerConfig must be a JS object");
+    auto obj = value.As<Napi::Object>();
+
+    if (obj.Has("max_num_batched_tokens")) {
+        config.max_num_batched_tokens = obj.Get("max_num_batched_tokens").ToNumber().Uint32Value();
+    }
+    if (obj.Has("num_kv_blocks")) {
+        config.num_kv_blocks = obj.Get("num_kv_blocks").ToNumber().Uint32Value();
+    }
+    if (obj.Has("cache_size")) {
+        config.cache_size = obj.Get("cache_size").ToNumber().Uint32Value();
+    }
+    if (obj.Has("dynamic_split_fuse")) {
+        config.dynamic_split_fuse = obj.Get("dynamic_split_fuse").ToBoolean().Value();
+    }
+
+    return config;
 }
 
 template <>
-Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env& env, const ov::genai::EmbeddingResults embedding_result) {
-    return std::visit([env](auto& embed_vector) {
-        auto js_result = Napi::Array::New(env, embed_vector.size());
-        for (auto i = 0; i < embed_vector.size(); i++) {
-            js_result[i] = cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(env, embed_vector[i]);
-        }
-        return js_result;
-    }, embedding_result);
+Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& env,
+                                                               const ov::genai::EmbeddingResult embedding_result) {
+    return std::visit(overloaded{[env](std::vector<float> embed_vector) -> Napi::Value {
+                                     auto vector_size = embed_vector.size();
+                                     auto buffer = Napi::ArrayBuffer::New(env, vector_size * sizeof(float));
+                                     std::memcpy(buffer.Data(), embed_vector.data(), vector_size * sizeof(float));
+                                     Napi::Value typed_array = Napi::Float32Array::New(env, vector_size, buffer, 0);
+                                     return typed_array;
+                                 },
+                                 [env](std::vector<int8_t> embed_vector) -> Napi::Value {
+                                     auto buffer_size = embed_vector.size();
+                                     auto buffer = Napi::ArrayBuffer::New(env, buffer_size * sizeof(int8_t));
+                                     std::memcpy(buffer.Data(), embed_vector.data(), buffer_size * sizeof(int8_t));
+                                     Napi::Value typed_array = Napi::Int8Array::New(env, buffer_size, buffer, 0);
+                                     return typed_array;
+                                 },
+                                 [env](std::vector<uint8_t> embed_vector) -> Napi::Value {
+                                     auto buffer_size = embed_vector.size();
+                                     auto buffer = Napi::ArrayBuffer::New(env, buffer_size * sizeof(uint8_t));
+                                     std::memcpy(buffer.Data(), embed_vector.data(), buffer_size * sizeof(uint8_t));
+                                     Napi::Value typed_array = Napi::Uint8Array::New(env, buffer_size, buffer, 0);
+                                     return typed_array;
+                                 },
+                                 [env](auto& args) -> Napi::Value {
+                                     OPENVINO_THROW("Unsupported type for EmbeddingResult.");
+                                 }},
+                      embedding_result);
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env& env,
+                                                                const ov::genai::EmbeddingResults embedding_result) {
+    return std::visit(
+        [env](auto& embed_vector) {
+            auto js_result = Napi::Array::New(env, embed_vector.size());
+            for (auto i = 0; i < embed_vector.size(); i++) {
+                js_result[i] = cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(env, embed_vector[i]);
+            }
+            return js_result;
+        },
+        embedding_result);
 }
 
 template <>
@@ -204,8 +240,7 @@ Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& en
 }
 
 template <>
-Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env,
-                                                             const std::vector<float> value) {
+Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env, const std::vector<float> value) {
     auto js_array = Napi::Array::New(env, value.size());
     for (auto i = 0; i < value.size(); i++) {
         js_array[i] = Napi::Number::New(env, value[i]);
@@ -214,8 +249,7 @@ Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env,
 }
 
 template <>
-Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env,
-                                                             const std::vector<double> value) {
+Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, const std::vector<double> value) {
     auto js_array = Napi::Array::New(env, value.size());
     for (auto i = 0; i < value.size(); i++) {
         js_array[i] = Napi::Number::New(env, value[i]);
@@ -224,8 +258,7 @@ Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env,
 }
 
 template <>
-Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env,
-                                                             const std::vector<size_t> value) {
+Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, const std::vector<size_t> value) {
     auto js_array = Napi::Array::New(env, value.size());
     for (auto i = 0; i < value.size(); i++) {
         js_array[i] = Napi::Number::New(env, value[i]);

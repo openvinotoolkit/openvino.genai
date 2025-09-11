@@ -1,3 +1,6 @@
+// Copyright (C) 2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 export enum StreamingStatus {
   RUNNING,
   STOP,
@@ -116,3 +119,32 @@ export type GenerationConfig = GenericGenerationConfig &
   RandomSamplingsGenerationConfig &
   AssistingGenerationConfig &
   DecodedResultsConfig;
+
+export type SchedulerConfig = {
+  /** a maximum number of tokens to batch
+   * (in contrast to max_batch_size which combines independent sequences, we consider total amount of tokens in a batch)
+   * When ContinuousBatching is invoked from LLMPipeline (client scenario) by default max_num_batched_tokens is not limited.
+   * Default: 256
+   */
+  max_num_batched_tokens?: number;
+  /** total number of KV blocks available to scheduler logic
+   * Default: 0
+   */
+  num_kv_blocks?: number;
+  /** total size of KV cache in GB
+   * When both num_kv_blocks and cache_size are set, num_kv_blocks is used.
+   * When both num_kv_blocks and cache_size are equal to zero dynamic KV-cache allocation is turned on.
+   * Default: 0
+   */
+  cache_size?: number;
+  /** whether to split prompt / generate to different scheduling phases
+   * Allows to process prompt partially in case when batch size is limited.
+   * If dynamic_split_fuse is turned off any prompt that is longer than batch size will lead to error.
+   * Default: true
+   */
+  dynamic_split_fuse?: boolean;
+};
+
+export type LLMPipelineProperties = {
+  schedulerConfig?: SchedulerConfig;
+};
