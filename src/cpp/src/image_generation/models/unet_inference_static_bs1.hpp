@@ -171,12 +171,10 @@ public:
                         "UNetInferenceStaticBS1::import_model: model must be static. Please use UNetInferenceDynamic instead.");
         
         // we'll create a separate infer request for each batch.
-
-        // todo: preserve original model batch size during export/import
+        // todo: preserve original requested batch size when exporting the model
         m_native_batch_size = compiled_model.input("sample").get_shape()[0];
         m_requests.resize(m_native_batch_size);
 
-        // todo: check that input batch is 1
         ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
 
         for (int i = 0; i < m_native_batch_size; i++) {

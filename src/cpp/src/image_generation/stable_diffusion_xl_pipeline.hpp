@@ -80,8 +80,7 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
-        const auto [properties_without_blob, blob_config] = utils::extract_blob_properties(properties);
-        const auto& [blob_path, export_blob] = blob_config;
+        const auto [properties_without_blob, blob_path] = utils::extract_export_properties(properties);
 
         auto updated_properties = update_adapters_in_properties(properties_without_blob, &DiffusionPipeline::derived_adapters);
         // updated_properies are for passing to the pipeline subcomponents only, not for the generation config

@@ -118,7 +118,6 @@ struct KVAxesPosition {
 };
 
 KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model);
-KVAxesPosition get_kv_axes_pos(const ov::CompiledModel& model);
 
 class KVCacheState {
     std::vector<int64_t> state;
@@ -258,8 +257,7 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
 ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id);
 
 // Extracts and removes blob import/export related properties from the provided map.
-// Returns a pair of (blob_path, export_blob_flag).
-std::pair<ov::AnyMap, std::pair<std::optional<std::filesystem::path>, bool>> extract_blob_properties(const ov::AnyMap& external_properties);
+std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties);
 
 ov::CompiledModel import_model(const std::filesystem::path& blob_path,
                                const std::string& device,

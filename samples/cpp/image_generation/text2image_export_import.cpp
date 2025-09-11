@@ -62,6 +62,20 @@ void test_load_full_pipe_from_blob(const std::filesystem::path& models_path, con
     std::cout << "Full pipeline load time from Blob: " << average_duration << " ms\n";
 }
 
+void test_npu_request_size(const std::filesystem::path& models_path) {
+    ov::AnyMap properties{{"NPU_USE_NPUW", "YES"}, {"NPUW_DEVICES", "CPU"}, {"NPUW_ONLINE_PIPELINE", "NONE"}};
+
+    // properties[ov::genai::blob_path.name()] = models_path / "blobs_npu";
+
+    ov::genai::Text2ImagePipeline pipe(models_path);
+
+    pipe.reshape(2, 512, 512, 77);
+
+    pipe.compile("NPU", properties);
+
+    pipe.export_model(models_path / "blobs_npu");
+}
+
 }  // namespace
 
 int32_t main(int32_t argc, char* argv[]) try {
@@ -71,13 +85,16 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string prompt = argv[2];
     const std::string device = "CPU";  // GPU can be used as well
 
+    test_npu_request_size(models_path);
+    return EXIT_SUCCESS;
+
     // full pipeline export/import example
     {
         auto pipe = ov::genai::Text2ImagePipeline(models_path, device);
         pipe.export_model(models_path / "blobs");
 
         // unet model saved at:
-        // models_path/ 
+        // models_path/
         // └── blobs/
         //     └── unet/
         //         └── openvino_model.blob

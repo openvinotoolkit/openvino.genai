@@ -40,8 +40,7 @@ UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir
     : m_config(root_dir / "config.json") {
     m_vae_scale_factor = get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
 
-    const auto [properties_without_blob, blob_config] = utils::extract_blob_properties(properties);
-    const auto& [blob_path, export_blob] = blob_config;
+    const auto [properties_without_blob, blob_path] = utils::extract_export_properties(properties);
 
     if (blob_path) {
         import_model(*blob_path, device, properties_without_blob);

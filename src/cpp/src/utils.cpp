@@ -403,38 +403,6 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     return kv_pos;
 }
 
-KVAxesPosition get_kv_axes_pos(const ov::CompiledModel& model) {
-    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
-    // therefore usually seq_length_axis = 2 and batch = 0
-    KVAxesPosition kv_pos { 0u, 2u };
-
-    // "ReadValue" node is KV cache representation in stateful model
-    std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
-
-    for (const auto op : model.get_runtime_model()->get_ops()) {
-        // check input size, as in LoRA adapters case it could be 0
-        if (op->get_type_name() != kv_node_type_name || op->get_input_size() < 1) {
-            continue;
-        }
-
-        // Shape example: [-1,4,0,64]
-        auto shape = op->get_input_partial_shape(0);
-
-        for (size_t i = 0; i < shape.rank().get_length(); i++) {
-            // Find axis = 0. This would be sequence length axis.
-            if (shape[i] == 0) {
-                kv_pos.seq_len = i;
-            } else if (shape[i].is_dynamic()) {
-                // Dynamic axis is a batch
-                kv_pos.batch = i;
-            }
-        }
-        break;
-    }
-
-    return kv_pos;
-}
-
 void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller) {
     if (kv_cache_state.reset_mem_state) {
         if (adapter_controller) {
@@ -736,38 +704,24 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
     return inputs_embeds;
 }
 
-std::pair<ov::AnyMap, std::pair<std::optional<std::filesystem::path>, bool>> extract_blob_properties(
-    const ov::AnyMap& external_properties) {
+std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties) {
     ov::AnyMap properties = external_properties;
     std::optional<std::filesystem::path> blob_path;
-    bool export_blob = false;
 
     auto blob_path_it = properties.find(ov::genai::blob_path.name());
     if (blob_path_it != properties.end()) {
         blob_path = blob_path_it->second.as<std::filesystem::path>();
-        OPENVINO_ASSERT(!blob_path->empty(), "BLOB_PATH property is empty");
+        OPENVINO_ASSERT(!blob_path->empty(), ov::genai::blob_path.name(), " property is empty");
         properties.erase(blob_path_it);
     }
 
-    auto export_blob_it = properties.find(ov::genai::export_blob.name());
-    if (export_blob_it != properties.end()) {
-        export_blob = export_blob_it->second.as<bool>();
-        OPENVINO_ASSERT(!export_blob || blob_path.has_value(), "BLOB_PATH property must be set if EXPORT_BLOB is true");
-        properties.erase(export_blob_it);
-    }
-
-    return {properties, {blob_path, export_blob}};
+    return {properties, blob_path};
 }
 
 ov::CompiledModel import_model(const std::filesystem::path& blob_path,
                                const std::string& device,
                                const ov::AnyMap& properties) {
     OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
-    // todo: consider if check requred
-    // if (!std::filesystem::exists(blob_path)) {
-    //     OPENVINO_THROW("Blob file is not found at: " + blob_path);
-    // }
-
     ov::Tensor blob_tensor = ov::read_tensor_data(blob_path);
     return ov::genai::utils::singleton_core().import_model(blob_tensor, device, properties);
 }
