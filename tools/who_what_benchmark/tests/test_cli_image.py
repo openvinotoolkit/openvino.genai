@@ -1,7 +1,9 @@
 import itertools
 import subprocess  # nosec B404
 import os
+import sys
 import shutil
+import platform
 import pytest
 import logging
 import tempfile
@@ -67,6 +69,8 @@ def get_similarity(output: str) -> float:
     ],
 )
 def test_image_model_types(model_id, model_type, backend, tmp_path):
+    if 'tiny-stable-diffusion-torch' in model_id and sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
     wwb_args = [
         "--base-model",
         model_id,
@@ -108,7 +112,16 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.skip(reason="FLUX-Fill is supported as inpainting only")
     if model_type == "image-inpainting":
         pytest.xfail("Segfault. Ticket 170877")
+    
+    mac_arm64_skip = ('stable-diffusion-xl-image-to-image' in model_id or
+                      'stable-diffusion-3-tiny-random' in model_id or
+                      'tiny-random-stable-diffusion' in model_id or
+                      'stable-diffusion-3-tiny-random-text-to-image' in model_id or
+                      'tiny-random-flux' in model_id)
 
+    if mac_arm64_skip and sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
+    
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
 
