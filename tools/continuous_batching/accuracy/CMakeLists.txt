@@ -25,19 +25,14 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 
 # end of dependencies
 
-set(TARGET_NAME continuous_batching_accuracy)
-add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
-target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai cxxopts::cxxopts)
+genai_add_tool_target(
+        NAME continuous_batching_accuracy
+        ROOT ${CMAKE_CURRENT_SOURCE_DIR}
+        SOURCES continuous_batching_accuracy.cpp
+        LINK_LIBRARIES cxxopts::cxxopts)
 
-set(TARGET_NAME_CB continuous_batching_speculative_decoding)
-add_executable(${TARGET_NAME_CB} ${TARGET_NAME_CB}.cpp)
-target_link_libraries(${TARGET_NAME_CB} PRIVATE openvino::genai cxxopts::cxxopts)
-
-set_target_properties(${TARGET_NAME} ${TARGET_NAME_CB} PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-install(TARGETS ${TARGET_NAME} ${TARGET_NAME_CB} 
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT tools_bin
-        EXCLUDE_FROM_ALL)
+genai_add_tool_target(
+        NAME continuous_batching_speculative_decoding
+        ROOT ${CMAKE_CURRENT_SOURCE_DIR}
+        SOURCES continuous_batching_speculative_decoding.cpp
+        LINK_LIBRARIES cxxopts::cxxopts)
