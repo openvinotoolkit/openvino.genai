@@ -122,12 +122,26 @@ bool is_special_token(int32_t token_type) {
     return token_type == 3 || token_type == 4;
 }
 
+std::string quote_meta(const std::string& str) {
+    std::string result = "(";
+    
+    // todo: add also utf validate
+    for (char c : str) {
+        if (!std::isalnum(c) && c != '_') {
+            result += '\\';
+        }
+        result += c;
+    }
+    result += ")";
+    return result;
+}
+
 std::string join_special_tokens(const std::vector<std::string>& special_tokens) {
     std::ostringstream oss;
     for (size_t i = 0; i < special_tokens.size(); ++i) {
         if (i > 0)
             oss << "|";
-        oss << special_tokens[i];
+        oss << quote_meta(special_tokens[i]);
     }
     return oss.str();
 }
