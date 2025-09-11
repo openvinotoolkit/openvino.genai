@@ -784,6 +784,7 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(ChatHistory history,
 }
 
 void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_template) {
+    m_original_chat_template = chat_template;
     m_chat_template = remap_template(chat_template);
 }
 
@@ -791,7 +792,7 @@ std::string Tokenizer::TokenizerImpl::get_chat_template() const {
     return m_chat_template;
 }
 
-std::string Tokenizer::TokenizerImpl::get_original_chat_template() const  {
+std::string Tokenizer::TokenizerImpl::get_original_chat_template() const {
     return m_original_chat_template;
 }
 
