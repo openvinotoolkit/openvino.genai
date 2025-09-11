@@ -15,6 +15,7 @@
 #include "continuous_batching/timer.hpp"
 
 #include "continuous_batching/attention_output.hpp"
+#include "debug_utils.hpp"
 
 namespace ov::genai {
 
@@ -48,6 +49,8 @@ class ModelRunner {
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
+
+    std::shared_ptr<InputsEmbedder> m_inputs_embedder;
 
 public:
     /**
@@ -95,8 +98,9 @@ public:
         return m_request;
     }
 
-    void set_embedding_model(const EmbeddingsModel::Ptr& embedder) {
-        m_embedding = embedder;
+    void set_inputs_embedder(std::shared_ptr<InputsEmbedder> inputs_embedder) {
+        m_inputs_embedder = inputs_embedder;
+        m_embedding = inputs_embedder->get_embedding_model();
     }
 
     /**
@@ -206,7 +210,8 @@ public:
         } catch (const ov::Exception&) {}
 
         std::map<size_t, std::set<size_t>> seq_id_to_skipped_blocks_map;
-
+        size_t position_idx = 0;
+        OPENVINO_ASSERT(num_sequence_groups == 1);
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
             SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
@@ -221,6 +226,15 @@ public:
             const bool echo_output = sequence_group->get_sampling_parameters().echo;
             const bool sampling_is_required = sequence_group->requires_sampling();
             const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
+
+            if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                //TODO: won't work for multiple prompts
+                std::optional<int64_t> rope_delta;
+                ov::Tensor tensor_tmp;
+                std::tie(tensor_tmp, rope_delta) = m_inputs_embedder->get_position_ids(hidden_size, sequence_group->get_num_processed_tokens());
+                position_ids = ov::Tensor(ov::element::i64, tensor_tmp.get_shape());
+                tensor_tmp.copy_to(position_ids);
+            }
 
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
                 // compute token_type_ids for current sequence
@@ -249,8 +263,9 @@ public:
                     } else {
                         OPENVINO_THROW("Unknown model inputs type.");
                     }
-
-                    position_ids_data[token_id] = position_id;
+                    if (sequence_group_type == SequenceGroupType::TOKENS) {
+                        position_ids_data[token_id] = position_id;
+                    }
 
                     // Check if token gathering is required for the entire sequence group
                     if (matmul_gathering_is_available && (sampling_is_required || echo_output)) {
@@ -310,7 +325,6 @@ public:
                         *score_aggregation_window_data = 1;
                     }
                 }
-
                 position_ids_data += num_scheduled_tokens;
                 past_lens_data += 1;
                 subsequence_begins_data += 1;
@@ -330,8 +344,20 @@ public:
             }
         }
 
+        // flatten positions ids
+        size_t pos_size = ov::shape_size(position_ids.get_shape());
+        ov::Tensor flatten_pos_ids(ov::element::i64, ov::Shape({pos_size}));
+        int64_t* position_ids_src = position_ids.data<int64_t>();
+        int64_t* position_ids_dst = flatten_pos_ids.data<int64_t>();
+
+        // TODO: memcpy can be used and moved to 230-239
+        for (size_t i=0; i <pos_size; i++) {
+            position_ids_dst[i] = position_ids_src[i];
+        }
+        //
+
         // typical LLM parameters
-        m_request.set_tensor("position_ids", position_ids);
+        m_request.set_tensor("position_ids", flatten_pos_ids);
 
         // PA specific parameters
         m_request.set_tensor("past_lens", past_lens);
