@@ -291,8 +291,9 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         }
         if (auto val = get_if_exist<std::string>(tokenizer_config, "chat_template")) {
             m_chat_template = *val;
-        }            
+        }         
         if (!m_chat_template.empty()) {
+            m_original_chat_template = m_chat_template;
             m_chat_template = patch_gguf_chat_template(m_chat_template);
         }
         ov_tokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
@@ -334,6 +335,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     parse_chat_template_from_file(models_path / "tokenizer_config.json", m_chat_template);
     parse_chat_template_from_file(models_path / "processor_config.json", m_chat_template);
     parse_chat_template_from_file(models_path / "chat_template.json", m_chat_template);
+    m_original_chat_template = m_chat_template;
     setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
 }
 
@@ -405,7 +407,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         m_eos_token_id = find_or_fallback(rt_info, "eos_token_id", m_eos_token_id);
 
         parse_chat_template_from_tokenizer(ov_tokenizer, m_chat_template);
-
+        m_original_chat_template = m_chat_template;
         m_chat_template = remap_template(m_chat_template);
 
         // Initialize tokenizer's cache to save time later.
@@ -775,8 +777,12 @@ void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_templat
     m_chat_template = remap_template(chat_template);
 }
 
-std::string Tokenizer::TokenizerImpl::get_chat_template() {
+std::string Tokenizer::TokenizerImpl::get_chat_template() const {
     return m_chat_template;
+}
+
+std::string Tokenizer::TokenizerImpl::get_original_chat_template() const  {
+    return m_original_chat_template;
 }
 
 std::shared_ptr<StructuredOutputController> Tokenizer::TokenizerImpl::get_structured_output_controller(std::optional<int> vocab_size) {
