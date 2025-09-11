@@ -495,18 +495,19 @@ std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_vision_encoder_ire
         });
 }
 
+bool check_image_preprocess_env() {
+    const char* env = std::getenv("IMAGE_PREPROCESS");
+    return !(env && std::string(env) == "CPP");
+}
+
 VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_dir,
                                            const std::string& device,
                                            const ov::AnyMap properties)
-    : VisionEncoder(model_dir, device, properties) {
-    const char* env = std::getenv("IMAGE_PREPROCESS");
-    if (env && std::string(env) == "CPP") {
-        use_ov_image_preprocess = false;
-    }
+    : VisionEncoder(model_dir, device, properties),
+      use_ov_image_preprocess(check_image_preprocess_env()) {
     if (use_ov_image_preprocess) {
         auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
-        m_ireq_queue_vision_encoder =
-            create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
+        m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
     }
 }
 
@@ -514,11 +515,8 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
                                            const std::filesystem::path& config_dir_path,
                                            const std::string& device,
                                            const ov::AnyMap properties)
-    : VisionEncoder(models_map, config_dir_path, device, properties) {
-    const char* env = std::getenv("IMAGE_PREPROCESS");
-    if (env && std::string(env) == "CPP") {
-        use_ov_image_preprocess = false;
-    }
+    : VisionEncoder(models_map, config_dir_path, device, properties),
+      use_ov_image_preprocess(check_image_preprocess_env()) {
     if (use_ov_image_preprocess) {
         const auto& [vision_encoder_model, vision_encoder_weights] =
             utils::get_model_weights_pair(models_map, "vision_embeddings");
