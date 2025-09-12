@@ -72,6 +72,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
 
     adapter_config = openvino_genai.AdapterConfig()
     if "adapters" in kwargs and kwargs["adapters"] is not None:
+        assert len(kwargs['alphas']) == len(kwargs["adapters"]), "`alphas` must be the same length as `adapters`"
         for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
@@ -135,7 +136,7 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
                 model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
             )
 
-    if 'adapters' in kwargs and kwargs['adapters'] is not None:
+    if kwargs.get("adapters") is not None:
         adapters = kwargs["adapters"]
         alphas = kwargs.get("alphas", None)
 
@@ -149,9 +150,9 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
 
         if alphas is not None:
             assert len(alphas) == len(adapter_names), "`alphas` must be the same length as `adapters`"
-            model.add_weighted_adapter([f"adapter_{idx}" for idx in range(len(kwargs['adapters']))], alphas, "merged_lora")
+            model.add_weighted_adapter(adapter_names, alphas, "merged_lora")
         else:
-            model.add_weighted_adapter([f"adapter_{idx}" for idx in range(len(kwargs['adapters']))], "merged_lora")
+            model.add_weighted_adapter(adapter_names, "merged_lora")
 
         model.set_adapter("merged_lora")
 
