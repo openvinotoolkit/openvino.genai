@@ -188,7 +188,7 @@ public:
         std::vector<ov::genai::EncodedImage> encoded_images;
         if (rgbs.size() > 0) {
             encoded_images = m_inputs_embedder->encode_images(rgbs, false);
-        } else if (rgbs.size() > 0) {
+        } else if (video.size() > 0) {
             encoded_images = m_inputs_embedder->encode_images(video, true);
         }
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
