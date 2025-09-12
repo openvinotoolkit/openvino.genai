@@ -71,13 +71,13 @@ public:
         //     ov::device::properties("NPU", ...),
         //     ov::device::properties("CPU", ...)
         // }
-        auto device_propertes = utils::pop_or_default<ov::AnyMap>(
+        auto device_properties = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
         );
         // Otherwise, the same properties are used for all models and devices
-        auto lm_properties = device_propertes.empty()
+        auto lm_properties = device_properties.empty()
             ? properties_copy
-            : utils::pop_or_default<ov::AnyMap>(device_propertes, device, {});
+            : utils::pop_or_default<ov::AnyMap>(device_properties, device, {});
 
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
@@ -95,9 +95,9 @@ public:
         m_language = compiled_language_model.create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
-        auto embedder_properties = device_propertes.empty()
+        auto embedder_properties = device_properties.empty()
             ? properties_copy
-            : utils::pop_or_default<ov::AnyMap>(device_propertes, embedder_device, {});
+            : utils::pop_or_default<ov::AnyMap>(device_properties, embedder_device, {});
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
         m_tokenizer = m_inputs_embedder->get_tokenizer();
