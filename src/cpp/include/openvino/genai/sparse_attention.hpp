@@ -4,6 +4,8 @@
 #pragma once
 
 #include <cstddef>
+#include <unordered_map>
+#include <sstream>
 
 namespace ov::genai {
 

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <sstream>
 
 #include "openvino/genai/cache_eviction.hpp"
 #include "openvino/genai/sparse_attention.hpp"

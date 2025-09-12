@@ -4,6 +4,8 @@
 #pragma once
 
 #include <cstddef>
+#include <unordered_map>
+#include <sstream>
 
 #include "openvino/core/except.hpp"
 
