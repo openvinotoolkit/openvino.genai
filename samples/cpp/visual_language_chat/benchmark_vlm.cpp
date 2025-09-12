@@ -63,18 +63,18 @@ int main(int argc, char* argv[]) try {
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
     config.ignore_eos = true;
 
-    ov::genai::SchedulerConfig scheduler_config;
-    scheduler_config.enable_prefix_caching = false;
-    scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
-
     std::cout << ov::get_openvino_version() << std::endl;
 
     std::unique_ptr<ov::genai::VLMPipeline> pipe;
     if (device == "NPU")
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
-    else
-        // Setting of Scheduler config will trigger usage of ContinousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
+    else {
+        // Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
+        ov::genai::SchedulerConfig scheduler_config;
+        scheduler_config.enable_prefix_caching = false;
+        scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
+    }
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
