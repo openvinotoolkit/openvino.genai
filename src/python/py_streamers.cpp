@@ -31,6 +31,7 @@ TextStreamer is used to decode tokens into text and call a user-defined callback
 
 tokenizer: Tokenizer object to decode tokens into text.
 callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
+skip_special_tokens: Whether to skip special tokens during decoding. Default is True.
 
 )";
 
@@ -93,7 +94,7 @@ void init_streamers(py::module_& m) {
     OPENVINO_SUPPRESS_DEPRECATED_END
 
     py::class_<TextStreamer, std::shared_ptr<TextStreamer>, StreamerBase>(m, "TextStreamer", text_streamer_docstring)
-        .def(py::init<const Tokenizer&, std::function<CallbackTypeVariant(std::string)>>(), py::arg("tokenizer"), py::arg("callback"))
+        .def(py::init<const Tokenizer&, std::function<CallbackTypeVariant(std::string)>, bool>(), py::arg("tokenizer"), py::arg("callback"), py::arg("skip_special_tokens") = true)
         .def("write", 
             [](TextStreamer& self, std::variant<int64_t, std::vector<int64_t>> token) {
                 if (auto _token = std::get_if<int64_t>(&token)) {
