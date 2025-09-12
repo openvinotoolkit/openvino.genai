@@ -837,6 +837,12 @@ class GenerationConfig:
     def max_new_tokens(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
+    def is_video(self) -> bool:
+        ...
+    @is_video.setter
+    def is_video(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
     def max_ngram_size(self) -> int:
         ...
     @max_ngram_size.setter
@@ -3442,7 +3448,7 @@ class VLMPipeline:
     def finish_chat(self) -> None:
         ...
     @typing.overload
-    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], video: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -3467,7 +3473,10 @@ class VLMPipeline:
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
-        
+
+            :param video: list of images
+            :type video: list[ov.Tensor]
+
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
         

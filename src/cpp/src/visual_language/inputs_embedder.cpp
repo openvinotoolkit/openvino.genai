@@ -164,9 +164,18 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
     return single_image_tensors;
 }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
-    std::vector<EncodedImage> embeds;
+std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images, const bool& is_video) {
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+    std::vector<EncodedImage> embeds;
+
+    if (is_video) {
+        embeds = m_vision_encoder->encode_video(single_images);
+        if (!embeds.empty()) {
+            return embeds;
+        }
+        // Fallback to image process.
+    }
+
     for (const ov::Tensor& image : single_images) {
         embeds.emplace_back(m_vision_encoder->encode(image));
     }
@@ -287,8 +296,8 @@ bool InputsEmbedder::has_token_type_ids() const {
     return m_impl->has_token_type_ids();
 }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
-    return m_impl->encode_images(images);
+std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images, const bool& is_video) {
+    return m_impl->encode_images(images, is_video);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
