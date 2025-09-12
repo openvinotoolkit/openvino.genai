@@ -439,7 +439,8 @@ def test_vlm_get_tokenizer(backend: str, vlm_pipeline_provider: Callable[[str, s
 def test_sampling(
     config, 
     backend: str, 
-    cat_tensor: openvino.Tensor, vlm_pipeline_provider: Callable[[str, str], VLMPipeline],
+    cat_tensor: openvino.Tensor, 
+    vlm_pipeline_provider: Callable[[str, str], VLMPipeline],
 ):
     pipe = vlm_pipeline_provider("katuni4ka/tiny-random-minicpmv-2_6", backend)
     pipe.generate(PROMPTS[0], image=cat_tensor, generation_config=config)
@@ -723,7 +724,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(ov_pipe: VLMPipeline, 
     res_first = streamer_generation_result
     current_iter = 0
     streamer_generation_result = ""
-    _ = ov_pipe.generate(
+    ov_pipe.generate(
         callback_questions[0],
         images=image_sequence,
         generation_config=generation_config,
@@ -771,12 +772,12 @@ TAG_INSERTED_BY_TEMPLATE = [
 ]
 
 
-IMAGE_ID_IGNORANT = TAG_INSERTED_BY_TEMPLATE + [
+IMAGE_ID_IGNORANT_MODELS_TO_TAG = TAG_INSERTED_BY_TEMPLATE + [
     ("katuni4ka/tiny-random-internvl2", lambda idx: "<image>\n"),
 ]
 
 
-MODELS_TO_TAG = IMAGE_ID_IGNORANT + [
+MODELS_TO_TAG = IMAGE_ID_IGNORANT_MODELS_TO_TAG + [
     # minicpm tracks image number in expanded tags
     ("katuni4ka/tiny-random-minicpmv-2_6", lambda idx: "(<image>./</image>)\n"),
     (
@@ -920,7 +921,7 @@ class TestImageTags:
 
         retry(workaround_inconsistent_inference)
 
-    @pytest.mark.parametrize("model_and_tag", MODELS_TO_TAG, indirect=True)
+    @pytest.mark.parametrize("model_and_tag", IMAGE_ID_IGNORANT_MODELS_TO_TAG, indirect=True)
     def test_same_reference(self, model_and_tag, cat_tensor):
         vlm, _ = model_and_tag
         generation_config = _setup_generation_config(vlm, set_eos_token=False)
