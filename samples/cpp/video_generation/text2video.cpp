@@ -22,7 +22,7 @@ int main(int32_t argc, char* argv[]) {
     ov::genai::VideoGenerationConfig config = pipe.get_generation_config();
     config.num_frames = 1;
     pipe.set_generation_config(config);
-    ov::Tensor image = pipe.generate(
+    ov::Tensor video = pipe.generate(
         prompt,
         "worst quality, inconsistent motion, blurry, jittery, distorted",
         ov::genai::height(512),
