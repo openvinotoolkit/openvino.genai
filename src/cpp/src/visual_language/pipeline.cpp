@@ -82,7 +82,7 @@ public:
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
         if (m_is_npu) {
-            embedder_device = "CPU";
+            embedder_device = "GPU";
             utils::KVDesc kv_desc;
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
