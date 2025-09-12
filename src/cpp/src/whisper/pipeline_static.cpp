@@ -527,14 +527,18 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
                 auto unsq1 = std::make_shared<v0::Unsqueeze>(broadcast->output(0), cst_0->output(0));
                 auto unsq2 = std::make_shared<v0::Unsqueeze>(unsq1->output(0), cst_1->output(0));
                 for (const auto& cross_attn_node : cross_attn_nodes) {
-                    auto sdpa = std::make_shared<v13::ScaledDotProductAttention>(
-                        cross_attn_node->input(0).get_source_output(),
-                        cross_attn_node->input(1).get_source_output(),
-                        cross_attn_node->input(2).get_source_output(),
-                        unsq2->output(0),
-                        false
-                    );
-                    ov::replace_node(cross_attn_node, sdpa);
+                    if (cross_attn_node->inputs().size() == 3) {
+                        auto sdpa = std::make_shared<v13::ScaledDotProductAttention>(
+                            cross_attn_node->input(0).get_source_output(),
+                            cross_attn_node->input(1).get_source_output(),
+                            cross_attn_node->input(2).get_source_output(),
+                            unsq2->output(0),
+                            false
+                        );
+                        ov::replace_node(cross_attn_node, sdpa);
+                    } else {
+                        cross_attn_node->input(3).replace_source_output(unsq2->output(0));
+                    }
                 }
             }
         }
