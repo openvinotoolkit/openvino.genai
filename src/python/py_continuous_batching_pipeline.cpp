@@ -30,6 +30,8 @@ using ov::genai::GenerationFinishReason;
 using ov::genai::GenerationStatus;
 using ov::genai::SchedulerConfig;
 using ov::genai::PipelineMetrics;
+using ov::genai::KVCrushAnchorPointMode;
+using ov::genai::KVCrushConfig;
 
 namespace {
 
@@ -277,17 +279,52 @@ void init_continuous_batching_pipeline(py::module_& m) {
                                :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache)")
             .value("SUM", AggregationMode::SUM)
             .value("NORM_SUM", AggregationMode::NORM_SUM);
+    py::enum_<KVCrushAnchorPointMode>(m,
+                                      "KVCrushAnchorPointMode",
+                                      R"(Represents the anchor point types for KVCrush cache eviction
+                  :param KVCrushAnchorPointMode.RANDOM: Random binary vector will be used as anchor point
+                  :param KVCrushAnchorPointMode.ZEROS: Vector of all zeros will be used as anchor point
+                  :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
+                  :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
+                  :param KVCrushAnchorPointMode.ALTERNATE: Alternating 0s and 1s will be used as anchor point)")
+        .value("RANDOM", KVCrushAnchorPointMode::RANDOM)
+        .value("ZEROS", KVCrushAnchorPointMode::ZEROS)
+        .value("ONES", KVCrushAnchorPointMode::ONES)
+        .value("MEAN", KVCrushAnchorPointMode::MEAN)
+        .value("ALTERNATE", KVCrushAnchorPointMode::ALTERNATE);
 
+    py::class_<KVCrushConfig>(m, "KVCrushConfig", "Configuration for KVCrush cache eviction algorithm")
+        .def(py::init<>(), "Default constructor")
+        .def(py::init<size_t, KVCrushAnchorPointMode, size_t>(),
+             "Constructor with budget, anchor point mode, and RNG seed",
+             py::arg("budget"),
+             py::arg_v("anchor_point_mode", KVCrushAnchorPointMode::RANDOM, "KVCrushAnchorPointMode.RANDOM"),
+             py::arg("rng_seed") = 0)
+        .def_readwrite("budget", &KVCrushConfig::budget)
+        .def_readwrite("anchor_point_mode", &KVCrushConfig::anchor_point_mode)
+        .def_readwrite("rng_seed", &KVCrushConfig::rng_seed);
 
     py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
             .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode, bool apply_rotation,
-                            size_t snapkv_window_size) {
-                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode, apply_rotation, snapkv_window_size}; }),
+                            size_t snapkv_window_size, py::object kvcrush_config) {
+                if (kvcrush_config.is_none()) {
+                     return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode, apply_rotation, snapkv_window_size};
+                 } else {
+                     const auto& config_ref = kvcrush_config.cast<const KVCrushConfig&>();
+                     return CacheEvictionConfig{start_size,
+                                                recent_size,
+                                                max_cache_size,
+                                                aggregation_mode,
+                                                apply_rotation,
+                                                snapkv_window_size,
+                                                config_ref};
+                 } }),
                  py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"), py::arg("apply_rotation") = false,
-                 py::arg("snapkv_window_size") = 8)
+                 py::arg("snapkv_window_size") = 8, py::arg("kvcrush_config") = py::none())
             .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode)
             .def_readwrite("apply_rotation", &CacheEvictionConfig::apply_rotation)
             .def_readwrite("snapkv_window_size", &CacheEvictionConfig::snapkv_window_size)
+            .def_readwrite("kvcrush_config", &CacheEvictionConfig::kvcrush_config)
             .def("get_start_size", &CacheEvictionConfig::get_start_size)
             .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
             .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)

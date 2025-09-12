@@ -17,7 +17,12 @@ namespace ov::genai::pybind::utils {
 
 // When StreamerVariant is used utf-8 decoding is done by pybind and can lead to exception on incomplete texts.
 // Therefore strings decoding should be handled with PyUnicode_DecodeUTF8(..., "replace") to not throw errors.
-using PyBindStreamerVariant = std::variant<std::function<std::optional<uint16_t>(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
+using PyBindStreamerVariant = std::variant<
+    std::function<std::optional<uint16_t>(std::string)>,
+    std::shared_ptr<StreamerBase>,
+    std::monostate>;
+
+ov::genai::StructuredOutputConfig::CompoundGrammar py_obj_to_compound_grammar(const py::object& py_obj);
 
 template <class... Ts>
 struct overloaded : Ts... {

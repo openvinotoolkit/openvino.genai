@@ -14,13 +14,17 @@ namespace ov::genai {
 
 class VisionEncoderQwen2VL : public VisionEncoder {
 public:
-    using VisionEncoder::VisionEncoder;
+    explicit VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
+    explicit VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir_path, const std::string& device, const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
     std::vector<EncodedImage> encode_video(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map) override;
 
 private:
     ov::Tensor preproces_single_image(const ov::Tensor& image, const ProcessorConfig& config, const ImageSize& target_image_size);
+    EncodedImage encode_with_imagepreprocess_cpp(const ov::Tensor& image, const ov::AnyMap& config_map);
+    EncodedImage encode_with_imagepreprocess_ov(const ov::Tensor& image, const ov::AnyMap& config_map);
+    bool use_ov_image_preprocess = true; // default use ov image preprocess, control by env IMAGE_PREPROCESS=CPP to use cpp image preprocess
 };
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {

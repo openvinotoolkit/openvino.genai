@@ -15,6 +15,7 @@
 #include "continuous_batching/timer.hpp"
 #include "continuous_batching/sparse_attention.hpp"
 #include "utils.hpp"
+#include "continuous_batching/cache_eviction.hpp"
 
 namespace ov::genai {
 class Scheduler {
@@ -28,7 +29,7 @@ class Scheduler {
 
     // Dynamic KV-cache allocation params
     size_t m_kv_blocks_initial_multiplier = 2;
-    const float m_cache_growth_factor = 2; // commmon values 1.5 or 2
+    const float m_cache_growth_num_tokens = 256; // Number of tokens by which KV-cache is increased
 
     std::shared_ptr<CacheManager> m_cache_manager;
 
@@ -159,6 +160,12 @@ public:
 
     void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free) {
         m_block_manager->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
+    }
+
+    void clear_kv_cache() {
+        OPENVINO_ASSERT(m_config.enable_prefix_caching == false, "KV-cache should not be cleared if prefix caching is enabled.");
+        m_cache_manager->clear();
+        m_block_manager->clear();
     }
 
 private:
@@ -394,10 +401,7 @@ private:
                         // block tables for each running sequence within a group
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
 
-                        if (seq->get_generated_len() == 0) {
-                            // full prompt or its remaining tail part fit completely into the next inference
-                            scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
-                        }
+                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                         scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
                         scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
                     }
@@ -507,37 +511,6 @@ private:
         }
     }
 
-    size_t _get_available_gpu_memory() {
-        auto device = m_cache_manager->get_device();
-        OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "_get_available_gpu_memory() is applicable for GPU only.");
-
-        ov::Core core = utils::singleton_core();
-        auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
-        auto device_type = core.get_property(device, ov::device::type);
-
-        // sum up all used device memory
-        std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
-        size_t used_device_mem = 0;
-        for (auto mem_type: device_memory_types) {
-            used_device_mem += memory_statistics[mem_type];
-        }
-
-        if (device_type == ov::device::Type::INTEGRATED) {
-            used_device_mem += memory_statistics["usm_host"];
-        }
-
-        // there could be unaccounted extra memory reserved by kernels, kept
-        // in memory pools, etc
-        // therefore, add a threshold to account for this
-        float used_memory_threshold = 1.1;
-        used_device_mem *= used_memory_threshold;
-
-        // total device memory in bytes
-        auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
-
-        return total_device_memory - used_device_mem;
-    }
-
     void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         size_t blocks_sum = 0;
         for (auto idx = 0; idx < sequence_groups.size(); idx++) {
@@ -562,12 +535,12 @@ private:
         }
         auto device = m_cache_manager->get_device();
         size_t current_num_of_kv_blocks = m_block_manager->get_total_number_of_kv_blocks();
-        size_t new_blocks_num = current_num_of_kv_blocks * m_cache_growth_factor;
+        size_t new_blocks_num = current_num_of_kv_blocks + std::ceil(m_cache_growth_num_tokens / get_block_size());
 
         if (device.find("GPU") == std::string::npos) {
             m_block_manager->increase_kv_blocks_number(new_blocks_num);
         } else {
-            const size_t available_gpu_memory = _get_available_gpu_memory();
+            const size_t available_gpu_memory = utils::get_available_gpu_memory(m_cache_manager->get_device(), m_cache_manager->get_num_decoder_layers());
             const size_t block_size_in_bytes = m_cache_manager->get_block_size_in_bytes();
             size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * block_size_in_bytes;
             if (required_memory <= available_gpu_memory) {
@@ -585,22 +558,13 @@ private:
     }
 
     size_t _schedule_scores_to_aggregate(SequenceGroup::Ptr sequence_group) {
-        size_t prompt_len = sequence_group->get_prompt_len();
-        size_t first_scored_token_position = m_snapkv_window_size > prompt_len ? 0 : prompt_len - m_snapkv_window_size;
-        size_t num_scored_token_positions_in_this_chunk = 0;
-        size_t num_processed_tokens_before_this_chunk = sequence_group->get_num_processed_tokens();
-        size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
-        size_t num_processed_tokens_after_this_chunk = num_processed_tokens_before_this_chunk + num_scheduled_tokens;
-        if (num_processed_tokens_after_this_chunk > first_scored_token_position) {
-            if (num_processed_tokens_before_this_chunk > first_scored_token_position) {
-                num_scored_token_positions_in_this_chunk = num_scheduled_tokens;
-            }
-            else {
-                num_scored_token_positions_in_this_chunk = num_processed_tokens_after_this_chunk - first_scored_token_position;
-            }
+        auto calculator = SnapKVScoreAggregationCalculator(m_snapkv_window_size);
 
-        }
-        return num_scored_token_positions_in_this_chunk;
+        size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
+        size_t prompt_len = sequence_group->get_prompt_len();
+
+        return calculator.get_num_token_scores_to_aggregate(prompt_len, num_scheduled_tokens, num_processed_tokens);
     }
 
     float _schedule_xattention_threshold(SequenceGroup::Ptr sequence_group) {

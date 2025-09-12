@@ -14,6 +14,7 @@
 #include "openvino/op/assign.hpp"
 #include "openvino/op/constant.hpp"
 #include <openvino/pass/manager.hpp>
+#include <openvino/core/graph_util.hpp>
 
 using namespace ov;
 using namespace ov::op;
@@ -108,6 +109,23 @@ bool ov::genai::MakeVocabDecoderSatateful::run_on_model(const std::shared_ptr<ov
     return true;
 }
 
+class ReadPadRightAttributes : public ov::AttributeVisitor {
+private:
+    bool m_pad_right = true;
+public:
+    void on_adapter(const std::string& name, ov::ValueAccessor<void>& adapter) override {
+        if (name != "pad_right") {
+            return;
+        }
+        if (auto a = ov::as_type<ov::AttributeAdapter<bool>>(&adapter)) {
+            m_pad_right = a->get();
+        }
+    }
+
+    bool get_pad_right() const {
+        return m_pad_right;
+    }
+};
 
 bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Model>& model) {
     std::shared_ptr<ov::Node> combine_seg_node;
@@ -243,19 +261,53 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     auto pad_to_max_length_var = std::make_shared<op::util::Variable>(op::util::VariableInfo{ov::Shape{1}, ov::element::boolean, ov::genai::PAD_TO_MAX_LENGTH_VAR_ID});
     auto default_false_const = std::make_shared<v0::Constant>(ov::element::boolean, ov::Shape{1}, std::vector{false});
     auto pad_to_max_length_rv = std::make_shared<v6::ReadValue>(default_false_const, pad_to_max_length_var);
-    model->add_sinks({std::make_shared<v6::Assign>(pad_to_max_length_rv, pad_to_max_length_var)});
-    model->add_variables({pad_to_max_length_var});
-    
     auto select_node = std::make_shared<v1::Select>(pad_to_max_length_rv, max_length_rv, zero_constant);
 
+    // If user called encode without explicitly stating padding side, then we should pad it to the default side.
+    // Here we get that side from the RaggedToDense nodes attribute. 
+    auto pad_right_attr_visitor = ReadPadRightAttributes();
+    bool first_iter = true;
+    bool default_pad_right = true;
     for (auto ragged_to_dense_node : ragged_to_dense_nodes) {
         if (!ragged_to_dense_node) {
-            return true;  // true since at this point we already have modified the graph.s
+            return true;  // true since at this point we already have modified the graph.
         }
-        
-        auto max_op = std::make_shared<v1::Maximum>(ragged_to_dense_node->input_value(3), select_node);
-        ragged_to_dense_node->input(3).replace_source_output(max_op->output(0));
+        ragged_to_dense_node->visit_attributes(pad_right_attr_visitor);
+        if (first_iter) {
+            default_pad_right = pad_right_attr_visitor.get_pad_right();
+        } else if (pad_right_attr_visitor.get_pad_right() != default_pad_right) {
+            return true;  // true since at this point we already have modified the graph.
+        }
+        first_iter = false;
     }
+
+    // Add padding side variable.
+    auto pad_right_var = std::make_shared<op::util::Variable>(op::util::VariableInfo{ov::Shape{}, ov::element::boolean, ov::genai::PAD_RIGHT_VAR_ID});
+    auto pad_right_const = std::make_shared<v0::Constant>(ov::element::boolean, ov::Shape{}, std::vector{default_pad_right});
+    auto pad_right_rv = std::make_shared<v6::ReadValue>(pad_right_const, pad_right_var);
+    
+    // This cycle cannot be united with the cycle above since first we need to ensure that all RaggedToDense nodes have the same padding side
+    // and only after that start to modify. Therefore we need to iterate over RaggedToDense nodes twice. In 99% of cases there is only one RaggedToDense node
+    // and in the rest of cases it would be two RaggedToDense nodes with the same padding side if they are created by the openvino_tokenizers.
+    for (auto ragged_to_dense_node : ragged_to_dense_nodes) {
+        if (!ragged_to_dense_node) {
+            return true;  // true since at this point we already have modified the graph.
+        }
+
+        auto new_inputs = ragged_to_dense_node->input_values();
+        new_inputs.emplace_back(pad_right_rv->output(0));
+        auto new_ragged_to_dense = ragged_to_dense_node->clone_with_new_inputs(new_inputs);
+        
+        auto max_op = std::make_shared<v1::Maximum>(new_ragged_to_dense->input_value(3), select_node);
+        new_ragged_to_dense->input(3).replace_source_output(max_op->output(0));
+        
+        ov::replace_node(ragged_to_dense_node, new_ragged_to_dense);
+    }
+
+    model->add_sinks({std::make_shared<v6::Assign>(pad_right_rv, pad_right_var)});
+    model->add_variables({pad_right_var});
+    model->add_sinks({std::make_shared<v6::Assign>(pad_to_max_length_rv, pad_to_max_length_var)});
+    model->add_variables({pad_to_max_length_var});
 
     return true;
 }

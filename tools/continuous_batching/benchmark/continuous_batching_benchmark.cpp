@@ -488,7 +488,7 @@ int main(int argc, char* argv[]) try {
     scheduler_config.max_num_seqs = 256; // not used if dynamic_split_fuse=True
     if (use_cache_eviction) {
         scheduler_config.use_cache_eviction = true;
-        scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(32, 32, 128, ov::genai::AggregationMode::NORM_SUM);
+        scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(32, 32, 128, ov::genai::AggregationMode::NORM_SUM, false, 8, ov::genai::KVCrushConfig(0, ov::genai::KVCrushAnchorPointMode::MEAN));
     }
 
     std::cout << "Benchmarking parameters: " << std::endl;

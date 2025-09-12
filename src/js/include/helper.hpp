@@ -40,6 +40,9 @@ std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& en
 /** @brief  A template specialization for TargetType ov::genai::StringInputs */
 template <>
 ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::ChatHistory */
+template <>
+ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
 
 /**
  * @brief  Template function to convert C++ data types into Javascript data types
@@ -79,6 +82,18 @@ Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, co
 
 template <>
 Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, const std::vector<size_t> value);
-                                                                  
-bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);
 
+/**
+ * @brief  Template function to convert C++ map into Javascript Object. Map key must be std::string.
+ * @tparam MapElementType C++ data type of map elements.
+ */
+template <typename MapElementType>
+Napi::Object cpp_map_to_js_object(const Napi::Env& env, const std::map<std::string, MapElementType>& map) {
+    Napi::Object obj = Napi::Object::New(env);
+    for (const auto& [k, v] : map) {
+        obj.Set(k, v);
+    }
+    return obj;
+}
+
+bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);

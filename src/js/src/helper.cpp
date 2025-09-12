@@ -117,6 +117,44 @@ ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env,
 }
 
 template <>
+ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value) {
+    auto incorrect_argument_message = "Chat history must be { role: string, content: string }[]";
+    if (value.IsArray()) {
+        auto array = value.As<Napi::Array>();
+        size_t arrayLength = array.Length();
+
+        std::vector<std::unordered_map<std::string, std::string>> nativeArray;
+        for (uint32_t i = 0; i < arrayLength; ++i) {
+            Napi::Value arrayItem = array[i];
+            if (!arrayItem.IsObject()) {
+                OPENVINO_THROW(incorrect_argument_message);
+            }
+            auto obj = arrayItem.As<Napi::Object>();
+            if (obj.Get("role").IsUndefined() || obj.Get("content").IsUndefined()) {
+                OPENVINO_THROW(incorrect_argument_message);
+            }
+            std::unordered_map<std::string, std::string> result;
+            Napi::Array keys = obj.GetPropertyNames();
+
+            for (uint32_t i = 0; i < keys.Length(); ++i) {
+                Napi::Value key = keys[i];
+                Napi::Value value = obj.Get(key);
+
+                std::string keyStr = key.ToString().Utf8Value();
+                std::string valueStr = value.ToString().Utf8Value();
+
+                result[keyStr] = valueStr;
+            }
+            nativeArray.push_back(result);
+        }
+        return nativeArray;
+
+    } else {
+        OPENVINO_THROW(incorrect_argument_message);
+    }
+}
+
+template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& env, const ov::genai::EmbeddingResult embedding_result) {
     return std::visit(overloaded {
         [env](std::vector<float> embed_vector) -> Napi::Value {

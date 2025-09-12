@@ -17,17 +17,12 @@ pip install -r tests/python_tests/requirements.txt
 python -m pytest tests/python_tests/ -m precommit
 ```
 
-During the test downloaded HuggingFace (HF) models will be saved into the current directory. If you wish to place them somewhere else you can specify `GENAI_MODELS_PATH_PREFIX` environment variable, e.g.
-```sh
-GENAI_MODELS_PATH_PREFIX=$HOME/test_models python -m pytest tests/python_tests/ -m precommit
-```
-
 If you have built GenAI library by yourself instead of using wheel please set `PYTHONPATH` so that test could find library, e.g.
 ```sh
 PYTHONPATH=$PYTHONPATH:.../openvino.genai/build-Release/ python -m pytest tests/python_tests/ -m precommit
 ```
 
-## Customise tests run
+## Customize tests run
 
 Tests have `precommit` set of models. `precommit` contains lightweight models which can be quickly inferred. If you wish to run specific tests, you can use `-k` option, for example to run only multibatch and chat tests:
 ```sh
@@ -71,3 +66,5 @@ If the `CLEANUP_CACHE` environment variable is set, all downloaded and converted
 ```sh
 CLEANUP_CACHE=1 python -m pytest tests/python_tests -m samples
 ```
+
+Test images are saved to pytest's default cache dir. It can be changed with `--override-ini cache_dir=new_path`. `-p no:cacheprovider` disables the cache.
