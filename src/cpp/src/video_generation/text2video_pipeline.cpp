@@ -869,23 +869,15 @@ Text2VideoPipeline::Text2VideoPipeline(
     const std::filesystem::path& models_dir,
     const std::string& device,
     const AnyMap& properties
-<<<<<<< HEAD
 ) : m_impl{std::make_unique<ov::genai::Text2VideoPipeline::LTXPipeline>(
     models_dir, device, properties
 )} {}
-=======
-) : m_impl{create_LTXPipeline(models_dir, device, properties)} {}
->>>>>>> ead1f9ad (VideoGenerationConfig)
 
 ov::Tensor Text2VideoPipeline::generate(
     const std::string& positive_prompt,
     const std::string& negative_prompt,
     const ov::AnyMap& properties
 ) {
-<<<<<<< HEAD
-=======
-    // TODO: explicit negative_prompt arg instead of Property? What other args can be exposed that way?
->>>>>>> ead1f9ad (VideoGenerationConfig)
     return m_impl->generate(positive_prompt, negative_prompt, properties);
 }
 
@@ -898,8 +890,3 @@ void Text2VideoPipeline::set_generation_config(const VideoGenerationConfig& gene
 }
 
 Text2VideoPipeline::~Text2VideoPipeline() = default;
-<<<<<<< HEAD
-
-=======
-}  // namespace ov::genai
->>>>>>> ead1f9ad (VideoGenerationConfig)
