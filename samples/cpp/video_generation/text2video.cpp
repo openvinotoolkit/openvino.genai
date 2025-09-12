@@ -16,6 +16,28 @@ int main(int32_t argc, char* argv[]) {
     std::filesystem::path models_dir = argv[1];
     std::string prompt = argv[2];
     // TODO: Test GPU, NPU, HETERO, MULTI, AUTO, different steps on different devices
+    // TODO: OpenCV?
+    // TODO: describe algo
+    // scheduler needs extra dim?
+    // upgrade diffusers, take from master
+    // optimum-intel vs diffusers
+    // update validation tools later
+    // Vide instead of images because of video generation confing
+    // new classes LTXVideoTransformer3DModel AutoencoderKLLTXVideo
+    // private copy constructors
+    // const VideoGenerationConfig& may outlive VideoGenerationConfig?
+    // hide negative prompt
+    // LoRA?
+    // How is vedeo inpainting mask specified
+    // WIll v::Tensor decode(const ov::Tensor latent); stay the same - yes, just an extra dim in Tensor
+    // using VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;
+    // wasn't need so far:
+    //     TODO: OVLTXPipeline allows prompt_embeds and prompt_attention_mask instead of prompt; Same for negative_prompt_embeds and negative_prompt_attention_mask
+    //     TODO: OVLTXPipeline allows batched generation with multiple prompts
+    // Tests:
+    //     Functional
+    //     Sample
+    // Cover all config members in sample
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::Text2VideoPipeline pipe(models_dir, device);

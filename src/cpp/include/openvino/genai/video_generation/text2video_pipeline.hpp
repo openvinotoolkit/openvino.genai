@@ -190,7 +190,7 @@ struct AutoencoderKLLTXVideo {
 namespace ov::genai {
 class OPENVINO_GENAI_EXPORTS Text2VideoPipeline {
 public:
-    // static Text2VideoPipeline ltx_video();
+    static Text2VideoPipeline ltx_video();
     Text2VideoPipeline(
         const std::filesystem::path& models_dir,
         const std::string& device,
