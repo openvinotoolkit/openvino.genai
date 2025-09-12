@@ -162,7 +162,7 @@ def vlm_pipeline_provider() -> Generator[Callable[[str, str], VLMPipeline], None
     cache: dict[tuple[str, str], VLMPipeline] = {}
     
     def provide_pipeline(model_id: str, attention_backend: str) -> VLMPipeline:
-        cache_key = (model_id, attention_backend)
+        cache_key = (model_id, attention_backend)        
         
         if cache_key in cache:
             pipeline = cache[cache_key]
@@ -170,7 +170,7 @@ def vlm_pipeline_provider() -> Generator[Callable[[str, str], VLMPipeline], None
             return pipeline
         try:
             models_path = _get_ov_model(model_id)
-            pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=attention_backend)
+            pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=attention_backend)   
             cache[cache_key] = pipeline
             return pipeline
         except Exception as e:
@@ -703,8 +703,9 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(ov_pipe: VLMPipeline, 
 
     def streamer(subword):
         nonlocal current_iter
-        current_iter += 1
         nonlocal streamer_generation_result
+
+        current_iter += 1
         streamer_generation_result += subword
         return (
             StreamingStatus.CANCEL
@@ -712,10 +713,12 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(ov_pipe: VLMPipeline, 
             else StreamingStatus.RUNNING
         )
 
-    generation_config = _setup_generation_config(ov_pipe, ignore_eos=True)
+    generation_config = _setup_generation_config(
+        ov_pipe, ignore_eos=True
+    )
 
     ov_pipe.start_chat()
-    _ = ov_pipe.generate(
+    ov_pipe.generate(
         callback_questions[0],
         images=image_sequence,
         generation_config=generation_config,
@@ -746,7 +749,7 @@ def retry(func, exception_type=AssertionError):
                 raise
 
 
-def generate(vlm, requests):
+def generate(vlm: VLMPipeline, requests):
     generation_config = _setup_generation_config(vlm, set_eos_token=False)
     vlm.set_generation_config(generation_config)
     vlm.start_chat()
