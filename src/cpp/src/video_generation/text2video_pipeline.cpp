@@ -4,6 +4,7 @@
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
 
 using namespace ov::genai;
+
 class Text2VideoPipeline::LTXPipeline {
 public:
     std::chrono::steady_clock::duration m_load_time_ms{0};
@@ -269,7 +270,6 @@ std::unique_ptr<ov::genai::Text2VideoPipeline::LTXPipeline> create_LTXPipeline(
 }
 }  // anonymous namespace
 
-namespace ov::genai {
 Text2VideoPipeline::Text2VideoPipeline(
     const std::filesystem::path& models_dir,
     const std::string& device,
@@ -294,4 +294,3 @@ void Text2VideoPipeline::set_generation_config(const VideoGenerationConfig& gene
 }
 
 Text2VideoPipeline::~Text2VideoPipeline() = default;
-}  // namespace ov::genai
