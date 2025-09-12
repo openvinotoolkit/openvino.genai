@@ -401,7 +401,8 @@ ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_im
         }
     }
 
-    ov::Tensor t_cu_seqlens(ov::element::i32, {cu_seqlens.size()}, cu_seqlens.data());
+    ov::Tensor t_cu_seqlens(ov::element::i32, {cu_seqlens.size()});
+    std::memcpy(t_cu_seqlens.data<int32_t>(), cu_seqlens.data(), cu_seqlens.size() * sizeof(int32_t));
     return t_cu_seqlens;
 }
 
