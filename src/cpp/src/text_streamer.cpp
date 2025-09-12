@@ -16,10 +16,10 @@ namespace genai {
 
 TextStreamer::TextStreamer(const Tokenizer& tokenizer,
                            std::function<ov::genai::CallbackTypeVariant(std::string)> callback,
-                           const ov::AnyMap& additional_decode_properties) {
+                           bool skip_special_tokens) {
     m_tokenizer = tokenizer;
     m_subword_callback = callback;
-    m_additional_decode_properties = additional_decode_properties;
+    m_additional_decode_properties = ov::AnyMap{ov::genai::skip_special_tokens(skip_special_tokens)};
 }
 
 StreamingStatus TextStreamer::write(int64_t token) {

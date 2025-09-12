@@ -25,7 +25,7 @@ public:
 
     void end() override;
 
-    TextStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback, const ov::AnyMap& additional_decode_properties = {});
+    TextStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback, bool skip_special_tokens = true);
 
 private:
     Tokenizer m_tokenizer;
