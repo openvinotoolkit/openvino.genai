@@ -4,6 +4,7 @@
 #include <optional>
 
 #include "indicators/progress_bar.hpp"
+#include <openvino/runtime/tensor.hpp>
 
 bool progress_bar(size_t step, size_t num_steps, ov::Tensor& /* latent */) {
     using namespace indicators;
