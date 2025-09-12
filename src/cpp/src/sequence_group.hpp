@@ -143,6 +143,11 @@ public:
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
         }
+        if (m_type == SequenceGroupType::EMBEDDINGS) {
+            for (int i = 0; i < n; i++) {
+                m_generated_ids_embeds.pop_back();
+            }
+        }
     }
 
     GenerationOutput get_last_generation_output(size_t token_cnt = 1, size_t num_token_to_ignore = 0) {

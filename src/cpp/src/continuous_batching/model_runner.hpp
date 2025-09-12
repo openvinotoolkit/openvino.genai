@@ -225,11 +225,17 @@ public:
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
                 // compute token_type_ids for current sequence
                 if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-                    if (auto token_type_ids = sequence_group->get_token_type_ids()) {
+                    try {
+                        std::ignore = m_request.get_tensor("token_type_ids");
                         have_token_type_ids = true;
-                        OPENVINO_ASSERT(token_type_ids->size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
-                        for (size_t i = 0; i < num_scheduled_tokens; ++i) {
-                            token_type_ids_data[i] = (i < prompt_len ? (*token_type_ids)[i] : 0);
+                    } catch (const ov::Exception&) {}
+
+                    if (have_token_type_ids) {
+                        if (auto token_type_ids = sequence_group->get_token_type_ids()) {
+                            OPENVINO_ASSERT(token_type_ids->size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
+                            for (size_t i = 0; i < num_scheduled_tokens; ++i) {
+                                token_type_ids_data[i] = (i < prompt_len ? (*token_type_ids)[i] : 0);
+                            }
                         }
                     }
                 }
