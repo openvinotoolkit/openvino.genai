@@ -19,7 +19,9 @@ int main(int32_t argc, char* argv[]) {
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::Text2VideoPipeline pipe(models_dir, device);
-    pipe.m_impl->m_generation_config.num_frames = 1;
+    ov::genai::VideoGenerationConfig config = pipe.get_generation_config();
+    config.num_frames = 1;
+    pipe.set_generation_config(config);
     ov::Tensor image = pipe.generate(
         prompt,
         "worst quality, inconsistent motion, blurry, jittery, distorted",
