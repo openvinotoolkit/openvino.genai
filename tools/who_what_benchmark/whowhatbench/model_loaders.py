@@ -71,7 +71,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
 
     adapter_config = openvino_genai.AdapterConfig()
-    if "adapters" in kwargs and kwargs["adapters"] is not None:
+    if kwargs.get("adapters") is not None:
         assert len(kwargs['alphas']) == len(kwargs["adapters"]), "`alphas` must be the same length as `adapters`"
         for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
             ov_adapter = openvino_genai.Adapter(adapter)
