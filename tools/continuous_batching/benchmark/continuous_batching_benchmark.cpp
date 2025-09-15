@@ -300,7 +300,7 @@ public:
         mean_ttft /= generations_info.size();
         mean_tpot /= generations_info.size();
 
-        auto total_duration_second = total_duration.count() / 1000.0;
+        auto total_duration_second = std::chrono::duration<double>(total_duration).count();
         std::cout << "Benchmark duration: " << total_duration_second << " s" << std::endl;
         std::cout << "Total number of input tokens: " << total_input_len << std::endl;
         std::cout << "Total number of output tokens: " << total_output_len << std::endl;
