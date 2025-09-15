@@ -768,7 +768,7 @@ void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path
     std::filesystem::create_directories(blob_path.parent_path());
 
     std::ofstream out(blob_path, std::ios::out | std::ios::binary);
-    OPENVINO_ASSERT(out.is_open(), "Cannot open file to write: " + std::string(blob_path));
+    OPENVINO_ASSERT(out.is_open(), "Cannot open file to write: " + blob_path.string());
     compiled_model.export_model(out);
     out.close();
 }
