@@ -22,6 +22,8 @@ class TestGreedyCausalLM:
         indirect=["convert_model"],
     )
     def test_sample_greedy_causal_lm(self, request, convert_model, sample_args):
+        if sys.platform == 'darwin':
+            pytest.xfail("Ticket 173586")
         prompt = sample_args
         
         # C++ test

@@ -637,6 +637,7 @@ jobs:
 
   genai_tools_tests:
     name: Tools ${{ matrix.build-type }}
+    if: ${{ 'false' }} # Only supported on X64 or ARM with SVE support
     strategy:
       fail-fast: false
       matrix:

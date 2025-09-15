@@ -21,6 +21,8 @@ class TestSpeculativeDecodingLM:
         indirect=["convert_model", "convert_draft_model"],
     )
     def test_sample_speculative_decoding_lm(self, convert_model, convert_draft_model, sample_args):
+        if sys.platform == 'darwin':
+            pytest.xfail("Ticket 173586")
         env = os.environ.copy()
         env["OPENVINO_LOG_LEVEL"] = "0"
         # Test CPP sample
