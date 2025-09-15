@@ -3162,7 +3162,7 @@ class TextStreamer(StreamerBase):
     detokenization_params: AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
 
     """
-    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus], skip_special_tokens: bool = True) -> None:
+    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus], detokenization_params: collections.abc.Mapping[str, typing.Any] = {}) -> None:
         ...
     def end(self) -> None:
         ...
