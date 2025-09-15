@@ -5,6 +5,13 @@
 #include <thread>
 #include <optional>
 
+#ifdef __APPLE__
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#elif !defined(_WIN32)
+#include <sys/sysinfo.h>
+#endif
+
 #include "openvino/genai/text_streamer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "utils.hpp"
@@ -23,6 +30,36 @@ ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model)
     }
 
     return ir_kv_cache_precision;
+}
+
+// Returns available RAM memory on system if possible, otherwise returns std::numeric_limits<std::streamsize>::max()
+size_t get_available_cpu_memory() {
+#ifdef __APPLE__ 
+    int64_t memsize;
+    size_t len = sizeof(memsize);
+    if (sysctlbyname("hw.memsize", &memsize, &len, NULL, 0) == 0) {
+        return memsize;
+    }
+#endif 
+
+#if !defined(_WIN32)
+    std::string token;
+    std::ifstream file("/proc/meminfo");
+    if(file.is_open()) {
+        while(file >> token) {
+            if(token == "MemTotal:") {
+                size_t mem;
+                if(file >> mem) {
+                    return mem * 1024;
+                } else {
+                    return std::numeric_limits<size_t>::max();
+                }
+            }
+            file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        }
+    }
+#endif
+    return std::numeric_limits<size_t>::max();
 }
 
 } // namespace
@@ -125,9 +162,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
 
     // Scheduler configuration
     SchedulerConfig normalized_config = scheduler_config;
+    size_t total_mem_size;
+    if (execution_device.find("GPU") != std::string::npos) {
+        total_mem_size = utils::get_available_gpu_memory(execution_device, m_num_decoder_layers);
+    } else {
+        total_mem_size = get_available_cpu_memory();
+    }
     if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
         size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
+        OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested KV-cache size is larger than available memory size on the system.");
         normalized_config.num_kv_blocks = size_in_bytes / cache_manager->get_block_size_in_bytes();
+    }
+    if (normalized_config.num_kv_blocks > 0) {
+        size_t size_in_bytes = cache_manager->get_block_size_in_bytes() * normalized_config.num_kv_blocks;
+        OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested number of KV-blocks require more memory than available on the system.");
     }
 
     bool can_use_partial_preemption = true;
