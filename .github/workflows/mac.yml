@@ -324,6 +324,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
+      CMAKE_POLICY_VERSION_MINIMUM: 3.5
 
     steps:
       - name: Clone openvino.genai
