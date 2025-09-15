@@ -19,23 +19,12 @@ clip_image_f32 preprocess_clip_image_nanollava(const clip_image_u8& image_orig, 
     int target_size = config.size_shortest_edge;
     resized_image = resize_and_pad_image(image, {target_size, target_size}, 127);
 
-
     // Normalize
     clip_ctx ctx;
     std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
     std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
     return clip_image_preprocess(ctx, resized_image);
 }
-
-namespace {
-
-ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig& config) {
-    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
-    clip_image_f32 preprocessed_image = preprocess_clip_image_nanollava(input_image, config);
-    return clip_image_f32_to_tensor(preprocessed_image);
-}
-
-} // namespace
 
 EncodedImage VisionEncoderNanoLLaVA::encode( const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
@@ -44,15 +33,15 @@ EncodedImage VisionEncoderNanoLLaVA::encode( const ov::Tensor& image, const ov::
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     // nanollava specific preprocess params
-    // std::array<float, 3> image_mean{0.5f, 0.5f, 0.5f};
-    // std::array<float, 3> image_std{0.5f, 0.5f, 0.5f};
     config.image_mean = std::array<float, 3>{0.5f, 0.5f, 0.5f};
     config.image_std = std::array<float, 3>{0.5f, 0.5f, 0.5f};
     config.crop_size_height = 384;
     config.crop_size_width = 384;
     config.size_shortest_edge = 384;
 
-    ov::Tensor pixel_values = get_pixel_values_llava(image, config); 
+    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
+    clip_image_f32 preprocessed_image = preprocess_clip_image_nanollava(input_image, config);
+    ov::Tensor pixel_values = clip_image_f32_to_tensor(preprocessed_image);
 
     encoder.set_tensor("images", pixel_values);
     encoder.infer();

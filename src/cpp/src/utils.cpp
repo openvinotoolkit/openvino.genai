@@ -17,7 +17,6 @@
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
-#include "debug_utils.hpp"
 
 #include "sampling/sampler.hpp"
 
