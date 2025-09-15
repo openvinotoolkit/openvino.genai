@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) try {
 
     // Eagle Speculative settings
     ov::genai::GenerationConfig config = ov::genai::greedy();
-    config.max_new_tokens = 100;
+    config.max_new_tokens = max_new_tokens;
     // Eagle specific parameters
     config.eagle_tree_params.branching_factor = 1; // Number of candidate tokens to consider at each level
     config.eagle_tree_params.tree_depth = depth; // How deep to explore the token tree
