@@ -179,6 +179,8 @@ def parse_args():
         type=bool,
         default=False,
         help="If True, the model will be loaded from ONNX format. It's converted to OpenVINO format in runtime.",
+    )
+    parser.add_argument(
         "--adapters",
         type=str,
         nargs='*',
