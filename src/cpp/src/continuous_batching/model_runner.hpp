@@ -456,13 +456,13 @@ private:
                                    const std::string& tensor_name,
                                    const ov::Shape& required_shape,
                                    ov::element::Type element_type) {
-        // if cached tensor is not initialized, try to get tensor.
        if (!cached_tensor) {
+            // if cached tensor is not initialized, try to get the tensor from the m_request.
             try {
                 cached_tensor = m_request.get_tensor(tensor_name);
             } catch (const ov::Exception&) {
                 // Fall back to default construction methods when exception occurs.
-                // For example, if an ireq doesn't have a name, the corresponding tensor isn't going to be used.
+                // For example, score_aggregation_window may not be used by a model but a Tensor is required for following operation.
                 return ov::Tensor(element_type, required_shape);
             }
        }
