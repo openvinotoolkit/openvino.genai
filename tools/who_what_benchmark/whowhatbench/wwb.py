@@ -267,9 +267,13 @@ def load_tokenizer(args):
                 args.target_model, trust_remote_code=False
             )
         except Exception:
-            tokenizer = AutoTokenizer.from_pretrained(
-                args.target_model, trust_remote_code=True
-            )
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    args.target_model, trust_remote_code=True
+                )
+            except Exception:
+                logger.error(f"Cannot load the tokenizer for model type \"{args.model_type}\" from {args.target_model}")
+                raise
 
     return tokenizer
 
@@ -567,6 +571,17 @@ def read_cb_config(path):
 def main():
     args = parse_args()
     check_args(args)
+
+    version_str = f'openvino runtime version: {ov.get_version()}'
+    if args.genai:
+        try:
+            import openvino_genai
+        except ImportError:
+            logger.error(
+                "Failed to import openvino_genai package. Please install it.")
+            exit(-1)
+        version_str += f', genai version: {openvino_genai.__version__}'
+    logger.info(version_str)
 
     kwargs = {}
     if args.cb_config:

@@ -18,7 +18,6 @@ concurrency:
 env:
   PYTHON_VERSION: '3.11'
   OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
-  TARGET_BRANCH: ${{ inputs.target-branch || github.base_ref || github.event.merge_group.base_ref || github.ref }}
   CMAKE_CXX_COMPILER_LAUNCHER: sccache
   CMAKE_C_COMPILER_LAUNCHER: sccache
   SCCACHE_IGNORE_SERVER_IO_ERROR: 1
@@ -146,7 +145,7 @@ jobs:
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -262,7 +261,7 @@ jobs:
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -340,7 +339,7 @@ jobs:
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -399,7 +398,7 @@ jobs:
 
     steps:
       - name: Download genai package
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
           path: ${{ env.CPACK_PATH }}
@@ -409,14 +408,14 @@ jobs:
         working-directory: ${{ env.CPACK_PATH }}
 
       - name: Download manifest and wheels
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           pattern: '{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},manifest_${{ matrix.build-type }}}'
           path: ${{ github.workspace }}
           merge-multiple: true
 
       - name: Download genai package
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           name: genai_nodejs_bindings
           path: ${{ env.NODEJS_PATH }}
@@ -506,7 +505,7 @@ jobs:
 
       - name: Download Build Artifacts
         if: ${{ matrix.test.run_condition }}
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
@@ -552,17 +551,16 @@ jobs:
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
-          ref: ${{ env.TARGET_BRANCH }}
 
       - name: Download OpenVINO Artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
       - name: Download GenAI JS Bildings Artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           name: genai_nodejs_bindings
           path: ${{ env.SRC_DIR }}/src/js/bin
@@ -580,7 +578,7 @@ jobs:
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
-          npm install ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* -- --ignore-scripts
+          npm install ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
           cp -R ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
