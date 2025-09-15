@@ -17,7 +17,7 @@
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
-
+#include "debug_utils.hpp"
 
 #include "sampling/sampler.hpp"
 
@@ -701,6 +701,36 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
     // so we need to return a copy to make sure data does not get corrupted
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
     std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+    return inputs_embeds;
+}
+
+
+ov::Tensor merge_text_and_image_embeddings_nanollava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_tok) {
+    size_t text_tokens_size = text_embeds.get_shape()[1];
+    size_t embeds_len = text_embeds.get_shape()[1] + image_embeds[0].get_shape()[1] - 1;
+    size_t hidden_size = text_embeds.get_shape()[2];
+    ov::Tensor inputs_embeds(text_embeds.get_element_type(), {1, embeds_len, hidden_size});
+
+    const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    const float* text_embeds_data = text_embeds.data<const float>();
+    const float* image_embeds_data = image_embeds[0].data<const float>();
+
+    size_t text_token_idx = 0;
+    size_t res_embeds_position = 0;
+    size_t image_idx = 0;
+    while (text_token_idx < text_tokens_size) {
+        if (input_ids_data[text_token_idx] == image_tok) {
+            const auto im_embed = image_embeds[image_idx];
+            image_idx++;
+            std::memcpy(inputs_embeds.data() + res_embeds_position * sizeof(float), im_embed.data(), im_embed.get_byte_size());
+            res_embeds_position += ov::shape_size(im_embed.get_shape());
+        }
+        else {
+            std::memcpy(inputs_embeds.data() + res_embeds_position * sizeof(float), text_embeds_data + text_token_idx * hidden_size, hidden_size * sizeof(float));
+            res_embeds_position += hidden_size;
+        }
+        text_token_idx ++;
+    }
     return inputs_embeds;
 }
 
