@@ -743,6 +743,7 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
     ov::Tensor reshape_shape2d(ov::element::i64, ov::Shape{2}, last_output_shape);
 
     encoder.set_tensor("same_image", same_image);
+    // Same image means just duplicating input_image_1 as input_image_2.
     encoder.set_tensor("raw_images_1", input_image_1);
     encoder.set_tensor("raw_images_2", input_image_2);
     encoder.set_tensor("resize_shape", target_shape);
