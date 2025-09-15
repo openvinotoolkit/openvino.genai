@@ -157,6 +157,16 @@ This sample demonstrates greedy decoding using Low-Rank Adaptation (LoRA) fine-t
   python lora_greedy_causal_lm.py model_dir adapter_safetensors_file prompt
   ```
 
+> [!NOTE]
+> ### LoRA `alpha` interpretation in OpenVINO GenAI
+> The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.
+>
+> In this context, the `alpha` value already includes:
+> - normalization by LoRA rank (`alpha / rank`)
+> - any user-defined scaling factor (`weight`)
+>
+> This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
+
 ### 8. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
 - **Description:** 
 LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly. 
@@ -260,6 +270,30 @@ This approach is useful for building LLM-powered agents that interact with exter
 For best results, use models fine-tuned for function calling and adapt structural tags according to the model function call template.
 If the model does not generate trigger strings there will be no structural constraints during the generation. 
 The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other models may not produce the expected results or might require different system prompt.
+
+
+### 13. Compound Grammar Generation Sample (`compound_grammar_generation`)
+- **Description:**
+  This sample demonstrates advanced structured output generation using compound grammars in OpenVINO GenAI.
+  It showcases how to combine multiple grammar types - Regex, JSONSchema and EBNF - using Union (`|`) and Concat (`+`) operations to strictly control LLM output.
+  It features multi-turn chat, switching grammar constraints between turns (e.g., "yes"/"no" answers and structured tool calls).
+  Union (`|`) operation allows the model to choose which grammar to use during generation. 
+  In the sample it is used to combine two regex grammars for `"yes"` or `"no"` answer.
+  Concat (`+`) operation allows to start with one grammar and continue with another. 
+  In the sample it used to create a `phi-4-mini-instruct` style tool calling answer - `functools[{tool_1_json}, ...]` - by combining regex and JSON schema grammars.
+
+- **Main Features:**
+  - Create grammar building blocks: Regex, JSONSchema, EBNF grammar
+  - Combine grammars with Concat (`+`) and Union (`|`) operations
+  - Multi-turn chat with grammar switching
+  - Structured tool calling using Pydantic schemas
+- **Run Command:**
+  ```bash
+  python compound_grammar_generation.py model_dir
+  ```
+- **Notes:**
+  This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation.
+  The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 
 ## Troubleshooting

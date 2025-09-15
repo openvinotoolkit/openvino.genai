@@ -130,7 +130,7 @@ def call_tool(tool_name: str, tool_args: str) -> str:
         resp.raise_for_status()
         resp = resp.json()
         ret = {k: {_v: resp[k][0][_v] for _v in v} for k, v in key_selection.items()}
-        return str(ret)
+        return json.dumps(ret, ensure_ascii=False)
     elif tool_name == "generate_image":
         tool_args = tool_args.replace("(", "").replace(")", "")
         prompt = json5.loads(tool_args)["prompt"]

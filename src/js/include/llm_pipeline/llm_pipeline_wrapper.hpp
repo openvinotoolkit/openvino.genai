@@ -14,6 +14,7 @@ public:
     Napi::Value generate(const Napi::CallbackInfo& info);
     Napi::Value start_chat(const Napi::CallbackInfo& info);
     Napi::Value finish_chat(const Napi::CallbackInfo& info);
+    Napi::Value get_tokenizer(const Napi::CallbackInfo& info);
 private:
     bool is_loaded = false;
     bool is_initialized = false;

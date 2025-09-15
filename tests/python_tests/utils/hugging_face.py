@@ -9,7 +9,7 @@ from functools import lru_cache
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 
-from optimum.intel import OVModelForCausalLM, OVModelForFeatureExtraction
+from optimum.intel import OVModelForCausalLM, OVModelForFeatureExtraction, OVModelForSequenceClassification
 from optimum.intel.openvino.modeling import OVModel
 
 from huggingface_hub import hf_hub_download
@@ -35,7 +35,9 @@ def generation_config_to_hf(
     # generic parameters
     kwargs['max_length'] = generation_config.max_length
     # has higher priority than 'max_length'
-    kwargs['max_new_tokens'] = generation_config.max_new_tokens
+    SIZE_MAX = 2**64 - 1
+    if generation_config.max_new_tokens != SIZE_MAX:
+        kwargs['max_new_tokens'] = generation_config.max_new_tokens
     kwargs['min_new_tokens'] = generation_config.min_new_tokens
     if generation_config.stop_strings:
         kwargs['stop_strings'] = generation_config.stop_strings
@@ -198,10 +200,16 @@ def convert_models(opt_model : OVModelForCausalLM,
 def download_and_convert_model(model_id: str, **tokenizer_kwargs):
     return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def download_and_convert_embeddings_models(request):
     model_id = request.param
     return _download_and_convert_model(model_id, OVModelForFeatureExtraction)
+
+
+@pytest.fixture()
+def download_and_convert_rerank_model(request):
+    model_id = request.param
+    return _download_and_convert_model(model_id, OVModelForSequenceClassification)
 
 
 def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):
