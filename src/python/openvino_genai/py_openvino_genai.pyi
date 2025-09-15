@@ -3159,7 +3159,7 @@ class TextStreamer(StreamerBase):
     
     tokenizer: Tokenizer object to decode tokens into text.
     callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
-    skip_special_tokens: If True, special tokens will be removed from the decoded text. Default is True.
+    detokenization_params: AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
 
     """
     def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus], skip_special_tokens: bool = True) -> None:
