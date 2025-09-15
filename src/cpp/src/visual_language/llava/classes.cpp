@@ -94,7 +94,7 @@ InputsEmbedderLLaVA::InputsEmbedderLLaVA(
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const std::vector<ov::Tensor>& images, const bool& is_video) {
     if (is_video) {
-        std::cout << "== Warning: LLaVA doesn't support video process. Input images are processed as separate images." << std::endl;
+        Logger::warn("LLaVA doesn't support video preprocess currently. Input images are processed as separate images.");
     }
     std::vector<EncodedImage> embeds;
     ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};

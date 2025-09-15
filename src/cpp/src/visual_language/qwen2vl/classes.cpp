@@ -615,44 +615,45 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
 }
 
 // keep both implementations for comparison and testing, here is the cpp version
-EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
-    ov::Shape image_shape = image.get_shape();
-    auto original_height = image_shape.at(1);
-    auto original_width = image_shape.at(2);
-    ImageSize target_image_size = qwen2_vl_utils::smart_resize(
-        original_height, 
-        original_width, 
-        config.patch_size * config.merge_size,
-        config.min_pixels,
-        config.max_pixels
-    );
+    
+    OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
+    if (images.size() > 1)
+        OPENVINO_ASSERT(config.temporal_patch_size == images.size(), "temporal_patch_size != images.size()");
 
-    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
-    clip_image_u8 resized_image;
-    bicubic_resize(input_image, resized_image, target_image_size.width, target_image_size.height);
+    ov::Shape orig_shape = images[0].get_shape();
+    ImageSize target_image_size = qwen2_vl_utils::smart_resize(orig_shape.at(1),
+                                                               orig_shape.at(2),
+                                                               config.patch_size * config.merge_size,
+                                                               config.min_pixels,
+                                                               config.max_pixels);
 
-    clip_ctx ctx;
-    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
-    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
-    clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
+    ov::Tensor tiled_patches(ov::element::f32,
+                             {config.temporal_patch_size, 3, target_image_size.height, target_image_size.width});
 
-    ov::Tensor patches = clip_image_f32_to_tensor(normalized_image);
-    // For single patch tile it to match temporal_patch_size
-    if (patches.get_shape().at(0) == 1) {
-        auto orig_shape = patches.get_shape();
-        ov::Tensor tiled_patches(patches.get_element_type(),
-                                 {config.temporal_patch_size, orig_shape.at(1), orig_shape.at(2), orig_shape.at(3)});
-        for (size_t i = 0; i < config.temporal_patch_size; i++) {
-            std::memcpy(tiled_patches.data<float>() + i * patches.get_byte_size() / sizeof(float),
-                        patches.data<float>(),
-                        patches.get_byte_size());
-                        
-        }
-        patches = std::move(tiled_patches);
+    for (size_t i = 0; i < config.temporal_patch_size; i++) {
+        const auto& image = images.size() > i ? images[i] : images[0];
+
+        clip_image_u8 input_image = tensor_to_clip_image_u8(image);
+        clip_image_u8 resized_image;
+        bicubic_resize(input_image, resized_image, target_image_size.width, target_image_size.height);
+
+        clip_ctx ctx;
+        std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
+        std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
+        clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
+
+        auto patch = clip_image_f32_to_tensor(normalized_image);
+
+        std::memcpy(tiled_patches.data<float>() + i * patch.get_byte_size() / sizeof(float),
+                    patch.data<float>(),
+                    patch.get_byte_size());
     }
+    auto patches = std::move(tiled_patches);
+
     auto patches_shape = patches.get_shape();
     size_t channel = patches_shape.at(1);
     size_t grid_t = patches_shape.at(0) / config.temporal_patch_size;
@@ -758,7 +759,7 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
 
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     if (use_ov_image_preprocess == false) {
-        return encode_with_imagepreprocess_cpp(image, config_map);
+        return encode_with_imagepreprocess_cpp({image}, config_map);
     }
     return encode_with_imagepreprocess_ov({image}, config_map);
 }
@@ -771,22 +772,25 @@ std::vector<EncodedImage> VisionEncoderQwen2VL::encode_video(const std::vector<o
     for (; i < images.size(); i += config.temporal_patch_size) {
         EncodedImage encoded_img;
         if (use_ov_image_preprocess == false) {
-            // return encode_with_imagepreprocess_cpp(image, config_map);
-            std::cout << "Warning: Not implemented. fallback to encode_with_imagepreprocess_ov" << std::endl;
+            encoded_img = encode_with_imagepreprocess_cpp(
+                std::vector<ov::Tensor>(images.begin() + i, images.begin() + i + config.temporal_patch_size),
+                config_map);
+        } else {
+            encoded_img = encode_with_imagepreprocess_ov(
+                std::vector<ov::Tensor>(images.begin() + i, images.begin() + i + config.temporal_patch_size),
+                config_map);
         }
 
-        encoded_img = encode_with_imagepreprocess_ov(
-            std::vector<ov::Tensor>(images.begin() + i, images.begin() + i + config.temporal_patch_size),
-            config_map);
+        encoded_imgs.push_back(encoded_img);
     }
     for (; i < images.size(); i++) {
         EncodedImage encoded_img;
         if (use_ov_image_preprocess == false) {
-            // return encode_with_imagepreprocess_cpp(image, config_map);
-            std::cout << "Warning: Not implemented. fallback to encode_with_imagepreprocess_ov" << std::endl;
+            encoded_img = encode_with_imagepreprocess_cpp({images[i]}, config_map);
+        } else {
+            encoded_img = encode_with_imagepreprocess_ov({images[i]}, config_map);
         }
-
-        encoded_img = encode_with_imagepreprocess_ov({images[i]}, config_map);
+        encoded_imgs.push_back(encoded_img);
     }
 
     return encoded_imgs;
