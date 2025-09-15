@@ -731,6 +731,7 @@ ov::Tensor merge_text_and_image_embeddings_nanollava(const ov::Tensor& input_ids
         text_token_idx ++;
     }
     return inputs_embeds;
+}
 
 size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers) {
     OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "get_available_gpu_memory() is applicable for GPU only.");
