@@ -6,6 +6,7 @@
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
+#include "read_prompt_from_file.h"
 
 template <typename T>
 void print_perf_metrics(T& perf_metrics, std::string model_name) {
@@ -28,13 +29,19 @@ void print_perf_metrics(T& perf_metrics, std::string model_name) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (4 != argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <EAGLE_MODEL_DIR> '<PROMPT>'");
+    if (6 != argc) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <EAGLE_MODEL_DIR> <MAX_NEW_TOKENS> <DEPTH> '<PROMPT>'");
     }
 
     std::string main_model_path = argv[1];
     std::string eagle_model_path = argv[2];
-    std::string prompt = argv[3];
+    int max_new_tokens = atoi(argv[3]);
+    int depth = atoi(argv[4]);
+    std::string prompt = argv[5];
+    if (std::filesystem::is_regular_file(prompt)) {
+        std::string prompt_file = prompt;
+        prompt = utils::read_prompt(prompt_file);
+    }
 
     // Configure devices - can run main and eagle models on different devices
     std::string main_device = "GPU", eagle_device = "GPU"; // currently only GPU is used during developing
@@ -43,9 +50,9 @@ int main(int argc, char* argv[]) try {
     ov::genai::GenerationConfig config = ov::genai::greedy();
     config.max_new_tokens = 100;
     // Eagle specific parameters
-    config.eagle_tree_params.branching_factor = 8; // Number of candidate tokens to consider at each level
-    config.eagle_tree_params.tree_depth = 3; // How deep to explore the token tree
-    config.eagle_tree_params.total_tokens = 16; // Total number of tokens to generate in eagle tree
+    config.eagle_tree_params.branching_factor = 1; // Number of candidate tokens to consider at each level
+    config.eagle_tree_params.tree_depth = depth; // How deep to explore the token tree
+    config.eagle_tree_params.total_tokens = depth + 2; // Total number of tokens to generate in eagle tree
     config.num_return_sequences = 1; // only support 1
 
     //config.eagle_tree_width = 3;    // Number of candidate tokens to consider at each level

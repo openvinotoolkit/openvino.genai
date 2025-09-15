@@ -9,7 +9,7 @@ find_package(OpenVINOGenAI REQUIRED
 )
 
 function(add_sample_executable target_name)
-    add_executable(${target_name} ${target_name}.cpp)
+    add_executable(${target_name} ${target_name}.cpp read_prompt_from_file.cpp)
     target_link_libraries(${target_name} PRIVATE openvino::genai)
     set_target_properties(${target_name} PROPERTIES
         # Ensure out-of-box LC_RPATH on macOS with SIP
