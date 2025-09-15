@@ -35,10 +35,8 @@ public:
         auto image = config_map.find(ov::genai::image.name());
         auto images = config_map.find(ov::genai::images.name());
         auto video = config_map.find(ov::genai::video.name());
-        OPENVINO_ASSERT(
-            config_map.end() == image || config_map.end() == images,
-            "Only one property can be set: image of images."
-        );
+        OPENVINO_ASSERT(config_map.end() == image || config_map.end() == images || config_map.end() == video,
+                        "Only one property can be set: image, images, or video.");
         std::vector<ov::Tensor> image_rgbs;
         if (config_map.end() != image) {
             image_rgbs = {image->second.as<ov::Tensor>()};

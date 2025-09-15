@@ -185,7 +185,7 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        // Currently only one input is supported. Video or images.
+        // Currently only one input is supported. Video, images or image.
         std::vector<ov::genai::EncodedImage> encoded_images;
         if (images.size() > 0) {
             encoded_images = m_inputs_embedder->encode_images(images, false);

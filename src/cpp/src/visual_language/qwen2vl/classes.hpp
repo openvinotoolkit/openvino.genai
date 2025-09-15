@@ -22,7 +22,7 @@ public:
 
 private:
     EncodedImage encode_with_imagepreprocess_cpp(const ov::Tensor& image, const ov::AnyMap& config_map);
-    EncodedImage encode_with_imagepreprocess_ov(const ov::Tensor& image, const ov::AnyMap& config_map);
+    EncodedImage encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map);
     bool use_ov_image_preprocess = true; // default use ov image preprocess, control by env IMAGE_PREPROCESS=CPP to use cpp image preprocess
 };
 
