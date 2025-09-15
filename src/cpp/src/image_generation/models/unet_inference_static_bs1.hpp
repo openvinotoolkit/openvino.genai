@@ -172,6 +172,7 @@ public:
         
         // we'll create a separate infer request for each batch.
         // todo: preserve original requested batch size when exporting the model
+        // current implementation imports model with batch = 1 and creates a single infer request.
         m_native_batch_size = compiled_model.input("sample").get_shape()[0];
         m_requests.resize(m_native_batch_size);
 

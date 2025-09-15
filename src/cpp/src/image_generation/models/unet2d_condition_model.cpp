@@ -42,7 +42,7 @@ UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir
 
     const auto [properties_without_blob, blob_path] = utils::extract_export_properties(properties);
 
-    if (blob_path) {
+    if (blob_path.has_value()) {
         import_model(*blob_path, device, properties_without_blob);
         return;
     }

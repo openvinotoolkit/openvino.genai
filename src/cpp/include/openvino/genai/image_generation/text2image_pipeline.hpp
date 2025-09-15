@@ -252,6 +252,11 @@ public:
     ov::Tensor decode(const ov::Tensor latent);
 
     ImageGenerationPerfMetrics get_performance_metrics();
+
+    /**
+     * @brief Exports compiled models to a specified folder
+     * @param export_path A path to a folder to export compiled models to
+     */
     void export_model(const std::filesystem::path& export_path);
 
 private:
