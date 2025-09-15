@@ -8,7 +8,7 @@
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 
 template <typename T>
-void print_perf_metrics(const T& perf_metrics, std::string model_name) {
+void print_perf_metrics(T& perf_metrics, std::string model_name) {
     std::cout << "\n" << model_name << std::endl;
     auto generation_duration = perf_metrics.get_generate_duration().mean;
     std::cout << "  Generate time: " << generation_duration << " ms" << std::endl;
