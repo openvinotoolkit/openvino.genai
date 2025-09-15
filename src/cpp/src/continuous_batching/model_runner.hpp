@@ -365,12 +365,9 @@ public:
                 ov::Tensor gather_indices = m_request.get_tensor("sampled_tokens_indices");
                 gather_indices.set_shape({gather_indices_values.size()});
                 std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
-            } catch (const ov::Exception&) {
-                // Fallback to creating new tensor if pre-allocated one doesn't exist
-                ov::Tensor gather_indices(ov::element::i64, {gather_indices_values.size()});
-                std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
-                m_request.set_tensor("sampled_tokens_indices", gather_indices);
-        }
+            } catch (const ov::Exception& e) {
+                OPENVINO_THROW("Fail to get or modify sampled_tokens_indices tensor. ", ". Error: ", e.what());
+            }
 
         if (m_is_aggregate_attention_scores && !m_cached_score_aggregation_window) {
             m_request.set_tensor("score_aggregation_window", score_aggregation_window);
@@ -457,7 +454,7 @@ private:
                                    const ov::Shape& required_shape,
                                    ov::element::Type element_type) {
        if (!cached_tensor) {
-            // if cached tensor is not initialized, try to get the tensor from the m_request.
+            // If cached tensor is not initialized, try to get the tensor from the request.
             try {
                 cached_tensor = m_request.get_tensor(tensor_name);
             } catch (const ov::Exception&) {
