@@ -96,7 +96,6 @@ public:
           m_is_use_xattention_inputs(is_use_xattention_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
-        _init_cached_tensors();
     }
 
     /**
@@ -185,6 +184,7 @@ public:
             {1, total_num_tokens}, ov::element::i64);
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
+
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
 
@@ -452,56 +452,30 @@ public:
     }
 
 private:
-    void _init_cached_tensors() {
-        try {
-            // Try to get pre-allocated tensors from the model
-            // If they exist and are USM Host tensors, use them
-            // Otherwise, this will throw and we'll handle it in the catch block
-            m_cached_input_ids = m_request.get_tensor("input_ids");
-            m_cached_inputs_embeds = m_request.get_tensor("inputs_embeds");
-            m_cached_position_ids = m_request.get_tensor("position_ids");
-            m_cached_past_lens = m_request.get_tensor("past_lens");
-            m_cached_subsequence_begins = m_request.get_tensor("subsequence_begins");
-            m_cached_block_indices_begins = m_request.get_tensor("block_indices_begins");
-            m_cached_max_context_len = m_request.get_tensor("max_context_len");
-            if (m_is_aggregate_attention_scores)
-            {
-                m_cached_score_aggregation_window = m_request.get_tensor("score_aggregation_window");
-            }
-            m_cached_token_type_ids = m_request.get_tensor("token_type_ids");
-        } catch (const ov::Exception&) {
-            // If pre-allocated tensors don't exist or are not accessible,
-            // we'll fall back to the original method in _get_or_resize_tensor()
-        }
-    }
-
     ov::Tensor _get_or_resize_tensor(ov::Tensor& cached_tensor, 
                                    const std::string& tensor_name,
                                    const ov::Shape& required_shape,
                                    ov::element::Type element_type) {
-        // If cached tensor is not initialized or too small, resize it
-        if (!cached_tensor || 
-            cached_tensor.get_shape().empty() || 
-            ov::shape_size(cached_tensor.get_shape()) < ov::shape_size(required_shape)) {
-
+        // if cached tensor is not initialized, try to get tensor.
+       if (!cached_tensor) {
             try {
-                // Try to get the tensor from the model and set its shape
                 cached_tensor = m_request.get_tensor(tensor_name);
-                cached_tensor.set_shape(required_shape);
             } catch (const ov::Exception&) {
-                // If tensor doesn't exist, create a regular tensor. 
-                // 2 cases may run into here and need fall back to default constuction method:
-                // #1. if an ireq doesn't have a name, the corresponding tensor isn't going to be used.
-                // #2. _init_cached_tensors() still has global try catch. If one of the names fail, the following names won't be initialized.
-                cached_tensor = ov::Tensor(element_type, required_shape);
+                // Fall back to default construction methods when exception occurs.
+                // For example, if an ireq doesn't have a name, the corresponding tensor isn't going to be used.
+                return ov::Tensor(element_type, required_shape);
             }
-        } else {
-            // Resize existing tensor
-            cached_tensor.set_shape(required_shape);
+       }
+       if (cached_tensor.get_shape() != required_shape) {
+            try {
+                cached_tensor.set_shape(required_shape);
+            } catch (const ov::Exception& e) {
+                OPENVINO_THROW("set_shape failed for tensor: ", tensor_name, ". Error: ", e.what());
+            }
         }
-
         return cached_tensor;
     }
+
     // Fills indices for sequences in the order defined by scheduler_output
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
