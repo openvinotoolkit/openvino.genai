@@ -25,7 +25,7 @@ describe("module", async () => {
     const result = await pipeline.generate(
       "Type something in English",
       { temperature: "0", max_new_tokens: "4" },
-      () => { },
+      () => {},
     );
 
     assert.ok(result.length > 0);

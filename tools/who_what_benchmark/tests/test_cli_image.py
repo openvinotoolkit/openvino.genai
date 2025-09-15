@@ -112,16 +112,15 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.skip(reason="FLUX-Fill is supported as inpainting only")
     if model_type == "image-inpainting":
         pytest.xfail("Segfault. Ticket 170877")
-    
-    mac_arm64_skip = ('stable-diffusion-xl-image-to-image' in model_id or
-                      'stable-diffusion-3-tiny-random' in model_id or
-                      'tiny-random-stable-diffusion' in model_id or
-                      'stable-diffusion-3-tiny-random-text-to-image' in model_id or
-                      'tiny-random-flux' in model_id)
+
+    mac_arm64_skip = any(substring in model_id for substring in ('stable-diffusion-xl', 
+                                                                 'tiny-random-stable-diffusion', 
+                                                                 'stable-diffusion-3', 
+                                                                 'tiny-random-flux'))
 
     if mac_arm64_skip and sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
-    
+
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
 
