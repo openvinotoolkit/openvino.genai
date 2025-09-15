@@ -268,6 +268,10 @@ void init_unet2d_condition_model(py::module_& m) {
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
+            )")
+        .def("export_model", &ov::genai::UNet2DConditionModel::export_model, py::arg("export_path"), R"(
+                Exports compiled model to a specified folder
+                export_path (os.PathLike): A path to a folder to export compiled model to
             )");
 }
 

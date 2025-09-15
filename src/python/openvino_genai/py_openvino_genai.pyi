@@ -2838,6 +2838,11 @@ class Text2ImagePipeline:
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled models to a specified folder
+                        export_path (os.PathLike): A path to a folder to export compiled models to
+        """
     def generate(self, prompt: str, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
@@ -3364,6 +3369,11 @@ class UNet2DConditionModel:
         """
     def do_classifier_free_guidance(self, guidance_scale: typing.SupportsFloat) -> bool:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled model to a specified folder
+                        export_path (os.PathLike): A path to a folder to export compiled model to
+        """
     def get_config(self) -> UNet2DConditionModel.Config:
         ...
     def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:

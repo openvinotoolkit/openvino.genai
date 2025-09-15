@@ -97,7 +97,12 @@ public:
         return guidance_scale > 1.0f && m_config.time_cond_proj_dim < 0;
     }
 
+    /**
+     * @brief Exports compiled model to a specified folder
+     * @param export_path A path to a folder to export compiled model to
+     */
     void export_model(const std::filesystem::path& blob_path);
+
 private:
     class UNetInference;
     std::shared_ptr<UNetInference> m_impl;
