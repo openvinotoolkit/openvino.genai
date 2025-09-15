@@ -601,7 +601,6 @@ def main():
             kwargs["alphas"] = [1.0] * len(args.adapters)
     kwargs["empty_adapters"] = args.empty_adapters
 
-
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
     else:
