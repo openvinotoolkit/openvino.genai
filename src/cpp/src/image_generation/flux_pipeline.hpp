@@ -242,8 +242,17 @@ public:
         OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
             pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
 
+        m_root_dir = pipe.m_root_dir;
+
+        m_clip_text_encoder = std::make_shared<CLIPTextModel>(*pipe.m_clip_text_encoder);
+        m_t5_text_encoder = std::make_shared<T5EncoderModel>(*pipe.m_t5_text_encoder);
+        m_vae = std::make_shared<AutoencoderKL>(*pipe.m_vae);
+        m_transformer = std::make_shared<FluxTransformer2DModel>(*pipe.m_transformer);
+
         m_pipeline_type = pipeline_type;
         initialize_generation_config("FluxPipeline");
+
+        OPENVINO_ASSERT(!is_inpainting_model(), "inpainting model is not currently supported by Flux InpaintingPipeline. Please, contact OpenVINO GenAI developers.");
     }
 
     void reshape(const int num_images_per_prompt,
@@ -568,8 +577,8 @@ protected:
     }
 
     void initialize_generation_config(const std::string& class_name) override {
-        assert(m_transformer != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
 
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
@@ -600,7 +609,7 @@ protected:
     }
 
     void check_image_size(const int height, const int width) const override {
-        assert(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) && (width % vae_scale_factor == 0 || width < 0),
                         "Both 'width' and 'height' must be divisible by ",
@@ -608,7 +617,7 @@ protected:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
 
@@ -627,7 +636,7 @@ protected:
     }
 
     size_t get_config_in_channels() const override {
-        assert(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
         return m_transformer->get_config().in_channels;
     }
 

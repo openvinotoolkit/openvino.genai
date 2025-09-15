@@ -20,22 +20,82 @@ enum class AggregationMode {
 };
 
 /**
+ * @brief Represents the mode of how anchor points are formed in KVCrush Cache eviction algorithm
+ */
+enum class KVCrushAnchorPointMode {
+    RANDOM, /**<In this mode the anchor point is a random binary vector of 0s and 1s > */
+    ZEROS,  /**<In this mode the anchor point is a vector of 0s */
+    ONES,   /**<In this mode the anchor point is a vector of 1s */
+    MEAN, /**<In this mode the anchor point is a random binary vector of 0s and 1s, where individual values are decided
+             based on majority value */
+    ALTERNATE /**In this mode the anchor point is a vector of alternate 0s and 1s */
+};
+
+class KVCrushConfig {
+public:
+    /**
+     * @brief Configuration struct for the KVCrush cache eviction algorithm.
+     */
+    /**
+     * @class KVCrushConfig
+     * @brief Configuration class for KVCrush cache mechanism.
+     *
+     * This class encapsulates the configuration parameters for the KVCrush cache,
+     * including cache budget, anchor point mode, and random seed.
+     */
+
+    KVCrushConfig() = default;
+
+    /**
+     * @brief Constructs a KVCrushConfig with the specified parameters.
+     * @param budget_ The cache budget, representing the number of blocks to store.
+     * @param anchor_point_mode_ The anchor point mode for KVCrush (see KVCrushAnchorPointMode).
+     * @param rng_seed_ Optional random seed for reproducibility (default is 0).
+     */
+
+    KVCrushConfig(size_t budget_, KVCrushAnchorPointMode anchor_point_mode_, size_t rng_seed_ = 0)
+        : budget(budget_),
+          anchor_point_mode(anchor_point_mode_),
+          rng_seed(rng_seed_) {}
+
+    /*KVCrush Cache budget - number of blocks*/
+    std::size_t budget = 0;
+    /*KVCrush Anchor point mode*/
+    KVCrushAnchorPointMode anchor_point_mode = KVCrushAnchorPointMode::RANDOM;
+    size_t rng_seed = 0;
+    std::size_t get_budget() const {
+        return budget;
+    }
+};
+
+/**
 * @brief Configuration struct for the cache eviction algorithm.
 */
 class CacheEvictionConfig {
 public:
     CacheEvictionConfig() = default;
 
-    CacheEvictionConfig(size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode_, bool apply_rotation_ = false, size_t snapkv_window_size_ = 8) : aggregation_mode(aggregation_mode_), apply_rotation(apply_rotation_), snapkv_window_size(snapkv_window_size_), m_start_size(start_size), m_recent_size(recent_size), m_max_cache_size(max_cache_size) {
+    CacheEvictionConfig(size_t start_size,
+                        size_t recent_size,
+                        size_t max_cache_size,
+                        AggregationMode aggregation_mode_,
+                        bool apply_rotation_ = false,
+                        size_t snapkv_window_size_ = 8,
+                        const KVCrushConfig& kvcrush_config_ = KVCrushConfig(0, KVCrushAnchorPointMode::RANDOM))
+        : aggregation_mode(aggregation_mode_),
+          apply_rotation(apply_rotation_),
+          snapkv_window_size(snapkv_window_size_),
+          m_start_size(start_size),
+          m_recent_size(recent_size),
+          m_max_cache_size(max_cache_size),
+          kvcrush_config(kvcrush_config_) {
         OPENVINO_ASSERT(start_size, "CacheEvictionConfig.start_size must be non-zero");
         OPENVINO_ASSERT(recent_size, "CacheEvictionConfig.recent_size must be non-zero");
         OPENVINO_ASSERT(max_cache_size, "CacheEvictionConfig.max_cache_size must be non-zero");
-        OPENVINO_ASSERT(snapkv_window_size, "CacheEvictionConfig.snapkv_window_size must be non-zero");
 
         OPENVINO_ASSERT(max_cache_size > (start_size + recent_size),
                         "CacheEvictionConfig.max_cache_size must be larger than CacheEvictionConfig.start_size + CacheEvictionConfig.recent_size");
         m_evictable_size = m_max_cache_size - m_start_size - m_recent_size;
-
     }
 
     /** @return Number of tokens between the "start" and "recent" areas of KV cache that
@@ -73,8 +133,14 @@ public:
 
     /** The size of the importance score aggregation window (in token positions from the end of the prompt) for
      * computing initial importance scores at the beginning of the generation phase for purposes of eviction,
-     * following the SnapKV article approach (https://arxiv.org/abs/2404.14469). **/
+     * following the SnapKV article approach (https://arxiv.org/abs/2404.14469). Setting this to 0 disables the SnapKV
+     * score aggregation. **/
     size_t snapkv_window_size = 8;
+
+    /** KVCrush configuration for this cache eviction algorithm.
+     * KVCrush is an additional mechanism that allows to retain some tokens in the cache
+     * even if they are not among the most important ones.*/
+    KVCrushConfig kvcrush_config;
 
 private:
     /** Number of tokens in the *beginning* of KV cache that should be retained

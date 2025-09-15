@@ -60,3 +60,76 @@ It can be enabled by setting the `CacheEvictionConfig.apply_rotation` field to `
 * Cache rotation is only targeted for the regular, linear LLaMa-like RoPE application and may degrade accuracy on models that use other RoPE schemes.
 
 * Cache rotation is currently only supported for the models with uniform V embedding sizes across the layers.
+
+## (Optional) KVCrush
+
+KVCrush enhances the standard H2O/SnapKV eviction by selecting the most representative blocks from the evictable area using clustering analysis, rather than simply evicting the low score blocks.
+
+### Algorithm Overview
+
+1. **Indicator Creation**: Generate binary indicators for tokens based on importance scores
+2. **Anchor Point Generation**: Create reference patterns using configurable modes
+3. **Distance Calculation**: Measure Hamming distance between block patterns and the anchor point
+4. **Representative Selection**: Select blocks to best represent context diversity
+
+### Configuration
+Setup KVCrush config parameters and pass it  to ```CacheEvictionConfig```. Sample code to allocate KVCrush a budget of 2 blocks and use MEAN anchor mode is following.
+```cpp
+const ov::genai::CacheEvictionConfig EXAMPLE_CACHE_EVICTION_CONFIG =
+    {32, 32, 192, ov::genai::AggregationMode::NORM_SUM, false, 8, KVCrushConfig(2, KVCrushAnchorPointMode::MEAN)};
+```
+```python
+CacheEvictionConfig(
+        start_size=32, 
+        recent_size=128, 
+        max_cache_size=448, 
+        aggregation_mode=AggregationMode.NORM_SUM,
+        apply_rotation=False,
+        snapkv_window_size=8,
+        kvcrush_config=KVCrushConfig(budget=2, anchor_point_mode=KVCrushAnchorPointMode.MEAN)
+    )
+```
+
+**Anchor Point Modes:**
+- `RANDOM`: Random binary pattern
+- `ZEROS`: All zeros pattern  
+- `ONES`: All ones pattern
+- `MEAN`: Mean of indicators across blocks
+- `ALTERNATE`: Alternating 0-1 pattern
+
+### Performance Comparison on LongBench
+
+**Note:** Values in **`this style`** indicate performance equal to or better than the respective baseline configurations.
+
+#### SnapKV
+The following table shows accuracy (using 200 samples) results comparing standard SnapKV eviction with KVCrush.
+
+Configuration format: SnapKV budget (tokens), KVCrush budget (blocks), Anchor Point
+
+| Configuration | qasper | samsum | trec |
+|---------------|--------|--------|------|
+| **1024, 0** | 19.77 | 37.72 | 62.50 |
+| 768, 8, ALTERNATE | 18.79 | **`37.78`** | **`62.50`** |
+| 768, 8, MEAN | 19.29 | 37.67 | **`62.50`** |
+| 768, 8, RANDOM | 18.95 | **`37.75`** | **`62.50`** |
+| 960, 2, ALTERNATE | **`19.83`** | **`37.77`** | **`62.50`** |
+| 960, 2, MEAN | **`19.82`** | **`37.95`** | **`62.50`** |
+| 960, 2, RANDOM | **`20.56`** | 37.33 | **`62.50`** |
+| 992, 1, ALTERNATE | **`20.05`** | 37.42 | **`62.50`** |
+| 992, 1, MEAN | **`19.83`** | **`37.80`** | **`62.50`** |
+| 992, 1, RANDOM | **`19.92`** | 37.56 | **`62.50`** |
+| **KVCrush - Best** | **`20.56`** | **`37.95`** | **`62.50`** |
+
+| Configuration | qasper | samsum | trec |
+|---------------|--------|--------|------|
+| **512, 0** | 16.97 | 36.60 | 62.50 |
+| 384, 4, ALTERNATE | 16.69 | 36.18 | **`62.50`** |
+| 384, 4, MEAN | 16.73 | **`36.91`** | **`62.50`** |
+| 384, 4, RANDOM | **`17.34`** | 36.24 | **`62.50`** |
+| 448, 2, ALTERNATE | **`17.14`** | 36.34 | **`62.50`** |
+| 448, 2, MEAN | **`17.09`** | 35.99 | **`62.50`** |
+| 448, 2, RANDOM | 16.94 | 36.26 | **`62.50`** |
+| 480, 1, ALTERNATE | **`17.40`** | **`36.61`** | **`62.50`** |
+| 480, 1, MEAN | 16.77 | 36.39 | **`62.50`** |
+| 480, 1, RANDOM | **`17.20`** | 36.54 | **`62.50`** |
+| **KVCrush - Best** | **`17.40`** | **`36.91`** | **`62.50`** |
