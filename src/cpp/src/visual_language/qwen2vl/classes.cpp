@@ -683,6 +683,8 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::ve
 }
 
 // keep both implementations for comparison and testing, here is the ov version
+// input multiple images, process based on video.
+// input single image, process based on image.
 EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
@@ -701,6 +703,8 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
     );
 
     OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
+
+    ov::Tensor same_image(ov::element::f32, ov::Shape{1}, std::vector<float>{images.size() == 2 ? 1 : 0}.data());
     ov::Tensor input_image_1(ov::element::u8, image_shape, images[0].data<uint8_t>());
     ov::Tensor input_image_2(ov::element::u8,
                              image_shape,
@@ -738,6 +742,7 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
     ov::Tensor reshape_shape4d(ov::element::i64, ov::Shape{4}, a_temp_shape4d);
     ov::Tensor reshape_shape2d(ov::element::i64, ov::Shape{2}, last_output_shape);
 
+    encoder.set_tensor("same_image", same_image);
     encoder.set_tensor("raw_images_1", input_image_1);
     encoder.set_tensor("raw_images_2", input_image_2);
     encoder.set_tensor("resize_shape", target_shape);
