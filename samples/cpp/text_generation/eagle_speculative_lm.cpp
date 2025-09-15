@@ -7,6 +7,26 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 
+template <typename T>
+void print_perf_metrics(const T& perf_metrics, std::string model_name) {
+    std::cout << "\n" << model_name << std::endl;
+    auto generation_duration = perf_metrics.get_generate_duration().mean;
+    std::cout << "  Generate time: " << generation_duration << " ms" << std::endl;
+    std::cout << "  TTFT: " << perf_metrics.get_ttft().mean << " ± " << perf_metrics.get_ttft().std << " ms"
+              << std::endl;
+    std::cout << "  TPOT: " << perf_metrics.get_tpot().mean << " ± " << perf_metrics.get_tpot().std << " ms/token"
+              << std::endl;
+    std::cout << "  Num generated token: " << perf_metrics.get_num_generated_tokens() << " tokens" << std::endl;
+    if (model_name == "Total") {
+        std::cout << "  Total iteration number: " << perf_metrics.raw_metrics.m_new_token_times.size() << std::endl;
+    } else {
+        std::cout << "  Total iteration number: " << perf_metrics.raw_metrics.m_durations.size() << std::endl;
+    }
+    if (perf_metrics.get_num_input_tokens() > 0) {
+        std::cout << "  Input token size: " << perf_metrics.get_num_input_tokens() << std::endl;
+    }
+}
+
 int main(int argc, char* argv[]) try {
     if (4 != argc) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <EAGLE_MODEL_DIR> '<PROMPT>'");
@@ -59,26 +79,14 @@ int main(int argc, char* argv[]) try {
 
     auto sd_perf_metrics = std::dynamic_pointer_cast<ov::genai::SDPerModelsPerfMetrics>(result.extended_perf_metrics);
     if (sd_perf_metrics) {
-        auto main_model_metrics = sd_perf_metrics->main_model_metrics;
-        std::cout << "\nMAIN MODEL " << std::endl;
-        std::cout << "  Generate time: " << main_model_metrics.get_generate_duration().mean << " ms" << std::endl;
-        std::cout << "  TTFT: " << main_model_metrics.get_ttft().mean  << " ± " << main_model_metrics.get_ttft().std << " ms" << std::endl;
-        std::cout << "  TTST: " << main_model_metrics.get_ttst().mean  << " ± " << main_model_metrics.get_ttst().std << " ms/token " << std::endl;
-        std::cout << "  TPOT: " << main_model_metrics.get_tpot().mean  << " ± " << main_model_metrics.get_tpot().std << " ms/iteration " << std::endl;
-        std::cout << "  AVG Latency: " << main_model_metrics.get_latency().mean  << " ± " << main_model_metrics.get_latency().std << " ms/token " << std::endl;
-        std::cout << "  Num generated token: " << main_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
-        std::cout << "  Total iteration number: " << main_model_metrics.raw_metrics.m_durations.size() << std::endl;
-        std::cout << "  Num accepted token: " << sd_perf_metrics->get_num_accepted_tokens() << " tokens" << std::endl;
-
-        auto draft_model_metrics = sd_perf_metrics->draft_model_metrics;
-        std::cout << "\nDRAFT MODEL " << std::endl;
-        std::cout << "  Generate time: " << draft_model_metrics.get_generate_duration().mean << " ms" << std::endl;
-        std::cout << "  TTFT: " << draft_model_metrics.get_ttft().mean  << " ms" << std::endl;
-        std::cout << "  TTST: " << draft_model_metrics.get_ttst().mean  << " ms/token " << std::endl;
-        std::cout << "  TPOT: " << draft_model_metrics.get_tpot().mean  << " ± " << draft_model_metrics.get_tpot().std << " ms/token " << std::endl;
-        std::cout << "  AVG Latency: " << draft_model_metrics.get_latency().mean  << " ± " << draft_model_metrics.get_latency().std << " ms/iteration " << std::endl;
-        std::cout << "  Num generated token: " << draft_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
-        std::cout << "  Total iteration number: " << draft_model_metrics.raw_metrics.m_durations.size() << std::endl;
+        print_perf_metrics(result.perf_metrics, "Total");
+        print_perf_metrics(sd_perf_metrics->main_model_metrics, "MAIN MODEL");
+        std::cout << "  accepted token: " << sd_perf_metrics->get_num_accepted_tokens() << " tokens" << std::endl;
+        std::cout << "  compress rate: "
+                  << sd_perf_metrics->main_model_metrics.get_num_generated_tokens() * 1.0f /
+                         sd_perf_metrics->main_model_metrics.raw_metrics.m_durations.size()
+                  << std::endl;
+        print_perf_metrics(sd_perf_metrics->draft_model_metrics, "DRAFT MODEL");
     }
     std::cout << std::endl;
 
