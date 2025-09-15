@@ -25,14 +25,14 @@ public:
 
     void end() override;
 
-    TextStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback, bool skip_special_tokens = true);
+    TextStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback, const ov::AnyMap& detokenization_params = {});
 
 private:
     Tokenizer m_tokenizer;
     std::vector<int64_t> m_tokens_cache;
     std::vector<int64_t> m_decoded_lengths;
     size_t m_printed_len = 0;
-    ov::AnyMap m_additional_decode_properties;
+    ov::AnyMap m_additional_detokenization_params;
 
     StreamingStatus set_streaming_status(CallbackTypeVariant callback_status);
 

@@ -16,16 +16,16 @@ namespace genai {
 
 TextStreamer::TextStreamer(const Tokenizer& tokenizer,
                            std::function<ov::genai::CallbackTypeVariant(std::string)> callback,
-                           bool skip_special_tokens) {
+                           const ov::AnyMap& detokenization_params) {
     m_tokenizer = tokenizer;
     m_subword_callback = callback;
-    m_additional_decode_properties = ov::AnyMap{ov::genai::skip_special_tokens(skip_special_tokens)};
+    m_additional_detokenization_params = detokenization_params;
 }
 
 StreamingStatus TextStreamer::write(int64_t token) {
     std::stringstream res;
     m_tokens_cache.push_back(token);
-    std::string text = m_tokenizer.decode(m_tokens_cache, m_additional_decode_properties);
+    std::string text = m_tokenizer.decode(m_tokens_cache, m_additional_detokenization_params);
     m_decoded_lengths.push_back(text.length());
 
     if (!text.empty() && '\n' == text.back() && text.size() > m_printed_len) {
@@ -71,7 +71,7 @@ void TextStreamer::compute_decoded_length_for_position(size_t cache_position) {
     }
 
     auto cache_for_position = std::vector(m_tokens_cache.begin(), m_tokens_cache.begin() + cache_position + 1);
-    std::string text_for_position = m_tokenizer.decode(cache_for_position, m_additional_decode_properties);
+    std::string text_for_position = m_tokenizer.decode(cache_for_position, m_additional_detokenization_params);
 
     if (is_incomplete(text_for_position)) {
         m_decoded_lengths[cache_position] = -1;
@@ -111,7 +111,7 @@ StreamingStatus TextStreamer::run_callback_if_needed(const std::string& text) {
 
 void TextStreamer::end() {
     std::stringstream res;
-    std::string text = m_tokenizer.decode(m_tokens_cache, m_additional_decode_properties);
+    std::string text = m_tokenizer.decode(m_tokens_cache, m_additional_detokenization_params);
     if (text.size() <= m_printed_len)
         return;
     res << std::string_view{text.data() + m_printed_len, text.size() - m_printed_len} << std::flush;
