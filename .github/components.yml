@@ -4,6 +4,28 @@ GHA:
 tokenizers:
   revalidate: 'all'
 
+tests_dependencies:
+  revalidate:
+    - whisper
+    - continuous_batching
+    - visual_language
+    - LLM
+    - GGUF
+    - tokenizers
+    - sampling
+    - text_streamer
+    - RAG
+    - WWB
+
+samples_dependencies:
+  revalidate:
+    - LLM_samples
+    - Whisper_samples
+    - Image_generation_samples
+    - VLM_samples
+    - RAG_samples
+    - Speech_generation_samples
+
 text_streamer:
   revalidate:
     - LLM
@@ -120,8 +142,7 @@ Speech_generation_samples:
   revalidate: []
 
 GGUF:
-  revalidate:
-    - LLM # GGUF is tested via test_llm_pipeline.py
+  revalidate: []
 
 C_API:
   revalidate:

@@ -30,6 +30,8 @@ using ov::genai::GenerationFinishReason;
 using ov::genai::GenerationStatus;
 using ov::genai::SchedulerConfig;
 using ov::genai::PipelineMetrics;
+using ov::genai::KVCrushAnchorPointMode;
+using ov::genai::KVCrushConfig;
 
 namespace {
 
@@ -63,12 +65,40 @@ auto sparse_attention_config_docstring = R"(
     :param mode: Sparse attention mode to be applied.
     :type mode: openvino_genai.SparseAttentionMode
 
-    :param num_last_dense_tokens_in_prefill: Number of tokens from the end of the prompt for which full attention across previous KV cache contents
-      will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention (encompassing first
-      and currently latest blocks) will be computed. Due to the block-wise nature of continuous batching cache management,
-      the actual number of prompt tokens for which the dense attention will be computed may be up to block-size larger than
-      this value (depending on the prompt length and block size).*/
+    :param num_last_dense_tokens_in_prefill: TRISHAPE and XATTENTION modes - Number of tokens from the end of the prompt
+       for which full attention across previous KV cache contents will be computed. In contrast, for the rest of the tokens
+       in the prompt only the sparse attention will be computed according to the selected algorithm.
+       TRISHAPE: Due to the block-wise nature of continuous batching cache management, the actual number of prompt tokens
+       for which the dense attention will be computed may be up to block-size larger than this value (depending on the
+       prompt length and block size).
+       XATTENTION: Same as above applies, but the dense attention may overspill up to a subsequence chunk (i.e. multiple
+       blocks)
     :type num_last_dense_tokens_in_prefill: int
+
+    :param num_retained_start_tokens_in_cache: TRISHAPE mode only - The number of tokens in the beginning of the cache
+     (least recent) to be retained when applying sparse attention. Must be a multiple of block size.
+    :type num_retained_start_tokens_in_cache: int
+
+    :param num_retained_recent_tokens_in_cache: TRISHAPE mode only - The number of most recent tokens in cache to be retained when
+      applying sparse attention. Must be a multiple of block size.
+    :param num_retained_recent_tokens_in_cache: int
+
+    :param xattention_threshold: XATTENTION mode only - Cumulative importance score threshold to be compared against when
+      determining blocks to exclude from the attention calculations in the block-sparse approach. Only the attention matrix
+      blocks with highest importance score sum not exceeding this threshold will be taking part in the computations. The lower
+      the threshold, the less computation will the main attention operation will take, and vice versa, with the corresponding
+      potential impact on generation accuracy.
+    :type xattention_threshold: float
+
+    :param xattention_block_size: XATTENTION mode only - Block granularity, in tokens, with which the block-sparse attention
+      calculation will be applied.
+    :type xattention_block_size: int
+
+    :param xattention_stride: XATTENTION mode only - The stride of antidiagonal sampling employed to calculate the importance
+     scores of each `xattention_block_size`-sized block of the attention matrix before the actual attention calculation takes
+     place.  Directly influences the overhead portion of the importance score computations - if full (dense) attention takes
+     M time to be calculated, then the importance score calculation would be taking `M / xattention_stride` time as overhead.
+    :type xattention_stride: int
 )";
 auto scheduler_config_docstring = R"(
     SchedulerConfig to construct ContinuousBatchingPipeline
@@ -249,17 +279,52 @@ void init_continuous_batching_pipeline(py::module_& m) {
                                :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache)")
             .value("SUM", AggregationMode::SUM)
             .value("NORM_SUM", AggregationMode::NORM_SUM);
+    py::enum_<KVCrushAnchorPointMode>(m,
+                                      "KVCrushAnchorPointMode",
+                                      R"(Represents the anchor point types for KVCrush cache eviction
+                  :param KVCrushAnchorPointMode.RANDOM: Random binary vector will be used as anchor point
+                  :param KVCrushAnchorPointMode.ZEROS: Vector of all zeros will be used as anchor point
+                  :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
+                  :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
+                  :param KVCrushAnchorPointMode.ALTERNATE: Alternating 0s and 1s will be used as anchor point)")
+        .value("RANDOM", KVCrushAnchorPointMode::RANDOM)
+        .value("ZEROS", KVCrushAnchorPointMode::ZEROS)
+        .value("ONES", KVCrushAnchorPointMode::ONES)
+        .value("MEAN", KVCrushAnchorPointMode::MEAN)
+        .value("ALTERNATE", KVCrushAnchorPointMode::ALTERNATE);
 
+    py::class_<KVCrushConfig>(m, "KVCrushConfig", "Configuration for KVCrush cache eviction algorithm")
+        .def(py::init<>(), "Default constructor")
+        .def(py::init<size_t, KVCrushAnchorPointMode, size_t>(),
+             "Constructor with budget, anchor point mode, and RNG seed",
+             py::arg("budget"),
+             py::arg_v("anchor_point_mode", KVCrushAnchorPointMode::RANDOM, "KVCrushAnchorPointMode.RANDOM"),
+             py::arg("rng_seed") = 0)
+        .def_readwrite("budget", &KVCrushConfig::budget)
+        .def_readwrite("anchor_point_mode", &KVCrushConfig::anchor_point_mode)
+        .def_readwrite("rng_seed", &KVCrushConfig::rng_seed);
 
     py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
             .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode, bool apply_rotation,
-                            size_t snapkv_window_size) {
-                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode, apply_rotation, snapkv_window_size}; }),
+                            size_t snapkv_window_size, py::object kvcrush_config) {
+                if (kvcrush_config.is_none()) {
+                     return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode, apply_rotation, snapkv_window_size};
+                 } else {
+                     const auto& config_ref = kvcrush_config.cast<const KVCrushConfig&>();
+                     return CacheEvictionConfig{start_size,
+                                                recent_size,
+                                                max_cache_size,
+                                                aggregation_mode,
+                                                apply_rotation,
+                                                snapkv_window_size,
+                                                config_ref};
+                 } }),
                  py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"), py::arg("apply_rotation") = false,
-                 py::arg("snapkv_window_size") = 8)
+                 py::arg("snapkv_window_size") = 8, py::arg("kvcrush_config") = py::none())
             .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode)
             .def_readwrite("apply_rotation", &CacheEvictionConfig::apply_rotation)
             .def_readwrite("snapkv_window_size", &CacheEvictionConfig::snapkv_window_size)
+            .def_readwrite("kvcrush_config", &CacheEvictionConfig::kvcrush_config)
             .def("get_start_size", &CacheEvictionConfig::get_start_size)
             .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
             .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
@@ -267,22 +332,31 @@ void init_continuous_batching_pipeline(py::module_& m) {
 
     py::enum_<SparseAttentionMode>(m, "SparseAttentionMode",
                             R"(Represents the mode of sparse attention applied during generation.
-                               :param SparseAttentionMode.TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.)")
-            .value("TRISHAPE", SparseAttentionMode::TRISHAPE);
+                               :param SparseAttentionMode.TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.
+                               :param SparseAttentionMode.XATTENTION: Following https://arxiv.org/pdf/2503.16428, introduces importance score threshold-based block sparsity into the prefill stage.  Computing importance scores introduces an overhead, but the total inference time is expected to be reduced even more.
+)")
+            .value("TRISHAPE", SparseAttentionMode::TRISHAPE)
+			.value("XATTENTION", SparseAttentionMode::XATTENTION);
 
     py::class_<SparseAttentionConfig>(m, "SparseAttentionConfig", sparse_attention_config_docstring)
-            .def(py::init<>([](SparseAttentionMode mode, size_t num_last_dense_tokens_in_prefill, size_t num_retained_start_tokens_in_cache, size_t num_retained_recent_tokens_in_cache) {
-                return SparseAttentionConfig{mode, num_last_dense_tokens_in_prefill, num_retained_start_tokens_in_cache, num_retained_recent_tokens_in_cache}; }),
+            .def(py::init<>([](SparseAttentionMode mode, size_t num_last_dense_tokens_in_prefill, size_t num_retained_start_tokens_in_cache, size_t num_retained_recent_tokens_in_cache, float xattention_threshold, size_t xattention_block_size, size_t xattention_stride) {
                  // somehow pybind cannot associate enum arg with a default value with its python counterpart,
                  // hence need to use arg_v instead of arg like everywhere else
+                return SparseAttentionConfig{mode, num_last_dense_tokens_in_prefill, num_retained_start_tokens_in_cache, num_retained_recent_tokens_in_cache, xattention_threshold, xattention_block_size, xattention_stride}; }),
                  py::arg_v("mode", SparseAttentionMode::TRISHAPE, "SparseAttentionMode.TRISHAPE"),
                  py::arg("num_last_dense_tokens_in_prefill") = 100,
                  py::arg("num_retained_start_tokens_in_cache") = 128,
-                 py::arg("num_retained_recent_tokens_in_cache") = 1920)
+                 py::arg("num_retained_recent_tokens_in_cache") = 1920,
+                 py::arg("xattention_threshold") = 0.8,
+                 py::arg("xattention_block_size") = 64,
+                 py::arg("xattention_stride") = 8)
             .def_readwrite("mode", &SparseAttentionConfig::mode)
             .def_readwrite("num_last_dense_tokens_in_prefill", &SparseAttentionConfig::num_last_dense_tokens_in_prefill)
             .def_readwrite("num_retained_start_tokens_in_cache", &SparseAttentionConfig::num_retained_start_tokens_in_cache)
-            .def_readwrite("num_retained_recent_tokens_in_cache", &SparseAttentionConfig::num_retained_recent_tokens_in_cache);
+            .def_readwrite("num_retained_recent_tokens_in_cache", &SparseAttentionConfig::num_retained_recent_tokens_in_cache)
+            .def_readwrite("xattention_threshold", &SparseAttentionConfig::xattention_threshold)
+            .def_readwrite("xattention_block_size", &SparseAttentionConfig::xattention_block_size)
+            .def_readwrite("xattention_stride", &SparseAttentionConfig::xattention_stride);
 
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
         .def(py::init<>())

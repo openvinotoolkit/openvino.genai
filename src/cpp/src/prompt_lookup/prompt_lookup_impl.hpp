@@ -33,7 +33,8 @@ public:
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
-                                 ov::genai::GenerationConfig sampling_params) override;
+                                 ov::genai::GenerationConfig sampling_params,
+                                 std::optional<ov::Tensor> token_type_ids = std::nullopt) override;
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  ov::genai::GenerationConfig sampling_params) override;
@@ -45,7 +46,8 @@ public:
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) override;
+             const StreamerVariant& streamer,
+             std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt) override;
 
     SpeculativeDecodingMetrics get_metrics();
 };

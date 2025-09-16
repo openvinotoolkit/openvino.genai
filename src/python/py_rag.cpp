@@ -8,6 +8,7 @@
 #include <pybind11/stl_bind.h>
 
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "py_utils.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 
@@ -15,6 +16,7 @@ namespace py = pybind11;
 using ov::genai::EmbeddingResult;
 using ov::genai::EmbeddingResults;
 using ov::genai::TextEmbeddingPipeline;
+using ov::genai::TextRerankPipeline;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -25,6 +27,13 @@ Structure to keep TextEmbeddingPipeline configuration parameters.
 Attributes:
     max_length (int, optional):
         Maximum length of tokens passed to the embedding model.
+    pad_to_max_length (bool, optional):
+        If 'True', model input tensors are padded to the maximum length.
+    batch_size (int, optional):
+        Batch size for the embedding model.
+        Useful for database population. If set, the pipeline will fix model shape for inference optimization.
+        Number of documents passed to pipeline should be equal to batch_size.
+        For query embeddings, batch_size should be set to 1 or not set.
     pooling_type (TextEmbeddingPipeline.PoolingType, optional):
         Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
     normalize (bool, optional):
@@ -34,7 +43,17 @@ Attributes:
     embed_instruction (str, optional):
         Instruction to use for embedding a document.
 )";
-}
+
+const auto text_reranking_config_docstring = R"(
+Structure to keep TextRerankPipeline configuration parameters.
+Attributes:
+    top_n (int, optional):
+        Number of documents to return sorted by score.
+    max_length (int, optional):
+        Maximum length of tokens passed to the embedding model.
+)";
+
+}  // namespace
 
 void init_rag_pipelines(py::module_& m) {
     auto text_embedding_pipeline =
@@ -116,7 +135,12 @@ void init_rag_pipelines(py::module_& m) {
         .def(py::init([](py::kwargs kwargs) {
             return TextEmbeddingPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
         }))
+        .def("validate",
+             &TextEmbeddingPipeline::Config::validate,
+             "Checks that are no conflicting parameters. Raises exception if config is invalid.")
         .def_readwrite("max_length", &TextEmbeddingPipeline::Config::max_length)
+        .def_readwrite("pad_to_max_length", &TextEmbeddingPipeline::Config::pad_to_max_length)
+        .def_readwrite("batch_size", &TextEmbeddingPipeline::Config::batch_size)
         .def_readwrite("pooling_type", &TextEmbeddingPipeline::Config::pooling_type)
         .def_readwrite("normalize", &TextEmbeddingPipeline::Config::normalize)
         .def_readwrite("query_instruction", &TextEmbeddingPipeline::Config::query_instruction)
@@ -149,6 +173,85 @@ Constructs a pipeline from xml/bin files, tokenizer and configuration in the sam
 models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
 device (str): Device to run the model on (e.g., CPU, GPU).
 config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
+kwargs: Plugin and/or config properties
+)");
+
+    auto text_rerank_pipeline =
+        py::class_<ov::genai::TextRerankPipeline>(m, "TextRerankPipeline", "Text rerank pipeline")
+            .def(
+                "rerank",
+                [](ov::genai::TextRerankPipeline& pipe,
+                   const std::string& query,
+                   const std::vector<std::string>& texts) -> py::typing::Union<std::vector<std::pair<size_t, float>>> {
+                    std::vector<std::pair<size_t, float>> res;
+                    {
+                        py::gil_scoped_release rel;
+                        res = pipe.rerank(query, texts);
+                    }
+                    return py::cast(res);
+                },
+                py::arg("query"),
+                py::arg("texts"),
+                "Reranks a vector of texts based on the query.")
+            .def(
+                "start_rerank_async",
+                [](ov::genai::TextRerankPipeline& pipe,
+                   const std::string& query,
+                   const std::vector<std::string>& texts) -> void {
+                    py::gil_scoped_release rel;
+                    pipe.start_rerank_async(query, texts);
+                },
+                py::arg("query"),
+                py::arg("texts"),
+                "Asynchronously reranks a vector of texts based on the query.")
+            .def(
+                "wait_rerank",
+                [](ov::genai::TextRerankPipeline& pipe) -> py::typing::Union<std::vector<std::pair<size_t, float>>> {
+                    std::vector<std::pair<size_t, float>> res;
+                    {
+                        py::gil_scoped_release rel;
+                        res = pipe.wait_rerank();
+                    }
+                    return py::cast(res);
+                },
+                "Waits for reranked texts.");
+
+    py::class_<ov::genai::TextRerankPipeline::Config>(text_rerank_pipeline, "Config", text_reranking_config_docstring)
+        .def(py::init<>())
+        .def(py::init([](py::kwargs kwargs) {
+            return ov::genai::TextRerankPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
+        }))
+        .def_readwrite("top_n", &ov::genai::TextRerankPipeline::Config::top_n)
+        .def_readwrite("max_length", &ov::genai::TextRerankPipeline::Config::max_length);
+
+    text_rerank_pipeline.def(
+        py::init([](const std::filesystem::path& models_path,
+                    const std::string& device,
+                    const std::optional<ov::genai::TextRerankPipeline::Config>& config,
+                    const py::kwargs& kwargs) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            if (config.has_value()) {
+                return std::make_unique<ov::genai::TextRerankPipeline>(models_path,
+                                                                       device,
+                                                                       *config,
+                                                                       pyutils::kwargs_to_any_map(kwargs));
+            }
+            return std::make_unique<ov::genai::TextRerankPipeline>(models_path,
+                                                                   device,
+                                                                   pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("models_path"),
+        "Path to the directory containing model xml/bin files and tokenizer",
+        py::arg("device"),
+        "Device to run the model on (e.g., CPU, GPU)",
+        py::arg("config") = std::nullopt,
+        "Optional pipeline configuration",
+        "Plugin and/or config properties",
+        R"(
+Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
+device (str): Device to run the model on (e.g., CPU, GPU).
+config: (TextRerankPipeline.Config): Optional pipeline configuration
 kwargs: Plugin and/or config properties
 )");
 }

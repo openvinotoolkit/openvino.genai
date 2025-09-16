@@ -1,11 +1,11 @@
 """
-Pybind11 binding for Text-to-speech Pipeline
+Pybind11 binding for OpenVINO GenAI library
 """
 from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -359,7 +359,8 @@ class CacheEvictionConfig:
     """
     aggregation_mode: AggregationMode
     apply_rotation: bool
-    def __init__(self, start_size: typing.SupportsInt, recent_size: typing.SupportsInt, max_cache_size: typing.SupportsInt, aggregation_mode: AggregationMode, apply_rotation: bool = False, snapkv_window_size: typing.SupportsInt = 8) -> None:
+    kvcrush_config: KVCrushConfig
+    def __init__(self, start_size: typing.SupportsInt, recent_size: typing.SupportsInt, max_cache_size: typing.SupportsInt, aggregation_mode: AggregationMode, apply_rotation: bool = False, snapkv_window_size: typing.SupportsInt = 8, kvcrush_config: typing.Any = None) -> None:
         ...
     def get_evictable_size(self) -> int:
         ...
@@ -557,20 +558,24 @@ class ExtendedPerfMetrics:
     
         Holds performance metrics for each generate call.
     
-        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        PerfMetrics holds the following metrics with mean and standard deviations:
         - Time To the First Token (TTFT), ms
         - Time per Output Token (TPOT), ms/token
+        - Inference time per Output Token (IPOT), ms/token
         - Generate total duration, ms
+        - Inference duration, ms
         - Tokenization duration, ms
         - Detokenization duration, ms
         - Throughput, tokens/s
     
-        Additional fields include:
+        Additional metrics include:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Time to initialize grammar compiler for each backend, ms
+        - Time to compile grammar, ms
     
-        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
     
         :param get_load_time: Returns the load time in milliseconds.
@@ -588,8 +593,14 @@ class ExtendedPerfMetrics:
         :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
         :type get_tpot: MeanStdPair
     
+        :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
+        :type get_ipot: MeanStdPair
+    
         :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
         :type get_throughput: MeanStdPair
+    
+        :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
+        :type get_inference_duration: MeanStdPair
     
         :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
         :type get_generate_duration: MeanStdPair
@@ -1445,6 +1456,86 @@ class InpaintingPipeline:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
+class KVCrushAnchorPointMode:
+    """
+    Represents the anchor point types for KVCrush cache eviction
+                      :param KVCrushAnchorPointMode.RANDOM: Random binary vector will be used as anchor point
+                      :param KVCrushAnchorPointMode.ZEROS: Vector of all zeros will be used as anchor point
+                      :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
+                      :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
+                      :param KVCrushAnchorPointMode.ALTERNATE: Alternating 0s and 1s will be used as anchor point
+    
+    Members:
+    
+      RANDOM
+    
+      ZEROS
+    
+      ONES
+    
+      MEAN
+    
+      ALTERNATE
+    """
+    ALTERNATE: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ALTERNATE: 4>
+    MEAN: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.MEAN: 3>
+    ONES: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ONES: 2>
+    RANDOM: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.RANDOM: 0>
+    ZEROS: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ZEROS: 1>
+    __members__: typing.ClassVar[dict[str, KVCrushAnchorPointMode]]  # value = {'RANDOM': <KVCrushAnchorPointMode.RANDOM: 0>, 'ZEROS': <KVCrushAnchorPointMode.ZEROS: 1>, 'ONES': <KVCrushAnchorPointMode.ONES: 2>, 'MEAN': <KVCrushAnchorPointMode.MEAN: 3>, 'ALTERNATE': <KVCrushAnchorPointMode.ALTERNATE: 4>}
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class KVCrushConfig:
+    """
+    Configuration for KVCrush cache eviction algorithm
+    """
+    anchor_point_mode: KVCrushAnchorPointMode
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Default constructor
+        """
+    @typing.overload
+    def __init__(self, budget: typing.SupportsInt, anchor_point_mode: KVCrushAnchorPointMode = ..., rng_seed: typing.SupportsInt = 0) -> None:
+        """
+        Constructor with budget, anchor point mode, and RNG seed
+        """
+    @property
+    def budget(self) -> int:
+        ...
+    @budget.setter
+    def budget(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def rng_seed(self) -> int:
+        ...
+    @rng_seed.setter
+    def rng_seed(self, arg0: typing.SupportsInt) -> None:
+        ...
 class LLMPipeline:
     """
     This class is used for generation with LLMs
@@ -1635,20 +1726,24 @@ class PerfMetrics:
     
         Holds performance metrics for each generate call.
     
-        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        PerfMetrics holds the following metrics with mean and standard deviations:
         - Time To the First Token (TTFT), ms
         - Time per Output Token (TPOT), ms/token
+        - Inference time per Output Token (IPOT), ms/token
         - Generate total duration, ms
+        - Inference duration, ms
         - Tokenization duration, ms
         - Detokenization duration, ms
         - Throughput, tokens/s
     
-        Additional fields include:
+        Additional metrics include:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Time to initialize grammar compiler for each backend, ms
+        - Time to compile grammar, ms
     
-        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
     
         :param get_load_time: Returns the load time in milliseconds.
@@ -1666,8 +1761,14 @@ class PerfMetrics:
         :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
         :type get_tpot: MeanStdPair
     
+        :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
+        :type get_ipot: MeanStdPair
+    
         :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
         :type get_throughput: MeanStdPair
+    
+        :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
+        :type get_inference_duration: MeanStdPair
     
         :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
         :type get_generate_duration: MeanStdPair
@@ -2101,15 +2202,43 @@ class SparseAttentionConfig:
         :param mode: Sparse attention mode to be applied.
         :type mode: openvino_genai.SparseAttentionMode
     
-        :param num_last_dense_tokens_in_prefill: Number of tokens from the end of the prompt for which full attention across previous KV cache contents
-          will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention (encompassing first
-          and currently latest blocks) will be computed. Due to the block-wise nature of continuous batching cache management,
-          the actual number of prompt tokens for which the dense attention will be computed may be up to block-size larger than
-          this value (depending on the prompt length and block size).*/
+        :param num_last_dense_tokens_in_prefill: TRISHAPE and XATTENTION modes - Number of tokens from the end of the prompt
+           for which full attention across previous KV cache contents will be computed. In contrast, for the rest of the tokens
+           in the prompt only the sparse attention will be computed according to the selected algorithm.
+           TRISHAPE: Due to the block-wise nature of continuous batching cache management, the actual number of prompt tokens
+           for which the dense attention will be computed may be up to block-size larger than this value (depending on the
+           prompt length and block size).
+           XATTENTION: Same as above applies, but the dense attention may overspill up to a subsequence chunk (i.e. multiple
+           blocks)
         :type num_last_dense_tokens_in_prefill: int
+    
+        :param num_retained_start_tokens_in_cache: TRISHAPE mode only - The number of tokens in the beginning of the cache
+         (least recent) to be retained when applying sparse attention. Must be a multiple of block size.
+        :type num_retained_start_tokens_in_cache: int
+    
+        :param num_retained_recent_tokens_in_cache: TRISHAPE mode only - The number of most recent tokens in cache to be retained when
+          applying sparse attention. Must be a multiple of block size.
+        :param num_retained_recent_tokens_in_cache: int
+    
+        :param xattention_threshold: XATTENTION mode only - Cumulative importance score threshold to be compared against when
+          determining blocks to exclude from the attention calculations in the block-sparse approach. Only the attention matrix
+          blocks with highest importance score sum not exceeding this threshold will be taking part in the computations. The lower
+          the threshold, the less computation will the main attention operation will take, and vice versa, with the corresponding
+          potential impact on generation accuracy.
+        :type xattention_threshold: float
+    
+        :param xattention_block_size: XATTENTION mode only - Block granularity, in tokens, with which the block-sparse attention
+          calculation will be applied.
+        :type xattention_block_size: int
+    
+        :param xattention_stride: XATTENTION mode only - The stride of antidiagonal sampling employed to calculate the importance
+         scores of each `xattention_block_size`-sized block of the attention matrix before the actual attention calculation takes
+         place.  Directly influences the overhead portion of the importance score computations - if full (dense) attention takes
+         M time to be calculated, then the importance score calculation would be taking `M / xattention_stride` time as overhead.
+        :type xattention_stride: int
     """
     mode: SparseAttentionMode
-    def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: typing.SupportsInt = 100, num_retained_start_tokens_in_cache: typing.SupportsInt = 128, num_retained_recent_tokens_in_cache: typing.SupportsInt = 1920) -> None:
+    def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: typing.SupportsInt = 100, num_retained_start_tokens_in_cache: typing.SupportsInt = 128, num_retained_recent_tokens_in_cache: typing.SupportsInt = 1920, xattention_threshold: typing.SupportsFloat = 0.8, xattention_block_size: typing.SupportsInt = 64, xattention_stride: typing.SupportsInt = 8) -> None:
         ...
     @property
     def num_last_dense_tokens_in_prefill(self) -> int:
@@ -2129,17 +2258,40 @@ class SparseAttentionConfig:
     @num_retained_start_tokens_in_cache.setter
     def num_retained_start_tokens_in_cache(self, arg0: typing.SupportsInt) -> None:
         ...
+    @property
+    def xattention_block_size(self) -> int:
+        ...
+    @xattention_block_size.setter
+    def xattention_block_size(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def xattention_stride(self) -> int:
+        ...
+    @xattention_stride.setter
+    def xattention_stride(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def xattention_threshold(self) -> float:
+        ...
+    @xattention_threshold.setter
+    def xattention_threshold(self, arg0: typing.SupportsFloat) -> None:
+        ...
 class SparseAttentionMode:
     """
     Represents the mode of sparse attention applied during generation.
                                    :param SparseAttentionMode.TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.
+                                   :param SparseAttentionMode.XATTENTION: Following https://arxiv.org/pdf/2503.16428, introduces importance score threshold-based block sparsity into the prefill stage.  Computing importance scores introduces an overhead, but the total inference time is expected to be reduced even more.
+    
     
     Members:
     
       TRISHAPE
+    
+      XATTENTION
     """
     TRISHAPE: typing.ClassVar[SparseAttentionMode]  # value = <SparseAttentionMode.TRISHAPE: 0>
-    __members__: typing.ClassVar[dict[str, SparseAttentionMode]]  # value = {'TRISHAPE': <SparseAttentionMode.TRISHAPE: 0>}
+    XATTENTION: typing.ClassVar[SparseAttentionMode]  # value = <SparseAttentionMode.XATTENTION: 1>
+    __members__: typing.ClassVar[dict[str, SparseAttentionMode]]  # value = {'TRISHAPE': <SparseAttentionMode.TRISHAPE: 0>, 'XATTENTION': <SparseAttentionMode.XATTENTION: 1>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -2446,10 +2598,78 @@ class StructuredOutputConfig:
         Structured output parameters:
         json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
         regex:          if set, the output will be constraint by specified regex.
-        grammar:        if set, the output will be constraint by specified grammar.
+        grammar:        if set, the output will be constraint by specified EBNF grammar.
         structural_tags_config: if set, the output will be constraint by specified structural tags configuration.
-    
+        compound_grammar:
+            if set, the output will be constraint by specified compound grammar.
+            Compound grammar is a combination of multiple grammars that can be used to generate structured outputs.
+            It allows for more complex and flexible structured output generation.
+            The compound grammar a Union or Concat of several grammars, where each grammar can be a JSON schema, regex, EBNF, Union or Concat.
     """
+    class Concat:
+        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        @staticmethod
+        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Concat:
+            """
+            Concat combines two grammars sequentially, e.g. "A B" means A followed by B
+            """
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class EBNF:
+        value: str
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, arg0: str) -> None:
+            """
+            EBNF grammar building block for compound grammar configuration.
+            """
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class JSONSchema:
+        value: str
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, arg0: str) -> None:
+            """
+            JSON schema building block for compound grammar configuration.
+            """
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class Regex:
+        value: str
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, arg0: str) -> None:
+            """
+            Regex building block for compound grammar configuration.
+            """
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class Union:
+        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        @staticmethod
+        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Union:
+            """
+            Union combines two grammars in parallel, e.g. "A | B" means either A or B
+            """
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
     @typing.overload
     def __init__(self) -> None:
         """
@@ -2461,6 +2681,14 @@ class StructuredOutputConfig:
         Constructor that initializes the structured output configuration with kwargs.
         """
     def __repr__(self) -> str:
+        ...
+    @property
+    def compound_grammar(self) -> openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None:
+        """
+        Compound grammar for structured output generation
+        """
+    @compound_grammar.setter
+    def compound_grammar(self, arg0: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None) -> None:
         ...
     @property
     def grammar(self) -> str | None:
@@ -2760,6 +2988,13 @@ class TextEmbeddingPipeline:
         Attributes:
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
+            pad_to_max_length (bool, optional):
+                If 'True', model input tensors are padded to the maximum length.
+            batch_size (int, optional):
+                Batch size for the embedding model.
+                Useful for database population. If set, the pipeline will fix model shape for inference optimization.
+                Number of documents passed to pipeline should be equal to batch_size.
+                For query embeddings, batch_size should be set to 1 or not set.
             pooling_type (TextEmbeddingPipeline.PoolingType, optional):
                 Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
             normalize (bool, optional):
@@ -2771,6 +3006,7 @@ class TextEmbeddingPipeline:
         """
         embed_instruction: str | None
         normalize: bool
+        pad_to_max_length: bool | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload
@@ -2778,6 +3014,16 @@ class TextEmbeddingPipeline:
             ...
         @typing.overload
         def __init__(self, **kwargs) -> None:
+            ...
+        def validate(self) -> None:
+            """
+            Checks that are no conflicting parameters. Raises exception if config is invalid.
+            """
+        @property
+        def batch_size(self) -> int | None:
+            ...
+        @batch_size.setter
+        def batch_size(self, arg0: typing.SupportsInt | None) -> None:
             ...
         @property
         def max_length(self) -> int | None:
@@ -2854,6 +3100,58 @@ class TextEmbeddingPipeline:
         """
         Waits computed embeddings for a query
         """
+class TextRerankPipeline:
+    """
+    Text rerank pipeline
+    """
+    class Config:
+        """
+        
+        Structure to keep TextRerankPipeline configuration parameters.
+        Attributes:
+            top_n (int, optional):
+                Number of documents to return sorted by score.
+            max_length (int, optional):
+                Maximum length of tokens passed to the embedding model.
+        """
+        @typing.overload
+        def __init__(self) -> None:
+            ...
+        @typing.overload
+        def __init__(self, **kwargs) -> None:
+            ...
+        @property
+        def max_length(self) -> int | None:
+            ...
+        @max_length.setter
+        def max_length(self, arg0: typing.SupportsInt | None) -> None:
+            ...
+        @property
+        def top_n(self) -> int:
+            ...
+        @top_n.setter
+        def top_n(self, arg0: typing.SupportsInt) -> None:
+            ...
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, config: openvino_genai.py_openvino_genai.TextRerankPipeline.Config | None = None, **kwargs) -> None:
+        """
+        Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir
+        models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer
+        device (str): Device to run the model on (e.g., CPU, GPU).
+        config: (TextRerankPipeline.Config): Optional pipeline configuration
+        kwargs: Plugin and/or config properties
+        """
+    def rerank(self, query: str, texts: collections.abc.Sequence[str]) -> list[tuple[int, float]]:
+        """
+        Reranks a vector of texts based on the query.
+        """
+    def start_rerank_async(self, query: str, texts: collections.abc.Sequence[str]) -> None:
+        """
+        Asynchronously reranks a vector of texts based on the query.
+        """
+    def wait_rerank(self) -> list[tuple[int, float]]:
+        """
+        Waits for reranked texts.
+        """
 class TextStreamer(StreamerBase):
     """
     
@@ -2887,10 +3185,6 @@ class Tokenizer:
         4. chat_template entry from rt_info section of openvino.Model
         5. If the template is known to be not supported by GenAI, it's
             replaced with a simplified supported version.
-        6. If the template was not in the list of not supported GenAI
-            templates from (5), it's replaced with simplified_chat_template entry
-            from rt_info section of ov::Model.
-        7. Replace not supported instructions with equivalents.
     """
     chat_template: str
     @typing.overload
@@ -2919,25 +3213,58 @@ class Tokenizer:
         Decode a batch of tokens into a list of string prompt.
         """
     @typing.overload
-    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
+    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs.
+        Args:
+         'prompts' - list of prompts to encode
+         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+        Returns:
+         TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
+    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
         """
         Encodes a single prompt into tokenized input.
+        Args:
+         'prompt' - prompt to encode
+         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+        Returns:
+         TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
+    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs. The number of strings must be the same, or one of the inputs can contain one string.
-                    In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.
+        In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.)
+        Args:
+         'prompts_1' - list of prompts to encode
+         'prompts_2' - list of prompts to encode
+         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+        Returns:
+         TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None) -> TokenizedInputs:
+    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
         """
         Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
+        Args:
+         'prompts' - list of prompts to encode\\n
+         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+        Returns:
+         TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     def get_bos_token(self) -> str:
         ...
@@ -2963,6 +3290,10 @@ class Tokenizer:
     def set_chat_template(self, chat_template: str) -> None:
         """
         Override a chat_template read from tokenizer_config.json.
+        """
+    def supports_paired_input(self) -> bool:
+        """
+        Returns true if the tokenizer supports paired input, false otherwise.
         """
 class TorchGenerator(CppStdGenerator):
     """
@@ -3130,6 +3461,7 @@ class VLMPipeline:
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+            gemma-3-4b-it: <start_of_image>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         
@@ -3168,6 +3500,7 @@ class VLMPipeline:
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+            gemma-3-4b-it: <start_of_image>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         
@@ -3205,6 +3538,7 @@ class VLMPipeline:
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+            gemma-3-4b-it: <start_of_image>
             If the prompt doesn't contain image tags, but images are
             provided, the tags are prepended to the prompt.
         

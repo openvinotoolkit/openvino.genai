@@ -4,6 +4,7 @@ import VLMModelsTable from './_components/vlm-models-table';
 import WhisperModelsTable from './_components/whisper-models-table';
 import TextEmbeddingsModelsTable from './_components/text-embeddings-models-table';
 import SpeechGenerationModelsTable from './_components/speech-generation-models-table';
+import TextRerankModelsTable from './_components/text-rerank-models-table';
 
 
 # Supported Models
@@ -60,10 +61,14 @@ To convert InternVL2 models, `timm` and `einops` are required:
 pip install timm einops
 ```
 #### phi3_v {#phi3_v-notes}
-  - Example models' configs aren't consistent. It's required to override the default `eos_token_id` with the one from a tokenizer:
-    ```python
-    generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())
-    ```
+
+Models' configs aren't consistent. It's required to override the default `eos_token_id` with the one from a tokenizer:
+```python
+generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())
+```
+#### phi4mm {#phi4mm-notes}
+
+Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/files to fix the model export for transformers>=4.50
 :::
 
 ## Speech Recognition Models (Whisper-based)
@@ -77,6 +82,14 @@ pip install timm einops
 ## Speech Generation Models
 
 <SpeechGenerationModelsTable />
+
+## Text Rerank Models
+
+<TextRerankModelsTable />
+
+:::info
+LoRA adapters are not supported.
+:::
 
 :::info
 

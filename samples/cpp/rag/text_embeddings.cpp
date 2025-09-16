@@ -17,8 +17,8 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::TextEmbeddingPipeline pipeline(models_path, device, config);
 
-    ov::genai::EmbeddingResults embeddings = pipeline.embed_documents(documents);
-
+    ov::genai::EmbeddingResults documents_embeddings = pipeline.embed_documents(documents);
+    ov::genai::EmbeddingResult query_embedding = pipeline.embed_query("What is the capital of France?");
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
