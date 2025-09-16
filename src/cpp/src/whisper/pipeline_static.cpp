@@ -404,8 +404,7 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model) {
 
         AttentionMaskInput_2(std::shared_ptr<ov::Model> model) {
             auto range = wrap_type<v4::Range>();
-            auto convert1 = wrap_type<v0::Convert>({range});
-            auto unsqueeze1 = wrap_type<v0::Unsqueeze>({convert1, any_input()});
+            auto unsqueeze1 = wrap_type<v0::Unsqueeze>({range, any_input()});
             auto unsqueeze2 = wrap_type<v0::Unsqueeze>({unsqueeze1, any_input()});
             auto unsqueeze3 = wrap_type<v0::Unsqueeze>({unsqueeze2, any_input()});
             auto lessequal = wrap_type<v1::LessEqual>({unsqueeze3, any_input()});
