@@ -3,7 +3,6 @@ import subprocess  # nosec B404
 import os
 import sys
 import shutil
-import platform
 import pytest
 import logging
 import tempfile
@@ -113,9 +112,9 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     if model_type == "image-inpainting":
         pytest.xfail("Segfault. Ticket 170877")
 
-    mac_arm64_skip = any(substring in model_id for substring in ('stable-diffusion-xl', 
-                                                                 'tiny-random-stable-diffusion', 
-                                                                 'stable-diffusion-3', 
+    mac_arm64_skip = any(substring in model_id for substring in ('stable-diffusion-xl',
+                                                                 'tiny-random-stable-diffusion',
+                                                                 'stable-diffusion-3',
                                                                  'tiny-random-flux'))
 
     if mac_arm64_skip and sys.platform == 'darwin':
