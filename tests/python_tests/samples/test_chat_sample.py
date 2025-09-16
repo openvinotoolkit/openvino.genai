@@ -18,17 +18,17 @@ class TestChatSample:
         ],
     )
     def test_chat_sample_refs(self, request, convert_model, prompts):
-        # Python test
-        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/chat_sample.py")
-        py_command = [sys.executable, py_script, convert_model]
-        py_result = run_sample(py_command, '\n'.join(prompts))
-        py_predictions = py_result.stdout
-
         # C++ test
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'chat_sample')
         cpp_command = [cpp_sample, convert_model]
         cpp_result = run_sample(cpp_command, '\n'.join(prompts))
         cpp_predictions = cpp_result.stdout
+
+        # Python test
+        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/chat_sample.py")
+        py_command = [sys.executable, py_script, convert_model]
+        py_result = run_sample(py_command, '\n'.join(prompts))
+        py_predictions = py_result.stdout
 
         # C test
         c_sample = os.path.join(SAMPLES_C_DIR, 'chat_sample_c')

@@ -91,6 +91,7 @@ export const VLM_MODELS: VLMModelType[] = [
         links: [
           'https://huggingface.co/microsoft/Phi-4-multimodal-instruct',
         ],
+        notesLink: '#phi4mm-notes'
       },
     ],
   },
@@ -118,6 +119,20 @@ export const VLM_MODELS: VLMModelType[] = [
         links: [
           'https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct',
           'https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'Gemma3ForConditionalGeneration',
+    models: [
+      {
+        name: 'gemma3',
+        loraSupport: false,
+        links: [
+          'https://huggingface.co/google/gemma-3-4b-it',
+          'https://huggingface.co/google/gemma-3-12b-it',
+          'https://huggingface.co/google/gemma-3-27b-it',
         ],
       },
     ],

@@ -219,6 +219,19 @@ public:
         OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
             pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
 
+        m_root_dir = pipe.m_root_dir;
+
+        if (pipe.m_t5_text_encoder) {
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(*pipe.m_t5_text_encoder);
+        }
+
+        m_clip_text_encoder_1 = std::make_shared<CLIPTextModelWithProjection>(*pipe.m_clip_text_encoder_1);
+        m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(*pipe.m_clip_text_encoder_2);
+        m_transformer = std::make_shared<SD3Transformer2DModel>(*pipe.m_transformer);
+        m_vae = std::make_shared<AutoencoderKL>(*pipe.m_vae);
+
+        // initialize generation config
+
         m_pipeline_type = pipeline_type;
         initialize_generation_config("StableDiffusion3Pipeline");
     }
@@ -690,8 +703,8 @@ private:
     }
 
     void initialize_generation_config(const std::string& class_name) override {
-        assert(m_transformer != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
 
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
@@ -712,8 +725,8 @@ private:
     }
 
     void check_image_size(const int height, const int width) const override {
-        assert(m_transformer != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const size_t patch_size = m_transformer->get_config().patch_size;
@@ -725,7 +738,7 @@ private:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
 

@@ -672,11 +672,6 @@ ov::Output<ov::Node> make_int4_weights(
         zero_point_data[i] = (bias2 << 4) | (bias1 & 0x0F);
     }
 
-    // CVS-166438: GGUF Q4_0 zp array (U4) with all same value (8) will be converted to single U4 scalar via ConvertU4WeightsZeroPointToScalar transformation.
-    // This corner case can be handled by CPU plugin properly, but will trigger compilation error on GPU plugin.
-    // Temporal WA by adding one small bias to keep zp array shape for GPU plugin, confirm no accuracy impact for final LLM generation results.
-    zero_point_data[0] += 1;
-
     auto zero_points_node = std::make_shared<ov::op::v0::Constant>(zero_point_tensor);
     auto zero_points_f16 = std::make_shared<ov::op::v0::Convert>(zero_points_node, ov::element::f16);
 
@@ -748,23 +743,17 @@ ov::Output<ov::Node> make_lm_head(
     const ov::Output<ov::Node>& input,
     const std::unordered_map<std::string, ov::Tensor>& consts,
     const ov::Output<ov::Node>& embeddings_node,
-    gguf_tensor_type qtype,
-    bool shared_embedding) {
+    gguf_tensor_type qtype) {
 
     ov::Output<ov::Node> w_f32;
-    if (shared_embedding){
-        w_f32 = embeddings_node;
-    }
-    else {
-        if (consts.count(key + ".weight")) {
-            gguf_tensor_type lm_qtype = qtype;
-            if (!consts.count(key + ".scales")) {
-                lm_qtype = gguf_tensor_type::GGUF_TYPE_F16;
-            }
-            w_f32 = make_weights_subgraph(key, consts, lm_qtype, false, -1);
-        } else {
-            w_f32 = embeddings_node;
+    if (consts.count(key + ".weight")) {
+        gguf_tensor_type lm_qtype = qtype;
+        if (!consts.count(key + ".scales")) {
+            lm_qtype = gguf_tensor_type::GGUF_TYPE_F16;
         }
+        w_f32 = make_weights_subgraph(key, consts, lm_qtype, false, -1);
+    } else {
+        w_f32 = embeddings_node;
     }
     return std::make_shared<ov::op::v0::MatMul>(
         input, w_f32, false, true);
