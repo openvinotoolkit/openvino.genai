@@ -725,7 +725,7 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
     if (patches_shape.at(0) == 1) {
         repeats = config.temporal_patch_size;
     }
-    uint64_t a_broadcast_shape[4] = {static_cast<size_t>(repeats), 1, 1, 1};
+    uint64_t a_tile_shape[4] = {static_cast<size_t>(repeats), 1, 1, 1};
 
     uint64_t a_temp_shape8d[8] = {
         grid_t, temporal_patch_size * channel, grid_h / config.merge_size, config.merge_size, config.patch_size, grid_w / config.merge_size, config.merge_size, config.patch_size
@@ -737,13 +737,13 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
         config.patch_size * config.patch_size
     };
     uint64_t last_output_shape[2] = {grid_t * grid_h * grid_w, channel * temporal_patch_size * config.patch_size * config.patch_size};
-    ov::Tensor tile_shape(ov::element::i64, ov::Shape{4}, a_broadcast_shape);
+    ov::Tensor tile_shape(ov::element::i64, ov::Shape{4}, a_tile_shape);
     ov::Tensor reshape_shape8d(ov::element::i64, ov::Shape{8}, a_temp_shape8d);
     ov::Tensor reshape_shape4d(ov::element::i64, ov::Shape{4}, a_temp_shape4d);
     ov::Tensor reshape_shape2d(ov::element::i64, ov::Shape{2}, last_output_shape);
 
+    // Same image means just duplicating input_image_1 as input_image_2 or not.
     encoder.set_tensor("same_image", same_image);
-    // Same image means just duplicating input_image_1 as input_image_2.
     encoder.set_tensor("raw_images_1", input_image_1);
     encoder.set_tensor("raw_images_2", input_image_2);
     encoder.set_tensor("resize_shape", target_shape);
@@ -774,8 +774,9 @@ std::vector<EncodedImage> VisionEncoderQwen2VL::encode_video(const std::vector<o
                                                              const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
     std::vector<EncodedImage> encoded_imgs;
-    size_t i = 0;
-    for (; i < images.size(); i += config.temporal_patch_size) {
+    int i = 0;
+    int image_num = static_cast<int>(images.size());
+    for (; i < image_num - static_cast<int>(config.temporal_patch_size); i += config.temporal_patch_size) {
         EncodedImage encoded_img;
         if (use_ov_image_preprocess == false) {
             encoded_img = encode_with_imagepreprocess_cpp(
@@ -789,7 +790,7 @@ std::vector<EncodedImage> VisionEncoderQwen2VL::encode_video(const std::vector<o
 
         encoded_imgs.push_back(encoded_img);
     }
-    for (; i < images.size(); i++) {
+    for (; i < image_num; i++) {
         EncodedImage encoded_img;
         if (use_ov_image_preprocess == false) {
             encoded_img = encode_with_imagepreprocess_cpp({images[i]}, config_map);
