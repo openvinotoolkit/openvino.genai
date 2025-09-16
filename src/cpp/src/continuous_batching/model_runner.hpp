@@ -337,13 +337,34 @@ public:
             sequence_group->set_output_seq_len(matmul_gathering_is_available ? output_seq_len : num_scheduled_tokens);
         }
         
-        if (sequence_group_type == SequenceGroupType::EMBEDDINGS && have_token_type_ids && !m_cached_token_type_ids) {
-            m_request.set_tensor("token_type_ids", token_type_ids);
+        // Note: For tensor optimization, these tensors are pre-allocated, but we still need to set them
+        // when they're not managed through the cached tensor system (fallback mode), to align these tensors' behavior 
+        // with score_aggregation_window.
+        if (sequence_group_type == SequenceGroupType::TOKENS && !m_cached_input_ids) {
+            m_request.set_tensor("input_ids", input_ids);
         }
+        else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+            if (!m_cached_inputs_embeds) {
+                m_request.set_tensor("inputs_embeds", inputs_embeds);
+            }
+            if (have_token_type_ids && !m_cached_token_type_ids) {
+                m_request.set_tensor("token_type_ids", token_type_ids);
+            }
+        }
+        // typical LLM parameters
+        if (!m_cached_position_ids) {
+            m_request.set_tensor("position_ids", position_ids);
+        }
+        // PA specific parameters
+        if (!m_cached_past_lens) {
+            m_request.set_tensor("past_lens", past_lens);
+        }
+        if (!m_cached_subsequence_begins) {
+            m_request.set_tensor("subsequence_begins", subsequence_begins);
+        }
+
         _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_skipped_blocks_map);
 
-        // Note: For tensor optimization, these tensors are pre-allocated, but we still need to set them
-        // when they're not managed through the cached tensor system (fallback mode)
         if (!m_cached_block_indices_begins) {
             m_request.set_tensor("block_indices_begins", block_indices_begins);
         }
@@ -360,14 +381,11 @@ public:
         }
 
         if (matmul_gathering_is_available) {
-            // Try to use pre-allocated tensor for gather_indices as well
-            try {
-                ov::Tensor gather_indices = m_request.get_tensor("sampled_tokens_indices");
-                gather_indices.set_shape({gather_indices_values.size()});
-                std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
-            } catch (const ov::Exception& e) {
-                OPENVINO_THROW("Fail to get or modify sampled_tokens_indices tensor. ", ". Error: ", e.what());
-            }
+            // use pre-allocated tensor for gather_indices as well
+            ov::Tensor gather_indices = m_request.get_tensor("sampled_tokens_indices");
+            gather_indices.set_shape({gather_indices_values.size()});
+            std::memcpy(gather_indices.data(), gather_indices_values.data(), gather_indices_values.size() * sizeof(int64_t));
+        }
 
         if (m_is_aggregate_attention_scores && !m_cached_score_aggregation_window) {
             m_request.set_tensor("score_aggregation_window", score_aggregation_window);
@@ -454,7 +472,7 @@ private:
                                    const ov::Shape& required_shape,
                                    ov::element::Type element_type) {
        if (!cached_tensor) {
-            // If cached tensor is not initialized, try to get the tensor from the request.
+            // If cached tensor is not initialized, try to get the tensor from the m_request.
             try {
                 cached_tensor = m_request.get_tensor(tensor_name);
             } catch (const ov::Exception&) {
