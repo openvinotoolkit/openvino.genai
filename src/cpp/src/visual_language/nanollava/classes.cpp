@@ -119,13 +119,14 @@ ov::Tensor InputsEmbedderNanoLLaVA::tokenize_without_image_tag(const std::string
     std::vector<ov::Tensor> encoded_substrings;
     size_t encoded_size = 0;
     size_t n_images = 0;
-    auto image_pos = prompt.find(NATIVE_TAG);
+    const std::string image_tag = "<image>";
+    auto image_pos = prompt.find(image_tag);
     while (image_pos != std::string::npos) {
         auto substr = prompt.substr(prev_pos, image_pos);
         encoded_substrings.emplace_back(m_tokenizer.encode(substr, ov::genai::add_special_tokens(false)).input_ids);
         encoded_size += encoded_substrings[encoded_substrings.size() - 1].get_shape()[1];
-        prev_pos = image_pos + NATIVE_TAG.size();
-        image_pos = prompt.find(NATIVE_TAG, prev_pos);
+        prev_pos = image_pos + image_tag.size();
+        image_pos = prompt.find(image_tag, prev_pos);
         n_images++;
     }
     auto last_substr = prev_pos > 0 ? prompt.substr(prev_pos, prompt.size()) : prompt;
