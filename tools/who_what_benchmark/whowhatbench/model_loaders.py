@@ -4,7 +4,7 @@ import torch
 
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
 
-from .utils import mock_torch_cuda_is_available
+from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 
 
 logging.basicConfig(level=logging.INFO)
@@ -105,7 +105,7 @@ def load_text_hf_pipeline(model_id, device):
         if is_gptq or is_awq:
             # infer in FP32
             model_kwargs["torch_dtype"] = torch.float32
-        with mock_torch_cuda_is_available(is_gptq or is_awq):
+        with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
             model.is_awq = is_awq
@@ -191,7 +191,7 @@ def load_text2image_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_genai:
-        logger.info("Using OpenvINO GenAI API")
+        logger.info("Using OpenVINO GenAI API")
         model = load_text2image_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_hf:
         from diffusers import DiffusionPipeline
@@ -275,19 +275,18 @@ def load_visual_text_model(
                     model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
                 )
             except ValueError:
-                from_pretrained_kwargs = {"_attn_implementation": "eager"}
                 if config.model_type == "phi4mm":
                     if "activation_checkpointing" in config.audio_processor["config"]:
                         config.audio_processor["config"]["activation_checkpointing"] = ""
-                    del from_pretrained_kwargs["_attn_implementation"]
                     config._attn_implementation = "sdpa"
-                    from_pretrained_kwargs["config"] = config
+                    from_pretrained_kwargs = {"config": config}
+                else:
+                    from_pretrained_kwargs = {"_attn_implementation": "eager", "use_flash_attention_2": False}
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
                     trust_remote_code=trust_remote_code,
                     device_map=device.lower(),
-                    use_flash_attention_2=False,
                     **from_pretrained_kwargs,
                 )
 

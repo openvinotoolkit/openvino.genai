@@ -219,6 +219,19 @@ public:
         OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
             pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
 
+        m_root_dir = pipe.m_root_dir;
+
+        if (pipe.m_t5_text_encoder) {
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(*pipe.m_t5_text_encoder);
+        }
+
+        m_clip_text_encoder_1 = std::make_shared<CLIPTextModelWithProjection>(*pipe.m_clip_text_encoder_1);
+        m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(*pipe.m_clip_text_encoder_2);
+        m_transformer = std::make_shared<SD3Transformer2DModel>(*pipe.m_transformer);
+        m_vae = std::make_shared<AutoencoderKL>(*pipe.m_vae);
+
+        // initialize generation config
+
         m_pipeline_type = pipeline_type;
         initialize_generation_config("StableDiffusion3Pipeline");
     }

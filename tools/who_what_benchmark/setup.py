@@ -42,4 +42,5 @@ setup(
     packages=find_packages(),
     install_requires=required,
     entry_points={"console_scripts": ["wwb=whowhatbench.wwb:main"]},
+    package_data={"whowhatbench": ["prompts/*.yaml"]}
 )

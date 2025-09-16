@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <string_view>
 #include <memory>
+#include <optional>
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -240,6 +241,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     std::size_t m_block_size;
     TokenIds m_prompt_ids;
     std::vector<std::vector<float>> m_input_embeds;
+    std::optional<std::vector<int64_t>> m_token_type_ids;
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
     size_t m_num_evicted_tokens = 0;
@@ -284,10 +286,10 @@ public:
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size) {
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, std::nullopt) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
+    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, const std::optional<ov::Tensor>& token_type_ids = std::nullopt)
         : SequenceGroup(request_id, sampling_params, block_size) {
         
         size_t prompt_len;
@@ -312,6 +314,13 @@ public:
                 m_input_embeds[i].resize(hidden_size);
                 OPENVINO_SUPPRESS_DEPRECATED_START
                 std::copy_n(input_ids.data<float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
+                OPENVINO_SUPPRESS_DEPRECATED_END
+            }
+            if (token_type_ids.has_value()) {
+                const ov::Tensor& tokens = token_type_ids.value();
+                m_token_type_ids = std::vector<int64_t>(tokens.get_size());
+                OPENVINO_SUPPRESS_DEPRECATED_START
+                std::copy_n(tokens.data<int64_t>(), tokens.get_size(), m_token_type_ids->begin());
                 OPENVINO_SUPPRESS_DEPRECATED_END
             }
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
@@ -599,6 +608,10 @@ public:
     const std::vector<std::vector<float>>& get_input_embeds() const {
         OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::EMBEDDINGS);
         return m_input_embeds;
+    }
+
+    std::optional<std::vector<int64_t>> get_token_type_ids() const {
+        return m_token_type_ids;
     }
 
     size_t get_hidden_size() const {

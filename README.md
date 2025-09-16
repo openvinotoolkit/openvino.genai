@@ -10,6 +10,10 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 
 ## Getting Started
 
+* [Introduction to OpenVINO™ GenAI](https://openvinotoolkit.github.io/openvino.genai/docs/getting-started/introduction)
+* [Install OpenVINO™ GenAI](https://openvinotoolkit.github.io/openvino.genai/docs/getting-started/installation)
+* [Build OpenVINO™ GenAI](./src/docs/BUILD.md)
+
 Please follow the following blogs to setup your first hands-on experience with C++ and Python samples.
 
 * [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
@@ -354,7 +358,7 @@ NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling
 optimum-cli export openvino --model openai/whisper-base whisper-base
 
 #Download, convert and apply int8 static quantization to whisper-base model
-optimum-cli export openvino --model openai/whisper-base \
+optimum-cli export openvino --model openai/whisper-base --disable-stateful \
 --quant-mode int8 --dataset librispeech --num-samples 32 whisper-base-int8
 ```
 
