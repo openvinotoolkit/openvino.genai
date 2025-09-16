@@ -12,7 +12,7 @@ import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 from llm_bench_utils.prompt_utils import get_text_prompt
 import llm_bench_utils.gen_output_data as gen_output_data
-from task.pipeline_utils import CommonPipeline, execution_time_in_ms
+from task.pipeline_utils import CommonPipeline, execution_time_in_sec
 from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from pathlib import Path
 from typing import Any
@@ -30,7 +30,7 @@ class TextRerankerOptimum(CommonPipeline):
         self.top_n = args.get("rerank_top_n")
         self.max_length = args.get("rerank_max_length")
 
-    @execution_time_in_ms
+    @execution_time_in_sec
     def tokenize(self, input_text: str, **kwargs):
         tokenizer_kwargs = {"truncation": True, "padding": True}
         if self.max_length is not None:
@@ -45,7 +45,7 @@ class TextRerankerOptimum(CommonPipeline):
         for index, score in generation_result:
             metrics_print.print_unicode(f"{prefix} Document {index}, score: {score:.4f}{': ' + self.texts[index] if iter_num == 0 else ''}")
 
-    @execution_time_in_ms
+    @execution_time_in_sec
     def generate(self, input_data: Any, **kwargs):
         outputs = self.model(**input_data).logits
         if outputs.shape[1] > 1:
@@ -115,13 +115,12 @@ class TextRerankerOptimum(CommonPipeline):
             tm_infer_list = bench_hook.get_time_infer_list()
             log.debug("latency of all infers:")
             [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
-
         iter_data = self.gen_iterate_data(
             num_input_tokens,
             iter_num,
             len(tm_list),
             generation_time + tokenization_time[0],
-            generation_time,
+            sum(tm_list) * 1000,
             max_rss_mem_consumption,
             rss_mem_increase,
             max_sys_mem_consumption,
@@ -173,7 +172,7 @@ class TextRerankerOptimum(CommonPipeline):
             max_sys_mem_consumption,
             sys_mem_increase,
             prompt_index,
-            [tokenization_time],
+            [tokenization_time * 1000],
             None,
             proc_id,
             bench_hook,
@@ -209,7 +208,7 @@ class TextRerankerGenAI(CommonPipeline):
         input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data
         return input_tokens
 
-    @execution_time_in_ms
+    @execution_time_in_sec
     def generate(self, input_data: Any, **kwargs):
         return self.model.rerank(input_data, self.texts)
 
@@ -264,14 +263,14 @@ class TextRerankerGenAI(CommonPipeline):
         proc_id: int,
         bench_hook: object | None,
     ):
-        tm_list = [generation_time / 1000]
-        tm_infer_list = [generation_time / 1000]
+        tm_list = [generation_time]
+        tm_infer_list = [generation_time]
         iter_data = self.gen_iterate_data(
             num_input_tokens,
             iter_num,
             len(tm_list),
             generation_time,
-            generation_time,
+            generation_time * 1000,
             max_rss_mem_consumption,
             rss_mem_increase,
             max_sys_mem_consumption,
