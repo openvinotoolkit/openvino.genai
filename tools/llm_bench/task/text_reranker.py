@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import json
+import scipy
 import datetime
-import numpy as np
 import logging as log
 import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
@@ -12,7 +12,7 @@ import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 from llm_bench_utils.prompt_utils import get_text_prompt
 import llm_bench_utils.gen_output_data as gen_output_data
-from task.pipeline_utils import CommonPipeline, execution_time
+from task.pipeline_utils import CommonPipeline, execution_time_in_ms
 from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from pathlib import Path
 from typing import Any
@@ -30,13 +30,13 @@ class TextRerankerOptimum(CommonPipeline):
         self.top_n = args.get("rerank_top_n")
         self.max_length = args.get("rerank_max_length")
 
-    @execution_time
+    @execution_time_in_ms
     def tokenize(self, input_text: str, **kwargs):
         tokenizer_kwargs = {"truncation": True, "padding": True}
         if self.max_length is not None:
             tokenizer_kwargs["max_length"] = self.max_length
-        inputs = [f"{input_text}{text}" for text in self.texts]
-        input_data = self.tokenizer(inputs, return_tensors="pt", **tokenizer_kwargs)
+        inputs = [input_text] * len(self.texts)
+        input_data = self.tokenizer(inputs, self.texts, return_tensors="pt", **tokenizer_kwargs)
         return input_data
 
     def print_generated(self, iter_num: int, generation_result: Any, prompt_idx: int):
@@ -45,14 +45,15 @@ class TextRerankerOptimum(CommonPipeline):
         for index, score in generation_result:
             metrics_print.print_unicode(f"{prefix} Document {index}, score: {score:.4f}{': ' + self.texts[index] if iter_num == 0 else ''}")
 
-    @execution_time
+    @execution_time_in_ms
     def generate(self, input_data: Any, **kwargs):
         outputs = self.model(**input_data).logits
         if outputs.shape[1] > 1:
             scores = outputs[:, 1]
         else:
             scores = outputs.flatten()
-        scores = list(1 / (1 + np.exp(-scores)))
+
+        scores = scipy.special.expit(scores)
         generation_result = []
         for index, (score, _) in enumerate(zip(scores, self.texts)):
             generation_result.append((index, score))
@@ -199,17 +200,16 @@ class TextRerankerGenAI(CommonPipeline):
         self.top_n = args.get("rerank_top_n")
         self.max_length = args.get("rerank_max_length")
 
-    @execution_time
     def tokenize(self, input_text: str, **kwargs):
         tokenizer_kwargs = {"truncation": True, "padding": True}
         if self.max_length is not None:
             tokenizer_kwargs["max_length"] = self.max_length
-        inputs = [f"{input_text}{text}" for text in self.texts]
+        inputs = [input_text] * len(self.texts)
         input_data = self.tokenizer(inputs, return_tensors="pt", **tokenizer_kwargs)
         input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data
         return input_tokens
 
-    @execution_time
+    @execution_time_in_ms
     def generate(self, input_data: Any, **kwargs):
         return self.model.rerank(input_data, self.texts)
 
@@ -297,7 +297,7 @@ class TextRerankerGenAI(CommonPipeline):
         return iter_data, []
 
     def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
-        tokenized_input, tokenization_time = self.tokenize(input_text)
+        tokenized_input = self.tokenize(input_text)
         input_token_size = tokenized_input[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
 
@@ -323,7 +323,7 @@ class TextRerankerGenAI(CommonPipeline):
             max_sys_mem_consumption,
             sys_mem_increase,
             prompt_index,
-            [tokenization_time],
+            [],
             None,
             proc_id,
             bench_hook,
@@ -409,8 +409,8 @@ def get_texts_from_file(args: dict) -> list:
             texts_list = args["rerank_texts"]
         else:
             texts_list = [
-                "Intel Core Ultra processors incorporate an AI-optimized architecture that supports \
-                 new user experiences and the next wave of commercial applications.",
+                "Intel Core Ultra processors incorporate an AI-optimized architecture that supports "
+                + "new user experiences and the next wave of commercial applications.",
                 "Intel Core Ultra processors are designed to provide enhanced performance and efficiency for a wide range of computing tasks.",
             ]
     return texts_list

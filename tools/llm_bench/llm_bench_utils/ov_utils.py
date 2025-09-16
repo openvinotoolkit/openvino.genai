@@ -11,6 +11,7 @@ import json
 import copy
 import types
 from llm_bench_utils.hook_common import get_bench_hook
+from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.model_utils import get_version_in_format_to_pars
 from llm_bench_utils.config_class import (
@@ -1147,7 +1148,7 @@ class OptimumChunkStreamer(BaseStreamer):
         return False
 
 
-def create_genai_text_reranker_model(model_path, device, memory_monitor, **kwargs):
+def create_genai_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, tokenizer: AutoTokenizer, **kwargs):
     import openvino_genai
 
     config = openvino_genai.TextRerankPipeline.Config()
@@ -1169,15 +1170,10 @@ def create_genai_text_reranker_model(model_path, device, memory_monitor, **kwarg
         memory_monitor.stop_and_collect_data('compilation_phase')
         memory_monitor.log_data('for compilation phase')
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-    except Exception:
-        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     return pipe, tokenizer, end - start, None, True
 
 
-def create_text_reranker_model(model_path, device, memory_monitor, **kwargs):
-    model_path = Path(model_path)
+def create_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, **kwargs):
     if model_path.name.endswith('xml'):
         model_path = model_path.parents[2]
 
@@ -1196,7 +1192,7 @@ def create_text_reranker_model(model_path, device, memory_monitor, **kwargs):
         trust_remote_code = True
     if kwargs.get("genai", True) and is_genai_available(log_msg=True):
         try:
-            return create_genai_text_reranker_model(model_path, device, memory_monitor, **kwargs)
+            return create_genai_text_reranker_model(model_path, device, memory_monitor, tokenizer, **kwargs)
         except Exception as exp:
             log.warning(
                 f"Model is not supported by OpenVINO GenAI. "
@@ -1205,11 +1201,10 @@ def create_text_reranker_model(model_path, device, memory_monitor, **kwargs):
             )
 
         log.info("Selected Optimum Intel for benchmarking")
-    model_class = TEXT_RERANK_GEN_CLS
     if kwargs.get("mem_consumption"):
         memory_monitor.start()
     start = time.perf_counter()
-    ov_model = model_class.from_pretrained(
+    ov_model = TEXT_RERANK_GEN_CLS.from_pretrained(
         model_path,
         device=device,
         ov_config=ov_config,
