@@ -4,6 +4,7 @@
 #pragma once
 
 #include "openvino/genai/image_generation/image2image_pipeline.hpp"
+#include "openvino/genai/common_types.hpp"
 
 namespace ov {
 namespace genai {
