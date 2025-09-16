@@ -9,12 +9,12 @@ from pathlib import Path
 from typing import Any
 
 
-def execution_time_in_ms(func):
+def execution_time_in_sec(func):
     def time_wrapper(self, args, **kwargs):
         start = time.perf_counter()
         result = func(self, args, **kwargs)
         end = time.perf_counter()
-        exec_time_ms = (end - start) * 1000
+        exec_time_ms = end - start
         return result, exec_time_ms
 
     return time_wrapper
@@ -41,7 +41,7 @@ class CommonPipeline:
         self.mem_consumption_meter = mem_consumption_meter
         self.mem_consumption_level = model_args.get("mem_consumption", 0)
 
-    @execution_time_in_ms
+    @execution_time_in_sec
     def tokenize(self, input_text_list: list, **kwargs):
         """Preprocessing of input text data.
 
@@ -57,7 +57,7 @@ class CommonPipeline:
         else:
             return self.tokenizer(input_text_list, return_tensors="pt", **kwargs)
 
-    @execution_time_in_ms
+    @execution_time_in_sec
     def generate(self, input_data: Any, **kwargs):
         """Run generation of input_data.
 
@@ -70,7 +70,7 @@ class CommonPipeline:
         """
         return self.model.generate(input_data, **kwargs)
 
-    @execution_time_in_ms
+    @execution_time_in_sec
     def detokenize(self, generated_tokens: list, **kwargs):
         """Postprocessing of generated text data.
 
