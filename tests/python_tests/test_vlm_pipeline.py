@@ -974,3 +974,24 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    "model_id, image_name, backend",
+    [
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "PA"),
+    ],
+)
+def test_vlm_pipeline_video_input(request, model_id, image_name, backend):
+    resized_image = request.getfixturevalue(image_name)
+
+    prompt = "Describe this image."
+    max_new_tokens = 10
+
+    model_path = get_ov_model(model_id)
+
+    vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
+    with pytest.raises(Exception):
+        genai_output = vlm.generate(prompt, video=[openvino.Tensor(resized_image)], max_new_tokens=max_new_tokens)
