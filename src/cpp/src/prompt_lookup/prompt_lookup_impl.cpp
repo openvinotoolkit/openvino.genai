@@ -24,9 +24,10 @@ ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
 GenerationHandle
 ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           const std::string& prompt,
-                                                          ov::genai::GenerationConfig sampling_params) {
+                                                          ov::genai::GenerationConfig sampling_params,
+                                                          std::optional<ov::Tensor> token_type_ids) {
     OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
-    return m_pipeline->add_request(request_id, prompt, sampling_params);
+    return m_pipeline->add_request(request_id, prompt, sampling_params, token_type_ids);
 }
 
 bool ContinuousBatchingPipeline::PromptLookupImpl::has_non_finished_requests() {
