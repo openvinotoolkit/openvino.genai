@@ -132,13 +132,7 @@ void UNet2DConditionModel::import_model(const std::filesystem::path& blob_path, 
         m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
     }
 
-    std::optional<AdapterConfig> adapters;
-    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
-    if (adapters) {
-        adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("lora_unet"));
-        m_adapter_controller = AdapterController(m_model, *adapters, device);
-    }
-    m_impl->import_model(blob_path, device, *filtered_properties);
+    m_impl->import_model(blob_path, device, properties);
 }
 
 void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {

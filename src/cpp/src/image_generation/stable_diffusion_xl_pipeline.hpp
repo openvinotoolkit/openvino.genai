@@ -87,22 +87,30 @@ public:
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
+            if (blob_path.has_value()) {
+                updated_properties.fork()[ov::genai::blob_path.name()] = blob_path.value() / "text_encoder";
+            }
             m_clip_text_encoder = std::make_shared<CLIPTextModel>(
                 root_dir / "text_encoder",
                 device,
                 *properties_for_text_encoder(*updated_properties, "lora_te1")
             );
+            updated_properties.fork().erase(ov::genai::blob_path.name());
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
+            if (blob_path.has_value()) {
+                updated_properties.fork()[ov::genai::blob_path.name()] = blob_path.value() / "text_encoder_2";
+            }
             m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(
                 root_dir / "text_encoder_2",
                 device,
                 *properties_for_text_encoder(*updated_properties, "lora_te2")
             );
+            updated_properties.fork().erase(ov::genai::blob_path.name());
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
@@ -388,6 +396,8 @@ public:
 
     void export_model(const std::filesystem::path& export_path) override {
         m_unet->export_model(export_path / "unet");
+        m_clip_text_encoder->export_model(export_path / "text_encoder");
+        m_clip_text_encoder_with_projection->export_model(export_path / "text_encoder_2");
     }
 
 private:

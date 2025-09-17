@@ -91,6 +91,12 @@ public:
 
     ov::Tensor get_output_tensor(const size_t idx);
 
+    /**
+     * @brief Exports compiled model to a specified folder
+     * @param export_path A path to a folder to export compiled model to
+     */
+    void export_model(const std::filesystem::path& blob_path);
+
 private:
     Config m_config;
     AdapterController m_adapter_controller;
@@ -100,6 +106,8 @@ private:
 protected:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
+
+    void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties);
 };
 
 } // namespace genai
