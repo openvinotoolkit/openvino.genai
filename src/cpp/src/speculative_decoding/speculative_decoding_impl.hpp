@@ -97,6 +97,14 @@ public:
              const StreamerVariant& streamer,
              std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt) override;
 
+    GenerationHandle add_request(uint64_t request_id,
+                                 const ov::Tensor& input_ids,
+                                 ov::genai::GenerationConfig sampling_params,
+                                 std::optional<ov::Tensor> token_type_ids = std::nullopt) override;
+
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 ov::genai::GenerationConfig sampling_params) override;
     void fill_hidden_states(const ov::Tensor& hidden_states) {
         hiddenstates_tensor = hidden_states;
     }
@@ -105,7 +113,7 @@ public:
         eagle_impl->set_d2t_for_draft_decoding(d2t_tensor);
     };
 protected:
-    //std::shared_ptr<ContinuousBatchingForEagleDecodingImpl> m_main_pipeline, m_draft_pipeline;
+    void update_eagle_pipeline_params();
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
     ov::Tensor hiddenstates_tensor;
 };

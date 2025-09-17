@@ -746,6 +746,7 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
                                                                                 false);
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+    m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
 }
 
 ov::Tensor ContinuousBatchingPipeline::EagleDecodingImpl::create_draft_input_ids(const ov::Tensor& original_input_ids) {
@@ -765,6 +766,46 @@ ov::Tensor ContinuousBatchingPipeline::EagleDecodingImpl::create_draft_input_ids
     std::copy(src_data + 1, src_data + original_length, dst_data);
 
     return draft_input_ids;
+}
+
+void ContinuousBatchingPipeline::EagleDecodingImpl::update_eagle_pipeline_params() {
+    auto m_main_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagleDecodingImpl>(m_main_pipeline);
+    auto m_draft_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagleDecodingImpl>(m_draft_pipeline);
+    m_main_eagle_pipeline->set_hidden_state_export_needed(true);
+    m_draft_eagle_pipeline->set_hidden_state_export_needed(true);
+    m_draft_eagle_pipeline->set_hidden_state_import_needed(true);
+    m_draft_eagle_pipeline->set_hidden_state_internal_needed(true);
+}
+
+GenerationHandle
+ContinuousBatchingPipeline::EagleDecodingImpl::add_request(uint64_t request_id,
+                                                                 const ov::Tensor& input_ids,
+                                                                 ov::genai::GenerationConfig sampling_params,
+                                                                 std::optional<ov::Tensor> token_type_ids) {
+    std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    auto draft_sampling_params = sampling_params;
+    draft_sampling_params.ignore_eos = true;
+    draft_sampling_params.stop_strings = {};
+    update_eagle_pipeline_params();
+    // remove first token from input_ids to create draft_input_ids
+    ov::Tensor draft_input_ids = create_draft_input_ids(input_ids);
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params, token_type_ids)});
+    return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids);
+}
+
+GenerationHandle
+ContinuousBatchingPipeline::EagleDecodingImpl::add_request(uint64_t request_id,
+                                                                 const std::string& prompt,
+                                                                 ov::genai::GenerationConfig sampling_params) {
+    std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    auto draft_sampling_params = sampling_params;
+    draft_sampling_params.ignore_eos = true;
+    draft_sampling_params.stop_strings = {};
+    update_eagle_pipeline_params();
+    // remove first token from input_ids to create draft_input_ids
+    // to be fixed
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
+    return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingImpl::generate(
@@ -793,11 +834,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
     auto m_draft_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagleDecodingImpl>(m_draft_pipeline);
 
     m_main_eagle_pipeline->set_adapters(sampling_params[0].adapters);
-    m_main_eagle_pipeline->set_hidden_state_export_needed(true);
     m_draft_eagle_pipeline->set_adapters(sampling_params[0].adapters);
-    m_draft_eagle_pipeline->set_hidden_state_export_needed(true);
-    m_draft_eagle_pipeline->set_hidden_state_import_needed(true);
-    m_draft_eagle_pipeline->set_hidden_state_internal_needed(true);
+    update_eagle_pipeline_params();
 
     const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
 
