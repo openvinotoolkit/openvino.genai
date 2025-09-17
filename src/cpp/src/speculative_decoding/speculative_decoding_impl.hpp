@@ -8,6 +8,18 @@
 #include "speculative_decoding/continuous_batching_for_speculative_decoding_impl.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
+#include "openvino/op/add.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/result.hpp"
+#include "openvino/op/multiply.hpp"
+#include "openvino/op/convert.hpp"
+#include "openvino/op/gather.hpp"
+#include "openvino/op/matmul.hpp"
+#include "openvino/op/concat.hpp"
+#include "openvino/pass/pattern/matcher.hpp"
+#include "openvino/pass/pattern/op/wrap_type.hpp"
+#include "openvino/pass/graph_rewrite.hpp"
+#include "openvino/pass/manager.hpp"
 
 namespace ov::genai {
 
@@ -51,6 +63,7 @@ protected:
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     
 public:
+    SpeculativeDecodingImpl() = default;
     SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
 
     GenerationHandle add_request(uint64_t request_id,
@@ -74,4 +87,86 @@ public:
     SpeculativeDecodingMetrics get_speculative_decoding_metrics();
 };
 
+class ContinuousBatchingPipeline::EagleDecodingImpl : public ContinuousBatchingPipeline::SpeculativeDecodingImpl {
+public:
+    EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
+
+    std::vector<EncodedGenerationResult>
+    generate(const std::vector<ov::Tensor>& input_ids,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer,
+             std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt) override;
+
+    void fill_hidden_states(const ov::Tensor& hidden_states) {
+        hiddenstates_tensor = hidden_states;
+    }
+    void set_d2t_for_draft_decoding(std::shared_ptr<ov::op::v0::Constant>& d2t_tensor) {
+        auto eagle_impl = std::dynamic_pointer_cast<ContinuousBatchingForEagleDecodingImpl>(m_draft_pipeline);
+        eagle_impl->set_d2t_for_draft_decoding(d2t_tensor);
+    };
+protected:
+    //std::shared_ptr<ContinuousBatchingForEagleDecodingImpl> m_main_pipeline, m_draft_pipeline;
+    ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
+    ov::Tensor hiddenstates_tensor;
+};
+
+using NodePtr = std::shared_ptr<ov::Node>;
+using namespace ov::op;
+
+class EagleBaseTransform : public ov::pass::MatcherPass {
+public:
+    using NodePtr = std::shared_ptr<ov::Node>;
+    OPENVINO_MATCHER_PASS_RTTI("EagleBaseTransform");
+    EagleBaseTransform(std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params, std::vector<std::shared_ptr<ov::op::v0::Result>>& results);
+
+    ~EagleBaseTransform() = default;
+
+private:
+    bool apply(NodePtr node, std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params, std::vector<std::shared_ptr<ov::op::v0::Result>>& results);
+    size_t applied = 0;
+    std::string m_eagle_version;
+    std::shared_ptr<ov::Node> find_last_hidden_node(const std::shared_ptr<ov::Node>& start_node);
+    std::shared_ptr<ov::Node> find_last_hidden_node(const std::shared_ptr<ov::Node>& start_node, 
+                                                   std::set<ov::Node*>& visited_nodes);
+    std::shared_ptr<ov::Node> find_last_residual_node(const std::shared_ptr<ov::Node>& start_node);
+    std::shared_ptr<ov::Node> find_last_residual_node(const std::shared_ptr<ov::Node>& start_node, 
+                                                               std::set<ov::Node*>& visited_nodes);
+};
+class EagleInputTransform : public ov::pass::MatcherPass { // eagle3 specific for draft model
+public:
+    using NodePtr = std::shared_ptr<ov::Node>;
+    OPENVINO_MATCHER_PASS_RTTI("EagleInputTransform");
+    EagleInputTransform(std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params);
+
+    ~EagleInputTransform() = default;
+
+private:
+    bool apply(NodePtr node, std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params);
+    size_t applied = 0;
+};
+class Eagle3Transform : public ov::pass::MatcherPass {
+public:
+    using NodePtr = std::shared_ptr<ov::Node>;
+    OPENVINO_MATCHER_PASS_RTTI("Eagle3Transform");
+    Eagle3Transform(const std::vector<int>& layers, std::vector<Output<Node>>& hidden_state_outputs);
+
+    ~Eagle3Transform() = default;
+
+private:
+    bool apply(NodePtr node, std::vector<Output<Node>>& hidden_state_outputs);
+    size_t applied = 0;
+    std::vector<int> m_layers; // layers to be abstracted
+};
+
+class EagleModelTransform : public ov::pass::ModelPass {
+public:
+    EagleModelTransform(const std::vector<int>& layer_ids);
+    bool run_on_model(const std::shared_ptr<Model>& model) override;
+
+private:
+    const std::vector<int> m_layer_ids;
+    std::vector<std::shared_ptr<ov::op::v0::Result>> m_new_results;
+    std::vector<std::shared_ptr<ov::op::v0::Parameter>> m_new_parameters;
+    std::vector<Output<Node>> m_hidden_layer_outputs;
+};
 }

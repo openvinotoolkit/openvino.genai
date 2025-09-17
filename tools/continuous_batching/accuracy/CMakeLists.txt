@@ -33,6 +33,10 @@ set(TARGET_NAME_CB continuous_batching_speculative_decoding)
 add_executable(${TARGET_NAME_CB} ${TARGET_NAME_CB}.cpp)
 target_link_libraries(${TARGET_NAME_CB} PRIVATE openvino::genai cxxopts::cxxopts)
 
+set(TARGET_NAME_CB continuous_batching_eagle_decoding)
+add_executable(${TARGET_NAME_CB} ${TARGET_NAME_CB}.cpp)
+target_link_libraries(${TARGET_NAME_CB} PRIVATE openvino::genai cxxopts::cxxopts)
+
 set_target_properties(${TARGET_NAME} ${TARGET_NAME_CB} PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)

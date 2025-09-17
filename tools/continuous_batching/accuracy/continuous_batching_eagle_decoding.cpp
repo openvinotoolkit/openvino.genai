@@ -22,21 +22,19 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
 
     ov::genai::GenerationConfig generation_config_multinomial_constant =ov::genai::greedy();
     {
-        //generation_config_multinomial_constant.num_assistant_tokens = 5;
         generation_config_multinomial_constant.num_return_sequences = 1;
         generation_config_multinomial_constant.num_assistant_tokens = 5;
     }
 
     ov::genai::GenerationConfig generation_config_greedy_dynamic = ov::genai::greedy();
     {
-        generation_config_greedy_dynamic.assistant_confidence_threshold = 0.8f;
+        generation_config_greedy_dynamic.num_assistant_tokens = 4;
     }
 
     ov::genai::GenerationConfig generation_config_multinomial_dynamic = ov::genai::greedy();
     {
-        //generation_config_multinomial_dynamic.assistant_confidence_threshold = 0.8f;
         generation_config_multinomial_dynamic.num_return_sequences = 1;
-        generation_config_multinomial_dynamic.num_assistant_tokens = 5;
+        generation_config_multinomial_dynamic.num_assistant_tokens = 4;
     }
 
     return {
@@ -54,10 +52,9 @@ int main(int argc, char* argv[]) try {
 
     options.add_options()
     ("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1"))
-    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("false"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("a,draft_model", "Path to assisting model base directory", cxxopts::value<std::string>()->default_value("."))
-    ("d,device", "Target device to run the model", cxxopts::value<std::string>()->default_value("CPU"))
+    ("d,device", "Target device to run the model", cxxopts::value<std::string>()->default_value("GPU"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -75,7 +72,6 @@ int main(int argc, char* argv[]) try {
     }
 
     const size_t num_prompts = result["num_prompts"].as<size_t>();
-    const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
     const std::string models_path = result["model"].as<std::string>();
     const std::string draft_models_path = result["draft_model"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
@@ -90,8 +86,9 @@ int main(int argc, char* argv[]) try {
 
     auto generation_config = get_spec_decoding_generation_config_examples();
     auto default_config_size = generation_config.size();
-    for (size_t i = default_config_size; i < num_prompts; ++i) {
-        generation_config.push_back(generation_config[i % default_config_size]);
+    std::vector<ov::genai::GenerationConfig> cb_generation_config;
+    for (size_t i = 0; i < num_prompts; ++i) {
+        cb_generation_config.push_back(generation_config[i % default_config_size]);
     }
 
     std::vector<std::string> prompts(num_prompts);
@@ -101,16 +98,16 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::SchedulerConfig scheduler_config;
     // batch size
-    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_batched_tokens = 64;
     // cache params
     scheduler_config.num_kv_blocks = 364;
     // mode - vLLM or dynamic_split_fuse
-    scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
+    scheduler_config.dynamic_split_fuse = false; // does not support true in eagle speculative decoding
     // vLLM specific params
-    scheduler_config.max_num_seqs = 2;
+    scheduler_config.max_num_seqs = 3;
     
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device)});
-    std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, generation_config);
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device), std::pair<std::string, ov::Any>("eagle_mode", ov::Any("EAGLE3"))});
+    std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, cb_generation_config);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
         const ov::genai::GenerationResult & generation_result = generation_results[request_id];

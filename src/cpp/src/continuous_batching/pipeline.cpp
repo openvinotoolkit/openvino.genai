@@ -15,6 +15,7 @@
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "safe_tensor_wrapper.hpp"
 
 using namespace ov::genai;
 
@@ -27,6 +28,16 @@ extract_draft_model_from_config(ov::AnyMap& config) {
         config.erase(utils::DRAFT_MODEL_ARG_NAME);
     }
     return draft_model;
+}
+
+bool
+extact_eagle_mode_from_config(ov::AnyMap& config) {
+    bool eagle_mode = false;
+    if (config.find(ov::genai::eagle3_mode.name()) != config.end()) {
+        eagle_mode = config.at(ov::genai::eagle3_mode.name()).as<bool>();
+        config.erase(ov::genai::eagle3_mode.name());
+    }
+    return eagle_mode;
 }
 
 bool
@@ -55,6 +66,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     auto properties_without_draft_model = properties;
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
+    auto eagle_mode = extact_eagle_mode_from_config(properties_without_draft_model);
 
     auto model = utils::read_model(models_path, properties);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
@@ -70,6 +82,19 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
+    } else if (draft_model_desr.model != nullptr && eagle_mode) {
+        OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
+        // Eagle speculative decoding does not support dynamic_split_fuse mode
+        // because it requires hidden state interaction from main model to draft model
+        // to be implemented future
+        OPENVINO_ASSERT(scheduler_config.dynamic_split_fuse == false, "Eagle speculative decoding does not support dynamic_split_fuse mode");
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        m_impl = std::make_shared<EagleDecodingImpl>(main_model_descr, draft_model_desr);
+        // parse d2t from safe tensors
+        ConstantMap constant_tensors = safetensor_to_constant_map(ov::read_tensor_data(models_path / "eagle3.safetensor"));
+        if (constant_tensors.find("d2t") != constant_tensors.end()) { // d2t map can be optional
+            std::dynamic_pointer_cast<EagleDecodingImpl>(m_impl)->set_d2t_for_draft_decoding(constant_tensors["d2t"]);
+        }
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
@@ -94,12 +119,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-
+    auto eagle_mode = extact_eagle_mode_from_config(properties_without_draft_model);
     auto model = utils::read_model(models_path, properties_without_draft_model);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
 
     auto generation_config = utils::from_config_json_if_exists(models_path);
-
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_without_draft_model_without_gguf);
@@ -109,6 +133,21 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
+    } else if (draft_model_desr.model != nullptr && eagle_mode) {
+        OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
+        // Eagle speculative decoding does not support dynamic_split_fuse mode
+        // because it requires hidden state interaction from main model to draft model
+        // to be implemented future
+        OPENVINO_ASSERT(scheduler_config.dynamic_split_fuse == false, "Eagle speculative decoding does not support dynamic_split_fuse mode");
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        m_impl = std::make_shared<EagleDecodingImpl>(main_model_descr, draft_model_desr);
+        // parse d2t from safe tensors
+        if (std::filesystem::exists(models_path / "eagle3.safetensor")) {
+            ConstantMap constant_tensors = safetensor_to_constant_map(ov::read_tensor_data(models_path / "eagle3.safetensor"));
+            if (constant_tensors.find("d2t") != constant_tensors.end()) { // d2t map can be optional
+                std::dynamic_pointer_cast<EagleDecodingImpl>(m_impl)->set_d2t_for_draft_decoding(constant_tensors["d2t"]);
+            }
+        }
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
@@ -135,6 +174,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
+    auto eagle_mode = extact_eagle_mode_from_config(properties_without_draft_model);
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
 
     auto rt_info = model->get_rt_info();
@@ -152,6 +192,19 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
+    } else if (draft_model_desr.model != nullptr && eagle_mode) {
+        OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
+        // Eagle speculative decoding does not support dynamic_split_fuse mode
+        // because it requires hidden state interaction from main model to draft model
+        // to be implemented future
+        OPENVINO_ASSERT(scheduler_config.dynamic_split_fuse == false, "Eagle speculative decoding does not support dynamic_split_fuse mode");
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        m_impl = std::make_shared<EagleDecodingImpl>(main_model_descr, draft_model_desr);
+        if (eagle_mode) {
+            // parse d2t from safe tensors
+            //ConstantMap constant_tensors = safetensor_to_constant_map(ov::read_tensor_data(models_path / "eagle3.safetensor"));
+            //std::dynamic_pointer_cast<EagleDecodingImpl>(m_impl)->set_d2t_for_draft_decoding(constant_tensors["d2t"]);
+        }
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);

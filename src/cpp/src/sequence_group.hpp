@@ -44,6 +44,7 @@ class Sequence {
     LogProbs m_generated_log_probs;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
+    ov::Tensor m_hidden_state = ov::Tensor();
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
@@ -67,6 +68,7 @@ class Sequence {
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
         m_grouped_id(id),
+        m_hidden_state(seq.m_hidden_state),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
         m_sequence_group(seq.m_sequence_group),
@@ -132,6 +134,14 @@ public:
         m_cumulative_log_prob += log_prob;
         m_generated_log_probs.push_back(log_prob);
         m_generated_ids.push_back(token_id);
+    }
+
+    void update_hidden_state(ov::Tensor tensor) {
+        m_hidden_state = tensor;
+    }
+
+    ov::Tensor& get_hidden_state() {
+        return m_hidden_state;
     }
 
     // removes n last tokens and updates cumulative log prob
@@ -561,7 +571,7 @@ public:
         m_num_validation_tokens = k;
     }
 
-    size_t get_num_tokens_to_validate() {
+    size_t get_num_tokens_to_validate() const {
         return m_num_validation_tokens;
     }
     

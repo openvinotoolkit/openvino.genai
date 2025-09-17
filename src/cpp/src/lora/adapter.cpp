@@ -40,12 +40,9 @@
 #include "openvino/genai/lora_adapter.hpp"
 
 #include "utils.hpp"
+#include "safe_tensor_wrapper.hpp"
 #include "lora/common.hpp"
 #include "lora/names_mapping.hpp"
-
-extern "C" {
-    #include "safetensors.h"
-}
 
 // FIXME: Remove or move to a dedicated common header
 #ifdef NDEBUG
@@ -68,65 +65,6 @@ using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 // Holds usual LoRA parameters alpha, A and B of a given type.
 using LoRANode = LoRAParts<std::shared_ptr<ov::Node>>;
 using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string& name)>>;
-
-// Converts Safetensors element type to OV element type. Only part of the types are supported.
-ov::element::Type safetensors_to_ov_element_type (int dtype) {
-    switch(dtype) {
-        case SAFETENSORS_F32:
-            return ov::element::f32;
-        case SAFETENSORS_F16:
-            return ov::element::f16;
-        case SAFETENSORS_BF16:
-            return ov::element::bf16;
-        default:
-            OPENVINO_THROW("Not supported safetensors dtype: ", dtype);
-    }
-}
-
-using ConstantMap = std::map<std::string, std::shared_ptr<ov::op::v0::Constant>>;
-
-// Safetensor file parser that deallocates temporary buffers automatically.
-// Drop-in replacement for the third party safetensors_File struct.
-struct AutoSafetensor: public safetensors_File {
-    ~AutoSafetensor () {
-        std::free(tensors);
-        std::free(metadata);
-    }
-};
-
-// The key in the map is a tensor name and the Constant uses a region of memory from the memory block.
-// Each Constant holds a shared pointer to the block in the runtime info.
-// The memory block will be deallocated when the last Constant is destroyed.
-ConstantMap safetensor_to_constant_map(const ov::Tensor& safetensor) {
-    AutoSafetensor safe_tensors_file{};
-
-    OPENVINO_ASSERT(safetensors_file_init(safetensor.data<char>(), safetensor.get_byte_size(), &safe_tensors_file) == nullptr,
-        "Cannot parse safetensor as a Safetensors file format. Safetensors file format is supported only"
-    );
-
-    ConstantMap tensors;
-    for (int i = 0; i < safe_tensors_file.num_tensors; i++) {
-        safetensors_TensorDescriptor tensor = safe_tensors_file.tensors[i];
-        std::string name(tensor.name.ptr, tensor.name.ptr + tensor.name.len);
-        ov::Shape shape(tensor.shape, tensor.shape + tensor.n_dimensions);
-        void* ptr = tensor.ptr;     // FIXME: needs a non-constant pointer because Tensor doesn't accept a constant pointer
-
-        auto type = safetensors_to_ov_element_type(tensor.dtype);
-        auto constant =
-            std::make_shared<v0::Constant>(type, shape, ptr, nullptr);      // wraps existing memory, no ownership
-        constant->get_rt_info()["__safetensors_buffer_holder"] = safetensor;    // to automatically deallocate underlying memory buffer when last constant that holds it is destroyed
-        tensors[name] = constant;
-    }
-    return tensors;
-}
-
-// Reads a file with a given filename expecting Safetensors file format.
-// The file data is mmaped to tensor.
-ConstantMap read_safetensors(const std::filesystem::path& filename) {
-    auto safetensor = ov::read_tensor_data(filename);
-
-    return safetensor_to_constant_map(safetensor);
-}
 
 // Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond
 // to a layer name in the base model
