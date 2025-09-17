@@ -46,10 +46,19 @@ def output_comments(result, use_case, writer):
     comment_list.append('iteration=0: warm-up; iteration=avg: average (exclude warm-up);iteration=mini: minimum value (exclude warm-up);'
                         'iteration=median: median value (exclude warm-up);')
     comment_list.append(
-        'max_rss_mem: max rss memory consumption;'
+        'max_rss_mem/max_sys_mem: max rss/system memory consumption during iteration;'
     )
     comment_list.append(
-        'max_sys_mem: max system consumption;'
+        'max_increase_rss_mem/max_increase_sys_mem: max increase of rss/system memory during iteration;'
+    )
+    comment_list.append(
+        'initial_rss_mem/initial_sys_mem: rss/system memory state at start;'
+    )
+    comment_list.append(
+        'compile_max_rss_mem/compile_max_sys_mem: max rss/system memory consumption on compilation phase;'
+    )
+    comment_list.append(
+        'compile_max_increase_rss_mem/compile_max_increase_sys_mem: max increase of rss/system memory on compilation phase;'
     )
 
     for comments in comment_list:
@@ -87,7 +96,7 @@ def output_avg_min_median(iter_data_list):
     return result
 
 
-def gen_data_to_csv(result, iter_data, pretrain_time, iter_timestamp):
+def gen_data_to_csv(result, iter_data, pretrain_time, iter_timestamp, memory_data_collector):
     generation_time = iter_data['generation_time']
     latency = iter_data['latency']
     first_latency = iter_data['first_token_latency']
@@ -96,10 +105,19 @@ def gen_data_to_csv(result, iter_data, pretrain_time, iter_timestamp):
     other_token_infer_latency = iter_data['other_tokens_infer_avg_latency']
     rss_mem = iter_data['max_rss_mem_consumption']
     sys_mem = iter_data['max_sys_mem_consumption']
+    rss_mem_increase = iter_data['max_rss_mem_increase']
+    sys_mem_increase = iter_data['max_sys_mem_increase']
     token_time = iter_data['tokenization_time']
     detoken_time = iter_data['detokenization_time']
     result['iteration'] = str(iter_data['iteration'])
     result['pretrain_time(s)'] = pretrain_time
+    result['initial_sys_mem(MB)'] = round(memory_data_collector.initial_mem_status.sys, 5) if memory_data_collector else ''
+    result['initial_rss_mem(MB)'] = round(memory_data_collector.initial_mem_status.rss, 5) if memory_data_collector else ''
+    compilation_mem_info = memory_data_collector.compilation_mem_info if memory_data_collector else {}
+    result['compile_max_rss_mem(MB)'] = round(compilation_mem_info['max_mem'].rss, 5) if compilation_mem_info.get('max_mem') else ''
+    result['compile_max_sys_mem(MB)'] = round(compilation_mem_info['max_mem'].sys, 5) if compilation_mem_info.get('max_mem') else ''
+    result['compile_max_increase_rss_mem(MB)'] = round(compilation_mem_info['increase_mem'].rss, 5) if compilation_mem_info.get('increase_mem') else ''
+    result['compile_max_increase_sys_mem(MB)'] = round(compilation_mem_info['increase_mem'].sys, 5) if compilation_mem_info.get('increase_mem') else ''
     result['input_size'] = iter_data['input_size']
     result['infer_count'] = iter_data['infer_count']
     result['generation_time(s)'] = round(generation_time, 5) if generation_time != '' else generation_time
@@ -124,19 +142,27 @@ def gen_data_to_csv(result, iter_data, pretrain_time, iter_timestamp):
         result['2nd_infer_avg_latency(ms)'] = round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency
     result['max_rss_mem(MB)'] = round(rss_mem, 5) if rss_mem != '' else rss_mem
     result['max_sys_mem(MB)'] = round(sys_mem, 5) if sys_mem != '' else sys_mem
+    result['max_increase_rss_mem(MB)'] = round(rss_mem_increase, 5) if rss_mem_increase != '' else rss_mem_increase
+    result['max_increase_sys_mem(MB)'] = round(sys_mem_increase, 5) if sys_mem_increase != '' else sys_mem_increase
     result['prompt_idx'] = iter_data['prompt_idx']
     result['tokenization_time'] = round(token_time, 5) if token_time != '' else token_time
     result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
     result['start'], result['end'] = output_json.get_timestamp(iter_data['iteration'], iter_data['prompt_idx'], iter_timestamp)
 
 
-def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp):
+def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp, memory_data_collector):
     header = [
         'iteration',
         'model',
         'framework',
         'device',
         'pretrain_time(s)',
+        'initial_sys_mem(MB)',
+        'initial_rss_mem(MB)',
+        'compile_max_rss_mem(MB)',
+        'compile_max_sys_mem(MB)',
+        'compile_max_increase_rss_mem(MB)',
+        'compile_max_increase_sys_mem(MB)',
         'input_size',
         'infer_count',
         'generation_time(s)',
@@ -147,6 +173,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         'precision',
         'max_rss_mem(MB)',
         'max_sys_mem(MB)',
+        'max_increase_rss_mem(MB)',
+        'max_increase_sys_mem(MB)',
         'prompt_idx',
         '1st_infer_latency(ms)',
         '2nd_infer_avg_latency(ms)',
@@ -175,13 +203,14 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             for i in range(len(iter_data_list)):
                 iter_data = iter_data_list[i]
                 pre_time = '' if i > 0 else result['pretrain_time(s)']
-                gen_data_to_csv(result, iter_data, pre_time, iter_timestamp)
+                mem_data_collector = '' if i > 0 else memory_data_collector
+                gen_data_to_csv(result, iter_data, pre_time, iter_timestamp, mem_data_collector)
                 writer.writerow(result)
 
             res_data = output_avg_min_median(iter_data_list)
 
             for key in res_data.keys():
                 for data in res_data[key]:
-                    gen_data_to_csv(result, data, '', iter_timestamp)
+                    gen_data_to_csv(result, data, '', iter_timestamp, None)
                     writer.writerow(result)
             output_comments(result, model_args['use_case'], writer)

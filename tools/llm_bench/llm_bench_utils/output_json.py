@@ -1,7 +1,7 @@
 import json
 
 
-def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp):
+def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp, memory_data_collector):
     metadata = {'model': model, 'framework': framework, 'device': device, 'precision': model_precision,
                 'num_beams': model_args['num_beams'], 'batch_size': model_args['batch_size']}
     result = []
@@ -14,8 +14,10 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         other_latency = iter_data['other_tokens_avg_latency']
         first_token_infer_latency = iter_data['first_token_infer_latency']
         other_token_infer_latency = iter_data['other_tokens_infer_avg_latency']
-        rss_mem = iter_data['max_rss_mem_consumption']
+        max_rss_mem = iter_data['max_rss_mem_consumption']
         max_sys_mem = iter_data['max_sys_mem_consumption']
+        rss_mem_increase = iter_data['max_rss_mem_increase']
+        sys_mem_increase = iter_data['max_sys_mem_increase']
         tokenization_time = iter_data['tokenization_time']
         detokenization_time = iter_data['detokenization_time']
 
@@ -37,8 +39,10 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             'second_avg_latency': round(other_latency, 5) if other_latency != '' else other_latency,
             'first_infer_latency': round(first_token_infer_latency, 5) if first_token_infer_latency != '' else first_token_infer_latency,
             'second_infer_avg_latency': round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency,
-            'max_rss_mem': round(rss_mem, 5) if rss_mem != '' else -1,
+            'max_rss_mem': round(max_rss_mem, 5) if max_rss_mem != '' else -1,
             'max_sys_mem': round(max_sys_mem, 5) if max_sys_mem != '' else -1,
+            'max_increase_rss_mem': round(rss_mem_increase, 5) if rss_mem_increase != '' else -1,
+            'max_increase_sys_mem': round(sys_mem_increase, 5) if sys_mem_increase != '' else -1,
             'prompt_idx': iter_data['prompt_idx'],
             'tokenization_time': round(tokenization_time, 5) if tokenization_time != '' else tokenization_time,
             'detokenization_time': round(detokenization_time, 5) if detokenization_time != '' else detokenization_time,
@@ -64,7 +68,16 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         if len(values) > 0:
             results_averaged[key] = round(sum(values) / len(values), 5)
 
-    output_result = {'metadata': metadata, "perfdata": {'compile_time': pretrain_time, 'results': result}}
+    compilation_mem_info = memory_data_collector.compilation_mem_info if memory_data_collector else {}
+    output_result = {'metadata': metadata,
+                     'perfdata': {'compile_time': pretrain_time,
+                                  'initial_sys_mem': memory_data_collector.initial_mem_status.sys if memory_data_collector else -1,
+                                  'initial_rss_mem': memory_data_collector.initial_mem_status.rss if memory_data_collector else -1,
+                                  'compile_max_rss_mem': compilation_mem_info['max_mem'].rss if compilation_mem_info.get('max_mem') else -1,
+                                  'compile_max_sys_mem': compilation_mem_info['max_mem'].sys if compilation_mem_info.get('max_mem') else -1,
+                                  'compile_max_increase_rss_mem': compilation_mem_info['increase_mem'].rss if compilation_mem_info.get('increase_mem') else -1,
+                                  'compile_max_increase_sys_mem': compilation_mem_info['increase_mem'].sys if compilation_mem_info.get('increase_mem') else -1,
+                                  'results': result}}
 
     if len(results_averaged) > 0:
         output_result['perfdata']['results_averaged'] = results_averaged
