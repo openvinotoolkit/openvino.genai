@@ -137,17 +137,13 @@ ov::Tensor InputsEmbedderNanoLLaVA::tokenize_without_image_tag(const std::string
         return encoded_substrings[0];
     }
     ov::Tensor new_chat_tokens = ov::Tensor(encoded_substrings[encoded_substrings.size() - 1].get_element_type(), {1, encoded_size + n_images});
-    int64_t* new_chat_tokens_data_ui64 = new_chat_tokens.data<int64_t>();
-    auto new_chat_tokens_data = new_chat_tokens.data();
-    size_t idx_tokens = 0;
+    int64_t* new_chat_tokens_data = new_chat_tokens.data<int64_t>();
     for (size_t idx = 0; idx < encoded_substrings.size(); idx++) {
         memcpy(new_chat_tokens_data, encoded_substrings[idx].data(), encoded_substrings[idx].get_byte_size());
-        new_chat_tokens_data += encoded_substrings[idx].get_byte_size();
-        idx_tokens += encoded_substrings[idx].get_shape()[1];
+        new_chat_tokens_data += ov::shape_size(encoded_substrings[idx].get_shape());
         if (idx < encoded_substrings.size() - 1) {
-            new_chat_tokens_data_ui64[idx_tokens] = IMAGE_TOKEN_ID;
-            idx_tokens += 1;
-            new_chat_tokens_data += sizeof(int64_t);
+            new_chat_tokens_data[0] = IMAGE_TOKEN_ID;
+            new_chat_tokens_data ++;
         }
     }
     return new_chat_tokens;
