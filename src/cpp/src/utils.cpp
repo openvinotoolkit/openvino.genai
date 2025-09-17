@@ -713,20 +713,20 @@ ov::Tensor merge_text_and_image_embeddings_nanollava(const ov::Tensor& input_ids
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
     const float* text_embeds_data = text_embeds.data<const float>();
     const float* image_embeds_data = image_embeds[0].data<const float>();
+    float* res_embeds_data = inputs_embeds.data<float>();
 
     size_t text_token_idx = 0;
-    size_t res_embeds_position = 0;
     size_t image_idx = 0;
     while (text_token_idx < text_tokens_size) {
         if (input_ids_data[text_token_idx] == image_tok) {
             const auto im_embed = image_embeds[image_idx];
             image_idx++;
-            std::memcpy(inputs_embeds.data() + res_embeds_position * sizeof(float), im_embed.data(), im_embed.get_byte_size());
-            res_embeds_position += ov::shape_size(im_embed.get_shape());
+            std::memcpy(res_embeds_data, im_embed.data(), im_embed.get_byte_size());
+            res_embeds_data += ov::shape_size(im_embed.get_shape());
         }
         else {
-            std::memcpy(inputs_embeds.data() + res_embeds_position * sizeof(float), text_embeds_data + text_token_idx * hidden_size, hidden_size * sizeof(float));
-            res_embeds_position += hidden_size;
+            std::memcpy(res_embeds_data, text_embeds_data + text_token_idx * hidden_size, hidden_size * sizeof(float));
+            res_embeds_data += hidden_size;
         }
         text_token_idx ++;
     }
