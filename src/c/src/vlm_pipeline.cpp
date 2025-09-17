@@ -135,9 +135,6 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
         const ov_tensor* ct = rgbs[i];
 
         auto et = ov::element::Type_t::u8;
-        if (et == ov::element::Type_t::undefined) {
-            return ov_status_e::INVALID_C_PARAM;
-        }
 
         ov_shape_t shape_c{};
         ov_tensor_get_shape(ct, &shape_c);

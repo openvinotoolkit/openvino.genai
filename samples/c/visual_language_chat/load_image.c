@@ -4,6 +4,12 @@
 #include <string.h>
 
 #ifdef _WIN32
+  #define strcasecmp _stricmp
+#else
+  #include <strings.h>
+#endif
+
+#ifdef _WIN32
     #include <io.h>
     #define stat _stat
 #else
@@ -34,19 +40,6 @@ static int is_supported_image(const char* filename) {
         }
     }
     return 0;
-}
-
-static int strcasecmp(const char* s1, const char* s2) {
-    while (*s1 && *s2) {
-        char c1 = *s1;
-        char c2 = *s2;
-        if (c1 >= 'A' && c1 <= 'Z') c1 += 32;
-        if (c2 >= 'A' && c2 <= 'Z') c2 += 32;
-        if (c1 != c2) return c1 - c2;
-        s1++;
-        s2++;
-    }
-    return *s1 - *s2;
 }
 
 typedef struct {
