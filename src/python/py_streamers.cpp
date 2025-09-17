@@ -32,7 +32,6 @@ TextStreamer is used to decode tokens into text and call a user-defined callback
 tokenizer: Tokenizer object to decode tokens into text.
 callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
 detokenization_params: AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
-
 )";
 
 class ConstructableStreamer: public StreamerBase {
