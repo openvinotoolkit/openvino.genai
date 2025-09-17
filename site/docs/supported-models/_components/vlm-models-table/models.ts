@@ -52,11 +52,6 @@ export const VLM_MODELS: VLMModelType[] = [
         loraSupport: false,
         links: ['https://huggingface.co/qnguyen3/nanoLLaVA'],
       },
-    ],
-  },
-  {
-    architecture: 'nanoLLaVA',
-    models: [
       {
         name: 'nanoLLaVA-1.5',
         loraSupport: false,
