@@ -511,43 +511,6 @@ private:
         }
     }
 
-    size_t _get_available_gpu_memory() {
-        auto device = m_cache_manager->get_device();
-        OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "_get_available_gpu_memory() is applicable for GPU only.");
-
-        ov::Core core = utils::singleton_core();
-        auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
-        auto device_type = core.get_property(device, ov::device::type);
-
-        // sum up all used device memory
-        std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
-        size_t used_device_mem = 0;
-        for (auto mem_type: device_memory_types) {
-            used_device_mem += memory_statistics[mem_type];
-        }
-
-        if (device_type == ov::device::Type::INTEGRATED) {
-            used_device_mem += memory_statistics["usm_host"];
-        }
-
-        // there could be unaccounted extra memory reserved by kernels, kept
-        // in memory pools, etc
-        // therefore, add a threshold to account for this
-        float used_memory_threshold = 1.1;
-        used_device_mem *= used_memory_threshold;
-
-        // total device memory in bytes
-        auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
-
-        // max allocatable memory size on GPU
-        auto max_alloc_memory_size = core.get_property(device, ov::intel_gpu::device_max_alloc_mem_size);
-
-        // Total KV-cache size if a single tensor is limited by 'device_max_alloc_mem_size' property
-        auto max_allocatable_kv_cache = max_alloc_memory_size * m_cache_manager->get_num_decoder_layers() * 2;
-
-        return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
-    }
-
     void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         size_t blocks_sum = 0;
         for (auto idx = 0; idx < sequence_groups.size(); idx++) {
@@ -577,7 +540,7 @@ private:
         if (device.find("GPU") == std::string::npos) {
             m_block_manager->increase_kv_blocks_number(new_blocks_num);
         } else {
-            const size_t available_gpu_memory = _get_available_gpu_memory();
+            const size_t available_gpu_memory = utils::get_available_gpu_memory(m_cache_manager->get_device(), m_cache_manager->get_num_decoder_layers());
             const size_t block_size_in_bytes = m_cache_manager->get_block_size_in_bytes();
             size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * block_size_in_bytes;
             if (required_memory <= available_gpu_memory) {
