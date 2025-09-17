@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/nanollava/classes.hpp"
-
 #include "visual_language/clip.hpp"
-
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -26,7 +24,7 @@ clip_image_f32 preprocess_clip_image_nanollava(const clip_image_u8& image_orig, 
     return clip_image_preprocess(ctx, resized_image);
 }
 
-EncodedImage VisionEncoderNanoLLaVA::encode( const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderNanoLLaVA::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
 
