@@ -81,8 +81,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderNanoLLaVA::encode_images(cons
 }
 
 std::pair<std::string, std::vector<size_t>> InputsEmbedderNanoLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
-    auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
-    return {std::move(unified_prompt), std::move(images_sequence)};
+    return normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
 }
 
 ov::Tensor InputsEmbedderNanoLLaVA::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
