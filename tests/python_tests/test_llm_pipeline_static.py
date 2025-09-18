@@ -10,7 +10,7 @@ import pytest
 import platform
 import sys
 
-from utils.constants import get_default_llm_properties
+from utils.constants import get_default_llm_properties, ModelDownloaderCallable
 from utils.generation_config import                     \
     get_greedy,                                         \
     get_greedy_with_penalties,                          \
@@ -57,7 +57,7 @@ def test_generation_compare_with_stateful(
     generation_config, 
     config, 
     model_id, 
-    model_downloader: Callable[[str], Path],
+    model_downloader: ModelDownloaderCallable,
 ):
     prompt = 'What is OpenVINO?'
     _, _, model_path = model_downloader(model_id)
@@ -75,7 +75,7 @@ def test_generation_compare_with_stateful(
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("with_weights", blob_with_weights)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id, model_downloader: Callable[[str], Path]):
+def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id, model_downloader: ModelDownloaderCallable):
     prompt = 'What is OpenVINO?'
     _, _, model_path = model_downloader(model_id)
     _, temp_path = model_tmp_path
@@ -110,7 +110,7 @@ def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id, mode
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("with_weights", blob_with_weights)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_pipeline_cache_dir(model_tmp_path, config, with_weights, model_id, model_downloader: Callable[[str], Path]):
+def test_pipeline_cache_dir(model_tmp_path, config, with_weights, model_id, model_downloader: ModelDownloaderCallable):
     prompt = 'What is OpenVINO?'
     _, _, model_path = model_downloader(model_id)
     _, temp_path = model_tmp_path
@@ -154,7 +154,7 @@ generation_configs = [
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_multinomial_sampling(generation_config, config, model_id, model_downloader: Callable[[str], Path]):
+def test_multinomial_sampling(generation_config, config, model_id, model_downloader: ModelDownloaderCallable):
     # Multinomial sampling is highly sensitive to raw logits values. For fair comparison,
     # a reference implementation producing identical logits (e.g., from StaticLLMPipeline)
     # would be necessary. However, the CPU in StatefulPipeline and StaticLLMPipeline may apply
@@ -170,7 +170,7 @@ def test_multinomial_sampling(generation_config, config, model_id, model_downloa
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_length_properties_set_no_exception(config, model_id, model_downloader: Callable[[str], Path]):
+def test_length_properties_set_no_exception(config, model_id, model_downloader: ModelDownloaderCallable):
     _, _, model_path = model_downloader(model_id)
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
@@ -188,7 +188,7 @@ length_configs = [
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_invalid_length_properties_raise_error(length_config, config, model_id, model_downloader: Callable[[str], Path]):
+def test_invalid_length_properties_raise_error(length_config, config, model_id, model_downloader: ModelDownloaderCallable):
     _, _, model_path = model_downloader(model_id)
     length_config |= config
     with pytest.raises(RuntimeError):
@@ -198,7 +198,7 @@ def test_invalid_length_properties_raise_error(length_config, config, model_id, 
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_batch_one_no_exception(config, model_id, model_downloader: Callable[[str], Path]):
+def test_batch_one_no_exception(config, model_id, model_downloader: ModelDownloaderCallable):
     _, _, model_path = model_downloader(model_id)
     prompt = 'The Sun is yellow because'
     static_pipe = LLMPipeline(model_path, "NPU", **config)
@@ -210,7 +210,7 @@ def test_batch_one_no_exception(config, model_id, model_downloader: Callable[[st
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_batch_raise_error(config, model_id, model_downloader: Callable[[str], Path]):
+def test_batch_raise_error(config, model_id, model_downloader: ModelDownloaderCallable):
     _, _, model_path = model_downloader(model_id)
     prompt = 'The Sun is yellow because'
     pipe = LLMPipeline(model_path, "NPU", **config)
@@ -228,7 +228,7 @@ generation_configs = [
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_unsupported_sampling_raise_error(generation_config, config, model_id, model_downloader: Callable[[str], Path]):
+def test_unsupported_sampling_raise_error(generation_config, config, model_id, model_downloader: ModelDownloaderCallable):
     _, _, model_path = model_downloader(model_id)
     prompt = 'What is OpenVINO?'
 
@@ -240,7 +240,7 @@ def test_unsupported_sampling_raise_error(generation_config, config, model_id, m
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_max_number_of_tokens(config, model_id, model_downloader: Callable[[str], Path]):
+def test_terminate_by_max_number_of_tokens(config, model_id, model_downloader: ModelDownloaderCallable):
     _, _, model_path = model_downloader(model_id)
     prompt = 'The Sun is yellow because'
     num_tokens = 128
@@ -256,7 +256,7 @@ def test_terminate_by_max_number_of_tokens(config, model_id, model_downloader: C
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_out_of_memory(config, model_id, model_downloader: Callable[[str], Path]):
+def test_terminate_by_out_of_memory(config, model_id, model_downloader: ModelDownloaderCallable):
     _, _, model_path = model_downloader(model_id)
     prompt = 'The Sun is yellow because'
     pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
@@ -276,7 +276,7 @@ def test_terminate_by_out_of_memory(config, model_id, model_downloader: Callable
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_sampler(config, model_id, model_downloader: Callable[[str], Path]):
+def test_terminate_by_sampler(config, model_id, model_downloader: ModelDownloaderCallable):
     _, _, model_path = model_downloader(model_id)
     prompt = 'The Sun is yellow because'
 
@@ -310,7 +310,7 @@ def test_terminate_by_sampler(config, model_id, model_downloader: Callable[[str]
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_chat_generation(config, model_id, model_downloader: Callable[[str], Path]):
+def test_chat_generation(config, model_id, model_downloader: ModelDownloaderCallable):
     questions = [
         '1+1=',
         'What is the previous answer?',
