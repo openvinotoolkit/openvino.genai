@@ -222,14 +222,13 @@ def run_visual_language_generation_genai(
     gen_config.do_sample = False
     gen_config.ignore_eos = True
     # Configure CDPruner
-    gen_config.enable_pruning = bool(args.get('enable_pruning', False))
-    if gen_config.enable_pruning:
-        if args.get('pruning_ratio') is not None:
-            gen_config.pruning_ratio = args['pruning_ratio']
-        if args.get('relevance_weight') is not None:
-            gen_config.relevance_weight = args['relevance_weight']
-        if args.get('pruning_debug_mode') is not None:
-            gen_config.pruning_debug_mode = bool(args['pruning_debug_mode'])
+    if args.get('pruning_ratio') is not None:
+        gen_config.pruning_ratio = args['pruning_ratio']
+        if gen_config.pruning_ratio > 0 and gen_config.pruning_ratio < 100:
+            if args.get('relevance_weight') is not None:
+                gen_config.relevance_weight = args['relevance_weight']
+            if args.get('pruning_debug_mode') is not None:
+                gen_config.pruning_debug_mode = bool(args['pruning_debug_mode'])
     kwargs = {}
     if len(images) >= 1:
         kwargs["images"] = images
