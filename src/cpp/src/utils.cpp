@@ -704,35 +704,6 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
     return inputs_embeds;
 }
 
-ov::Tensor merge_text_and_image_embeddings_nanollava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_tok) {
-    size_t text_tokens_size = text_embeds.get_shape()[1];
-    size_t embeds_len = text_embeds.get_shape()[1] + (image_embeds[0].get_shape()[1]) * image_embeds.size() - image_embeds.size();
-    size_t hidden_size = text_embeds.get_shape()[2];
-    ov::Tensor inputs_embeds(text_embeds.get_element_type(), {1, embeds_len, hidden_size});
-
-    const int64_t* input_ids_data = input_ids.data<const int64_t>();
-    const float* text_embeds_data = text_embeds.data<const float>();
-    const float* image_embeds_data = image_embeds[0].data<const float>();
-    float* res_embeds_data = inputs_embeds.data<float>();
-
-    size_t text_token_idx = 0;
-    size_t image_idx = 0;
-    while (text_token_idx < text_tokens_size) {
-        if (input_ids_data[text_token_idx] == image_tok) {
-            const auto im_embed = image_embeds[image_idx];
-            image_idx++;
-            std::memcpy(res_embeds_data, im_embed.data(), im_embed.get_byte_size());
-            res_embeds_data += ov::shape_size(im_embed.get_shape());
-        }
-        else {
-            std::memcpy(res_embeds_data, text_embeds_data + text_token_idx * hidden_size, hidden_size * sizeof(float));
-            res_embeds_data += hidden_size;
-        }
-        text_token_idx ++;
-    }
-    return inputs_embeds;
-}
-
 size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers) {
     OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "get_available_gpu_memory() is applicable for GPU only.");
 

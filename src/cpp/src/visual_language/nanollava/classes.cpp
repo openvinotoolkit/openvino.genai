@@ -8,7 +8,7 @@
 namespace ov::genai {
 
 const std::string NATIVE_TAG = "<image>\n";
-const int64_t IMAGE_TOKEN_ID = -200;
+const int64_t IMAGE_PLACEHOLDER = -200;
 
 clip_image_f32 preprocess_clip_image_nanollava(const clip_image_u8& image_orig, const ProcessorConfig& config) {
     // Resize
@@ -22,6 +22,35 @@ clip_image_f32 preprocess_clip_image_nanollava(const clip_image_u8& image_orig, 
     std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
     std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
     return clip_image_preprocess(ctx, resized_image);
+}
+
+ov::Tensor merge_text_and_image_embeddings_nanollava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_tok) {
+    size_t text_tokens_size = text_embeds.get_shape()[1];
+    size_t embeds_len = text_embeds.get_shape()[1] + (image_embeds[0].get_shape()[1]) * image_embeds.size() - image_embeds.size();
+    size_t hidden_size = text_embeds.get_shape()[2];
+    ov::Tensor inputs_embeds(text_embeds.get_element_type(), {1, embeds_len, hidden_size});
+
+    const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    const float* text_embeds_data = text_embeds.data<const float>();
+    const float* image_embeds_data = image_embeds[0].data<const float>();
+    float* res_embeds_data = inputs_embeds.data<float>();
+
+    size_t text_token_idx = 0;
+    size_t image_idx = 0;
+    while (text_token_idx < text_tokens_size) {
+        if (input_ids_data[text_token_idx] == image_tok) {
+            const auto im_embed = image_embeds[image_idx];
+            image_idx++;
+            std::memcpy(res_embeds_data, im_embed.data(), im_embed.get_byte_size());
+            res_embeds_data += ov::shape_size(im_embed.get_shape());
+        }
+        else {
+            std::memcpy(res_embeds_data, text_embeds_data + text_token_idx * hidden_size, hidden_size * sizeof(float));
+            res_embeds_data += hidden_size;
+        }
+        text_token_idx ++;
+    }
+    return inputs_embeds;
 }
 
 EncodedImage VisionEncoderNanoLLaVA::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
@@ -106,7 +135,7 @@ ov::Tensor InputsEmbedderNanoLLaVA::get_inputs_embeds(const std::string& unified
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-    return utils::merge_text_and_image_embeddings_nanollava(input_ids, text_embeds, image_embeds, IMAGE_TOKEN_ID);
+    return merge_text_and_image_embeddings_nanollava(input_ids, text_embeds, image_embeds, IMAGE_PLACEHOLDER);
 }
 
 
@@ -139,7 +168,7 @@ ov::Tensor InputsEmbedderNanoLLaVA::tokenize_without_image_tag(const std::string
         memcpy(new_chat_tokens_data, encoded_substrings[idx].data(), encoded_substrings[idx].get_byte_size());
         new_chat_tokens_data += ov::shape_size(encoded_substrings[idx].get_shape());
         if (idx < encoded_substrings.size() - 1) {
-            new_chat_tokens_data[0] = IMAGE_TOKEN_ID;
+            new_chat_tokens_data[0] = IMAGE_PLACEHOLDER;
             new_chat_tokens_data ++;
         }
     }
