@@ -23,9 +23,9 @@ public:
     virtual VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& video,
         GenerationConfig generation_config,
-        const StreamerVariant& streamer
+        const StreamerVariant& streamer,
+        const bool& is_video = false
     ) = 0;
 
     VLMDecodedResults generate(
@@ -35,7 +35,8 @@ public:
         auto image = config_map.find(ov::genai::image.name());
         auto images = config_map.find(ov::genai::images.name());
         auto video = config_map.find(ov::genai::video.name());
-        int num_set = (config_map.end() != image) + (config_map.end() != images) + (config_map.end() != video);
+        bool is_video = config_map.end() != video;
+        int num_set = (config_map.end() != image) + (config_map.end() != images) + (is_video);
         OPENVINO_ASSERT(num_set <= 1, "Only one property can be set: image, images, or video.");
         std::vector<ov::Tensor> image_rgbs;
         if (config_map.end() != image) {
@@ -52,13 +53,12 @@ public:
             }
         }
 
-        std::vector<ov::Tensor> video_rgbs;
-        if (config_map.end() != video) {
+        if (is_video) {
             if (video->second.is<std::vector<ov::Tensor>>()) {
-                video_rgbs = video->second.as<std::vector<ov::Tensor>>();
+                image_rgbs = video->second.as<std::vector<ov::Tensor>>();
             }
             else if (video->second.is<ov::Tensor>()){
-                video_rgbs = {video->second.as<ov::Tensor>()};
+                image_rgbs = {video->second.as<ov::Tensor>()};
             }
             else {
                 OPENVINO_THROW("Unknown video type.");
@@ -69,13 +69,7 @@ public:
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
         config.update_generation_config(config_map);
 
-        return generate(
-            prompt,
-            image_rgbs,
-            video_rgbs,
-            config,
-            utils::get_streamer_from_map(config_map)
-        );
+        return generate(prompt, image_rgbs, config, utils::get_streamer_from_map(config_map), is_video);
     }
 
     virtual void start_chat(const std::string& system_message) = 0;

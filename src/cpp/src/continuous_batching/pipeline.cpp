@@ -240,9 +240,9 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
                                                          const std::string& prompt,
                                                          const std::vector<ov::Tensor>& images,
-                                                         const std::vector<ov::Tensor>& video,
-                                                         const ov::genai::GenerationConfig& sampling_params) {
-    return m_impl->add_request(request_id, prompt, images, video, sampling_params);
+                                                         const ov::genai::GenerationConfig& sampling_params,
+                                                         const bool& is_video) {
+    return m_impl->add_request(request_id, prompt, images, sampling_params, is_video);
 }
 
 void ContinuousBatchingPipeline::step() {
@@ -276,10 +276,10 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::ve
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& images,
-             const std::vector<std::vector<ov::Tensor>>& videos,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) {
-    return m_impl->generate(prompts, images, videos, sampling_params, streamer);
+             const StreamerVariant& streamer,
+             const bool& is_video) {
+    return m_impl->generate(prompts, images, sampling_params, streamer, is_video);
 }
 
 

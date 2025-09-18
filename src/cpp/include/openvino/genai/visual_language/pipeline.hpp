@@ -99,9 +99,9 @@ public:
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& video,
         const GenerationConfig& generation_config,
-        const StreamerVariant& streamer
+        const StreamerVariant& streamer,
+        const bool& is_video = false
     );
 
     /// @brief Generate a response given a prompt and uint8 RGB image with [NHWC] or [HWC] layout.

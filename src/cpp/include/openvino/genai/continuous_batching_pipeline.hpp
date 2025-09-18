@@ -168,8 +168,8 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const std::vector<ov::Tensor>& images,
-                                 const std::vector<ov::Tensor>& video,
-                                 const ov::genai::GenerationConfig& sampling_params);
+                                 const ov::genai::GenerationConfig& sampling_params,
+                                 const bool& is_video = false);
 
     void step();
 
@@ -181,9 +181,9 @@ public:
     std::vector<VLMDecodedResults> generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& images,
-             const std::vector<std::vector<ov::Tensor>>& videos,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer=std::monostate{});
+             const StreamerVariant& streamer=std::monostate{},
+             const bool& is_video = false);
     /**
     * @brief start chat with keeping history in kv cache.
     * @param system_message optional system message.

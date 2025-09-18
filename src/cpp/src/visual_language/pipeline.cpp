@@ -153,13 +153,10 @@ public:
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& video,
         GenerationConfig generation_config,
-        const StreamerVariant& streamer
+        const StreamerVariant& streamer,
+        const bool& is_video
     ) override {
-        int input_check = (images.size() == 0u) + (video.size() == 0u);
-        OPENVINO_ASSERT(input_check <= 1, "Only accept one input image, images, or video.");
-
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -187,13 +184,7 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        // Currently only one input is supported. Video, images or image.
-        std::vector<ov::genai::EncodedImage> encoded_images;
-        if (images.size() > 0) {
-            encoded_images = m_inputs_embedder->encode_images(images, false);
-        } else if (video.size() > 0) {
-            encoded_images = m_inputs_embedder->encode_images(video, true);
-        }
+        auto encoded_images = m_inputs_embedder->encode_images(images, is_video);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
         if (m_is_chat_conversation) {
@@ -461,11 +452,11 @@ VLMPipeline::~VLMPipeline() = default;
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
-    const std::vector<ov::Tensor>& video,
     const GenerationConfig& generation_config,
-    const StreamerVariant& streamer
+    const StreamerVariant& streamer,
+    const bool& is_video
 ) {
-    return m_pimpl->generate(prompt, images, video, generation_config, streamer);
+    return m_pimpl->generate(prompt, images, generation_config, streamer, is_video);
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -474,7 +465,7 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, {rgb}, {}, generation_config, streamer);
+    return m_pimpl->generate(prompt, {rgb}, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(
