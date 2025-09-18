@@ -25,18 +25,18 @@ ov::genai::StreamingStatus stream_generated_tokens(std::shared_ptr<ov::genai::St
     return ov::genai::StreamingStatus{};
 }
 
-void update_perf_metrics(ov::genai::RawPerfMetrics& raw_perf_counters, const float duration_microsec,
-                         const ov::genai::TimePoint new_token_time, const std::size_t num_generated_tokens) {
+void update_perf_stat_by_token_time(ov::genai::RawPerfMetrics& raw_perf_counters, const float duration_microsec,
+                                    const ov::genai::TimePoint new_token_time, const std::size_t num_generated_tokens) {
     raw_perf_counters.m_token_infer_durations.emplace_back(duration_microsec);
     raw_perf_counters.m_inference_durations[0] += ov::genai::MicroSeconds(duration_microsec);
     raw_perf_counters.m_new_token_times.emplace_back(new_token_time);
     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
 }
 
-void update_perf_metrics(ov::genai::RawPerfMetrics& raw_perf_counters,
-                         const float inference_duration,
-                         const float token_duration,
-                         const std::size_t num_generated_tokens) {
+void update_perf_stat_by_infer_duration(ov::genai::RawPerfMetrics& raw_perf_counters,
+                                        const float inference_duration,
+                                        const float token_duration,
+                                        const std::size_t num_generated_tokens) {
     raw_perf_counters.m_durations.emplace_back(token_duration);
     raw_perf_counters.m_inference_durations[0] += ov::genai::MicroSeconds(inference_duration);
     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
@@ -138,7 +138,7 @@ int64_t LLMInferWrapper::infer_first(const ov::Tensor &input_ids,
     last_token = std::get<int64_t>(sample_tokens(get_logits(), 1u));
 
     infer_first_timer.end();
-    update_perf_metrics(raw_perf_metrics,
+    update_perf_stat_by_infer_duration(raw_perf_metrics,
          ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
          infer_first_timer.get_duration_microsec(), BATCH_SIZE);
     return last_token;
@@ -192,7 +192,7 @@ int64_t LLMInferWrapper::infer_next(int64_t token, bool append_perf_stat) {
     infer_next_timer.end();
     // prepend perf stat
     if (!append_perf_stat) {
-        update_perf_metrics(
+        update_perf_stat_by_infer_duration(
             raw_perf_metrics,
             ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
             infer_next_timer.get_duration_microsec(),
@@ -254,7 +254,7 @@ std::vector<int64_t> LLMInferWrapper::infer_next_return_all(const std::vector<in
     last_token = sampled_tokens.back();
 
     infer_next_return_all_timer.end();
-    update_perf_metrics(
+    update_perf_stat_by_infer_duration(
         raw_perf_metrics, ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
         infer_next_return_all_timer.get_duration_microsec(), tokens_size);
     return sampled_tokens;
@@ -531,8 +531,8 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     auto out_token = m_main_request->infer_first(input_ids, attention_mask, position_ids);
 
     first_token_timer.end();
-    update_perf_metrics(raw_perf_counters, first_token_timer.get_duration_microsec(),
-                        first_token_timer.get_end_time(), 1u);
+    update_perf_stat_by_token_time(raw_perf_counters, first_token_timer.get_duration_microsec(),
+                                   first_token_timer.get_end_time(), 1u);
 
     m_draft_request->infer_first(input_ids, attention_mask, position_ids);
 
@@ -604,7 +604,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
 
                     iteration_timer.end();
                     auto iteration_duration = iteration_timer.get_duration_microsec();
-                    update_perf_metrics(raw_perf_counters, iteration_duration, main_timer.get_end_time(), 1u);
+                    update_perf_stat_by_token_time(raw_perf_counters, iteration_duration, main_timer.get_end_time(), 1u);
 
                     main_timer.clear();
                     iteration_timer.clear();
@@ -697,7 +697,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
 
         iteration_timer.end();
         auto iteration_duration = iteration_timer.get_duration_microsec();
-        update_perf_metrics(raw_perf_counters, iteration_duration, main_timer.get_end_time(), validated_tokens.size());
+        update_perf_stat_by_token_time(raw_perf_counters, iteration_duration, main_timer.get_end_time(), validated_tokens.size());
         iteration_timer.clear();
         main_timer.clear();
     }
@@ -772,7 +772,7 @@ void StatefulSpeculativeLLMPipeline::update_candidate_strategy(const std::size_t
     if (matches_num == m_candidates_num) {
         m_candidates_num = std::min(m_candidates_num + 2, m_max_candidates_num);
     } else {
-        m_candidates_num = std::max(int64_t(m_candidates_num) - 1, int64_t(1));
+        m_candidates_num = static_cast<std::size_t>(std::max(static_cast<int64_t>(m_candidates_num) - 1, int64_t(1)));
     }
 }
 }  // namespace genai

@@ -14,8 +14,8 @@ class ManualTimer {
 public:
     ManualTimer(const std::string& title) :
         m_total(0.),
-        m_start(std::chrono::steady_clock::duration::zero()),
-        m_end(std::chrono::steady_clock::duration::zero()),
+        m_start(),
+        m_end(),
         m_title(title) {
     }
 
@@ -46,10 +46,8 @@ public:
 
     void clear() {
         m_total = 0.0;
-        m_start = std::chrono::steady_clock::time_point(
-            std::chrono::steady_clock::duration::zero());
-        m_end = std::chrono::steady_clock::time_point(
-            std::chrono::steady_clock::duration::zero());
+        m_start = std::chrono::steady_clock::time_point();
+        m_end = std::chrono::steady_clock::time_point();
     }
 
     ~ManualTimer() {
