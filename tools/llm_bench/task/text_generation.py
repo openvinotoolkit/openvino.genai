@@ -288,7 +288,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         # eagle3 needs to disable special tokens to ensure compress rate
         input_data = tokenizer.encode(input_text_list, add_special_tokens=False)
     else:
-        input_data = tokenizer(input_text_list)
+        input_data = tokenizer.encode(input_text_list)
     tokenization_end = time.perf_counter()
     tokenization_time = [(tokenization_end - tokenization_start) * 1000]
 
