@@ -6,7 +6,7 @@ import datasets
 import pytest
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 from tqdm import tqdm
 
 from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode, SparseAttentionMode, KVCrushAnchorPointMode, KVCrushConfig
@@ -102,7 +102,7 @@ OPTIMAL_KVCRUSH_CONFIGS = {
     ], ids=lambda x: x.test_id)
 @pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
 @pytest.mark.parametrize("use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]) # sparse attn should not degrade similarity too much
-def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention):
+def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention, model_downloader: Callable[[str], Path]):
     import whowhatbench
 
     seqs_per_request = 32
@@ -123,7 +123,7 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
         scheduler_config_opt.sparse_attention_config.num_last_dense_tokens_in_prefill = 10
 
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    _, tokenizer, models_path = download_and_convert_model(model_id)
+    _, tokenizer, models_path = model_downloader(model_id)
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
 
@@ -211,12 +211,12 @@ class LongBenchTestData:
     LongBenchTestData("samsum", 4, 1.6, 2.5),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
 ], ids=["samsum", "trec"])
-def test_optimized_generation_longbench(test_struct):
+def test_optimized_generation_longbench(test_struct, model_downloader: Callable[[str], Path]):
     seqs_per_request = 32
     device = "CPU"
     num_kv_blocks = 1000 if device == "CPU" else 500
     model_id = "Qwen/Qwen2-0.5B-Instruct"
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = model_downloader(model_id)
     scheduler_config = get_scheduler_config(num_kv_blocks)
 
     scheduler_config_opt = get_scheduler_config(num_kv_blocks)
@@ -286,13 +286,13 @@ def test_optimized_generation_longbench(test_struct):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("subset", ["samsum", "trec", "qasper"])
-def test_kvcrush_vs_snapkv_baseline(subset):
+def test_kvcrush_vs_snapkv_baseline(subset, model_downloader: Callable[[str], Path]):
     """Test that KVCrush performs equal or better than SnapKV baseline on LongBench datasets."""
     device = "CPU"
     seqs_per_request = 32
     num_kv_blocks = 1000 if device == "CPU" else 500
     model_id = "Qwen/Qwen2-0.5B-Instruct"
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = model_downloader(model_id)
 
     # Setup baseline and KVCrush configurations
     scheduler_config_baseline = get_scheduler_config(num_kv_blocks)

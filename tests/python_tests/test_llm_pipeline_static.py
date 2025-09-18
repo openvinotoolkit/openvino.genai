@@ -1,6 +1,8 @@
 # Copyright (C) 2024-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from pathlib import Path
+from typing import Callable
 from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline, StreamerBase
 import os
 
@@ -9,16 +11,14 @@ import platform
 import sys
 
 from utils.constants import get_default_llm_properties
-from utils.tokenizers import model_tmp_path
 from utils.hugging_face import download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline
 from utils.generation_config import                     \
     get_greedy,                                         \
     get_greedy_with_penalties,                          \
     get_multinomial_all_parameters,                     \
     get_multinomial_temperature_and_presence_penalty,   \
     get_beam_search
-from data.models import get_models_list, get_chat_models_list
+from data.models import get_models_list
 
 
 if sys.platform == 'darwin' or platform.machine() in ["aarch64", "arm64", "ARM64"]:
@@ -54,9 +54,14 @@ generation_configs = [
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.xfail(reason="Generation result mismatch. Ticket 171117", raises=AssertionError)
-def test_generation_compare_with_stateful(generation_config, config, model_id):
+def test_generation_compare_with_stateful(
+    generation_config, 
+    config, 
+    model_id, 
+    model_downloader: Callable[[str], Path],
+):
     prompt = 'What is OpenVINO?'
-    _, _, model_path = download_and_convert_model(model_id)
+    _, _, model_path = model_downloader(model_id)
 
     stateful_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
     ref_out = stateful_pipe.generate(prompt, generation_config)
@@ -71,9 +76,9 @@ def test_generation_compare_with_stateful(generation_config, config, model_id):
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("with_weights", blob_with_weights)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id):
+def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id, model_downloader: Callable[[str], Path]):
     prompt = 'What is OpenVINO?'
-    _, _, model_path = download_and_convert_model(model_id)
+    _, _, model_path = model_downloader(model_id)
     _, temp_path = model_tmp_path
 
     blob_path = os.path.join(temp_path, "compiled_model.blob")
@@ -106,9 +111,9 @@ def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id):
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("with_weights", blob_with_weights)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_pipeline_cache_dir(model_tmp_path, config, with_weights, model_id):
+def test_pipeline_cache_dir(model_tmp_path, config, with_weights, model_id, model_downloader: Callable[[str], Path]):
     prompt = 'What is OpenVINO?'
-    _, _, model_path = download_and_convert_model(model_id)
+    _, _, model_path = model_downloader(model_id)
     _, temp_path = model_tmp_path
 
     cpu_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
@@ -150,7 +155,7 @@ generation_configs = [
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_multinomial_sampling(generation_config, config, model_id):
+def test_multinomial_sampling(generation_config, config, model_id, model_downloader: Callable[[str], Path]):
     # Multinomial sampling is highly sensitive to raw logits values. For fair comparison,
     # a reference implementation producing identical logits (e.g., from StaticLLMPipeline)
     # would be necessary. However, the CPU in StatefulPipeline and StaticLLMPipeline may apply
@@ -158,7 +163,7 @@ def test_multinomial_sampling(generation_config, config, model_id):
     # variations in raw logits. Therefore, there is no reliable reference for validation,
     # so only ensure that no exceptions are raised.
     prompt = 'What is OpenVINO?'
-    _, _, model_path = download_and_convert_model(model_id)
+    _, _, model_path = model_downloader(model_id)
     static_pipe = LLMPipeline(model_path, "NPU", **config)
     actual_out = static_pipe.generate(prompt, generation_config)
 
@@ -166,8 +171,8 @@ def test_multinomial_sampling(generation_config, config, model_id):
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_length_properties_set_no_exception(config, model_id):
-    _, _, model_path = download_and_convert_model(model_id)
+def test_length_properties_set_no_exception(config, model_id, model_downloader: Callable[[str], Path]):
+    _, _, model_path = model_downloader(model_id)
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= config
@@ -184,8 +189,8 @@ length_configs = [
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_invalid_length_properties_raise_error(length_config, config, model_id):
-    _, _, model_path = download_and_convert_model(model_id)
+def test_invalid_length_properties_raise_error(length_config, config, model_id, model_downloader: Callable[[str], Path]):
+    _, _, model_path = model_downloader(model_id)
     length_config |= config
     with pytest.raises(RuntimeError):
         pipe = LLMPipeline(model_path, "NPU", **length_config)
@@ -194,8 +199,8 @@ def test_invalid_length_properties_raise_error(length_config, config, model_id):
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_batch_one_no_exception(config, model_id):
-    _, _, model_path = download_and_convert_model(model_id)
+def test_batch_one_no_exception(config, model_id, model_downloader: Callable[[str], Path]):
+    _, _, model_path = model_downloader(model_id)
     prompt = 'The Sun is yellow because'
     static_pipe = LLMPipeline(model_path, "NPU", **config)
     # Check it doesn't throw any exception when batch of size 1 is provided
@@ -206,8 +211,8 @@ def test_batch_one_no_exception(config, model_id):
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_batch_raise_error(config, model_id):
-    _, _, model_path = download_and_convert_model(model_id)
+def test_batch_raise_error(config, model_id, model_downloader: Callable[[str], Path]):
+    _, _, model_path = model_downloader(model_id)
     prompt = 'The Sun is yellow because'
     pipe = LLMPipeline(model_path, "NPU", **config)
     with pytest.raises(RuntimeError):
@@ -224,8 +229,8 @@ generation_configs = [
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_unsupported_sampling_raise_error(generation_config, config, model_id):
-    _, _, model_path = download_and_convert_model(model_id)
+def test_unsupported_sampling_raise_error(generation_config, config, model_id, model_downloader: Callable[[str], Path]):
+    _, _, model_path = model_downloader(model_id)
     prompt = 'What is OpenVINO?'
 
     pipe = LLMPipeline(model_path, "NPU", **config)
@@ -236,8 +241,8 @@ def test_unsupported_sampling_raise_error(generation_config, config, model_id):
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_max_number_of_tokens(config, model_id):
-    _, _, model_path = download_and_convert_model(model_id)
+def test_terminate_by_max_number_of_tokens(config, model_id, model_downloader: Callable[[str], Path]):
+    _, _, model_path = model_downloader(model_id)
     prompt = 'The Sun is yellow because'
     num_tokens = 128
 
@@ -252,8 +257,8 @@ def test_terminate_by_max_number_of_tokens(config, model_id):
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_out_of_memory(config, model_id):
-    _, _, model_path = download_and_convert_model(model_id)
+def test_terminate_by_out_of_memory(config, model_id, model_downloader: Callable[[str], Path]):
+    _, _, model_path = model_downloader(model_id)
     prompt = 'The Sun is yellow because'
     pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= config
@@ -272,8 +277,8 @@ def test_terminate_by_out_of_memory(config, model_id):
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_sampler(config, model_id):
-    _, _, model_path = download_and_convert_model(model_id)
+def test_terminate_by_sampler(config, model_id, model_downloader: Callable[[str], Path]):
+    _, _, model_path = model_downloader(model_id)
     prompt = 'The Sun is yellow because'
 
     current_iter = 0
@@ -281,11 +286,15 @@ def test_terminate_by_sampler(config, model_id):
 
     class TestStreamer(StreamerBase):
         def __init__(self):
-            StreamerBase.__init__(self)
-        def put(self, token_id):
+            super().__init__()
+
+        def put(self, token_id: int) -> bool:
             nonlocal current_iter
             current_iter += 1
-            return current_iter == num_iters
+            if current_iter > num_iters:
+                return False
+            return True
+
         def end(self):
             pass
 
@@ -293,8 +302,7 @@ def test_terminate_by_sampler(config, model_id):
     tokenized_input = tokenizer.encode(prompt)
 
     pipe = LLMPipeline(model_path, "NPU", **config)
-    encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True, streamer=TestStreamer())
-
+    encoded_results = pipe.generate(tokenized_input, streamer=TestStreamer())
     assert len(encoded_results.tokens[0]) == num_iters
 
 

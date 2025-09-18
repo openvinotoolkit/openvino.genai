@@ -145,13 +145,3 @@ class OvTestCacheManager:
             
             if cache_date <= expiry_date:
                 shutil.rmtree(cache_dir)
-
-
-def get_ov_cache_dir(pytestconfig: pytest.Config) -> Path:
-    cache_manager = OvTestCacheManager(pytestconfig)
-    return cache_manager.get_cache_dir()
-
-
-def get_ov_cache_models_dir(pytestconfig: pytest.Config) -> Path:
-    cache_manager = OvTestCacheManager(pytestconfig)
-    return cache_manager.get_models_dir()
