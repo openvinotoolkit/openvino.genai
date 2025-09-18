@@ -157,6 +157,8 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+        int input_check = (images.size() == 0u) + (video.size() == 0u);
+        OPENVINO_ASSERT(input_check <= 1, "Only accept one input image, images, or video.");
 
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;

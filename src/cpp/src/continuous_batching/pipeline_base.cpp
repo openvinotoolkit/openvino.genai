@@ -173,6 +173,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         const auto& video = video_vector[0];
         const auto& prompt = prompts[0];
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
+
+        int input_check = (rgbs.size() == 0u) + (video.size() == 0u);
+        OPENVINO_ASSERT(input_check <= 1, "Only accept one input image, images, or video.");
+
         if (rgbs.size() > 0) {
             encoded_images = m_inputs_embedder->encode_images(rgbs, false);
         } else if (video.size() > 0) {
@@ -205,6 +209,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             const auto& rgbs = rgbs_vector[i];
             const auto& video = video_vector[i];
             std::vector<ov::genai::EncodedImage> encoded_images;
+
+            int input_check = (rgbs.size() == 0u) + (video.size() == 0u);
+            OPENVINO_ASSERT(input_check <= 1, "Only accept one input image, images, or video.");
+
             if (rgbs.size() > 0) {
                 encoded_images = m_inputs_embedder->encode_images(rgbs, false);
             } else if (video.size() > 0) {
@@ -276,6 +284,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
                                         const std::vector<ov::Tensor>& video,
                                         GenerationConfig sampling_params) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
+    int input_check = (rgbs.size() == 0u) + (video.size() == 0u);
+    OPENVINO_ASSERT(input_check <= 1, "Only accept one input image, images, or video.");
+
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
     {
