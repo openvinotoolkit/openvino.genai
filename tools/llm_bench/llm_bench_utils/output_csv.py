@@ -6,7 +6,7 @@ import numpy as np
 import copy
 from pathlib import Path
 import llm_bench_utils.output_json as output_json
-from llm_bench_utils.memory_monitor import MemoryDataCollector, MemoryUnit
+from llm_bench_utils.memory_monitor import MemoryDataSummarizer, MemoryUnit
 
 
 def output_comments(result, use_case, writer):
@@ -98,7 +98,7 @@ def output_avg_min_median(iter_data_list):
 
 
 def gen_data_to_csv(result: dict, iter_data: dict, pretrain_time: int, iter_timestamp: dict,
-                    memory_data_collector: MemoryDataCollector | None, mem_unit: MemoryUnit):
+                    memory_data_collector: MemoryDataSummarizer | None, mem_unit: MemoryUnit):
     generation_time = iter_data['generation_time']
     latency = iter_data['latency']
     first_latency = iter_data['first_token_latency']
@@ -147,7 +147,7 @@ def gen_data_to_csv(result: dict, iter_data: dict, pretrain_time: int, iter_time
 
 
 def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp, memory_data_collector):
-    mem_unit = memory_data_collector.memory_monitor.memory_unit if memory_data_collector else MemoryDataCollector.DEF_MEM_UNIT
+    mem_unit = memory_data_collector.memory_monitor.memory_unit if memory_data_collector else MemoryDataSummarizer.DEF_MEM_UNIT
     header = [
         'iteration',
         'model',

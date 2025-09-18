@@ -9,7 +9,7 @@ import llm_bench_utils.model_utils
 from openvino import get_version
 import torch
 import traceback
-from llm_bench_utils.memory_monitor import MemMonitorWrapper, MemoryDataCollector
+from llm_bench_utils.memory_monitor import MemMonitorWrapper, MemoryDataSummarizer
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
@@ -280,7 +280,7 @@ def main():
         memory_monitor.create_monitors()
         if args.memory_consumption_dir:
             memory_monitor.set_dir(args.memory_consumption_dir)
-        memory_data_collector = MemoryDataCollector(memory_monitor)
+        memory_data_collector = MemoryDataSummarizer(memory_monitor)
     try:
         if model_args['use_case'] in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](

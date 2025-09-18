@@ -343,7 +343,7 @@ class MemStatus():
         self.sys = sys
 
 
-class MemoryDataCollector():
+class MemoryDataSummarizer():
     MEMORY_NOT_COLLECTED = ''
     DEF_MEM_UNIT = MemoryUnit.MiB
 
@@ -399,7 +399,7 @@ class MemoryDataCollector():
                 f'initial_rss_mem{suffix}': round(rss, 5)}
 
     def get_compilation_mem_data(self, print_unit: MemoryUnit | None = None):
-        suffix = f'({self.memory_monitor.memory_unit.value})' if print_unit else ''
+        suffix = f'({print_unit.value})' if print_unit else ''
         sys_max = self.compilation_mem_info['max_mem'].sys
         rss_max = self.compilation_mem_info['max_mem'].rss
         sys_increase = self.compilation_mem_info['increase_mem'].sys
