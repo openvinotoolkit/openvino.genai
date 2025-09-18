@@ -67,4 +67,21 @@ If the `CLEANUP_CACHE` environment variable is set, all downloaded and converted
 CLEANUP_CACHE=1 python -m pytest tests/python_tests -m samples
 ```
 
-Test images are saved to pytest's default cache dir. It can be changed with `--override-ini cache_dir=new_path`. `-p no:cacheprovider` disables the cache.
+## Cache Configuration
+
+Models and test data are cached using pytest's built-in cache mechanism. The cache location can be customized:
+
+```sh
+# Use custom cache directory
+python -m pytest tests/python_tests/ -m precommit -o cache_dir=/path/to/custom/cache
+
+# Use default cache location (~/.pytest_cache/)  
+python -m pytest tests/python_tests/ -m precommit
+```
+
+The model cache automatically expires after 24 hours and is organized by date and package versions. You can clear the cache manually:
+
+```sh
+# Clear all pytest cache
+python -m pytest tests/python_tests/ --cache-clear
+```
