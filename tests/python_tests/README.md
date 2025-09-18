@@ -57,9 +57,9 @@ Or to run only the `whisper` tests:
 python -m pytest tests/python_tests/samples -m whisper
 ```
 
-If the `OV_CACHE` environment variable is set, all downloaded and converted models will be saved to the specified directory. This allows the models to be reused between runs, saving time and resources. For example:
+Downloaded and converted models are automatically cached using pytest's cache mechanism in `~/.pytest_cache/ov_models/` with 24-hour expiration. The cache is organized by date and package versions to ensure compatibility. Old cache entries are automatically cleaned up. The cache expiration can be customized using the `OV_CACHE_EXPIRY_HOURS` environment variable:
 ```sh
-OV_CACHE=$HOME/ov_cache python -m pytest tests/python_tests -m samples
+OV_CACHE_EXPIRY_HOURS=48 python -m pytest tests/python_tests -m samples
 ```
 
 If the `CLEANUP_CACHE` environment variable is set, all downloaded and converted models will be removed right after the tests have stopped using them. Note that this does not affect the HuggingFace (HF) cache. For example:

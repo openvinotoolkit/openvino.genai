@@ -25,7 +25,6 @@ env:
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/manylinux_2_28
   HF_HOME: /mount/caches/huggingface/lin
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin
   OPENVINO_LOG_LEVEL: 5
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
@@ -521,7 +520,7 @@ jobs:
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
-        run: python -m pytest -v ./${{ matrix.test.cmd }}
+        run: python -m pytest -v -o cache_dir=/mount/caches/pytest/lin ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
   genai_nodejs_tests:
