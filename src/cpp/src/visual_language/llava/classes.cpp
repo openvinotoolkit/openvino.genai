@@ -318,7 +318,7 @@ EncodedImage VisionEncoderLLaVA::encode_with_pruning(
         }
 
         // Apply CDPruner to get pruned visual features
-        ov::Tensor pruned_visual_features = apply_pruning(full_encoded_image.resized_source, text_features);
+        ov::Tensor pruned_visual_features = apply_pruning({full_encoded_image.resized_source}, text_features);
 
         // Validate pruned features shape
         auto pruned_shape = pruned_visual_features.get_shape();

@@ -126,7 +126,7 @@ public:
     /// @param visual_featuresa
     /// @param text_features
     /// @return
-    virtual ov::Tensor apply_pruning(const ov::Tensor& visual_features, const ov::Tensor& text_features);
+    virtual ov::Tensor apply_pruning(const std::vector<ov::Tensor>& visual_features, const ov::Tensor& text_features);
     /// @brief Gets processor config
     /// @return Processor config
     ProcessorConfig get_processor_config() const;

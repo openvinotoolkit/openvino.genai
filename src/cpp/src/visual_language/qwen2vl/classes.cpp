@@ -537,11 +537,11 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                                                      vision_end_token_id);
         
         // Convert visual features for CDPruner using the implemented function
-        ov::Tensor visual_features = convert_visual_features_for_cdpruner(merged_image_embeddings_tensor);
+        auto visual_features = convert_visual_features_for_cdpruner(merged_image_embeddings_tensor, images.size());
 
         // Apply CDPruner to get pruned visual tokens
         ov::Tensor pruned_visual_features = m_vision_encoder->apply_pruning(visual_features, text_features);
-
+        
         // [CDPruner] Convert back from 3D [1, num_tokens, hidden_size] to 2D [num_tokens, hidden_size]
         // to match the expected input format for merge_text_and_image_embeddings
         ov::Shape pruned_shape = pruned_visual_features.get_shape();
@@ -1022,23 +1022,26 @@ ov::Tensor InputsEmbedderQwen2VL::adjust_position_ids_for_pruning(const ov::Tens
     return adjusted_position_ids;
 }
 
-ov::Tensor InputsEmbedderQwen2VL::convert_visual_features_for_cdpruner(const ov::Tensor& merged_image_embeddings) {
-    // Convert from [num_patches, embedding_dim] to [1, num_patches, embedding_dim]
+std::vector<ov::Tensor> InputsEmbedderQwen2VL::convert_visual_features_for_cdpruner(
+    const ov::Tensor& merged_image_embeddings,
+    size_t image_num) {
+    // Convert from [num_patches, embedding_dim] to image_num * [1, num_patches, embedding_dim]
     ov::Shape original_shape = merged_image_embeddings.get_shape();
     size_t num_patches = original_shape[0];
     size_t embedding_dim = original_shape[1];
-    
-    // Create new tensor with batch dimension
-    ov::Shape new_shape = {1, num_patches, embedding_dim};
-    ov::Tensor visual_features(merged_image_embeddings.get_element_type(), new_shape);
-    
-    // Copy data
+    size_t new_patches = num_patches / image_num;
+    OPENVINO_ASSERT(original_shape[0] == new_patches * image_num, "Inconsistent number of patches per image");
+
+    std::vector<ov::Tensor> visual_features;
     const float* src_data = merged_image_embeddings.data<const float>();
-    float* dst_data = visual_features.data<float>();
-    
-    size_t total_elements = num_patches * embedding_dim;
-    std::memcpy(dst_data, src_data, total_elements * sizeof(float));
-    
+    size_t total_elements = new_patches * embedding_dim;
+    for (size_t i = 0; i < image_num; i++) {
+        ov::Shape new_shape = {1, new_patches, embedding_dim};
+        ov::Tensor features(merged_image_embeddings.get_element_type(), new_shape);
+        float* dst_data = features.data<float>();
+        std::memcpy(dst_data, src_data + total_elements * i, total_elements * sizeof(float));
+        visual_features.push_back(features);
+    }
     return visual_features;
 }
 
