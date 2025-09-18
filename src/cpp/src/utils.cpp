@@ -706,7 +706,7 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
 
 ov::Tensor merge_text_and_image_embeddings_nanollava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_tok) {
     size_t text_tokens_size = text_embeds.get_shape()[1];
-    size_t embeds_len = text_embeds.get_shape()[1] + image_embeds[0].get_shape()[1] - 1;
+    size_t embeds_len = text_embeds.get_shape()[1] + (image_embeds[0].get_shape()[1]) * image_embeds.size() - image_embeds.size();
     size_t hidden_size = text_embeds.get_shape()[2];
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), {1, embeds_len, hidden_size});
 
