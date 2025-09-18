@@ -137,6 +137,14 @@ std::string Tokenizer::apply_chat_template(ChatHistory history,
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);
 }
 
+std::string Tokenizer::apply_chat_template(NewChatHistory history,
+                                           bool add_generation_prompt,
+                                           const std::string& chat_template,
+                                           const ToolDefinitions& tools,
+                                           const ov::AnyMap& extra_context) const {
+    return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template, tools, extra_context);
+}
+
 std::string Tokenizer::get_chat_template() const {
     return m_pimpl->get_chat_template();
 }

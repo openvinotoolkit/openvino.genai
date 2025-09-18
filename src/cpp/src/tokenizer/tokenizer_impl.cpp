@@ -761,6 +761,123 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(ChatHistory history,
     return result;
 }
 
+nlohmann::ordered_json any_map_to_json(const ov::AnyMap& any_map) {
+    nlohmann::ordered_json object_json = nlohmann::ordered_json::object();
+    for (const auto& [key, value] : any_map) {
+        if (value.is<std::string>()) {
+            object_json[key] = value.as<std::string>();
+        } else if (value.is<int>()) {
+            object_json[key] = value.as<int>();
+        } else if (value.is<float>()) {
+            object_json[key] = value.as<float>();
+        } else if (value.is<bool>()) {
+            object_json[key] = value.as<bool>();
+        } else if (value.is<std::vector<std::string>>()) {
+            auto array_json = nlohmann::ordered_json::array();
+            for (const auto& item : value.as<std::vector<std::string>>()) {
+                array_json.push_back(item);
+            }
+            object_json[key] = array_json;
+        } else if (value.is<AnyMap>()) {
+            object_json[key] = any_map_to_json(value.as<AnyMap>());
+        } else {
+            OPENVINO_THROW("Unsupported type in AnyMap for key: ", key);
+        }
+    }
+    return object_json;
+}
+
+nlohmann::ordered_json convert_messages_to_json(const NewChatHistory& history) {
+    auto messages_json = nlohmann::ordered_json::array();
+    for (const auto& message : history) {
+        nlohmann::ordered_json message_json = any_map_to_json(message);
+        messages_json.push_back(message_json);
+    }
+    return messages_json;
+}
+
+void validate_json_array(const nlohmann::json& json_array, void validate_item(const nlohmann::json& item) = nullptr) {
+    if (!json_array.is_array()) {
+        OPENVINO_THROW("Expected a JSON array of JSON objects.");
+    }
+    for (const auto& item : json_array) {
+        if (!item.is_object()) {
+            OPENVINO_THROW("Each item in the JSON array should be a JSON object.");
+        }
+        if (validate_item != nullptr) {
+            validate_item(item);
+        }
+    }
+}
+
+void validate_chat_history_json(const nlohmann::json& history) {
+    validate_json_array(history, [](const nlohmann::json& item) {
+        if (!item.contains("role") || !item["role"].is_string()) {
+            OPENVINO_THROW("Each message must contain a 'role' field of type string.");
+        }
+    });
+}
+
+void validate_tools_definitions_json(const nlohmann::json& tools) {
+    validate_json_array(tools, [](const nlohmann::json& item) {
+        if (!item.contains("type") || !item["type"].is_string()) {
+            OPENVINO_THROW("Each tool definition must contain a 'type' field of type string.");
+        }
+    });
+}
+
+std::string Tokenizer::TokenizerImpl::apply_chat_template(NewChatHistory history,
+                                           bool add_generation_prompt,
+                                           const std::string& chat_template,
+                                           const ToolDefinitions& tools,
+                                           const ov::AnyMap& extra_context) const {
+    std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_template(chat_template);
+    OPENVINO_ASSERT(!chat_tpl.empty(),
+                    "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
+                    " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
+                    " For more information see the section Troubleshooting in README.md");
+    
+    nlohmann::ordered_json messages_json = convert_messages_to_json(history);
+    nlohmann::ordered_json tools_json = convert_messages_to_json(tools);
+
+    validate_chat_history_json(messages_json);
+    validate_tools_definitions_json(tools_json);
+
+    minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
+    
+    minja::chat_template_inputs minja_inputs;
+    minja_inputs.messages = messages_json;
+    if (!tools_json.empty()) {
+        minja_inputs.tools = tools_json;
+    }
+    minja_inputs.add_generation_prompt = add_generation_prompt;
+    minja_inputs.extra_context = nlohmann::ordered_json::object();
+    minja_inputs.extra_context["bos_token"] = m_bos_token;
+    minja_inputs.extra_context["eos_token"] = m_eos_token;
+    minja_inputs.extra_context["pad_token"] = m_pad_token;
+
+    if (!extra_context.empty()) {
+        auto extra_context_json = any_map_to_json(extra_context);
+        minja_inputs.extra_context.update(extra_context_json);
+    }
+    
+    std::string result;
+    try {
+        result = minja_template.apply(minja_inputs);
+    } catch (const std::exception& error) {
+        OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
+                        "* Provide a simplified chat template with set_chat_template().\n"
+                        "* Set apply_chat_template to false in GenerationConfig. "
+                        "It's possible to apply the template manually to your prompt before calling generate. "
+                        "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
+                        "Minja's error: ", error.what());
+    }
+    OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
+                                     "Please check the chat template or apply template manually to your prompt before calling generate."
+                                     "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+    return result;
+}
+
 void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_template) {
     m_chat_template = remap_template(chat_template);
 }

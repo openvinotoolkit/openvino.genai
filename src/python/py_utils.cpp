@@ -42,8 +42,6 @@ py::list handle_utf8(const std::vector<std::string>& decoded_res) {
     return res;
 }
 
-namespace {
-
 bool py_object_is_any_map(const py::object& py_obj) {
     if (!py::isinstance<py::dict>(py_obj)) {
         return false;
@@ -345,8 +343,6 @@ void add_deprecation_warning_for_chunk_streamer(std::shared_ptr<StreamerBase> st
     }
     OPENVINO_SUPPRESS_DEPRECATED_END
 }
-
-} // namespace
 
 ov::AnyMap properties_to_any_map(const std::map<std::string, py::object>& properties) {
     ov::AnyMap properties_to_cpp;

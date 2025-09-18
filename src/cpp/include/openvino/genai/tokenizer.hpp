@@ -17,6 +17,9 @@ namespace ov {
 namespace genai {
 
 using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
+using NewChatHistory = std::vector<ov::AnyMap>;
+using ToolDefinitions = std::vector<ov::AnyMap>;
+
 using Vocab = std::unordered_map<std::string, int64_t>;  // similar to huggingface .get_vocab() output format
 
 struct TokenizedInputs {
@@ -255,6 +258,15 @@ public:
     std::string apply_chat_template(ChatHistory history,
                                     bool add_generation_prompt,
                                     const std::string& chat_template = {}) const;
+    
+    // TODO Add docstring
+    std::string apply_chat_template(
+        NewChatHistory history,
+        bool add_generation_prompt,
+        const std::string& chat_template = {},
+        const ToolDefinitions& tools = {},
+        const ov::AnyMap& extra_context = {}
+    ) const;
 
     /// @brief Override a chat_template read from tokenizer_config.json.
     /// @param chat_template The new template to override with.
