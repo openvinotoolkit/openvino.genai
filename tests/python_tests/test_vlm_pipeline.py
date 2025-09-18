@@ -68,8 +68,21 @@ def get_ov_model(model_id):
             **align_with_optimum_cli,
         )
     )
+    model = retry_request(
+        lambda: OVModelForVisualCausalLM.from_pretrained(
+            model_id,
+            compile=False,
+            device="CPU",
+            export=True,
+            load_in_8bit=False,
+            trust_remote_code=True,
+            ov_config=get_default_llm_properties(),
+        )
+    )
+    if model.config.model_type == "llava-qwen2":
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     # For tiny-random-internvl2 processor is actually tokenizer
-    if isinstance(processor, transformers.Qwen2TokenizerFast):
+    elif isinstance(processor, transformers.Qwen2TokenizerFast):
         tokenizer = processor
         processor = transformers.AutoImageProcessor.from_pretrained(
             model_id, trust_remote_code=True
@@ -84,17 +97,6 @@ def get_ov_model(model_id):
     )
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    model = retry_request(
-        lambda: OVModelForVisualCausalLM.from_pretrained(
-            model_id,
-            compile=False,
-            device="CPU",
-            export=True,
-            load_in_8bit=False,
-            trust_remote_code=True,
-            ov_config=get_default_llm_properties(),
-        )
-    )
     if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
         processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.audio_tokenizer = None
@@ -918,6 +920,9 @@ class TestImageTags:
 def cat_image_336x336(cat_image):
     return cat_image.resize((336, 336))
 
+@pytest.fixture(scope="module")
+def cat_image_384x384(cat_image):
+    return cat_image.resize((384, 384))
 
 @pytest.fixture(scope="module")
 def cat_image_32x32(cat_image):
@@ -934,9 +939,28 @@ def cat_image_32x32(cat_image):
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
         pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "SDPA"),
         pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
+        pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", "SDPA"),
+        pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", "PA"),
     ],
 )
 def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, backend):
+    class NanollavaProcessorWrapper:
+        def __init__(self, processor, config, model_dtype):
+            self.processor = processor
+            self.config = config
+            self.model_dtype = model_dtype
+
+        def __call__(self, images, return_tensors):
+            return {"pixel_values": self.processor(images, self.config).to(dtype=self.model_dtype)}
+
+    def get_nanollava_processor():
+        hf_model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_id,
+            device_map='auto',
+            trust_remote_code=True)
+        return NanollavaProcessorWrapper(hf_model.process_images, hf_model.config, hf_model.dtype)
+
+
     resized_image = request.getfixturevalue(image_name)
 
     prompt = "Describe this image."
@@ -946,7 +970,6 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
 
     # Run the model with optimum-intel
     model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
-    processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     conversation = [
         {
             "role": "user",
@@ -956,17 +979,36 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
             ],
         }
     ]
+    tokenizer = None
+    if model.config.model_type == "llava-qwen2":
+        processor = get_nanollava_processor()
+        conversation[0]["content"] = f'<image>\n{prompt}'
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        templated_prompt = tokenizer.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
 
-    # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
-    if model.config.model_type == "gemma3":
-        processor.tokenizer.add_bos_token = False
+        from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
+        preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type].preprocess_inputs
+        inputs = preprocess_inputs(prompt, resized_image, processor, tokenizer, config=model.config)
 
-    templated_prompt = processor.apply_chat_template(conversation,add_generation_prompt=True)
-    inputs = processor(text=[templated_prompt], images=[resized_image], padding=True, return_tensors="pt")
-    output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens)
-    generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(inputs.input_ids, output_ids)]
-    optimum_output = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-    optimum_text = optimum_output[0]
+    else:
+        processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
+        if model.config.model_type == "gemma3":
+            processor.tokenizer.add_bos_token = False
+        templated_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
+        inputs = processor(text=[templated_prompt], images=[resized_image], padding=True, return_tensors="pt")
+
+
+    output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
+    generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(input_ids, output_ids)]
+
+    if model.config.model_type == "llava-qwen2":
+        assert tokenizer is not None, "Tokenizer should be set for llava-qwen2 models."
+        optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
+    else:
+        optimum_output = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        optimum_text = optimum_output[0]
 
     # Run the model with GenAI
     vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
