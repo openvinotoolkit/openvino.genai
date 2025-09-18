@@ -3,9 +3,19 @@
 
 #include "cdpruner_config.hpp"
 
+#include <cmath>
+
 namespace ov::genai::cdpruner {
 
-// Currently no implementation needed for POD config struct
-// Future config validation or serialization methods can be added here
+bool Config::operator==(const Config& other) const {
+    return pruning_ratio == other.pruning_ratio && std::abs(relevance_weight - other.relevance_weight) < 1e-6f &&
+           device == other.device && pruning_debug_mode == other.pruning_debug_mode &&
+           std::abs(numerical_threshold - other.numerical_threshold) < 1e-9f &&
+           use_negative_relevance == other.use_negative_relevance;
+}
 
-} // namespace ov::genai::cdpruner 
+bool Config::operator!=(const Config& other) const {
+    return !(*this == other);
+}
+
+}  // namespace ov::genai::cdpruner

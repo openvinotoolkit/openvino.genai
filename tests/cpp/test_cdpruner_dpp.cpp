@@ -5,8 +5,8 @@
 
 #include <algorithm>
 #include <openvino/openvino.hpp>
-#include <vector>
 #include <tuple>
+#include <vector>
 
 #include "visual_language/cdpruner/cdpruner.hpp"
 #include "visual_language/cdpruner/cdpruner_config.hpp"
@@ -27,7 +27,7 @@ struct DPPTestParams {
     BatchMode batch_mode;
     MatrixMode matrix_mode;
     size_t num_tokens_to_select;
-    
+
     // Helper method to get description for test naming
     std::string toString() const {
         std::string result;
@@ -45,7 +45,7 @@ struct DPPTestParams {
 struct CDPrunerIntegrationTestParams {
     Backend backend;
     SplitMode split_mode;
-    
+
     // Helper method to get description for test naming
     std::string toString() const {
         std::string result;
@@ -82,28 +82,36 @@ protected:
     ov::Tensor createStandardTestKernel() {
         std::vector<float> kernel_data = {
             // 4x4 kernel matrix with known diagonal dominance
-            0.8f, 0.3f, 0.1f, 0.2f,  // token 0 row
-            0.3f, 0.9f, 0.4f, 0.1f,  // token 1 row (highest diagonal)
-            0.1f, 0.4f, 0.7f, 0.5f,  // token 2 row
-            0.2f, 0.1f, 0.5f, 0.6f   // token 3 row
+            0.8f,
+            0.3f,
+            0.1f,
+            0.2f,  // token 0 row
+            0.3f,
+            0.9f,
+            0.4f,
+            0.1f,  // token 1 row (highest diagonal)
+            0.1f,
+            0.4f,
+            0.7f,
+            0.5f,  // token 2 row
+            0.2f,
+            0.1f,
+            0.5f,
+            0.6f  // token 3 row
         };
         return createTestKernel(kernel_data, {1, 4, 4});
     }
 
     // Create multi-batch standard test kernel
     ov::Tensor createMultiBatchStandardTestKernel(size_t batch_size = 2) {
-        std::vector<float> single_kernel = {
-            0.8f, 0.3f, 0.1f, 0.2f,
-            0.3f, 0.9f, 0.4f, 0.1f,
-            0.1f, 0.4f, 0.7f, 0.5f,
-            0.2f, 0.1f, 0.5f, 0.6f
-        };
-        
+        std::vector<float> single_kernel =
+            {0.8f, 0.3f, 0.1f, 0.2f, 0.3f, 0.9f, 0.4f, 0.1f, 0.1f, 0.4f, 0.7f, 0.5f, 0.2f, 0.1f, 0.5f, 0.6f};
+
         std::vector<float> multi_kernel;
         for (size_t b = 0; b < batch_size; ++b) {
             multi_kernel.insert(multi_kernel.end(), single_kernel.begin(), single_kernel.end());
         }
-        
+
         return createTestKernel(multi_kernel, {batch_size, 4, 4});
     }
 
@@ -113,18 +121,17 @@ protected:
 // =============================================================================
 // Parameterized Test Fixture
 // =============================================================================
-class DPPParameterizedTest : public DPPTestBase, 
-                            public ::testing::WithParamInterface<DPPTestParams> {
+class DPPParameterizedTest : public DPPTestBase, public ::testing::WithParamInterface<DPPTestParams> {
 protected:
     void SetUp() override {
         DPPTestBase::SetUp();
-        
+
         auto params = GetParam();
-        
+
         // Configure backend
         test_config = base_config;
         test_config.use_cl_kernel = (params.backend == Backend::OpenCL);
-        
+
         // Create DPP selector
         dpp_selector = std::make_unique<FastGreedyDPP>(test_config);
     }
@@ -146,18 +153,14 @@ private:
         } else {
             kernel = createMultiBatchStandardTestKernel();
         }
-        
+
         return dpp_selector->select(kernel, params.num_tokens_to_select);
     }
-    
+
     std::vector<std::vector<size_t>> executeSplitSelection(const DPPTestParams& params) {
-        std::vector<float> standard_kernel_data = {
-            0.8f, 0.3f, 0.1f, 0.2f,
-            0.3f, 0.9f, 0.4f, 0.1f,
-            0.1f, 0.4f, 0.7f, 0.5f,
-            0.2f, 0.1f, 0.5f, 0.6f
-        };
-        
+        std::vector<float> standard_kernel_data =
+            {0.8f, 0.3f, 0.1f, 0.2f, 0.3f, 0.9f, 0.4f, 0.1f, 0.1f, 0.4f, 0.7f, 0.5f, 0.2f, 0.1f, 0.5f, 0.6f};
+
         ov::Tensor first_kernel, second_kernel;
         if (params.batch_mode == BatchMode::SingleBatch) {
             first_kernel = createTestKernel(standard_kernel_data, {1, 4, 4});
@@ -171,7 +174,7 @@ private:
             first_kernel = createTestKernel(multi_data, {2, 4, 4});
             second_kernel = createTestKernel(multi_data, {2, 4, 4});
         }
-        
+
         size_t split_point = 4;
         return dpp_selector->select(first_kernel, second_kernel, params.num_tokens_to_select, split_point);
     }
@@ -188,11 +191,11 @@ protected:
 TEST_P(DPPParameterizedTest, BasicTokenSelection) {
     auto params = GetParam();
     auto selected_tokens = executeSelection(params);
-    
+
     // Basic validations
     size_t expected_batch_count = (params.batch_mode == BatchMode::SingleBatch) ? 1 : 2;
     ASSERT_EQ(selected_tokens.size(), expected_batch_count);
-    
+
     for (size_t batch = 0; batch < selected_tokens.size(); ++batch) {
         // Verify correct number of tokens selected
         if (params.matrix_mode == MatrixMode::Split && params.num_tokens_to_select == 3) {
@@ -201,14 +204,14 @@ TEST_P(DPPParameterizedTest, BasicTokenSelection) {
                 // OpenCL split mode might return different count due to even number requirement
                 EXPECT_GT(selected_tokens[batch].size(), 0) << "Batch " << batch << " should select some tokens";
             } else {
-                EXPECT_EQ(selected_tokens[batch].size(), params.num_tokens_to_select) 
+                EXPECT_EQ(selected_tokens[batch].size(), params.num_tokens_to_select)
                     << "Batch " << batch << " should select " << params.num_tokens_to_select << " tokens";
             }
         } else {
-            EXPECT_EQ(selected_tokens[batch].size(), params.num_tokens_to_select) 
+            EXPECT_EQ(selected_tokens[batch].size(), params.num_tokens_to_select)
                 << "Batch " << batch << " should select " << params.num_tokens_to_select << " tokens";
         }
-        
+
         // Verify token indices are valid
         for (size_t token : selected_tokens[batch]) {
             if (params.matrix_mode == MatrixMode::Split) {
@@ -217,7 +220,7 @@ TEST_P(DPPParameterizedTest, BasicTokenSelection) {
                 EXPECT_LT(token, 4) << "Normal mode token index should be < 4";
             }
         }
-        
+
         // Verify no duplicate tokens
         std::vector<size_t> sorted_tokens = selected_tokens[batch];
         std::sort(sorted_tokens.begin(), sorted_tokens.end());
@@ -228,20 +231,20 @@ TEST_P(DPPParameterizedTest, BasicTokenSelection) {
 
 TEST_P(DPPParameterizedTest, DeterministicResults) {
     auto params = GetParam();
-    
+
     // Run selection multiple times to verify deterministic behavior
     auto result1 = executeSelection(params);
     auto result2 = executeSelection(params);
-    
+
     ASSERT_EQ(result1.size(), result2.size());
-    
+
     for (size_t batch = 0; batch < result1.size(); ++batch) {
         // Sort both results for comparison
         std::vector<size_t> sorted1 = result1[batch];
         std::vector<size_t> sorted2 = result2[batch];
         std::sort(sorted1.begin(), sorted1.end());
         std::sort(sorted2.begin(), sorted2.end());
-        
+
         EXPECT_EQ(sorted1, sorted2) << "Batch " << batch << " should have deterministic results";
     }
 }
@@ -249,7 +252,7 @@ TEST_P(DPPParameterizedTest, DeterministicResults) {
 TEST_P(DPPParameterizedTest, KnownResultValidation) {
     auto params = GetParam();
     auto selected_tokens = executeSelection(params);
-    
+
     // Validate known results for specific configurations
     if (params.num_tokens_to_select == 1 && params.matrix_mode == MatrixMode::Normal) {
         // Single token selection should pick token 1 (highest diagonal value)
@@ -257,7 +260,7 @@ TEST_P(DPPParameterizedTest, KnownResultValidation) {
             EXPECT_EQ(batch_tokens[0], 1) << "Single token selection should pick token 1";
         }
     }
-    
+
     if (params.num_tokens_to_select == 3 && params.matrix_mode == MatrixMode::Normal) {
         // 3 token selection should pick tokens [1, 0, 3] (known DPP result)
         for (const auto& batch_tokens : selected_tokens) {
@@ -276,12 +279,12 @@ TEST_P(DPPParameterizedTest, KnownResultValidation) {
 // Generate all combinations of test parameters
 std::vector<DPPTestParams> generateTestParams() {
     std::vector<DPPTestParams> params;
-    
+
     std::vector<Backend> backends = {Backend::CPU, Backend::OpenCL};
     std::vector<BatchMode> batch_modes = {BatchMode::SingleBatch, BatchMode::MultiBatch};
     std::vector<MatrixMode> matrix_modes = {MatrixMode::Normal, MatrixMode::Split};
     std::vector<size_t> token_counts = {1, 3, 4};  // Different token selection counts
-    
+
     for (auto backend : backends) {
         for (auto batch_mode : batch_modes) {
             for (auto matrix_mode : matrix_modes) {
@@ -291,7 +294,7 @@ std::vector<DPPTestParams> generateTestParams() {
             }
         }
     }
-    
+
     return params;
 }
 
@@ -301,28 +304,23 @@ std::string paramToString(const ::testing::TestParamInfo<DPPTestParams>& info) {
 }
 
 // Instantiate parameterized tests
-INSTANTIATE_TEST_SUITE_P(
-    CDPrunerTest,
-    DPPParameterizedTest,
-    ::testing::ValuesIn(generateTestParams()),
-    paramToString
-);
+INSTANTIATE_TEST_SUITE_P(CDPrunerTest, DPPParameterizedTest, ::testing::ValuesIn(generateTestParams()), paramToString);
 
 // =============================================================================
 // Integration Tests with CDPruner
 // =============================================================================
-class CDPrunerIntegrationTest : public DPPTestBase, 
+class CDPrunerIntegrationTest : public DPPTestBase,
                                 public ::testing::WithParamInterface<CDPrunerIntegrationTestParams> {
 protected:
     void SetUp() override {
         DPPTestBase::SetUp();
         cdp_config = base_config;
         cdp_config.pruning_ratio = 50;
-        
+
         // Configure based on test parameters
         auto params = GetParam();
         cdp_config.use_cl_kernel = (params.backend == Backend::OpenCL);
-        
+
         // Set split threshold based on split mode
         if (params.split_mode == SplitMode::Split) {
             cdp_config.split_threshold = 50;  // Force splitting for testing
@@ -357,7 +355,7 @@ TEST_P(CDPrunerIntegrationTest, LargeSequenceSplitting) {
                 visual_data[idx] = 0.5f + 0.2f * idx;
             }
         }
-        
+
         for (size_t h = 0; h < hidden_dim; ++h) {
             text_data[b * hidden_dim + h] = 0.3f + 0.1f * h;
         }
@@ -367,9 +365,9 @@ TEST_P(CDPrunerIntegrationTest, LargeSequenceSplitting) {
     auto pruned_features = cdpruner.apply_pruning(visual_features, text_features);
     auto pruned_shape = pruned_features.get_shape();
 
-    EXPECT_EQ(pruned_shape[0], batch_size);  // Batch size unchanged
+    EXPECT_EQ(pruned_shape[0], batch_size);       // Batch size unchanged
     EXPECT_LT(pruned_shape[1], sequence_length);  // Sequence length reduced
-    EXPECT_EQ(pruned_shape[2], hidden_dim);  // Hidden dim unchanged
+    EXPECT_EQ(pruned_shape[2], hidden_dim);       // Hidden dim unchanged
 }
 
 // =============================================================================
@@ -377,13 +375,13 @@ TEST_P(CDPrunerIntegrationTest, LargeSequenceSplitting) {
 // =============================================================================
 std::vector<CDPrunerIntegrationTestParams> generateCDPrunerTestParams() {
     std::vector<CDPrunerIntegrationTestParams> params;
-    
+
     for (auto backend : {Backend::CPU, Backend::OpenCL}) {
         for (auto split_mode : {SplitMode::NonSplit, SplitMode::Split}) {
             params.push_back({backend, split_mode});
         }
     }
-    
+
     return params;
 }
 
@@ -392,9 +390,7 @@ std::string cdprunerParamToString(const ::testing::TestParamInfo<CDPrunerIntegra
 }
 
 // Instantiate the parameterized CDPruner integration test
-INSTANTIATE_TEST_SUITE_P(
-    CDPrunerTest,
-    CDPrunerIntegrationTest,
-    ::testing::ValuesIn(generateCDPrunerTestParams()),
-    cdprunerParamToString
-);
+INSTANTIATE_TEST_SUITE_P(CDPrunerTest,
+                         CDPrunerIntegrationTest,
+                         ::testing::ValuesIn(generateCDPrunerTestParams()),
+                         cdprunerParamToString);
