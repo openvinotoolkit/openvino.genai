@@ -254,7 +254,7 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         generated_tokens = np.array(generation_result.tokens)
 
     perf_metrics = generation_result[0].perf_metrics if cb_pipeline else generation_result.perf_metrics
-    return generated_tokens, perf_metrics, start - end
+    return generated_tokens, perf_metrics, end - start
 
 
 def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index,
