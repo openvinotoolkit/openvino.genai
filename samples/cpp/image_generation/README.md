@@ -299,12 +299,12 @@ if (image_path.empty()) {
 `ov::genai::Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet.
 
 ```cpp
-// export pipeline
+// export models
 ov::genai::Text2ImagePipeline pipeline(models_path, device);
 pipeline.export_model(models_path / "blobs");
 
-// import pipeline
+// import models
 ov::genai::Text2ImagePipeline imported_pipeline(models_path, device, ov::genai::blob_path(models_path / "blobs"));
 ```
 
-For the NPU device, the `ov::cache_mode(ov::CacheMode::OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights. Otherwise, the `ov::weights_path(BIN_FILE_PATH)` property must be specified to provide the path to the model weights in BIN format.
+For the NPU device, the `ov::cache_mode(ov::CacheMode::OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.

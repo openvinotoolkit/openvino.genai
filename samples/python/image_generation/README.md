@@ -261,3 +261,18 @@ if image_path:
 else:
    image_tensor = text2img_pipe.generate(prompt, strength=1.0)
 ```
+
+## Export and import compiled models
+
+`openvino_genai.Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet.
+
+```python
+# export models
+pipeline = openvino_genai.Text2ImagePipeline(models_path, device)
+pipeline.export_model(models_path / "blobs")
+
+# import models
+imported_pipeline = openvino_genai.Text2ImagePipeline(models_path, device, blob_path=models_path / "blobs")
+```
+
+For the NPU device, the `openvino.cache_mode(openvino.CacheMode.OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights. Otherwise, the `openvino.weights_path(BIN_FILE_PATH)` property must be specified to provide the path to the model weights in BIN format.
