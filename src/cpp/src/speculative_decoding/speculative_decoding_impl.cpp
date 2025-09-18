@@ -803,9 +803,21 @@ ContinuousBatchingPipeline::EagleDecodingImpl::add_request(uint64_t request_id,
     draft_sampling_params.stop_strings = {};
     update_eagle_pipeline_params();
     // remove first token from input_ids to create draft_input_ids
-    // to be fixed
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
-    return m_main_pipeline->add_request(request_id, prompt, sampling_params);
+    if (m_model_input_type == ModelInputType::TOKENS) {
+        static ManualTimer timer("tokenize");
+        timer.start();
+        ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+        auto templated_prompt = m_tokenizer.apply_chat_template(history, true);
+        auto input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
+        timer.end();
+        ov::Tensor draft_input_ids = create_draft_input_ids(input_ids);
+        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
+        return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
+    } else {
+        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
+        return m_main_pipeline->add_request(request_id, prompt, sampling_params);
+    }
+    
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingImpl::generate(

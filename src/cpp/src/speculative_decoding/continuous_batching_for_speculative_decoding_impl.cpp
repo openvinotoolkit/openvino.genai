@@ -296,12 +296,6 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                                                             pruned_hidden_state);
                     validate_length = pruned_hidden_state.get_shape().size() > 0 ? pruned_hidden_state.get_shape()[0] : 0;
                 }
-                if (!m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
-                    std::cout << "main update draft: request id: " << request_id << "removed tokens: " << result.removed_tokens_cnt << ", inserted tokens: " << result.inserted_tokens_cnt << std::endl;
-                }
-                if (m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
-                    std::cout << "draft update main: request id: " << request_id << "removed tokens: " << result.removed_tokens_cnt << ", inserted tokens: " << result.inserted_tokens_cnt << std::endl;
-                }
             }
             // we should update a logit processor just for draft model to generate the same tokens
             // logit processors of main model will be updated in sampler while validation mode

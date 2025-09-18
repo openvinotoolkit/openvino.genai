@@ -240,6 +240,14 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_monitor, *
         draft_model_load_kwargs = {'scheduler_config': get_scheduler_config_genai(kwargs.get("draft_cb_config"), config_name="draft CB config")}\
             if kwargs.get("draft_cb_config") is not None else {}
         config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
+        if (kwargs.get('eagle3_mode', None)):
+            config['eagle3_mode'] = True
+            if 'scheduler_config' in config.keys():
+                config['scheduler_config'].dynamic_split_fuse = False  # Eagle speculative decoding does not support dynamic_split_fuse mode
+            else:
+                config['scheduler_config'] = openvino_genai.SchedulerConfig()
+                config['scheduler_config'].dynamic_split_fuse = False
+            log.info("Eagle3 Speculative Decoding is activated, and dynamic_split_fuse is set to False in scheduler_config")
 
     if kwargs.get('max_ngram_size') and kwargs.get('num_assistant_tokens'):
         log.info("Prompt Lookup decoding is activated")

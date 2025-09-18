@@ -486,7 +486,7 @@ public:
                 try {
                     m_request.set_tensor("target_hidden_state_input", hidden_state_input);
                     auto shape = hidden_state_input.get_shape();
-                    shape[-1] = shape [-1]/3;
+                    shape[shape.size() - 1] = shape [shape.size() - 1]/3;
                     ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
                     auto fake_data = fake_tensor.data<float>();
                     std::memset(fake_data, 0, fake_tensor.get_byte_size());
@@ -497,7 +497,7 @@ public:
                 try {
                     m_request.set_tensor("internal_hidden_state_input", hidden_state_input);
                     auto shape = hidden_state_input.get_shape();
-                    shape[-1] = shape [-1] * 3;
+                    shape[shape.size() - 1] = shape [shape.size() - 1] * 3;
                     ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
                     auto fake_data = fake_tensor.data<float>();
                     std::memset(fake_data, 0, fake_tensor.get_byte_size());
