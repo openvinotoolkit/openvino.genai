@@ -137,8 +137,15 @@ public:
 
     size_t get_vae_scale_factor() const;
 
+    /**
+     * @brief Exports compiled models to a specified folder
+     * @param export_path A path to a folder to export compiled models to
+     */
+    void export_model(const std::filesystem::path& blob_path);
+
 private:
     void merge_vae_image_post_processing() const;
+    void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties = {});
 
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;

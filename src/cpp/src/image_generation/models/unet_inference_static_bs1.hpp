@@ -167,9 +167,6 @@ public:
     virtual void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties) override {
         auto compiled_model = utils::import_model(blob_path / "openvino_model.blob", device, properties);
 
-        OPENVINO_ASSERT(!compiled_model.get_runtime_model()->is_dynamic(),
-                        "UNetInferenceStaticBS1::import_model: model must be static. Please use UNetInferenceDynamic instead.");
-        
         // we'll create a separate infer request for each batch.
         // todo: preserve original requested batch size when exporting the model
         // current implementation imports model with batch = 1 and creates a single infer request.

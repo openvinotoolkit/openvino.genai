@@ -134,6 +134,9 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
+            if (blob_path.has_value()) {
+                updated_properties.fork()[ov::genai::blob_path.name()] = blob_path.value();
+            }
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
@@ -141,6 +144,7 @@ public:
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
+            updated_properties.fork().erase(ov::genai::blob_path.name());
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -398,6 +402,7 @@ public:
         m_unet->export_model(export_path / "unet");
         m_clip_text_encoder->export_model(export_path / "text_encoder");
         m_clip_text_encoder_with_projection->export_model(export_path / "text_encoder_2");
+        m_vae->export_model(export_path);
     }
 
 private:
