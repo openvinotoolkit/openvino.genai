@@ -285,8 +285,8 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
 
     tokenization_start = time.perf_counter()
     if (args.get("eagle3_mode")):
-        #eagle3 needs to disable special tokens to ensure compress rate
-        input_data = tokenizer.encode(input_text_list, add_special_tokens = False)
+        # eagle3 needs to disable special tokens to ensure compress rate
+        input_data = tokenizer.encode(input_text_list, add_special_tokens=False)
     else:
         input_data = tokenizer(input_text_list)
     tokenization_end = time.perf_counter()
@@ -456,8 +456,8 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
             )
     tok_encode_start = time.perf_counter()
     if (args.get("eagle3_mode")):
-        #eagle3 needs to disable special tokens to ensure compress rate
-        input_data = pipe_tokenizer.encode(input_text_list, add_special_tokens = False)
+        # eagle3 needs to disable special tokens to ensure compress rate
+        input_data = pipe_tokenizer.encode(input_text_list, add_special_tokens=False)
     else:
         input_data = pipe_tokenizer.encode(input_text_list)
     tok_encode_end = time.perf_counter()
