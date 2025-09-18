@@ -982,9 +982,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
     tokenizer = None
     if model.config.model_type == "llava-qwen2":
         processor = get_nanollava_processor()
-        conversation[0]["content"] = f'<image>\n{prompt}'
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        templated_prompt = tokenizer.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
 
         from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
         preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type].preprocess_inputs
