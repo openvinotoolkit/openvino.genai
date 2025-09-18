@@ -1,4 +1,5 @@
 import json
+from llm_bench_utils.memory_monitor import MemoryUnit, MemoryDataCollector
 
 
 def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp, memory_data_collector):
@@ -68,22 +69,28 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         if len(values) > 0:
             results_averaged[key] = round(sum(values) / len(values), 5)
 
-    compilation_mem_info = memory_data_collector.compilation_mem_info if memory_data_collector else {}
     output_result = {'metadata': metadata,
                      'perfdata': {'compile_time': pretrain_time,
-                                  'initial_sys_mem': memory_data_collector.initial_mem_status.sys if memory_data_collector else -1,
-                                  'initial_rss_mem': memory_data_collector.initial_mem_status.rss if memory_data_collector else -1,
-                                  'compile_max_rss_mem': compilation_mem_info['max_mem'].rss if compilation_mem_info.get('max_mem') else -1,
-                                  'compile_max_sys_mem': compilation_mem_info['max_mem'].sys if compilation_mem_info.get('max_mem') else -1,
-                                  'compile_max_increase_rss_mem': compilation_mem_info['increase_mem'].rss if compilation_mem_info.get('increase_mem') else -1,
-                                  'compile_max_increase_sys_mem': compilation_mem_info['increase_mem'].sys if compilation_mem_info.get('increase_mem') else -1,
-                                  'results': result}}
-
+                                  'results': result} | get_pre_gen_memory_data(memory_data_collector)}
     if len(results_averaged) > 0:
         output_result['perfdata']['results_averaged'] = results_averaged
 
     with open(report_file, 'w') as outfile:
         json.dump(output_result, outfile, indent=4)
+
+
+def get_pre_gen_memory_data(memory_data_collector: MemoryDataCollector | None, print_unit: MemoryUnit | None = None):
+    no_info = MemoryDataCollector.MEMORY_NOT_COLLECTED
+    suffix = f'({MemoryDataCollector.DEF_MEM_UNIT})' if print_unit else ''
+    data = {f'initial_sys_mem{suffix}': no_info, f'initial_rss_mem{suffix}': no_info,
+            f'compile_max_rss_mem{suffix}': no_info, f'compile_max_sys_mem{suffix}': no_info,
+            f'compile_max_increase_rss_mem{suffix}': no_info, f'compile_max_increase_sys_mem{suffix}': no_info}
+    if not memory_data_collector:
+        return data
+
+    data = data | memory_data_collector.get_initial_mem_data(print_unit)
+    data = data | memory_data_collector.get_compilation_mem_data(print_unit)
+    return data
 
 
 def get_timestamp(iter_idx, prompt_idx, iter_timestamp):

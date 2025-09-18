@@ -344,11 +344,14 @@ class MemStatus():
 
 
 class MemoryDataCollector():
+    MEMORY_NOT_COLLECTED = ''
+    DEF_MEM_UNIT = MemoryUnit.MiB
+
     def __init__(self, memory_monitor: MemMonitorWrapper):
         self.memory_monitor = memory_monitor
         self.iteration_mem_data = []
-        self.compilation_mem_info = {'max_mem': MemStatus(-1, -1),
-                                     'increase_mem': MemStatus(-1, -1)}
+        self.compilation_mem_info = {'max_mem': MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED),
+                                     'increase_mem': MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED)}
 
         self.initial_mem_status = self.log_curent_memory_data(prefix="Start")
 
@@ -361,7 +364,7 @@ class MemoryDataCollector():
     def get_data(self):
         return self.memory_monitor.get_data()
 
-    def log_data(self, compilation_phase=False):
+    def log_data(self, compilation_phase: bool = False):
         max_rss_mem, rss_increase, max_sys_mem, sys_increase = self.memory_monitor.get_data()
         comment = ""
         if compilation_phase:
@@ -377,12 +380,40 @@ class MemoryDataCollector():
                f"System memory increase {comment}: {sys_increase:.2f}{self.memory_monitor.memory_unit.value}")
         log.info(msg)
 
-    def log_curent_memory_data(self, prefix=""):
+    def log_curent_memory_data(self, prefix : str = ""):
         mem_status = MemStatus(cast_bytes_to(MemoryMonitor.get_rss_memory(), self.memory_monitor.memory_unit),
                                cast_bytes_to(MemoryMonitor.get_system_memory(), self.memory_monitor.memory_unit))
         log.info(f"{prefix} RSS memory {mem_status.rss:.2f}{self.memory_monitor.memory_unit.value}, "
                  f"{prefix} System memory {mem_status.sys:.2f}{self.memory_monitor.memory_unit.value}")
         return mem_status
+
+    def get_initial_mem_data(self, print_unit: MemoryUnit | None = None):
+        suffix = f'({print_unit})' if print_unit else ''
+        sys = self.initial_mem_status.sys
+        rss = self.initial_mem_status.rss
+        if print_unit and print_unit != self.memory_monitor.memory_unit:
+            sys = convert_mem_unit(sys, self.memory_monitor.memory_unit, print_unit)
+            rss = convert_mem_unit(rss, self.memory_monitor.memory_unit, print_unit)
+
+        return {f'initial_sys_mem{suffix}': round(sys, 5),
+                f'initial_rss_mem{suffix}': round(rss, 5)}
+
+    def get_compilation_mem_data(self, print_unit: MemoryUnit | None = None):
+        suffix = f'({self.memory_monitor.memory_unit.value})' if print_unit else ''
+        sys_max = self.compilation_mem_info['max_mem'].sys
+        rss_max = self.compilation_mem_info['max_mem'].rss
+        sys_increase = self.compilation_mem_info['increase_mem'].sys
+        rss_increase = self.compilation_mem_info['increase_mem'].rss
+        if print_unit and print_unit != self.memory_monitor.memory_unit:
+            sys_max = convert_mem_unit(sys_max, self.memory_monitor.memory_unit, print_unit)
+            rss_max = convert_mem_unit(rss_max, self.memory_monitor.memory_unit, print_unit)
+            sys_increase = convert_mem_unit(sys_increase, self.memory_monitor.memory_unit, print_unit)
+            rss_increase = convert_mem_unit(rss_increase, self.memory_monitor.memory_unit, print_unit)
+
+        return {f'compile_max_rss_mem{suffix}': round(rss_max, 5),
+                f'compile_max_sys_mem{suffix}': round(sys_max, 5),
+                f'compile_max_increase_rss_mem{suffix}': round(rss_increase, 5),
+                f'compile_max_increase_sys_mem{suffix}': round(sys_increase, 5)}
 
 
 def cast_bytes_to(bytes, memory_unit, round_to_int=False):
@@ -396,6 +427,21 @@ def cast_bytes_to(bytes, memory_unit, round_to_int=False):
         MemoryUnit.GB: 10**9,
     }
     result = bytes / memory_unit_divisors[memory_unit]
+    return int(result) if round_to_int else result
+
+
+def convert_mem_unit(amount, current_memory_unit, new_memory_unit, round_to_int=False):
+    memory_unit_divisors = {
+        MemoryUnit.B: 1,
+        MemoryUnit.KiB: 2**10,
+        MemoryUnit.MiB: 2**20,
+        MemoryUnit.GiB: 2**30,
+        MemoryUnit.KB: 10**3,
+        MemoryUnit.MB: 10**6,
+        MemoryUnit.GB: 10**9,
+    }
+    bytes = amount * memory_unit_divisors[current_memory_unit]
+    result = bytes / memory_unit_divisors[new_memory_unit]
     return int(result) if round_to_int else result
 
 
