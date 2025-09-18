@@ -275,4 +275,4 @@ pipeline.export_model(models_path / "blobs")
 imported_pipeline = openvino_genai.Text2ImagePipeline(models_path, device, blob_path=models_path / "blobs")
 ```
 
-For the NPU device, the `openvino.cache_mode(openvino.CacheMode.OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights. Otherwise, the `openvino.weights_path(BIN_FILE_PATH)` property must be specified to provide the path to the model weights in BIN format.
+For the NPU device, the `cache_mode = openvino.CacheMode.OPTIMIZE_SPEED` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.
