@@ -82,10 +82,13 @@ class OvTestCacheManager:
         models_dir.mkdir(parents=True, exist_ok=True)
         return models_dir
     
-    def _is_cache_valid(self, cached_timestamp: str | None, 
-                       cached_versions: dict[str, str], 
-                       current_versions: dict[str, str],
-                       cached_dir: str | None) -> bool:
+    def _is_cache_valid(
+        self, 
+        cached_timestamp: str | None, 
+        cached_versions: dict[str, str], 
+        current_versions: dict[str, str],
+        cached_dir: str | None,
+    ) -> bool:
         if not cached_timestamp or not cached_dir or not Path(cached_dir).exists():
             return False
             
@@ -102,7 +105,7 @@ class OvTestCacheManager:
     def _create_new_cache(self, versions: dict[str, str]) -> Path:
         self._cleanup_expired_caches()
         
-        date_str = dt_now().strftime("%Y%m%d")
+        date_str = dt_now().strftime("%Y%m%d%H")
         version_str = (
             f"{OPTIMUM_INTEL_PACKAGE}-"
             f"{versions.get(OPTIMUM_INTEL_PACKAGE, 'unknown')}_"
@@ -140,15 +143,14 @@ class OvTestCacheManager:
         if not self.base_cache_dir.exists():
             return
             
-        current_date = dt_now().date()
-        expiry_date = current_date - timedelta(days=1)
+        threshold_dt = dt_now() - timedelta(hours=DEFAULT_CACHE_EXPIRY_HOURS)
         
         for cache_dir in self.base_cache_dir.iterdir():
             if not cache_dir.is_dir():
                 continue
                 
-            date_str = cache_dir.name.split("_")[0]
-            cache_date = datetime.strptime(date_str, "%Y%m%d").date()
-            
-            if cache_date <= expiry_date:
+            date_token = cache_dir.name.split("_")[0]
+            cache_dt = datetime.strptime(date_token, "%Y%m%d%H").replace(tzinfo=timezone.utc)
+
+            if cache_dt <= threshold_dt:
                 shutil.rmtree(cache_dir)
