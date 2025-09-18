@@ -4,12 +4,19 @@
 import openvino.properties.hint as hints
 import openvino.properties as props
 import openvino as ov
+
+from transformers import AutoTokenizer
+from optimum.intel.openvino.modeling import OVModel
+from typing import Callable
+
 import os
 import shutil
 import pytest
 from importlib import metadata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+ModelDownloaderCallable = Callable[[str], tuple[OVModel | None, AutoTokenizer | None, Path]]
 
 
 CACHE_BASE_DIR = "ov_models"
@@ -55,7 +62,7 @@ class OvTestCacheManager:
     def __init__(self, pytestconfig: pytest.Config):
         self.cache = pytestconfig.cache
         self.cache_expiry_hours = int(os.environ.get("OV_CACHE_EXPIRY_HOURS", DEFAULT_CACHE_EXPIRY_HOURS))
-        self.base_cache_dir = Path.home() / ".pytest_cache" / CACHE_BASE_DIR
+        self.base_cache_dir = self.cache.mkdir(CACHE_BASE_DIR)
         
     def get_cache_dir(self) -> Path:
         cached_dir = self.cache.get(CACHE_CURRENT_DIR_KEY, None)

@@ -13,8 +13,7 @@ from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, Generati
 
 from utils.ov_genai_pipelines import PipelineType, generate_and_compare
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
-from utils.constants import get_default_llm_properties
-from utils.hugging_face import download_and_convert_model
+from utils.constants import get_default_llm_properties, ModelDownloaderCallable
 from data.test_dataset import get_test_dataset
 
 
@@ -189,13 +188,16 @@ scheduler_params_list = [
                          ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy_seq_len_300())]
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
-def test_dynamic_memory_allocation(params):
+def test_dynamic_memory_allocation(params, model_downloader: ModelDownloaderCallable):
     prompts, _ = get_test_dataset()
-    generate_and_compare(prompts=prompts,
-                         model="facebook/opt-125m",
-                         scheduler_config=params[0],
-                         generation_config=params[1],
-                         pipeline_type=PipelineType.CONTINUOUS_BATCHING)
+    generate_and_compare(
+        model_downloader,
+        prompts=prompts,
+        model="facebook/opt-125m",
+        scheduler_config=params[0],
+        generation_config=params[1],
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+    )
 
 
 @dataclass

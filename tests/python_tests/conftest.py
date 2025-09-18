@@ -8,7 +8,7 @@ import logging
 from transformers import AutoTokenizer
 from optimum.intel.openvino.modeling import OVModel
 from tests.python_tests.utils.hugging_face import download_and_convert_model
-from utils.constants import OvTestCacheManager
+from utils.constants import OvTestCacheManager, ModelDownloaderCallable
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,8 +31,8 @@ def ov_cache_dir(ov_cache_manager: OvTestCacheManager) -> Path:
 
 
 @pytest.fixture(scope="session")
-def model_downloader(ov_cache_models_dir: Path) -> Callable[[str], tuple[OVModel | None, AutoTokenizer | None, Path]]:
-    def download_model(model_id: str) -> Path:
+def model_downloader(ov_cache_models_dir: Path) -> ModelDownloaderCallable:
+    def download_model(model_id: str) -> tuple:
         return download_and_convert_model(model_id, ov_cache_models_dir)
 
     return download_model

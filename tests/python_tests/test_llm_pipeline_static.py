@@ -11,7 +11,6 @@ import platform
 import sys
 
 from utils.constants import get_default_llm_properties
-from utils.hugging_face import download_and_convert_model
 from utils.generation_config import                     \
     get_greedy,                                         \
     get_greedy_with_penalties,                          \
@@ -311,7 +310,7 @@ def test_terminate_by_sampler(config, model_id, model_downloader: Callable[[str]
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_chat_generation(config, model_id):
+def test_chat_generation(config, model_id, model_downloader: Callable[[str], Path]):
     questions = [
         '1+1=',
         'What is the previous answer?',
@@ -319,7 +318,7 @@ def test_chat_generation(config, model_id):
         'What was my first question?'
     ]
 
-    _, _, model_path = download_and_convert_model(model_id)
+    _, _, model_path = model_downloader(model_id)
 
     chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
     chat_history_static   = generate_chat_history(model_path, "NPU", config, questions)
