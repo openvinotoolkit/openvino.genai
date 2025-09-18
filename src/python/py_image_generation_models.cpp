@@ -94,7 +94,15 @@ void init_clip_text_model(py::module_& m) {
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
-            )");
+            )")
+        .def(
+            "export_model", &ov::genai::CLIPTextModel::export_model,
+            py::arg("export_path"),
+            R"(
+                Exports compiled model to a specified directory
+                export_path (os.PathLike): A path to a directory to export compiled model to
+            )"
+        );
 }
 
 void init_clip_text_model_with_projection(py::module_& m) {
@@ -270,8 +278,8 @@ void init_unet2d_condition_model(py::module_& m) {
                 kwargs: Device properties.
             )")
         .def("export_model", &ov::genai::UNet2DConditionModel::export_model, py::arg("export_path"), R"(
-                Exports compiled model to a specified folder
-                export_path (os.PathLike): A path to a folder to export compiled model to
+                Exports compiled model to a specified directory
+                export_path (os.PathLike): A path to a directory to export compiled model to
             )");
 }
 
@@ -515,5 +523,13 @@ void init_autoencoder_kl(py::module_& m) {
         .def("decode", &ov::genai::AutoencoderKL::decode, py::call_guard<py::gil_scoped_release>(), py::arg("latent"))
         .def("encode", &ov::genai::AutoencoderKL::encode, py::call_guard<py::gil_scoped_release>(), py::arg("image"), py::arg("generator"))
         .def("get_config", &ov::genai::AutoencoderKL::get_config)
-        .def("get_vae_scale_factor", &ov::genai::AutoencoderKL::get_vae_scale_factor);
+        .def("get_vae_scale_factor", &ov::genai::AutoencoderKL::get_vae_scale_factor)
+        .def("export_model",
+            &ov::genai::AutoencoderKL::export_model,
+            py::arg("export_path"),
+            R"(
+                Exports compiled model to a specified directory
+                export_path (os.PathLike): A path to a directory to export compiled model to
+            )"
+        );
 }

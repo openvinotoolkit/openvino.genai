@@ -241,6 +241,11 @@ class AutoencoderKL:
         ...
     def encode(self, image: openvino._pyopenvino.Tensor, generator: Generator) -> openvino._pyopenvino.Tensor:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled model to a specified directory
+                        export_path (os.PathLike): A path to a directory to export compiled model to
+        """
     def get_config(self) -> AutoencoderKL.Config:
         ...
     def get_vae_scale_factor(self) -> int:
@@ -295,6 +300,11 @@ class CLIPTextModel:
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
+        """
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled model to a specified directory
+                        export_path (os.PathLike): A path to a directory to export compiled model to
         """
     def get_config(self) -> CLIPTextModel.Config:
         ...
@@ -3371,8 +3381,8 @@ class UNet2DConditionModel:
         ...
     def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         """
-                        Exports compiled model to a specified folder
-                        export_path (os.PathLike): A path to a folder to export compiled model to
+                        Exports compiled model to a specified directory
+                        export_path (os.PathLike): A path to a directory to export compiled model to
         """
     def get_config(self) -> UNet2DConditionModel.Config:
         ...

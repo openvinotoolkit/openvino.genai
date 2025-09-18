@@ -255,8 +255,8 @@ public:
     ImageGenerationPerfMetrics get_performance_metrics();
 
     /**
-     * @brief Exports compiled models to a specified folder
-     * @param export_path A path to a folder to export compiled models to
+     * @brief Exports compiled models to a specified directory
+     * @param export_path A path to a directory to export compiled models to
      */
     void export_model(const std::filesystem::path& export_path);
 

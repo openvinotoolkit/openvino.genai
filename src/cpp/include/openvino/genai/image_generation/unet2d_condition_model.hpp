@@ -98,8 +98,8 @@ public:
     }
 
     /**
-     * @brief Exports compiled model to a specified folder
-     * @param export_path A path to a folder to export compiled model to
+     * @brief Exports compiled model to a specified directory
+     * @param export_path A path to a directory to export compiled model to
      */
     void export_model(const std::filesystem::path& blob_path);
 
