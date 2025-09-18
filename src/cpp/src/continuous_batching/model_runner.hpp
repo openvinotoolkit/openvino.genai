@@ -231,7 +231,7 @@ public:
                 //TODO: won't work for multiple prompts
                 std::optional<int64_t> rope_delta;
                 ov::Tensor tensor_tmp;
-                std::tie(tensor_tmp, rope_delta) = m_inputs_embedder->get_position_ids(hidden_size, sequence_group->get_num_processed_tokens());
+                std::tie(tensor_tmp, rope_delta) = m_inputs_embedder->get_position_ids(total_num_tokens, sequence_group->get_num_processed_tokens());
                 position_ids = ov::Tensor(ov::element::i64, tensor_tmp.get_shape());
                 tensor_tmp.copy_to(position_ids);
             }
