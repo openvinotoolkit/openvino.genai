@@ -98,15 +98,15 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::SchedulerConfig scheduler_config;
     // batch size
-    scheduler_config.max_num_batched_tokens = 64;
+    scheduler_config.max_num_batched_tokens = 128;
     // cache params
     scheduler_config.num_kv_blocks = 364;
     // mode - vLLM or dynamic_split_fuse
     scheduler_config.dynamic_split_fuse = false; // does not support true in eagle speculative decoding
     // vLLM specific params
-    scheduler_config.max_num_seqs = 3;
+    scheduler_config.max_num_seqs = 2;
     
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device), std::pair<std::string, ov::Any>("eagle_mode", ov::Any("EAGLE3"))});
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device), ov::genai::eagle3_mode(true)});
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, cb_generation_config);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {

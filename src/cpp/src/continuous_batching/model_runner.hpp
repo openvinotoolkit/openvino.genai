@@ -342,24 +342,39 @@ public:
 
                                 if (stored_hidden_size == hidden_size) {
                                     if (stored_seq_len == total_num_tokens) {
-                                        hidden_state_input = stored_hidden_state;  // all tokens from eagle is accepted
+                                        hidden_state_input = stored_hidden_state;  // all tokens from eagle are accepted
                                     } else {
                                         size_t copy_length = std::min(stored_seq_len, num_scheduled_tokens);
 
                                         size_t source_start_idx =
                                             stored_seq_len >= copy_length ? stored_seq_len - copy_length : 0;
-
-                                        const float* source_data = stored_hidden_state.data<float>();
-                                        float* target_data = hidden_state_data + current_token_idx * hidden_size;
-
-                                        for (size_t token_offset = 0; token_offset < copy_length; ++token_offset) {
-                                            size_t source_offset = (source_start_idx + token_offset) * hidden_size;
-                                            size_t target_offset = token_offset * hidden_size;
-
-                                            std::copy_n(source_data + source_offset,
-                                                        hidden_size,
-                                                        target_data + target_offset);
+                                        // Create ROI (sub-tensor) on stored_hidden_state
+                                        auto stored_shape = stored_hidden_state.get_shape();
+                                        ov::Coordinate src_start(stored_shape.size(), 0),
+                                            src_end(stored_shape.size(), 0);
+                                        src_start[0] = source_start_idx;
+                                        src_end[0] = source_start_idx + copy_length;
+                                        for (size_t d = 1; d < stored_shape.size(); ++d) {
+                                            src_start[d] = 0;
+                                            src_end[d] = stored_shape[d];
                                         }
+                                        ov::Tensor src_roi(stored_hidden_state, src_start, src_end);
+
+                                        // Create ROI on the destination hidden_state_input at current_token_idx
+                                        auto target_shape =
+                                            hidden_state_input.get_shape();  // {total_num_tokens, 1, hidden_size}
+                                        ov::Coordinate tgt_start(target_shape.size(), 0),
+                                            tgt_end(target_shape.size(), 0);
+                                        tgt_start[0] = current_token_idx;
+                                        tgt_end[0] = current_token_idx + copy_length;
+                                        for (size_t d = 1; d < target_shape.size(); ++d) {
+                                            tgt_start[d] = 0;
+                                            tgt_end[d] = target_shape[d];
+                                        }
+                                        ov::Tensor tgt_roi(hidden_state_input, tgt_start, tgt_end);
+
+                                        // Bulk copy ROI -> ROI
+                                        src_roi.copy_to(tgt_roi);
                                     }
                                 }
                             }
@@ -368,6 +383,7 @@ public:
                 } else {
                     // fill hidden_state_data with m_hidden_states
                     if (hidden_state_data) {
+                        OPENVINO_ASSERT(num_scheduled_tokens == 1, "unexpected num_scheduled_tokens in speculative drafting stage in eagle3 mode");
                         std::memset(hidden_state_data + current_token_idx * hidden_size,
                                     0,
                                     num_scheduled_tokens * hidden_size * sizeof(float));
@@ -376,14 +392,10 @@ public:
                             auto shape = hidden_state.get_shape();
                             if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size) {
                                 size_t seq_len = shape[0];
-                                size_t copy_length = std::min(seq_len, num_scheduled_tokens);
                                 const float* source_data = hidden_state.data<float>();
                                 float* target_data = hidden_state_data + current_token_idx * hidden_size;
-                                for (size_t token_offset = 0; token_offset < copy_length; ++token_offset) {
-                                    size_t source_offset = (seq_len - token_offset - 1) * hidden_size;
-                                    size_t target_offset = token_offset * hidden_size;
-                                    std::copy_n(source_data + source_offset, hidden_size, target_data + target_offset);
-                                }
+                                size_t source_offset = (seq_len - 1) * hidden_size;
+                                std::copy_n(source_data + source_offset, hidden_size, target_data);
                             }
                         }
                     }
@@ -486,7 +498,7 @@ public:
                 try {
                     m_request.set_tensor("target_hidden_state_input", hidden_state_input);
                     auto shape = hidden_state_input.get_shape();
-                    shape[shape.size() - 1] = shape [shape.size() - 1]/3;
+                    shape[shape.size() - 1] = shape [shape.size() - 1] / 3;
                     ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
                     auto fake_data = fake_tensor.data<float>();
                     std::memset(fake_data, 0, fake_tensor.get_byte_size());
