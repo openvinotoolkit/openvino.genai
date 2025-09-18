@@ -629,10 +629,10 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_pro
 }
 
 ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds_with_token_type_ids(prompt, images, metrics, recalculate_merged_embeddings, image_sequence).first;
+    return get_inputs_embeds_with_prompt_ids(prompt, images, metrics, recalculate_merged_embeddings, image_sequence).first;
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMiniCPM::get_inputs_embeds_with_token_type_ids(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderMiniCPM::get_inputs_embeds_with_prompt_ids(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
     std::string unk64;
     ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
 

@@ -177,25 +177,21 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string&
     return get_inputs_embeds(prompt, encode_images(images), metrics, true, image_sequence);
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_prompt_ids(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
     ov::genai::VLMPerfMetrics& metrics,
     const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds_with_token_type_ids(prompt, encode_images(images), metrics, true, image_sequence);
+    return get_inputs_embeds_with_prompt_ids(prompt, encode_images(images), metrics, true, image_sequence);
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& image_sequence) {
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_token_type_ids(const ov::Tensor& prompt_ids,
+                                                                      VLMPerfMetrics& metrics) {
     OPENVINO_THROW("This model does not support token_type_ids.");
 }
 
 bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { 
-    return m_prompt_lookup; 
+    return false; 
 }
 
 /// Public InputsEmbedder class
@@ -272,23 +268,27 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
     return m_impl->get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_prompt_ids(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
     VLMPerfMetrics& metrics,
     const std::vector<size_t>& image_sequence) {
-    return m_impl->get_inputs_embeds_with_token_type_ids(
+    return m_impl->get_inputs_embeds_with_prompt_ids(
         prompt, images, metrics, image_sequence);
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_prompt_ids(
     const std::string& prompt,
     const std::vector<EncodedImage>& images,
     VLMPerfMetrics& metrics,
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& image_sequence) {
-    return m_impl->get_inputs_embeds_with_token_type_ids(
+    return m_impl->get_inputs_embeds_with_prompt_ids(
         prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
+}
+
+ov::Tensor InputsEmbedder::get_inputs_token_type_ids(const ov::Tensor& prompt_ids, VLMPerfMetrics& metrics) {
+    return m_impl->get_inputs_token_type_ids(prompt_ids, metrics);
 }
 
 bool InputsEmbedder::has_token_type_ids() const {

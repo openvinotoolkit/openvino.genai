@@ -375,10 +375,10 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVANext::normalize_p
 }
 
 ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds_with_token_type_ids(image_prompt, images, metrics, recalculate_merged_embeddings, image_sequence).first;
+    return get_inputs_embeds_with_prompt_ids(image_prompt, images, metrics, recalculate_merged_embeddings, image_sequence).first;
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderLLaVANext::get_inputs_embeds_with_token_type_ids(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderLLaVANext::get_inputs_embeds_with_prompt_ids(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
     ov::Tensor image_newline;
     size_t searched_pos = 0;
     std::vector<ov::Tensor> image_embeds;

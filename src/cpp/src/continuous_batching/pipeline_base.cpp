@@ -180,7 +180,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         m_inputs_embedder->set_apply_chat_template_status(false);
         if (m_inputs_embedder->has_token_type_ids()) {
-            auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
+            auto [embeds, prompt_ids] = m_inputs_embedder->get_inputs_embeds_with_prompt_ids(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
+            auto tt_ids = m_inputs_embedder->get_inputs_token_type_ids(prompt_ids, vlm_perf_metrics[0]);
+
             input_embeds_list.push_back(std::move(embeds));
             token_type_ids_list.push_back(std::move(tt_ids));
         } else {
@@ -201,7 +203,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
             if (m_inputs_embedder->has_token_type_ids()) {
-                auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence);
+                auto [embeds, prompt_ids] = m_inputs_embedder->get_inputs_embeds_with_prompt_ids(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence);
+                auto tt_ids = m_inputs_embedder->get_inputs_token_type_ids(prompt_ids, vlm_perf_metrics[i]);
                 input_embeds_list.push_back(std::move(embeds));
                 token_type_ids_list.push_back(std::move(tt_ids));
             } else {

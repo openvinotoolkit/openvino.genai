@@ -42,9 +42,11 @@ public:
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
     // compute input embedding and token_type_ids
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::Tensor>& images, VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence = {});
+    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_prompt_ids(const std::string& prompt, const std::vector<ov::Tensor>& images, VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence = {});
     
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_prompt_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+
+    ov::Tensor get_inputs_token_type_ids(const ov::Tensor& prompt_ids, VLMPerfMetrics& metrics);
 
     bool has_token_type_ids() const;
     
@@ -114,9 +116,11 @@ private:
 
         ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence);
 
-        std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence = {});
+        std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_prompt_ids(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence = {});
 
-        virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+        virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_prompt_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
+
+        virtual ov::Tensor get_inputs_token_type_ids(const ov::Tensor& prompt_ids, VLMPerfMetrics& metrics);
 
         virtual bool has_token_type_ids() const;
 

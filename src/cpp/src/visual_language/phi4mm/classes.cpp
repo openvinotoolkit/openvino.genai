@@ -781,10 +781,10 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderPhi4MM::normalize_prom
 }
 
 ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds_with_token_type_ids(image_prompt, images, metrics, recalculate_merged_embeddings, image_sequence).first;
+    return get_inputs_embeds_with_prompt_ids(image_prompt, images, metrics, recalculate_merged_embeddings, image_sequence).first;
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderPhi4MM::get_inputs_embeds_with_token_type_ids(
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderPhi4MM::get_inputs_embeds_with_prompt_ids(
     const std::string& image_prompt,
     const std::vector<ov::genai::EncodedImage>& images,
     ov::genai::VLMPerfMetrics& metrics,
