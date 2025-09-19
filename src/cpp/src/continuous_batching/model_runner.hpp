@@ -348,36 +348,12 @@ public:
 
                                         size_t source_start_idx =
                                             stored_seq_len >= copy_length ? stored_seq_len - copy_length : 0;
-                                        // Create ROI (sub-tensor) on stored_hidden_state
-                                        auto stored_shape = stored_hidden_state.get_shape();
-                                        ov::Coordinate src_start(stored_shape.size(), 0),
-                                            src_end(stored_shape.size(), 0);
-                                        src_start[0] = source_start_idx;
-                                        src_end[0] = source_start_idx + copy_length;
-                                        for (size_t d = 1; d < stored_shape.size(); ++d) {
-                                            src_start[d] = 0;
-                                            src_end[d] = stored_shape[d];
-                                        }
-                                        ov::Tensor src_roi(stored_hidden_state, src_start, src_end);
-
-                                        // Create ROI on the destination hidden_state_input at current_token_idx
-                                        auto target_shape =
-                                            hidden_state_input.get_shape();  // {total_num_tokens, 1, hidden_size}
-                                        ov::Coordinate tgt_start(target_shape.size(), 0),
-                                            tgt_end(target_shape.size(), 0);
-                                        tgt_start[0] = current_token_idx;
-                                        tgt_end[0] = current_token_idx + copy_length;
-                                        for (size_t d = 1; d < target_shape.size(); ++d) {
-                                            tgt_start[d] = 0;
-                                            tgt_end[d] = target_shape[d];
-                                        }
-                                        ov::Tensor tgt_roi(hidden_state_input, tgt_start, tgt_end);
-
-                                        // Bulk copy ROI -> ROI
-                                        src_roi.copy_to(tgt_roi);
+                                        copy_roi_between_tensors(stored_hidden_state, source_start_idx, copy_length, hidden_state_input, current_token_idx);
                                     }
                                 }
                             }
+                        } else {
+                            OPENVINO_ASSERT(false, "missing hidden state from target model to eagle draft model");
                         }
                     }
                 } else {
@@ -392,10 +368,12 @@ public:
                             auto shape = hidden_state.get_shape();
                             if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size) {
                                 size_t seq_len = shape[0];
-                                const float* source_data = hidden_state.data<float>();
-                                float* target_data = hidden_state_data + current_token_idx * hidden_size;
-                                size_t source_offset = (seq_len - 1) * hidden_size;
-                                std::copy_n(source_data + source_offset, hidden_size, target_data);
+                                size_t copy_length = std::min(seq_len, num_scheduled_tokens);
+
+                                size_t src_start_idx = seq_len >= copy_length ? seq_len - copy_length : 0;
+                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_size};
+                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_size);
+                                copy_roi_between_tensors(hidden_state, src_start_idx, copy_length, target_base, 0);
                             }
                         }
                     }
@@ -640,6 +618,49 @@ public:
 
 private:
     ov::Tensor m_hidden_states;
+
+    // Common helper to copy a contiguous slice (first-dim range) from src to dst using ROI tensors.
+    // src_start_idx: start index along src first dimension
+    // copy_length: number of elements along first dim to copy
+    // dst_base: destination base tensor (may be full buffer or a wrapper around a raw pointer)
+    // dst_first_dim_start: start index in first dimension of dst_base where copy should be placed
+    static void copy_roi_between_tensors(const ov::Tensor& src,
+                                         size_t src_start_idx,
+                                         size_t copy_length,
+                                         const ov::Tensor& dst_base,
+                                         size_t dst_first_dim_start) {
+        if (copy_length == 0) {
+            return;
+        }
+
+        // prepare source ROI coords
+        const auto src_shape = src.get_shape();
+        OPENVINO_ASSERT(!src_shape.empty(), "source tensor rank is zero");
+        ov::Coordinate src_start(src_shape.size(), 0), src_end(src_shape.size(), 0);
+        src_start[0] = src_start_idx;
+        src_end[0] = src_start_idx + copy_length;
+        for (size_t d = 1; d < src_shape.size(); ++d) {
+            src_start[d] = 0;
+            src_end[d] = src_shape[d];
+        }
+        ov::Tensor src_roi(src, src_start, src_end);
+
+        // prepare destination ROI coords
+        const auto dst_shape = dst_base.get_shape();
+        OPENVINO_ASSERT(!dst_shape.empty(), "destination tensor rank is zero");
+        ov::Coordinate tgt_start(dst_shape.size(), 0), tgt_end(dst_shape.size(), 0);
+        tgt_start[0] = dst_first_dim_start;
+        tgt_end[0] = dst_first_dim_start + copy_length;
+        for (size_t d = 1; d < dst_shape.size(); ++d) {
+            tgt_start[d] = 0;
+            tgt_end[d] = dst_shape[d];
+        }
+        ov::Tensor tgt_roi(dst_base, tgt_start, tgt_end);
+
+        // bulk copy
+        src_roi.copy_to(tgt_roi);
+    }
+
     // Fills indices for sequences in the order defined by scheduler_output
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
