@@ -8,20 +8,20 @@
 #include "utils.hpp"
 
 namespace ov::genai {
-
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config) {
+    clip_image_u8 cropped_image;
+    int crop_height = config.crop_size_height;
+    int crop_width = config.crop_size_width;
     // Resize
     clip_image_u8 resized_image;
     int target_size = config.size_shortest_edge;
     float scale = static_cast<float>(target_size) / std::min(image.nx, image.ny);
     int new_width = static_cast<int>(image.nx * scale);
     int new_height = static_cast<int>(image.ny * scale);
+    new_width = std::max(new_width, crop_width);
+    new_height = std::max(new_height, crop_height);
     bicubic_resize(image, resized_image, new_width, new_height);
-
     // Center crop
-    clip_image_u8 cropped_image;
-    int crop_height = config.crop_size_height;
-    int crop_width = config.crop_size_width;
     int start_x = (resized_image.nx - crop_width) / 2;
     int start_y = (resized_image.ny - crop_height) / 2;
 
