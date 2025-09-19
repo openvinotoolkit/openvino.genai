@@ -72,7 +72,8 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
       try {
         core.debug(`Attempt ${attempt} of 3`);
         const { stdout, stderr } = await execAsync(
-          `python -m pip install ${installArgs.join(' ')}`,
+          'python',
+          ['-m', 'pip', 'install', ...installArgs],
           {
             stdio: 'inherit'
           }
