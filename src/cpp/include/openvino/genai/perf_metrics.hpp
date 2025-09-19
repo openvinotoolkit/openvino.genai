@@ -134,7 +134,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair detokenization_duration = {-1.0f, -1.0f};
 
     size_t num_generated_tokens;
-    size_t num_input_tokens;
+    size_t num_input_tokens = 0;
 
     float get_load_time();         // Load time in ms.
     size_t get_num_generated_tokens();

@@ -437,6 +437,7 @@ int main(int argc, char* argv[]) try {
     ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("true"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("draft_model", "Path to assistant model directory", cxxopts::value<std::string>()->default_value(""))
+    ("eagle3_mode", "Whether to enable eagle3 mode for speculative decoding", cxxopts::value<bool>()->default_value("false"))
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>()->default_value("./ShareGPT_V3_unfiltered_cleaned_split.json"))
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
     ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("2048"))
@@ -476,7 +477,7 @@ int main(int argc, char* argv[]) try {
     const bool use_cache_eviction = result["use_cache_eviction"].as<bool>();
 
     bool is_speculative_decoding_enabled = !draft_model_path.empty();
-
+    bool is_eagle3_mode = result["eagle3_mode"].as<bool>();
     // Create requests for generation
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
 
@@ -507,6 +508,12 @@ int main(int argc, char* argv[]) try {
     ov::AnyMap device_config_map = {};
     if (is_speculative_decoding_enabled) {
         device_config_map.insert({ ov::genai::draft_model(draft_model_path) });
+        if (is_eagle3_mode) {
+            // disable dynamic split fuse in eagle3 mode
+            scheduler_config.dynamic_split_fuse = false;
+            std::cout << "disable dynamic split fuse for eagle3 speculative decoding" << std::endl;
+            device_config_map.insert({ ov::genai::eagle3_mode(true) });
+        }
     }
     if (!parse_plugin_config_string(device_config, device_config_map)) {
         std::cout << "ERROR: Wrong json parameter in device_config." << std::endl;
