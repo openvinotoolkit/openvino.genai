@@ -465,7 +465,14 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"))
-        .def("get_performance_metrics", &ov::genai::Text2ImagePipeline::get_performance_metrics);
+        .def("get_performance_metrics", &ov::genai::Text2ImagePipeline::get_performance_metrics)
+        .def("export_model",
+            &ov::genai::Text2ImagePipeline::export_model,
+            py::arg("export_path"),
+            R"(
+                Exports compiled models to a specified folder
+                export_path (os.PathLike): A path to a folder to export compiled models to
+            )");
 
 
     auto image2image_pipeline = py::class_<ov::genai::Image2ImagePipeline>(m, "Image2ImagePipeline", "This class is used for generation with image-to-image models.")

@@ -97,6 +97,12 @@ public:
         return guidance_scale > 1.0f && m_config.time_cond_proj_dim < 0;
     }
 
+    /**
+     * @brief Exports compiled model to a specified directory
+     * @param export_path A path to a directory to export compiled model to
+     */
+    void export_model(const std::filesystem::path& blob_path);
+
 private:
     class UNetInference;
     std::shared_ptr<UNetInference> m_impl;
@@ -105,6 +111,8 @@ private:
     AdapterController m_adapter_controller;
     std::shared_ptr<ov::Model> m_model;
     size_t m_vae_scale_factor;
+
+    void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties = {});
 
     class UNetInferenceDynamic;
     class UNetInferenceStaticBS1;
