@@ -19,6 +19,8 @@ class TestBenchmarkGenAI:
         indirect=["convert_model"],
     )
     def test_py_sample_benchmark_genai(self, convert_model, prompt, sample_args):
+        if sys.platform == 'darwin':
+            pytest.xfail("Ticket 173586")
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/benchmark_genai.py")
         py_command = [sys.executable, py_script, '-m', convert_model, '-p', f'"{prompt}"'] + sample_args
