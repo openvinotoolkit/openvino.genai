@@ -20,15 +20,15 @@ def main():
 
     # User can run main and draft model on different devices.
     # Please, set device for main model in `openvino_genai.LLMPipeline` constructor and in openvino_genai.draft_model` for draft.
-    main_device = 'CPU'  # GPU can be used as well
-    draft_device = 'CPU'
+    main_device = 'NPU'  # GPU can be used as well
+    draft_device = 'NPU'
 
     draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
 
-    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model)
+    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, config={"GENERATE_HINT" : "BEST_PERF"}, draft_model=draft_model)
     
     config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = 100
+    config.max_new_tokens = 150
     # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
     # add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
     config.num_assistant_tokens = 5
@@ -61,6 +61,15 @@ def main():
         print(f"  Num generated token: {draft_model_metrics.get_num_generated_tokens()} tokens")
         print(f"  Total iteration number: {len(draft_model_metrics.raw_metrics.m_durations)}")
         print()
+    perf_metrics = res.perf_metrics
+    print(f"Whole pipeline" )
+    print(f"  Generate time: {perf_metrics.get_generate_duration().mean:.2f} ms" )
+    print(f"  TTFT: {perf_metrics.get_ttft().mean:.2f} ms")
+    print(f"  TPOT: {perf_metrics.get_tpot().mean:.2f} ± {perf_metrics.get_tpot().std:.2f} ms/token")
+    print(f"  Throughput: {(1000.0 / perf_metrics.get_tpot().mean):.2f}")
+    print(f"  Num generated token: {perf_metrics.get_num_generated_tokens()} tokens")
+    print(f"  Total iteration number: {len(perf_metrics.raw_metrics.m_durations)}")
+    print()
 
 if '__main__' == __name__:
     main()
