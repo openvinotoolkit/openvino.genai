@@ -537,7 +537,9 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                                                       vision_end_token_id);
 
         // Convert visual features for CDPruner using the implemented function
-        auto visual_features = convert_visual_features_for_cdpruner(merged_image_embeddings_tensor, images.size());
+        // [CDPruner] Check enable_frame_chunking to decide chunking strategy
+        size_t chunk_count = current_config->enable_frame_chunking ? images.size() : 1;
+        auto visual_features = convert_visual_features_for_cdpruner(merged_image_embeddings_tensor, chunk_count);
 
         // Apply CDPruner to get pruned visual tokens
         ov::Tensor pruned_visual_features = m_vision_encoder->apply_pruning(visual_features, text_features);

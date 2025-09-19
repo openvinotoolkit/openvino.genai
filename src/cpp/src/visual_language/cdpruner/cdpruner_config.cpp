@@ -11,7 +11,8 @@ bool Config::operator==(const Config& other) const {
     return pruning_ratio == other.pruning_ratio && std::abs(relevance_weight - other.relevance_weight) < 1e-6f &&
            device == other.device && pruning_debug_mode == other.pruning_debug_mode &&
            std::abs(numerical_threshold - other.numerical_threshold) < 1e-9f &&
-           use_negative_relevance == other.use_negative_relevance;
+           use_negative_relevance == other.use_negative_relevance && split_threshold == other.split_threshold &&
+           enable_frame_chunking == other.enable_frame_chunking;
 }
 
 bool Config::operator!=(const Config& other) const {

@@ -329,6 +329,55 @@ protected:
         }
     }
 
+    // Helper function to create visual features with simple test patterns
+    ov::Tensor createVisualFeatures(size_t batch_size, size_t sequence_length, size_t hidden_dim, float base_value = 0.5f, float scale = 0.01f) {
+        ov::Tensor visual_features(ov::element::f32, {batch_size, sequence_length, hidden_dim});
+        float* visual_data = visual_features.data<float>();
+        
+        for (size_t b = 0; b < batch_size; ++b) {
+            for (size_t s = 0; s < sequence_length; ++s) {
+                for (size_t h = 0; h < hidden_dim; ++h) {
+                    size_t idx = b * sequence_length * hidden_dim + s * hidden_dim + h;
+                    visual_data[idx] = base_value + scale * idx;
+                }
+            }
+        }
+        return visual_features;
+    }
+
+    // Helper function to create text features with simple test patterns
+    ov::Tensor createTextFeatures(size_t batch_size, size_t hidden_dim, float base_value = 0.3f, float scale = 0.01f) {
+        ov::Tensor text_features(ov::element::f32, {batch_size, hidden_dim});
+        float* text_data = text_features.data<float>();
+        
+        for (size_t b = 0; b < batch_size; ++b) {
+            for (size_t h = 0; h < hidden_dim; ++h) {
+                size_t idx = b * hidden_dim + h;
+                text_data[idx] = base_value + scale * idx;
+            }
+        }
+        return text_features;
+    }
+
+    // Helper function to create multi-frame visual features
+    std::vector<ov::Tensor> createMultiFrameVisualFeatures(size_t num_frames, size_t batch_size, size_t sequence_length_per_frame, size_t hidden_dim) {
+        std::vector<ov::Tensor> visual_features;
+        for (size_t frame = 0; frame < num_frames; ++frame) {
+            // Each frame has a different base value pattern for testing
+            float base_value = 0.1f * (frame + 1);
+            visual_features.push_back(createVisualFeatures(batch_size, sequence_length_per_frame, hidden_dim, base_value, 0.01f));
+        }
+        return visual_features;
+    }
+
+    // Helper function to initialize tensor with simple pattern
+    void initializeTensorWithPattern(ov::Tensor& tensor, float base_value, float scale) {
+        float* data = tensor.data<float>();
+        for (size_t i = 0; i < tensor.get_size(); ++i) {
+            data[i] = base_value + scale * i;
+        }
+    }
+
     Config cdp_config;
 };
 
@@ -340,34 +389,112 @@ TEST_P(CDPrunerIntegrationTest, LargeSequenceSplitting) {
     size_t sequence_length = 600;
     size_t hidden_dim = 1024;
 
-    ov::Tensor visual_features(ov::element::f32, {batch_size, sequence_length, hidden_dim});
-    ov::Tensor text_features(ov::element::f32, {batch_size, hidden_dim});
-
-    // Initialize with simple test patterns
-    float* visual_data = visual_features.data<float>();
-    float* text_data = text_features.data<float>();
-
-    // Create simple patterns
-    for (size_t b = 0; b < batch_size; ++b) {
-        for (size_t s = 0; s < sequence_length; ++s) {
-            for (size_t h = 0; h < hidden_dim; ++h) {
-                size_t idx = b * sequence_length * hidden_dim + s * hidden_dim + h;
-                visual_data[idx] = 0.5f + 0.2f * idx;
-            }
-        }
-
-        for (size_t h = 0; h < hidden_dim; ++h) {
-            text_data[b * hidden_dim + h] = 0.3f + 0.1f * h;
-        }
-    }
+    // Create test data using helper functions
+    auto visual_features = createVisualFeatures(batch_size, sequence_length, hidden_dim, 0.5f, 0.2f);
+    auto text_features = createTextFeatures(batch_size, hidden_dim, 0.3f, 0.1f);
 
     // Test pruning application
-    auto pruned_features = cdpruner.apply_pruning({visual_features}, text_features);
+    auto pruned_features = cdpruner.apply_pruning(visual_features, text_features);
     auto pruned_shape = pruned_features.get_shape();
 
     EXPECT_EQ(pruned_shape[0], batch_size);       // Batch size unchanged
     EXPECT_LT(pruned_shape[1], sequence_length);  // Sequence length reduced
     EXPECT_EQ(pruned_shape[2], hidden_dim);       // Hidden dim unchanged
+}
+
+TEST_P(CDPrunerIntegrationTest, MultiFramePruning) {
+    // Test CDPruner with multi-frame visual features (vector interface)
+    CDPruner cdpruner(cdp_config);
+
+    size_t num_frames = 3;
+    size_t sequence_length_per_frame = 100;
+    size_t hidden_dim = 512;
+    size_t batch_size = 1;
+
+    // Create multi-frame visual features using helper function
+    auto visual_features = createMultiFrameVisualFeatures(num_frames, batch_size, sequence_length_per_frame, hidden_dim);
+    
+    // Create text features using helper function
+    auto text_features = createTextFeatures(batch_size, hidden_dim, 0.5f, 0.1f);
+
+    // Test multi-frame pruning using vector interface
+    auto pruned_features = cdpruner.apply_pruning(visual_features, text_features);
+    auto pruned_shape = pruned_features.get_shape();
+
+    // Verify output dimensions
+    EXPECT_EQ(pruned_shape.size(), 3) << "Pruned features should have 3 dimensions [batch, sequence, hidden]";
+    EXPECT_EQ(pruned_shape[0], batch_size) << "Batch size should remain unchanged";
+    EXPECT_EQ(pruned_shape[2], hidden_dim) << "Hidden dimension should remain unchanged";
+
+    // Verify sequence length is reduced (pruning applied)
+    size_t total_original_length = num_frames * sequence_length_per_frame;
+    EXPECT_LT(pruned_shape[1], total_original_length) << "Sequence length should be reduced after pruning";
+    EXPECT_GT(pruned_shape[1], 0) << "Pruned sequence should have at least some tokens";
+
+    // Verify pruning ratio is approximately correct (allowing some tolerance)
+    double actual_pruning_ratio = 1.0 - (double)pruned_shape[1] / total_original_length;
+    double expected_ratio = cdp_config.pruning_ratio / 100.0;
+    double tolerance = 0.1;  // 10% tolerance for pruning ratio
+    EXPECT_NEAR(actual_pruning_ratio, expected_ratio, tolerance)
+        << "Actual pruning ratio should be close to configured ratio";
+
+    // Verify that output tensor is valid and contains reasonable values
+    EXPECT_FALSE(pruned_features.get_shape().empty()) << "Pruned features should not be empty";
+    EXPECT_GT(pruned_features.get_byte_size(), 0) << "Pruned features should have non-zero size";
+}
+
+TEST_P(CDPrunerIntegrationTest, MultiFramePruningEdgeCases) {
+    // Test edge cases for multi-frame pruning
+    CDPruner cdpruner(cdp_config);
+
+    size_t hidden_dim = 128;
+    size_t batch_size = 1;
+
+    // Test case 1: Single frame (should work like regular pruning)
+    {
+        std::vector<ov::Tensor> single_frame;
+        ov::Tensor frame_features(ov::element::f32, {batch_size, 50, hidden_dim});
+        initializeTensorWithPattern(frame_features, 0.5f, 0.01f);
+        single_frame.push_back(std::move(frame_features));
+
+        auto text_features = createTextFeatures(batch_size, hidden_dim);
+
+        auto result = cdpruner.apply_pruning(single_frame, text_features);
+        EXPECT_FALSE(result.get_shape().empty()) << "Single frame pruning should produce valid result";
+        EXPECT_LT(result.get_shape()[1], 50) << "Single frame should be pruned";
+    }
+
+    // Test case 2: Empty frames vector (should handle gracefully)
+    {
+        std::vector<ov::Tensor> empty_frames;
+        auto text_features = createTextFeatures(batch_size, hidden_dim);
+
+        // This should either return empty tensor or handle gracefully
+        auto result = cdpruner.apply_pruning(empty_frames, text_features);
+        // We don't expect this to crash - specific behavior depends on implementation
+    }
+
+    // Test case 3: Many small frames
+    {
+        std::vector<ov::Tensor> many_frames;
+        size_t num_small_frames = 10;
+        size_t small_sequence_length = 10;
+
+        for (size_t frame = 0; frame < num_small_frames; ++frame) {
+            ov::Tensor frame_features(ov::element::f32, {batch_size, small_sequence_length, hidden_dim});
+            float base_value = 0.1f * frame;
+            initializeTensorWithPattern(frame_features, base_value, 0.001f);
+            many_frames.push_back(std::move(frame_features));
+        }
+
+        auto text_features = createTextFeatures(batch_size, hidden_dim, 0.4f, 0.01f);
+
+        auto result = cdpruner.apply_pruning(many_frames, text_features);
+        EXPECT_FALSE(result.get_shape().empty()) << "Many small frames should produce valid result";
+
+        size_t total_original = num_small_frames * small_sequence_length;
+        EXPECT_LT(result.get_shape()[1], total_original) << "Many frames concatenation should be pruned";
+    }
 }
 
 // =============================================================================

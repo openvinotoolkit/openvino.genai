@@ -60,17 +60,29 @@ public:
      * @brief Select diverse and relevant visual tokens
      * @param visual_features Input visual features [B, N, D]
      * @param text_features Input text features [M, D]
+     * @param silent If true, suppress detailed logging output
      * @return Selected token indices for each batch [B, T]
      */
-    std::vector<std::vector<size_t>> select_tokens(const ov::Tensor& visual_features, const ov::Tensor& text_features);
+    std::vector<std::vector<size_t>> select_tokens(const ov::Tensor& visual_features,
+                                                   const ov::Tensor& text_features,
+                                                   bool silent = false);
 
     /**
      * @brief Apply pruning and return only selected features
      * @param visual_features Input visual features [B, N, D]
      * @param text_features Input text features [M, D]
+     * @param silent If true, suppress detailed logging output
      * @return Pruned visual features [B, T, D] where T is calculated from pruning_ratio
      */
-    ov::Tensor apply_pruning(const ov::Tensor& visual_features, const ov::Tensor& text_features);
+    ov::Tensor apply_pruning(const ov::Tensor& visual_features, const ov::Tensor& text_features, bool silent = false);
+
+    /**
+     * @brief Apply pruning to multiple visual features and return concatenated result
+     * @param visual_features_list Vector of input visual features, each [B, N, D]
+     * @param text_features Input text features [M, D]
+     * @return Concatenated pruned visual features [B, T*num_frames, D] where T is calculated from pruning_ratio
+     */
+    ov::Tensor apply_pruning(const std::vector<ov::Tensor>& visual_features_list, const ov::Tensor& text_features);
 
     /**
      * @brief Get current configuration

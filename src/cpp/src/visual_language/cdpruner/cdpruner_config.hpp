@@ -44,6 +44,12 @@ struct Config {
     /// for parallel processing. This parameter is not exposed in public API.
     size_t split_threshold = 2000;
 
+    /// @brief Whether to enable frame-level chunking for multi-frame video processing
+    /// When true, each frame in multi-frame input will be processed separately for DPP pruning
+    /// When false, all frames will be concatenated and processed together
+    /// Default is false to maintain existing behavior
+    bool enable_frame_chunking = false;
+
     /// @brief Compare two Config structures for equality
     /// @param other The other Config to compare with
     /// @return true if all configuration parameters are equal, false otherwise
