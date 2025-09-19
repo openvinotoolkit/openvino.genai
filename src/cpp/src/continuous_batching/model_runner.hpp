@@ -15,6 +15,7 @@
 #include "continuous_batching/timer.hpp"
 
 #include "continuous_batching/attention_output.hpp"
+#include "continuous_batching/cache_eviction.hpp"
 
 namespace ov::genai {
 
@@ -108,6 +109,10 @@ class ModelRunner {
     bool m_is_aggregate_attention_scores;
 
     bool m_is_use_xattention_inputs;
+
+    bool m_is_use_adaptive_rkv_inputs;
+    std::vector<std::map<size_t, AdaptiveRKVDiversityBlocks>> m_adaptive_rkv_diversity_blocks_per_sequence_for_each_layer;
+
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
@@ -154,7 +159,8 @@ public:
                 bool is_use_per_layer_cache_control = false,
                 bool is_use_rotation_inputs = false,
                 bool is_aggregate_attention_scores = false,
-                bool is_use_xattention_inputs = false)
+                bool is_use_xattention_inputs = false,
+                bool m_is_use_adaptive_rkv_inputs = false)
         : m_request(std::move(request)),
           m_block_size(block_size),
           m_num_decoder_layers(num_decoder_layers),
@@ -163,7 +169,8 @@ public:
           m_is_use_rotation_inputs(is_use_rotation_inputs),
           m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers),
           m_is_aggregate_attention_scores(is_aggregate_attention_scores),
-          m_is_use_xattention_inputs(is_use_xattention_inputs) {
+          m_is_use_xattention_inputs(is_use_xattention_inputs),
+          m_is_use_adaptive_rkv_inputs(m_is_use_adaptive_rkv_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
     }
@@ -530,6 +537,10 @@ public:
 
         if (m_is_use_xattention_inputs) {
             _set_xattention_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
+        }
+
+        if (m_is_use_adaptive_rkv_inputs) {
+            _set_adaptive_rkv_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
         if (matmul_gathering_is_available) {
@@ -1059,6 +1070,41 @@ private:
             auto tensor_name = std::string("xattention_threshold.") + std::to_string(i);
             m_request.set_tensor(tensor_name, xattention_thresholds);
         }
+
+    }
+
+    void _set_adaptive_rkv_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                   const Scheduler::Output& scheduler_output,
+                                   size_t batch_size_in_sequences) {
+        ov::Tensor adaptive_rkv_start_size(ov::element::i32, {});
+        adaptive_rkv_start_size.data<int32_t>()[0] = scheduler_output.m_adaptive_rkv_start_size;
+        m_request.set_tensor("adaptive_rkv_start_size", adaptive_rkv_start_size);
+
+        ov::Tensor adaptive_rkv_evictable_sizes(ov::element::i32, {batch_size_in_sequences});
+        float* adaptive_rkv_evictable_sizes_data = adaptive_rkv_evictable_sizes.data<float>();
+        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); i++) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            size_t num_running_sequences = running_sequences.size();
+            for (size_t k = 0; k < num_running_sequences; ++k) {
+                Sequence::CPtr sequence = running_sequences[k];
+                size_t seq_id = sequence->get_id();
+                size_t evictable_size = 0;
+
+                if (scheduler_output.m_adaptive_rkv_evictable_sizes.find(seq_id) != scheduler_output.m_adaptive_rkv_evictable_sizes.end()) {
+                    evictable_size = scheduler_output.m_adaptive_rkv_evictable_sizes.at(seq_id);
+                }
+                *adaptive_rkv_evictable_sizes_data = evictable_size;
+                adaptive_rkv_evictable_sizes_data += 1;
+            }
+        }
+
+        m_request.set_tensor("adaptive_rkv_evictable_sizes", adaptive_rkv_evictable_sizes);
+
+        // Reserved for future use
+        ov::Tensor adaptive_rkv_diversity_block_set(ov::element::i32, {batch_size_in_sequences});
+        m_request.set_tensor("adaptive_rkv_diversity_block_set", adaptive_rkv_diversity_block_set);
 
     }
 };
