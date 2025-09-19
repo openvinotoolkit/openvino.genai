@@ -23,7 +23,6 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/
   OPENVINO_LOG_LEVEL: 5
   ARTIFACTS_SHARE: '/mount/build-artifacts'
   BASE_PRODUCT_TYPE: public_windows_vs2022
@@ -681,7 +680,7 @@ jobs:
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
-        run: python -m pytest -s -v ${{ matrix.test.cmd }}
+        run: python -m pytest -s -v -o cache_dir=C:/mount/caches/pytest/win ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
   genai_samples_tests:
@@ -801,7 +800,7 @@ jobs:
 
       - name: Test Samples (Python and C++)
         if: ${{ matrix.test.run_condition }}
-        run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        run: python -m pytest -vs -o cache_dir=C:/mount/caches/pytest/win ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
@@ -864,7 +863,7 @@ jobs:
       - name: Test C++ Tools
         run: |
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
+          python -m pytest -vs -o cache_dir=C:/mount/caches/pytest/win ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 

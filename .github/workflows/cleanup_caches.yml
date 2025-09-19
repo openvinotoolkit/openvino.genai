@@ -8,28 +8,41 @@ on:
 permissions: read-all
 
 jobs:
-  Cleanup_OV_CACHE:
-    name: Cleanup OV_CACHE
+  Cleanup_Pytest_Cache:
+    name: Cleanup Pytest Cache
     runs-on: aks-linux-4-cores-16gb
     if: ${{ github.repository_owner == 'openvinotoolkit' }}
     container:
       image: openvinogithubactions.azurecr.io/dockerhub/ubuntu:20.04
       volumes:
         - /mount:/mount
-    env:
-      OV_CACHE: /mount/caches/huggingface/.ov_cache
-
     steps:
       - name: Pre-Collecting Cache Info
         run: |
-          echo "Cache info: "
-          du -h -d2 ${{ env.OV_CACHE }}
-      - name: Cleanup cache
+          echo "Pytest cache info: "
+          CACHE_DIR="/mount/caches/pytest"
+          if [ -d "$CACHE_DIR" ]; then
+            du -h -d2 "$CACHE_DIR"
+          else
+            echo "Pytest cache directory does not exist"
+          fi
+          
+      - name: Cleanup pytest cache
         run: |
-          echo "Delete cache files if they have not been used in over 3 days"
-          [ ! -z "${{ env.OV_CACHE }}" ] && find ${{ env.OV_CACHE }} ! -type d -atime +3 -delete
+          echo "Delete pytest cache files if they have not been used in over 3 days"
+          CACHE_DIR="/mount/caches/pytest"
+          if [ -d "$CACHE_DIR" ]; then
+            find "$CACHE_DIR" ! -type d -atime +3 -delete
+            echo "Cleanup directories older than 7 days in pytest cache"
+            find "$CACHE_DIR"/*/ov_models -type d -mtime +7 -exec rm -rf {} + 2>/dev/null || true
+          fi
 
       - name: Post-Collecting Cache Info
         run: |
-          echo "Cache info: "
-          du -h -d2 ${{ env.OV_CACHE }}
+          echo "Pytest cache info after cleanup: "
+          CACHE_DIR="/mount/caches/pytest"
+          if [ -d "$CACHE_DIR" ]; then
+            du -h -d2 "$CACHE_DIR"
+          else
+            echo "Pytest cache directory does not exist"
+          fi
