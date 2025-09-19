@@ -30,7 +30,7 @@ TEST_FILES = {
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_and_teardown(request, tmp_path_factory):
+def setup_and_teardown(cache, tmp_path_factory):
     """Fixture to set up and tear down the temporary directories."""
 
     ov_cache_models_dir = get_ov_cache_models_dir()
@@ -47,9 +47,9 @@ def setup_and_teardown(request, tmp_path_factory):
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(test_data, exist_ok=True)
 
-    request.config.cache.set("OV_CACHE", str(ov_cache))
-    request.config.cache.set("MODELS_DIR", str(models_dir))
-    request.config.cache.set("TEST_DATA", str(test_data))
+    cache.set("OV_CACHE", str(ov_cache))
+    cache.set("MODELS_DIR", str(models_dir))
+    cache.set("TEST_DATA", str(test_data))
 
     yield
 
