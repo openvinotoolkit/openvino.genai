@@ -362,7 +362,7 @@ TEST_P(CDPrunerIntegrationTest, LargeSequenceSplitting) {
     }
 
     // Test pruning application
-    auto pruned_features = cdpruner.apply_pruning(visual_features, text_features);
+    auto pruned_features = cdpruner.apply_pruning({visual_features}, text_features);
     auto pruned_shape = pruned_features.get_shape();
 
     EXPECT_EQ(pruned_shape[0], batch_size);       // Batch size unchanged

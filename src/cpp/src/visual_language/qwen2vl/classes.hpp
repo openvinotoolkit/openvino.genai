@@ -92,7 +92,7 @@ protected:
                                                   int64_t vision_start_token_id,
                                                   int64_t vision_end_token_id);
     
-    ov::Tensor convert_visual_features_for_cdpruner(const ov::Tensor& merged_image_embeddings);
+    std::vector<ov::Tensor> convert_visual_features_for_cdpruner(const ov::Tensor& merged_image_embeddings, size_t image_num);
     
     // [CDPruner] Position encoding adjustment function for pruning
     ov::Tensor adjust_position_ids_for_pruning(const ov::Tensor& original_position_ids,
