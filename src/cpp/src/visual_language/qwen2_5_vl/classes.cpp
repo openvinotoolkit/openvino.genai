@@ -16,7 +16,7 @@ std::pair<ov::Tensor, std::vector<int32_t>> get_window_index(
 ) {
     std::vector<int64_t> window_indices;
     std::vector<int32_t> cu_window_seqlens = {0};
-    int32_t window_index_id = 0;
+    size_t window_index_id = 0;
 
     const size_t spatial_merge_size = processor_config.merge_size;
     const size_t spatial_merge_unit = spatial_merge_size * spatial_merge_size;
@@ -36,29 +36,18 @@ std::pair<ov::Tensor, std::vector<int32_t>> get_window_index(
         size_t num_windows_h = (llm_grid_h + pad_h) / vit_merger_window_size;
         size_t num_windows_w = (llm_grid_w + pad_w) / vit_merger_window_size;
 
-        std::vector<std::vector<std::vector<int32_t>>> index_3d(grid_t,
-            std::vector<std::vector<int32_t>>(llm_grid_h + pad_h,
-                std::vector<int32_t>(llm_grid_w + pad_w, -100)));
-
-        int32_t index = 0;
-        for (size_t t = 0; t < grid_t; ++t) {
-            for (size_t h = 0; h < llm_grid_h; ++h) {
-                for (size_t w = 0; w < llm_grid_w; ++w) {
-                    index_3d[t][h][w] = index++;
-                }
-            }
-        }
-
         for (size_t t = 0; t < grid_t; ++t) {
             for (size_t wh = 0; wh < num_windows_h; ++wh) {
                 for (size_t ww = 0; ww < num_windows_w; ++ww) {
                     int32_t valid_count = 0;
                     for (size_t h = 0; h < vit_merger_window_size; ++h) {
+                        size_t gh = wh * vit_merger_window_size + h;
+                        if (gh >= llm_grid_h + pad_h) continue;
                         for (size_t w = 0; w < vit_merger_window_size; ++w) {
-                            size_t gh = wh * vit_merger_window_size + h;
                             size_t gw = ww * vit_merger_window_size + w;
-                            int32_t idx = index_3d[t][gh][gw];
-                            if (idx != -100) {
+                            if (gw >= llm_grid_w + pad_w) continue;
+                            if (gh < llm_grid_h && gw < llm_grid_w) {
+                                int32_t idx = static_cast<int32_t>(t * llm_grid_h * llm_grid_w + gh * llm_grid_w + gw);
                                 window_indices.push_back(idx + window_index_id);
                                 valid_count++;
                             }
@@ -68,7 +57,7 @@ std::pair<ov::Tensor, std::vector<int32_t>> get_window_index(
                 }
             }
         }
-        window_index_id += static_cast<int32_t>(grid_t * llm_grid_h * llm_grid_w);
+        window_index_id += static_cast<size_t>(grid_t * llm_grid_h * llm_grid_w);
     }
 
     ov::Tensor window_index_tensor{ov::element::i64, {window_indices.size()}};
