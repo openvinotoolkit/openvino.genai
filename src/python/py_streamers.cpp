@@ -31,7 +31,7 @@ TextStreamer is used to decode tokens into text and call a user-defined callback
 
 tokenizer: Tokenizer object to decode tokens into text.
 callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
-
+detokenization_params: AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
 )";
 
 class ConstructableStreamer: public StreamerBase {
@@ -93,8 +93,14 @@ void init_streamers(py::module_& m) {
     OPENVINO_SUPPRESS_DEPRECATED_END
 
     py::class_<TextStreamer, std::shared_ptr<TextStreamer>, StreamerBase>(m, "TextStreamer", text_streamer_docstring)
-        .def(py::init<const Tokenizer&, std::function<CallbackTypeVariant(std::string)>>(), py::arg("tokenizer"), py::arg("callback"))
-        .def("write", 
+        .def(py::init([](const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback, const std::map<std::string, py::object>& detokenization_params) {
+            return std::make_shared<TextStreamer>(tokenizer, callback, pyutils::properties_to_any_map(detokenization_params));
+        }),
+        py::arg("tokenizer"),
+        py::arg("callback"),
+        py::arg("detokenization_params") = ov::AnyMap({}))
+
+        .def("write",
             [](TextStreamer& self, std::variant<int64_t, std::vector<int64_t>> token) {
                 if (auto _token = std::get_if<int64_t>(&token)) {
                     return self.write(*_token);

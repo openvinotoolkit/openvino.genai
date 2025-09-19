@@ -17,6 +17,7 @@ using CallbackTypeVariant = std::variant<bool, StreamingStatus>;
  * @param tokenizer Tokenizer object to decode tokens into text.
  * @param callback User-defined callback function to process the decoded text, callback should return
  * either boolean flag or StreamingStatus.
+ * @param detokenization_params AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
  */
 class OPENVINO_GENAI_EXPORTS TextStreamer : public StreamerBase {
 public:
@@ -25,13 +26,14 @@ public:
 
     void end() override;
 
-    TextStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback);
+    TextStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback, const ov::AnyMap& detokenization_params = {});
 
 private:
     Tokenizer m_tokenizer;
     std::vector<int64_t> m_tokens_cache;
     std::vector<int64_t> m_decoded_lengths;
     size_t m_printed_len = 0;
+    ov::AnyMap m_additional_detokenization_params;
 
     StreamingStatus set_streaming_status(CallbackTypeVariant callback_status);
 
