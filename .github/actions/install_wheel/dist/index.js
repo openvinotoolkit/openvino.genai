@@ -35843,18 +35843,22 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         core.debug(`Attempt ${attempt} of 3`);
-        const { stdout, stderr } = await execAsync(
-          ['python', '-m', 'pip', 'install', ...installArgs],
-          {
-            stdio: 'inherit'
-          }
-        );
-        if (stdout) {
-          core.debug('stdout:', stdout);
-        }
-        if (stderr) {
-          core.error('stderr:', stderr);
-        }
+
+        await new Promise((resolve, reject) => {
+          const child = exec(
+            'python',
+            ['-m', 'pip', 'install', ...installArgs],
+            {
+              stdio: 'inherit'
+            }
+          );
+          child.on('close', code => {
+            if (code === 0) resolve();
+            else reject(new Error(`pip exited with code ${code}`));
+          });
+          child.on('error', reject);
+        });
+
         break;
       } catch (error) {
         core.error(`Attempt ${attempt + 1} failed:`, error.message);
