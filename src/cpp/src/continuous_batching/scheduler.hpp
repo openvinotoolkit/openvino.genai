@@ -52,6 +52,9 @@ public:
         size_t m_xattention_block_size = 0;
         size_t m_xattention_stride = 0;
 
+        size_t m_adaptive_rkv_start_size = 0;
+        // A value of 0 means that Adaptive R-KV similarity computation is not to be applied
+        std::map<uint64_t, size_t> m_adaptive_rkv_evictable_sizes;
 
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
@@ -334,6 +337,9 @@ private:
                         scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
                         scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
                         scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
+
+                        scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
+                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
                     }
                 }
 
@@ -402,8 +408,13 @@ private:
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
 
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+
+                        scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
                         scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
                         scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
+
+                        scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
+                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
                     }
 
 
@@ -476,8 +487,6 @@ private:
 
                 // add scheduling information
                 {
-                    Sequence::Ptr sequence = (*sequence_group)[0];
-                    uint64_t seq_id = sequence->get_id();
                     // and schedule tokens
                     sequence_group->schedule_tokens(sequence_len);
 
@@ -490,10 +499,15 @@ private:
                         uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
+
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+
                         scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
                         scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
                         scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
+
+                        scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
+                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
                     }
 
                     // update "is_prompt" flag
@@ -587,6 +601,27 @@ private:
         return m_config.sparse_attention_config.xattention_threshold;
     }
 
+    size_t _schedule_adaptive_rkv_evictable_size(SequenceGroup::Ptr sequence_group) {
+        if (!(m_config.use_cache_eviction && m_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV)) {
+            return 0;
+        }
+        if (!sequence_group->can_generate_tokens()) {
+            // Won't evict during prefill
+            return 0;
+        }
+
+        // First similarity/diversity calculation will be scheduled when at least `max_cache_size` tokens are filled
+        if (sequence_group->get_num_processed_tokens() < m_config.cache_eviction_config.get_max_cache_size()) {
+            return 0;
+        }
+
+        if (sequence_group->get_num_cached_tokens() % get_block_size() != 0) {
+            // Only request similarity computation once every block since eviction can only occur with a block granularity
+            return 0;
+        }
+
+        return m_config.cache_eviction_config.get_evictable_size();
+    }
 };
 
 }
