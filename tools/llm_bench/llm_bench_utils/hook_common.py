@@ -9,13 +9,13 @@ from packaging import version
 TRANS_MIN_VERSION = '4.40.0'
 
 
-def get_bench_hook(num_beams, ov_model, embed=False):
+def get_bench_hook(num_beams, ov_model, rag=False):
     min_version = version.parse(TRANS_MIN_VERSION)
     trans_version = version.parse(transformers.__version__)
     search_type = 'beam search' if num_beams > 1 else 'greedy search'
-    if embed:
+    if rag:
         import llm_bench_utils.hook_forward
-        bench_hook = llm_bench_utils.hook_forward.EmbedForwardHook()
+        bench_hook = llm_bench_utils.hook_forward.RAGForwardHook()
         bench_hook.new_forward(ov_model)
         return bench_hook
 
