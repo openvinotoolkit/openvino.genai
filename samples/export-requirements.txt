@@ -14,4 +14,4 @@ torchvision==0.23.0+cpu; platform_system != "Darwin" or platform_machine != "x86
 transformers==4.52.4 # For Whisper
 hf_transfer==0.1.9  # for faster models download, should used with env var HF_HUB_ENABLE_HF_TRANSFER=1
 backoff==2.2.1  # for microsoft/Phi-3.5-vision-instruct
-peft==0.17.0  # For microsoft/Phi-4-multimodal-instruct
+peft==0.17.1  # For microsoft/Phi-4-multimodal-instruct

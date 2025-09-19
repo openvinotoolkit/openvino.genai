@@ -1,10 +1,9 @@
-#include "include/helper.hpp"
+#include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 
 #include <future>
 #include "include/addon.hpp"
 #include "include/helper.hpp"
 #include "include/perf_metrics.hpp"
-#include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 #include "include/llm_pipeline/start_chat_worker.hpp"
 #include "include/llm_pipeline/finish_chat_worker.hpp"
 #include "include/llm_pipeline/init_worker.hpp"
@@ -111,9 +110,10 @@ Napi::Value LLMPipelineWrapper::init(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     const std::string model_path = info[0].ToString();
     const std::string device = info[1].ToString();
-    Napi::Function callback = info[2].As<Napi::Function>();
+    const auto& properties = js_to_cpp<ov::AnyMap>(info.Env(), info[2]);
+    Napi::Function callback = info[3].As<Napi::Function>();
 
-    InitWorker* asyncWorker = new InitWorker(callback, this->pipe, model_path, device);
+    InitWorker* asyncWorker = new InitWorker(callback, this->pipe, model_path, device, properties);
     asyncWorker->Queue();
 
     return info.Env().Undefined();

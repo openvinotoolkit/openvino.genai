@@ -74,10 +74,6 @@ int main(int argc, char* argv[]) try {
         config.pruning_debug_mode = pruning_debug_mode;
     }
 
-    ov::genai::SchedulerConfig scheduler_config;
-    scheduler_config.enable_prefix_caching = false;
-    scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
-
     std::cout << ov::get_openvino_version() << std::endl;
 
     // Setup cache configuration for CDPruner if needed
@@ -91,10 +87,11 @@ int main(int argc, char* argv[]) try {
     if (device == "NPU") {
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
     } else {
-        // Setting of Scheduler config will trigger usage of ContinousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
-        // Combine scheduler config and compile cache properties
-        properties.insert(ov::genai::scheduler_config(scheduler_config));
-        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, properties);
+        // Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
+        ov::genai::SchedulerConfig scheduler_config;
+        scheduler_config.enable_prefix_caching = false;
+        scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
+        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
     }
 
     auto input_data = pipe->get_tokenizer().encode(prompt);

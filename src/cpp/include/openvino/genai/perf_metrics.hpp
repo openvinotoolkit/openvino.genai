@@ -87,7 +87,9 @@ struct OPENVINO_GENAI_EXPORTS SummaryStats {
  * @param get_num_input_tokens Returns the number of tokens in the input prompt.
  * @param get_ttft Returns the mean and standard deviation of TTFT.
  * @param get_tpot Returns the mean and standard deviation of TPOT.
+ * @param get_ipot Returns the mean and standard deviation of IPOT.
  * @param get_throughput Returns the mean and standard deviation of throughput.
+ * @param get_inference_duration Returns the mean and standard deviation of inference duration.
  * @param get_generate_duration Returns the mean and standard deviation of generate duration.
  * @param get_tokenization_duration Returns the mean and standard deviation of tokenization duration.
  * @param get_detokenization_duration Returns the mean and standard deviation of detokenization duration.
@@ -106,7 +108,9 @@ struct OPENVINO_GENAI_EXPORTS SummaryStats {
  * Cached mean and standard deviations.
  * @param ttft Mean and standard deviation of Time to the First Token (TTFT) in milliseconds.
  * @param tpot Mean and standard deviation of Time per Output Token (TPOT) in milliseconds per token.
+ * @param ipot Mean and standard deviation of Inference Time per Output Token (IPOT) in milliseconds per token.
  * @param throughput Mean and standard deviation of tokens per second.
+ * @param inference_duration Mean and standard deviation of the time spent on model inference during generate call in milliseconds.
  * @param generate_duration Mean and standard deviation of the total duration of generate calls in milliseconds.
  * @param tokenization_duration Mean and standard deviation of the tokenization duration in milliseconds.
  * @param detokenization_duration Mean and standard deviation of the detokenization duration in milliseconds.
