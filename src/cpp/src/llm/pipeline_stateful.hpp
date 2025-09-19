@@ -23,7 +23,7 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     // Finish reason of last generation for chat scenario
     ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
     // if True, full history will be used as prompt on each chat generation
-    bool m_use_full_chat_history = false;
+    bool m_use_full_chat_history = true;
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;

@@ -120,7 +120,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new_chat_tokens) {
     ov::Tensor encoded_inputs;
-    if (m_is_chat_conversation) {
+    if (m_is_chat_conversation && !m_use_full_chat_history) {
         ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
         encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state).input_ids;
     } else {
@@ -317,6 +317,14 @@ void InputsEmbedder::update_chat_history(const std::string& decoded_results, con
 
 void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
     return m_impl->set_apply_chat_template_status(apply_chat_template);
+}
+
+bool InputsEmbedder::is_use_full_chat_history() {
+    return m_impl->is_use_full_chat_history();
+}
+
+void InputsEmbedder::set_use_full_chat_history_mode(bool use_full_chat_history) {
+    return m_impl->set_use_full_chat_history_mode(use_full_chat_history);
 }
 
 void InputsEmbedder::finish_chat() {
