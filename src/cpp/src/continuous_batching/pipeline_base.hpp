@@ -93,7 +93,8 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const std::vector<ov::Tensor>& rgbs,
-                                 GenerationConfig sampling_params);
+                                 GenerationConfig sampling_params,
+                                 const bool& is_video = false);
 
     /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
@@ -127,7 +128,8 @@ public:
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& rgbs,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer);
+             const StreamerVariant& streamer,
+             const bool& is_video = false);
 
     /**
      * Starts chat with a given system prompt

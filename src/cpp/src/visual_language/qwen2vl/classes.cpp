@@ -18,6 +18,8 @@
 #include "openvino/op/round.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/op/tile.hpp"
+#include "openvino/op/if.hpp"
+#include "openvino/op/concat.hpp"
 
 #include "visual_language/vl_sdpa_transformations.hpp"
 
@@ -112,18 +114,70 @@ std::shared_ptr<ov::Node> create_flatten_patches(std::shared_ptr<ov::Node> input
     return flattened;
 }
 
+std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch_preprocess_branch_image(
+    std::shared_ptr<ov::op::v0::Parameter> raw_images_1,
+    std::shared_ptr<ov::op::v0::Parameter> resize_shape,
+    std::shared_ptr<ov::op::v0::Constant> image_mean,
+    std::shared_ptr<ov::op::v0::Constant> image_scale,
+    std::shared_ptr<ov::op::v0::Parameter> tile_shape) {
+    auto img_f32_nchw = create_f32_nchw_input(raw_images_1);
+    auto img_resized = create_bicubic_resize(img_f32_nchw, resize_shape);
+    auto img_normalized = create_normalization(img_resized, image_mean, image_scale);
+    auto temporal_images = std::make_shared<ov::op::v0::Tile>(img_normalized, tile_shape);
+    auto results = std::make_shared<ov::op::v0::Result>(temporal_images);
+    return {
+        std::make_shared<ov::Model>(results, ov::ParameterVector{raw_images_1, resize_shape, tile_shape}, "then_body"),
+        results};
+}
+
+std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch_preprocess_branch_video(
+    std::shared_ptr<ov::op::v0::Parameter> same_image,
+    std::shared_ptr<ov::op::v0::Parameter> raw_images_1,
+    std::shared_ptr<ov::op::v0::Parameter> raw_images_2,
+    std::shared_ptr<ov::op::v0::Parameter> resize_shape,
+    std::shared_ptr<ov::op::v0::Constant> image_mean,
+    std::shared_ptr<ov::op::v0::Constant> image_scale) {
+    auto img_f32_nchw_1 = create_f32_nchw_input(raw_images_1);
+    auto img_resized_1 = create_bicubic_resize(img_f32_nchw_1, resize_shape);
+    auto img_normalized_1 = create_normalization(img_resized_1, image_mean, image_scale);
+
+    auto img_f32_nchw_2 = create_f32_nchw_input(raw_images_2);
+    auto img_resized_2 = create_bicubic_resize(img_f32_nchw_2, resize_shape);
+    auto img_normalized_2 = create_normalization(img_resized_2, image_mean, image_scale);
+
+    int64_t concat_axis = 0;
+    ov::NodeVector inputs_to_concat = {img_normalized_1, img_normalized_2};
+    auto temporal_images = std::make_shared<ov::op::v0::Concat>(inputs_to_concat, concat_axis);
+
+    auto result_temperal_images = std::make_shared<ov::op::v0::Result>(temporal_images);
+    auto result_ignore = std::make_shared<ov::op::v0::Result>(same_image);
+    return {std::make_shared<ov::Model>(ov::ResultVector{result_temperal_images, result_ignore},
+                                        ov::ParameterVector{same_image, raw_images_1, raw_images_2, resize_shape},
+                                        "else_body"),
+            result_temperal_images};
+}
+
 std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org,
                                                        const ov::Tensor& image_mean_tensor,
                                                        const ov::Tensor& image_scale_tensor) {
-    auto input_images = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+    auto same_image = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
+
+    auto raw_images_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+    auto raw_images_2 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+
     auto resize_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
     auto tile_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
     auto reshape_shape8d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{8});
     auto reshape_shape4d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
     auto reshape_shape2d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
 
-    input_images->set_friendly_name("input_images");
-    input_images->output(0).get_tensor().set_names({"input_images"});
+    same_image->set_friendly_name("same_image");
+    same_image->output(0).get_tensor().set_names({"same_image"});
+
+    raw_images_1->set_friendly_name("raw_images_1");
+    raw_images_1->output(0).get_tensor().set_names({"raw_images_1"});
+    raw_images_2->set_friendly_name("raw_images_2");
+    raw_images_2->output(0).get_tensor().set_names({"raw_images_2"});
 
     resize_shape->set_friendly_name("resize_shape");
     resize_shape->output(0).get_tensor().set_names({"resize_shape"});
@@ -139,16 +193,45 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     reshape_shape2d->output(0).get_tensor().set_names({"reshape_shape2d"});
     auto image_mean = std::make_shared<ov::op::v0::Constant>(image_mean_tensor);
     auto image_scale = std::make_shared<ov::op::v0::Constant>(image_scale_tensor);
-    auto img_f32_nchw = create_f32_nchw_input(input_images);
 
-    auto img_resized = create_bicubic_resize(img_f32_nchw, resize_shape);
+    // If
+    auto then_raw_images_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+    auto then_resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
+    auto then_tile_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
+    auto model_then = patch_preprocess_branch_image(then_raw_images_1,
+                                                    then_resize_target_shape,
+                                                    image_mean,
+                                                    image_scale,
+                                                    then_tile_shape);
 
-    auto img_normalized = create_normalization(img_resized, image_mean, image_scale);
+    auto else_same_image = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
+    auto else_raw_images_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+    auto else_raw_images_2 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+    auto else_resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
+    auto model_else = patch_preprocess_branch_video(else_same_image,
+                                                    else_raw_images_1,
+                                                    else_raw_images_2,
+                                                    else_resize_target_shape,
+                                                    image_mean,
+                                                    image_scale);
 
-    auto temporal_images = std::make_shared<ov::op::v0::Tile>(img_normalized, tile_shape);
+    auto if_op = std::make_shared<ov::op::v8::If>();
+    if_op->set_then_body(model_then.first);
+    if_op->set_else_body(model_else.first);
+    if_op->set_input(same_image->output(0), nullptr, else_same_image);
+    
+    if_op->set_input(raw_images_1->output(0), nullptr, else_raw_images_1);
+    if_op->set_input(raw_images_2->output(0), nullptr, else_raw_images_2);
+    if_op->set_input(resize_shape->output(0), nullptr, else_resize_target_shape);
+
+    if_op->set_input(raw_images_1->output(0), then_raw_images_1, nullptr);
+    if_op->set_input(resize_shape->output(0), then_resize_target_shape, nullptr);
+    if_op->set_input(tile_shape->output(0), then_tile_shape, nullptr);
+
+    auto temporal_images = if_op->set_output(model_then.second, model_else.second);
 
     auto img_8d =
-        create_transpose_patches(temporal_images,
+        create_transpose_patches(temporal_images.get_node_shared_ptr(),
                                  reshape_shape8d,
                                  std::make_shared<ov::op::v0::Constant>(ov::element::i32,
                                                                         Shape{8},
@@ -168,11 +251,17 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
 
     auto results = model_org->get_results();
 
-    return std::make_shared<ov::Model>(
-        results,
-        ov::ParameterVector{input_images, resize_shape, tile_shape, reshape_shape8d, reshape_shape4d, reshape_shape2d});
+    return std::make_shared<ov::Model>(results,
+                                       ov::ParameterVector{same_image,
+                                                           raw_images_1,
+                                                           raw_images_2,
+                                                           resize_shape,
+                                                           tile_shape,
+                                                           reshape_shape8d,
+                                                           reshape_shape4d,
+                                                           reshape_shape2d});
 }
-} // namespace
+}  // namespace
 
 namespace qwen2_vl_utils {
 
@@ -221,7 +310,7 @@ ov::Tensor reshape_image_patches(
         spatial_merge_size,          
         patch_size                   
     };
-    
+
     ov::Tensor reshaped_patches(patches.get_element_type(), output_shape);
 
     const float* input_data = patches.data<float>();
@@ -526,51 +615,47 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
 }
 
 // keep both implementations for comparison and testing, here is the cpp version
-EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
-    ov::Shape image_shape = image.get_shape();
-    auto original_height = image_shape.at(1);
-    auto original_width = image_shape.at(2);
-    ImageSize target_image_size = qwen2_vl_utils::smart_resize(
-        original_height, 
-        original_width, 
-        config.patch_size * config.merge_size,
-        config.min_pixels,
-        config.max_pixels
-    );
+    
+    OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
+    if (images.size() > 1)
+        OPENVINO_ASSERT(config.temporal_patch_size == images.size(), "temporal_patch_size != images.size()");
 
-    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
-    clip_image_u8 resized_image;
-    bicubic_resize(input_image, resized_image, target_image_size.width, target_image_size.height);
+    ov::Shape orig_shape = images[0].get_shape();
+    ImageSize target_image_size = qwen2_vl_utils::smart_resize(orig_shape.at(1),
+                                                               orig_shape.at(2),
+                                                               config.patch_size * config.merge_size,
+                                                               config.min_pixels,
+                                                               config.max_pixels);
 
-    clip_ctx ctx;
-    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
-    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
-    clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
+    ov::Tensor tiled_patches(ov::element::f32,
+                             {config.temporal_patch_size, 3, target_image_size.height, target_image_size.width});
 
-    ov::Tensor patches = clip_image_f32_to_tensor(normalized_image);
+    for (size_t i = 0; i < config.temporal_patch_size; i++) {
+        const auto& image = images.size() > i ? images[i] : images[0];
 
-    // For single patch tile it to match temporal_patch_size
-    if (patches.get_shape().at(0) == 1) {
-        auto orig_shape = patches.get_shape();
-        ov::Tensor tiled_patches(patches.get_element_type(),
-                                    {config.temporal_patch_size, orig_shape.at(1), orig_shape.at(2), orig_shape.at(3)});
+        clip_image_u8 input_image = tensor_to_clip_image_u8(image);
+        clip_image_u8 resized_image;
+        bicubic_resize(input_image, resized_image, target_image_size.width, target_image_size.height);
 
-        for (size_t i = 0; i < config.temporal_patch_size; i++) {
-            std::memcpy(
-                tiled_patches.data<float>() + i * patches.get_byte_size() / sizeof(float),
-                patches.data<float>(),
-                patches.get_byte_size()
-            );
-        }
-        patches = std::move(tiled_patches);
+        clip_ctx ctx;
+        std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
+        std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
+        clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
+
+        auto patch = clip_image_f32_to_tensor(normalized_image);
+
+        std::memcpy(tiled_patches.data<float>() + i * patch.get_byte_size() / sizeof(float),
+                    patch.data<float>(),
+                    patch.get_byte_size());
     }
+    auto patches = std::move(tiled_patches);
 
     auto patches_shape = patches.get_shape();
     size_t channel = patches_shape.at(1);
-
     size_t grid_t = patches_shape.at(0) / config.temporal_patch_size;
     size_t grid_h = target_image_size.height / config.patch_size;
     size_t grid_w = target_image_size.width / config.patch_size;
@@ -598,12 +683,14 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const ov::Ten
 }
 
 // keep both implementations for comparison and testing, here is the ov version
-EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const ov::Tensor& image, const ov::AnyMap& config_map) {
+// input multiple images, process based on video.
+// input single image, process based on image.
+EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
-    ov::Shape image_shape = image.get_shape();
+    ov::Shape image_shape = images[0].get_shape();
     auto original_height = image_shape.at(1);
     auto original_width = image_shape.at(2);
 
@@ -615,12 +702,18 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const ov::Tens
         config.max_pixels
     );
 
-    ov::Tensor input_images(ov::element::u8, image_shape, image.data<uint8_t>());
+    OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
+
+    ov::Tensor same_image(ov::element::f32, ov::Shape{1}, std::vector<float>{images.size() == 2u ? 1.f : 0.f}.data());
+    ov::Tensor input_image_1(ov::element::u8, image_shape, images[0].data<uint8_t>());
+    ov::Tensor input_image_2(ov::element::u8,
+                             image_shape,
+                             images.size() == 2 ? images[1].data<uint8_t>() : images[0].data<uint8_t>());
 
     uint64_t a_target_shape[2] = {target_image_size.height, target_image_size.width};
     ov::Tensor target_shape(ov::element::i64, ov::Shape{2}, a_target_shape);
 
-    auto patches_shape = image.get_shape();
+    auto patches_shape = images[0].get_shape();
     size_t temporal_patch_size = std::max(static_cast<size_t>(patches_shape.at(0)), static_cast<size_t>(config.temporal_patch_size));
     size_t channel = image_shape.at(3);
 
@@ -632,7 +725,7 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const ov::Tens
     if (patches_shape.at(0) == 1) {
         repeats = config.temporal_patch_size;
     }
-    uint64_t a_broadcast_shape[4] = {static_cast<size_t>(repeats), 1, 1, 1};
+    uint64_t a_tile_shape[4] = {static_cast<size_t>(repeats), 1, 1, 1};
 
     uint64_t a_temp_shape8d[8] = {
         grid_t, temporal_patch_size * channel, grid_h / config.merge_size, config.merge_size, config.patch_size, grid_w / config.merge_size, config.merge_size, config.patch_size
@@ -644,12 +737,15 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const ov::Tens
         config.patch_size * config.patch_size
     };
     uint64_t last_output_shape[2] = {grid_t * grid_h * grid_w, channel * temporal_patch_size * config.patch_size * config.patch_size};
-    ov::Tensor tile_shape(ov::element::i64, ov::Shape{4}, a_broadcast_shape);
+    ov::Tensor tile_shape(ov::element::i64, ov::Shape{4}, a_tile_shape);
     ov::Tensor reshape_shape8d(ov::element::i64, ov::Shape{8}, a_temp_shape8d);
     ov::Tensor reshape_shape4d(ov::element::i64, ov::Shape{4}, a_temp_shape4d);
     ov::Tensor reshape_shape2d(ov::element::i64, ov::Shape{2}, last_output_shape);
 
-    encoder.set_tensor("input_images", input_images);
+    // Same image means just duplicating input_image_1 as input_image_2 or not.
+    encoder.set_tensor("same_image", same_image);
+    encoder.set_tensor("raw_images_1", input_image_1);
+    encoder.set_tensor("raw_images_2", input_image_2);
     encoder.set_tensor("resize_shape", target_shape);
     encoder.set_tensor("tile_shape", tile_shape);
     encoder.set_tensor("reshape_shape8d", reshape_shape8d);
@@ -669,9 +765,42 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const ov::Tens
 
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     if (use_ov_image_preprocess == false) {
-        return encode_with_imagepreprocess_cpp(image, config_map);
+        return encode_with_imagepreprocess_cpp({image}, config_map);
     }
-    return encode_with_imagepreprocess_ov(image, config_map);
+    return encode_with_imagepreprocess_ov({image}, config_map);
+}
+
+std::vector<EncodedImage> VisionEncoderQwen2VL::encode_video(const std::vector<ov::Tensor>& images,
+                                                             const ov::AnyMap& config_map) {
+    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    std::vector<EncodedImage> encoded_imgs;
+    int i = 0;
+    int image_num = static_cast<int>(images.size());
+    for (; i < image_num - static_cast<int>(config.temporal_patch_size); i += config.temporal_patch_size) {
+        EncodedImage encoded_img;
+        if (use_ov_image_preprocess == false) {
+            encoded_img = encode_with_imagepreprocess_cpp(
+                std::vector<ov::Tensor>(images.begin() + i, images.begin() + i + config.temporal_patch_size),
+                config_map);
+        } else {
+            encoded_img = encode_with_imagepreprocess_ov(
+                std::vector<ov::Tensor>(images.begin() + i, images.begin() + i + config.temporal_patch_size),
+                config_map);
+        }
+
+        encoded_imgs.push_back(encoded_img);
+    }
+    for (; i < image_num; i++) {
+        EncodedImage encoded_img;
+        if (use_ov_image_preprocess == false) {
+            encoded_img = encode_with_imagepreprocess_cpp({images[i]}, config_map);
+        } else {
+            encoded_img = encode_with_imagepreprocess_ov({images[i]}, config_map);
+        }
+        encoded_imgs.push_back(encoded_img);
+    }
+
+    return encoded_imgs;
 }
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(

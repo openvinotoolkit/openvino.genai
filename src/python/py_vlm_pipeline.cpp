@@ -46,6 +46,9 @@ auto vlm_generate_docstring = R"(
     :param images: image or list of images
     :type images: list[ov.Tensor] or ov.Tensor
 
+    :param video: list of frames
+    :type video: list[ov.Tensor]
+
     :param generation_config: generation_config
     :type generation_config: GenerationConfig or a dict
 
@@ -127,14 +130,15 @@ py::object call_vlm_generate(
     const std::vector<ov::Tensor>& images,
     const ov::genai::GenerationConfig& generation_config,
     const pyutils::PyBindStreamerVariant& py_streamer,
-    const py::kwargs& kwargs
+    const py::kwargs& kwargs,
+    const bool& is_video = false
 ) {
     auto updated_config = *pyutils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res= pipe.generate(prompt, images, updated_config, streamer);
+        res= pipe.generate(prompt, images, updated_config, streamer, is_video);
     }
     return py::cast(res);
 }
@@ -231,6 +235,23 @@ void init_vlm_pipeline(py::module_& m) {
             },
             py::arg("prompt"), "Input string",
             py::arg("images"), "Input images",
+            py::arg("generation_config"), "generation_config",
+            py::arg("streamer") = std::monostate(), "streamer",
+            (vlm_generate_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
+                const std::string& prompt,
+                const std::vector<ov::Tensor>& video,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
+                return call_vlm_generate(pipe, prompt, video, generation_config, streamer, kwargs, true);
+            },
+            py::arg("prompt"), "Input string",
+            py::arg("video"), "Input video",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
             (vlm_generate_docstring + std::string(" \n ")).c_str()

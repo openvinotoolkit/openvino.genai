@@ -43,12 +43,13 @@ public:
 
     VLMDecodedResults generate(
         const std::string& prompt,
-        const std::vector<ov::Tensor>& rgbs,
+        const std::vector<ov::Tensor>& images,
         GenerationConfig generation_config,
-        const StreamerVariant& streamer
+        const StreamerVariant& streamer,
+        const bool& is_video
     ) override {
         auto start_time = std::chrono::steady_clock::now();
-        auto result = m_impl.generate({prompt}, {rgbs}, {generation_config}, streamer)[0];
+        auto result = m_impl.generate({prompt}, {images}, {generation_config}, streamer, is_video)[0];
         auto stop_time = std::chrono::steady_clock::now();
         
         VLMDecodedResults decoded;

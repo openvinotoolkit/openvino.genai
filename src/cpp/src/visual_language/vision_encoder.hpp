@@ -5,10 +5,12 @@
 #include <memory>
 #include "openvino/runtime/infer_request.hpp"
 
+#include "logger.hpp"
 #include "openvino/genai/common_types.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
 #include "circular_buffer_queue.hpp"
+
 
 namespace ov::genai {
 /// @brief A pair describing image size.
@@ -99,6 +101,10 @@ public:
     /// @return Resulting embeddings for the resized source image and
     /// its slices.
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
+    virtual std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map = {}) {
+        // Video encode not implemented, return empty and fallback to image encode.
+        return {};
+    }
 
     /// @brief Gets processor config
     /// @return Processor config
