@@ -263,7 +263,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     ov::genai::GenerationConfig sampling_params,
-    std::optional<ov::Tensor> token_type_ids) {
+    std::optional<ov::Tensor> token_type_ids,
+    std::optional<ov::Tensor> prompt_ids) {
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params.stop_token_ids.empty())
         sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
@@ -279,7 +280,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     }
     OPENVINO_ASSERT(sampling_params.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
 
-    auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, token_type_ids);
+    auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, token_type_ids, prompt_ids);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
@@ -460,7 +461,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer,
-                                                             const std::optional<std::vector<ov::Tensor>> token_type_ids) {
+                                                             const std::optional<std::vector<ov::Tensor>> token_type_ids,
+                                                             const std::optional<std::vector<ov::Tensor>> prompt_ids) {
 
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");

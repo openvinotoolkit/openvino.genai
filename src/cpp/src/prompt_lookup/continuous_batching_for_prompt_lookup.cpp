@@ -56,13 +56,7 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
 
 void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates() {
     for (auto& request : m_requests) {
-        auto prompt = request->get_prompt_ids();
-        if (prompt.size() == 0) {
-            auto type_ids = request->get_token_type_ids();
-            if (type_ids.has_value()) {
-                prompt = *type_ids;
-            }
-        }
+        const auto prompt = request->get_prompt_ids();
 
         size_t max_validation_len = 0;
         for (auto& running_sequence : request->get_running_sequences()) {

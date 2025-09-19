@@ -160,6 +160,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
+    std::vector<ov::Tensor> prompt_ids_list;
     
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
     std::vector<EncodedImage> encoded_images = {};
@@ -179,8 +180,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
         m_inputs_embedder->set_apply_chat_template_status(false);
+
+        auto [embeds, prompt_ids] = m_inputs_embedder->get_inputs_embeds_with_prompt_ids(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
+        if (sampling_params[0].is_prompt_lookup()) {
+            prompt_ids_list.push_back(prompt_ids);
+        }
+
         if (m_inputs_embedder->has_token_type_ids()) {
-            auto [embeds, prompt_ids] = m_inputs_embedder->get_inputs_embeds_with_prompt_ids(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
             auto tt_ids = m_inputs_embedder->get_inputs_token_type_ids(prompt_ids, vlm_perf_metrics[0]);
 
             input_embeds_list.push_back(std::move(embeds));
@@ -202,8 +208,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
+            auto [embeds, prompt_ids] = m_inputs_embedder->get_inputs_embeds_with_prompt_ids(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence);
+
+            if (sampling_params[i].is_prompt_lookup()) {
+                prompt_ids_list.push_back(prompt_ids);
+            }
+
             if (m_inputs_embedder->has_token_type_ids()) {
-                auto [embeds, prompt_ids] = m_inputs_embedder->get_inputs_embeds_with_prompt_ids(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence);
                 auto tt_ids = m_inputs_embedder->get_inputs_token_type_ids(prompt_ids, vlm_perf_metrics[i]);
                 input_embeds_list.push_back(std::move(embeds));
                 token_type_ids_list.push_back(std::move(tt_ids));
@@ -216,7 +227,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
     }
     std::vector<VLMDecodedResults> results;
-    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list, sampling_params, streamer, token_type_ids_list);
+    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list, sampling_params, streamer, token_type_ids_list, prompt_ids_list);
     for (size_t i = 0; i < prompts.size(); i++) {
         auto result = encoded_results[i];
         VLMDecodedResults gen_result;

@@ -291,12 +291,16 @@ public:
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, std::nullopt) {
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, std::nullopt, std::nullopt) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, const std::optional<ov::Tensor>& token_type_ids = std::nullopt)
+    SequenceGroup(uint64_t request_id,
+                  const ov::Tensor input_ids,
+                  const ov::genai::GenerationConfig& sampling_params,
+                  std::size_t block_size,
+                  const std::optional<ov::Tensor>& token_type_ids = std::nullopt,
+                  const std::optional<ov::Tensor>& prompt_ids = std::nullopt)
         : SequenceGroup(request_id, sampling_params, block_size) {
-        
         size_t prompt_len;
         size_t hidden_size = 0;
         if (input_ids.get_shape().size() > 1) {
@@ -326,6 +330,14 @@ public:
                 m_token_type_ids = std::vector<int64_t>(tokens.get_size());
                 OPENVINO_SUPPRESS_DEPRECATED_START
                 std::copy_n(tokens.data<int64_t>(), tokens.get_size(), m_token_type_ids->begin());
+                OPENVINO_SUPPRESS_DEPRECATED_END
+            }
+            if (prompt_ids.has_value()) {
+                const ov::Tensor& tokens = prompt_ids.value();
+                OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64);
+                m_prompt_ids.resize(tokens.get_size());
+                OPENVINO_SUPPRESS_DEPRECATED_START
+                std::copy_n(tokens.data<int64_t>(), tokens.get_size(), m_prompt_ids.begin());
                 OPENVINO_SUPPRESS_DEPRECATED_END
             }
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
