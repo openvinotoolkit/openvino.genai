@@ -42,6 +42,7 @@ public:
     std::string m_bos_token = {};
     std::string m_eos_token = {};
     std::string m_chat_template = {};
+    std::string m_original_chat_template = {};
     std::vector<std::string> m_vocab = {};
     std::shared_ptr<StructuredOutputController> m_structured_output_controller = nullptr;
 
@@ -77,7 +78,8 @@ public:
                                     const std::string& chat_template) const;
 
     void set_chat_template(const std::string& chat_template);
-    std::string get_chat_template();
+    std::string get_chat_template() const;
+    std::string get_original_chat_template() const;
     std::shared_ptr<StructuredOutputController> get_structured_output_controller(std::optional<int> vocab_size = std::nullopt);
 };
 
