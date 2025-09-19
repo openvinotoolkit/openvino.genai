@@ -139,7 +139,7 @@ def load_text_model(
         from optimum.intel.openvino import OVModelForCausalLM
         try:
             model = OVModelForCausalLM.from_pretrained(
-                model_id, device=device, ov_config=ov_config
+                model_id, device=device, ov_config=ov_config, **kwargs
             )
         except Exception:
             try:
