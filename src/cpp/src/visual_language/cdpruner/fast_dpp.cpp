@@ -853,7 +853,6 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
                           CL_MEM_READ_WRITE,
                           sizeof(float) * selected_token_num * total_tokens_num * batch_size);
     cl::Buffer buffer_output_ids(m_state->context, CL_MEM_READ_WRITE, sizeof(int) * selected_token_num * batch_size);
-    cl::Buffer buffer_best_id(m_state->context, CL_MEM_READ_WRITE, sizeof(int) * batch_size);
 
     // Use merged kernel approach (ENABLE_KERNEL_MERGE = 1)
     auto merged_kernel = m_state->get_kernel("dpp_impl");
@@ -863,15 +862,14 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     // Set kernel arguments
     merged_kernel.setArg(0, buffer_mat);
     merged_kernel.setArg(1, static_cast<int>(total_tokens_num));
-    merged_kernel.setArg(2, buffer_best_id);
     // arg 3 will be set in the loop (iteration)
-    merged_kernel.setArg(4, buffer_cis);
-    merged_kernel.setArg(5, buffer_di2s);
-    merged_kernel.setArg(6, numerical_threshold);
-    merged_kernel.setArg(7, static_cast<int>(selected_token_num));
-    merged_kernel.setArg(8, buffer_output_ids);
-    merged_kernel.setArg(9, sizeof(float) * lws[1], nullptr);  // local memory for reduction
-    merged_kernel.setArg(10, sizeof(int) * lws[1], nullptr);   // local memory for argmax
+    merged_kernel.setArg(3, buffer_cis);
+    merged_kernel.setArg(4, buffer_di2s);
+    merged_kernel.setArg(5, numerical_threshold);
+    merged_kernel.setArg(6, static_cast<int>(selected_token_num));
+    merged_kernel.setArg(7, buffer_output_ids);
+    merged_kernel.setArg(8, sizeof(float) * lws[1], nullptr);  // local memory for reduction
+    merged_kernel.setArg(9, sizeof(int) * lws[1], nullptr);   // local memory for argmax
 
     if (m_config.pruning_debug_mode) {
         std::cout << "[OpenCLDPP] Global work size: [" << gws[0] << ", " << gws[1] << ", " << gws[2] << "]"
@@ -894,7 +892,7 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
         cl::Event event;
 
         // Set current iteration
-        merged_kernel.setArg(3, static_cast<int>(t));
+        merged_kernel.setArg(2, static_cast<int>(t));
 
         // Execute the merged kernel (combines argmax, update orthogonal vector, and update marginal gains)
         m_state->queue.enqueueNDRangeKernel(merged_kernel, cl::NullRange, gws, lws, &eventList, &event);
