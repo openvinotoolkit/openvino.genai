@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include <string>
-#include <cstddef>
 #include <cmath>
+#include <cstddef>
+#include <string>
 
 namespace ov::genai::cdpruner {
 
@@ -16,7 +16,7 @@ struct Config {
 
     /// @brief Weight for balancing relevance vs diversity (0.0 to 1.0)
     float relevance_weight = 0.5f;
-    
+
     /// @brief Device to run CDPruner computations on
     std::string device = "CPU";
 
@@ -38,29 +38,21 @@ struct Config {
     /// @brief OpenCL kernel file path for DPP computation
     /// Only used when use_cl_kernel is true
     std::string cl_kernel_path = "/home/ywang2/openvino.genai/src/cpp/src/visual_language/cdpruner/dpp_kernel_split.cl";
-    
+
     /// @brief Threshold for splitting large kernel matrices (internal use only)
     /// When visual tokens exceed this threshold, the kernel matrix will be split
     /// for parallel processing. This parameter is not exposed in public API.
     size_t split_threshold = 2000;
-    
+
     /// @brief Compare two Config structures for equality
     /// @param other The other Config to compare with
     /// @return true if all configuration parameters are equal, false otherwise
-    bool operator==(const Config& other) const {
-        return pruning_ratio == other.pruning_ratio &&
-               std::abs(relevance_weight - other.relevance_weight) < 1e-6f &&
-               device == other.device && pruning_debug_mode == other.pruning_debug_mode &&
-               std::abs(numerical_threshold - other.numerical_threshold) < 1e-9f &&
-               use_negative_relevance == other.use_negative_relevance;
-    }
+    bool operator==(const Config& other) const;
 
     /// @brief Compare two Config structures for inequality
     /// @param other The other Config to compare with
     /// @return true if any configuration parameters differ, false otherwise
-    bool operator!=(const Config& other) const {
-        return !(*this == other);
-    }
+    bool operator!=(const Config& other) const;
 };
 
-} // namespace ov::genai::cdpruner 
+}  // namespace ov::genai::cdpruner

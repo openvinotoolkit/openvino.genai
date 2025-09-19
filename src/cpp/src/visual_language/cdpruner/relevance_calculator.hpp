@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "openvino/runtime/tensor.hpp"
 #include "cdpruner_config.hpp"
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov::genai::cdpruner {
 
@@ -14,7 +14,7 @@ public:
     /// @brief Constructor
     /// @param config Configuration for the calculator
     explicit RelevanceCalculator(const Config& config);
-    
+
     /// @brief Compute relevance scores between visual embeddings and text embeddings
     /// @param visual_embeds Visual feature embeddings [B, N, C]
     /// @param text_embeds Text feature embeddings [M, C]
@@ -26,12 +26,12 @@ private:
     /// @param input Input tensor to normalize
     /// @return Normalized tensor
     ov::Tensor l2_normalize(const ov::Tensor& input);
-    
+
     /// @brief Min-max normalize tensor
     /// @param input Input tensor to normalize
     /// @return Normalized tensor
     ov::Tensor min_max_normalize(const ov::Tensor& input);
-    
+
     /// @brief Compute matrix multiplication between visual and text embeddings
     /// @param visual_embeds Visual embeddings [B, N, C]
     /// @param text_embeds Text embeddings [M, C]
@@ -47,4 +47,4 @@ private:
     Config m_config;
 };
 
-} // namespace ov::genai::cdpruner 
+}  // namespace ov::genai::cdpruner
