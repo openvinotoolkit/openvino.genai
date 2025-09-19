@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Intel Corporation
+﻿// Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "load_image.hpp"
@@ -10,25 +10,41 @@ bool print_subword(std::string&& subword) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc < 3 || argc > 4) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE>");
+    if (3 > argc || argc > 6) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE> [<DEVICE>] [<PRUNING_RATIO>] [<PRUNING_DEBUG_MODE>]");
     }
 
-    std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
+    std::string model_dir = argv[1];
+    std::string image_file = argv[2];
+    std::string device = argc > 3 ? argv[3] : "CPU";
+    size_t pruning_ratio = argc > 4 ? std::stoul(argv[4]) : 0;  // 0 means disabled
+    bool pruning_debug_mode = argc > 5 ? (std::string(argv[5]) == "true" || std::string(argv[5]) == "1") : false;
+
+    std::vector<ov::Tensor> rgbs = utils::load_images(image_file);
 
     // GPU and NPU can be used as well.
     // Note: If NPU is selected, only language model will be run on NPU
-    std::string device = (argc == 4) ? argv[3] : "CPU";
     ov::AnyMap enable_compile_cache;
     if (device == "GPU") {
-        // Cache compiled models on disk for GPU to save time on the
-        // next run. It's not beneficial for CPU.
         enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
     }
-    ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
 
+    if (pruning_ratio > 0) {
+        enable_compile_cache.insert({"ATTENTION_BACKEND", "PA"});
+        std::cout << "[CDPruner] Setting ATTENTION_BACKEND to PA" << std::endl;
+    }
+    
+    // Initialize VLMPipeline with cache configuration if needed
+    ov::genai::VLMPipeline pipe(model_dir, device, enable_compile_cache);
+    
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
+    generation_config.pruning_ratio = pruning_ratio;
+    // Configure CDPruner if requested
+    if (pruning_ratio > 0) {
+        std::cout << "[CDPruner] Enabling CDPruner with " << pruning_ratio << "% visual token pruning" << std::endl;
+        generation_config.pruning_debug_mode = pruning_debug_mode;
+    }
 
     std::string prompt;
 

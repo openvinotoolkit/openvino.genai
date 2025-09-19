@@ -173,6 +173,15 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_ima
     return embeds;
 }
 
+std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map) {
+    std::vector<EncodedImage> embeds;
+    std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+    for (const ov::Tensor& image : single_images) {
+        embeds.emplace_back(m_vision_encoder->encode(image, config_map));
+    }
+    return embeds;
+}
+
 ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence) {
     return get_inputs_embeds(prompt, encode_images(images), metrics, true, image_sequence);
 }
@@ -291,6 +300,10 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::ve
     return m_impl->encode_images(images);
 }
 
+std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map) {
+    return m_impl->encode_images(images, config_map);
+}
+
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
 }
@@ -321,6 +334,14 @@ void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
 
 void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
+}
+
+void InputsEmbedder::set_visual_token_pruning_config(size_t pruning_ratio,
+                                                     float relevance_weight,
+                                                     bool pruning_debug_mode) {
+    return m_impl->set_visual_token_pruning_config(pruning_ratio,
+                                                   relevance_weight,
+                                                   pruning_debug_mode);
 }
 
 std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(

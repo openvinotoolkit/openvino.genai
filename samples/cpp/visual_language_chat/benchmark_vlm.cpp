@@ -20,6 +20,8 @@ int main(int argc, char* argv[]) try {
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
+    ("pr,pruning_ratio", "Percentage of visual tokens to prune when CDPruner is enabled", cxxopts::value<size_t>()->default_value("50"))
+    ("pdm,pruning_debug_mode", "Enable pruning debug mode", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -57,18 +59,34 @@ int main(int argc, char* argv[]) try {
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
+    size_t pruning_ratio = result["pruning_ratio"].as<size_t>();
+    bool pruning_debug_mode = result["pruning_debug_mode"].as<bool>();
     std::vector<ov::Tensor> images = utils::load_images(image_path);
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
     config.ignore_eos = true;
+    
+    config.pruning_ratio = pruning_ratio;
+    // Configure CDPruner if requested
+    if (pruning_ratio > 0 && pruning_ratio < 100) {
+        std::cout << "[CDPruner] Enabling CDPruner with pruning ratio " << pruning_ratio << "% visual tokens" << std::endl;
+        config.pruning_debug_mode = pruning_debug_mode;
+    }
 
     std::cout << ov::get_openvino_version() << std::endl;
 
+    // Setup cache configuration for CDPruner if needed
+    ov::AnyMap properties = {};
+    if (pruning_ratio > 0 && pruning_ratio < 100) {
+        properties.insert({"ATTENTION_BACKEND", "PA"});
+        std::cout << "[CDPruner] Setting ATTENTION_BACKEND to PA for CDPruner" << std::endl;
+    }
+
     std::unique_ptr<ov::genai::VLMPipeline> pipe;
-    if (device == "NPU")
+    if (device == "NPU") {
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
-    else {
+    } else {
         // Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
         ov::genai::SchedulerConfig scheduler_config;
         scheduler_config.enable_prefix_caching = false;
