@@ -339,7 +339,17 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 
 /**
-* @brief enable enable_save_ov_model property serves to serialize ov model (xml/bin) generated from gguf model on disk for re-use.
+* @brief enable eagle_mode property serves to activate eagle decoding.
+* for eagle2 now
+* And create LLMPipeline instance with this config.
+*/
+enum class EagleMode {
+    OFF = 0,  // Default mode, no eagle2 optimizations
+    EAGLE2 = 1   // Enable eagle2 optimizations
+};
+static constexpr ov::Property<EagleMode> eagle_mode{"eagle_mode"};
+
+/* @brief enable enable_save_ov_model property serves to serialize ov model (xml/bin) generated from gguf model on disk for re-use.
 * Set `true` to activate this mode.
 * And create LLMPipeline instance with this config.
 */

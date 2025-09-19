@@ -967,7 +967,14 @@ public:
                 continue;
             last_block_ids.insert(last_block_id);
 
-            size_t needed_blocks_per_sequence = seq_group->get_num_logical_blocks() - num_physical_blocks;
+            // here we need to expand to 2 stages: 1 generation stage for causal LLM and num_validate_tokens stage for spec decode
+            size_t logical_blocks = seq_group->get_num_logical_blocks();
+            size_t logical_blocks_with_1_generation_only = logical_blocks;
+            if (seq_group->get_num_tokens_to_validate() > 0) {
+                logical_blocks_with_1_generation_only = seq_group->get_num_logical_blocks_for_1_generation();
+            }
+
+            size_t needed_blocks_per_sequence = (logical_blocks == logical_blocks_with_1_generation_only ? logical_blocks : logical_blocks_with_1_generation_only) - num_physical_blocks;
 
             KVCacheBlock::Ptr last_block = block_table.back();
             if (last_block->copy_on_write()) {
@@ -981,10 +988,14 @@ public:
                 else {
                     blocks_count += needed_blocks_per_sequence * references_count;
                 }
-            }
-            else {
+            } else {
                 // block is used only by one sequence
                 blocks_count += needed_blocks_per_sequence;
+            }
+            if (seq_group->get_num_tokens_to_validate() > 0) {
+                // now we need to allocate blocks for num_tokens_to_validate
+                size_t needed_blocks_extra = logical_blocks - logical_blocks_with_1_generation_only;
+                blocks_count += needed_blocks_extra * last_block->get_references_count();
             }
         }
         return blocks_count;
@@ -1009,7 +1020,29 @@ public:
             }
         }
     }
+    void allocate_slots_for_validation(SequenceGroup::Ptr seq_group) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        size_t num_logical_blocks = seq_group->get_num_logical_blocks();
+        std::vector<Sequence::Ptr> running_sequences = seq_group->get_running_sequences();
 
+        for (size_t i = 0; i < running_sequences.size(); ++i) {
+            Sequence::Ptr sequence = running_sequences[i];
+            auto seq_id = sequence->get_id();
+            size_t num_physical_blocks = 0;
+
+            if (m_block_table.find(seq_id) != m_block_table.end())
+            {
+                num_physical_blocks = m_block_table[seq_id][0].size();
+            }
+
+            if (num_logical_blocks > num_physical_blocks) {
+                OPENVINO_ASSERT(can_allocate_blocks(num_logical_blocks - num_physical_blocks));
+                allocate(sequence, num_logical_blocks - num_physical_blocks, seq_group->get_prompt_len());
+            } else {
+                OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks, "A number of physical and logic blocks must be the same in this code path");
+            }
+        }
+    }
 
     /**
      * Allocates just enough physical KV cache blocks to a sequence group to be enough for the sequences in it. If the sequences
@@ -1023,7 +1056,7 @@ public:
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         // Will always allocate the identical number of new blocks (if any) to each of the "layers" to keep the
         // number of blocks occupied by each "layer" identical at all times.
-        size_t num_logical_blocks = seq_group->get_num_logical_blocks();
+        size_t num_logical_blocks = seq_group->get_num_tokens_to_validate() > 0 ? seq_group->get_num_logical_blocks_for_1_generation() :seq_group->get_num_logical_blocks();
         std::vector<Sequence::Ptr> running_sequences = seq_group->get_running_sequences();
 
         std::map<size_t, std::list<size_t>> copy_blocks_map;

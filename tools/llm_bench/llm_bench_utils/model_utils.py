@@ -214,7 +214,10 @@ def analyze_args(args):
     model_args['num_assistant_tokens'] = args.num_assistant_tokens
     model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
     model_args['max_ngram_size'] = args.max_ngram_size
-
+    eagle_config = None
+    if args.eagle_config:
+        eagle_config = get_config(args.eagle_config)
+    model_args['eagle_config'] = eagle_config
     model_args['speaker_embeddings'] = None
     if args.speaker_embeddings:
         model_args['speaker_embeddings'] = get_speaker_embeddings(args.speaker_embeddings)

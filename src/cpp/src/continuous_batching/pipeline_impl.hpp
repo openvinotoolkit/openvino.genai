@@ -130,7 +130,6 @@ public:
     bool has_non_finished_requests() override;
 
     void step() override;
-
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
@@ -141,7 +140,6 @@ public:
      * Updates LoRA adapters for current generation call
      */
     void set_adapters(const std::optional<AdapterConfig>& adapters);
-
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 };
 } // namespace ov::genai
