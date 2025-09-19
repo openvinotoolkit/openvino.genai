@@ -164,6 +164,7 @@ model_ids = [
     "katuni4ka/tiny-random-qwen2vl",
     "katuni4ka/tiny-random-qwen2.5-vl",
     "katuni4ka/tiny-random-gemma3",
+    "qnguyen3/nanoLLaVA"
 ]
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
@@ -542,6 +543,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
     generation_config.ignore_eos = True
+    generation_config.do_sample = False
 
     results_with_cancel = ""
     ov_pipe.start_chat()
@@ -665,6 +667,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, image_sequen
     generation_config.max_new_tokens = 30
     generation_config.ignore_eos = True
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+    generation_config.do_sample = False
 
     ov_pipe.start_chat()
     _ = ov_pipe.generate(
@@ -703,7 +706,7 @@ def generate(vlm, requests):
     generation_config.max_new_tokens = 30
     vlm.set_generation_config(generation_config)
     vlm.start_chat()
-    answers = [vlm.generate(prompt, images=images) for (prompt, images) in requests]
+    answers = [vlm.generate(prompt, images=images, do_sample=False) for (prompt, images) in requests]
     vlm.finish_chat()
     return answers
 
@@ -722,6 +725,7 @@ tag_inserted_by_template = [
     ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
     ("katuni4ka/tiny-random-qwen2.5-vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
     ("katuni4ka/tiny-random-gemma3", lambda idx: "<start_of_image>"),
+    ("qnguyen3/nanoLLaVA", lambda idx: "<image>\n"),
 ]
 
 image_id_ignorant =  tag_inserted_by_template + [
@@ -768,29 +772,40 @@ class TestImageTags:
         prompt = "Describe"
 
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-        processor = retry_request(
-            lambda: transformers.AutoProcessor.from_pretrained(
-                model_id,
-                trust_remote_code=True,
-                **align_with_optimum_cli,
+        if model_id == "qnguyen3/nanoLLaVA":
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            messages = [
+                {"role": "user", "content": f'<image>\n{prompt}'}
+            ]
+            templated_prompt = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
             )
-        )
-        templated_prompt = processor.apply_chat_template(
-            [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image"},
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-            add_generation_prompt=True,
-        )
+        else:
+            processor = retry_request(
+                lambda: transformers.AutoProcessor.from_pretrained(
+                    model_id,
+                    trust_remote_code=True,
+                    **align_with_optimum_cli,
+                )
+            )
+            templated_prompt = processor.apply_chat_template(
+                [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image"},
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+                add_generation_prompt=True,
+            )
         def workaround_inconsistent_inference():
-            automatic_tags = vlm.generate(prompt, images=[cat_tensor])
+            automatic_tags = vlm.generate(prompt, images=[cat_tensor], do_sample=False)
             reference_tags = vlm.generate(
-                templated_prompt, images=[cat_tensor], apply_chat_template=False
+                templated_prompt, images=[cat_tensor], apply_chat_template=False, do_sample=False
             )
             assert automatic_tags.texts == reference_tags.texts
             assert automatic_tags.scores == reference_tags.scores
@@ -806,12 +821,12 @@ class TestImageTags:
 
             vlm.start_chat()
             native_tag0 = vlm.generate(
-                tag(0) + conversation_requests[0][0], images=conversation_requests[0][1]
+                tag(0) + conversation_requests[0][0], images=conversation_requests[0][1], do_sample=False
             )
             assert native_tag0.texts == answers[0].texts
             assert native_tag0.scores == answers[0].scores
             native_tags1 = vlm.generate(
-                tag(1) + tag(2) + conversation_requests[1][0], images=conversation_requests[1][1]
+                tag(1) + tag(2) + conversation_requests[1][0], images=conversation_requests[1][1], do_sample=False
             )
             assert native_tags1.texts == answers[1].texts
             assert native_tags1.scores == answers[1].scores
@@ -828,13 +843,14 @@ class TestImageTags:
 
             vlm.start_chat()
             universal_tag0 = vlm.generate(
-                "<ov_genai_image_0>" + conversation_requests[0][0], images=conversation_requests[0][1]
+                "<ov_genai_image_0>" + conversation_requests[0][0], images=conversation_requests[0][1], do_sample=False
             )
             assert universal_tag0.texts == answers[0].texts
             assert universal_tag0.scores == answers[0].scores
             universal_tags1 = vlm.generate(
                 "<ov_genai_image_1><ov_genai_image_2>" + conversation_requests[1][0],
                 images=conversation_requests[1][1],
+                do_sample=False
             )
             assert universal_tags1.texts == answers[1].texts
             assert universal_tags1.scores == answers[1].scores
@@ -852,22 +868,23 @@ class TestImageTags:
         def workaround_inconsistent_inference():
             vlm.start_chat()
             native_tag0 = vlm.generate(
-                conversation_requests[0][0] + tag(0), images=conversation_requests[0][1]
+                conversation_requests[0][0] + tag(0), images=conversation_requests[0][1], do_sample=False
             )
             native_tags1 = vlm.generate(
-                conversation_requests[1][0] + tag(1) + tag(2), images=conversation_requests[1][1]
+                conversation_requests[1][0] + tag(1) + tag(2), images=conversation_requests[1][1], do_sample=False
             )
             vlm.finish_chat()
 
             vlm.start_chat()
             universal_tag0 = vlm.generate(
-                conversation_requests[0][0] + "<ov_genai_image_0>", images=conversation_requests[0][1]
+                conversation_requests[0][0] + "<ov_genai_image_0>", images=conversation_requests[0][1], do_sample=False
             )
             assert universal_tag0.texts == native_tag0.texts
             assert universal_tag0.scores == native_tag0.scores
             universal_tags1 = vlm.generate(
                 conversation_requests[1][0] + "<ov_genai_image_1><ov_genai_image_2>",
                 images=conversation_requests[1][1],
+                do_sample=False
             )
             assert universal_tags1.texts == native_tags1.texts
             assert universal_tags1.scores == native_tags1.scores
@@ -883,9 +900,9 @@ class TestImageTags:
         vlm.set_generation_config(generation_config)
 
         def workaround_inconsistent_inference():
-            one_image = vlm.generate("<ov_genai_image_0>" * 2, images=[cat_tensor])
+            one_image = vlm.generate("<ov_genai_image_0>" * 2, images=[cat_tensor], do_sample=False)
             two_images = vlm.generate(
-                "<ov_genai_image_0><ov_genai_image_1>", images=[cat_tensor, cat_tensor]
+                "<ov_genai_image_0><ov_genai_image_1>", images=[cat_tensor, cat_tensor], do_sample=False
             )
             assert one_image.texts == two_images.texts
             assert one_image.scores == two_images.scores

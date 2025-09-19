@@ -46,9 +46,12 @@ public:
     ) const override;
 
     ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) override;
-
+    
+    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) override;
 private:
     ov::Tensor tokenize_without_image_tag(const std::string& prompt);
+
+    size_t m_image_features_size = 0;
 };
 
 } // namespace ov::genai
