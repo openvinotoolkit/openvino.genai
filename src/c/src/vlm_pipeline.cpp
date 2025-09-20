@@ -101,7 +101,7 @@ ov_status_e ov_genai_vlm_pipeline_create(const char* models_path, const char* de
                 property.erase("MIN_RESPONSE_LEN");
                 property["MIN_RESPONSE_LEN"] = std::stoi(min_response_len);
             }
-       }
+        }
         std::unique_ptr<ov_genai_vlm_pipeline> _pipe = std::make_unique<ov_genai_vlm_pipeline>();
         _pipe->object =
             std::make_shared<ov::genai::VLMPipeline>(std::filesystem::path(models_path), std::string(device), property);
@@ -165,6 +165,7 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
                                       ? pipe->object->generate(input_str, rgbs_cpp, *(config->object), callback)
                                       : pipe->object->generate(input_str, rgbs_cpp, {}, callback);
         } 
+        // //Currently, VLM pipeline in GenAI does not support non-streaming mode, but we retain the code support here for future support.
         // else {
         //     *(_results->object) = (config && config->object) ? pipe->object->generate(input_str, rgbs_cpp, *(config->object))
         //                                                      : pipe->object->generate(input_str, rgbs_cpp);
