@@ -16,9 +16,10 @@ GenerationHandle
 ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           const ov::Tensor& input_ids,
                                                           ov::genai::GenerationConfig sampling_params,
-                                                          std::optional<ov::Tensor> token_type_ids) {
+                                                          std::optional<ov::Tensor> token_type_ids,
+                                                          const ov::AnyMap& generation_options) {
     OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
-    return m_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids);
+    return m_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, generation_options);
 }
 
 GenerationHandle
@@ -95,7 +96,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                        const std::vector<GenerationConfig>& sampling_params,
                                                        const StreamerVariant& streamer,
-                                                       std::optional<std::vector<ov::Tensor>> token_type_ids) {
+                                                       std::optional<std::vector<ov::Tensor>> token_type_ids,
+                                                       const ov::AnyMap& generation_options) {
     m_perf_metrics = PerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 

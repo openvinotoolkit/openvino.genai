@@ -163,7 +163,7 @@ public:
     ov::genai::PipelineMetrics get_metrics() const;
 
     /// @param request_id must be unique for every add_request() call.
-    GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params);
+    GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params, const ov::AnyMap& generation_options = {});
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params);
 
@@ -172,7 +172,10 @@ public:
     bool has_non_finished_requests();
 
     /// Higher level interface, which can process multiple prompts in continuous batching manner
-    std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
+    std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids,
+                                                  const std::vector<ov::genai::GenerationConfig>& sampling_params,
+                                                  const ov::genai::StreamerVariant& streamer = std::monostate{},
+                                                  const ov::AnyMap& generation_options = {});
     std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
     std::vector<VLMDecodedResults> generate(
              const std::vector<std::string>& prompts,

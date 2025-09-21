@@ -233,8 +233,8 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
     return m_impl->add_request(request_id, prompt, sampling_params);
 }
 
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params) {
-    return m_impl->add_request(request_id, input_ids, sampling_params);
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params, const ov::AnyMap& generation_options) {
+    return m_impl->add_request(request_id, input_ids, sampling_params, std::nullopt, generation_options);
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params) {
@@ -249,8 +249,12 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
     return m_impl->has_non_finished_requests();
 }
 
-std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
-    auto encoded_results = m_impl->generate(input_ids, sampling_params, streamer);
+std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<ov::genai::GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    const ov::AnyMap& generation_options) {
+    auto encoded_results = m_impl->generate(input_ids, sampling_params, streamer, std::nullopt, generation_options);
 
     for (auto& encoded_result : encoded_results) {
         encoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;

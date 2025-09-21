@@ -76,7 +76,8 @@ public:
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const ov::Tensor& input_ids,
                                          GenerationConfig sampling_params,
-                                         std::optional<ov::Tensor> token_type_ids = std::nullopt) = 0;
+                                         std::optional<ov::Tensor> token_type_ids = std::nullopt,
+                                         const ov::AnyMap& generation_options = {}) = 0;
 
     /**
      * Adds request to running queue based on string input
@@ -112,7 +113,8 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
-             std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt) = 0;
+             std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt,
+             const ov::AnyMap& generation_options = {}) = 0;
 
     /**
      * Performs monolitic generation based on text prompts

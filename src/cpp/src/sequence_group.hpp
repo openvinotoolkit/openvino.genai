@@ -242,6 +242,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     TokenIds m_prompt_ids;
     std::vector<std::vector<float>> m_input_embeds;
     std::optional<std::vector<int64_t>> m_token_type_ids;
+    ov::AnyMap m_generation_options;
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
     size_t m_num_evicted_tokens = 0;
@@ -289,7 +290,7 @@ public:
         : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, std::nullopt) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, const std::optional<ov::Tensor>& token_type_ids = std::nullopt)
+    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, const std::optional<ov::Tensor>& token_type_ids = std::nullopt, const ov::AnyMap& generation_options = {})
         : SequenceGroup(request_id, sampling_params, block_size) {
         
         size_t prompt_len;
@@ -301,6 +302,8 @@ public:
         }
         OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
 
+        // Need to deep copy?
+        m_generation_options = generation_options;
         if (input_ids.get_element_type() == ov::element::i64) {
             m_prompt_ids.resize(prompt_len);
             OPENVINO_SUPPRESS_DEPRECATED_START
