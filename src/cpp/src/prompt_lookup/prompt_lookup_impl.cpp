@@ -97,7 +97,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
                                                        const std::vector<GenerationConfig>& sampling_params,
                                                        const StreamerVariant& streamer,
                                                        std::optional<std::vector<ov::Tensor>> token_type_ids,
-                                                       const ov::AnyMap& generation_options) {
+                                                       const std::vector<ov::AnyMap>& generation_options) {
     m_perf_metrics = PerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 

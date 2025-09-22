@@ -253,7 +253,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<ov::genai::GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const ov::AnyMap& generation_options) {
+    const std::vector<ov::AnyMap>& generation_options) {
     auto encoded_results = m_impl->generate(input_ids, sampling_params, streamer, std::nullopt, generation_options);
 
     for (auto& encoded_result : encoded_results) {

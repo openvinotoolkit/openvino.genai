@@ -453,7 +453,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer,
                                                              const std::optional<std::vector<ov::Tensor>> token_type_ids,
-                                                             const ov::AnyMap& generation_options) {
+                                                             const std::vector<ov::AnyMap>& generation_options) {
 
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
@@ -485,8 +485,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         bool has_valid_token = token_type_ids.has_value() && request_id < token_type_ids->size();
         generations.push_back(
-            add_request(request_id, input_ids[request_id], sampling_params[request_id], has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt, generation_options)
-        );
+            add_request(request_id,
+                        input_ids[request_id],
+                        sampling_params[request_id],
+                        has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
+                        request_id < generation_options.size() ? generation_options[request_id] : ov::AnyMap{}));
     }
 
     auto all_requests = get_awaiting_requests(); // we need to store all requests to get results from them once generation has finished

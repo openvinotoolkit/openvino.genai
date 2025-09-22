@@ -71,7 +71,7 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
              std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt,
-             const ov::AnyMap& generation_options = {}) override;
+             const std::vector<ov::AnyMap>& generation_options = {}) override;
 
     SpeculativeDecodingMetrics get_speculative_decoding_metrics();
 };

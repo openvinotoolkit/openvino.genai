@@ -160,7 +160,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
-    std::vector<ov::Tensor> prompt_ids_list;
+    std::vector<ov::AnyMap> generation_option_list;
     
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
     std::vector<EncodedImage> encoded_images = {};
@@ -214,8 +214,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
     }
     std::vector<VLMDecodedResults> results;
-    ov::AnyMap generation_options = {{"prompt_ids", prompt_ids_list}};
-    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list, sampling_params, streamer, token_type_ids_list, generation_options);
+    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list, sampling_params, streamer, token_type_ids_list, generation_option_list);
     for (size_t i = 0; i < prompts.size(); i++) {
         auto result = encoded_results[i];
         VLMDecodedResults gen_result;

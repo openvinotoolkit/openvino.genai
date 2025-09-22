@@ -175,7 +175,7 @@ public:
     std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids,
                                                   const std::vector<ov::genai::GenerationConfig>& sampling_params,
                                                   const ov::genai::StreamerVariant& streamer = std::monostate{},
-                                                  const ov::AnyMap& generation_options = {});
+                                                  const std::vector<ov::AnyMap>& generation_options = {});
     std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
     std::vector<VLMDecodedResults> generate(
              const std::vector<std::string>& prompts,
