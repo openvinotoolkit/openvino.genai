@@ -148,6 +148,21 @@ result = pipe.generate(raw_speech, initial_prompt="Polychrome")
 #  He has gone and gone for good answered Polychrome who...
 ```
 
+### Model caching
+
+The compiled Whisper model can be cached on disk for reuse in next runs. This significantly reduces pipeline latency, particularly on NPU and GPU devices, where model compilation is time-consuming.
+
+```python
+ov_config = {"CACHE_DIR": "./cache"}
+pipe = openvino_genai.WhisperPipeline(args.model_dir, args.device, **ov_config)
+```
+or
+```python
+ov_config = dict()
+ov_config["CACHE_DIR"] = "./cache"
+pipe = openvino_genai.WhisperPipeline(args.model_dir, args.device, **ov_config)
+```
+
 ### Troubleshooting
 
 #### Empty or rubbish output

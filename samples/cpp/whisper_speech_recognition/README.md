@@ -117,6 +117,16 @@ result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
 //  He has gone and gone for good answered Polychrome who...
 ```
 
+### Model caching
+
+The compiled Whisper model can be cached on disk for reuse in next runs. This significantly reduces pipeline latency, particularly on NPU and GPU devices, where model compilation is time-consuming.
+
+```c++
+ov::AnyMap ov_config;
+ov_config[ov::cache_dir.name()] = "./cache";
+ov::genai::WhisperPipeline pipeline(models_path, device, ov_config);
+```
+
 
 ### Troubleshooting
 
