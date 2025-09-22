@@ -30,9 +30,9 @@ def torch_compile_child_module(model, child_modules, backend='openvino', dynamic
     return model
 
 
-def run_torch_compile(model, backend='openvino', dynamic=None, options=None, child_modules=None, memory_monitor=None):
-    if memory_monitor:
-        memory_monitor.start()
+def run_torch_compile(model, backend='openvino', dynamic=None, options=None, child_modules=None, memory_data_collector=None):
+    if memory_data_collector:
+        memory_data_collector.start()
     if backend == 'pytorch':
         log.info(f'Running torch.compile() with {backend} backend')
         start = time.perf_counter()
@@ -50,13 +50,13 @@ def run_torch_compile(model, backend='openvino', dynamic=None, options=None, chi
         end = time.perf_counter()
         compile_time = end - start
         log.info(f'Compiling model via torch.compile() took: {compile_time}')
-    if memory_monitor:
-        memory_monitor.stop_and_collect_data('compilation_phase')
-        memory_monitor.log_data('for from torch.compile() phase')
+    if memory_data_collector:
+        memory_data_collector.stop_and_collect_data('compilation_phase')
+        memory_data_collector.log_data(compilation_phase=True)
     return compiled_model
 
 
-def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
+def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     model_path = Path(model_path)
     from_pretrain_time = 0
     if model_path.exists():
@@ -67,7 +67,7 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
             model_class = PT_MODEL_CLASSES_MAPPING.get(model_type, PT_MODEL_CLASSES_MAPPING[default_model_type])
             token_class = TOKENIZE_CLASSES_MAPPING.get(model_type, TOKENIZE_CLASSES_MAPPING[default_model_type])
             if kwargs.get("mem_consumption"):
-                memory_monitor.start()
+                memory_data_collector.start()
             start = time.perf_counter()
             trust_remote_code = False
             try:
@@ -80,8 +80,8 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
             end = time.perf_counter()
             from_pretrain_time = end - start
             if kwargs.get("mem_consumption"):
-                memory_monitor.stop_and_collect_data('from_pretrained_phase')
-                memory_monitor.log_data('for from pretrained phase')
+                memory_data_collector.stop_and_collect_data('from_pretrained_phase')
+                memory_data_collector.log_data(compilation_phase=True)
         else:
             raise RuntimeError(f'==Failure ==: model path:{model_path} is not directory or directory is empty')
     else:
@@ -129,12 +129,12 @@ def create_text_gen_model(model_path, device, memory_monitor, **kwargs):
             options = json.loads(kwargs['torch_compile_options'])
         if kwargs['torch_compile_input_module']:
             child_modules = kwargs['torch_compile_input_module'].split(".")
-        compiled_model = run_torch_compile(model, backend, dynamic, options, child_modules, memory_monitor if kwargs.get("mem_consumption") else None)
+        compiled_model = run_torch_compile(model, backend, dynamic, options, child_modules, memory_data_collector if kwargs.get("mem_consumption") else None)
         model = compiled_model
     return model, tokenizer, from_pretrain_time, bench_hook, False
 
 
-def create_image_gen_model(model_path, device, memory_monitor, **kwargs):
+def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
     model_path = Path(model_path)
     from_pretrain_time = 0
     if model_path.exists():
@@ -143,14 +143,14 @@ def create_image_gen_model(model_path, device, memory_monitor, **kwargs):
             model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
             model_class = PT_MODEL_CLASSES_MAPPING[model_type]
             if kwargs.get("mem_consumption"):
-                memory_monitor.start()
+                memory_data_collector.start()
             start = time.perf_counter()
             pipe = model_class.from_pretrained(model_path)
             pipe = set_bf16(pipe, device, **kwargs)
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
-                memory_monitor.stop_and_collect_data('from_pretrained_phase')
-                memory_monitor.log_data('for from pretrained phase')
+                memory_data_collector.stop_and_collect_data('from_pretrained_phase')
+                memory_data_collector.log_data(compilation_phase=True)
             from_pretrain_time = end - start
         else:
             raise RuntimeError(f'==Failure ==: model path:{model_path} is not directory or directory is empty')
@@ -173,12 +173,12 @@ def create_image_gen_model(model_path, device, memory_monitor, **kwargs):
 
     if kwargs['torch_compile_backend']:
         backend = kwargs['torch_compile_backend']
-        compiled_model = run_torch_compile(pipe, backend, memory_monitor if kwargs.get("mem_consumption") else None)
+        compiled_model = run_torch_compile(pipe, backend, memory_data_collector if kwargs.get("mem_consumption") else None)
         pipe = compiled_model
     return pipe, from_pretrain_time, False, None
 
 
-def create_text_2_speech_model(model_path, device, memory_monitor, **kwargs):
+def create_text_2_speech_model(model_path, device, memory_data_collector, **kwargs):
     model_path = Path(model_path)
     from_pretrain_time = 0
     if model_path.exists():
@@ -189,7 +189,7 @@ def create_text_2_speech_model(model_path, device, memory_monitor, **kwargs):
             model_class = PT_MODEL_CLASSES_MAPPING.get(model_type, PT_MODEL_CLASSES_MAPPING[default_model_type])
             token_class = TOKENIZE_CLASSES_MAPPING.get(model_type, TOKENIZE_CLASSES_MAPPING[default_model_type])
             if kwargs.get("mem_consumption"):
-                memory_monitor.start()
+                memory_data_collector.start()
             start = time.perf_counter()
             pipe = model_class.from_pretrained(model_path)
             vocoder = None
@@ -198,8 +198,8 @@ def create_text_2_speech_model(model_path, device, memory_monitor, **kwargs):
             pipe = set_bf16(pipe, device, **kwargs)
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
-                memory_monitor.stop_and_collect_data('from_pretrained_phase')
-                memory_monitor.log_data('for from pretrained phase')
+                memory_data_collector.stop_and_collect_data('from_pretrained_phase')
+                memory_data_collector.log_data(compilation_phase=True)
             from_pretrain_time = end - start
             processor = token_class.from_pretrained(model_path)
         else:
@@ -223,13 +223,13 @@ def create_text_2_speech_model(model_path, device, memory_monitor, **kwargs):
 
     if kwargs['torch_compile_backend']:
         backend = kwargs['torch_compile_backend']
-        compiled_model = run_torch_compile(pipe, backend, memory_monitor if kwargs.get("mem_consumption") else None)
+        compiled_model = run_torch_compile(pipe, backend, memory_data_collector if kwargs.get("mem_consumption") else None)
         pipe = compiled_model
 
     return pipe, processor, vocoder, from_pretrain_time, False
 
 
-def create_ldm_super_resolution_model(model_path, device, memory_monitor, **kwargs):
+def create_ldm_super_resolution_model(model_path, device, memory_data_collector, **kwargs):
     model_path = Path(model_path)
     from_pretrain_time = 0
     if model_path.exists():
@@ -241,8 +241,8 @@ def create_ldm_super_resolution_model(model_path, device, memory_monitor, **kwar
             pipe = model_class.from_pretrained(model_path)
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
-                memory_monitor.stop_and_collect_data('from_pretrained_phase')
-                memory_monitor.log_data('for from pretrained phase')
+                memory_data_collector.stop_and_collect_data('from_pretrained_phase')
+                memory_data_collector.log_data(compilation_phase=True)
             from_pretrain_time = end - start
         else:
             raise RuntimeError(f'==Failure ==: model path:{model_path} is not directory or directory is empty')
@@ -265,6 +265,6 @@ def create_ldm_super_resolution_model(model_path, device, memory_monitor, **kwar
 
     if kwargs['torch_compile_backend']:
         backend = kwargs['torch_compile_backend']
-        compiled_model = run_torch_compile(pipe, backend, memory_monitor if kwargs.get("mem_consumption") else None)
+        compiled_model = run_torch_compile(pipe, backend, memory_data_collector if kwargs.get("mem_consumption") else None)
         pipe = compiled_model
     return pipe, from_pretrain_time
