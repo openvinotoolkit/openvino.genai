@@ -29,14 +29,6 @@ int main(int argc, char* argv[]) try {
         enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
     }
 
-    if (pruning_ratio > 0) {
-        enable_compile_cache.insert({"ATTENTION_BACKEND", "PA"});
-        std::cout << "[CDPruner] Setting ATTENTION_BACKEND to PA" << std::endl;
-    }
-    
-    // Initialize VLMPipeline with cache configuration if needed
-    ov::genai::VLMPipeline pipe(model_dir, device, enable_compile_cache);
-    
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
     generation_config.pruning_ratio = pruning_ratio;
@@ -45,6 +37,9 @@ int main(int argc, char* argv[]) try {
         std::cout << "[CDPruner] Enabling CDPruner with " << pruning_ratio << "% visual token pruning" << std::endl;
         generation_config.pruning_debug_mode = pruning_debug_mode;
     }
+
+    // Initialize VLMPipeline with cache configuration if needed
+    ov::genai::VLMPipeline pipe(model_dir, device, enable_compile_cache);
 
     std::string prompt;
 

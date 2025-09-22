@@ -188,8 +188,13 @@ public:
         
         // Add text prompt to vision config for CDPruner
         vision_config["text_prompt"] = prompt;
-
-        // Set visual token pruning configuration
+        if (generation_config.pruning_ratio > 0 && generation_config.pruning_ratio < 100) {
+            std::cout << "[CDPruner] Warning: Pruning is disabled. It is only supported when using PA as the attention "
+                         "backend."
+                      << std::endl;
+            // Disable CDPruner
+            generation_config.pruning_ratio = 0;
+        }
         m_inputs_embedder->set_visual_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight,
                                                            generation_config.pruning_debug_mode);

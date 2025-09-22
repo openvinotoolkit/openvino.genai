@@ -140,15 +140,18 @@ def analyze_args(args):
     model_args["apply_chat_template"] = args.apply_chat_template
 
     # CDPruner config
-    if args.pruning_ratio is not None:
-        model_args['pruning_ratio'] = args.pruning_ratio
-    if model_args['pruning_ratio'] > 0 and model_args['pruning_ratio'] < 100:
+    model_args['pruning_ratio'] = args.pruning_ratio if args.pruning_ratio is not None else 0
+    if model_args['pruning_ratio'] == 0:
+        # Disable CDPruner
+        log.info("CDPruner config: Pruning is disabled.")
+    elif model_args['pruning_ratio'] > 0 and model_args['pruning_ratio'] < 100:
         log.info(f"CDPruner config: Percentage of visual tokens to prune - {model_args['pruning_ratio']}%")
-        if args.relevance_weight is not None:
-            model_args['relevance_weight'] = args.relevance_weight
-        if args.pruning_debug_mode:
-            model_args['pruning_debug_mode'] = args.pruning_debug_mode
-        log.info(f"CDPruner config: Pruning debug mode - {model_args['pruning_debug_mode']}")
+        model_args['relevance_weight'] = args.relevance_weight if args.relevance_weight is not None else 0.5
+        log.info(f"CDPruner config: Relevance weight - {model_args['relevance_weight']}")
+        model_args['pruning_debug_mode'] = args.pruning_debug_mode if args.pruning_debug_mode is not None else False
+    else:
+        log.warning(f"CDPruner config: Invalid pruning ratio({model_args['pruning_ratio']}). Pruning is disabled.")
+        model_args['pruning_ratio'] = 0
 
     optimum = args.optimum
 

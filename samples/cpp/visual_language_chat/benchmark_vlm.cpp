@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) try {
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("pr,pruning_ratio", "Percentage of visual tokens to prune when CDPruner is enabled", cxxopts::value<size_t>()->default_value("50"))
+    ("pr,pruning_ratio", "Percentage of visual tokens to prune when CDPruner is enabled", cxxopts::value<size_t>()->default_value("0"))
     ("pdm,pruning_debug_mode", "Enable pruning debug mode", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
 
@@ -78,10 +78,6 @@ int main(int argc, char* argv[]) try {
 
     // Setup cache configuration for CDPruner if needed
     ov::AnyMap properties = {};
-    if (pruning_ratio > 0 && pruning_ratio < 100) {
-        properties.insert({"ATTENTION_BACKEND", "PA"});
-        std::cout << "[CDPruner] Setting ATTENTION_BACKEND to PA for CDPruner" << std::endl;
-    }
 
     std::unique_ptr<ov::genai::VLMPipeline> pipe;
     if (device == "NPU") {
