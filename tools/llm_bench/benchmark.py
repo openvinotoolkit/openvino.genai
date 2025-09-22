@@ -113,7 +113,6 @@ def get_argprser():
         help='Percentage of visual tokens to prune'
         'Only support PA model. To switch to PA mode, please, set up {"ATTENTION_BACKEND": "PA"} in --load_config.'
     )
-    parser.add_argument('--pruning_debug_mode', action='store_true', help='Enable debugging mode for pruning')
     parser.add_argument('--relevance_weight', type=float, help='Relevance weight for the model')
     parser.add_argument(
         '--torch_compile_backend',

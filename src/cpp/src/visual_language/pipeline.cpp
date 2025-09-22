@@ -196,8 +196,7 @@ public:
             generation_config.pruning_ratio = 0;
         }
         m_inputs_embedder->set_visual_token_pruning_config(generation_config.pruning_ratio,
-                                                           generation_config.relevance_weight,
-                                                           generation_config.pruning_debug_mode);
+                                                           generation_config.relevance_weight);
 
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs, vision_config);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);

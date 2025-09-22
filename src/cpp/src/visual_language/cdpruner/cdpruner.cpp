@@ -23,6 +23,8 @@ CDPruner::CDPruner(const Config& config)
       m_dpp_selector(config) {
     // Validate configuration
     validate_config(config);
+    // Load config from env
+    m_config.update_from_env();
 }
 
 std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visual_features,
@@ -76,7 +78,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         size_t feature_dim = visual_shape[2];
 
         // Decision: split tokens only if total count exceeds threshold
-        bool use_splitting = total_visual_tokens > m_config.split_threshold;
+        bool use_splitting = m_config.split_threshold > 0 && total_visual_tokens > m_config.split_threshold;
 
         if (m_config.pruning_debug_mode) {
             std::cout << "[CDPruner] Total visual tokens: " << total_visual_tokens << std::endl;

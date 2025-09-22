@@ -11,14 +11,14 @@ bool print_subword(std::string&& subword) {
 
 int main(int argc, char* argv[]) try {
     if (3 > argc || argc > 6) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE> [<DEVICE>] [<PRUNING_RATIO>] [<PRUNING_DEBUG_MODE>]");
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE> [<DEVICE>] [<PRUNING_RATIO>] [PRUNING_RELEVANCE_WEIGHT]");
     }
 
     std::string model_dir = argv[1];
     std::string image_file = argv[2];
     std::string device = argc > 3 ? argv[3] : "CPU";
     size_t pruning_ratio = argc > 4 ? std::stoul(argv[4]) : 0;  // 0 means disabled
-    bool pruning_debug_mode = argc > 5 ? (std::string(argv[5]) == "true" || std::string(argv[5]) == "1") : false;
+    float pruning_relevance_weight = argc > 5 ? std::stof(argv[5]) : 0.5f;
 
     std::vector<ov::Tensor> rgbs = utils::load_images(image_file);
 
@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) try {
     // Configure CDPruner if requested
     if (pruning_ratio > 0) {
         std::cout << "[CDPruner] Enabling CDPruner with " << pruning_ratio << "% visual token pruning" << std::endl;
-        generation_config.pruning_debug_mode = pruning_debug_mode;
+        generation_config.relevance_weight = pruning_relevance_weight;
     }
 
     // Initialize VLMPipeline with cache configuration if needed

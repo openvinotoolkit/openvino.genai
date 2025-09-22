@@ -148,7 +148,6 @@ def analyze_args(args):
         log.info(f"CDPruner config: Percentage of visual tokens to prune - {model_args['pruning_ratio']}%")
         model_args['relevance_weight'] = args.relevance_weight if args.relevance_weight is not None else 0.5
         log.info(f"CDPruner config: Relevance weight - {model_args['relevance_weight']}")
-        model_args['pruning_debug_mode'] = args.pruning_debug_mode if args.pruning_debug_mode is not None else False
     else:
         log.warning(f"CDPruner config: Invalid pruning ratio({model_args['pruning_ratio']}). Pruning is disabled.")
         model_args['pruning_ratio'] = 0

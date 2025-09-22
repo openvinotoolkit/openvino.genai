@@ -21,7 +21,6 @@ int main(int argc, char* argv[]) try {
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
     ("pr,pruning_ratio", "Percentage of visual tokens to prune when CDPruner is enabled", cxxopts::value<size_t>()->default_value("0"))
-    ("pdm,pruning_debug_mode", "Enable pruning debug mode", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -60,7 +59,6 @@ int main(int argc, char* argv[]) try {
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
     size_t pruning_ratio = result["pruning_ratio"].as<size_t>();
-    bool pruning_debug_mode = result["pruning_debug_mode"].as<bool>();
     std::vector<ov::Tensor> images = utils::load_images(image_path);
 
     ov::genai::GenerationConfig config;
@@ -71,7 +69,6 @@ int main(int argc, char* argv[]) try {
     // Configure CDPruner if requested
     if (pruning_ratio > 0 && pruning_ratio < 100) {
         std::cout << "[CDPruner] Enabling CDPruner with pruning ratio " << pruning_ratio << "% visual tokens" << std::endl;
-        config.pruning_debug_mode = pruning_debug_mode;
     }
 
     std::cout << ov::get_openvino_version() << std::endl;

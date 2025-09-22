@@ -17,6 +17,7 @@ struct Config {
     /// @brief Weight for balancing relevance vs diversity (0.0 to 1.0)
     float relevance_weight = 0.5f;
 
+    void update_from_env();
     /// @brief Device to run CDPruner computations on
     std::string device = "CPU";
 
@@ -38,7 +39,7 @@ struct Config {
     /// @brief Threshold for splitting large kernel matrices (internal use only)
     /// When visual tokens exceed this threshold, the kernel matrix will be split
     /// for parallel processing. This parameter is not exposed in public API.
-    size_t split_threshold = 2000;
+    size_t split_threshold = 0;
 
     /// @brief Whether to enable frame-level chunking for multi-frame video processing
     /// When true, each frame in multi-frame input will be processed separately for DPP pruning

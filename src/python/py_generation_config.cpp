@@ -272,7 +272,6 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
         .def_readwrite("pruning_ratio", &GenerationConfig::pruning_ratio)
         .def_readwrite("relevance_weight", &GenerationConfig::relevance_weight)
-        .def_readwrite("pruning_debug_mode", &GenerationConfig::pruning_debug_mode)
         .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
         .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
         .def_readwrite("echo", &GenerationConfig::echo)

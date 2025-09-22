@@ -227,8 +227,9 @@ def run_visual_language_generation_genai(
         if gen_config.pruning_ratio > 0 and gen_config.pruning_ratio < 100:
             if args.get('relevance_weight') is not None:
                 gen_config.relevance_weight = args['relevance_weight']
-            if args.get('pruning_debug_mode') is not None:
-                gen_config.pruning_debug_mode = bool(args['pruning_debug_mode'])
+    else:
+        # Disable CDPruner
+        gen_config.pruning_ratio = 0
     kwargs = {}
     if len(images) >= 1:
         kwargs["images"] = images

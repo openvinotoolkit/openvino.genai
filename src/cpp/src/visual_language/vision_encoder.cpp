@@ -31,7 +31,6 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
     ov::genai::cdpruner::Config cdpruner_config;
     cdpruner_config.pruning_ratio = 50;           // 50% pruning by default
     cdpruner_config.device = device;             // Use same device as the model
-    cdpruner_config.pruning_debug_mode = false;  // Disable debug output for production
     m_cdpruner = std::make_unique<ov::genai::cdpruner::CDPruner>(cdpruner_config);
 }
 
@@ -55,7 +54,6 @@ VisionEncoder::VisionEncoder(
     ov::genai::cdpruner::Config cdpruner_config;
     cdpruner_config.pruning_ratio = 50;           // 50% pruning by default
     cdpruner_config.device = device;             // Use same device as the model
-    cdpruner_config.pruning_debug_mode = false;  // Disable debug output for production
     m_cdpruner = std::make_unique<ov::genai::cdpruner::CDPruner>(cdpruner_config);
 }
 

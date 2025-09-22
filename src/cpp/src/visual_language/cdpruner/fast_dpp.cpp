@@ -92,7 +92,8 @@ inline void simd_vector_mul_scalar(float* out, float scalar, size_t size) {
 }
 
 FastGreedyDPP::FastGreedyDPP(const Config& config) : m_config(config) {
-    // Constructor implementation
+    // Load config from env
+    m_config.update_from_env();
 }
 
 std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel, size_t num_tokens) {
