@@ -37,8 +37,12 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         return create_all_tokens_selection(visual_features);
     }
 
+    // Get input dimensions for context
+    const auto& visual_shape = visual_features.get_shape();
+    const auto& text_shape = text_features.get_shape();
+
     // Calculate actual number of tokens to keep based on percentage
-    size_t total_tokens = visual_features.get_shape()[1];
+    size_t total_tokens = visual_shape[1];
     size_t raw_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * (1.0 - m_config.pruning_ratio / 100.0)));
     // Ensure the number of tokens to keep is the nearest even number
     size_t num_tokens_to_keep = (raw_tokens_to_keep % 2 == 0) ? raw_tokens_to_keep : raw_tokens_to_keep + 1;
@@ -56,10 +60,6 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
     // Performance timing setup
     auto overall_start = std::chrono::high_resolution_clock::now();
 
-    // Get input dimensions for context
-    auto visual_shape = visual_features.get_shape();
-    auto text_shape = text_features.get_shape();
-
     try {
         std::vector<std::vector<size_t>> selected_tokens;
         std::chrono::microseconds dpp_duration{0};        // Initialize DPP timing variable
@@ -71,7 +71,6 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         }
 
         // Get input dimensions for processing decision
-        auto visual_shape = visual_features.get_shape();
         size_t batch_size = visual_shape[0];
         size_t total_visual_tokens = visual_shape[1];
         size_t feature_dim = visual_shape[2];
@@ -321,7 +320,8 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 }
 
 ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::Tensor& text_features, bool silent) {
-    auto visual_shape = visual_features.get_shape();
+    const auto& visual_shape = visual_features.get_shape();
+    const auto& text_shape = text_features.get_shape();
     size_t batch_size = visual_shape[0];
     size_t total_tokens = visual_shape[1];
     size_t feature_dim = visual_shape[2];
@@ -329,7 +329,6 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
     // Calculate actual number of tokens to keep based on percentage
     size_t num_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * (1 - m_config.pruning_ratio / 100.0)));
 
-    auto text_shape = text_features.get_shape();
     size_t text_tokens = text_shape[0];
     size_t text_feature_dim = text_shape[1];
 
@@ -412,8 +411,9 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     }
 
     // Collect frame information for overview
-    auto first_feature = visual_features_list[0];
-    auto visual_shape = first_feature.get_shape();
+    const auto& first_feature = visual_features_list[0];
+    const auto& visual_shape = first_feature.get_shape();
+    const auto& text_shape = text_features.get_shape();
     size_t batch_size = visual_shape[0];
     size_t tokens_per_frame = visual_shape[1];
     size_t feature_dim = visual_shape[2];
@@ -424,7 +424,6 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
         static_cast<size_t>(std::round(tokens_per_frame * (1 - m_config.pruning_ratio / 100.0)));
     size_t total_output_tokens = num_tokens_to_keep * visual_features_list.size();
 
-    auto text_shape = text_features.get_shape();
     size_t text_tokens = text_shape[0];
     size_t text_feature_dim = text_shape[1];
 
@@ -601,8 +600,8 @@ void CDPruner::validate_input_tensors(const ov::Tensor& visual_features, const o
         throw std::invalid_argument("Text features must be 2D tensor [M, D]");
     }
 
-    auto visual_shape = visual_features.get_shape();
-    auto text_shape = text_features.get_shape();
+    const auto& visual_shape = visual_features.get_shape();
+    const auto& text_shape = text_features.get_shape();
 
     // Check feature dimension consistency
     if (visual_shape[2] != text_shape[1]) {
@@ -643,7 +642,7 @@ std::vector<std::vector<size_t>> CDPruner::create_all_tokens_selection(const ov:
 
 void CDPruner::print_selection_statistics(const ov::Tensor& visual_features,
                                           const std::vector<std::vector<size_t>>& selected_tokens) {
-    auto shape = visual_features.get_shape();
+    const auto& shape = visual_features.get_shape();
     size_t batch_size = shape[0];
     size_t total_tokens = shape[1];
     size_t selected_token_count = static_cast<size_t>(std::round(total_tokens * (1 - m_config.pruning_ratio / 100.0)));

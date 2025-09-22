@@ -35,10 +35,6 @@ struct Config {
     /// When false, uses traditional CPU-based DPP algorithm
     bool use_cl_kernel = true;
 
-    /// @brief OpenCL kernel file path for DPP computation
-    /// Only used when use_cl_kernel is true
-    std::string cl_kernel_path = "/home/ywang2/openvino.genai/src/cpp/src/visual_language/cdpruner/dpp_kernel_split.cl";
-
     /// @brief Threshold for splitting large kernel matrices (internal use only)
     /// When visual tokens exceed this threshold, the kernel matrix will be split
     /// for parallel processing. This parameter is not exposed in public API.

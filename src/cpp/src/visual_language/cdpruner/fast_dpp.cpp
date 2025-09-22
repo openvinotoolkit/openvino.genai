@@ -760,33 +760,15 @@ bool OpenCLDPP::initialize_opencl() {
 
 bool OpenCLDPP::load_and_compile_kernels() {
     try {
-        if (m_config.cl_kernel_path.empty()) {
-            if (m_config.pruning_debug_mode) {
-                std::cerr << "[OpenCLDPP] Kernel path not specified" << std::endl;
-            }
-            return false;
-        }
-
-        // Load kernel source from file
-        std::ifstream kernel_file(m_config.cl_kernel_path);
-        if (!kernel_file.is_open()) {
-            if (m_config.pruning_debug_mode) {
-                std::cerr << "[OpenCLDPP] Failed to open kernel file: " << m_config.cl_kernel_path << std::endl;
-            }
-            return false;
-        }
-
-        std::string kernel_source((std::istreambuf_iterator<char>(kernel_file)), std::istreambuf_iterator<char>());
-        kernel_file.close();
+        const char* kernel_source = dpp_kernel_split_cl;
+        size_t kernel_length = std::strlen(kernel_source);
 
         if (m_config.pruning_debug_mode) {
-            std::cout << "[OpenCLDPP] Loaded kernel source (" << kernel_source.length()
-                      << " chars) from: " << m_config.cl_kernel_path << std::endl;
+            std::cout << "[OpenCLDPP] Loaded kernel source (" << kernel_length << " chars) from header." << std::endl;
         }
 
-        // Compile program
         cl::Program::Sources sources;
-        sources.push_back({kernel_source.c_str(), kernel_source.length()});
+        sources.push_back({kernel_source, kernel_length});
 
         m_state->program = cl::Program(m_state->context, sources);
         cl_int result = m_state->program.build({m_state->device});
@@ -869,7 +851,7 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     merged_kernel.setArg(6, static_cast<int>(selected_token_num));
     merged_kernel.setArg(7, buffer_output_ids);
     merged_kernel.setArg(8, sizeof(float) * lws[1], nullptr);  // local memory for reduction
-    merged_kernel.setArg(9, sizeof(int) * lws[1], nullptr);   // local memory for argmax
+    merged_kernel.setArg(9, sizeof(int) * lws[1], nullptr);    // local memory for argmax
 
     if (m_config.pruning_debug_mode) {
         std::cout << "[OpenCLDPP] Global work size: [" << gws[0] << ", " << gws[1] << ", " << gws[2] << "]"
