@@ -10,6 +10,8 @@ namespace ov::genai {
 const std::string NATIVE_TAG = "<image>\n";
 const int64_t IMAGE_PLACEHOLDER = -200;
 
+namespace {
+
 clip_image_f32 preprocess_clip_image_nanollava(const clip_image_u8& image_orig, const ProcessorConfig& config) {
     // Resize
     auto image = image_orig;
@@ -51,6 +53,69 @@ ov::Tensor merge_text_and_image_embeddings_nanollava(const ov::Tensor& input_ids
     }
     return inputs_embeds;
 }
+
+ov::Tensor insert_image_placeholders(const ov::Tensor& tokens, size_t image_placeholder_size) {
+    size_t tokens_size = tokens.get_size();
+    const int64_t* tokens_data = tokens.data<const int64_t>();
+    size_t images_num = 0;
+    for (size_t idx = 0; idx < tokens_size; idx++) {
+        if (tokens_data[idx] == IMAGE_PLACEHOLDER)
+            images_num++;
+    }
+    size_t new_tokens_size = tokens_size + images_num * image_placeholder_size - images_num;
+    ov::Tensor res_tokens(tokens.get_element_type(), {1, new_tokens_size});
+
+    int64_t* res_tokens_data = res_tokens.data<int64_t>();
+
+    size_t idx = 0;
+    size_t token_idx = 0;
+    while (idx < new_tokens_size) {
+        if (tokens_data[token_idx] == IMAGE_PLACEHOLDER) {
+            for (size_t i = 0; i < image_placeholder_size; i++) {
+                res_tokens_data[idx + i] = IMAGE_PLACEHOLDER;
+            }
+            idx += image_placeholder_size;
+        }
+        else {
+            res_tokens_data[idx] = tokens_data[token_idx];
+            idx++;
+        }
+        token_idx++;
+    }
+    return res_tokens;
+}
+
+ov::Tensor drop_image_placeholders(const ov::Tensor& tokens, size_t image_placeholder_size) {
+    size_t tokens_size = tokens.get_size();
+    const int64_t* tokens_data = tokens.data<const int64_t>();
+    size_t images_num = 0;
+    for (size_t idx = 0; idx < tokens_size; idx++) {
+        if (tokens_data[idx] == IMAGE_PLACEHOLDER)
+            images_num++;
+    }
+    images_num = images_num / image_placeholder_size;
+
+    size_t new_tokens_size = tokens_size - images_num * image_placeholder_size + images_num;
+    ov::Tensor res_tokens(tokens.get_element_type(), {1, new_tokens_size});
+
+    int64_t* res_tokens_data = res_tokens.data<int64_t>();
+
+    size_t idx = 0;
+    size_t res_idx = 0;
+    while (idx < tokens_size) {
+        if (tokens_data[idx] == IMAGE_PLACEHOLDER) {
+            idx += image_placeholder_size;
+            res_tokens_data[res_idx] = IMAGE_PLACEHOLDER;
+        }
+        else {
+            res_tokens_data[res_idx] = tokens_data[idx];
+            idx++;
+        }
+        res_idx++;
+    }
+    return res_tokens;
+}
+} // namespace
 
 EncodedImage VisionEncoderNanoLLaVA::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
@@ -127,6 +192,9 @@ ov::Tensor InputsEmbedderNanoLLaVA::get_inputs_embeds(const std::string& unified
         }
     }
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
+    if (m_image_features_size > 0)
+        input_ids = drop_image_placeholders(input_ids, m_image_features_size);
+
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
@@ -145,7 +213,7 @@ ov::Tensor InputsEmbedderNanoLLaVA::get_inputs_embeds(const std::string& unified
 }
 
 
-ov::Tensor InputsEmbedderNanoLLaVA::tokenize_without_image_tag(const std::string& prompt) {
+ov::Tensor InputsEmbedderNanoLLaVA::tokenize_without_image_tag(const std::string& prompt, bool add_special_tokens) {
     std::string prompt_substr;
     size_t prev_pos = 0;
     std::vector<ov::Tensor> encoded_substrings;
@@ -155,14 +223,14 @@ ov::Tensor InputsEmbedderNanoLLaVA::tokenize_without_image_tag(const std::string
     auto image_pos = prompt.find(image_tag);
     while (image_pos != std::string::npos) {
         auto substr = prompt.substr(prev_pos, image_pos - prev_pos);
-        encoded_substrings.emplace_back(m_tokenizer.encode(substr, ov::genai::add_special_tokens(false)).input_ids);
+        encoded_substrings.emplace_back(m_tokenizer.encode(substr, ov::genai::add_special_tokens(add_special_tokens)).input_ids);
         encoded_size += encoded_substrings[encoded_substrings.size() - 1].get_shape()[1];
         prev_pos = image_pos + image_tag.size();
         image_pos = prompt.find(image_tag, prev_pos);
         n_images++;
     }
     auto last_substr = prev_pos > 0 ? prompt.substr(prev_pos, prompt.size()) : prompt;
-    encoded_substrings.emplace_back(m_tokenizer.encode(last_substr, ov::genai::add_special_tokens(false)).input_ids);
+    encoded_substrings.emplace_back(m_tokenizer.encode(last_substr, ov::genai::add_special_tokens(add_special_tokens)).input_ids);
     encoded_size += encoded_substrings[encoded_substrings.size() - 1].get_shape()[1];
 
     if (encoded_substrings.size() == 1) {
@@ -183,12 +251,13 @@ ov::Tensor InputsEmbedderNanoLLaVA::tokenize_without_image_tag(const std::string
 
 ov::Tensor InputsEmbedderNanoLLaVA::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     if (m_is_chat_conversation) {
-        std::string prompt_to_encode = prompt;
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        ov::Tensor new_chat_tokens = tokenize_without_image_tag(prompt);
+        ov::Tensor new_chat_tokens = tokenize_without_image_tag(prompt, false);
 
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        if (m_image_features_size > 0)
+            new_chat_tokens = insert_image_placeholders(new_chat_tokens, m_image_features_size);
         return new_chat_tokens;
     } else {
         ov::Tensor encoded_input_ids;
@@ -199,90 +268,16 @@ ov::Tensor InputsEmbedderNanoLLaVA::apply_chat_template_tokenize(const std::stri
             constexpr bool add_generation_prompt = true;
 
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-            encoded_input_ids = tokenize_without_image_tag(templated_prompt);
+            encoded_input_ids = tokenize_without_image_tag(templated_prompt, false);
         } else {
-            encoded_input_ids = tokenize_without_image_tag(prompt);
+            encoded_input_ids = tokenize_without_image_tag(prompt, true);
         }
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        if (m_image_features_size > 0)
+            encoded_input_ids = insert_image_placeholders(encoded_input_ids, m_image_features_size);
         return encoded_input_ids;
     }
-}
-
-ov::Tensor insert_image_placeholders(const ov::Tensor& tokens, size_t image_placeholder_size) {
-    size_t tokens_size = tokens.get_size();
-    const int64_t* tokens_data = tokens.data<const int64_t>();
-    size_t images_num = 0;
-    for (size_t idx = 0; idx < tokens_size; idx++) {
-        if (tokens_data[idx] == IMAGE_PLACEHOLDER)
-            images_num++;
-    }
-    size_t new_tokens_size = tokens_size + images_num * image_placeholder_size - images_num;
-    ov::Tensor res_tokens(tokens.get_element_type(), {1, new_tokens_size});
-
-    int64_t* res_tokens_data = res_tokens.data<int64_t>();
-
-    size_t idx = 0;
-    size_t token_idx = 0;
-    while (idx < new_tokens_size) {
-        if (tokens_data[token_idx] == IMAGE_PLACEHOLDER) {
-            for (size_t i = 0; i < image_placeholder_size; i++) {
-                res_tokens_data[idx + i] = IMAGE_PLACEHOLDER;
-            }
-            idx += image_placeholder_size;
-        }
-        else {
-            res_tokens_data[idx] = tokens_data[token_idx];
-            idx++;
-        }
-        token_idx++;
-    }
-    return res_tokens;
-}
-
-ov::Tensor drop_image_placeholders(const ov::Tensor& tokens, size_t image_placeholder_size) {
-    size_t tokens_size = tokens.get_size();
-    const int64_t* tokens_data = tokens.data<const int64_t>();
-    size_t images_num = 0;
-    for (size_t idx = 0; idx < tokens_size; idx++) {
-        if (tokens_data[idx] == IMAGE_PLACEHOLDER)
-            images_num++;
-    }
-    images_num = images_num / image_placeholder_size;
-
-    size_t new_tokens_size = tokens_size - images_num * image_placeholder_size + images_num;
-    ov::Tensor res_tokens(tokens.get_element_type(), {1, new_tokens_size});
-
-    int64_t* res_tokens_data = res_tokens.data<int64_t>();
-
-    size_t idx = 0;
-    size_t res_idx = 0;
-    while (idx < tokens_size) {
-        if (tokens_data[idx] == IMAGE_PLACEHOLDER) {
-            idx += image_placeholder_size;
-            res_tokens_data[res_idx] = IMAGE_PLACEHOLDER;
-        }
-        else {
-            res_tokens_data[res_idx] = tokens_data[idx];
-            idx++;
-        }
-        res_idx++;
-    }
-    return res_tokens;
-}
-
-ov::Tensor InputsEmbedderNanoLLaVA::get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
-    auto new_chat_tokens = apply_chat_template_tokenize(prompt, metrics);
-
-    if (m_image_features_size > 0)
-        new_chat_tokens = insert_image_placeholders(new_chat_tokens, m_image_features_size);
-    auto new_input_ids = IInputsEmbedder::update_history(new_chat_tokens);
-    m_prev_hist_length = m_kv_cache_state.get_state().size();
-    m_kv_cache_state.add_inputs(new_input_ids);
-
-    if (m_image_features_size > 0)
-        new_input_ids = drop_image_placeholders(new_input_ids, m_image_features_size);
-    return new_input_ids;
 }
 
 

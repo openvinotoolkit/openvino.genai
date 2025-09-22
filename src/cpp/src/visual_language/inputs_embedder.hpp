@@ -167,7 +167,7 @@ private:
     
         ov::Tensor update_history(const ov::Tensor& new_chat_tokens);
 
-        virtual ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
+        ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
 
         std::pair<std::string, std::vector<size_t>> normalize(
             const std::string& prompt,

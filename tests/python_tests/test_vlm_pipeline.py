@@ -27,6 +27,7 @@ model_and_tag
 
 import openvino_tokenizers
 import openvino
+import gc
 import PIL
 import pytest
 import platform
@@ -207,6 +208,8 @@ def test_vlm_pipeline(model_id, backend, cat_tensor, handwritten_tensor, car_ten
         )
         assert res.texts[0] == "".join(result_from_streamer)
 
+    gc.collect()
+
 
 configs = [
     get_greedy(),
@@ -358,6 +361,7 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
         assert res.texts[0] == "".join(result_from_streamer)
 
     ov_pipe.finish_chat()
+    gc.collect()
 
 
 @pytest.mark.precommit
@@ -585,6 +589,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
     ov_pipe.finish_chat()
 
     assert results_with_cancel == results
+    gc.collect()
 
 
 @pytest.mark.precommit
@@ -1031,3 +1036,4 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
+    gc.collect()
