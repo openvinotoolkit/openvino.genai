@@ -3003,10 +3003,13 @@ class TextEmbeddingPipeline:
                 Instruction to use for embedding a query.
             embed_instruction (str, optional):
                 Instruction to use for embedding a document.
+            padding_side (str, optional):
+                Side to use for padding "left" or "right
         """
         embed_instruction: str | None
         normalize: bool
         pad_to_max_length: bool | None
+        padding_side: str | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload
@@ -3038,10 +3041,13 @@ class TextEmbeddingPipeline:
           CLS : First token embeddings
         
           MEAN : The average of all token embeddings
+        
+          LAST_TOKEN : Last token embeddings
         """
         CLS: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.CLS: 0>
+        LAST_TOKEN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.LAST_TOKEN: 2>
         MEAN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.MEAN: 1>
-        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>}
+        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>, 'LAST_TOKEN': <PoolingType.LAST_TOKEN: 2>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:

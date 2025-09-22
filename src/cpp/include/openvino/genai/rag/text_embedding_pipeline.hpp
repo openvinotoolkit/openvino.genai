@@ -27,6 +27,11 @@ public:
          * @brief The average of all token embeddings
          */
         MEAN = 1,
+
+        /**
+         * @brief Last token embeddings
+         */
+        LAST_TOKEN = 2,
     };
 
     struct OPENVINO_GENAI_EXPORTS Config {
@@ -39,6 +44,11 @@ public:
          * @brief If 'true', model input tensors are padded to the maximum length
          */
         std::optional<bool> pad_to_max_length;
+
+        /**
+         * @brief Side to use for padding "left" or "right"
+         */
+        std::optional<std::string> padding_side;
 
         /**
          * @brief Batch size of embedding model.
