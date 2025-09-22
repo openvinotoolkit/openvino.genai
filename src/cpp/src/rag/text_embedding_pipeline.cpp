@@ -96,7 +96,7 @@ std::shared_ptr<op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
     return std::make_shared<op::v1::Divide>(sum_hidden_state, max_expanded_mask);
 }
 
-std::shared_ptr<op::Op> get_last_token_poolling_op(const ov::Output<ov::Node>& last_hidden_state_node) {
+std::shared_ptr<op::Op> get_last_token_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node) {
     auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
     auto stop = std::make_shared<op::v0::Constant>(ov::element::i64,
                                                    ov::Shape{1},
@@ -119,7 +119,7 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const 
         } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::MEAN) {
             return get_mean_pooling_op(model, node);
         } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::LAST_TOKEN) {
-            return get_last_token_poolling_op(node);
+            return get_last_token_pooling_op(node);
         }
 
         OPENVINO_THROW("Pooling type is not supported");

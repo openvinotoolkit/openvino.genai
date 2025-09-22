@@ -3004,7 +3004,7 @@ class TextEmbeddingPipeline:
             embed_instruction (str, optional):
                 Instruction to use for embedding a document.
             padding_side (str, optional):
-                Side to use for padding "left" or "right
+                Side to use for padding "left" or "right"
         """
         embed_instruction: str | None
         normalize: bool
