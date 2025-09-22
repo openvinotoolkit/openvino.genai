@@ -372,7 +372,7 @@ MILEBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
 @pytest.mark.parametrize(
     ("test_struct", "download_test_content"), [
     (BenchmarkTestData("DocVQA", 0.001, 2.60, 2.47), "MileBench_part1.tar.gz"),
-    (BenchmarkTestData("MMCoQA", 0.001, 3.75, 4.55), "MileBench_part2.tar.gz"),
+    (BenchmarkTestData("MMCoQA", 0.001, 3.75, 4.40), "MileBench_part2.tar.gz"),
     ],
     indirect=["download_test_content"],
     ids=["DocVQA", "MMCoQA"],
