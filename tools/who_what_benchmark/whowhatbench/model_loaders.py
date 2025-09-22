@@ -275,19 +275,18 @@ def load_visual_text_model(
                     model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
                 )
             except ValueError:
-                from_pretrained_kwargs = {"_attn_implementation": "eager"}
                 if config.model_type == "phi4mm":
                     if "activation_checkpointing" in config.audio_processor["config"]:
                         config.audio_processor["config"]["activation_checkpointing"] = ""
-                    del from_pretrained_kwargs["_attn_implementation"]
                     config._attn_implementation = "sdpa"
-                    from_pretrained_kwargs["config"] = config
+                    from_pretrained_kwargs = {"config": config}
+                else:
+                    from_pretrained_kwargs = {"_attn_implementation": "eager", "use_flash_attention_2": False}
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
                     trust_remote_code=trust_remote_code,
                     device_map=device.lower(),
-                    use_flash_attention_2=False,
                     **from_pretrained_kwargs,
                 )
 

@@ -84,8 +84,6 @@ public:
         if (m_is_npu) {
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
-            // disable chunking as at the moment it is not supported for VLMs
-            lm_properties.insert({"NPUW_LLM_PREFILL_HINT", "STATIC"});
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
@@ -179,7 +177,7 @@ public:
         generation_config.validate();
 
         if (m_is_npu) {
-            OPENVINO_ASSERT(rgbs.size() == 1u, "Currently only batch size equal to 1 is supported for NPU device!");
+            OPENVINO_ASSERT(rgbs.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
             OPENVINO_ASSERT(generation_config.is_greedy_decoding() || generation_config.is_multinomial(),
                 "Currently only greedy and multinomial decoding are supported for NPU device!");
             OPENVINO_ASSERT(generation_config.num_return_sequences == 1u,
@@ -360,7 +358,7 @@ public:
 // TODO: remove it when QWEN ticket-167316/GEMMA3 ticket-171180 is fixed
 bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::QWEN2_VL || 
+    return vlm_config.model_type == VLMModelType::QWEN2_VL ||
            vlm_config.model_type == VLMModelType::QWEN2_5_VL ||
            vlm_config.model_type == VLMModelType::GEMMA3;
 }

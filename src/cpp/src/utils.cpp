@@ -295,7 +295,7 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
     }
 }
 
-ov::Core singleton_core() {
+ov::Core& singleton_core() {
     static ov::Core core;
     return core;
 }
@@ -473,7 +473,12 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
     for (const auto& cfg : supported_properties) {
         if (cfg == ov::supported_properties)
             continue;
-        auto prop = compiled_Model.get_property(cfg);
+        ov::Any prop;
+        try {
+            prop = compiled_Model.get_property(cfg);
+        } catch (const ov::Exception&) {
+            continue;  // NPU: Unsupported configuration key: EXECUTION_MODE_HINT. Ticket 172485
+        }
         if (cfg == ov::device::properties) {
             auto devices_properties = prop.as<ov::AnyMap>();
             for (auto& item : devices_properties) {
@@ -487,12 +492,17 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
     }
 
-    ov::Core core;
     std::vector<std::string> exeTargets;
     exeTargets = compiled_Model.get_property(ov::execution_devices);
     std::cout << "EXECUTION_DEVICES:" << std::endl;
     for (const auto& device : exeTargets) {
-        std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
+        std::string full_name;
+        try {
+            full_name = singleton_core().get_property(device, ov::device::full_name);
+        } catch (const ov::Exception&) {
+            continue;  // NPU: No available devices. Ticket 172485
+        }
+        std::cout << " " << device << ": " << full_name << std::endl;
     }
 }
 
@@ -692,6 +702,42 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
     std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
     return inputs_embeds;
+}
+
+size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers) {
+    OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "get_available_gpu_memory() is applicable for GPU only.");
+
+    ov::Core core = utils::singleton_core();
+    auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
+    auto device_type = core.get_property(device, ov::device::type);
+
+    // sum up all used device memory
+    std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
+    size_t used_device_mem = 0;
+    for (auto mem_type: device_memory_types) {
+        used_device_mem += memory_statistics[mem_type];
+    }
+
+    if (device_type == ov::device::Type::INTEGRATED) {
+        used_device_mem += memory_statistics["usm_host"];
+    }
+
+    // there could be unaccounted extra memory reserved by kernels, kept
+    // in memory pools, etc
+    // therefore, add a threshold to account for this
+    float used_memory_threshold = 1.1;
+    used_device_mem *= used_memory_threshold;
+
+    // total device memory in bytes
+    auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
+
+    // max allocatable memory size on GPU
+    auto max_alloc_memory_size = core.get_property(device, ov::intel_gpu::device_max_alloc_mem_size);
+
+    // Total KV-cache size if a single tensor is limited by 'device_max_alloc_mem_size' property
+    auto max_allocatable_kv_cache = max_alloc_memory_size * num_decoder_layers * 2;
+
+    return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
 }
 
 }  // namespace utils

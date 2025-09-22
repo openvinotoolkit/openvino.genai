@@ -64,20 +64,24 @@ auto raw_perf_metrics_docstring = R"(
 auto perf_metrics_docstring = R"(
     Holds performance metrics for each generate call.
 
-    PerfMetrics holds fields with mean and standard deviations for the following metrics:
+    PerfMetrics holds the following metrics with mean and standard deviations:
     - Time To the First Token (TTFT), ms
     - Time per Output Token (TPOT), ms/token
+    - Inference time per Output Token (IPOT), ms/token
     - Generate total duration, ms
+    - Inference duration, ms
     - Tokenization duration, ms
     - Detokenization duration, ms
     - Throughput, tokens/s
 
-    Additional fields include:
+    Additional metrics include:
     - Load time, ms
     - Number of generated tokens
     - Number of tokens in the input prompt
+    - Time to initialize grammar compiler for each backend, ms
+    - Time to compile grammar, ms
 
-    Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+    Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
     If mean and std were already calculated, getters return cached values.
 
     :param get_load_time: Returns the load time in milliseconds.
@@ -95,8 +99,14 @@ auto perf_metrics_docstring = R"(
     :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
     :type get_tpot: MeanStdPair
 
+    :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
+    :type get_ipot: MeanStdPair
+
     :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
     :type get_throughput: MeanStdPair
+
+    :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
+    :type get_inference_duration: MeanStdPair
 
     :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
     :type get_generate_duration: MeanStdPair
