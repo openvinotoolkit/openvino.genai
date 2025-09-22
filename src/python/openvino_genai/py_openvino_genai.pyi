@@ -243,8 +243,12 @@ class AutoencoderKL:
         ...
     def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         """
-                        Exports compiled model to a specified directory
-                        export_path (os.PathLike): A path to a directory to export compiled model to
+                        Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled models to.
+        
+                        For the NPU device, the `ov.cache_mode(ov.CacheMode.OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.
+        
+                        Use `blob_path` property to load previously exported models.
         """
     def get_config(self) -> AutoencoderKL.Config:
         ...
@@ -303,8 +307,12 @@ class CLIPTextModel:
         """
     def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         """
-                        Exports compiled model to a specified directory
-                        export_path (os.PathLike): A path to a directory to export compiled model to
+                        Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled model to.
+        
+                        For the NPU device, the `ov.cache_mode(ov.CacheMode.OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.
+        
+                        Use `blob_path` property to load previously exported models.
         """
     def get_config(self) -> CLIPTextModel.Config:
         ...
@@ -2850,8 +2858,12 @@ class Text2ImagePipeline:
         ...
     def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         """
-                        Exports compiled models to a specified folder
-                        export_path (os.PathLike): A path to a folder to export compiled models to
+                        Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled models to.
+        
+                        For the NPU device, the `ov.cache_mode(ov.CacheMode.OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.
+        
+                        Use `blob_path` property to load previously exported models.
         """
     def generate(self, prompt: str, **kwargs) -> openvino._pyopenvino.Tensor:
         """
@@ -3381,8 +3393,12 @@ class UNet2DConditionModel:
         ...
     def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         """
-                        Exports compiled model to a specified directory
-                        export_path (os.PathLike): A path to a directory to export compiled model to
+                        Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled model to.
+        
+                        For the NPU device, the `ov.cache_mode(ov.CacheMode.OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.
+        
+                        Use `blob_path` property to load previously exported models.
         """
     def get_config(self) -> UNet2DConditionModel.Config:
         ...

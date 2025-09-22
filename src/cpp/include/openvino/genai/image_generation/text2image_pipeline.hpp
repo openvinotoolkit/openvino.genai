@@ -255,8 +255,14 @@ public:
     ImageGenerationPerfMetrics get_performance_metrics();
 
     /**
-     * @brief Exports compiled models to a specified directory
+     * @brief Exports compiled models to a specified directory. Can significantly reduce model load time, especially for
+     * large models.
      * @param export_path A path to a directory to export compiled models to
+     *
+     * For the NPU device, the `ov::cache_mode(ov::CacheMode::OPTIMIZE_SPEED)` property is required to override the
+     * default behavior of the NPU plugin in order to obtain blobs with weights.
+     * 
+     * See @ref ov::genai::blob_path property to load previously exported models
      */
     void export_model(const std::filesystem::path& export_path);
 
