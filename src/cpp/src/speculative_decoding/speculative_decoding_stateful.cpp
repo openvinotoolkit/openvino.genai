@@ -41,6 +41,18 @@ void update_perf_stat_by_infer_duration(ov::genai::RawPerfMetrics& raw_perf_coun
     raw_perf_counters.m_inference_durations[0] += ov::genai::MicroSeconds(inference_duration);
     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
 }
+
+void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& generation_config) {
+    auto assistant_confidence_threshold = generation_config.assistant_confidence_threshold;
+    OPENVINO_ASSERT(assistant_confidence_threshold == 0.f,
+        "Stateful (non Continuous Batching) Speculative Decoding pipeline only supports `num_assistant_tokens` "
+        "as parameter in GenerationConfig and doesn't work with `assistant_confidence_threshold`.\nPlease "
+        "remove its specification or set it to 0.f.");
+
+    if (generation_config.num_assistant_tokens == 0) {
+        generation_config.num_assistant_tokens = 5;
+    }
+}
 }// anonymous namespace
 
 namespace ov {
@@ -374,8 +386,10 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
     }
     m_draft_request = std::make_unique<LLMInferWrapper>(draft_model_desc_copy);
 
-    auto requested_candidates_num = main_model_desc.generation_config.num_assistant_tokens;
-    m_candidates_num = (requested_candidates_num != 0) ? requested_candidates_num : 5;
+    // Specifying number candidates to generate
+    ensure_num_assistant_tokens_is_set(m_generation_config);
+    m_candidates_num = m_generation_config.num_assistant_tokens;
+    m_max_candidates_num = m_candidates_num * 2;
 
     // Main model (which is bigger, more accurate but slower)
     auto main_model_desc_copy = main_model_desc;
@@ -407,7 +421,13 @@ DecodedResults StatefulSpeculativeLLMPipeline::generate(
         }
     }, inputs);
 
-    const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
+    GenerationConfig config = m_generation_config;
+    if (generation_config.has_value()) {
+        config = *generation_config;
+        ensure_num_assistant_tokens_is_set(config);
+        m_candidates_num = config.num_assistant_tokens;
+        m_max_candidates_num = m_candidates_num * 2;
+    }
 
     ov::genai::TokenizedInputs tokenized_input;
     if (m_is_chat_conversation) {
@@ -481,7 +501,13 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     const size_t batch_size = prompt_shape[0];
     OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size=1 is supported");
 
-    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    GenerationConfig config = m_generation_config;
+    if (generation_config.has_value()) {
+        config = *generation_config;
+        ensure_num_assistant_tokens_is_set(config);
+        m_candidates_num = config.num_assistant_tokens;
+        m_max_candidates_num = m_candidates_num * 2;
+    }
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (config.stop_token_ids.empty())
         config.stop_token_ids = m_generation_config.stop_token_ids;

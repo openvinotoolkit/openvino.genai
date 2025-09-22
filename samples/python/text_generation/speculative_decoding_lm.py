@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2024 Intel Corporation
+# Copyright (C) 2024-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
@@ -20,7 +20,9 @@ def main():
 
     # User can run main and draft model on different devices.
     # Please, set device for main model in `openvino_genai.LLMPipeline` constructor and in openvino_genai.draft_model` for draft.
-    main_device = 'CPU'  # GPU or NPU can be used as well
+    # CPU, GPU and NPU can be used. Please be aware that GPU is performant only with Continious Batching pipeline, so it is not
+    # recommented to use it in conjuction with NPU or in configuration when main model doesn't work in Paged Attention mode.
+    main_device = 'CPU'
     draft_device = 'CPU'
 
     draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
@@ -34,6 +36,8 @@ def main():
     config.num_assistant_tokens = 5
     # add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than `assistant_confidence_threshold`
     # config.assistant_confidence_threshold = 0.4
+    # Note: `config.num_assistant_tokens` behaves differently if Stateful and non Continuous Batching pipeline is called for Speculative Decode, number of candidates
+    #       will still be chosen dynamically based on first hint from `config.num_assistant_tokens`
 
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.
