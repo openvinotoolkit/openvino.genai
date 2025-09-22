@@ -26,32 +26,28 @@ clip_image_f32 preprocess_clip_image_nanollava(const clip_image_u8& image_orig, 
     return clip_image_preprocess(ctx, resized_image);
 }
 
-ov::Tensor merge_text_and_image_embeddings_nanollava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_tok) {
+void merge_text_and_image_embeddings_nanollava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_tok) {
     size_t text_tokens_size = text_embeds.get_shape()[1];
-    size_t embeds_len = text_embeds.get_shape()[1] + image_embeds[0].get_shape()[1] * image_embeds.size() - image_embeds.size();
     size_t hidden_size = text_embeds.get_shape()[2];
-    ov::Tensor inputs_embeds(text_embeds.get_element_type(), {1, embeds_len, hidden_size});
+    OPENVINO_ASSERT(text_embeds.get_shape()[1] == input_ids.get_shape()[1]);
 
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
-    const float* text_embeds_data = text_embeds.data<const float>();
-    float* res_embeds_data = inputs_embeds.data<float>();
-
+    float* text_embeds_data = text_embeds.data<float>();
     size_t text_token_idx = 0;
     size_t image_idx = 0;
     while (text_token_idx < text_tokens_size) {
         if (input_ids_data[text_token_idx] == image_tok) {
             const auto im_embed = image_embeds[image_idx];
             image_idx++;
-            std::memcpy(res_embeds_data, im_embed.data(), im_embed.get_byte_size());
-            res_embeds_data += ov::shape_size(im_embed.get_shape());
+            std::memcpy(text_embeds_data, im_embed.data(), im_embed.get_byte_size());
+            text_embeds_data += ov::shape_size(im_embed.get_shape());
+            text_token_idx += im_embed.get_shape()[1];
         }
         else {
-            std::memcpy(res_embeds_data, text_embeds_data + text_token_idx * hidden_size, hidden_size * sizeof(float));
-            res_embeds_data += hidden_size;
+            text_embeds_data += hidden_size;
+            text_token_idx ++;
         }
-        text_token_idx ++;
     }
-    return inputs_embeds;
 }
 
 ov::Tensor insert_image_placeholders(const ov::Tensor& tokens, size_t image_placeholder_size) {
@@ -81,37 +77,6 @@ ov::Tensor insert_image_placeholders(const ov::Tensor& tokens, size_t image_plac
             idx++;
         }
         token_idx++;
-    }
-    return res_tokens;
-}
-
-ov::Tensor drop_image_placeholders(const ov::Tensor& tokens, size_t image_placeholder_size) {
-    size_t tokens_size = tokens.get_size();
-    const int64_t* tokens_data = tokens.data<const int64_t>();
-    size_t images_num = 0;
-    for (size_t idx = 0; idx < tokens_size; idx++) {
-        if (tokens_data[idx] == IMAGE_PLACEHOLDER)
-            images_num++;
-    }
-    images_num = images_num / image_placeholder_size;
-
-    size_t new_tokens_size = tokens_size - images_num * image_placeholder_size + images_num;
-    ov::Tensor res_tokens(tokens.get_element_type(), {1, new_tokens_size});
-
-    int64_t* res_tokens_data = res_tokens.data<int64_t>();
-
-    size_t idx = 0;
-    size_t res_idx = 0;
-    while (idx < tokens_size) {
-        if (tokens_data[idx] == IMAGE_PLACEHOLDER) {
-            idx += image_placeholder_size;
-            res_tokens_data[res_idx] = IMAGE_PLACEHOLDER;
-        }
-        else {
-            res_tokens_data[res_idx] = tokens_data[idx];
-            idx++;
-        }
-        res_idx++;
     }
     return res_tokens;
 }
@@ -192,8 +157,6 @@ ov::Tensor InputsEmbedderNanoLLaVA::get_inputs_embeds(const std::string& unified
         }
     }
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
-    if (m_image_features_size > 0)
-        input_ids = drop_image_placeholders(input_ids, m_image_features_size);
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
@@ -209,7 +172,8 @@ ov::Tensor InputsEmbedderNanoLLaVA::get_inputs_embeds(const std::string& unified
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-    return merge_text_and_image_embeddings_nanollava(input_ids, text_embeds, image_embeds, IMAGE_PLACEHOLDER);
+    merge_text_and_image_embeddings_nanollava(input_ids, text_embeds, image_embeds, IMAGE_PLACEHOLDER);
+    return text_embeds;
 }
 
 
