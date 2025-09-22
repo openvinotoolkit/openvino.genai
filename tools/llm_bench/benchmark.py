@@ -9,7 +9,7 @@ import llm_bench_utils.model_utils
 from openvino import get_version
 import torch
 import traceback
-from llm_bench_utils.memory_monitor import MemMonitorWrapper
+from llm_bench_utils.memory_monitor import MemMonitorWrapper, MemoryDataSummarizer
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
@@ -21,7 +21,6 @@ import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 
 DEFAULT_TORCH_THREAD_NUMS = 16
-memory_monitor = MemMonitorWrapper()
 
 
 def num_iters_type(x):
@@ -282,21 +281,23 @@ def main():
             log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
+    memory_data_collector = None
     if args.memory_consumption:
+        memory_monitor = MemMonitorWrapper()
         if args.memory_consumption_delay:
             memory_monitor.interval = args.memory_consumption_delay
         memory_monitor.create_monitors()
         if args.memory_consumption_dir:
             memory_monitor.set_dir(args.memory_consumption_dir)
-        memory_monitor.log_curent_memory_data(prefix="Start")
+        memory_data_collector = MemoryDataSummarizer(memory_monitor)
     try:
         if model_args['use_case'] in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
                 model_path, framework, args.device, args.tokens_len, args.streaming, model_args,
-                args.num_iters, memory_monitor)
+                args.num_iters, memory_data_collector)
         else:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
-                model_path, framework, args.device, model_args, args.num_iters, memory_monitor)
+                model_path, framework, args.device, model_args, args.num_iters, memory_data_collector)
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
@@ -317,7 +318,8 @@ def main():
                     iter_data_list,
                     pretrain_time,
                     model_precision,
-                    iter_timestamp
+                    iter_timestamp,
+                    memory_data_collector
                 )
             if args.report_json is not None:
                 llm_bench_utils.output_json.write_result(
@@ -329,15 +331,16 @@ def main():
                     iter_data_list,
                     pretrain_time,
                     model_precision,
-                    iter_timestamp
+                    iter_timestamp,
+                    memory_data_collector
                 )
     except Exception:
         log.error('An exception occurred')
         log.info(traceback.format_exc())
         exit(1)
     finally:
-        if args.memory_consumption:
-            memory_monitor.stop()
+        if memory_data_collector:
+            memory_data_collector.memory_monitor.stop()
 
 
 if __name__ == '__main__':
