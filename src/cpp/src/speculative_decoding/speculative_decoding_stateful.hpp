@@ -112,7 +112,7 @@ private:
     std::unique_ptr<LLMInferWrapper> m_draft_request;
     std::unique_ptr<LLMInferWrapper> m_main_request;
     std::size_t m_candidates_num = 5;
-    const std::size_t m_max_candidates_num = 10;
+    std::size_t m_max_candidates_num = 10;
 
     ov::genai::SpeculativeDecodingMetrics m_sd_metrics;
     ov::genai::SDPerModelsPerfMetrics m_sd_perf_metrics;

@@ -20,7 +20,7 @@ def main():
 
     # User can run main and draft model on different devices.
     # Please, set device for main model in `openvino_genai.LLMPipeline` constructor and in openvino_genai.draft_model` for draft.
-    # CPU, GPU and NPU can be used. Please be aware that GPU is performant only with Continious Batching pipeline, so it is not
+    # CPU, GPU and NPU can be used. Please be aware that GPU is performant only with Continuous Batching pipeline, so it is not
     # recommented to use it in conjuction with NPU or in configuration when main model doesn't work in Paged Attention mode.
     main_device = 'CPU'
     draft_device = 'CPU'
@@ -31,13 +31,14 @@ def main():
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
-    # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
-    # add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
+    # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded.
+    # Add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration.
+    # NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses `num_assistant_tokens`'s copy as initial
+    # value and adjusts it based on recent number of accepted tokens.
     config.num_assistant_tokens = 5
-    # add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than `assistant_confidence_threshold`
+    # Add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than
+    # `assistant_confidence_threshold`.
     # config.assistant_confidence_threshold = 0.4
-    # Note: `config.num_assistant_tokens` behaves differently if Stateful and non Continuous Batching pipeline is called for Speculative Decode, number of candidates
-    #       will still be chosen dynamically based on first hint from `config.num_assistant_tokens`
 
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.
