@@ -345,12 +345,6 @@ static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 */
 static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
 
-/**
-* @brief enable eagle3_mode property serves to activate eagle3 speculative decoding.
-* Set `true` to activate this mode.
-* And create LLMPipeline instance with this config.
-*/
-static constexpr ov::Property<bool> eagle3_mode{"eagle3_mode"};
 
 }  // namespace genai
 }  // namespace ov

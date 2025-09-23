@@ -20,11 +20,10 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
         generation_config_greedy_constant.num_assistant_tokens = 5;
     }
 
-    ov::genai::GenerationConfig generation_config_multinomial_constant =ov::genai::greedy();
+    ov::genai::GenerationConfig generation_config_multinomial_constant = ov::genai::multinomial();
     {
-        //generation_config_multinomial_constant.num_assistant_tokens = 5;
-        generation_config_multinomial_constant.num_return_sequences = 1;
         generation_config_multinomial_constant.num_assistant_tokens = 5;
+        generation_config_multinomial_constant.num_return_sequences = 1;
     }
 
     ov::genai::GenerationConfig generation_config_greedy_dynamic = ov::genai::greedy();
@@ -32,11 +31,9 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
         generation_config_greedy_dynamic.assistant_confidence_threshold = 0.8f;
     }
 
-    ov::genai::GenerationConfig generation_config_multinomial_dynamic = ov::genai::greedy();
+    ov::genai::GenerationConfig generation_config_multinomial_dynamic = ov::genai::multinomial();
     {
-        //generation_config_multinomial_dynamic.assistant_confidence_threshold = 0.8f;
-        generation_config_multinomial_dynamic.num_return_sequences = 1;
-        generation_config_multinomial_dynamic.num_assistant_tokens = 5;
+        generation_config_multinomial_dynamic.assistant_confidence_threshold = 0.8f;
     }
 
     return {

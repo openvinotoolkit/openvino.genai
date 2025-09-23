@@ -129,10 +129,6 @@ public:
 private:
     bool apply(NodePtr node, std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params, std::vector<std::shared_ptr<ov::op::v0::Result>>& results);
     size_t applied = 0;
-    std::string m_eagle_version;
-    std::shared_ptr<ov::Node> find_last_hidden_node(const std::shared_ptr<ov::Node>& start_node);
-    std::shared_ptr<ov::Node> find_last_hidden_node(const std::shared_ptr<ov::Node>& start_node, 
-                                                   std::set<ov::Node*>& visited_nodes);
     std::shared_ptr<ov::Node> find_last_residual_node(const std::shared_ptr<ov::Node>& start_node);
     std::shared_ptr<ov::Node> find_last_residual_node(const std::shared_ptr<ov::Node>& start_node, 
                                                                std::set<ov::Node*>& visited_nodes);
