@@ -13,72 +13,54 @@ using json = nlohmann::json;
 
 namespace ov::genai {
 
-std::string state_to_string(const ParsingState state) {
-    switch (state) {
-        case ParsingState::CONTENT:
-            return "CONTENT";
-        case ParsingState::REASONING:
-            return "REASONING";
-        case ParsingState::TOOL_CALLING:
-            return "TOOL_CALLING";
-        case ParsingState::UNDEFINED:
-            return "UNDEFINED";
-        default:
-            return "UNKNOWN";
-    }
+static std::map<std::string, std::shared_ptr<IncrementalParserBase>> registered_incremental_parsers;
+static std::map<std::string, std::shared_ptr<ParserBase>> registered_base_parsers;
+
+bool DeepSeekR1ReasoningParser::is_active() const {
+    return !m_deactivated;
 }
 
-class DeepSeekR1Parser : public IncrementalParserBase {
-private:
-    bool m_starts_with_thinking = true;
-    ParsingState m_parsing_state = ParsingState::REASONING;
-public:
-    DeepSeekR1Parser() = default;
-    std::map<std::string, std::string> accumulated_parsed;
-
-    ParsedMessage parse(
-        const std::string& previous_text, 
-        const std::string& delta_text,
-        const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
-        const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
-        ParsedMessage msg;
-
-        if (!m_starts_with_thinking) {
-            m_parsing_state = ParsingState::UNDEFINED;
-        } else {
-            m_parsing_state = ParsingState::REASONING;
-        }
-
-        if (m_parsing_state == ParsingState::UNDEFINED && delta_text.find("<think>") != std::string::npos) {
-            m_parsing_state = ParsingState::REASONING;
-            auto think_idx = delta_text.find("<think>");
-            msg["reasoning_content"] = delta_text.substr(think_idx + std::string("<think>").size(), delta_text.size() - (think_idx + std::string("<think>").size()));
-        } else if (delta_text.find("</think>") != std::string::npos && m_parsing_state == ParsingState::REASONING) {
-            auto think_idx = delta_text.find("</think>");
-
-            msg["reasoning_content"] = delta_text.substr(0, think_idx);
-            msg["content"] = delta_text.substr(think_idx + std::string("</think>").size(), delta_text.size() - (think_idx + std::string("</think>").size()));
-
-            m_parsing_state = ParsingState::CONTENT;
-        } else if (m_parsing_state == ParsingState::REASONING) {
-            msg["reasoning_content"] = delta_text;
-        } else if (m_parsing_state == ParsingState::CONTENT) {
-            msg["content"] = delta_text;
-        } else {
-            throw std::runtime_error("Unexpected state in DeepSeekR1Parser");
-        }
-        msg["state"] = state_to_string(m_parsing_state);
-        
-        // TODO: consider accumulating all fiels and returning accumulated fields instead of parsing once more at the end.
-        
-        // std::string accumulated_reasoning += msg["reasoning_content"];
-        accumulated_parsed["content"] += msg["content"];
-        
-        // accumulated_parsed["reasoning_content"] = accumulated_reasoning;
-        // TODO: if thinking is closed, disable parsing and give content without cutting thinking.
+ParsedMessage DeepSeekR1ReasoningParser::parse(
+    ParsedMessage& msg,
+    const std::string& previous_text, 
+    const std::string& delta_text,
+    const std::optional<std::vector<int64_t>>& previous_tokens, 
+    const std::optional<std::vector<int64_t>>& delta_tokens
+) {
+    if (msg.find("reasoning_content") == msg.end()) {
+        msg["reasoning_content"] = "";
+    }
+    if (msg.find("content") == msg.end()) {
+        msg["content"] = "";
+    }
+    
+    if (m_deactivated) {
+        msg["content"] += delta_text;
         return msg;
     }
-};
+    if (m_starts_with_thinking) {
+        m_think_tag_opened = true;
+    }
+    
+    bool think_tag_closed = delta_text.find(m_close_tag) != std::string::npos;
+
+    if (!m_think_tag_opened && delta_text.find(m_open_tag) != std::string::npos) {
+        // Thinking has started
+        auto think_idx = delta_text.find(m_open_tag);
+        msg["reasoning_content"] += delta_text.substr(think_idx + std::string(m_open_tag).size(), delta_text.size() - (think_idx + std::string(m_open_tag).size()));
+        m_think_tag_opened = true;
+    } else if (m_think_tag_opened && delta_text.find(m_close_tag) != std::string::npos) {
+        auto think_idx = delta_text.find(m_close_tag);
+        msg["reasoning_content"] += delta_text.substr(0, think_idx);
+        msg["content"] += delta_text.substr(think_idx + std::string(m_close_tag).size(), delta_text.size() - (think_idx + std::string(m_close_tag).size()));
+        m_think_tag_opened = false;
+        m_deactivated = true;
+    } else if (m_think_tag_opened) {
+        msg["reasoning_content"] += delta_text;
+    } 
+    
+    return msg;
+}
 
 
 ParsedMessage Llama32PythonicParser::parse(ParsedMessage& input) {
@@ -142,26 +124,50 @@ ParsedMessage BaseReasoningParser::parse(ParsedMessage& input) {
 }
 
 
-TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer) 
+TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<ParserVariant> parsers) 
     : ov::genai::TextStreamer(tokenizer, [this](std::string s) -> ov::genai::CallbackTypeVariant {
                 return this->write(s);
     }) {
-        m_reasoning_parser = std::make_shared<DeepSeekR1Parser>();
+        for (auto& parser : parsers) {
+            if (std::holds_alternative<std::shared_ptr<IncrementalParserBase>>(parser)) {
+                m_parsers.push_back(std::get<std::shared_ptr<IncrementalParserBase>>(parser));
+            } else {
+                auto parser_name = std::get<std::string>(parser);
+                if (registered_incremental_parsers.find(parser_name) != registered_incremental_parsers.end()) {
+                    m_parsers.push_back(registered_incremental_parsers[parser_name]);
+                }
+            }
+        }
     }
 
 StreamingStatus TextParserStreamer::write(ParsedMessage& message) {
+    if (message.find("content") != message.end()) {
+        std::cout << message.at("content") << std::endl;
+    }
     return StreamingStatus::RUNNING;
 }
 
 ov::genai::CallbackTypeVariant TextParserStreamer::write(std::string message) {
-    // for (auto& parser: m_parsers) {
-    //     if (parser.is_active()) {
-    //         msg = parser.parse(m_text_buffer, message, msg);
-    //     }
-    // }
+    for (auto& parser: m_parsers) {
+        if (parser->is_active()) {
+            m_parsed_message = parser->parse(m_parsed_message, m_text_buffer, message);
+        }
+    }
 
-    // m_text_buffer += message;
-    // return write(msg);
+    m_text_buffer = message;
+    return write(m_parsed_message);
 }
+
+
+// static initializer to register available buildin parsers
+static bool register_backends() {
+    registered_incremental_parsers[DeepSeekR1ReasoningParser::name()] = std::make_shared<DeepSeekR1ReasoningParser>();
+    
+    registered_base_parsers[Llama32PythonicParser::name()] = std::make_shared<Llama32PythonicParser>();
+    return true;
+}
+
+// Ensure the backends are registered before main
+static bool are_backends_registered = register_backends();
 
 } // namespace ov::genai
