@@ -16,8 +16,8 @@ int main(int argc, char* argv[]) try {
     // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded.
     // Add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration.
     // NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses `num_assistant_tokens`'s copy as initial
-    // value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is not set it will be defaulted to `5`
-    // for both backends.
+    // value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is not set, it defaults to `5` for both
+    // backends.
     // config.num_assistant_tokens = 5;
     // Add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than
     // `assistant_confidence_threshold`.
