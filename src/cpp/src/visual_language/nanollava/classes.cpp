@@ -207,7 +207,7 @@ ov::Tensor InputsEmbedderNanoLLaVA::tokenize_without_image_tag(const std::string
         new_chat_tokens_data += ov::shape_size(encoded_substrings[idx].get_shape());
         if (idx < encoded_substrings.size() - 1) {
             new_chat_tokens_data[0] = IMAGE_PLACEHOLDER;
-            new_chat_tokens_data ++;
+            new_chat_tokens_data++;
         }
     }
     return new_chat_tokens;
