@@ -240,7 +240,10 @@ private:
     std::size_t m_num_evicted_tokens = 0;
     std::size_t m_num_decoder_layers;
     EvictionScoreManager m_score_manager;
-    TokenSimilarityForEachDecoderLayer m_last_token_similarity;
+
+    std::vector<std::vector<double>> m_last_token_similarity;
+    std::pair<std::set<size_t>, size_t> get_adaptive_rkv_similarity_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
+    std::set<size_t> get_adaptive_rkv_diverse_blocks(size_t num_blocks_left_to_fill, std::set<size_t> similarity_set, const std::vector<double> token_similarity);
 };
 
 
