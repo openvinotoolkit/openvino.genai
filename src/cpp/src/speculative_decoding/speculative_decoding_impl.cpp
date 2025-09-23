@@ -366,23 +366,20 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::SpeculativeDecodingI
     return main_awaiting_requests;
 }
 
-
 void extract_hidden_state_generic(std::shared_ptr<ov::Model>& model,
-                                                       const std::string& model_type,
-                                                       const std::string& custom_node_name = "") {
-    if (model_type == "draft") { // for draft model, we always only need to extract last hidden state
-        std::cout << model_type << " model - last hidden state extraction" << std::endl;
+                                  const std::vector<int>& hidden_layers_to_abstract) {
+    if (hidden_layers_to_abstract.size() == 1 &&
+        hidden_layers_to_abstract[0] == -1) {  // for draft model, we always only need to extract last hidden state
+        std::cout << "draft model - last hidden state extraction" << std::endl;
         ov::pass::Manager pm;
-        std::vector<int> layers = {-1}; // -1 means last hidden layer
-        pm.register_pass<EagleModelTransform>(layers);
+        pm.register_pass<EagleModelTransform>(hidden_layers_to_abstract);
         pm.run_passes(model);
     } else {
-        std::cout << model_type << " model - Eagle 3 hidden state extraction" << std::endl;
+        std::cout << "main model - Eagle 3 hidden states extraction" << std::endl;
         ov::pass::Manager pm;
         /*if idx==len(self.layers)-3 or idx==len(self.layers)//2 or idx==2:
             all_hidden_states += (hidden_states,)*/
-        std::vector<int> layers = {2, 16, 29}; // need to add check, only support positive values
-        pm.register_pass<EagleModelTransform>(layers);
+        pm.register_pass<EagleModelTransform>(hidden_layers_to_abstract);
         pm.run_passes(model);
     }
 }
@@ -657,7 +654,8 @@ bool Eagle3Transform::apply(NodePtr node, std::vector<Output<Node>>& hidden_stat
 }
 
 ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
-                                                                 const ov::genai::ModelDesc& draft_model_desc) {
+                                                                 const ov::genai::ModelDesc& draft_model_desc,
+                                                                 const std::vector<int>& hidden_layers) {
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
 
@@ -726,8 +724,8 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
     // apply transformations needed to run eagle model
     // target model: hidden state extraction, draft model: hidden state import , hidden state extraction
     // eagle3 specific : dt importing
-    extract_hidden_state_generic(main_model, "main", "");
-    extract_hidden_state_generic(draft_model, "draft", "");
+    extract_hidden_state_generic(main_model, hidden_layers);
+    extract_hidden_state_generic(draft_model, { -1 });
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(main_model,

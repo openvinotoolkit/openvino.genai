@@ -89,7 +89,7 @@ public:
 
 class ContinuousBatchingPipeline::EagleDecodingImpl : public ContinuousBatchingPipeline::SpeculativeDecodingImpl {
 public:
-    EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
+    EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc, const std::vector<int>& hidden_layers_to_abstract);
 
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
@@ -105,9 +105,7 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  ov::genai::GenerationConfig sampling_params) override;
-    void fill_hidden_states(const ov::Tensor& hidden_states) {
-        hiddenstates_tensor = hidden_states;
-    }
+
     void set_d2t_for_draft_decoding(std::shared_ptr<ov::op::v0::Constant>& d2t_tensor) {
         auto eagle_impl = std::dynamic_pointer_cast<ContinuousBatchingForEagleDecodingImpl>(m_draft_pipeline);
         eagle_impl->set_d2t_for_draft_decoding(d2t_tensor);
@@ -115,7 +113,6 @@ public:
 protected:
     void update_eagle_pipeline_params();
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
-    ov::Tensor hiddenstates_tensor;
 };
 
 using NodePtr = std::shared_ptr<ov::Node>;

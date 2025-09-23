@@ -106,7 +106,7 @@ int main(int argc, char* argv[]) try {
     // vLLM specific params
     scheduler_config.max_num_seqs = 2;
     
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device), ov::genai::eagle3_mode(true)});
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device)});
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, cb_generation_config);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {

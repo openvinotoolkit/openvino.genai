@@ -32,12 +32,12 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <EAGLE_MODEL_DIR> '<PROMPT>'");
     }
 
-    std::string main_model_path = argv[1];
-    std::string eagle_model_path = argv[2];
+    std::filesystem::path main_model_path = argv[1];
+    std::filesystem::path eagle_model_path = argv[2];
     std::string prompt = argv[3];
 
     // Configure devices - can run main and eagle models on different devices
-    std::string main_device = "GPU", eagle_device = "GPU"; // CPU can bse used as well
+    std::string main_device = "CPU", eagle_device = "CPU"; // GPU can be used as well
 
     // Eagle Speculative settings
     ov::genai::GenerationConfig config = ov::genai::greedy();
@@ -51,8 +51,7 @@ int main(int argc, char* argv[]) try {
         main_model_path,
         main_device,
         ov::genai::draft_model(eagle_model_path, eagle_device),
-        ov::genai::scheduler_config(scheduler_config),
-        ov::genai::eagle3_mode(true)
+        ov::genai::scheduler_config(scheduler_config)
     );
     // Setup performance measurement
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -85,22 +84,6 @@ int main(int argc, char* argv[]) try {
         print_perf_metrics(sd_perf_metrics->draft_model_metrics, "DRAFT MODEL");
     }
     std::cout << std::endl;
-
-    // Run without Eagle for comparison
-    std::cout << "\n-----------------------------" << std::endl;
-    std::cout << "Generating without Eagle Speculative decoding:" << std::endl;
-
-    // Disable Eagle mode
-    /*config.eagle_model = false;
-    
-    start_time = std::chrono::high_resolution_clock::now();
-    pipe.generate(prompt, config, streamer);
-    std::cout << std::endl;
-    */
-    end_time = std::chrono::high_resolution_clock::now();
-    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-    std::cout << "\nStandard generation completed in " << duration.count() << " ms" << std::endl;
-
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
