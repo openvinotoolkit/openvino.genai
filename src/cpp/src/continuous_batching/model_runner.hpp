@@ -337,9 +337,11 @@ public:
             sequence_group->set_output_seq_len(matmul_gathering_is_available ? output_seq_len : num_scheduled_tokens);
         }
         
-        // Note: For tensor optimization, these tensors are pre-allocated, but we still need to set them
-        // when they're not managed through the cached tensor system (fallback mode), to align these tensors' behavior 
-        // with score_aggregation_window.
+        // Note: A ireq will pre-allocate a USM for each model's input. For tensor optimization, we cache pre-allocated USM gotten from a ireq for these tensors.
+        // Since these tensors(except score_aggregation_window) are gotten from a ireq, there's no need to set them again.
+        // Score_aggregation_window might be not managed through the cached tensor system in some case as it is created inconditionally, and need to be set to a ireq.
+        // To align these tensors' behavior, set each tensor when it is not cached.
+
         if (sequence_group_type == SequenceGroupType::TOKENS && !m_cached_input_ids) {
             m_request.set_tensor("input_ids", input_ids);
         }
@@ -407,7 +409,6 @@ public:
         // return logits
         return m_request.get_tensor("logits");
     }
-}
 
     void append_embeddings(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
