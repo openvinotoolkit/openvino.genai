@@ -106,11 +106,6 @@ struct AdaptiveRKVConfig {
     size_t window_size = 8;
 };
 
-struct AdaptiveRKVDiversityBlocks {
-    size_t start_logical_block_idx;
-    size_t end_logical_block_idx;
-    std::set<size_t> target_logical_block_indices;
-};
 
 class CacheEvictionConfig {
 public:
