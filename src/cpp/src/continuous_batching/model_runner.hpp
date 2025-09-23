@@ -111,7 +111,6 @@ class ModelRunner {
     bool m_is_use_xattention_inputs;
 
     bool m_is_use_adaptive_rkv_inputs;
-    std::vector<std::map<size_t, AdaptiveRKVDiversityBlocks>> m_adaptive_rkv_diversity_blocks_per_sequence_for_each_layer;
 
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
