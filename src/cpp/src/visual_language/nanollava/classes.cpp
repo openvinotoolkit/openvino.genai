@@ -45,7 +45,7 @@ void merge_text_and_image_embeddings_nanollava(const ov::Tensor& input_ids, ov::
         }
         else {
             text_embeds_data += hidden_size;
-            text_token_idx ++;
+            text_token_idx++;
         }
     }
 }
