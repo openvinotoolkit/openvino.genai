@@ -15,6 +15,54 @@ if(ENABLE_SYSTEM_OPENCL)
     find_package(OpenCL QUIET)
     if(TARGET OpenCL::OpenCL)
         message(STATUS "OpenCL found via OpenVINO configuration - enabling CDPruner DPP acceleration")
+
+        set(opencl_header_search_params
+            HINTS
+                ${opencl_root_hints}
+            PATHS
+                ENV "PROGRAMFILES(X86)"
+                ENV AMDAPPSDKROOT
+                ENV INTELOCLSDKROOT
+                ENV NVSDKCOMPUTE_ROOT
+                ENV CUDA_PATH
+                ENV ATISTREAMSDKROOT
+                ENV OCL_ROOT
+            PATH_SUFFIXES
+                "include"
+                "OpenCL/common/inc"
+                "AMD APP/include")
+
+        find_path(OpenCL_HPP_INCLUDE_DIR
+            NAMES
+                CL/opencl.hpp OpenCL/opencl.hpp
+            ${opencl_header_search_params})
+
+        find_path(CL2_HPP_INCLUDE_DIR
+            NAMES
+                CL/cl2.hpp OpenCL/cl2.hpp
+            ${opencl_header_search_params})
+
+        set(OpenCL_DEFINITIONS)
+        if(OpenCL_HPP_INCLUDE_DIR OR CL2_HPP_INCLUDE_DIR)
+            get_target_property(opencl_target OpenCL::OpenCL ALIASED_TARGET)
+            if(NOT TARGET ${opencl_target})
+                set(opencl_target OpenCL::OpenCL)
+            endif()
+            set(OpenCL_HEADERS)
+            if(OpenCL_HPP_INCLUDE_DIR)
+                message(STATUS "OpenCL C++ headers found: ${OpenCL_HPP_INCLUDE_DIR}")
+                list(APPEND OpenCL_HEADERS ${OpenCL_HPP_INCLUDE_DIR})
+                list(APPEND OpenCL_DEFINITIONS OV_GPU_USE_OPENCL_HPP)
+            endif()
+            if(CL2_HPP_INCLUDE_DIR)
+                message(STATUS "OpenCL C++ headers found: ${CL2_HPP_INCLUDE_DIR}")
+                list(APPEND OpenCL_HEADERS ${CL2_HPP_INCLUDE_DIR})
+            endif()
+            set_property(TARGET ${opencl_target} APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${OpenCL_HEADERS})
+            set_property(TARGET ${opencl_target} APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS ${OpenCL_DEFINITIONS})
+        else()
+            message(WARNING "OpenCL C++ headers not found, some features may be disabled. Please install opencl-headers.")
+        endif()
     else()
         message(STATUS "ENABLE_SYSTEM_OPENCL is ON but OpenCL::OpenCL target not found - CDPruner will use CPU-only DPP")
     endif()
@@ -157,9 +205,11 @@ target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SO
 target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json minja)
 
 # Add OpenCL support if enabled via OpenVINO configuration
-if(ENABLE_SYSTEM_OPENCL AND TARGET OpenCL::OpenCL)
+if(ENABLE_SYSTEM_OPENCL AND TARGET OpenCL::OpenCL AND (DEFINED OpenCL_HPP_INCLUDE_DIR OR DEFINED CL2_HPP_INCLUDE_DIR))
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_OPENCL_DPP)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE OpenCL::OpenCL)
+else()
+    message(STATUS "OpenCL library or headers not found, ENABLE_OPENCL_DPP will not be defined.")
 endif()
 
 target_compile_features(${TARGET_NAME_OBJ} PRIVATE cxx_std_17)

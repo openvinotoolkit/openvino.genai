@@ -9,7 +9,11 @@
 #include "openvino/openvino.hpp"
 
 #ifdef ENABLE_OPENCL_DPP
-#    include <CL/opencl.hpp>
+#    ifdef OV_GPU_USE_OPENCL_HPP
+#        include <CL/opencl.hpp>
+#    else
+#        include <CL/cl2.hpp>
+#    endif
 #    include <memory>
 #endif
 
