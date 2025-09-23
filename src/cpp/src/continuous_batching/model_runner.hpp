@@ -161,7 +161,6 @@ public:
             input_ids(ov::element::i64, {total_num_tokens}),
             inputs_embeds(ov::element::f32, {total_num_tokens, hidden_size}),
             token_type_ids(ov::element::i64, {1, total_num_tokens}),
-            position_ids(ov::element::i64, {total_num_tokens}),
             // PA specific parameters
             past_lens(ov::element::i32, {batch_size_in_sequences}),
             subsequence_begins(ov::element::i32, {batch_size_in_sequences + 1}),
@@ -173,6 +172,7 @@ public:
 
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
+        ov::Tensor position_ids;
 
         max_context_len.data<int32_t>()[0] = max_context_len_val;
 
@@ -184,8 +184,14 @@ public:
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
             token_type_ids_data = token_type_ids.data<int64_t>();
+            auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids();
+            ov::Shape position_ids_shape = position_ids_elem[0].get_shape();
+            size_t seq_len_shape_idx = position_ids_shape.size() == 1 ? 0 : 2;
+            position_ids_shape[seq_len_shape_idx] = total_num_tokens;
+            position_ids = ov::Tensor(ov::element::i64, position_ids_shape);
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
+            position_ids = ov::Tensor(ov::element::i64, {total_num_tokens});
         }
 
         int64_t
@@ -211,7 +217,6 @@ public:
 
         std::map<size_t, std::set<size_t>> seq_id_to_skipped_blocks_map;
         size_t position_idx = 0;
-        OPENVINO_ASSERT(num_sequence_groups == 1);
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
             SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
@@ -226,15 +231,6 @@ public:
             const bool echo_output = sequence_group->get_sampling_parameters().echo;
             const bool sampling_is_required = sequence_group->requires_sampling();
             const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
-
-            if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-                //TODO: won't work for multiple prompts
-                std::optional<int64_t> rope_delta;
-                ov::Tensor tensor_tmp;
-                std::tie(tensor_tmp, rope_delta) = m_inputs_embedder->get_position_ids(total_num_tokens, sequence_group->get_num_processed_tokens());
-                position_ids = ov::Tensor(ov::element::i64, tensor_tmp.get_shape());
-                tensor_tmp.copy_to(position_ids);
-            }
 
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
                 // compute token_type_ids for current sequence
@@ -256,15 +252,20 @@ public:
                         input_ids_data[token_id] = position_id < prompt_len ?
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
+                        position_ids_data[token_id] = position_id;
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
+                        const auto& position_ids_elem = sequence->get_position_ids()[position_id];
+                        std::memcpy(position_ids_data, position_ids_elem.data<uint64_t>(), position_ids_elem.get_byte_size());
+                        position_ids_data += ov::shape_size(position_ids_elem.get_shape());
                     } else {
                         OPENVINO_THROW("Unknown model inputs type.");
                     }
                     if (sequence_group_type == SequenceGroupType::TOKENS) {
                         position_ids_data[token_id] = position_id;
+                        position_ids_data++;
                     }
 
                     // Check if token gathering is required for the entire sequence group
@@ -325,7 +326,6 @@ public:
                         *score_aggregation_window_data = 1;
                     }
                 }
-                position_ids_data += num_scheduled_tokens;
                 past_lens_data += 1;
                 subsequence_begins_data += 1;
                 block_indices_begins_data += 1;
@@ -344,20 +344,25 @@ public:
             }
         }
 
-        // flatten positions ids
-        size_t pos_size = ov::shape_size(position_ids.get_shape());
-        ov::Tensor flatten_pos_ids(ov::element::i64, ov::Shape({pos_size}));
-        int64_t* position_ids_src = position_ids.data<int64_t>();
-        int64_t* position_ids_dst = flatten_pos_ids.data<int64_t>();
+        if (position_ids.get_shape().size() > 1) {
+            // flatten positions ids
+            size_t pos_size = ov::shape_size(position_ids.get_shape());
+            ov::Tensor flatten_pos_ids(ov::element::i64, ov::Shape({pos_size}));
+            int64_t* position_ids_src = position_ids.data<int64_t>();
+            int64_t* position_ids_dst = flatten_pos_ids.data<int64_t>();
 
-        // TODO: memcpy can be used and moved to 230-239
-        for (size_t i=0; i <pos_size; i++) {
-            position_ids_dst[i] = position_ids_src[i];
+            // TODO: memcpy can be used and moved to 230-239
+            for (size_t i=0; i <pos_size; i++) {
+                position_ids_dst[i] = position_ids_src[i];
+            }
+            //
+
+            position_ids = flatten_pos_ids;
         }
-        //
+
 
         // typical LLM parameters
-        m_request.set_tensor("position_ids", flatten_pos_ids);
+        m_request.set_tensor("position_ids", position_ids);
 
         // PA specific parameters
         m_request.set_tensor("past_lens", past_lens);
@@ -428,12 +433,15 @@ public:
         size_t pos = 0;
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
             for (auto seq: sequence_group->get_running_sequences()) {
                 const auto& generated_ids = seq->get_generated_ids();
                 for (size_t token_idx = seq->get_generated_ids_embeds().size(); token_idx < generated_ids.size(); token_idx++) {
                     generated_ids_data[pos] = generated_ids[token_idx];
                     pos++;
+
+                    size_t position_id = token_idx + sequence_group->get_prompt_len();
+                    seq->append_position_ids(m_inputs_embedder->get_generation_phase_position_ids(1, position_id, seq->get_rope_delta()).first);
                 }
             }
         }

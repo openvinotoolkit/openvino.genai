@@ -14,6 +14,7 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
+#include "debug_utils.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {
@@ -53,6 +54,8 @@ class Sequence {
     std::vector<std::vector<float>> m_generated_ids_embeds;
     SequenceGroupType m_type;
     size_t m_hidden_size;
+    std::vector<ov:: Tensor> m_position_ids;
+    int64_t m_rope_delta;
 
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
@@ -222,6 +225,39 @@ public:
         }
     }
 
+    void append_position_ids(ov::Tensor position_ids) {
+        size_t seq_len_shape_idx = position_ids.get_shape().size() == 1 ? 0 : 2;
+        size_t position_ids_len = position_ids.get_shape()[seq_len_shape_idx];
+        if (position_ids_len == 1) {
+            m_position_ids.emplace_back(position_ids);
+            return;
+        }
+        //OPENVINO_ASSERT(m_sequence_group->get_prompt_len() == position_ids_len);
+        int64_t* position_ids_data = position_ids.data<int64_t>();
+        ov::Shape position_ids_elem_shape = position_ids.get_shape();
+        position_ids_elem_shape[seq_len_shape_idx] = 1;
+
+        for (size_t idx = 0; idx < position_ids_len; idx ++) {
+            ov::Tensor position_ids_elem(position_ids.get_element_type(), position_ids_elem_shape);
+            std::memcpy(position_ids_elem.data<int64_t>(), position_ids_data, shape_size(position_ids_elem_shape) * sizeof(int64_t));
+            m_position_ids.emplace_back(position_ids_elem);
+            position_ids_data += shape_size(position_ids_elem_shape);
+        }
+    }
+
+    void set_rope_delta(int64_t rope_delta) {
+        m_rope_delta = rope_delta;
+    }
+
+    const std::vector<ov::Tensor>& get_position_ids() const {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_position_ids;
+    }
+
+    const int64_t get_rope_delta() const {
+        return m_rope_delta;
+    }
+
     std::shared_ptr<SequenceGroup> get_sequence_group_ptr() const;
 
     // Each KV block can be uniquely identified by
@@ -289,9 +325,14 @@ public:
         : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, std::nullopt) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, const std::optional<ov::Tensor>& token_type_ids = std::nullopt)
+    SequenceGroup(uint64_t request_id, 
+                  const ov::Tensor input_ids, 
+                  const ov::genai::GenerationConfig& sampling_params, 
+                  std::size_t block_size, 
+                  const std::optional<ov::Tensor>& token_type_ids = std::nullopt, 
+                  const std::optional<ov::Tensor>& position_ids = std::nullopt, 
+                  const std::optional<int64_t>& rope_delta = std::nullopt)
         : SequenceGroup(request_id, sampling_params, block_size) {
-        
         size_t prompt_len;
         size_t hidden_size = 0;
         if (input_ids.get_shape().size() > 1) {
@@ -330,8 +371,17 @@ public:
         }
         m_prompt_log_probs.reserve(prompt_len);
 
+        auto sequence = Sequence::create(m_next_sequence_id++, m_sequence_group_type, hidden_size);
+        
+        if (position_ids.has_value()) {
+            sequence->append_position_ids(*position_ids);
+        }
+        if (rope_delta.has_value()) {
+            sequence->set_rope_delta(*rope_delta);
+        }
+
         // create a single sequence
-        add_sequence(Sequence::create(m_next_sequence_id++, m_sequence_group_type, hidden_size));
+        add_sequence(sequence);
     }
 
     void add_sequence(const Sequence::Ptr & sequence) {
