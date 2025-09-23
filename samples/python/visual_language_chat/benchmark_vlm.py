@@ -71,10 +71,14 @@ def main():
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
     config.pruning_ratio = args.pruning_ratio if args.pruning_ratio is not None else 0
-    print(f'CDPruner config: Pruning ratio - {config.pruning_ratio}% (0 means disabled)')
-    if config.pruning_ratio > 0:
+    if config.pruning_ratio > 0 and config.pruning_ratio < 100:
+        print(f'[CDPruner] Enabling CDPruner with {config.pruning_ratio}% visual token pruning')
         if args.relevance_weight is not None:
             config.relevance_weight = args.relevance_weight
+            print(f'[CDPruner] Setting relevance weight to {config.relevance_weight}')
+    else:
+        config.pruning_ratio = 0
+        print(f'[CDPruner] Disabled')
 
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)

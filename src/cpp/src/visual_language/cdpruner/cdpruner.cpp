@@ -21,10 +21,10 @@ CDPruner::CDPruner(const Config& config)
       m_relevance_calc(config),
       m_kernel_builder(config),
       m_dpp_selector(config) {
-    // Validate configuration
-    validate_config(config);
     // Load config from env
     m_config.update_from_env();
+    // Validate configuration
+    validate_config(config);
 }
 
 std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visual_features,
@@ -39,11 +39,9 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         return create_all_tokens_selection(visual_features);
     }
 
-    // Get input dimensions for context
     const auto& visual_shape = visual_features.get_shape();
     const auto& text_shape = text_features.get_shape();
 
-    // Calculate actual number of tokens to keep based on percentage
     size_t total_tokens = visual_shape[1];
     size_t raw_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * (1.0 - m_config.pruning_ratio / 100.0)));
     // Ensure the number of tokens to keep is the nearest even number
@@ -59,25 +57,22 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 
     validate_input_tensors(visual_features, text_features);
 
-    // Performance timing setup
     auto overall_start = std::chrono::high_resolution_clock::now();
 
     try {
         std::vector<std::vector<size_t>> selected_tokens;
-        std::chrono::microseconds dpp_duration{0};        // Initialize DPP timing variable
-        std::chrono::microseconds relevance_duration{0};  // Initialize relevance timing variable
-        std::chrono::microseconds kernel_duration{0};     // Initialize kernel building timing variable
+        std::chrono::microseconds dpp_duration{0};
+        std::chrono::microseconds relevance_duration{0};
+        std::chrono::microseconds kernel_duration{0};
 
         if (m_config.pruning_debug_mode) {
             std::cout << "\n+--- CDPruner Processing Steps ----------------------+" << std::endl;
         }
 
-        // Get input dimensions for processing decision
         size_t batch_size = visual_shape[0];
         size_t total_visual_tokens = visual_shape[1];
         size_t feature_dim = visual_shape[2];
 
-        // Decision: split tokens only if total count exceeds threshold
         bool use_splitting = m_config.split_threshold > 0 && total_visual_tokens > m_config.split_threshold;
 
         if (m_config.pruning_debug_mode) {
@@ -102,12 +97,10 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
             }
         }
 
-        // Create tensor views based on splitting decision
         const float* visual_data = visual_features.data<const float>();
         ov::Tensor visual_first_half, visual_second_half;
 
         if (use_splitting) {
-            // Create tensor views for first and second halves without copying data
             visual_first_half = ov::Tensor(ov::element::f32,
                                            {batch_size, first_half_size, feature_dim},
                                            const_cast<float*>(visual_data));
@@ -116,11 +109,9 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
                            {batch_size, second_half_size, feature_dim},
                            const_cast<float*>(visual_data + batch_size * first_half_size * feature_dim));
         } else {
-            // Use the entire visual features tensor without splitting
             visual_first_half = visual_features;
         }
 
-        // Build kernel matrices using different approaches
         ov::Tensor kernel_matrix_first, kernel_matrix_second;
 
         std::string computation_mode;
@@ -155,7 +146,6 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
             auto computation_duration =
                 std::chrono::duration_cast<std::chrono::microseconds>(computation_end - computation_start);
 
-            // For OV model approach, this includes both relevance computation and kernel building
             kernel_duration = computation_duration;
 
             if (m_config.pruning_debug_mode) {
@@ -165,7 +155,6 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         } catch (const std::exception& e) {
             std::cerr << "[CDPruner] Error occurred during kernel building: " << e.what() << std::endl;
             std::cout << "[CDPruner] Falling back to traditional approach..." << std::endl;
-            // Traditional step-by-step approach
             computation_mode = "Traditional Step-by-Step by CPU";
             auto relevance_start = std::chrono::high_resolution_clock::now();
 
@@ -272,7 +261,6 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
             }
         }
 
-        // Overall timing summary
         auto overall_end = std::chrono::high_resolution_clock::now();
         auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(overall_end - overall_start);
 
@@ -328,18 +316,15 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
     size_t total_tokens = visual_shape[1];
     size_t feature_dim = visual_shape[2];
 
-    // Calculate actual number of tokens to keep based on percentage
     size_t num_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * (1 - m_config.pruning_ratio / 100.0)));
 
     size_t text_tokens = text_shape[0];
     size_t text_feature_dim = text_shape[1];
 
-    // Calculate pruning statistics
     float pruning_ratio = 1.0f - static_cast<float>(num_tokens_to_keep) / static_cast<float>(total_tokens);
     float reduction_percentage = pruning_ratio * 100.0f;
     size_t tokens_removed = total_tokens - num_tokens_to_keep;
 
-    // Print consolidated CDPruner overview
     if (!silent) {
         std::cout << "\n+--- CDPruner Processing Overview -------------------------+" << std::endl;
         std::cout << "[CDPruner] Input:  Vision[" << total_tokens << " tokens x " << feature_dim << "D] + Text["
@@ -356,7 +341,6 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
     // Determine actual number of selected tokens (may differ from num_tokens_to_keep due to odd->even adjustment)
     size_t actual_selected_tokens = selected_tokens.empty() ? 0 : selected_tokens[0].size();
 
-    // Create output tensor with actual selected tokens
     ov::Tensor pruned_features(visual_features.get_element_type(), {batch_size, actual_selected_tokens, feature_dim});
 
     const float* input_data = visual_features.data<const float>();
@@ -368,7 +352,6 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
         for (size_t t = 0; t < batch_selected.size(); ++t) {
             size_t src_token_idx = batch_selected[t];
 
-            // Copy features for this token
             for (size_t f = 0; f < feature_dim; ++f) {
                 size_t src_idx = b * total_tokens * feature_dim + src_token_idx * feature_dim + f;
                 size_t dst_idx = b * actual_selected_tokens * feature_dim + t * feature_dim + f;
@@ -377,13 +360,11 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
         }
     }
 
-    // Update statistics
     m_last_statistics.total_tokens = total_tokens;
     m_last_statistics.selected_tokens = actual_selected_tokens;
     m_last_statistics.pruning_ratio = 1.0f - static_cast<float>(actual_selected_tokens) / total_tokens;
     m_last_statistics.batch_size = batch_size;
 
-    // Show selected token indices for debugging
     if (!selected_tokens.empty() && m_config.pruning_debug_mode) {
         std::cout << "\n[CDPruner] Selected token indices (batch 0): [";
         const auto& first_batch_tokens = selected_tokens[0];
@@ -412,7 +393,6 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
         return apply_pruning(visual_features_list[0], text_features);
     }
 
-    // Collect frame information for overview
     const auto& first_feature = visual_features_list[0];
     const auto& visual_shape = first_feature.get_shape();
     const auto& text_shape = text_features.get_shape();
@@ -421,7 +401,6 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     size_t feature_dim = visual_shape[2];
     size_t total_input_tokens = tokens_per_frame * visual_features_list.size();
 
-    // Calculate pruning settings
     size_t num_tokens_to_keep =
         static_cast<size_t>(std::round(tokens_per_frame * (1 - m_config.pruning_ratio / 100.0)));
     size_t total_output_tokens = num_tokens_to_keep * visual_features_list.size();
@@ -429,7 +408,6 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     size_t text_tokens = text_shape[0];
     size_t text_feature_dim = text_shape[1];
 
-    // Print multi-frame overview
     std::cout << "\n+--- CDPruner Multi-Frame Processing Overview -------------+" << std::endl;
     std::cout << "[CDPruner] Input:  " << visual_features_list.size() << " frames × Vision[" << tokens_per_frame
               << " tokens x " << feature_dim << "D] + Text[" << text_tokens << " tokens x " << text_feature_dim << "D]"
@@ -463,7 +441,6 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
         }
     }
 
-    // Concatenate all pruned features
     const auto& first_pruned_feature = pruned_features_list[0];
     const size_t actual_batch_size = first_pruned_feature.get_shape()[0];
     const size_t actual_tokens_per_frame = first_pruned_feature.get_shape()[1];
@@ -474,7 +451,6 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
                                      {actual_batch_size, actual_total_tokens, actual_hidden_dim});
     float* concat_data = concatenated_features.data<float>();
 
-    // Efficient concatenation using direct memory copy
     const size_t feature_size_bytes = actual_tokens_per_frame * actual_hidden_dim * sizeof(float);
     size_t offset_elements = 0;
 
@@ -486,13 +462,11 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     auto overall_end = std::chrono::high_resolution_clock::now();
     auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(overall_end - overall_start);
 
-    // Update combined statistics
     m_last_statistics.total_tokens = total_input_tokens;
     m_last_statistics.selected_tokens = actual_total_tokens;
     m_last_statistics.pruning_ratio = 1.0f - static_cast<float>(actual_total_tokens) / total_input_tokens;
     m_last_statistics.batch_size = actual_batch_size;
 
-    // Show multi-frame performance summary
     std::cout << "\n+--- CDPruner Multi-Frame Performance Summary -------------+" << std::endl;
 
 #ifdef ENABLE_OPENCL_DPP
@@ -527,7 +501,6 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
 }
 
 float CDPruner::compute_pruning_ratio() const {
-    // Return the percentage as a ratio (30% -> 0.30)
     return m_config.pruning_ratio / 100.0f;
 }
 
@@ -649,15 +622,12 @@ void CDPruner::print_selection_statistics(const ov::Tensor& visual_features,
     size_t total_tokens = shape[1];
     size_t selected_token_count = static_cast<size_t>(std::round(total_tokens * (1 - m_config.pruning_ratio / 100.0)));
 
-    // Start CDPruner output block
     std::cout << "\n+--- CDPruner Results -----------------------------------+" << std::endl;
 
-    // Show compact performance summary
     std::cout << "[CDPruner] Summary: " << total_tokens << " -> " << selected_token_count << " tokens (" << std::fixed
               << std::setprecision(1) << (1.0f - static_cast<float>(selected_token_count) / total_tokens) * 100.0f
               << "% reduction)" << std::endl;
 
-    // Show token indices for debugging
     if (batch_size > 0 && !selected_tokens.empty()) {
         for (size_t b = 0; b < batch_size; b++) {
             std::cout << "[CDPruner] Selected indices (batch " << b << "): [";
@@ -676,10 +646,8 @@ void CDPruner::print_selection_statistics(const ov::Tensor& visual_features,
         }
     }
 
-    // End CDPruner output block
     std::cout << "+----------------------------------------------------------+" << std::endl;
 
-    // Update statistics
     m_last_statistics.total_tokens = total_tokens;
     m_last_statistics.selected_tokens = selected_token_count;
     m_last_statistics.pruning_ratio = 1.0f - static_cast<float>(selected_token_count) / total_tokens;

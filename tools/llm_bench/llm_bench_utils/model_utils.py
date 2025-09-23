@@ -149,7 +149,7 @@ def analyze_args(args):
         model_args['relevance_weight'] = args.relevance_weight if args.relevance_weight is not None else 0.5
         log.info(f"CDPruner config: Relevance weight - {model_args['relevance_weight']}")
     else:
-        log.warning(f"CDPruner config: Invalid pruning ratio({model_args['pruning_ratio']}). Pruning is disabled.")
+        log.warning(f"CDPruner config: Invalid pruning ratio({model_args['pruning_ratio']}%). Pruning is disabled.")
         model_args['pruning_ratio'] = 0
 
     optimum = args.optimum

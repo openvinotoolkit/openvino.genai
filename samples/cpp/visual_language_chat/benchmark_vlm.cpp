@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) try {
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("pr,pruning_ratio", "Percentage of visual tokens to prune when CDPruner is enabled", cxxopts::value<size_t>()->default_value("0"))
+    ("pr,pruning_ratio", "Percentage of visual tokens to prune. 0 by default means no pruning", cxxopts::value<size_t>()->default_value("0"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -64,22 +64,25 @@ int main(int argc, char* argv[]) try {
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
     config.ignore_eos = true;
-    
-    config.pruning_ratio = pruning_ratio;
+
     // Configure CDPruner if requested
-    if (pruning_ratio > 0 && pruning_ratio < 100) {
-        std::cout << "[CDPruner] Enabling CDPruner with pruning ratio " << pruning_ratio << "% visual tokens" << std::endl;
+    if (pruning_ratio == 0) {
+        std::cout << "[CDPruner] CDPruner is disabled." << std::endl;
+    } else if (pruning_ratio > 0 && pruning_ratio < 100) {
+        std::cout << "[CDPruner] Enabling CDPruner with pruning ratio " << pruning_ratio << "% visual tokens"
+                  << std::endl;
+        config.pruning_ratio = pruning_ratio;
+    } else {
+        // Disable CDPruner
+        std::cout << "[CDPruner] Invalid pruning ratio(" << pruning_ratio << "%). Disabling CDPruner." << std::endl;
     }
 
     std::cout << ov::get_openvino_version() << std::endl;
 
-    // Setup cache configuration for CDPruner if needed
-    ov::AnyMap properties = {};
-
     std::unique_ptr<ov::genai::VLMPipeline> pipe;
-    if (device == "NPU") {
+    if (device == "NPU")
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
-    } else {
+    else {
         // Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
         ov::genai::SchedulerConfig scheduler_config;
         scheduler_config.enable_prefix_caching = false;

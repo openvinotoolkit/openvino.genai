@@ -31,11 +31,15 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
-    generation_config.pruning_ratio = pruning_ratio;
     // Configure CDPruner if requested
-    if (pruning_ratio > 0) {
+    if (pruning_ratio == 0) {
+        std::cout << "[CDPruner] Disabled" << std::endl;
+    } else if (pruning_ratio > 0 && pruning_ratio < 100) {
         std::cout << "[CDPruner] Enabling CDPruner with " << pruning_ratio << "% visual token pruning" << std::endl;
+        generation_config.pruning_ratio = pruning_ratio;
         generation_config.relevance_weight = pruning_relevance_weight;
+    } else {
+        std::cout << "[CDPruner] Invalid pruning ratio(" << pruning_ratio << "%). Disabling CDPruner." << std::endl;
     }
 
     // Initialize VLMPipeline with cache configuration if needed
