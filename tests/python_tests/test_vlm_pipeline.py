@@ -515,7 +515,12 @@ def test_vlm_npu_no_image():
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_sequence, backend):
+def test_vlm_pipeline_chat_streamer_cancel_second_generate(
+    image_sequence, 
+    model_id,
+    backend, 
+    ov_cache_models_dir,
+):
     callback_questions = [
         "Explain in details 1+1=",
         "Why is the Sun yellow?",
@@ -534,7 +539,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
             else StreamingStatus.RUNNING
         )
 
-    models_path = get_ov_model(model_id)
+    models_path = get_ov_model(model_id, ov_cache_models_dir)
     ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
