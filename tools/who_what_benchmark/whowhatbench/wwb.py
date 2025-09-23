@@ -199,6 +199,28 @@ def parse_args():
         action="store_true",
         help="Inference with empty adapters. Applicable for GenAI only.",
     )
+    parser.add_argument(
+        "--draft-model",
+        default=None,
+        help="Path to draft model folder including IR files for Speculative decoding generation.",
+    )
+    parser.add_argument(
+        "--draft-device",
+        type=str,
+        default=None,
+        help="Inference device for Speculative decoding of draft model, e.g. 'CPU', 'GPU'.",
+    )
+    parser.add_argument(
+        "--draft-cb-config",
+        type=str,
+        default=None,
+        help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model",
+    )
+    parser.add_argument(
+        "--eagle3-mode",
+        action="store_true",
+        help="Flag to indicate whether to use eagle3 for speculative decoding.",
+    )
 
     return parser.parse_args()
 

@@ -1,3 +1,4 @@
+from pathlib import Path
 import logging
 import json
 import torch
@@ -63,15 +64,34 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
+    config = {}
+    draft_model_path = kwargs.get("draft-model", '')
+
+    if draft_model_path:
+        if not Path(draft_model_path).exists():
+            raise RuntimeError(f'==Failure ==: draft model by path:{draft_model_path} is not exists')
+        draft_device = kwargs.get('draft_device', None) or device
+        draft_model_load_kwargs = {'scheduler_config': get_scheduler_config_genai(kwargs.get("draft_cb_config"), config_name="draft CB config")}\
+            if kwargs.get("draft_cb_config") is not None else {}
+        config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
+        if (kwargs.get('eagle3_mode', None)):
+            config['eagle3_mode'] = True
+            if 'scheduler_config' in config.keys():
+                config['scheduler_config'].dynamic_split_fuse = False  # Eagle speculative decoding does not support dynamic_split_fuse mode
+            else:
+                config['scheduler_config'] = openvino_genai.SchedulerConfig()
+                config['scheduler_config'].dynamic_split_fuse = False
+            # log.info("Eagle3 Speculative Decoding is activated, and dynamic_split_fuse is set to False in scheduler_config")
+
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, **ov_config)
+        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, **ov_config, **config)
     else:
         logger.info("Using OpenVINO GenAI LLMPipeline API")
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, **ov_config)
+        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, **config, **ov_config)
 
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
