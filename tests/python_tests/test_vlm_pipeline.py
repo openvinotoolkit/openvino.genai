@@ -25,6 +25,7 @@ handwritten_tensor
 model_and_tag
 """
 
+from pathlib import Path
 import openvino_tokenizers
 import openvino
 import PIL
@@ -51,11 +52,10 @@ from utils.generation_config import (
     get_multinomial_all_parameters,
     get_greedy,
 )
-from utils.constants import get_default_llm_properties, get_ov_cache_models_dir
+from utils.constants import get_default_llm_properties
 
 
-def get_ov_model(model_id):
-    ov_cache_models_dir = get_ov_cache_models_dir()
+def get_ov_model(model_id: str, ov_cache_models_dir: Path):
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_models_dir / dir_name
     if (model_dir / "openvino_language_model.xml").exists():

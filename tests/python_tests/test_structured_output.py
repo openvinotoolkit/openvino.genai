@@ -4,33 +4,39 @@ import openvino_genai as ov_genai
 
 from pydantic import BaseModel, Field
 from typing import Literal
-from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
+from utils.constants import ModelDownloaderCallable
 import re
 
+
 @pytest.fixture(scope="module")
-def ov_pipe(request):
-    _, _, models_path = download_and_convert_model(request.param)
+def ov_pipe(request, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(request.param)
     return create_ov_pipeline(models_path)
+
 
 class Person(BaseModel):
     name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
     age: int = Field(ge=0, le=128)
     city: Literal["Dublin", "Dubai", "Munich"]
 
+
 class Transaction(BaseModel):
     id: int = Field(ge=0, le=2**14)
     amount: float = Field(ge=0.0, le=1e6)
     currency: Literal["USD", "EUR", "GBP"]
 
+
 class RESTAPIResponse(BaseModel):
     status: Literal["success", "error"]
     data: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+
 
 structured_id_models = [
     'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
     'katuni4ka/tiny-random-phi3',
 ]
+
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
