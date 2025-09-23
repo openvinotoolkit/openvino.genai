@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdlib>
 #include <cmath>
+#include <deque>
 
 #include "openvino/openvino.hpp"
 #include "continuous_batching/attention_output.hpp"
@@ -14,6 +15,7 @@
 #include "continuous_batching/kvcrush.hpp"
 
 namespace ov::genai {
+
 
 /**
  * @brief Keeps track of the accumulated token scores across model inferences and their lifetime.
@@ -100,6 +102,21 @@ private:
     std::size_t m_ignore_first_n_blocks;
     std::size_t m_snapkv_window_size;
     std::size_t m_num_registered_snapkv_aggregated_scores;
+
+    struct EvictionScoreRecord {
+        EvictionScoreRecord(const std::vector<double>& score_, const std::set<size_t>& skips_) : score(score_), skips(skips_) {};
+        std::vector<double> score;
+        std::set<size_t> skips;
+    };
+
+    std::vector<std::deque<EvictionScoreRecord>> m_previous_scores_queues;
+    void _initialize_score_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t> skipped_logical_block_ids);
+    void _accumulate_initial_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids);
+
+    void _accumulate_layer_scores_to(size_t decoder_layer_idx, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids, std::vector<double>& dst);
+    void _accumulate_with_existing_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids);
+    void _adjust_norm_sum_counters(size_t decoder_layer_idx, size_t old_size_in_tokens, size_t new_size_in_tokens);
+    static constexpr size_t ADAPTIVE_RKV_SCORE_AGGREGATION_WINDOW_SIZE = 8;
 };
 
 class SnapKVScoreAggregationCalculator {
@@ -201,6 +218,8 @@ public:
      */
     std::vector<std::set<std::size_t>> evict_logical_blocks();
 
+    void register_token_similarity(const TokenSimilarityForEachDecoderLayer& token_similarity_for_all_decoder_layers);
+
 
 private:
     std::size_t get_num_blocks(std::size_t num_tokens) const;
@@ -221,6 +240,7 @@ private:
     std::size_t m_num_evicted_tokens = 0;
     std::size_t m_num_decoder_layers;
     EvictionScoreManager m_score_manager;
+    TokenSimilarityForEachDecoderLayer m_last_token_similarity;
 };
 
 
