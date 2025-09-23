@@ -30,7 +30,6 @@ void print_tensor(ov::Tensor tensor) {
 
     const size_t batch_size = shape[0];
     const size_t seq_length = shape[1];
-    const size_t hidden_size = shape[2];
 
     std::cout << " => [ \n";
     for (size_t batch = 0; batch < batch_size; ++batch) {
@@ -44,6 +43,8 @@ void print_tensor(ov::Tensor tensor) {
             std::cout << "]\n";
             continue;
         }
+
+        const size_t hidden_size = shape[2];
 
         for (size_t seq = 0; seq < seq_length; ++seq) {
             if (seq != 0)
