@@ -75,6 +75,14 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
     }
 }
 
+template <typename T>
+void read_anymap_param_without_exception(const ov::AnyMap& config_map, const std::string& name, T& param) {
+    try {
+        read_anymap_param(config_map, name, param);
+    } catch (ov::Exception& e) {
+    }
+}
+
 const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";

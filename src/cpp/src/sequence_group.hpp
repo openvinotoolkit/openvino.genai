@@ -14,6 +14,7 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {
@@ -242,7 +243,11 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     TokenIds m_prompt_ids;
     std::vector<std::vector<float>> m_input_embeds;
     std::optional<std::vector<int64_t>> m_token_type_ids;
-    ov::AnyMap m_generation_options;
+
+    // 2D vector used to cache position_ids, for compatibility with special cases (Qwen-VL 3D position_ids)
+    std::vector<std::vector<int64_t>> m_position_ids;
+    std::vector<std::vector<int64_t>> m_position_ids_last = std::vector<std::vector<int64_t>>{{0}};
+
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
     size_t m_num_evicted_tokens = 0;
@@ -292,7 +297,8 @@ public:
 
     SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, const std::optional<ov::Tensor>& token_type_ids = std::nullopt, const ov::AnyMap& generation_options = {})
         : SequenceGroup(request_id, sampling_params, block_size) {
-        
+        using ov::genai::utils::read_anymap_param_without_exception;
+
         size_t prompt_len;
         size_t hidden_size = 0;
         if (input_ids.get_shape().size() > 1) {
@@ -302,8 +308,6 @@ public:
         }
         OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
 
-        // Need to deep copy?
-        m_generation_options = generation_options;
         if (input_ids.get_element_type() == ov::element::i64) {
             m_prompt_ids.resize(prompt_len);
             OPENVINO_SUPPRESS_DEPRECATED_START
@@ -331,6 +335,30 @@ public:
         else {
             OPENVINO_THROW("Unknown tensor format.");
         }
+
+        ov::Tensor position_ids;
+        read_anymap_param_without_exception<ov::Tensor>(generation_options, "position_ids", position_ids);
+        if (position_ids) {
+            auto position_ids_shape = position_ids.get_shape();
+            OPENVINO_ASSERT(position_ids_shape.size() >= 2u);   // [batch, seq], or [3d, batch, seq]
+            size_t position_ids_multi_d_size = 1;
+            size_t position_ids_stride = 1;
+            for (size_t b = 0; b < position_ids_shape.size(); b++) {
+                if (b + 2u < position_ids_shape.size())
+                    position_ids_multi_d_size *= position_ids_shape[b];
+                else
+                    position_ids_stride *= position_ids_shape[b];
+            }
+
+            m_position_ids = std::vector<std::vector<int64_t>>(position_ids_multi_d_size, std::vector<int64_t>(position_ids_stride));
+            OPENVINO_SUPPRESS_DEPRECATED_START
+            for (size_t d = 0; d < position_ids_multi_d_size; d++) {
+                std::copy_n(position_ids.data<int64_t>() + d * position_ids_stride, position_ids_stride, m_position_ids[d].begin());
+            }
+            OPENVINO_SUPPRESS_DEPRECATED_END
+
+        }
+
         m_prompt_log_probs.reserve(prompt_len);
 
         // create a single sequence
@@ -810,6 +838,22 @@ public:
 
     size_t get_max_new_tokens() const {
         return m_sampling_params.get_max_new_tokens(get_prompt_len());
+    }
+
+    std::vector<std::vector<int64_t>> get_position_ids() const {
+        return m_position_ids;
+    }
+    void clear_position_ids() {
+        m_position_ids.clear();
+    }
+    size_t get_position_ids_batch() const {
+        return m_position_ids.size() > 0 ? m_position_ids.size() : m_position_ids_last.size();
+    }
+    std::vector<std::vector<int64_t>> get_position_ids_last() const {
+        return m_position_ids_last;
+    }
+    void update_position_ids_last(const std::vector<std::vector<int64_t>>& position_ids_last) {
+        m_position_ids_last = position_ids_last;
     }
 };
 
