@@ -14,7 +14,6 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
-#include "debug_utils.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {
@@ -226,22 +225,33 @@ public:
     }
 
     void append_position_ids(ov::Tensor position_ids) {
-        size_t seq_len_shape_idx = position_ids.get_shape().size() == 1 ? 0 : 2;
+        size_t seq_len_shape_idx = position_ids.get_shape().size() == 3 ? 2 : 1;
         size_t position_ids_len = position_ids.get_shape()[seq_len_shape_idx];
         if (position_ids_len == 1) {
             m_position_ids.emplace_back(position_ids);
             return;
         }
-        //OPENVINO_ASSERT(m_sequence_group->get_prompt_len() == position_ids_len);
         int64_t* position_ids_data = position_ids.data<int64_t>();
         ov::Shape position_ids_elem_shape = position_ids.get_shape();
         position_ids_elem_shape[seq_len_shape_idx] = 1;
 
         for (size_t idx = 0; idx < position_ids_len; idx ++) {
+
             ov::Tensor position_ids_elem(position_ids.get_element_type(), position_ids_elem_shape);
-            std::memcpy(position_ids_elem.data<int64_t>(), position_ids_data, shape_size(position_ids_elem_shape) * sizeof(int64_t));
+            ov::Coordinate begin;
+            ov::Coordinate end;
+            if (position_ids_elem.get_shape().size() == 3) {
+                begin = ov::Coordinate{0, 0, idx};
+                end = ov::Coordinate{3, 1, idx + 1};
+            }
+            else {
+                begin = ov::Coordinate{0, idx};
+                end = ov::Coordinate{1, idx + 1};
+            }
+
+            ov::Tensor src_roi(position_ids, begin, end);
+            src_roi.copy_to(position_ids_elem);
             m_position_ids.emplace_back(position_ids_elem);
-            position_ids_data += shape_size(position_ids_elem_shape);
         }
     }
 

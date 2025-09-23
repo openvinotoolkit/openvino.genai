@@ -15,7 +15,6 @@
 #include "continuous_batching/timer.hpp"
 
 #include "continuous_batching/attention_output.hpp"
-#include "debug_utils.hpp"
 
 namespace ov::genai {
 
@@ -186,8 +185,12 @@ public:
             token_type_ids_data = token_type_ids.data<int64_t>();
             auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids();
             ov::Shape position_ids_shape = position_ids_elem[0].get_shape();
-            size_t seq_len_shape_idx = position_ids_shape.size() == 1 ? 0 : 2;
-            position_ids_shape[seq_len_shape_idx] = total_num_tokens;
+            if (position_ids_shape.size() == 3) {
+                position_ids_shape[2] = total_num_tokens;
+            }
+            else {
+                position_ids_shape = {total_num_tokens};
+            }
             position_ids = ov::Tensor(ov::element::i64, position_ids_shape);
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
@@ -258,8 +261,20 @@ public:
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
                         const auto& position_ids_elem = sequence->get_position_ids()[position_id];
-                        std::memcpy(position_ids_data, position_ids_elem.data<uint64_t>(), position_ids_elem.get_byte_size());
-                        position_ids_data += ov::shape_size(position_ids_elem.get_shape());
+
+                        ov::Coordinate begin;
+                        ov::Coordinate end;
+                        if (position_ids_elem.get_shape().size() == 3) {
+                            begin = ov::Coordinate{0, 0, position_idx};
+                            end = ov::Coordinate{3, 1, position_idx + 1};
+                        }
+                        else {
+                            begin = ov::Coordinate{position_idx};
+                            end = ov::Coordinate{position_idx + 1};
+                        }
+
+                        ov::Tensor dst_roi(position_ids, begin, end);
+                        position_ids_elem.copy_to(dst_roi);
                     } else {
                         OPENVINO_THROW("Unknown model inputs type.");
                     }
@@ -281,6 +296,7 @@ public:
                             output_seq_len++;
                         }
                     }
+                    position_idx++;
                 }
 
                 size_t num_blocks = sequence_group->get_num_logical_blocks();
@@ -344,19 +360,10 @@ public:
             }
         }
 
-        if (position_ids.get_shape().size() > 1) {
-            // flatten positions ids
-            size_t pos_size = ov::shape_size(position_ids.get_shape());
-            ov::Tensor flatten_pos_ids(ov::element::i64, ov::Shape({pos_size}));
-            int64_t* position_ids_src = position_ids.data<int64_t>();
-            int64_t* position_ids_dst = flatten_pos_ids.data<int64_t>();
-
-            // TODO: memcpy can be used and moved to 230-239
-            for (size_t i=0; i <pos_size; i++) {
-                position_ids_dst[i] = position_ids_src[i];
-            }
-            //
-
+        if (position_ids.get_shape().size() > 2) {
+            // flatten positions ids for 3D position ids case
+            ov::Tensor flatten_pos_ids(ov::element::i64, {ov::shape_size(position_ids.get_shape())});
+            std::memcpy(flatten_pos_ids.data<int64_t>(), position_ids.data<int64_t>(), position_ids.get_byte_size());
             position_ids = flatten_pos_ids;
         }
 
@@ -441,6 +448,7 @@ public:
                     pos++;
 
                     size_t position_id = token_idx + sequence_group->get_prompt_len();
+                    auto appended_pos_id = m_inputs_embedder->get_generation_phase_position_ids(1, position_id, seq->get_rope_delta()).first;
                     seq->append_position_ids(m_inputs_embedder->get_generation_phase_position_ids(1, position_id, seq->get_rope_delta()).first);
                 }
             }
