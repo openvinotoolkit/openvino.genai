@@ -151,7 +151,7 @@ namespace ov::genai {
 
     void EvictionScoreManager::_accumulate_with_existing_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids) {
         if (m_aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
-            if (m_previous_scores_queues[decoder_layer_idx].size() >= EvictionScoreManager::ADAPTIVE_RKV_SCORE_AGGREGATION_WINDOW_SIZE) {
+            if (m_previous_scores_queues[decoder_layer_idx].size() >= m_adaptive_rkv_window_size) {
                 m_previous_scores_queues[decoder_layer_idx].pop_front();
             }
             m_previous_scores_queues[decoder_layer_idx].emplace_back(max_pooled_hh_scores, skipped_logical_block_ids);
@@ -273,7 +273,7 @@ namespace ov::genai {
     CacheEvictionAlgorithm::CacheEvictionAlgorithm(const CacheEvictionConfig &eviction_config, size_t block_size,
                                                    size_t num_decoder_layers, size_t max_pool_window_size) :
             m_eviction_config(eviction_config), m_block_size(block_size), m_num_decoder_layers(num_decoder_layers),
-            m_score_manager(block_size, num_decoder_layers, max_pool_window_size, eviction_config.aggregation_mode, eviction_config.get_start_size() / block_size, eviction_config.snapkv_window_size), m_kvcrush_algo(eviction_config.kvcrush_config, block_size)
+            m_score_manager(block_size, num_decoder_layers, max_pool_window_size, eviction_config.aggregation_mode, eviction_config.get_start_size() / block_size, eviction_config.snapkv_window_size, eviction_config.adaptive_rkv_config.window_size), m_kvcrush_algo(eviction_config.kvcrush_config, block_size)
     {
             OPENVINO_ASSERT(!(m_eviction_config.get_start_size() % m_block_size),
                             "CacheEvictionConfig.start_size in tokens must be a multiple of block size ", m_block_size);
@@ -402,8 +402,7 @@ namespace ov::genai {
             }
         }
 
-        double ADAPTIVE_RKV_ATTENTION_MASS = 0.9;
-        double expected_sum = total_sum * ADAPTIVE_RKV_ATTENTION_MASS;
+        double expected_sum = total_sum * m_eviction_config.adaptive_rkv_config.attention_mass;
         std::set<size_t> retval;
 
         double sum = 0.0;
