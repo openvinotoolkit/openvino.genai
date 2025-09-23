@@ -522,12 +522,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     OPENVINO_ASSERT(config.num_return_sequences == 1u,
         "Currently only \"num_return_sequences\" equal to 1 is supported!");
 
-    // FIXME: Update conditionally:
     m_main_request->set_generation_config(config);
-    auto requested_candidates_num = config.num_assistant_tokens;
-    if (requested_candidates_num != 0) {
-        m_candidates_num = requested_candidates_num;
-    }
 
     // Config draft model to not stop on EOS and remove stop strings:
     ov::genai::GenerationConfig draft_config = m_draft_request->get_generation_config();
@@ -735,11 +730,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
 
     // If not chat conversation, then reset all states.
     if (!m_is_chat_conversation) {
-        m_candidates_num = 5;
-        requested_candidates_num = config.num_assistant_tokens;
-        if (requested_candidates_num != 0) {
-            m_candidates_num = requested_candidates_num;
-        }
+        m_candidates_num = config.num_assistant_tokens;
         m_draft_request->reset_state();
         m_main_request->reset_state();
     }

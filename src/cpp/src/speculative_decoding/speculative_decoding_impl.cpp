@@ -262,9 +262,15 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
+        auto main_sampling_params = sampling_params[request_id];
+        if (main_sampling_params.assistant_confidence_threshold == 0.f) {
+            if (main_sampling_params.num_assistant_tokens == 0) {
+                main_sampling_params.num_assistant_tokens = 5;
+            }
+        }
+        main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], main_sampling_params));
 
-        auto draft_sampling_params = sampling_params[request_id];
+        auto draft_sampling_params = main_sampling_params;
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
         draft_sampling_params.stop_strings = {};

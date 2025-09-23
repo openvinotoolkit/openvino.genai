@@ -14,6 +14,11 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     bool is_validation_mode_enabled) {
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
+    if (m_generation_config.assistant_confidence_threshold == 0.f) {
+        if (m_generation_config.num_assistant_tokens == 0) {
+            m_generation_config.num_assistant_tokens = 5;
+        }
+    }
     m_is_validation_mode_enabled = is_validation_mode_enabled;
     initialize_pipeline(model, scheduler_config, device, plugin_config);
 }
