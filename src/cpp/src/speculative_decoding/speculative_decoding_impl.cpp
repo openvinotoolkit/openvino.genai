@@ -25,23 +25,17 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
            lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
-ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, 
-                                                                             const ov::genai::ModelDesc& draft_model_desc) {
-    auto main_model = main_model_desc.model;
-    auto draft_model = draft_model_desc.model;
+std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig>
+ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc) {
+    utils::apply_paged_attention_transformations(main_model_desc.model, main_model_desc.scheduler_config.use_cache_eviction);
+    utils::apply_paged_attention_transformations(draft_model_desc.model, main_model_desc.scheduler_config.use_cache_eviction);
 
-    auto main_scheduler_config = main_model_desc.scheduler_config;
-    auto main_device = main_model_desc.device;
+    utils::apply_gather_before_matmul_transformation(main_model_desc.model);
+    utils::apply_gather_before_matmul_transformation(draft_model_desc.model);
 
-    utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
-    utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
-
-    utils::apply_gather_before_matmul_transformation(main_model);
-    utils::apply_gather_before_matmul_transformation(draft_model);
-
-    std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
     bool is_draft_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
 
+    auto main_scheduler_config = main_model_desc.scheduler_config;
     ov::genai::SchedulerConfig main_scheduler_config_updated = main_scheduler_config,
                                draft_scheduler_config = is_draft_scheduler_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
 
@@ -60,8 +54,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
             }
             return total_hidden_size;
         };
-        float main_model_hidden_size = compute_total_hidden_size(main_model),
-              draft_model_hidden_size = compute_total_hidden_size(draft_model);
+        float main_model_hidden_size = compute_total_hidden_size(main_model_desc.model),
+              draft_model_hidden_size = compute_total_hidden_size(draft_model_desc.model);
         auto k = draft_model_hidden_size / (main_model_hidden_size + draft_model_hidden_size);
 
         // TODO: work with KV blocks as it will be more precise instead of GBs
@@ -79,8 +73,15 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
         draft_scheduler_config.max_num_batched_tokens = main_scheduler_config_updated.max_num_batched_tokens;
     }
 
-    ov::AnyMap draft_properties = draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
+    return std::make_pair(main_scheduler_config_updated, draft_scheduler_config);
+}
 
+ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
+                                                                             const ov::genai::ModelDesc& draft_model_desc) {
+    auto scheduler_configs = init_speculative_models(main_model_desc, draft_model_desc);
+
+    auto main_device = main_model_desc.device;
+    std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
     // main and draft model can have different tokenizers
     // to do: support retokenization: 154103
     Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
@@ -88,16 +89,15 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
     // todo: remove this condition after support of CVS-154103
     OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
-    
     m_tokenizer = main_model_tokenizer;
-
+    ov::AnyMap draft_properties = draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
-        main_model, main_model_tokenizer, main_model_desc.generation_config,
-        main_scheduler_config_updated, main_device, main_model_desc.properties, true);
+        main_model_desc.model, main_model_tokenizer, main_model_desc.generation_config,
+        scheduler_configs.first, main_device, main_model_desc.properties, true);
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
-        draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
-        draft_scheduler_config, draft_device, draft_properties, false);
+        draft_model_desc.model, draft_model_tokenizer, draft_model_desc.generation_config,
+        scheduler_configs.second, draft_device, draft_properties, false);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
@@ -607,57 +607,14 @@ bool Eagle3Transform::apply(NodePtr node, std::vector<Output<Node>>& hidden_stat
 
 ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                                  const ov::genai::ModelDesc& draft_model_desc,
-                                                                 const std::vector<int>& hidden_layers) {
+                                                                 const std::vector<int>& hidden_layers)
+                                                                 : m_hidden_layers_to_abstract(hidden_layers) {
+    auto scheduler_configs = init_speculative_models(main_model_desc, draft_model_desc);
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
 
-    auto main_scheduler_config = main_model_desc.scheduler_config;
     auto main_device = main_model_desc.device;
-
-    utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
-    utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
-
-    utils::apply_gather_before_matmul_transformation(main_model);
-    utils::apply_gather_before_matmul_transformation(draft_model);
-
     std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
-    bool is_draft_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
-
-    ov::genai::SchedulerConfig main_scheduler_config_updated = main_scheduler_config,
-                               draft_scheduler_config = is_draft_scheduler_undefined
-                                                            ? main_scheduler_config
-                                                            : draft_model_desc.scheduler_config;
-
-    if (is_draft_scheduler_undefined) {
-        // split KV cache to 2 caches for main and draft models
-        auto compute_total_hidden_size = [](const std::shared_ptr<ov::Model>& model) -> size_t {
-            size_t total_hidden_size = 0;
-            for (const auto& param_ptr : model->get_parameters()) {
-                const auto& name = param_ptr->get_friendly_name();
-                if (name.find("key_cache.") == 0) {
-                    auto pa_op = param_ptr->get_output_target_inputs(0).begin()->get_node();
-                    const auto& rt_info = pa_op->get_rt_info();
-                    total_hidden_size += rt_info.at("num_k_heads").as<int>() * rt_info.at("k_head_size").as<int>() +
-                                         rt_info.at("num_v_heads").as<int>() * rt_info.at("v_head_size").as<int>();
-                }
-            }
-            return total_hidden_size;
-        };
-        float main_model_hidden_size = compute_total_hidden_size(main_model),
-              draft_model_hidden_size = compute_total_hidden_size(draft_model);
-        auto k = draft_model_hidden_size / (main_model_hidden_size + draft_model_hidden_size);
-
-        // TODO: work with KV blocks as it will be more precise instead of GBs
-        size_t main_cache_size = std::ceil(main_scheduler_config.cache_size * (1.f - k)),
-               draft_cache_size = main_scheduler_config.cache_size - main_cache_size;
-        if (draft_cache_size == 0 && main_cache_size > 0) {
-            main_cache_size -= (main_cache_size > 1 ? 1 : 0);
-            draft_cache_size = 1;
-        }
-
-        main_scheduler_config_updated.cache_size = main_cache_size;
-        draft_scheduler_config.cache_size = draft_cache_size;
-    }
 
     ov::AnyMap draft_properties =
         draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
@@ -666,11 +623,6 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
     // to do: support retokenization: 154103
     Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
     Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
-
-    // todo: remove this condition after support of CVS-154103
-    OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer),
-                    "Tokenizers for draft and main models are different!");
-
     m_tokenizer = main_model_tokenizer;
     // for eagle model, we need to obtain hidden layer state as extra output
     // apply transformations needed to run eagle model
@@ -683,14 +635,14 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
     m_main_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(main_model,
                                                                                main_model_tokenizer,
                                                                                main_model_desc.generation_config,
-                                                                               main_scheduler_config_updated,
+                                                                               scheduler_configs.first,
                                                                                main_device,
                                                                                main_model_desc.properties,
                                                                                true);
     m_draft_pipeline = std::make_shared<ContinuousBatchingForEagleDecodingImpl>(draft_model,
                                                                                 draft_model_tokenizer,
                                                                                 draft_model_desc.generation_config,
-                                                                                draft_scheduler_config,
+                                                                                scheduler_configs.second,
                                                                                 draft_device,
                                                                                 draft_properties,
                                                                                 false);
@@ -725,6 +677,7 @@ void ContinuousBatchingPipeline::EagleDecodingImpl::update_eagle_pipeline_params
     m_draft_eagle_pipeline->set_hidden_state_export_needed(true);
     m_draft_eagle_pipeline->set_hidden_state_import_needed(true);
     m_draft_eagle_pipeline->set_hidden_state_internal_needed(true);
+    m_draft_eagle_pipeline->set_adjust_factor(m_hidden_layers_to_abstract.size() > 0 ? m_hidden_layers_to_abstract.size() : 1);
 }
 
 GenerationHandle

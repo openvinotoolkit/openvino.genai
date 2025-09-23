@@ -55,6 +55,7 @@ class ModelRunner {
     std::map<std::pair<size_t, size_t>, std::pair<size_t, size_t>> m_sequence_hidden_state_mapping; // pre-requisite: main/draft have same seq group and running seq grouped id
     // a container which use sequence group id and request id as key to store hidden states
     std::map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
+    size_t m_adjust_factor = 1; // to adjust the hidden size of draft model input
 public:
     /**
      * Constructs the ModelRunner.
@@ -115,6 +116,10 @@ public:
 
     void set_embedding_model(const EmbeddingsModel::Ptr& embedder) {
         m_embedding = embedder;
+    }
+
+    void set_adjust_factor(size_t adjust_factor) {
+        m_adjust_factor = adjust_factor;
     }
 
     /**
@@ -235,7 +240,7 @@ public:
                         if (shape.size() >= 2) {
                             hidden_size = shape[shape.size() - 1];
                             if (!m_is_hidden_state_import_needed)
-                                hidden_size /= 3;
+                                hidden_size /= m_adjust_factor;
                             break;
                         }
                     }
@@ -476,7 +481,7 @@ public:
                 try {
                     m_request.set_tensor("target_hidden_state_input", hidden_state_input);
                     auto shape = hidden_state_input.get_shape();
-                    shape[shape.size() - 1] = shape [shape.size() - 1] / 3;
+                    shape[shape.size() - 1] = shape [shape.size() - 1] / m_adjust_factor;
                     ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
                     auto fake_data = fake_tensor.data<float>();
                     std::memset(fake_data, 0, fake_tensor.get_byte_size());
@@ -487,7 +492,7 @@ public:
                 try {
                     m_request.set_tensor("internal_hidden_state_input", hidden_state_input);
                     auto shape = hidden_state_input.get_shape();
-                    shape[shape.size() - 1] = shape [shape.size() - 1] * 3;
+                    shape[shape.size() - 1] = shape [shape.size() - 1] * m_adjust_factor;
                     ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
                     auto fake_data = fake_tensor.data<float>();
                     std::memset(fake_data, 0, fake_tensor.get_byte_size());
