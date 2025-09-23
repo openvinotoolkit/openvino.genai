@@ -150,12 +150,13 @@ def run_qwen3_embedding_optimum(
     model: OVModelForFeatureExtraction,
     tokenizer,
     documents: list[str],
+    padding_side: Literal["left", "right"] = "left",
 ):
     encoded = tokenizer(
         documents,
         padding=True,
         truncation=True,
-        padding_side="left",
+        padding_side=padding_side,
         return_tensors="pt",
     )
     outputs = model(**encoded)
@@ -279,12 +280,13 @@ def test_embedding_constructors(download_and_convert_embeddings_models):
     "config",
     [
         TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, padding_side="left"),
+        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN),
     ],
 )
 @pytest.mark.precommit
 def test_qwen3_embedding(download_and_convert_embeddings_models, dataset_documents, config):
     opt_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
-    embeddings_opt = run_qwen3_embedding_optimum(opt_model, hf_tokenizer, dataset_documents)
+    embeddings_opt = run_qwen3_embedding_optimum(opt_model, hf_tokenizer, dataset_documents, config.padding_side)
     embeddings_genai = run_text_embedding_genai(models_path, dataset_documents, config, "embed_documents")
     validate_embedding_results(embeddings_genai, embeddings_opt.tolist())
 

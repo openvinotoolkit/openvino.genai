@@ -30,6 +30,8 @@ public:
 
         /**
          * @brief Last token embeddings
+         * 
+         * @note Specifying `ov::genai::padding_side = "left"` can optimize performance for this pooling type.
          */
         LAST_TOKEN = 2,
     };
