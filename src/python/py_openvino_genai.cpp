@@ -33,6 +33,7 @@ void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
 void init_tokenizer(py::module_& m);
 void init_streamers(py::module_& m);
+void init_parsers(py::module_& m);
 void init_generation_config(py::module_& m);
 
 void init_continuous_batching_pipeline(py::module_& m);
@@ -117,6 +118,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
     init_generation_config(m);
     init_tokenizer(m);
     init_streamers(m);
+    init_parsers(m);
 
     init_llm_pipeline(m);
     init_continuous_batching_pipeline(m);

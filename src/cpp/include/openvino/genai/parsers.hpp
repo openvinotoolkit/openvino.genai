@@ -3,16 +3,13 @@
 
 #pragma once
 #include "openvino/genai/text_streamer.hpp"
+#include <string>
+#include <map>
+#include <optional>
+#include <vector>
 
 namespace ov {
 namespace genai {
-
-enum class ParsingState {
-    CONTENT,
-    REASONING,
-    TOOL_CALLING,
-    UNDEFINED
-};
 
 
 using ParsedMessage = std::map<std::string, std::string>;
@@ -22,29 +19,41 @@ public:
     std::map<std::string, std::string> content;
 };
 
-
-// struct DeltaMessage {
-//     std::map<std::string, std::string> content;
-//     std::optional<std::string> content;
-//     std::optional<std::string> reasoning_content;
-//     ParsingState state = ParsingState::UNDEFINED;
-    
-//     // std::vector<DeltaToolCall> tool_calls;
-
-//     DeltaMessage() = default;
-// };
-
-
 class IncrementalParserBase {
 public:
     IncrementalParserBase() = default;
 
     virtual ParsedMessage parse(
+        ParsedMessage& msg,
         const std::string& previous_text, 
         const std::string& delta_text, 
         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) = 0;
+
+    virtual bool is_active() const = 0;
+};
+
+class DeepSeekR1ReasoningParser : public IncrementalParserBase {
+private:
+    bool m_starts_with_thinking = true;
+    bool m_think_tag_opened = false;
+    bool m_deactivated = false;
+    std::string m_open_tag = "<think>";
+    std::string m_close_tag = "</think>";
+public:
+    DeepSeekR1ReasoningParser() = default;
+    std::map<std::string, std::string> accumulated_parsed;
+
+    ParsedMessage parse(
+        ParsedMessage& msg,
+        const std::string& previous_text, 
+        const std::string& delta_text,
+        const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
+        const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
+    ) override;
+    static std::string name() { return "DeepSeekR1ReasoningParser"; }
+    bool is_active() const override;
 };
 
 class ParserBase {
@@ -54,19 +63,20 @@ public:
     virtual ParsedMessage parse(ParsedMessage& text) = 0;
 };
 
+using ParserVariant = std::variant<std::shared_ptr<IncrementalParserBase>, std::string>;
 
 
 class TextParserStreamer : public ov::genai::TextStreamer {
 public:
-    TextParserStreamer(const Tokenizer& tokenizer);
+    TextParserStreamer(const Tokenizer& tokenizer, std::vector<ParserVariant> parsers = {});
 
     virtual StreamingStatus write(ParsedMessage& message) = 0;
 
     ov::genai::CallbackTypeVariant write(std::string message);
+    ParsedMessage m_parsed_message;
 private:
     std::string m_text_buffer;
-    std::shared_ptr<IncrementalParserBase> m_reasoning_parser;
-    std::shared_ptr<ParserBase> m_tool_calling_parser;
+    std::vector<std::shared_ptr<IncrementalParserBase>> m_parsers;
 };
 
 class Llama32PythonicParser : public ParserBase {
@@ -75,7 +85,7 @@ public:
     Llama32PythonicParser(bool keep_original_content = true) : m_keep_original_content(keep_original_content) {}
 
     ParsedMessage parse(ParsedMessage& input) override;
-
+    static std::string name() { return "Llama32PythonicParser"; }
 private:
     bool m_keep_original_content = true;
 };

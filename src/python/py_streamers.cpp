@@ -9,6 +9,7 @@
 
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/genai/parsers.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;
@@ -16,6 +17,9 @@ namespace py = pybind11;
 using ov::genai::CallbackTypeVariant;
 using ov::genai::StreamingStatus;
 using ov::genai::TextStreamer;
+using ov::genai::TextParserStreamer;
+using ov::genai::IncrementalParserBase;
+using ov::genai::ParsedMessage;
 using ov::genai::Tokenizer;
 
 namespace pyutils = ov::genai::pybind::utils;
@@ -66,6 +70,20 @@ class ConstructableStreamer: public StreamerBase {
     }
 };
 
+class ConstructableTextParserStreamer: public TextParserStreamer {
+public:
+    using TextParserStreamer::TextParserStreamer;  // inherit base constructors
+
+    StreamingStatus write(ParsedMessage& message) override {
+        PYBIND11_OVERRIDE_PURE(
+            StreamingStatus,  // Return type
+            TextParserStreamer,  // Parent class
+            write,  // Name of function in C++ (must match Python name)
+            message  // Argument(s)
+        );
+    }
+};
+
 } // namespace
 
 void init_streamers(py::module_& m) {
@@ -109,6 +127,19 @@ void init_streamers(py::module_& m) {
                     return self.write(tokens);
                 }
             },
-            py::arg("token"))
-        .def("end", &TextStreamer::end);
+            py::arg("token"));
+
+    py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>>(m, "TextParserStreamer")
+        .def(py::init([](const Tokenizer& tokenizer,
+                         std::vector<std::shared_ptr<IncrementalParserBase>> parsers) {
+                std::vector<ov::genai::ParserVariant> variants(parsers.begin(), parsers.end());
+                return std::make_shared<ConstructableTextParserStreamer>(tokenizer, variants);
+            }),
+            py::arg("tokenizer"),
+            py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParserBase>>({}),
+            "TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.")
+        .def("write",
+             py::overload_cast<ParsedMessage&>(&TextParserStreamer::write),
+             py::arg("message"),
+             "Write is called with a ParsedMessage. Returns StreamingStatus.");
 }

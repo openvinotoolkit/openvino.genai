@@ -1,0 +1,49 @@
+# Copyright (C) 2023-2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+import dataclasses
+import json
+from typing import Optional
+
+import numpy as np
+import openvino
+import pytest
+from openvino_genai import Tokenizer
+from transformers import AutoTokenizer
+from 
+from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
+
+
+@pytest.fixture(scope="module")
+def hf_ov_genai_models(request, tmp_path_factory):
+    model_id, args = request.param
+    tok_load_properties = {"add_second_input": args.pop("add_second_input")} if "add_second_input" in args else {}
+    
+    hf_args = args.copy()  # to overcome mutable default argument side effects
+    if "padding_side" in hf_args and hf_args["padding_side"] is None:
+        # HF does not accept None.
+        # Need to remove padding_side and let HF to choose default value,
+        hf_args.pop("padding_side")
+    else:
+        hf_args["truncation_side"] = hf_args["padding_side"]
+    model_dir = tmp_path_factory.getbasetemp() / model_id.replace("/", "_")
+    model_dir.mkdir(exist_ok=True, parents=True)
+
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_args)
+    convert_args = {"number_of_inputs": hf_args.pop("number_of_inputs")} if "number_of_inputs" in hf_args else {}
+    convert_and_save_tokenizer(hf_tokenizer, model_dir, **convert_args)
+
+    genai_tokenizer = Tokenizer(model_dir, tok_load_properties)
+    return hf_tokenizer, genai_tokenizer
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", 
+    ["katuni4ka/tiny-random-phi3"],
+    indirect=True
+)
+def test_non_string_chat_template(hf_ov_genai_models):
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+    
+
+
