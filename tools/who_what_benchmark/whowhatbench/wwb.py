@@ -175,6 +175,11 @@ def parse_args():
         help="Text-to-image specific parameter that defines the seed value.",
     )
     parser.add_argument(
+        "--from-onnx",
+        action="store_true",
+        help="If True, the model will be loaded from ONNX format. It's converted to OpenVINO format in runtime.",
+    )
+    parser.add_argument(
         "--adapters",
         type=str,
         nargs='*',
@@ -193,7 +198,6 @@ def parse_args():
         action='store_true',
         help="LLMPipeline specific parameter that defines the use of a long context prompt.",
     )
-
     parser.add_argument(
         "--empty_adapters",
         action="store_true",
@@ -586,13 +590,15 @@ def main():
     kwargs = {}
     if args.cb_config:
         kwargs["cb_config"] = read_cb_config(args.cb_config)
+    if args.from_onnx:
+        kwargs["from_onnx"] = args.from_onnx
+        kwargs["use_cache"] = False
     if args.adapters is not None:
         kwargs["adapters"] = args.adapters
         if args.alphas is not None:
             kwargs["alphas"] = args.alphas
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
-
     kwargs["empty_adapters"] = args.empty_adapters
 
     if args.gt_data and os.path.exists(args.gt_data):

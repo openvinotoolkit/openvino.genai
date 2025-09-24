@@ -398,8 +398,47 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model) {
         }
     };
 
+    class AttentionMaskInput_2 : public ov::pass::MatcherPass {
+    public:
+        OPENVINO_MATCHER_PASS_RTTI("AttentionMaskInput_2");
+
+        AttentionMaskInput_2(std::shared_ptr<ov::Model> model) {
+            auto range = wrap_type<v4::Range>();
+            auto unsqueeze1 = wrap_type<v0::Unsqueeze>({range, any_input()});
+            auto unsqueeze2 = wrap_type<v0::Unsqueeze>({unsqueeze1, any_input()});
+            auto unsqueeze3 = wrap_type<v0::Unsqueeze>({unsqueeze2, any_input()});
+            auto lessequal = wrap_type<v1::LessEqual>({unsqueeze3, any_input()});
+
+            register_matcher(std::make_shared<Matcher>(lessequal, this->get_type_info().name), [model](Matcher& m) {
+                auto node = m.get_match_root();
+                auto attention_mask = std::make_shared<v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1});
+                attention_mask->get_output_tensor(0).set_names({"attention_mask"});
+                model->add_parameters({attention_mask});
+
+                auto cst_0_0 = std::make_shared<v0::Constant>(ov::element::f32, ov::Shape{1}, 0.0f);
+                auto cst_0 = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, 0);
+                auto cst_1 = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, 1);
+                auto cst_2 = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, 2);
+
+                auto attn_mask_shape = std::make_shared<v3::ShapeOf>(attention_mask, ov::element::i32)->output(0);
+                auto gather = std::make_shared<v8::Gather>(attn_mask_shape, cst_1, cst_0)->output(0);
+                auto attn_mask_size_minus_one = std::make_shared<v1::Subtract>(gather, cst_1)->output(0);
+                auto slice = std::make_shared<v8::Slice>(attention_mask->output(0), cst_0, attn_mask_size_minus_one, cst_1, cst_1);
+
+                auto unsqueeze_1 = std::make_shared<v0::Unsqueeze>(slice->output(0), cst_1->output(0));
+                auto unsqueeze_2 = std::make_shared<v0::Unsqueeze>(unsqueeze_1->output(0), cst_2->output(0));
+
+                auto equal = std::make_shared<v1::Equal>(unsqueeze_2->output(0), cst_0_0->output(0));
+
+                ov::replace_node(node, equal);
+                return false;
+            });
+        }
+    };
+
     ov::pass::Manager pm;
     pm.register_pass<AttentionMaskInput>(model);
+    pm.register_pass<AttentionMaskInput_2>(model);
     pm.run_passes(model);
 }
 
@@ -413,9 +452,10 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
         AttentionMaskInput(std::shared_ptr<ov::Model> model, bool transform_cross_attn, const uint32_t& hidden_state_seq_size) {
             std::vector<std::shared_ptr<ov::Node>> self_attn_nodes;
             std::vector<std::shared_ptr<ov::Node>> cross_attn_nodes;
+            const auto kAttnMaskPort = 3;
             for (const auto &node : model->get_ops()) {
                 if (ov::is_type<ov::op::v13::ScaledDotProductAttention>(node)) {
-                    if (node->inputs().size() == 4u) {
+                    if (node->inputs().size() > kAttnMaskPort && ov::is_type<v8::Slice>(node->input(kAttnMaskPort).get_source_output().get_node())) {
                         self_attn_nodes.push_back(node);
                     } else {
                         cross_attn_nodes.push_back(node);
@@ -430,7 +470,6 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
             attention_mask->get_output_tensor(0).set_names({"attention_mask"});
             model->add_parameters({attention_mask});
 
-            const auto kAttnMaskPort = 3;
             auto slice = self_attn_nodes[0]->input(kAttnMaskPort).get_source_output().get_node();
             auto cvt = std::make_shared<v0::Convert>(attention_mask->output(0), ov::element::f32);
             auto add = std::make_shared<v1::Add>(slice->output(0), cvt->output(0));
@@ -487,14 +526,18 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
                 auto unsq1 = std::make_shared<v0::Unsqueeze>(broadcast->output(0), cst_0->output(0));
                 auto unsq2 = std::make_shared<v0::Unsqueeze>(unsq1->output(0), cst_1->output(0));
                 for (const auto& cross_attn_node : cross_attn_nodes) {
-                    auto sdpa = std::make_shared<v13::ScaledDotProductAttention>(
-                        cross_attn_node->input(0).get_source_output(),
-                        cross_attn_node->input(1).get_source_output(),
-                        cross_attn_node->input(2).get_source_output(),
-                        unsq2->output(0),
-                        false
-                    );
-                    ov::replace_node(cross_attn_node, sdpa);
+                    if (cross_attn_node->inputs().size() == 3) {
+                        auto sdpa = std::make_shared<v13::ScaledDotProductAttention>(
+                            cross_attn_node->input(0).get_source_output(),
+                            cross_attn_node->input(1).get_source_output(),
+                            cross_attn_node->input(2).get_source_output(),
+                            unsq2->output(0),
+                            false
+                        );
+                        ov::replace_node(cross_attn_node, sdpa);
+                    } else {
+                        cross_attn_node->input(3).replace_source_output(unsq2->output(0));
+                    }
                 }
             }
         }
@@ -523,7 +566,7 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
             new_shape = ov::PartialShape({1, input_size});
         } else if (input_name.find("attention_mask") != std::string::npos) {
             if (with_past)
-                new_shape = ov::PartialShape({1, kvcache_size+1});
+                new_shape = ov::PartialShape({1, kvcache_size + 1});
             else
                 new_shape = ov::PartialShape({1, kvcache_size});
         } else if (input_name.find("position_ids") != std::string::npos) {
