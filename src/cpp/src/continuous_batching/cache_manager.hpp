@@ -44,8 +44,14 @@ public:
         OPENVINO_ASSERT(all_gpu_device || execution_devices.size() == 1,
                         "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
         m_device = execution_devices[0];
+        // decide gpu_block_size based on xattn enable status
+        const char* env_p = std::getenv("OV_GPU_XATTN_BLOCK_SIZE");
+        size_t gpu_block_size = 256;
+        if (env_p != nullptr && std::stoi(env_p) == 1) {
+            gpu_block_size = 16;
+        }
         // set block_size depending on device
-        const size_t cpu_block_size = 32, gpu_block_size = 16;
+        const size_t cpu_block_size = 32;
         m_block_size = all_gpu_device ? gpu_block_size : cpu_block_size;
 
         if (all_gpu_device) {

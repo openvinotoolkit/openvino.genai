@@ -58,6 +58,13 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, boo
         pa_op->get_rt_info()["k_head_size"] = k_head_size;
         pa_op->get_rt_info()["num_v_heads"] = num_v_heads;
         pa_op->get_rt_info()["v_head_size"] = v_head_size;
+        if (allow_xattention) {
+            pa_op->get_rt_info()["k_block_size"] = 256;
+            pa_op->get_rt_info()["v_block_size"] = 256;
+        } else {
+            pa_op->get_rt_info()["k_block_size"] = 16;
+            pa_op->get_rt_info()["v_block_size"] = 16;
+        }
     }
 
     model->validate_nodes_and_infer_types();
