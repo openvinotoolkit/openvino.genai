@@ -42,7 +42,7 @@ std::pair<ov::Tensor, std::vector<int32_t>> get_window_index(
                     int32_t valid_count = 0;
                     for (size_t h = 0; h < vit_merger_window_size; ++h) {
                         size_t gh = wh * vit_merger_window_size + h;
-                        if (gh >= llm_grid_h + pad_h) continue;
+                        if (gh >= llm_grid_h + pad_h) break;
                         for (size_t w = 0; w < vit_merger_window_size; ++w) {
                             size_t gw = ww * vit_merger_window_size + w;
                             if (gw >= llm_grid_w + pad_w) continue;
