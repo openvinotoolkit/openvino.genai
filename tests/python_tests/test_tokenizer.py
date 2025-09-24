@@ -155,6 +155,39 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
+    [("google/gemma-3-1b-it", { "padding_side": None })],
+    indirect=True
+)
+def test_apply_chat_template_nested_content(hf_ov_genai_models):
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models
+
+    messages = [{
+        "role": "user",
+        "content": [
+            { "type": "text", "text": "sample text"},
+            { "type": "image" }
+        ]
+    }]
+
+    add_generation_prompt = True
+    
+    hf_full_history_str = hf_tokenizer.apply_chat_template(
+        messages, add_generation_prompt=add_generation_prompt, tokenize=False
+    )
+
+    ov_full_history_str = genai_tokenzier.apply_chat_template(
+        messages, add_generation_prompt=add_generation_prompt
+    )
+
+    if ov_full_history_str != hf_full_history_str:
+        print(f"HF reference:\n", hf_full_history_str)
+        print(f"GenAI output:\n", ov_full_history_str)
+    assert ov_full_history_str == hf_full_history_str
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", 
     [("Qwen/Qwen3-8B-Base", { "padding_side": None })],
     indirect=True
 )
