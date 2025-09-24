@@ -885,6 +885,18 @@ class GenerationConfig:
     def presence_penalty(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
+    def pruning_ratio(self) -> int:
+        ...
+    @pruning_ratio.setter
+    def pruning_ratio(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def relevance_weight(self) -> float:
+        ...
+    @relevance_weight.setter
+    def relevance_weight(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
     def repetition_penalty(self) -> float:
         ...
     @repetition_penalty.setter
@@ -925,18 +937,6 @@ class GenerationConfig:
         ...
     @top_p.setter
     def top_p(self, arg0: typing.SupportsFloat) -> None:
-        ...
-    @property
-    def pruning_ratio(self) -> int:
-        ...
-    @pruning_ratio.setter
-    def pruning_ratio(self, arg0: typing.SupportsInt) -> None:
-        ...
-    @property
-    def relevance_weight(self) -> float:
-        ...
-    @relevance_weight.setter
-    def relevance_weight(self, arg0: typing.SupportsFloat) -> None:
         ...
 class GenerationFinishReason:
     """
@@ -3171,9 +3171,9 @@ class TextStreamer(StreamerBase):
     
     tokenizer: Tokenizer object to decode tokens into text.
     callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
-    detokenization_params: AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
+    
     """
-    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus], detokenization_params: collections.abc.Mapping[str, typing.Any] = {}) -> None:
+    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus]) -> None:
         ...
     def end(self) -> None:
         ...

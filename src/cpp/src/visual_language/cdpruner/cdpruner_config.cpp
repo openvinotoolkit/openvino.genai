@@ -17,8 +17,8 @@ void Config::update_from_env() {
         pruning_debug_mode = (val == "1" || val == "true" || val == "TRUE");
     }
 
-    // CDPRUNER_SPLITE_THRESHOLD
-    if (const char* env = std::getenv("CDPRUNER_SPLITE_THRESHOLD")) {
+    // CDPRUNER_SPLIT_THRESHOLD
+    if (const char* env = std::getenv("CDPRUNER_SPLIT_THRESHOLD")) {
         try {
             split_threshold = std::stoul(env);
         } catch (...) {

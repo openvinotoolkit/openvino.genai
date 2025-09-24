@@ -1,9 +1,10 @@
 ﻿// Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "load_image.hpp"
-#include <openvino/genai/visual_language/pipeline.hpp>
 #include <filesystem>
+#include <openvino/genai/visual_language/pipeline.hpp>
+
+#include "load_image.hpp"
 
 bool print_subword(std::string&& subword) {
     return !(std::cout << subword << std::flush);

@@ -123,7 +123,7 @@ public:
     }
 
     /// @brief Apply pruning to visual features based on text features.
-    /// @param visual_featuresa
+    /// @param visual_features
     /// @param text_features
     /// @return
     virtual ov::Tensor apply_pruning(const std::vector<ov::Tensor>& visual_features, const ov::Tensor& text_features);
