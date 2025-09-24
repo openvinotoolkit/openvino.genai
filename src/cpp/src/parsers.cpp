@@ -13,9 +13,6 @@ using json = nlohmann::json;
 
 namespace ov::genai {
 
-static std::map<std::string, std::shared_ptr<IncrementalParserBase>> registered_incremental_parsers;
-static std::map<std::string, std::shared_ptr<ParserBase>> registered_base_parsers;
-
 bool DeepSeekR1ReasoningParser::is_active() const {
     return !m_deactivated;
 }
@@ -123,47 +120,14 @@ ParsedMessage BaseReasoningParser::parse(ParsedMessage& input) {
     return res;
 }
 
-
-TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<ParserVariant> parsers) 
-    : ov::genai::TextStreamer(tokenizer, [this](std::string s) -> ov::genai::CallbackTypeVariant {
-                return this->write(s);
-    }) {
-        for (auto& parser : parsers) {
-            if (std::holds_alternative<std::shared_ptr<IncrementalParserBase>>(parser)) {
-                m_parsers.push_back(std::get<std::shared_ptr<IncrementalParserBase>>(parser));
-            } else {
-                auto parser_name = std::get<std::string>(parser);
-                if (registered_incremental_parsers.find(parser_name) != registered_incremental_parsers.end()) {
-                    m_parsers.push_back(registered_incremental_parsers[parser_name]);
-                }
-            }
-        }
-    }
-
-StreamingStatus TextParserStreamer::write(ParsedMessage& message) {
-    if (message.find("content") != message.end()) {
-        std::cout << message.at("content") << std::endl;
-    }
-    return StreamingStatus::RUNNING;
-}
-
-ov::genai::CallbackTypeVariant TextParserStreamer::write(std::string message) {
-    for (auto& parser: m_parsers) {
-        if (parser->is_active()) {
-            m_parsed_message = parser->parse(m_parsed_message, m_text_buffer, message);
-        }
-    }
-
-    m_text_buffer = message;
-    return write(m_parsed_message);
-}
-
+std::map<std::string, std::shared_ptr<IncrementalParserBase>> IncrementalParserBase::registered_parsers;
+std::map<std::string, std::shared_ptr<ParserBase>> ParserBase::registered_parsers;
 
 // static initializer to register available buildin parsers
 static bool register_backends() {
-    registered_incremental_parsers[DeepSeekR1ReasoningParser::name()] = std::make_shared<DeepSeekR1ReasoningParser>();
-    
-    registered_base_parsers[Llama32PythonicParser::name()] = std::make_shared<Llama32PythonicParser>();
+    IncrementalParserBase::registered_parsers[DeepSeekR1ReasoningParser::name()] = std::make_shared<DeepSeekR1ReasoningParser>();
+
+    ParserBase::registered_parsers[Llama32PythonicParser::name()] = std::make_shared<Llama32PythonicParser>();
     return true;
 }
 
