@@ -260,6 +260,53 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", configs)
+def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(config, cat_tensor):
+    scheduler_config = SchedulerConfig()
+    models_path = get_ov_model(model_ids[8])
+    ov_pipe = VLMPipeline(
+        models_path,
+        "CPU",
+        scheduler_config=scheduler_config,
+        **get_default_llm_properties(),
+    )
+    generation_config = config
+    generation_config.max_new_tokens = 30
+    eps = 0.001
+    image_links_list = [[], [cat_tensor]]
+
+    res_generate = []
+    for images in image_links_list:
+        res_generate.append(
+            ov_pipe.generate(
+                prompts[0], images=images, generation_config=generation_config
+            )
+        )
+
+    cb_pipe = ContinuousBatchingPipeline(
+        models_path,
+        scheduler_config=scheduler_config,
+        device="CPU",
+        properties=get_default_llm_properties(),
+    )
+    tokenizer = cb_pipe.get_tokenizer()
+
+    for idx, images in enumerate(image_links_list):
+        handle = cb_pipe.add_request(idx, prompts[0], images, generation_config)
+        while handle.get_status() != GenerationStatus.FINISHED:
+            cb_pipe.step()
+        outputs = handle.read_all()
+        for out_idx, output in enumerate(outputs):
+            text = tokenizer.decode(output.generated_ids)
+            assert len(output.generated_ids) > 0, f"Should generate at least one token"
+            assert text.strip() != "", f"Decoded text should not be empty"
+            assert (
+                output.finish_reason == GenerationFinishReason.STOP
+                or output.finish_reason == GenerationFinishReason.LENGTH
+            )
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("config", configs)
 def test_vlm_continuous_batching_vs_stateful(config, cat_tensor):
     scheduler_config = SchedulerConfig()
     models_path = get_ov_model(model_ids[0])
