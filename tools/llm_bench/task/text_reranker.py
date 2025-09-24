@@ -388,21 +388,19 @@ def launch(pipeline: CommonPipeline, iter_num: int, prompt_idx: int, iter_timest
 def get_texts_from_file(args: dict) -> list:
     texts_list = []
     if args["rerank_texts_file"] is not None and args["rerank_texts"] is not None:
-        log.warning("--texts and --texts_file are set, they are conflict options, it will be used texts from --texts_file")
+        raise RuntimeError("== --texts and --texts_file are set together, they define lists of texts both, please choose one of them ==")
 
     if args["rerank_texts_file"] is not None:
         for input_texts_file in args["rerank_texts_file"]:
-            if input_texts_file.endswith(".jsonl"):
-                if os.path.exists(input_texts_file):
-                    log.info(f"Read texts from {input_texts_file}")
-                    with open(input_texts_file, "r", encoding="utf-8") as f:
-                        for line in f:
-                            data = json.loads(line)
-                            texts_list.append(data["text"])
-                else:
-                    raise RuntimeError(f"== The texts file:{input_texts_file} does not exist ==")
-            else:
+            if not input_texts_file.endswith(".jsonl"):
                 raise RuntimeError(f"== The texts file:{input_texts_file} should be ended with .jsonl ==")
+            if not os.path.exists(input_texts_file):
+                raise RuntimeError(f"== The texts file:{input_texts_file} does not exist ==")
+            log.info(f"Read texts from {input_texts_file}")
+            with open(input_texts_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    data = json.loads(line)
+                    texts_list.append(data["text"])
     else:
         if args["rerank_texts"] is not None:
             texts_list = args["rerank_texts"]

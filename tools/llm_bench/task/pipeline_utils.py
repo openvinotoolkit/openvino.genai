@@ -7,6 +7,7 @@ import llm_bench_utils.model_utils as model_utils
 from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from pathlib import Path
 from typing import Any
+from abc import ABC, abstractmethod
 
 
 def execution_time_in_sec(func):
@@ -20,7 +21,7 @@ def execution_time_in_sec(func):
     return time_wrapper
 
 
-class CommonPipeline:
+class CommonPipeline(ABC):
     DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
     def __init__(self, model, tokenizer, model_args: dict, model_path: Path, mem_consumption_meter: MemMonitorWrapper):
@@ -108,8 +109,9 @@ class CommonPipeline:
             generation_result (Any): Output of generation.
             prompt_idx (int): Number of the prompt being processed.
         """
-        pass
+        raise NotImplementedError
 
+    @abstractmethod
     def gen_iterate_data(
         self,
         input_token_size: int,
@@ -143,6 +145,7 @@ class CommonPipeline:
         """
         return {}
 
+    @abstractmethod
     def postprocess_output_info(
         self,
         generation_result: Any,
@@ -184,6 +187,7 @@ class CommonPipeline:
         """
         return {}, []
 
+    @abstractmethod
     def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
         """Run pipeline.
 
