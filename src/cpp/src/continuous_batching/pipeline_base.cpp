@@ -51,7 +51,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // TODO: remove this code and within model runner add check: if sequence group type is tokens, 
         // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(prompts.size());
-        auto results_vlm = generate(prompts, images, sampling_params, streamer, false);
+        auto results_vlm = generate(prompts, images, sampling_params, streamer);
         std::vector<GenerationResult> resutls;
         for (auto& vlm_result : results_vlm) {
             GenerationResult result;
@@ -151,13 +151,23 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& rgbs_vector,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer,
-             const bool& is_video)  {
+             const StreamerVariant& streamer) {
+    return generate(prompts, rgbs_vector, {}, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+             const std::vector<std::string>& prompts,
+             const std::vector<std::vector<ov::Tensor>>& rgbs_vector,
+             const std::vector<std::vector<ov::Tensor>>& video_vector,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer)  {
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
 
     OPENVINO_ASSERT(prompts.size() == sampling_params.size(), "Number of prompts should be equal to the number of generation configs.");
     OPENVINO_ASSERT(prompts.size() == rgbs_vector.size(), "Number of prompts should be equal to the number of images vectors.");
+    OPENVINO_ASSERT(rgbs_vector.empty() || video_vector.empty(), "Only support one input, video or images");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
@@ -167,11 +177,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
-        const auto& rgbs = rgbs_vector[0];
+        const auto& rgbs = video_vector.empty() ? rgbs_vector[0] : video_vector[0];
         const auto& prompt = prompts[0];
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        encoded_images = m_inputs_embedder->encode_images(rgbs, is_video);
+        encoded_images = m_inputs_embedder->encode_images(rgbs, rgbs_vector.empty());
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
@@ -196,9 +206,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
-            const auto& rgbs = rgbs_vector[i];
+            const auto& rgbs = video_vector.empty() ? rgbs_vector[i] : video_vector[i];
 
-            auto encoded_images = m_inputs_embedder->encode_images(rgbs, is_video);
+            auto encoded_images = m_inputs_embedder->encode_images(rgbs, rgbs_vector.empty());
 
             auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
@@ -262,8 +272,7 @@ GenerationHandle
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t request_id,
                                         const std::string& prompt,
                                         const std::vector<ov::Tensor>& rgbs,
-                                        GenerationConfig sampling_params,
-                                        const bool& is_video) {
+                                        GenerationConfig sampling_params) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
@@ -271,7 +280,30 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
 
-        auto encoded_images = m_inputs_embedder->encode_images(rgbs, is_video);
+        auto encoded_images = m_inputs_embedder->encode_images(rgbs, false);
+
+        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
+        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
+    }
+    return add_request(request_id, inputs, sampling_params);
+}
+
+GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& video,
+    GenerationConfig sampling_params) {
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
+    OPENVINO_ASSERT((video.empty() || images.empty()), "Only support one input, video or images.");
+    ov::genai::VLMPerfMetrics metrics;
+    ov::Tensor inputs;
+    {
+        std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+        m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+
+        auto encoded_images = video.empty() ? m_inputs_embedder->encode_images(images, false)
+                                            : m_inputs_embedder->encode_images(video, true);
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);

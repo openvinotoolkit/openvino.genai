@@ -93,8 +93,13 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const std::vector<ov::Tensor>& rgbs,
-                                 GenerationConfig sampling_params,
-                                 const bool& is_video = false);
+                                 GenerationConfig sampling_params);
+
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 const std::vector<ov::Tensor>& video,
+                                 GenerationConfig sampling_params);
 
     /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
@@ -128,8 +133,13 @@ public:
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& rgbs,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer,
-             const bool& is_video = false);
+             const StreamerVariant& streamer);
+
+    virtual std::vector<VLMDecodedResults> generate(const std::vector<std::string>& prompts,
+                                                    const std::vector<std::vector<ov::Tensor>>& images,
+                                                    const std::vector<std::vector<ov::Tensor>>& video,
+                                                    const std::vector<GenerationConfig>& sampling_params,
+                                                    const StreamerVariant& streamer);
 
     /**
      * Starts chat with a given system prompt

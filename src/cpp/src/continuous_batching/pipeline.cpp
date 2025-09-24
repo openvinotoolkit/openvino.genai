@@ -240,9 +240,16 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
                                                          const std::string& prompt,
                                                          const std::vector<ov::Tensor>& images,
-                                                         const ov::genai::GenerationConfig& sampling_params,
-                                                         const bool& is_video) {
-    return m_impl->add_request(request_id, prompt, images, sampling_params, is_video);
+                                                         const ov::genai::GenerationConfig& sampling_params) {
+    return m_impl->add_request(request_id, prompt, images, sampling_params);
+}
+
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
+                                                         const std::string& prompt,
+                                                         const std::vector<ov::Tensor>& images,
+                                                         const std::vector<ov::Tensor>& video,
+                                                         const ov::genai::GenerationConfig& sampling_params) {
+    return m_impl->add_request(request_id, prompt, images, video, sampling_params);
 }
 
 void ContinuousBatchingPipeline::step() {
@@ -277,11 +284,18 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& images,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer,
-             const bool& is_video) {
-    return m_impl->generate(prompts, images, sampling_params, streamer, is_video);
+             const StreamerVariant& streamer) {
+    return m_impl->generate(prompts, images, sampling_params, streamer);
 }
 
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<std::vector<ov::Tensor>>& video,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    return m_impl->generate(prompts, images, video, sampling_params, streamer);
+}
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
     m_impl->finish_chat();

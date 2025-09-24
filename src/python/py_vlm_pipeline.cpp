@@ -128,17 +128,17 @@ py::object call_vlm_generate(
     ov::genai::VLMPipeline& pipe,
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& video,
     const ov::genai::GenerationConfig& generation_config,
     const pyutils::PyBindStreamerVariant& py_streamer,
-    const py::kwargs& kwargs,
-    const bool& is_video = false
+    const py::kwargs& kwargs
 ) {
     auto updated_config = *pyutils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res= pipe.generate(prompt, images, updated_config, streamer, is_video);
+        res= pipe.generate(prompt, images, video, updated_config, streamer);
     }
     return py::cast(res);
 }
@@ -231,7 +231,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate(pipe, prompt, images, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, prompt, images, {}, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
             py::arg("images"), "Input images",
@@ -248,7 +248,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate(pipe, prompt, video, generation_config, streamer, kwargs, true);
+                return call_vlm_generate(pipe, prompt, {}, video, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
             py::arg("video"), "Input video",
@@ -265,7 +265,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate(pipe, prompt, {images}, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, prompt, {images}, {}, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
             py::arg("images"), "Input images",
