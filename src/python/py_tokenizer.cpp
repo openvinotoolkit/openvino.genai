@@ -74,7 +74,6 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::ChatHistory;
-using ov::genai::NewChatHistory;
 using ov::genai::ToolDefinitions;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
@@ -252,23 +251,12 @@ void init_tokenizer(py::module_& m) {
             R"(Decode a batch of tokens into a list of string prompt.)")
 
         .def("apply_chat_template", [](Tokenizer& tok,
-                                        ChatHistory history,
-                                        bool add_generation_prompt,
-                                        const std::string& chat_template) {
-            return tok.apply_chat_template(history, add_generation_prompt, chat_template);
-        },
-            py::arg("history"),
-            py::arg("add_generation_prompt"),
-            py::arg("chat_template") = "",
-            R"(Embeds input prompts with special tags for a chat scenario.)")
-
-        .def("apply_chat_template", [](Tokenizer& tok,
                                         const std::vector<py::object>& history,
                                         bool add_generation_prompt,
                                         const std::string& chat_template,
                                         const std::vector<py::object>& tools,
                                         const py::object& extra_context) {
-            auto history_anymap = NewChatHistory{};
+            auto history_anymap = ChatHistory{};
             for (const auto& message : history) {
                 ov::AnyMap message_anymap = pyutils::py_object_to_any_map(message);
                 history_anymap.push_back(message_anymap);
@@ -286,7 +274,7 @@ void init_tokenizer(py::module_& m) {
             py::arg("chat_template") = "",
             py::arg("tools") = std::vector<ov::AnyMap>(),
             py::arg("extra_context") = ov::AnyMap({}),
-            R"(Embeds input prompts with special tags for a chat scenario.)")
+            R"(Applies a chat template to format chat history into a prompt string.)")
 
         .def(
             "set_chat_template", &Tokenizer::set_chat_template,
