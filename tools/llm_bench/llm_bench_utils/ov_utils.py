@@ -542,10 +542,11 @@ def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, *
         raise RuntimeError('==Failure the command line does not set --genai ==')
     if is_genai_available(log_msg=True) is False:
         raise RuntimeError('==Failure genai is not enable ==')
+    ov_config = kwargs['config']
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
     start = time.perf_counter()
-    genai_pipe = ov_genai.WhisperPipeline(model_path, device.upper())
+    genai_pipe = ov_genai.WhisperPipeline(model_path, device.upper(), **ov_config)
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data('compilation_phase')
@@ -580,12 +581,14 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs)
         log.info("Selected Optimum Intel for benchmarking")
+        ov_config = kwargs['config']
         if kwargs.get("mem_consumption"):
             memory_data_collector.start()
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(
             model_path,
-            device=device
+            device=device,
+            ov_config=ov_config
         )
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
