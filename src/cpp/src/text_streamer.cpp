@@ -122,7 +122,43 @@ void TextStreamer::end() {
     return;
 }
 
-ov::genai::StreamerBase::~StreamerBase() = default;
+StreamerBase::~StreamerBase() = default;
+
+TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<ParserVariant> parsers) 
+    : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
+                return this->write(s);
+    }) {
+        for (auto& parser : parsers) {
+            if (std::holds_alternative<std::string>(parser)) {
+                auto parser_name = std::get<std::string>(parser);
+                if (IncrementalParserBase::registered_parsers.find(parser_name) != IncrementalParserBase::registered_parsers.end()) {
+                   m_parsers.push_back(IncrementalParserBase::registered_parsers[parser_name]);
+                } else {
+                    OPENVINO_THROW("Parser with name " + parser_name + " is not registered");
+                }
+            } else {
+                m_parsers.push_back(std::get<std::shared_ptr<IncrementalParserBase>>(parser));
+            }
+        }
+    }
+
+StreamingStatus TextParserStreamer::write(ParsedMessage& message) {
+    if (message.find("content") != message.end()) {
+        std::cout << message.at("content") << std::endl;
+    }
+    return StreamingStatus::RUNNING;
+}
+
+CallbackTypeVariant TextParserStreamer::write(std::string message) {
+    for (auto& parser: m_parsers) {
+        // if (parser->is_active()) {
+            m_parsed_message = parser->parse(m_parsed_message, m_text_buffer, message);
+        // }
+    }
+
+    m_text_buffer = message;
+    return write(m_parsed_message);
+}
 
 }  // namespace genai
 }  // namespace ov

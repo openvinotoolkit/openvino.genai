@@ -5,6 +5,7 @@
 
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/parsers.hpp"
 
 namespace ov {
 namespace genai {
@@ -44,6 +45,19 @@ private:
     StreamingStatus run_callback_if_needed(const std::string& text);
 
     void compute_decoded_length_for_position(size_t cache_position);
+};
+
+class TextParserStreamer : public TextStreamer {
+public:
+    TextParserStreamer(const Tokenizer& tokenizer, std::vector<ParserVariant> parsers = {});
+
+    virtual StreamingStatus write(ParsedMessage& message);
+
+    CallbackTypeVariant write(std::string message);
+    ParsedMessage m_parsed_message;
+private:
+    std::string m_text_buffer;
+    std::vector<std::shared_ptr<IncrementalParserBase>> m_parsers;
 };
 
 }  // namespace genai

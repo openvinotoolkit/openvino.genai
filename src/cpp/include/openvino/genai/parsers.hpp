@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
-#include "openvino/genai/text_streamer.hpp"
 #include <string>
+#include <memory>
+#include <variant>
 #include <map>
 #include <optional>
 #include <vector>
@@ -32,6 +33,7 @@ public:
     ) = 0;
 
     virtual bool is_active() const = 0;
+    static std::map<std::string, std::shared_ptr<IncrementalParserBase>> registered_parsers;
 };
 
 class DeepSeekR1ReasoningParser : public IncrementalParserBase {
@@ -61,23 +63,10 @@ public:
     ParserBase() = default;
 
     virtual ParsedMessage parse(ParsedMessage& text) = 0;
+    static std::map<std::string, std::shared_ptr<ParserBase>> registered_parsers;
 };
 
 using ParserVariant = std::variant<std::shared_ptr<IncrementalParserBase>, std::string>;
-
-
-class TextParserStreamer : public ov::genai::TextStreamer {
-public:
-    TextParserStreamer(const Tokenizer& tokenizer, std::vector<ParserVariant> parsers = {});
-
-    virtual StreamingStatus write(ParsedMessage& message) = 0;
-
-    ov::genai::CallbackTypeVariant write(std::string message);
-    ParsedMessage m_parsed_message;
-private:
-    std::string m_text_buffer;
-    std::vector<std::shared_ptr<IncrementalParserBase>> m_parsers;
-};
 
 class Llama32PythonicParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
@@ -104,7 +93,7 @@ private:
     bool m_expect_open_tag = true;
     bool m_keep_original_content = true;
     std::string m_open_tag = "<think>";
-    std::string m_close_tag = "<think/>";
+    std::string m_close_tag = "</think>";
 };
 
 

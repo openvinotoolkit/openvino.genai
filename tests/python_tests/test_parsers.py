@@ -7,9 +7,8 @@ from typing import Optional
 import numpy as np
 import openvino
 import pytest
-from openvino_genai import Tokenizer
+from openvino_genai import Tokenizer, IncrementalParserBase, ParserBase, TextParserStreamer
 from transformers import AutoTokenizer
-from 
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 
 
@@ -39,11 +38,35 @@ def hf_ov_genai_models(request, tmp_path_factory):
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],
+    [("katuni4ka/tiny-random-phi3", {"padding_side": "right"})],
     indirect=True
 )
 def test_non_string_chat_template(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            if "content" in message:
+                print(message["content"])
+            return True
     
+    breakpoint()
+    streamer = CustomStreamer(genai_tokenizer, parsers=["DeepSeekR1ReasoningParser"])
+    
+    msg = {}
+    stream_string = [
+        "<｜begin▁of▁sentence｜>", "First", ",", " I", " recognize", " that", " the", " question", " is", " asking", 
+        " for", " the", " sum", " of", " ", "2", " and", " ", "1", ".\n\n", "I", " know", " that", " addition", 
+        " involves", " combining", " two", " numbers", " to", " find", " their", " total", ".\n\n", "Starting", 
+        " with", " ", "2", ",", " I", " add", " ", "1", " to", " it", ".\n\n", "2", " plus", " ", "1", " equals", 
+        " ", "3", ".\n", "</think>", "\n\n", "**", "Solution", ":", "**\n\n", "To", " find", " the", " sum", 
+        " of", " ", "2", " and", " ", "1", " follow", " these", " simple", " steps", ":\n\n", "1", ".", " **", 
+        "Start", " with", " the", " number", " ", "2", ".", "**\n", "2", ".", " **", "Add", " ", "1", " to", 
+        " it", ".", "**\n", "   \n", "  ", " \\", "[\n", "  "
+    ]
 
-
+    for subword in stream_string:
+        msg = streamer.write(subword)
+    
+    # for (prev_subword, subword) in zip(stream_string[:-1], stream_string[1:]):
+    #     msg = streamer.write(msg, prev_subword, subword)
+    breakpoint()

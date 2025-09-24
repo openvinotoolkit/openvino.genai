@@ -75,7 +75,7 @@ public:
     using TextParserStreamer::TextParserStreamer;  // inherit base constructors
 
     StreamingStatus write(ParsedMessage& message) override {
-        PYBIND11_OVERRIDE_PURE(
+        PYBIND11_OVERRIDE(
             StreamingStatus,  // Return type
             TextParserStreamer,  // Parent class
             write,  // Name of function in C++ (must match Python name)
@@ -131,15 +131,18 @@ void init_streamers(py::module_& m) {
 
     py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>>(m, "TextParserStreamer")
         .def(py::init([](const Tokenizer& tokenizer,
-                         std::vector<std::shared_ptr<IncrementalParserBase>> parsers) {
-                std::vector<ov::genai::ParserVariant> variants(parsers.begin(), parsers.end());
-                return std::make_shared<ConstructableTextParserStreamer>(tokenizer, variants);
+                         std::vector<std::variant<std::shared_ptr<IncrementalParserBase>, std::string>> parsers) {
+                return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
             }),
             py::arg("tokenizer"),
-            py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParserBase>>({}),
+            py::arg("parsers") = std::vector<std::variant<std::shared_ptr<IncrementalParserBase>, std::string>>({}),
             "TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.")
         .def("write",
              py::overload_cast<ParsedMessage&>(&TextParserStreamer::write),
              py::arg("message"),
-             "Write is called with a ParsedMessage. Returns StreamingStatus.");
+             "Write is called with a ParsedMessage. Returns StreamingStatus.")
+        .def("write",
+             py::overload_cast<std::string>(&TextParserStreamer::write),
+             py::arg("message"),
+             "Write is called with a string message. Returns CallbackTypeVariant.");
 }
