@@ -181,7 +181,8 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
 py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
                               const std::variant<std::vector<ov::Tensor>, std::vector<std::string>>& inputs,
                               const std::vector<ov::genai::GenerationConfig>& sampling_params,
-                              const pyutils::PyBindStreamerVariant& py_streamer) {
+                              const pyutils::PyBindStreamerVariant& py_streamer,
+                              const std::vector<ov::AnyMap>& generation_options = {}) {
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     py::object results;
 
@@ -190,7 +191,7 @@ py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
         std::vector<ov::genai::EncodedGenerationResult> encoded_results;
         {
             py::gil_scoped_release rel;
-            encoded_results = pipe.generate(input_ids, sampling_params, streamer);
+            encoded_results = pipe.generate(input_ids, sampling_params, streamer, generation_options);
         }  
         results = py::cast(encoded_results);
     },
@@ -419,13 +420,15 @@ void init_continuous_batching_pipeline(py::module_& m) {
             [](ContinuousBatchingPipeline& pipe,
                const std::vector<ov::Tensor>& input_ids,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& streamer
+               const pyutils::PyBindStreamerVariant& streamer,
+               const std::vector<ov::AnyMap>& generation_options
             ) -> py::typing::Union<std::vector<ov::genai::EncodedGenerationResult>> {
-                return __call_cb_generate(pipe, input_ids, generation_config, streamer);
+                return __call_cb_generate(pipe, input_ids, generation_config, streamer, generation_options);
             },
             py::arg("input_ids"),
             py::arg("generation_config"),
-            py::arg("streamer") = std::monostate{}
+            py::arg("streamer") = std::monostate{},
+            py::arg("generation_options") = {}
         )
 
         .def(
