@@ -6,7 +6,6 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 
-#include "debug_utils.hpp"
 #include "json_utils.hpp"
 #include "logger.hpp"
 #include "openvino/core/except.hpp"
