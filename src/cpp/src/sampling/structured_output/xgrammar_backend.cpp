@@ -53,34 +53,30 @@ xgrammar::Grammar XGrammarStructuredOutput::parse_compound_grammar(const Structu
 }
 
 xgrammar::Grammar XGrammarStructuredOutput::create_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) {
-    // Default constructor for xgrammar::Grammar is not enabled,
-    // create explicitly an empty grammar.
-    xgrammar::Grammar grammar = xgrammar::Grammar::FromEBNF("root ::= root");
     if (!structured_output_config.has_value()) {
-        return grammar;
+        return xgrammar::Grammar::FromEBNF("root ::= root");
     }
 
     if (structured_output_config.value().json_schema.has_value()) {
-        grammar = xgrammar::Grammar::FromJSONSchema(structured_output_config.value().json_schema.value());
+        return xgrammar::Grammar::FromJSONSchema(structured_output_config.value().json_schema.value());
     } else if (structured_output_config.value().regex.has_value()) {
-        grammar = xgrammar::Grammar::FromRegex(structured_output_config.value().regex.value());
+        return xgrammar::Grammar::FromRegex(structured_output_config.value().regex.value());
     } else if (structured_output_config.value().grammar.has_value()) {
-        grammar = xgrammar::Grammar::FromEBNF(structured_output_config.value().grammar.value());
+        return xgrammar::Grammar::FromEBNF(structured_output_config.value().grammar.value());
     } else if (structured_output_config.value().structural_tags_config.has_value()) {
         std::vector<xgrammar::StructuralTagItem> xgrammar_structural_tags;
         for (const auto& tag : structured_output_config.value().structural_tags_config.value().structural_tags) {
             auto structural_tag = xgrammar::StructuralTagItem{tag.begin, tag.schema, tag.end};
             xgrammar_structural_tags.push_back(std::move(structural_tag));
         }
-        grammar = xgrammar::Grammar::FromStructuralTag(
+        return xgrammar::Grammar::FromStructuralTag(
             xgrammar_structural_tags, structured_output_config.value().structural_tags_config.value().triggers
         );
     } else if (structured_output_config.value().compound_grammar.has_value()) {
-        grammar = parse_compound_grammar(structured_output_config.value().compound_grammar.value());
-    } else {
-        OPENVINO_THROW("No grammar definition provided for structured output generation.");
-    }
-    return grammar;
+        return parse_compound_grammar(structured_output_config.value().compound_grammar.value());
+    };
+    
+    OPENVINO_THROW("No grammar definition provided for structured output generation.");
 }
 
 void XGrammarStructuredOutput::validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) {
@@ -129,7 +125,7 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     m_token_bitmask->ndim = 1;
     m_token_bitmask->dtype = DLDataType{kDLInt, 32, 1};
     m_token_bitmask->byte_offset = 0;
-    m_token_bitmask->strides = nullptr; // No strides, tensor is compact
+    m_token_bitmask->strides = &m_bitmask_strides[0];  // xgrammar expects strides to be set, even for compact tensors
     m_bitmask_shape = {static_cast<int64_t>(m_token_bitmask_ov.get_size())};
     m_token_bitmask->shape = &m_bitmask_shape[0];
     
@@ -138,15 +134,25 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     m_next_token_logits->ndim = 1;
     m_next_token_logits->dtype = DLDataType{kDLFloat, 32, 1};
     m_next_token_logits->byte_offset = 0;
-    m_next_token_logits->strides = nullptr; // No strides, tensor is compact
     m_logits_shape = {static_cast<int64_t>(m_vocab_size)};
     m_next_token_logits->shape = &m_logits_shape[0];
+    m_next_token_logits->strides = &m_logits_strides[0];
 }
 
 void XGrammarLogitsTransformer::accept_tokens(const TokenIds& input_ids) {
+    // std::cerr << "XGrammarLogitsTransformer: Accepting " << input_ids.size() << " tokens." << std::endl;
+    // std::cerr << "Tokens: ";
+    // for (const auto& token : input_ids) {
+    //     std::cerr << token << " ";
+    // }
+    // std::cerr << std::endl;
     for (const auto& token : input_ids) {
         m_grammar_matcher.AcceptToken(token);
     }
+    // std::cerr << "XGrammarLogitsTransformer: Accepted tokens." << std::endl;
+    // if (m_grammar_matcher.IsTerminated()) {
+    //     std::cerr << "XGrammarLogitsTransformer: Matcher is terminated after accepting tokens." << std::endl;
+    // }
 }
 
 void XGrammarLogitsTransformer::apply(Logits& logits) {
