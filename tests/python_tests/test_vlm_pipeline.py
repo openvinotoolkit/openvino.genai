@@ -263,24 +263,11 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
 def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(config, cat_tensor):
     scheduler_config = SchedulerConfig()
     models_path = get_ov_model(model_ids[8])
-    ov_pipe = VLMPipeline(
-        models_path,
-        "CPU",
-        scheduler_config=scheduler_config,
-        **get_default_llm_properties(),
-    )
+
     generation_config = config
     generation_config.max_new_tokens = 30
     eps = 0.001
     image_links_list = [[], [cat_tensor]]
-
-    res_generate = []
-    for images in image_links_list:
-        res_generate.append(
-            ov_pipe.generate(
-                prompts[0], images=images, generation_config=generation_config
-            )
-        )
 
     cb_pipe = ContinuousBatchingPipeline(
         models_path,
