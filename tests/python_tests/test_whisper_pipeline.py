@@ -16,10 +16,10 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
+from utils.constants import extra_generate_kwargs
 
 from utils.network import retry_request
-from typing import Any
+from typing import Any, Generator
 
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
@@ -31,7 +31,10 @@ def run_gc_after_test():
     gc.collect()
 
 
-def get_whisper_models_list(tiny_only=False):
+def get_whisper_models_list(
+    ov_cache_models_dir: pathlib.Path, 
+    tiny_only: bool = False,
+) -> list[tuple[str, pathlib.Path]]:
     model_ids = [
         "openai/whisper-tiny",
         "distil-whisper/distil-small.en",
@@ -47,14 +50,27 @@ def get_whisper_models_list(tiny_only=False):
             if model_id in pytest.selected_model_ids.split(" ")
         ]
 
-    prefix = get_ov_cache_models_dir()
-    return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
+    return [(model_id, ov_cache_models_dir / model_id.split("/")[1]) for model_id in model_ids]
+
+
+@pytest.fixture(scope="session")
+def whisper_model(ov_cache_models_dir: pathlib.Path) -> Generator[tuple[str, pathlib.Path], None, None]:
+    models = get_whisper_models_list(ov_cache_models_dir)
+    for model_id, model_path in models:
+        yield pytest.param((model_id, model_path), id=model_id)
+
+
+@pytest.fixture(scope="session")
+def whisper_model_tiny(ov_cache_models_dir: pathlib.Path) -> Generator[tuple[str, pathlib.Path], None, None]:
+    models = get_whisper_models_list(ov_cache_models_dir, tiny_only=True)
+    for model_id, model_path in models:
+        yield pytest.param((model_id, model_path), id=model_id)
 
 
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
-def read_whisper_model(params, stateful=True):
+def read_whisper_model(params: tuple[str, pathlib.Path], stateful: bool = True):
     model_id, path = params
     if not stateful:
         path = pathlib.Path(f"{path}_with_past")
@@ -272,21 +288,19 @@ def compare_results(hf_result, genai_result):
             assert round(genai_chunk.end_ts, 2) == -1.0
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
 @pytest.mark.precommit
-def test_smoke(model_descr, sample_from_dataset):
+def test_smoke(whisper_model_tiny: tuple[str, pathlib.Path], sample_from_dataset):
     run_pipeline_with_ref(
-        model_id=model_descr[0],
-        tmp_path=model_descr[1],
+        model_id=whisper_model_tiny[0],
+        tmp_path=whisper_model_tiny[1],
         sample=sample_from_dataset,
     )
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.precommit
-def test_whisper_config_constructor(model_descr):
-    model_id, path = model_descr
+def test_whisper_config_constructor(whisper_model_tiny: tuple[str, pathlib.Path]):
+    _, path = whisper_model_tiny
 
     config = ov_genai.WhisperGenerationConfig(path / "generation_config.json")
 
@@ -322,11 +336,10 @@ def test_whisper_config_constructor(model_descr):
     assert config.lang_to_id["<|_ru|>"] == 42
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
 @pytest.mark.precommit
-def test_whisper_constructors(model_descr, sample_from_dataset):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+def test_whisper_constructors(whisper_model_tiny, sample_from_dataset):
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
     expected = hf_pipe(sample_from_dataset)["text"]
 
@@ -342,11 +355,10 @@ def test_whisper_constructors(model_descr, sample_from_dataset):
     assert genai_result.texts[0] == expected
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.precommit
-def test_max_new_tokens(model_descr, sample_from_dataset):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+def test_max_new_tokens(whisper_model_tiny, sample_from_dataset):
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
     expected = hf_pipe(sample_from_dataset, max_new_tokens=10)
 
@@ -360,11 +372,10 @@ def test_max_new_tokens(model_descr, sample_from_dataset):
     compare_results(expected, genai_result)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("language", ["fr", "de"])
 @pytest.mark.precommit
-def test_language_mode(model_descr, language):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+def test_language_mode(whisper_model_tiny, language):
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
     sample = get_whisper_dataset(language, long_form=False)[0]
 
     expected = hf_pipe(
@@ -385,11 +396,10 @@ def test_language_mode(model_descr, language):
     compare_results(expected, genai_result)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", get_fixture_params_for_n_whisper_dataset_samples(n=1, language="fr"), indirect=True)
 @pytest.mark.precommit
-def test_task_mode(model_descr, sample_from_dataset):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+def test_task_mode(whisper_model_tiny, sample_from_dataset):
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
     expected = hf_pipe(
         sample_from_dataset,
@@ -433,13 +443,18 @@ def test_task_mode(model_descr, sample_from_dataset):
     compare_results(expected, genai_result)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1, language="fr"),
-                                                 *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="de"),
-                                                 *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="es")], indirect=True)
+@pytest.mark.parametrize(
+    "sample_from_dataset", 
+    [
+        *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="fr"),
+        *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="de"),
+        *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="es"),
+    ], 
+    indirect=True,
+)
 @pytest.mark.precommit
-def test_language_autodetect(model_descr, sample_from_dataset):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+def test_language_autodetect(whisper_model_tiny, sample_from_dataset):
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
     input_features = hf_pipe.feature_extractor(sample_from_dataset)
     language_id = hf_pipe.model.detect_language(input_features["input_features"])[0]
@@ -447,32 +462,30 @@ def test_language_autodetect(model_descr, sample_from_dataset):
     assert language_id != genai_pipe.get_generation_config().lang_to_id["<|en|>"]
 
     run_pipeline_with_ref(
-        model_id=model_descr[0],
-        tmp_path=model_descr[1],
+        model_id=whisper_model_tiny[0],
+        tmp_path=whisper_model_tiny[1],
         sample=sample_from_dataset,
         generation_config=ov_genai.WhisperGenerationConfig(max_new_tokens=30),
     )
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1)], indirect=True)
 @pytest.mark.precommit
-def test_return_timestamps_short_form(model_descr, sample_from_dataset):
+def test_return_timestamps_short_form(whisper_model_tiny, sample_from_dataset):
     run_pipeline_with_ref(
-        model_id=model_descr[0],
-        tmp_path=model_descr[1],
+        model_id=whisper_model_tiny[0],
+        tmp_path=whisper_model_tiny[1],
         sample=sample_from_dataset,
         generation_config=ov_genai.WhisperGenerationConfig(return_timestamps=True),
     )
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1)], indirect=True)
 @pytest.mark.precommit
-def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_dataset):
+def test_return_timestamps_max_new_tokens_short_form(whisper_model_tiny, sample_from_dataset):
     run_pipeline_with_ref(
-        model_id=model_descr[0],
-        tmp_path=model_descr[1],
+        model_id=whisper_model_tiny[0],
+        tmp_path=whisper_model_tiny[1],
         sample=sample_from_dataset,
         generation_config=ov_genai.WhisperGenerationConfig(
             return_timestamps=True, language="en", max_new_tokens=30
@@ -480,11 +493,10 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
     )
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True)
 @pytest.mark.precommit
-def test_longform_audio(model_descr, sample_from_dataset):
-    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+def test_longform_audio(whisper_model_tiny, sample_from_dataset):
+    _, _, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
     streamer_result = []
 
@@ -506,11 +518,10 @@ def test_longform_audio(model_descr, sample_from_dataset):
     assert "".join(streamer_result) == hf_result["text"]
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
 @pytest.mark.precommit
-def test_longform_audio_with_past(model_descr, sample_from_dataset):
-    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr, stateful=True)
+def test_longform_audio_with_past(whisper_model_tiny, sample_from_dataset):
+    _, _, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny, stateful=True)
 
     streamer_result = []
 
@@ -532,9 +543,8 @@ def test_longform_audio_with_past(model_descr, sample_from_dataset):
     assert "".join(streamer_result) == hf_result["text"]
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.precommit
-def test_shortform(model_descr):
+def test_shortform(whisper_model):
     samples = []
     ds = datasets.load_dataset(
         "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation"
@@ -544,20 +554,19 @@ def test_shortform(model_descr):
         samples.append(ds_row["audio"]["array"])
 
     run_pipeline_with_ref(
-        model_id=model_descr[0],
-        tmp_path=model_descr[1],
+        model_id=whisper_model[0],
+        tmp_path=whisper_model[1],
         sample=samples,
     )
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
 @pytest.mark.precommit
-def test_beam_search(model_descr, sample_from_dataset):
+def test_beam_search(whisper_model_tiny, sample_from_dataset):
     # use only 30 seconds of audio due to beam search results wrong with enabled timestamps
     # ticket: 167239
     sample_from_dataset = sample_from_dataset[:30 * 16000]
-    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+    _, _, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
     generation_config=ov_genai.WhisperGenerationConfig(
         num_beams=2,
     )
@@ -567,11 +576,10 @@ def test_beam_search(model_descr, sample_from_dataset):
 
     compare_results(hf_result, genai_result)
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
 @pytest.mark.precommit
-def test_initial_prompt_hotwords(model_descr, sample_from_dataset):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+def test_initial_prompt_hotwords(whisper_model_tiny, sample_from_dataset):
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
     result = genai_pipe.generate(sample_from_dataset)
 
@@ -589,11 +597,10 @@ def test_initial_prompt_hotwords(model_descr, sample_from_dataset):
     assert "Joel Kyton" in result.texts[0]
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
 @pytest.mark.precommit
-def test_random_sampling(model_descr, sample_from_dataset):
-    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+def test_random_sampling(whisper_model_tiny, sample_from_dataset):
+    _, _, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
     config = ov_genai.WhisperGenerationConfig(do_sample=True, top_p=0.01)
 
@@ -628,11 +635,10 @@ def test_random_sampling(model_descr, sample_from_dataset):
     assert genai_result.texts[0] != hf_result["text"]
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
 @pytest.mark.precommit
-def test_perf_metrics(model_descr, sample_from_dataset):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+def test_perf_metrics(whisper_model_tiny, sample_from_dataset):
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
     result = genai_pipe.generate(sample_from_dataset)
 
@@ -775,11 +781,10 @@ def streamer_for_test(request):
             return False
         return streamer_bool_callback, ResultHandler(texts)
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
 @pytest.mark.precommit
-def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
-    _, _, _, genai_pipe = read_whisper_model(model_descr)
+def test_streamers(whisper_model_tiny, sample_from_dataset, streamer_for_test):
+    _, _, _, genai_pipe = read_whisper_model(whisper_model_tiny)
 
     streamer, result_handler = streamer_for_test
 

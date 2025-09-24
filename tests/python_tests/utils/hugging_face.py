@@ -18,7 +18,7 @@ from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
-from utils.constants import get_default_llm_properties, extra_generate_kwargs, get_ov_cache_models_dir
+from utils.constants import get_default_llm_properties, extra_generate_kwargs
 from utils.network import retry_request
 import pytest
 
@@ -197,24 +197,38 @@ def convert_models(opt_model : OVModelForCausalLM,
     convert_and_save_tokenizer(hf_tokenizer, models_path)
 
 
-def download_and_convert_model(model_id: str, **tokenizer_kwargs):
-    return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
+def download_and_convert_model(
+    model_id: str, 
+    ov_cache_models_dir: Path, 
+    **tokenizer_kwargs,
+) -> tuple[OVModel | None, AutoTokenizer | None, Path]:
+    return _download_and_convert_model(model_id, OVModelForCausalLM, ov_cache_models_dir, **tokenizer_kwargs)
 
 @pytest.fixture(scope="module")
-def download_and_convert_embeddings_models(request):
+def download_and_convert_embeddings_models(
+    request: pytest.FixtureRequest, 
+    ov_cache_models_dir: Path,
+) -> tuple[OVModel | None, AutoTokenizer | None, Path]:
     model_id = request.param
-    return _download_and_convert_model(model_id, OVModelForFeatureExtraction)
+    return _download_and_convert_model(model_id, OVModelForFeatureExtraction, ov_cache_models_dir)
 
 
 @pytest.fixture()
-def download_and_convert_rerank_model(request):
+def download_and_convert_rerank_model(
+    request: pytest.FixtureRequest, 
+    ov_cache_models_dir: Path
+) -> tuple[OVModel | None, AutoTokenizer | None, Path]:
     model_id = request.param
-    return _download_and_convert_model(model_id, OVModelForSequenceClassification)
+    return _download_and_convert_model(model_id, OVModelForSequenceClassification, ov_cache_models_dir)
 
 
-def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):
+def _download_and_convert_model(
+    model_id: str, 
+    model_class: Type[OVModel], 
+    ov_cache_models_dir: Path,
+    **tokenizer_kwargs,
+) -> tuple[OVModel | None, AutoTokenizer | None, Path]:
     dir_name = str(model_id).replace(sep, "_")
-    ov_cache_models_dir = get_ov_cache_models_dir()
     models_path = ov_cache_models_dir / dir_name
 
     from utils.constants import OV_MODEL_FILENAME
@@ -230,10 +244,12 @@ def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tok
     return opt_model, hf_tokenizer, models_path
 
 
-def download_gguf_model(gguf_model_id: str,
-                        gguf_filename: str):
+def download_gguf_model(
+    gguf_model_id: str,
+    gguf_filename: str,
+    ov_cache_models_dir: Path,
+):
     gguf_dir_name = str(gguf_model_id).replace(sep, "_")
-    ov_cache_models_dir = get_ov_cache_models_dir()
     models_path_gguf = ov_cache_models_dir / gguf_dir_name
 
     gguf_path = hf_hub_download(

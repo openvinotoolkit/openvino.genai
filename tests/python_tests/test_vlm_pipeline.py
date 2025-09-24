@@ -25,6 +25,7 @@ handwritten_tensor
 model_and_tag
 """
 
+from pathlib import Path
 import openvino_tokenizers
 import openvino
 import PIL
@@ -51,11 +52,10 @@ from utils.generation_config import (
     get_multinomial_all_parameters,
     get_greedy,
 )
-from utils.constants import get_default_llm_properties, get_ov_cache_models_dir
+from utils.constants import get_default_llm_properties
 
 
-def get_ov_model(model_id):
-    ov_cache_models_dir = get_ov_cache_models_dir()
+def get_ov_model(model_id: str, ov_cache_models_dir: Path):
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_models_dir / dir_name
     if (model_dir / "openvino_language_model.xml").exists():
@@ -515,7 +515,12 @@ def test_vlm_npu_no_image():
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_sequence, backend):
+def test_vlm_pipeline_chat_streamer_cancel_second_generate(
+    image_sequence, 
+    model_id,
+    backend, 
+    ov_cache_models_dir,
+):
     callback_questions = [
         "Explain in details 1+1=",
         "Why is the Sun yellow?",
@@ -534,7 +539,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
             else StreamingStatus.RUNNING
         )
 
-    models_path = get_ov_model(model_id)
+    models_path = get_ov_model(model_id, ov_cache_models_dir)
     ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30

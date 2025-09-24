@@ -1,8 +1,9 @@
 # Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from typing import Generator
 from utils.network import retry_request
-from test_whisper_pipeline import get_whisper_models_list, sample_from_dataset, get_fixture_params_for_n_whisper_dataset_samples
+from test_whisper_pipeline import get_whisper_models_list, get_fixture_params_for_n_whisper_dataset_samples
 from transformers import WhisperProcessor, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import openvino_genai as ov_genai
@@ -74,136 +75,139 @@ def compare_results_with_assert(expected, actual_out):
         assert expected.texts[i] == actual_out.texts[i]
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.fixture(scope="session")
+def whisper_model(ov_cache_models_dir: pathlib.Path) -> Generator[tuple[str, pathlib.Path], None, None]:
+    models = get_whisper_models_list(ov_cache_models_dir)
+    for model_id, model_path in models:
+        yield pytest.param((model_id, model_path), id=model_id)
+
+
+
+@pytest.fixture(scope="session")
+def whisper_model_tiny(ov_cache_models_dir: pathlib.Path) -> Generator[tuple[str, pathlib.Path], None, None]:
+    models = get_whisper_models_list(ov_cache_models_dir, tiny_only=True)
+    for model_id, model_path in models:
+        yield pytest.param((model_id, model_path), id=model_id)
+
+
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_generation_compare_with_cpu(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+def test_static_whisper_generation_compare_with_cpu(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset)
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, language="fr"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="de"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="es")], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_autodetect(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+def test_static_whisper_autodetect(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset)
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='de', n=3)], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_language_de(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+def test_static_whisper_language_de(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset, max_new_tokens=30, language="<|de|>")
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='fr', n=3)], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_language_fr(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+def test_static_whisper_language_fr(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset, max_new_tokens=30, language="<|fr|>")
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='ru', n=3)], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_language_ru(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+def test_static_whisper_language_ru(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset, max_new_tokens=30, language="<|ru|>")
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": True}], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_generation_long(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+def test_static_whisper_generation_long(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset)
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_stateful_generation_compare_with_cpu(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
+def test_static_whisper_stateful_generation_compare_with_cpu(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset)
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, language="fr"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="de"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="es")], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_stateful_autodetect(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
+def test_static_whisper_stateful_autodetect(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset)
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='de', n=3)], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_stateful_language_de(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
+def test_static_whisper_stateful_language_de(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset, max_new_tokens=30, language="<|de|>")
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='fr', n=3)], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_stateful_language_fr(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
+def test_static_whisper_stateful_language_fr(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset, max_new_tokens=30, language="<|fr|>")
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='ru', n=3)], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_stateful_language_ru(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
+def test_static_whisper_stateful_language_ru(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset, max_new_tokens=30, language="<|ru|>")
 
     compare_results_with_assert(expected, actual_out)
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": True}], indirect=True)
 @pytest.mark.precommit
-def test_static_whisper_stateful_generation_long(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
+def test_static_whisper_stateful_generation_long(whisper_model_tiny, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset)
 
