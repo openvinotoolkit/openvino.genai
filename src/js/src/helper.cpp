@@ -118,12 +118,13 @@ ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env,
 
 template <>
 ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value) {
+    // TODO Update for new ChatHistory type: Record<string, any>[]
     auto incorrect_argument_message = "Chat history must be { role: string, content: string }[]";
     if (value.IsArray()) {
         auto array = value.As<Napi::Array>();
         size_t arrayLength = array.Length();
 
-        std::vector<std::unordered_map<std::string, std::string>> nativeArray;
+        std::vector<ov::AnyMap> nativeArray;
         for (uint32_t i = 0; i < arrayLength; ++i) {
             Napi::Value arrayItem = array[i];
             if (!arrayItem.IsObject()) {
@@ -133,7 +134,7 @@ ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, c
             if (obj.Get("role").IsUndefined() || obj.Get("content").IsUndefined()) {
                 OPENVINO_THROW(incorrect_argument_message);
             }
-            std::unordered_map<std::string, std::string> result;
+            ov::AnyMap result;
             Napi::Array keys = obj.GetPropertyNames();
 
             for (uint32_t i = 0; i < keys.Length(); ++i) {
