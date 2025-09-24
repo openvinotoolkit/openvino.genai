@@ -245,6 +245,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     std::optional<std::vector<int64_t>> m_token_type_ids;
 
     // 2D vector used to cache position_ids, for compatibility with special cases (Qwen-VL 3D position_ids)
+    bool m_is_prefill = true;
     std::vector<std::vector<int64_t>> m_position_ids;
     std::vector<std::vector<int64_t>> m_position_ids_last = std::vector<std::vector<int64_t>>{{0}};
 
@@ -854,6 +855,12 @@ public:
     }
     void update_position_ids_last(const std::vector<std::vector<int64_t>>& position_ids_last) {
         m_position_ids_last = position_ids_last;
+    }
+    void reset_is_prefill() {
+        m_is_prefill = false;
+    }
+    bool get_is_prefill() const {
+        return m_is_prefill;
     }
 };
 

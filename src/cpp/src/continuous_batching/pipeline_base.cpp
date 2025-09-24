@@ -179,20 +179,34 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
+        ov::AnyMap generation_options;
+        ov::Tensor position_ids;
+        std::optional<int64_t> rope_delta;
         m_inputs_embedder->set_apply_chat_template_status(false);
         if (m_inputs_embedder->has_token_type_ids()) {
             auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
+            std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(embeds.get_shape().at(1), 0);  // LLM Prefill position ids.
             input_embeds_list.push_back(std::move(embeds));
             token_type_ids_list.push_back(std::move(tt_ids));
+            generation_options["position_ids"] = std::move(position_ids);
         } else {
-            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids));
+            auto embeds = m_inputs_embedder->get_inputs_embeds(templated_history, m_history_images, vlm_perf_metrics[0], rgbs.size() > 0, m_history_image_ids);
+            std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(embeds.get_shape().at(1), 0);
+            input_embeds_list.emplace_back(embeds);
+            std::cout << "VIT: position ids shape = " << position_ids.get_shape() << std::endl;
+            generation_options["position_ids"] = std::move(position_ids);
         }
+        generation_option_list.push_back(std::move(generation_options));
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
 
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
+            ov::AnyMap generation_options;
+            ov::Tensor position_ids;
+            std::optional<int64_t> rope_delta;
+
             const auto& prompt = prompts[i];
             const auto& rgbs = rgbs_vector[i];
             const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
@@ -203,11 +217,17 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             if (m_inputs_embedder->has_token_type_ids()) {
                 auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence);
+                std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(embeds.get_shape().at(1), 0);  // LLM Prefill position ids.
                 input_embeds_list.push_back(std::move(embeds));
                 token_type_ids_list.push_back(std::move(tt_ids));
+                generation_options["position_ids"] = std::move(position_ids);
             } else {
-                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence));
+                auto embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence);
+                std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(embeds.get_shape().at(1), 0);  // LLM Prefill position ids.
+                input_embeds_list.emplace_back(embeds);
+                generation_options["position_ids"] = std::move(position_ids);
             }
+            generation_option_list.push_back(std::move(generation_options));
         
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
             vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));

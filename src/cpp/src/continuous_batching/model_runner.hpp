@@ -217,6 +217,7 @@ public:
             size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
             size_t group_position_id = sequence_group->get_num_processed_tokens();
             size_t prompt_len = sequence_group->get_prompt_len();
+            bool is_prefill = sequence_group->get_is_prefill();
 
             // Next variables are only for sliced matmul case
             size_t output_seq_len = 0;
@@ -241,19 +242,7 @@ public:
 
                 auto customized_position_ids = sequence->get_sequence_group_ptr()->get_position_ids();
                 bool have_customized_position_ids = customized_position_ids.size() > 0u;
-                if (have_customized_position_ids) {
-                    size_t position_ids_batch = sequence->get_sequence_group_ptr()->get_position_ids_batch();
-                    std::vector<std::vector<int64_t>> position_ids_last(position_ids_batch, std::vector<int64_t>(1));
-                    for (size_t b = 0, stride = 0; b < position_ids_batch; b++) {
-                        for (size_t i = 0; i < num_scheduled_tokens; ++i) {
-                            position_ids_data[i + stride] = (i < prompt_len ? customized_position_ids[b].at(i) : 0);
-                        }
-                        position_ids_last[b][0] = position_ids_data[(prompt_len > 0u ? prompt_len - 1 : 0u) + stride] + 1;
-                        stride += customized_position_ids[b].size();
-                    }
-                    sequence->get_sequence_group_ptr()->update_position_ids_last(position_ids_last);
-                }
-
+                size_t position_ids_batch = sequence->get_sequence_group_ptr()->get_position_ids_batch();
                 auto position_ids_last = sequence->get_sequence_group_ptr()->get_position_ids_last();
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
@@ -273,7 +262,18 @@ public:
                         size_t position_ids_batch = sequence->get_sequence_group_ptr()->get_position_ids_batch();
                         for (size_t b = 0; b < position_ids_batch; b++) {
                             size_t stride = b * num_scheduled_tokens;
-                            position_ids_data[token_id + stride] = (token_id < prompt_len ? position_ids_last[b][0] + token_id : 0);
+                            if (is_prefill) {
+                                position_ids_data[token_id + stride] = position_id;
+                            } else {
+                                position_ids_data[token_id + stride] = position_ids_last[b][0] + token_id;
+                            }
+                        }
+                    } else {
+                        // default be prefill
+                        for (size_t b = 0, stride = 0; b < position_ids_batch; b++) {
+                            OPENVINO_ASSERT(position_id < prompt_len);
+                            position_ids_data[token_id + stride] = customized_position_ids[b].at(position_id);
+                            stride += customized_position_ids[b].size();
                         }
                     }
 
@@ -292,19 +292,13 @@ public:
                     }
                 }
 
-                if (!have_customized_position_ids) {
-                    size_t position_ids_batch = sequence->get_sequence_group_ptr()->get_position_ids_batch();
-                    std::vector<std::vector<int64_t>> position_ids_last_tmp(position_ids_batch, std::vector<int64_t>(1));
-                    if (num_scheduled_tokens < (prompt_len + 1) && num_scheduled_tokens > 0) {
-                        for (size_t b = 0; b < position_ids_batch; b++) {
-                            size_t stride = b * num_scheduled_tokens;
-                            position_ids_last_tmp[b][0] =
-                                position_ids_data[stride + ((num_scheduled_tokens < prompt_len + 1)
-                                                                ? num_scheduled_tokens - 1
-                                                                : prompt_len - 1)] + 1;
-                        }
-                        sequence->get_sequence_group_ptr()->update_position_ids_last(position_ids_last_tmp);
+                // Cache last position ids.
+                std::vector<std::vector<int64_t>> position_ids_last_tmp(position_ids_batch, std::vector<int64_t>(1));
+                if (num_scheduled_tokens > 0) {
+                    for (size_t b = 0, stride = 0; b < position_ids_batch; b++, stride += num_scheduled_tokens) {
+                        position_ids_last_tmp[b][0] = position_ids_data[stride + num_scheduled_tokens - 1] + 1;
                     }
+                    sequence->get_sequence_group_ptr()->update_position_ids_last(position_ids_last_tmp);
                 }
 
                 size_t num_blocks = sequence_group->get_num_logical_blocks();
@@ -421,6 +415,7 @@ public:
             for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                 Sequence::CPtr sequence = running_sequences[seq_idx];
                 sequence->get_sequence_group_ptr()->clear_position_ids();
+                sequence->get_sequence_group_ptr()->reset_is_prefill();
             }
         }
 
