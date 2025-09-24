@@ -926,6 +926,18 @@ class GenerationConfig:
     @top_p.setter
     def top_p(self, arg0: typing.SupportsFloat) -> None:
         ...
+    @property
+    def pruning_ratio(self) -> int:
+        ...
+    @pruning_ratio.setter
+    def pruning_ratio(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def relevance_weight(self) -> float:
+        ...
+    @relevance_weight.setter
+    def relevance_weight(self, arg0: typing.SupportsFloat) -> None:
+        ...
 class GenerationFinishReason:
     """
     Members:
