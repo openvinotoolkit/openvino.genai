@@ -155,6 +155,49 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
+    [("Qwen/Qwen3-8B-Base", { "padding_side": None })],
+    indirect=True
+)
+def test_apply_chat_template_with_tools_and_extra_context(hf_ov_genai_models):
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models
+
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "test",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "arg": { "type": "string" }
+                },
+                "required": ["arg"]
+            }
+        }
+    }]
+    # In GenAI order of dict keys is not preserved (sorted alphabetically, due to conversion to AnyMap)
+    tools = [json.loads(json.dumps(tool, sort_keys=True)) for tool in tools]
+
+    add_generation_prompt = True
+
+    extra_context = { "enable_thinking": False }
+    
+    hf_full_history_str = hf_tokenizer.apply_chat_template(
+        conversation, add_generation_prompt=add_generation_prompt, tokenize=False, tools=tools, **extra_context
+    )
+
+    ov_full_history_str = genai_tokenzier.apply_chat_template(
+        conversation, add_generation_prompt=add_generation_prompt, tools=tools, extra_context=extra_context
+    )
+
+    if ov_full_history_str != hf_full_history_str:
+        print(f"HF reference:\n", hf_full_history_str)
+        print(f"GenAI output:\n", ov_full_history_str)
+    assert ov_full_history_str == hf_full_history_str
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", 
     [("Xenova/c4ai-command-r-v01-tokenizer", { "padding_side": None })],
     indirect=True
 )
@@ -168,8 +211,8 @@ def test_non_string_chat_template(hf_ov_genai_models):
     ov_full_history_str = genai_tokenzier.apply_chat_template(conversation, add_generation_prompt=False)
 
     if ov_full_history_str != hf_full_history_str:
-        print(f"hf reference: {hf_full_history_str}")
-        print(f"ov_genai out: {ov_full_history_str}")
+        print(f"HF reference:\n", hf_full_history_str)
+        print(f"GenAI output:\n", ov_full_history_str)
     assert ov_full_history_str == hf_full_history_str
 
 
