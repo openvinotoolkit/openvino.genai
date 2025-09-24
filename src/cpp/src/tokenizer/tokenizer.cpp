@@ -133,12 +133,6 @@ std::string Tokenizer::get_eos_token() const {
 
 std::string Tokenizer::apply_chat_template(ChatHistory history,
                                            bool add_generation_prompt,
-                                           const std::string& chat_template) const {
-    return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);
-}
-
-std::string Tokenizer::apply_chat_template(NewChatHistory history,
-                                           bool add_generation_prompt,
                                            const std::string& chat_template,
                                            const ToolDefinitions& tools,
                                            const ov::AnyMap& extra_context) const {
