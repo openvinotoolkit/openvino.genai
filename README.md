@@ -160,6 +160,13 @@ image_data = ov.Tensor(image_data)
 
 prompt = "Can you describe the image?"
 result = pipe.generate(prompt, image=image_data, max_new_tokens=100)
+
+# To input multiple images, use 'images='
+# result = pipe.generate(prompt, images=[image_data], max_new_tokens=100)
+
+# To input video frames, use 'video='
+# result = pipe.generate(prompt, video=[image_data], max_new_tokens=100)
+
 print(result.texts[0])
 ```
 
@@ -181,6 +188,12 @@ int main(int argc, char* argv[]) {
         ov::genai::image(rgb),
         ov::genai::max_new_tokens(100)
     ) << '\n';
+
+    // To input multiple images, use 'images'
+    // pipe.generate(prompt, ov::genai::images(std::vector<ov::Tensor>{rgb}), ov::genai::max_new_tokens(100));
+
+    // To input video frames, use 'video'
+    // pipe.generate(prompt, ov::genai::video(std::vector<ov::Tensor>{rgb}), ov::genai::max_new_tokens(100));
 }
 ```
 
