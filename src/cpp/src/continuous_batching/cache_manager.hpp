@@ -45,8 +45,8 @@ public:
                         "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
         m_device = execution_devices[0];
         // set block_size depending on device
-        const size_t cpu_block_size = 32, gpu_block_size = 16;
-        m_block_size = all_gpu_device ? gpu_block_size : cpu_block_size;
+        const size_t cpu_block_size = 32, gpu_block_size = 16, gpu_block_size_xattn = 256;
+        bool has_xattention = false;
 
         if (all_gpu_device) {
             m_context = m_request.get_compiled_model().get_context();
@@ -61,6 +61,11 @@ public:
                 if (name.find("key_cache.") == 0) {
                     pshape = input.get_partial_shape();
                     m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
+                    if (pshape[2].get_length() == 256 && pshape[3].get_length() != 16) {
+                        // use xattention layout
+                        // TODO: better check condition ?
+                        has_xattention = true;
+                    }
                     m_key_shapes.push_back(pshape);
                     m_key_precisions.push_back(cache_precision);
                     break;
@@ -74,7 +79,7 @@ public:
                 }
             }
         }
-
+        m_block_size = all_gpu_device ? ( has_xattention ? gpu_block_size_xattn : gpu_block_size ) : cpu_block_size;
         m_num_decoder_layers = m_value_precisions.size();
         OPENVINO_ASSERT(m_num_decoder_layers == m_key_precisions.size(), "Invalid case: a different number of K and V caches in a LLM model");
     }
