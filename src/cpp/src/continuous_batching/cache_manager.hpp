@@ -46,7 +46,6 @@ public:
         m_device = execution_devices[0];
         // set block_size depending on device
         const size_t cpu_block_size = 32, gpu_block_size = 16, gpu_block_size_xattn = 256;
-        bool has_xattention = false;
 
         if (all_gpu_device) {
             m_context = m_request.get_compiled_model().get_context();
@@ -61,11 +60,6 @@ public:
                 if (name.find("key_cache.") == 0) {
                     pshape = input.get_partial_shape();
                     m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
-                    if (pshape[2].get_length() == 256 && pshape[3].get_length() != 16) {
-                        // use xattention layout
-                        // TODO: better check condition ?
-                        has_xattention = true;
-                    }
                     m_key_shapes.push_back(pshape);
                     m_key_precisions.push_back(cache_precision);
                     break;
@@ -78,6 +72,13 @@ public:
                     break;
                 }
             }
+        }
+
+        bool has_xattention = false;
+        if ((m_key_shapes[0][2].get_length() == m_value_shapes[0][2].get_length()) &&
+            (m_key_shapes[0][3].get_length() == m_value_shapes[0][3].get_length()) &&
+            (m_key_shapes[0][2].get_length() == gpu_block_size_xattn)) {
+            has_xattention = true;        
         }
         m_block_size = all_gpu_device ? ( has_xattention ? gpu_block_size_xattn : gpu_block_size ) : cpu_block_size;
         m_num_decoder_layers = m_value_precisions.size();
