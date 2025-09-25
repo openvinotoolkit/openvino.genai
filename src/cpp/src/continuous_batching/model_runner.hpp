@@ -49,6 +49,13 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
 
+    bool m_is_hidden_state_export_needed = false; // need to export hidden state after inference
+    bool m_is_hidden_state_import_needed = false; // need to import hidden state from another model runner
+    bool m_is_hidden_state_internal_needed = false; // need to use internal hidden state, e.g, eagle2
+    std::map<std::pair<size_t, size_t>, std::pair<size_t, size_t>> m_sequence_hidden_state_mapping; // pre-requisite: main/draft have same seq group and running seq grouped id
+    // a container which use sequence group id and request id as key to store hidden states
+    std::map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
+    size_t m_adjust_factor = 1; // to adjust the hidden size of draft model input
 public:
     /**
      * Constructs the ModelRunner.
@@ -95,8 +102,24 @@ public:
         return m_request;
     }
 
+    void set_hidden_state_export_needed(bool is_needed) {
+        m_is_hidden_state_export_needed = is_needed;
+    }
+
+    void set_hidden_state_import_needed(bool is_needed) {
+        m_is_hidden_state_import_needed = is_needed;
+    }
+
+    void set_hidden_state_internal_needed(bool is_needed) {
+        m_is_hidden_state_internal_needed = is_needed;
+    }
+
     void set_embedding_model(const EmbeddingsModel::Ptr& embedder) {
         m_embedding = embedder;
+    }
+
+    void set_adjust_factor(size_t adjust_factor) {
+        m_adjust_factor = adjust_factor;
     }
 
     /**
@@ -121,6 +144,47 @@ public:
         m_cache_rotation_deltas_for_each_layer = std::move(rotation_deltas_for_each_layer);
     }
 
+    ov::Tensor get_hidden_state(size_t request_id, size_t seq_grouped_id) const {
+        if (m_hidden_states.get_size() == 0) {
+            return ov::Tensor();
+        }
+
+        auto key = std::make_pair(request_id, seq_grouped_id);
+        auto it = m_sequence_hidden_state_mapping.find(key);
+        if (it == m_sequence_hidden_state_mapping.end()) {
+            return ov::Tensor();
+        }
+
+        size_t start_idx = it->second.first;
+        size_t length = it->second.second;
+
+        auto shape = m_hidden_states.get_shape();
+        if (shape.size() < 2) {
+            return ov::Tensor();
+        }
+
+        size_t hidden_size = shape[shape.size() - 1];
+
+        ov::Coordinate start_coord(shape.size(), 0);
+        ov::Coordinate end_coord(shape.size(), 0);
+
+        start_coord[0] = start_idx;
+        end_coord[0] = start_idx + length;
+
+        for (size_t i = 1; i < shape.size(); ++i) {
+            start_coord[i] = 0;
+            end_coord[i] = shape[i];
+        }
+
+        return ov::Tensor(m_hidden_states, start_coord, end_coord);
+    }
+
+    void set_initial_hidden_state(size_t request_id, const ov::Tensor& hidden_state) {
+        // m_initial_hidden_states.clear();
+        //auto key = std::make_pair(request_id, seq_grouped_id);
+        m_initial_hidden_states[request_id] = hidden_state;
+    }
+
     /**
      * Runs the forward inference call on the underlying LLM's ov::InferRequest, scheduling for inferencing tokens for given sequences
      * taking into account the supplied scheduler output struct.
@@ -129,6 +193,7 @@ public:
      * @return An ov::Tensor with next-token logit scores for each sequence processed during this `forward` call.
      */
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+        m_sequence_hidden_state_mapping.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
 
         size_t batch_size_in_sequences = 0;
@@ -164,7 +229,29 @@ public:
             // block_indices are handled in a special fashion below
             block_indices_begins(ov::element::i32, {batch_size_in_sequences + 1}),
             max_context_len(ov::element::i32, {});
-
+        ov::Tensor hidden_state_input;
+        float* hidden_state_data = nullptr;
+        if (m_is_hidden_state_import_needed || m_is_hidden_state_internal_needed) {
+            if (hidden_size == 0) {
+                for (const auto& entry : m_initial_hidden_states) {
+                    const auto& stored_hidden_state = entry.second;
+                    if (stored_hidden_state.get_size() > 0) {
+                        auto shape = stored_hidden_state.get_shape();
+                        if (shape.size() >= 2) {
+                            hidden_size = shape[shape.size() - 1];
+                            if (!m_is_hidden_state_import_needed)
+                                hidden_size /= m_adjust_factor;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (hidden_size > 0) {
+                hidden_state_input = ov::Tensor(ov::element::f32, {total_num_tokens, 1, hidden_size});
+                hidden_state_data = hidden_state_input.data<float>();
+                std::memset(hidden_state_data, 0, total_num_tokens * hidden_size * sizeof(float));
+            }
+        }
         ov::Tensor score_aggregation_window(ov::element::i32, {batch_size_in_sequences});
 
         ov::Tensor generated_ids_embeds;
@@ -205,6 +292,7 @@ public:
             matmul_gathering_is_available = true;
         } catch (const ov::Exception&) {}
 
+        size_t current_token_idx = 0;
         std::map<size_t, std::set<size_t>> seq_id_to_skipped_blocks_map;
 
         for (size_t i = 0; i < num_sequence_groups; ++i) {
@@ -236,6 +324,65 @@ public:
 
                 output_seq_len = 0;
                 Sequence::CPtr sequence = running_sequences[seq_idx];
+                if (m_is_hidden_state_export_needed) {
+                    size_t start_token_idx = current_token_idx;
+                    size_t sequence_length = num_scheduled_tokens;
+
+                    auto key = std::make_pair(sequence_group->get_request_id(), sequence->get_grouped_id());
+                    m_sequence_hidden_state_mapping[key] = std::make_pair(start_token_idx, sequence_length);
+                }
+                if (m_is_hidden_state_import_needed && hidden_state_data && hidden_size > 0) {
+                    //auto key = std::make_pair(sequence_group->get_request_id(), sequence->get_grouped_id());
+                    auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
+
+                    if (it != m_initial_hidden_states.end()) {
+                        const auto& stored_hidden_state = it->second;
+
+                        if (stored_hidden_state.get_size() > 0) {
+                            auto stored_shape = stored_hidden_state.get_shape();
+
+                            if (stored_shape.size() >= 2) {
+                                size_t stored_seq_len = stored_shape[0];
+                                size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
+
+                                if (stored_hidden_size == hidden_size) {
+                                    if (stored_seq_len == total_num_tokens) {
+                                        hidden_state_input = stored_hidden_state;  // all tokens from eagle are accepted
+                                    } else {
+                                        size_t copy_length = std::min(stored_seq_len, num_scheduled_tokens);
+
+                                        size_t source_start_idx =
+                                            stored_seq_len >= copy_length ? stored_seq_len - copy_length : 0;
+                                        copy_roi_between_tensors(stored_hidden_state, source_start_idx, copy_length, hidden_state_input, current_token_idx);
+                                    }
+                                }
+                            }
+                        } else {
+                            OPENVINO_ASSERT(false, "missing hidden state from target model to eagle draft model");
+                        }
+                    }
+                } else {
+                    // fill hidden_state_data with m_hidden_states
+                    if (hidden_state_data) {
+                        OPENVINO_ASSERT(num_scheduled_tokens == 1, "unexpected num_scheduled_tokens in speculative drafting stage in eagle3 mode");
+                        std::memset(hidden_state_data + current_token_idx * hidden_size,
+                                    0,
+                                    num_scheduled_tokens * hidden_size * sizeof(float));
+                        auto hidden_state = running_sequences[seq_idx]->get_hidden_state();
+                        if (hidden_state.get_size() > 0) {
+                            auto shape = hidden_state.get_shape();
+                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size) {
+                                size_t seq_len = shape[0];
+                                size_t copy_length = std::min(seq_len, num_scheduled_tokens);
+
+                                size_t src_start_idx = seq_len >= copy_length ? seq_len - copy_length : 0;
+                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_size};
+                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_size);
+                                copy_roi_between_tensors(hidden_state, src_start_idx, copy_length, target_base, 0);
+                            }
+                        }
+                    }
+                }
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
                     if (sequence_group_type == SequenceGroupType::TOKENS) {
@@ -310,7 +457,7 @@ public:
                         *score_aggregation_window_data = 1;
                     }
                 }
-
+                current_token_idx += num_scheduled_tokens;
                 position_ids_data += num_scheduled_tokens;
                 past_lens_data += 1;
                 subsequence_begins_data += 1;
@@ -329,7 +476,31 @@ public:
                 m_request.set_tensor("token_type_ids", token_type_ids);
             }
         }
-
+        if (hidden_state_input && hidden_state_input.get_size() > 0) {
+            if (m_is_hidden_state_import_needed) {
+                try {
+                    m_request.set_tensor("target_hidden_state_input", hidden_state_input);
+                    auto shape = hidden_state_input.get_shape();
+                    shape[shape.size() - 1] = shape [shape.size() - 1] / m_adjust_factor;
+                    ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
+                    auto fake_data = fake_tensor.data<float>();
+                    std::memset(fake_data, 0, fake_tensor.get_byte_size());
+                    m_request.set_tensor("internal_hidden_state_input", fake_tensor);
+                } catch (const ov::Exception& e) {
+                }
+            } else {
+                try {
+                    m_request.set_tensor("internal_hidden_state_input", hidden_state_input);
+                    auto shape = hidden_state_input.get_shape();
+                    shape[shape.size() - 1] = shape [shape.size() - 1] * m_adjust_factor;
+                    ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
+                    auto fake_data = fake_tensor.data<float>();
+                    std::memset(fake_data, 0, fake_tensor.get_byte_size());
+                    m_request.set_tensor("target_hidden_state_input", fake_tensor);
+                } catch (const ov::Exception& e) {
+                }
+            }
+        }
         // typical LLM parameters
         m_request.set_tensor("position_ids", position_ids);
 
@@ -373,6 +544,23 @@ public:
 
         _reset_cache_rotation_coefficients();
 
+        if (m_is_hidden_state_export_needed) {
+            try {
+                m_hidden_states = m_request.get_tensor("last_hidden_state");
+                for (size_t i = 0; i < num_sequence_groups; ++i) {
+                    size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                    SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
+                    std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+                    for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                        Sequence::Ptr sequence = running_sequences[seq_idx];
+                        sequence->update_hidden_state(
+                            get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                    }
+                }
+            } catch (const ov::Exception&) {
+                m_hidden_states = ov::Tensor();
+            }
+        }
         // return logits
         return m_request.get_tensor("logits");
     }
@@ -434,6 +622,50 @@ public:
     }
 
 private:
+    ov::Tensor m_hidden_states;
+
+    // Common helper to copy a contiguous slice (first-dim range) from src to dst using ROI tensors.
+    // src_start_idx: start index along src first dimension
+    // copy_length: number of elements along first dim to copy
+    // dst_base: destination base tensor (may be full buffer or a wrapper around a raw pointer)
+    // dst_first_dim_start: start index in first dimension of dst_base where copy should be placed
+    static void copy_roi_between_tensors(const ov::Tensor& src,
+                                         size_t src_start_idx,
+                                         size_t copy_length,
+                                         const ov::Tensor& dst_base,
+                                         size_t dst_first_dim_start) {
+        if (copy_length == 0) {
+            return;
+        }
+
+        // prepare source ROI coords
+        const auto src_shape = src.get_shape();
+        OPENVINO_ASSERT(!src_shape.empty(), "source tensor rank is zero");
+        ov::Coordinate src_start(src_shape.size(), 0), src_end(src_shape.size(), 0);
+        src_start[0] = src_start_idx;
+        src_end[0] = src_start_idx + copy_length;
+        for (size_t d = 1; d < src_shape.size(); ++d) {
+            src_start[d] = 0;
+            src_end[d] = src_shape[d];
+        }
+        ov::Tensor src_roi(src, src_start, src_end);
+
+        // prepare destination ROI coords
+        const auto dst_shape = dst_base.get_shape();
+        OPENVINO_ASSERT(!dst_shape.empty(), "destination tensor rank is zero");
+        ov::Coordinate tgt_start(dst_shape.size(), 0), tgt_end(dst_shape.size(), 0);
+        tgt_start[0] = dst_first_dim_start;
+        tgt_end[0] = dst_first_dim_start + copy_length;
+        for (size_t d = 1; d < dst_shape.size(); ++d) {
+            tgt_start[d] = 0;
+            tgt_end[d] = dst_shape[d];
+        }
+        ov::Tensor tgt_roi(dst_base, tgt_start, tgt_end);
+
+        // bulk copy
+        src_roi.copy_to(tgt_roi);
+    }
+
     // Fills indices for sequences in the order defined by scheduler_output
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
