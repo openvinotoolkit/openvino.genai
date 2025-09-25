@@ -42,13 +42,15 @@ ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_co
 
 class Text2VideoPipeline::LTXPipeline {
 public:
-    std::chrono::steady_clock::duration m_load_time{0};
+    using Ms = std::chrono::duration<float, std::ratio<1, 1000>>;
+
+    float m_load_time_ms{0};
     std::shared_ptr<IScheduler> m_scheduler;
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<LTXVideoTransformer3DModel> m_transformer;
     std::shared_ptr<AutoencoderKLLTXVideo> m_vae;
     VideoGenerationConfig m_generation_config;
-    ImageGenerationPerfMetrics m_perf_metrics;  // TODO: can it be resused for video?
+    VideoGenerationPerfMetrics m_perf_metrics;
     double m_latent_timestep = -1.0;  // TODO: float?
     LTXPipeline(const std::filesystem::path& models_dir, const std::string& device, const ov::AnyMap& properties) {
         auto start_time = std::chrono::steady_clock::now();
@@ -79,7 +81,7 @@ public:
         m_vae = std::make_shared<AutoencoderKLLTXVideo>(models_dir / "vae_decoder", device, properties);
 
         initialize_generation_config(class_name);
-        m_load_time = std::chrono::steady_clock::now() - start_time;
+        m_load_time_ms = Ms{std::chrono::steady_clock::now() - start_time}.count();
     }
     void check_image_size(const int height, const int width) const {
         // TODO:
@@ -118,7 +120,6 @@ public:
             }
         );
         auto infer_end = std::chrono::steady_clock::now();
-        using Ms = std::chrono::duration<double, std::ratio<1, 1000>>;
         m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();
 
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);

@@ -30,6 +30,8 @@
 #include "debug_utils.hpp"
 
 namespace ov::genai {
+using VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;
+
 struct VideoGenerationConfig : public ImageGenerationConfig {
     double guidance_rescale = 0.0;
     size_t num_frames = 161;
