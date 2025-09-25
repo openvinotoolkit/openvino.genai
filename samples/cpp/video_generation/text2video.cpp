@@ -32,7 +32,6 @@ int main(int32_t argc, char* argv[]) {
     // LoRA later: https://huggingface.co/Lightricks/LTX-Video-ICLoRA-depth-13b-0.9.7, https://huggingface.co/Lightricks/LTX-Video-ICLoRA-pose-13b-0.9.7, https://huggingface.co/Lightricks/LTXV-LoRAs Check https://github.com/Lightricks/LTX-Video for updates
     // How is video inpainting mask specified
     // WIll ov::Tensor decode(const ov::Tensor latent); stay the same - yes, just an extra dim in Tensor
-    // using VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;
     // Wasn't need so far so not going to implement:
     //     OVLTXPipeline allows prompt_embeds and prompt_attention_mask instead of prompt; Same for negative_prompt_embeds and negative_prompt_attention_mask
     //     OVLTXPipeline allows batched generation with multiple prompts
