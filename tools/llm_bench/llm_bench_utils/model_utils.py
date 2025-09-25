@@ -250,6 +250,12 @@ def get_use_case(model_name_or_path: str | Path, task: str | None = None):
                 log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_name}')
                 return case, model_name
             model_id = config.get("model_type").lower().replace('_', '-')
+    elif Path(model_name_or_path).suffix in '.gguf':
+        import gguf_parser
+        parser = gguf_parser.GGUFParser(model_name_or_path)
+        parser.parse()
+        if parser.metadata and parser.metadata.get('general.architecture'):
+            model_id = parser.metadata.get('general.architecture').lower()
 
     if model_id is not None:
         case, model_id = get_use_case_by_model_id(model_id, task)
