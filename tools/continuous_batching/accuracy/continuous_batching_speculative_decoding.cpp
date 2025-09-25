@@ -20,7 +20,7 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
         generation_config_greedy_constant.num_assistant_tokens = 5;
     }
 
-    ov::genai::GenerationConfig generation_config_multinomial_constant = ov::genai::multinomial();
+    ov::genai::GenerationConfig generation_config_multinomial_constant = ov::genai::greedy();
     {
         generation_config_multinomial_constant.num_assistant_tokens = 5;
         generation_config_multinomial_constant.num_return_sequences = 1;
@@ -31,7 +31,7 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
         generation_config_greedy_dynamic.assistant_confidence_threshold = 0.8f;
     }
 
-    ov::genai::GenerationConfig generation_config_multinomial_dynamic = ov::genai::multinomial();
+    ov::genai::GenerationConfig generation_config_multinomial_dynamic = ov::genai::greedy();
     {
         generation_config_multinomial_dynamic.assistant_confidence_threshold = 0.8f;
     }
@@ -40,7 +40,7 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
         generation_config_greedy_constant,
         generation_config_multinomial_constant,
         generation_config_greedy_dynamic,
-        generation_config_multinomial_dynamic,
+        //generation_config_multinomial_dynamic,
     };
 }
 
@@ -104,7 +104,7 @@ int main(int argc, char* argv[]) try {
     // mode - vLLM or dynamic_split_fuse
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     // vLLM specific params
-    scheduler_config.max_num_seqs = 2;
+    scheduler_config.max_num_seqs = 3;
     
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device)});
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, generation_config);

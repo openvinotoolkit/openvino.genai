@@ -34,6 +34,7 @@ class Scheduler {
     std::shared_ptr<CacheManager> m_cache_manager;
 
     size_t m_snapkv_window_size = 1;
+    bool m_validation_mode_enabled = false;
 public:
     struct Output {
         // IDs of scheduled groups
@@ -73,6 +74,10 @@ public:
     void release() {
         m_cache_manager.reset();
         m_block_manager.reset();
+    }
+
+    void set_validation_mode(bool is_validation_mode_enabled) {
+        m_validation_mode_enabled = is_validation_mode_enabled;
     }
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
@@ -354,7 +359,7 @@ private:
             // Question: do we need to schedule preeempted first as it's done in vLLM?
             // Answer: preempted sequences have low priority, so they should be after "running" ones. So, here we
             //         keep latencies for sequence groups of high priority
-            if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
+            if (sequence_group->can_generate_tokens() && (!sequence_group->is_waiting() || sequence_group->is_caching()) && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 OPENVINO_ASSERT(num_running_seqs);
@@ -368,8 +373,11 @@ private:
                 // Note: current function can return more than 1 token even for generation phase in case of some tokens
                 // of current sequence group were evicted before
                 size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
-
+                // if validation mode, we want to make sure the batch validation is done in one go
+                if (m_validation_mode_enabled && available_tokens_per_seq_in_megabatch < num_available_tokens_per_seq)
+                    break;
                 size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
+                
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
                 while (!m_block_manager->can_append_slots(sequence_group)){
@@ -389,6 +397,9 @@ private:
                 // allocate new slots
                 std::map<size_t, std::list<size_t>> copy_blocks_map = m_block_manager->append_slots(sequence_group);
 
+                // extra steps for validation mode to make sure we have enough blocks to hold all the scheduled tokens
+                if (sequence_group->get_num_tokens_to_validate())
+                    m_block_manager->allocate_slots_for_validation(sequence_group);
                 // add information to scheduler_output
                 {
                     auto request_id = sequence_group->get_request_id();

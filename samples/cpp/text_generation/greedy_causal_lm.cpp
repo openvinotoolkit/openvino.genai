@@ -10,11 +10,18 @@ int main(int argc, char* argv[]) try {
     std::string models_path = argv[1];
     std::string prompt = argv[2];
     std::string device = "CPU";  // GPU can be used as well
-
     ov::genai::LLMPipeline pipe(models_path, device);
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
-    std::string result = pipe.generate(prompt, config);
+    auto start_time = std::chrono::high_resolution_clock::now();
+    auto streamer = [](std::string subword) {
+        std::cout << subword << std::flush;
+        return ov::genai::StreamingStatus::RUNNING;
+    };
+    std::string result = pipe.generate(prompt, config, streamer);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "\nGeneration completed in " << duration.count() << " ms" << std::endl;
     std::cout << result << std::endl;
 } catch (const std::exception& error) {
     try {

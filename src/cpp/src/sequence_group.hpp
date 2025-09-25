@@ -20,7 +20,8 @@ enum class SequenceStatus {
     RUNNING = 0,
     FINISHED = 1,
     OUT_OF_MEMORY = 2,
-    WAITING = 3
+    WAITING = 3,
+    CACHING = 4 // Sequence is waiting for top-k to be finialized
 };
 
 enum class SequenceGroupType {
@@ -42,6 +43,7 @@ class Sequence {
 
     TokenIds m_generated_ids;
     LogProbs m_generated_log_probs;
+    ov::Tensor m_hidden_state;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     SequenceStatus m_status = SequenceStatus::RUNNING;
@@ -66,6 +68,8 @@ class Sequence {
 
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
+        m_generated_log_probs(seq.m_generated_log_probs),
+        m_hidden_state(seq.m_hidden_state),
         m_grouped_id(id),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
@@ -115,6 +119,10 @@ public:
         return m_status == SequenceStatus::WAITING;
     }
 
+    bool is_caching() const {
+        return m_status == SequenceStatus::CACHING;
+    }
+
     void set_status(SequenceStatus status) {
         m_status = status;
     }
@@ -125,6 +133,14 @@ public:
 
     void set_finish_reason(GenerationFinishReason finish_reason) {
         m_finish_reason = finish_reason;
+    }
+
+    void update_hidden_state(ov::Tensor tensor) {
+        m_hidden_state = tensor;
+    }
+
+    ov::Tensor& get_hidden_state() {
+        return m_hidden_state;
     }
 
     // appends new tokens to a generated part
@@ -479,6 +495,27 @@ public:
         return running_seqs;
     }
 
+    std::vector<Sequence::Ptr> get_caching_sequences() {
+        std::vector<Sequence::Ptr> caching_seqs;
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_caching()) {
+                caching_seqs.emplace_back(m_sequences[seq_id]);
+            }
+        }
+
+        return caching_seqs;
+    }
+
+    std::vector<Sequence::CPtr> get_caching_sequences() const {
+        std::vector<Sequence::CPtr> caching_seqs;
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_caching()) {
+                caching_seqs.emplace_back(m_sequences[seq_id]);
+            }
+        }
+
+        return caching_seqs;
+    }
     uint64_t get_request_id() const {
         return m_request_id;
     }
@@ -561,7 +598,7 @@ public:
         m_num_validation_tokens = k;
     }
 
-    size_t get_num_tokens_to_validate() {
+    size_t get_num_tokens_to_validate() const {
         return m_num_validation_tokens;
     }
     
@@ -643,6 +680,19 @@ public:
         return (get_context_len() - get_num_evicted_tokens() + m_block_size - 1) / m_block_size;
     }
 
+    /**
+     * @return The number of logical KV cache blocks required to host 1 extra token in this sequence group, taking into account previous token evictions.
+     */
+    size_t get_num_logical_blocks_for_1_generation() const {
+        return (get_context_len() - get_num_evicted_tokens() - get_num_tokens_to_validate() + m_block_size - 1) / m_block_size;
+    }
+    /**
+     * @return The number of logical KV cache blocks required to host validation tokens in this sequence group, taking into account previous token evictions.
+     */
+    size_t get_num_logical_blocks_for_validation_tokens() const {
+        return (get_context_len() - get_num_evicted_tokens() - 1 + m_block_size - 1) / m_block_size;
+    }
+
     // requires number of physical blocks for next generation
     size_t get_num_blocks() const {
         return get_num_logical_blocks();
@@ -682,6 +732,15 @@ public:
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
                 return true;
+            }
+        }
+        return m_is_gen_paused;
+    }
+
+    bool is_caching() const {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_caching()) {
+                return true; // in the middle of drafting stage
             }
         }
         return m_is_gen_paused;

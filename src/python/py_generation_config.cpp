@@ -247,6 +247,13 @@ void init_generation_config(py::module_& m) {
             }
         );
 
+    py::class_<GenerationConfig::eagle_params>(m, "Eagle_PARAMS", "eagle tree parameters for assisting generation")
+        .def(py::init<>())
+        .def_readwrite("branching_factor", &GenerationConfig::eagle_params::branching_factor)
+        .def_readwrite("tree_depth", &GenerationConfig::eagle_params::tree_depth)
+        .def_readwrite("total_tokens", &GenerationConfig::eagle_params::total_tokens);
+
+
     // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
@@ -276,6 +283,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("logprobs", &GenerationConfig::logprobs)
         .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
+        .def_readwrite("eagle_config", &GenerationConfig::eagle_tree_params, "Eagle tree parameters for assisting generation")
         .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)

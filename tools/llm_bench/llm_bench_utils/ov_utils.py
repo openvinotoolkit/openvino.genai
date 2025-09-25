@@ -228,6 +228,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
     config = {}
     draft_model_path = kwargs.get("draft_model", '')
     cb_config = kwargs.get("cb_config")
+    eagle_config = kwargs.get("eagle_config", None)
     use_streamer_metrics = False
     if cb_config is not None:
         config["scheduler_config"] = get_scheduler_config_genai(cb_config)
@@ -242,6 +243,10 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
         draft_model_load_kwargs = {'scheduler_config': get_scheduler_config_genai(kwargs.get("draft_cb_config"), config_name="draft CB config")}\
             if kwargs.get("draft_cb_config") is not None else {}
         config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
+    if eagle_config:
+        log.info("eagle decoding is activated, if not specified, default to eagle3")
+        eagle_mode = kwargs.get("eagle_mode", "EAGLE3")
+        config['eagle_mode'] = eagle_mode
 
     if kwargs.get('max_ngram_size') and kwargs.get('num_assistant_tokens'):
         log.info("Prompt Lookup decoding is activated")

@@ -237,6 +237,37 @@ Recommended models: `meta-llama/Llama-3.2-1B-Instruct`, `meta-llama/Llama-3.2-8B
 **Note:**  
 Structured output enforcement ensures valid JSON formatting, but does not guarantee factual accuracy or meaningfulness. The model may generate plausible-looking JSON with incorrect or nonsensical data (e.g., `{"explanation": "John", "output": 200000}` or `{"final_answer": "AbrakaKadabra9999######4242"}`). For best results, use the latest or fine-tuned models to improve output quality and relevance.
 
+### 6. Eagle Speculative LM (`eagle_speculative_lm`)
+- **Description:**
+EAGLE is a lossless acceleration algorithm for LLM inference.
+
+- **Convert model**
+If you have your own draft model, you can refer to https://jira.devtools.intel.com/browse/CVS-171947 to convert the model.
+We currently have a set of converted models which you can download (password: openvino):
+``` bash
+scp -r openvino-ci-97@10.67.108.171:~/bell/speculative_decoding/eagle3/llama-3.1-8b-instruct-ov-int4/ your_path_to_main/
+scp -r openvino-ci-97@10.67.108.171:~/bell/speculative_decoding/eagle3/EAGLE3-LLaMA3.1-instruct-8B-ov-int4/ your_path_to_draft/
+```
+
+- **Run Command:**
+Linux:
+  ```bash
+  source <OpenVINO_install_path>/setupvars.sh
+  ./eagle_speculative_lm <MODEL_DIR> <DRAFT_MODEL_DIR> <MAX_NEW_TOKENS> <DEPTH> "<PROMPT>"
+  ```
+Windows:
+  ```bash
+  <OpenVINO_install_path>/setupvars.bat
+  eagle_speculative_lm.exe <MODEL_DIR> <DRAFT_MODEL_DIR> <MAX_NEW_TOKENS> <DEPTH> "<PROMPT>"
+  ```
+
+- **Benchmark Tools**
+``` bash
+scp openvino-ci-97@10.67.108.171:~/xufang/run_eagle_base.py your_path_to_tool
+scp -r openvino-ci-97@10.67.108.171:~/xufang/data your_path_to_test_datasets
+python run_eagle_base.py
+```
+
 ## Troubleshooting
 
 ### Unicode characters encoding error on Windows

@@ -284,7 +284,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             )
 
     tokenization_start = time.perf_counter()
-    input_data = tokenizer.encode(input_text_list)
+    input_data = tokenizer.encode(input_text_list, add_special_tokens = False)
     tokenization_end = time.perf_counter()
     tokenization_time = [(tokenization_end - tokenization_start) * 1000]
 
@@ -339,6 +339,13 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         if args.get('assistant_confidence_threshold', None):
             gen_config.assistant_confidence_threshold = float(args['assistant_confidence_threshold'])
             config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
+        if args.get("eagle_config", None):
+            gen_config.eagle_config.branching_factor = args.get("eagle_config").get("branching_factor")
+            config_info += f" -- eagle3 branching_factor {gen_config.eagle_config.branching_factor}"
+            gen_config.eagle_config.tree_depth = args.get("eagle_config").get("tree_depth")
+            config_info += f" tree_depth {gen_config.eagle_config.tree_depth}"
+            gen_config.eagle_config.total_tokens = args.get("eagle_config").get("total_tokens")
+            config_info += f" total_tokens {gen_config.eagle_config.total_tokens}"
         log.info(config_info)
     if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
         config_info = "Prompt Lookup decoding config: "
@@ -356,7 +363,29 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         generated_text = tokenizer.decode(generated_tokens)
         detokenization_end = time.perf_counter()
         tokenization_time.append((detokenization_end - detokenization_start) * 1000)
+    extended_perf_metrics = generation_result.extended_perf_metrics
+    if (extended_perf_metrics):
+        main_model_metrics = extended_perf_metrics.main_model_metrics
+        print(f"MAIN MODEL")
+        print(f"  Generate time: {main_model_metrics.get_generate_duration().mean:.2f} ms" )
+        print(f"  TTFT: {main_model_metrics.get_ttft().mean:.2f} ± {main_model_metrics.get_ttft().std:.2f} ms" )
+        print(f"  TTST: {main_model_metrics.get_ttst().mean:.2f} ± {main_model_metrics.get_ttst().std:.2f} ms/token")
+        print(f"  TPOT: {main_model_metrics.get_tpot().mean:.2f} ± {main_model_metrics.get_tpot().std:.2f} ms/iteration")
+        print(f"  AVG Latency: {main_model_metrics.get_latency().mean:.2f} ± {main_model_metrics.get_latency().std:.2f} ms/token")
+        print(f"  Num generated token: {main_model_metrics.get_num_generated_tokens()} tokens")
+        print(f"  Total iteration number: {len(main_model_metrics.raw_metrics.m_durations)}")
+        print(f"  Num accepted token: {extended_perf_metrics.get_num_accepted_tokens()} tokens")
 
+        draft_model_metrics = extended_perf_metrics.draft_model_metrics
+        print(f"DRAFT MODEL" )
+        print(f"  Generate time: {draft_model_metrics.get_generate_duration().mean:.2f} ms" )
+        print(f"  TTFT: {draft_model_metrics.get_ttft().mean:.2f} ms")
+        print(f"  TTST: {draft_model_metrics.get_ttst().mean:.2f} ms/token")
+        print(f"  TPOT: {draft_model_metrics.get_tpot().mean:.2f} ± {draft_model_metrics.get_tpot().std:.2f} ms/token")
+        print(f"  AVG Latency: {draft_model_metrics.get_latency().mean:.2f} ± {draft_model_metrics.get_latency().std:.2f} ms/iteration")
+        print(f"  Num generated token: {draft_model_metrics.get_num_generated_tokens()} tokens")
+        print(f"  Total iteration number: {len(draft_model_metrics.raw_metrics.m_durations)}")
+        print()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
         max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
@@ -504,6 +533,14 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         if args.get("assistant_confidence_threshold", None):
             gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
             config_info += f'assistant_confidence_threshold {args["assistant_confidence_threshold"]}'
+        if args.get("eagle_config", None):
+            gen_config.eagle_config.branching_factor = args.get("eagle_config").get("branching_factor")
+            config_info += f" -- eagle3 branching_factor {gen_config.eagle_config.branching_factor}"
+            gen_config.eagle_config.tree_depth = args.get("eagle_config").get("tree_depth")
+            config_info += f" tree_depth {gen_config.eagle_config.tree_depth}"
+            gen_config.eagle_config.total_tokens = args.get("eagle_config").get("total_tokens")
+            config_info += f" total_tokens {gen_config.eagle_config.total_tokens}"
+        log.info(config_info)
         log.info(config_info)
     if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
         config_info = "Prompt Lookup decoding config: "

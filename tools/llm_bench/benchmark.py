@@ -164,6 +164,8 @@ def get_argprser():
     parser.add_argument("--draft_device", required=False, default=None, help="Inference device for Speculative decoding of draft model")
     parser.add_argument("--draft_cb_config", required=False, default=None,
                         help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model")
+    parser.add_argument("--eagle_config", required=False, default=None,
+                        help="Path to file with eagle3 settings or dict for Speculative decoding of draft model")
     parser.add_argument("--num_assistant_tokens", required=False, default=None,
                         help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding", type=int)
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,

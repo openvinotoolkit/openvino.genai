@@ -47,19 +47,6 @@ std::pair<std::string, Any> draft_model(
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
-std::pair<std::string, Any> draft_model(
-    std::string& model_str,
-    ov::Tensor& weights_tensor,
-    const ov::genai::Tokenizer& tokenizer,
-    const std::string& device,
-    const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config) {
-    auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
-
-    auto model = utils::singleton_core().read_model(model_str, weights_tensor);
-    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
-}
-
 // Public LLMPipeline
 
 ov::genai::LLMPipeline::LLMPipeline(
