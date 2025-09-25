@@ -9,7 +9,7 @@ from diffusers.utils import export_to_video
 def generate(pipeline, frame_rate):
     prompt = "Will Smith eating spaghetti"
     negative_prompt = "worst quality, inconsistent motion, blurry, jittery, distorted"
-    video = pipeline(
+    ltx_pipeline_output = pipeline(
         prompt=prompt,
         # prompt_embeds=0,
         # prompt_attention_mask=1,
@@ -23,7 +23,7 @@ def generate(pipeline, frame_rate):
         generator=torch.Generator(device="cpu").manual_seed(42),
         guidance_scale=3,
     )
-    return video.frames[0]
+    return ltx_pipeline_output.frames[0]
 
 
 def main():
