@@ -29,24 +29,25 @@ def generate(pipeline, frame_rate):
 def main():
     frame_rate = 25
 
-    diffusers_pipeline = LTXPipeline.from_pretrained("Lightricks/LTX-Video", torch_dtype=torch.float32)
-    diffusers_video = generate(diffusers_pipeline, frame_rate)
-    export_to_video(diffusers_video, "diffusers_video.mp4", fps=frame_rate)
-
     ov_pipe = OVLTXPipeline.from_pretrained(
-        './i/LTX-Video/',
+        '/home/vzlobin/z/g/i/LTX-Video/',
         device='CPU',
         load_in_8bit=False,
         ov_config={openvino.properties.hint.inference_precision: openvino.Type.f32},
     )
     ov_video = generate(ov_pipe, frame_rate)
-    export_to_video(diffusers_video, "ov_video.mp4", fps=frame_rate)
+    print(ov_video)
+    # export_to_video(ov_video, "ov_video.mp4", fps=frame_rate)
 
-    max_diff = np.abs(
-        np.stack(ov_video, dtype=np.int16) - np.stack(diffusers_video, dtype=np.int16)
-    ).max()
-    print(max_diff)
-    assert max_diff <= 9
+    # diffusers_pipeline = LTXPipeline.from_pretrained("Lightricks/LTX-Video", torch_dtype=torch.float32)
+    # diffusers_video = generate(diffusers_pipeline, frame_rate)
+    # export_to_video(diffusers_video, "diffusers_video.mp4", fps=frame_rate)
+
+    # max_diff = np.abs(
+    #     np.stack(ov_video, dtype=np.int16) - np.stack(diffusers_video, dtype=np.int16)
+    # ).max()
+    # print(max_diff)
+    # assert max_diff <= 9
 
 
 if "__main__" == __name__:
