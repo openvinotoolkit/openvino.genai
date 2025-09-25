@@ -48,7 +48,13 @@ int32_t main(int32_t argc, char* argv[]) try {
         unet.export_model(blob_path / "unet");
 
         auto vae = ov::genai::AutoencoderKL(root_dir / "vae_decoder", "CPU", ov::AnyMap{});
-        vae.export_model(blob_path / "vae_decoder");
+        vae.export_model(blob_path);
+        // AutoencoderKL can be composed with decoder and encoder models
+        // exported/
+        // └── vae_decoder/
+        //     └── openvino_model.blob
+        // └── vae_encoder/
+        //     └── openvino_model.blob
 
         // create pipeline from the exported models
         auto imported_pipe = ov::genai::Text2ImagePipeline::stable_diffusion_xl(
@@ -60,7 +66,7 @@ int32_t main(int32_t argc, char* argv[]) try {
                                                    device,
                                                    ov::genai::blob_path(blob_path / "text_encoder_2")),
             ov::genai::UNet2DConditionModel(root_dir / "unet", device, ov::genai::blob_path(blob_path / "unet")),
-            ov::genai::AutoencoderKL(root_dir / "vae_decoder", "CPU", ov::genai::blob_path(blob_path / "vae_decoder")));
+            ov::genai::AutoencoderKL(root_dir / "vae_decoder", "CPU", ov::genai::blob_path(blob_path)));
     }
 
     // export/import with reshaped pipeline

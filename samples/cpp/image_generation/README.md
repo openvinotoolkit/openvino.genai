@@ -11,6 +11,7 @@ There are several sample files:
  - [`image2image_concurrency.cpp.cpp`](./image2image_concurrency.cpp) demonstrates concurrent usage of the image to image pipeline to create multiple images with different prompts
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.cpp`](./benchmark_image_gen.cpp) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
+ - [`stable_diffusion_export_import.cpp`](./stable_diffusion_export_import.cpp) demonstrates how to export and import compiled models from/to the text to image pipeline
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -306,5 +307,3 @@ pipeline.export_model(models_path / "blobs");
 // import models
 ov::genai::Text2ImagePipeline imported_pipeline(models_path, device, ov::genai::blob_path(models_path / "blobs"));
 ```
-
-For the NPU device, the `ov::cache_mode(ov::CacheMode::OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.
