@@ -9,7 +9,8 @@ from transformers import (
     AutoModel,
     SpeechT5ForTextToSpeech,
     SpeechT5Processor,
-    SpeechT5HifiGan
+    SpeechT5HifiGan,
+    AutoModelForSequenceClassification
 )
 from diffusers.pipelines import DiffusionPipeline, LDMSuperResolutionPipeline
 from optimum.intel.openvino import (
@@ -21,7 +22,8 @@ from optimum.intel.openvino import (
     OVPipelineForInpainting,
     OVPipelineForImage2Image,
     OVModelForFeatureExtraction,
-    OVModelForTextToSpeechSeq2Seq
+    OVModelForTextToSpeechSeq2Seq,
+    OVModelForSequenceClassification
 )
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 
@@ -31,7 +33,8 @@ TOKENIZE_CLASSES_MAPPING = {
     't5': AutoTokenizer,
     'blenderbot': AutoTokenizer,
     'falcon': AutoTokenizer,
-    'speecht5': SpeechT5Processor
+    'speecht5': SpeechT5Processor,
+    'bert': AutoTokenizer
 }
 
 TEXT_TO_SPEECH_VOCODER_CLS = SpeechT5HifiGan
@@ -41,6 +44,10 @@ IMAGE_GEN_CLS = OVDiffusionPipeline
 INPAINTING_IMAGE_GEN_CLS = OVPipelineForInpainting
 
 IMAGE_TO_IMAGE_GEN_CLS = OVPipelineForImage2Image
+
+TEXT_RERANK_GEN_CLS = OVModelForSequenceClassification
+
+TEXT_RERANK_PT_GEN_CLS = AutoModelForSequenceClassification
 
 OV_MODEL_CLASSES_MAPPING = {
     'decoder': OVModelForCausalLM,
@@ -136,7 +143,7 @@ USE_CASES = {
         "gptj"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
-    'text_embed': ["bge", "bert", "albert", "roberta", "xlm-roberta"],
+    'rag': ["bge", "bert", "albert", "roberta", "xlm-roberta"],
     'text2speech': ['speecht5'],
 }
 
@@ -148,7 +155,9 @@ DEFAULT_MODEL_CLASSES = {
     'code_gen': 'decoder',
     'ldm_super_resolution': 'ldm_super_resolution',
     "vlm": "vlm",
+    'rag': 'bert',
     'text_embed': 'bert',
+    'text_rerank': 'bert',
     'text2speech': 'speecht5',
 }
 
