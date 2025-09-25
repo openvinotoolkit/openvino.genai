@@ -145,10 +145,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
     ov_tokenizer.set_chat_template(tokenizer_config["chat_template"])
     ov_full_history_str = ov_tokenizer.apply_chat_template(conversation, add_generation_prompt=False)
 
-    if ov_full_history_str != hf_full_history_str:
-        print(f"hf reference: {hf_full_history_str}")
-        print(f"ov_genai out: {ov_full_history_str}")
-    assert ov_full_history_str == hf_full_history_str
+    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
 
 
 @pytest.mark.precommit
@@ -178,10 +175,7 @@ def test_apply_chat_template_nested_content(model_tmp_path, ov_hf_tokenizers, to
         messages, add_generation_prompt=add_generation_prompt
     )
 
-    if ov_full_history_str != hf_full_history_str:
-        print(f"HF reference:\n", hf_full_history_str)
-        print(f"GenAI output:\n", ov_full_history_str)
-    assert ov_full_history_str == hf_full_history_str
+    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
 
 
 @pytest.mark.precommit
@@ -221,10 +215,7 @@ def test_apply_chat_template_with_tools_and_extra_context(model_tmp_path, ov_hf_
         conversation, add_generation_prompt=add_generation_prompt, tools=tools, extra_context=extra_context
     )
 
-    if ov_full_history_str != hf_full_history_str:
-        print(f"HF reference:\n", hf_full_history_str)
-        print(f"GenAI output:\n", ov_full_history_str)
-    assert ov_full_history_str == hf_full_history_str
+    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
 
 
 @pytest.mark.precommit
@@ -242,10 +233,7 @@ def test_non_string_chat_template(hf_ov_genai_models):
 
     ov_full_history_str = genai_tokenzier.apply_chat_template(conversation, add_generation_prompt=False)
 
-    if ov_full_history_str != hf_full_history_str:
-        print(f"HF reference:\n", hf_full_history_str)
-        print(f"GenAI output:\n", ov_full_history_str)
-    assert ov_full_history_str == hf_full_history_str
+    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
 
 
 @pytest.mark.precommit
