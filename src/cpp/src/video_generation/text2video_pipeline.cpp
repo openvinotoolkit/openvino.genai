@@ -24,10 +24,9 @@
 
 using namespace ov::genai;
 
-using namespace ov::genai;
 class Text2VideoPipeline::LTXPipeline {
 public:
-    std::chrono::steady_clock::duration m_load_time_ms{0};
+    std::chrono::steady_clock::duration m_load_time{0};
     std::shared_ptr<IScheduler> m_scheduler;
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<LTXVideoTransformer3DModel> m_transformer;
@@ -36,6 +35,7 @@ public:
     ImageGenerationPerfMetrics m_perf_metrics;  // TODO: can it be resused for video?
     double m_latent_timestep = -1.0;  // TODO: float?
     LTXPipeline(const std::filesystem::path& models_dir, const std::string& device, const ov::AnyMap& properties) {
+        auto start_time = std::chrono::steady_clock::now();
         // TODO: move to common
         const std::filesystem::path model_index_path = models_dir / "model_index.json";
         std::ifstream file(model_index_path);
@@ -63,6 +63,7 @@ public:
         m_vae = std::make_shared<AutoencoderKLLTXVideo>(models_dir / "vae_decoder", device, properties);
 
         initialize_generation_config(class_name);
+        m_load_time = std::chrono::steady_clock::now() - start_time;
     }
     void check_image_size(const int height, const int width) const {
         // TODO:
@@ -96,15 +97,15 @@ public:
             do_classifier_free_guidance,
             generation_config.max_sequence_length, {
                 ov::genai::pad_to_max_length(true),
-                ov::genai::max_length(generation_config.max_sequence_length),  // TODO: should infer() do that for everyone?
+                ov::genai::max_length(generation_config.max_sequence_length),
                 ov::genai::add_special_tokens(true)
             }
         );
         auto infer_end = std::chrono::steady_clock::now();
         using Ms = std::chrono::duration<double, std::ratio<1, 1000>>;
-        m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();  // TODO: explain in docstrings available metrics
+        m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();
 
-        prompt_embeds = ::numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
+        prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
         ov::Tensor ref_prompt_embeds = from_npy("prompt_embeds.npy");
         OPENVINO_ASSERT(max_diff(prompt_embeds, ref_prompt_embeds) == 0.0f);
 
@@ -262,13 +263,8 @@ public:
         m_generation_config.strength = 1.0f;
         m_generation_config.max_sequence_length = 128;
     }
-    void save_load_time(std::chrono::steady_clock::time_point start_time) {
-        // TODO: move to common
-        auto stop_time = std::chrono::steady_clock::now();
-        m_load_time_ms += stop_time - start_time;
-    }
+
     void set_scheduler(std::shared_ptr<Scheduler> scheduler) {
-        // TODO: move to common
         auto casted = std::dynamic_pointer_cast<IScheduler>(scheduler);
         OPENVINO_ASSERT(casted != nullptr, "Passed incorrect scheduler type");
         m_scheduler = casted;
