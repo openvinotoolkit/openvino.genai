@@ -54,8 +54,11 @@ public:
     virtual StreamingStatus write(ParsedMessage& message);
 
     CallbackTypeVariant write(std::string message);
-    ParsedMessage m_parsed_message;
+    
+    ParsedMessage get_parsed_message() const { return m_parsed_message; }
+    std::vector<std::shared_ptr<IncrementalParserBase>> get_parsers() const { return m_parsers; }
 private:
+    ParsedMessage m_parsed_message;
     std::string m_text_buffer;
     std::vector<std::shared_ptr<IncrementalParserBase>> m_parsers;
 };

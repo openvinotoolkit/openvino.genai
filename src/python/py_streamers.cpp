@@ -129,7 +129,7 @@ void init_streamers(py::module_& m) {
             },
             py::arg("token"));
 
-    py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>>(m, "TextParserStreamer")
+    py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>, TextStreamer>(m, "TextParserStreamer")
         .def(py::init([](const Tokenizer& tokenizer,
                          std::vector<std::variant<std::shared_ptr<IncrementalParserBase>, std::string>> parsers) {
                 return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
@@ -137,12 +137,16 @@ void init_streamers(py::module_& m) {
             py::arg("tokenizer"),
             py::arg("parsers") = std::vector<std::variant<std::shared_ptr<IncrementalParserBase>, std::string>>({}),
             "TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.")
-        .def("write",
-             py::overload_cast<ParsedMessage&>(&TextParserStreamer::write),
-             py::arg("message"),
-             "Write is called with a ParsedMessage. Returns StreamingStatus.")
+        // .def("write",
+        //      py::overload_cast<ParsedMessage&>(&TextParserStreamer::write),
+        //      py::arg("message"),
+        //      "Write is called with a ParsedMessage. Returns StreamingStatus.")
         .def("write",
              py::overload_cast<std::string>(&TextParserStreamer::write),
              py::arg("message"),
-             "Write is called with a string message. Returns CallbackTypeVariant.");
+             "Write is called with a string message. Returns CallbackTypeVariant.")
+        
+        .def("get_parsed_message", &TextParserStreamer::get_parsed_message, "Get the current parsed message")
+
+        .def("get_parsers", &TextParserStreamer::get_parsers, "Get the list of parsers");
 }

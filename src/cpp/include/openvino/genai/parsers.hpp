@@ -15,11 +15,6 @@ namespace genai {
 
 using ParsedMessage = std::map<std::string, std::string>;
 
-class ParsedJSONMessage {
-public:
-    std::map<std::string, std::string> content;
-};
-
 class IncrementalParserBase {
 public:
     IncrementalParserBase() = default;
@@ -44,7 +39,7 @@ private:
     std::string m_open_tag = "<think>";
     std::string m_close_tag = "</think>";
 public:
-    DeepSeekR1ReasoningParser() = default;
+    DeepSeekR1ReasoningParser(bool starts_with_thinking = true) : m_starts_with_thinking(starts_with_thinking) {};
     std::map<std::string, std::string> accumulated_parsed;
 
     ParsedMessage parse(

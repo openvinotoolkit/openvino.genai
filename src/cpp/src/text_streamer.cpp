@@ -131,11 +131,10 @@ TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<P
         for (auto& parser : parsers) {
             if (std::holds_alternative<std::string>(parser)) {
                 auto parser_name = std::get<std::string>(parser);
-                if (IncrementalParserBase::registered_parsers.find(parser_name) != IncrementalParserBase::registered_parsers.end()) {
-                   m_parsers.push_back(IncrementalParserBase::registered_parsers[parser_name]);
-                } else {
+                if (IncrementalParserBase::registered_parsers.find(parser_name) == IncrementalParserBase::registered_parsers.end()) {
                     OPENVINO_THROW("Parser with name " + parser_name + " is not registered");
                 }
+                m_parsers.push_back(IncrementalParserBase::registered_parsers[parser_name]);
             } else {
                 m_parsers.push_back(std::get<std::shared_ptr<IncrementalParserBase>>(parser));
             }
@@ -154,6 +153,7 @@ CallbackTypeVariant TextParserStreamer::write(std::string message) {
         // if (parser->is_active()) {
             m_parsed_message = parser->parse(m_parsed_message, m_text_buffer, message);
         // }
+        // m_parsed_message["content"] += message;
     }
 
     m_text_buffer = message;
