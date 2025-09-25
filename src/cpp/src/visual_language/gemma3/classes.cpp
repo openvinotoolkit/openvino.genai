@@ -184,4 +184,10 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma3::get_position
     return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size + 1);
 }
 
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma3::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
+    // position_ids in Gemma3 are 1-indexed
+    // https://github.com/huggingface/optimum-intel/blob/v1.24.0/optimum/intel/openvino/modeling_visual_language.py#L874-L876
+    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size + 1);
+}
+
 } // namespace ov::genai
