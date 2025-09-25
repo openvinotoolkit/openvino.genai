@@ -27,7 +27,8 @@ int main(int32_t argc, char* argv[]) {
     // private copy constructors
     // const VideoGenerationConfig& may outlive VideoGenerationConfig?
     // hide negative prompt to Property
-    // LoRA later: ltxv-2b-0.9.8-distilled.safetensors, https://huggingface.co/Lightricks/LTX-Video-ICLoRA-depth-13b-0.9.7, https://huggingface.co/Lightricks/LTX-Video-ICLoRA-pose-13b-0.9.7, https://huggingface.co/Lightricks/LTXV-LoRAs Check https://github.com/Lightricks/LTX-Video for updates
+    // Allow selecting different models to export from optimum-intel, for example ltxv-2b-0.9.8-distilled.safetensors
+    // LoRA later: https://huggingface.co/Lightricks/LTX-Video-ICLoRA-depth-13b-0.9.7, https://huggingface.co/Lightricks/LTX-Video-ICLoRA-pose-13b-0.9.7, https://huggingface.co/Lightricks/LTXV-LoRAs Check https://github.com/Lightricks/LTX-Video for updates
     // How is video inpainting mask specified
     // WIll ov::Tensor decode(const ov::Tensor latent); stay the same - yes, just an extra dim in Tensor
     // using VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;
@@ -40,7 +41,8 @@ int main(int32_t argc, char* argv[]) {
     // Cover all config members in sample. Use the default values but explicitly
     // Prefer patching optimum-intel to include more stuff into a model instead of implementing it in C++
     // TODO: support video-to-video, inpainting?
-    // image to video described in https://huggingface.co/Lightricks/LTX-Video
+    // image to video described in https://huggingface.co/Lightricks/LTX-Video (class LTXConditionPipeline)
+    // Optimum doesn't have LTXLatentUpsamplePipeline class
     // Controlled video from https://github.com/Lightricks/LTX-Video
     // TODO: decode, perf metrics, set_scheduler, set/get_generation_config, reshape, compile, clone()
     // TODO: Rename image->video everywhere
