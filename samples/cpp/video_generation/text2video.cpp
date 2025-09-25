@@ -15,29 +15,40 @@ int main(int32_t argc, char* argv[]) {
 
     std::filesystem::path models_dir = argv[1];
     std::string prompt = argv[2];
-    // TODO: Test GPU, NPU, HETERO, MULTI, AUTO, different steps on different devices
-    // TODO: OpenCV?
-    // TODO: describe algo
-    // scheduler needs extra dim?
     // upgrade diffusers, take from master
     // optimum-intel vs diffusers
-    // update validation tools later
-    // Vide instead of images because of video generation confing
+    // Compare with https://github.com/Lightricks/LTX-Video
+    // TODO: Test GPU, NPU, HETERO, MULTI, AUTO, different steps on different devices
+    // TODO: describe algo to generate a video
+    // scheduler needs extra dim?
+    // Mention that will update validation tools later
+    // Video instead of images because of video generation confing
     // new classes LTXVideoTransformer3DModel AutoencoderKLLTXVideo
     // private copy constructors
     // const VideoGenerationConfig& may outlive VideoGenerationConfig?
-    // hide negative prompt
-    // LoRA?
-    // How is vedeo inpainting mask specified
-    // WIll v::Tensor decode(const ov::Tensor latent); stay the same - yes, just an extra dim in Tensor
+    // hide negative prompt to Property
+    // LoRA later: ltxv-2b-0.9.8-distilled.safetensors, https://huggingface.co/Lightricks/LTX-Video-ICLoRA-depth-13b-0.9.7, https://huggingface.co/Lightricks/LTX-Video-ICLoRA-pose-13b-0.9.7, https://huggingface.co/Lightricks/LTXV-LoRAs Check https://github.com/Lightricks/LTX-Video for updates
+    // How is video inpainting mask specified
+    // WIll ov::Tensor decode(const ov::Tensor latent); stay the same - yes, just an extra dim in Tensor
     // using VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;
-    // wasn't need so far:
-    //     TODO: OVLTXPipeline allows prompt_embeds and prompt_attention_mask instead of prompt; Same for negative_prompt_embeds and negative_prompt_attention_mask
-    //     TODO: OVLTXPipeline allows batched generation with multiple prompts
+    // Wasn't need so far so not going to implement:
+    //     OVLTXPipeline allows prompt_embeds and prompt_attention_mask instead of prompt; Same for negative_prompt_embeds and negative_prompt_attention_mask
+    //     OVLTXPipeline allows batched generation with multiple prompts
     // Tests:
     //     Functional
     //     Sample
-    // Cover all config members in sample
+    // Cover all config members in sample. Use the default values but explicitly
+    // Prefer patching optimum-intel to include more stuff into a model instead of implementing it in C++
+    // TODO: support video-to-video, inpainting?
+    // image to video described in https://huggingface.co/Lightricks/LTX-Video
+    // Controlled video from https://github.com/Lightricks/LTX-Video
+    // TODO: decode, perf metrics, set_scheduler, set/get_generation_config, reshape, compile, clone()
+    // TODO: Rename image->video everywhere
+    // TODO: test multiple videos per prompt
+    // TODO: test with different config values
+    // TODO: throw if num_frames isn't devisable by 8 + 1. Similar value for resolution. The model works on resolutions that are divisible by 32 and number of frames that are divisible by 8 + 1 (e.g. 257). The model works best on resolutions under 720 x 1280 and number of frames below 257.
+    // OVLTXPipeline()(num_inference_steps=1) fails. 2 passes. Would be nice to avoid that bug in genai.
+    // Verify tiny resolution like 32x32
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::Text2VideoPipeline pipe(models_dir, device);
@@ -47,11 +58,13 @@ int main(int32_t argc, char* argv[]) {
     ov::Tensor video = pipe.generate(
         prompt,
         "worst quality, inconsistent motion, blurry, jittery, distorted",
-        ov::genai::height(512),
-        ov::genai::width(704),
-        ov::genai::num_inference_steps(50),
+        ov::genai::height(512),  // OVLTXPipeline's default
+        ov::genai::width(704),  // OVLTXPipeline's default
+        ov::genai::num_inference_steps(2),
         ov::genai::num_images_per_prompt(1),
-        ov::genai::callback(progress_bar)
+        ov::genai::callback(progress_bar),
+        // num_frames: int = 161,
+        // frame_rate: int = 25,
     );
     return EXIT_SUCCESS;
 // } catch (const std::exception& error) {
