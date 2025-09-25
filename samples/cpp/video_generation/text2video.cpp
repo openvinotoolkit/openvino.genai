@@ -15,32 +15,27 @@ int main(int32_t argc, char* argv[]) {
 
     std::filesystem::path models_dir = argv[1];
     std::string prompt = argv[2];
-    // upgrade diffusers, take from master
-    // optimum-intel vs diffusers
     // Compare with https://github.com/Lightricks/LTX-Video
     // TODO: Test GPU, NPU, HETERO, MULTI, AUTO, different steps on different devices
-    // TODO: describe algo to generate a video
-    // TODO: explain in docstrings available metrics
+    // TODO: describe algo to generate a video in docs and docstrings
+    // TODO: explain in docstrings available perf metrics
     // scheduler needs extra dim?
-    // Mention that will update validation tools later
-    // Video instead of images because of video generation confing
+    // Present that will update validation tools later
     // new classes LTXVideoTransformer3DModel AutoencoderKLLTXVideo
-    // private copy constructors
+    // private copy constructors to implement clone()
     // const VideoGenerationConfig& may outlive VideoGenerationConfig?
-    // hide negative_prompt to Property
+    // Move negative_prompt to Property
     // Allow selecting different models to export from optimum-intel, for example ltxv-2b-0.9.8-distilled.safetensors
     // LoRA later: https://huggingface.co/Lightricks/LTX-Video-ICLoRA-depth-13b-0.9.7, https://huggingface.co/Lightricks/LTX-Video-ICLoRA-pose-13b-0.9.7, https://huggingface.co/Lightricks/LTXV-LoRAs Check https://github.com/Lightricks/LTX-Video for updates
-    // How is video inpainting mask specified
-    // WIll ov::Tensor decode(const ov::Tensor latent); stay the same - yes, just an extra dim in Tensor
     // Wasn't need so far so not going to implement:
     //     OVLTXPipeline allows prompt_embeds and prompt_attention_mask instead of prompt; Same for negative_prompt_embeds and negative_prompt_attention_mask
     //     OVLTXPipeline allows batched generation with multiple prompts
     // Tests:
     //     Functional
     //     Sample
-    // Cover all config members in sample. Use the default values but explicitly
+    // Cover all config members in sample. Use default values explicitly
     // Prefer patching optimum-intel to include more stuff into a model instead of implementing it in C++
-    // TODO: support video-to-video, inpainting?
+    // Add video-to-video, inpainting
     // image to video described in https://huggingface.co/Lightricks/LTX-Video (class LTXConditionPipeline)
     // Optimum doesn't have LTXLatentUpsamplePipeline class
     // Controlled video from https://github.com/Lightricks/LTX-Video
@@ -48,6 +43,7 @@ int main(int32_t argc, char* argv[]) {
     // TODO: Rename image->video everywhere
     // TODO: test multiple videos per prompt
     // TODO: test with different config values
+    // TODO: test log prompts to check truncation
     // TODO: throw if num_frames isn't devisable by 8 + 1. Similar value for resolution. The model works on resolutions that are divisible by 32 and number of frames that are divisible by 8 + 1 (e.g. 257). The model works best on resolutions under 720 x 1280 and number of frames below 257.
     // OVLTXPipeline()(num_inference_steps=1) fails. 2 passes. Would be nice to avoid that bug in genai.
     // Verify tiny resolution like 32x32

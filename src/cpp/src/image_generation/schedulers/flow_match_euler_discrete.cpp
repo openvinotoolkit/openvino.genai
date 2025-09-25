@@ -19,8 +19,6 @@ namespace {
 /// @param sigmas
 /// @param shift_terminal
 void stretch_shift_to_terminal(std::vector<float>& sigmas, float shift_terminal) {
-    ov::Tensor ref_t = from_npy("t.npy");
-    OPENVINO_ASSERT(max_diff(ref_t, ov::Tensor{ov::element::f32, {sigmas.size()}, sigmas.data()}) < 1e-6f);
     std::transform(sigmas.begin(), sigmas.end(), sigmas.begin(), [](float val) {
         return 1.0f - val;
     });

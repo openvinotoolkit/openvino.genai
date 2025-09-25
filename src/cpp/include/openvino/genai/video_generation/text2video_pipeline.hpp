@@ -3,31 +3,11 @@
 
 #pragma once
 
-#include "openvino/core/any.hpp"
-#include "openvino/runtime/tensor.hpp"
-#include "openvino/op/transpose.hpp"
-
-#include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
-
-#include "openvino/genai/image_generation/clip_text_model.hpp"
-#include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
-#include "openvino/genai/image_generation/unet2d_condition_model.hpp"
-#include "openvino/genai/image_generation/autoencoder_kl.hpp"
+#include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/genai/image_generation/t5_encoder_model.hpp"
-#include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
-#include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
-
-#include "openvino/genai/image_generation/image2image_pipeline.hpp"
-
-#include "image_generation/stable_diffusion_pipeline.hpp"
-#include "image_generation/stable_diffusion_xl_pipeline.hpp"
-#include "image_generation/stable_diffusion_3_pipeline.hpp"
-#include "image_generation/flux_pipeline.hpp"
-
 #include "utils.hpp"
-#include "debug_utils.hpp"
 
 namespace ov::genai {
 using VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;
@@ -99,12 +79,12 @@ struct AutoencoderKLLTXVideo {
         float shift_factor = 0.0f;
         std::vector<size_t> block_out_channels = { 64 };
         size_t patch_size = 4;  // TODO: read from vae_decoder/config.json
-        std::vector<bool> spatio_temporal_scaling{true, true, true, false};  // TODO: read from vae_decoder/config.json. I use it only to compute sum over it so far
+        std::vector<bool> spatio_temporal_scaling{true, true, true, false};  // TODO: read from vae_decoder/config.json. I use it only to compute sum over it so far, so it may be removed
         size_t patch_size_t = 1;  // TODO: read from vae_decoder/config.json
     };
     Config m_config;
     AutoencoderKLLTXVideo(const std::filesystem::path& dir, const std::string& device, const ov::AnyMap& properties) {}
-    size_t get_vae_scale_factor() const {  // TODO: verify. Drop?
+    size_t get_vae_scale_factor() const {  // TODO: compare with reference. Drop?
         return std::pow(2, m_config.block_out_channels.size() - 1);
     }
     const Config& get_config() const {return m_config;}  // TODO: are getters needed?
@@ -148,6 +128,5 @@ public:
 private:
     class LTXPipeline;
     std::unique_ptr<LTXPipeline> m_impl;
-    explicit Text2VideoPipeline(std::unique_ptr<LTXPipeline>&& impl);
 };
 }  // namespace ov::genai
