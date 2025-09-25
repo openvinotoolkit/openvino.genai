@@ -13,6 +13,7 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/lora_adapter.hpp"
+#include "openvino/genai/parsers.hpp"
 
 namespace ov {
 namespace genai {
@@ -347,6 +348,9 @@ public:
     bool is_assisting_generation() const;
     bool is_prompt_lookup() const;
     bool is_structured_output_generation() const;
+
+    // parsers
+    std::vector<std::variant<std::string, std::shared_ptr<ParserBase>>> parsers;
 
     OPENVINO_DEPRECATED("Please, use `is_assisting_generation()` instead of `is_speculative_decoding()`. This method will be removed in 2026.0.0 release")
     bool is_speculative_decoding() const;

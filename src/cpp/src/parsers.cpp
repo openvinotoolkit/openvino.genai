@@ -35,18 +35,14 @@ ParsedMessage DeepSeekR1ReasoningParser::parse(
         msg["content"] += delta_text;
         return msg;
     }
-    if (m_starts_with_thinking) {
-        m_think_tag_opened = true;
-    }
-    
     bool think_tag_closed = delta_text.find(m_close_tag) != std::string::npos;
 
-    if (!m_think_tag_opened && delta_text.find(m_open_tag) != std::string::npos) {
+    if (!m_think_tag_opened && delta_text.find(m_open_tag) != std::string::npos && !m_starts_with_thinking) {
         // Thinking has started
         auto think_idx = delta_text.find(m_open_tag);
         msg["reasoning_content"] += delta_text.substr(think_idx + std::string(m_open_tag).size(), delta_text.size() - (think_idx + std::string(m_open_tag).size()));
         m_think_tag_opened = true;
-    } else if (m_think_tag_opened && delta_text.find(m_close_tag) != std::string::npos) {
+    } else if ((m_think_tag_opened || m_starts_with_thinking) && delta_text.find(m_close_tag) != std::string::npos) {
         auto think_idx = delta_text.find(m_close_tag);
         msg["reasoning_content"] += delta_text.substr(0, think_idx);
         msg["content"] += delta_text.substr(think_idx + std::string(m_close_tag).size(), delta_text.size() - (think_idx + std::string(m_close_tag).size()));
@@ -126,6 +122,8 @@ std::map<std::string, std::shared_ptr<ParserBase>> ParserBase::registered_parser
 // static initializer to register available buildin parsers
 static bool register_backends() {
     IncrementalParserBase::registered_parsers[DeepSeekR1ReasoningParser::name()] = std::make_shared<DeepSeekR1ReasoningParser>();
+    IncrementalParserBase::registered_parsers[DeepSeekR1ReasoningParser::name()] = std::make_shared<DeepSeekR1ReasoningParser>();
+    IncrementalParserBase::registered_parsers["Phi-4-reasoning"] = std::make_shared<DeepSeekR1ReasoningParser>(/*starts_with_thinking*/ false);
 
     ParserBase::registered_parsers[Llama32PythonicParser::name()] = std::make_shared<Llama32PythonicParser>();
     return true;
@@ -133,5 +131,17 @@ static bool register_backends() {
 
 // Ensure the backends are registered before main
 static bool are_backends_registered = register_backends();
+
+static std::vector<std::string> get_parsers_names() {
+    if (!are_backends_registered) {
+        register_backends();
+    }
+
+    std::vector<std::string> names;
+    for (const auto& [name, _] : IncrementalParserBase::registered_parsers) {
+        names.push_back(name);
+    }
+    return names;
+}
 
 } // namespace ov::genai
