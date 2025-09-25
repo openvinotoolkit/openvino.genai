@@ -29,13 +29,6 @@
 #include "utils.hpp"
 #include "debug_utils.hpp"
 
-// TODO: support video2video, inpainting?
-// TODO: decode, perf metrics, set_scheduler, set/get_generation_config, reshape, compile, clone()
-// TODO: image->video
-// TODO: LoRA?
-// TODO: test multiple videos per prompt
-// TODO: test with different config values
-// TODO: throw in num_frames isn't devisable by 8 + 1
 namespace numpy_utils {
 void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_batch, size_t batch_size) {
     const ov::Shape src_shape = src.get_shape(), dst_shape = dst.get_shape();
