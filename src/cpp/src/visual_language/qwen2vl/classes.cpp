@@ -401,11 +401,8 @@ ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_im
         }
     }
 
-    ov::Tensor t_cu_seqlens = ov::Tensor(ov::element::i32, {cu_seqlens.size()});
-    auto* ptr = static_cast<int32_t*>(t_cu_seqlens.data());
-    for (size_t n = 0; n < cu_seqlens.size(); n++) {
-        ptr[n] = cu_seqlens[n];
-    }
+    ov::Tensor t_cu_seqlens(ov::element::i32, {cu_seqlens.size()});
+    std::memcpy(t_cu_seqlens.data<int32_t>(), cu_seqlens.data(), cu_seqlens.size() * sizeof(int32_t));
     return t_cu_seqlens;
 }
 
@@ -945,7 +942,6 @@ ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::arra
     const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
 
     std::vector<std::vector<size_t>> all_pos_ids;
-    size_t total_positions = 0;
     size_t max_grid_size = 0;
 
     for (const auto& grid_thw : grids_thw) {
@@ -953,52 +949,22 @@ ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::arra
         size_t h = grid_thw.at(1);
         size_t w = grid_thw.at(2);
 
-        total_positions += t * h * w;
         max_grid_size = std::max({max_grid_size, h, w});
-        
-        // Create height position IDs
-        std::vector<size_t> hpos_ids(h * w);
-        for (size_t hi = 0; hi < h; ++hi) {
-            for (size_t wi = 0; wi < w; ++wi) {
-                size_t idx = hi * w + wi;
-                hpos_ids[idx] = hi;
-            }
-        }
 
-        // Reshape hpos_ids according to spatial merge size
-        std::vector<size_t> reshaped_hpos;
+        // According to spatial merge size, create height & width position IDs
+        std::vector<size_t> hpos_ids;
+        std::vector<size_t> wpos_ids;
         size_t h_blocks = h / spatial_merge_size;
         size_t w_blocks = w / spatial_merge_size;
-        reshaped_hpos.reserve(h * w);
+        hpos_ids.reserve(h * w);
+        wpos_ids.reserve(h * w);
 
         for (size_t hb = 0; hb < h_blocks; ++hb) {
             for (size_t wb = 0; wb < w_blocks; ++wb) {
                 for (size_t hs = 0; hs < spatial_merge_size; ++hs) {
                     for (size_t ws = 0; ws < spatial_merge_size; ++ws) {
-                        reshaped_hpos.push_back(hb * spatial_merge_size + hs);
-                    }
-                }
-            }
-        }
-
-        // Create width position IDs
-        std::vector<size_t> wpos_ids(h * w);
-        for (size_t hi = 0; hi < h; ++hi) {
-            for (size_t wi = 0; wi < w; ++wi) {
-                size_t idx = hi * w + wi;
-                wpos_ids[idx] = wi;
-            }
-        }
-
-        // Reshape wpos_ids according to spatial merge size
-        std::vector<size_t> reshaped_wpos;
-        reshaped_wpos.reserve(h * w);
-
-        for (size_t hb = 0; hb < h_blocks; ++hb) {
-            for (size_t wb = 0; wb < w_blocks; ++wb) {
-                for (size_t hs = 0; hs < spatial_merge_size; ++hs) {
-                    for (size_t ws = 0; ws < spatial_merge_size; ++ws) {
-                        reshaped_wpos.push_back(wb * spatial_merge_size + ws);
+                        hpos_ids.push_back(hb * spatial_merge_size + hs);
+                        wpos_ids.push_back(wb * spatial_merge_size + ws);
                     }
                 }
             }
@@ -1006,8 +972,8 @@ ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::arra
 
         // Stack and repeat for each t
         for (size_t i = 0; i < t; ++i) {
-            for (size_t j = 0; j < reshaped_hpos.size(); ++j) {
-                all_pos_ids.push_back({reshaped_hpos[j], reshaped_wpos[j]});
+            for (size_t j = 0; j < hpos_ids.size(); ++j) {
+                all_pos_ids.push_back({hpos_ids[j], wpos_ids[j]});
             }
         }
     }
