@@ -1,7 +1,7 @@
 import torch
 import openvino
 import numpy as np
-from optimum.intel.openvino import OVDiffusionPipeline, OVLTXPipeline
+from optimum.intel.openvino import OVLTXPipeline  # OVDiffusionPipeline
 from diffusers import LTXPipeline
 from diffusers.utils import export_to_video
 
@@ -37,7 +37,7 @@ def main():
         './i/LTX-Video/',
         device='CPU',
         load_in_8bit=False,
-        ov_config={openvino.properties.hint.inference_precision: openvino.Type.f32}
+        ov_config={openvino.properties.hint.inference_precision: openvino.Type.f32},
     )
     ov_video = generate(ov_pipe, frame_rate)
     export_to_video(diffusers_video, "ov_video.mp4", fps=frame_rate)
