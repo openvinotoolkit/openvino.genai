@@ -704,7 +704,8 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
 
     OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
 
-    ov::Tensor same_image(ov::element::f32, ov::Shape{1}, std::vector<float>{images.size() == 2u ? 1.f : 0.f}.data());
+    std::vector<float> same_image_data{images.size() == 2u ? 1.f : 0.f};
+    ov::Tensor same_image(ov::element::f32, ov::Shape{1}, same_image_data.data());
     ov::Tensor input_image_1(ov::element::u8, image_shape, images[0].data<uint8_t>());
     ov::Tensor input_image_2(ov::element::u8,
                              image_shape,
