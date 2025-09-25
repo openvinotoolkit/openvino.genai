@@ -166,8 +166,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
 
     OPENVINO_ASSERT(prompts.size() == sampling_params.size(), "Number of prompts should be equal to the number of generation configs.");
-    OPENVINO_ASSERT(prompts.size() == rgbs_vector.size(), "Number of prompts should be equal to the number of images vectors.");
-    OPENVINO_ASSERT(rgbs_vector.empty() || video_vector.empty(), "Only support one input, video or images");
+    OPENVINO_ASSERT(prompts.size() == rgbs_vector.size() || prompts.size() == video_vector.size(), "Number of prompts should be equal to the number of images/video vectors.");
+    OPENVINO_ASSERT(rgbs_vector.size() == 0u || video_vector.size() == 0u, "Only support one input, video or images");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
@@ -295,15 +295,15 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
     const std::vector<ov::Tensor>& video,
     GenerationConfig sampling_params) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
-    OPENVINO_ASSERT((video.empty() || images.empty()), "Only support one input, video or images.");
+    OPENVINO_ASSERT((video.size() == 0u || images.size() == 0u), "Only support one input, video or images.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
 
-        auto encoded_images = video.empty() ? m_inputs_embedder->encode_images(images, false)
-                                            : m_inputs_embedder->encode_images(video, true);
+        auto encoded_images = video.size() == 0 ? m_inputs_embedder->encode_images(images, false)
+                                                : m_inputs_embedder->encode_images(video, true);
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);

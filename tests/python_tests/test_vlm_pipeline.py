@@ -987,10 +987,10 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
 def test_vlm_pipeline_video_input(request, model_id, image_name, backend):
     resized_image = request.getfixturevalue(image_name)
 
-    prompt = "Describe this image."
+    prompt = "Describe this video."
     max_new_tokens = 10
 
     model_path = get_ov_model(model_id)
 
     vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-    genai_output = vlm.generate(prompt, video=[openvino.Tensor(resized_image)], max_new_tokens=max_new_tokens)
+    genai_output = vlm.generate(prompt, video=[openvino.Tensor(resized_image)]*3, max_new_tokens=max_new_tokens)

@@ -166,7 +166,7 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
-        OPENVINO_ASSERT((video.empty() || images.empty()), "Only support one input, video or images.");
+        OPENVINO_ASSERT((video.size() == 0 || images.size() == 0u), "Only support one input, video or images.");
 
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
@@ -195,8 +195,8 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        auto encoded_images = video.empty() ? m_inputs_embedder->encode_images(images, false)
-                                            : m_inputs_embedder->encode_images(video, true);
+        auto encoded_images = video.size() == 0u ? m_inputs_embedder->encode_images(images, false)
+                                                 : m_inputs_embedder->encode_images(video, true);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
         if (m_is_chat_conversation) {
