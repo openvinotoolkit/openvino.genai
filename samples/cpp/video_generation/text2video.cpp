@@ -64,7 +64,7 @@ int main(int32_t argc, char* argv[]) {
         ov::genai::width(704),  // OVLTXPipeline's default
         ov::genai::num_inference_steps(2),
         ov::genai::num_images_per_prompt(1),
-        ov::genai::callback(progress_bar),
+        ov::genai::callback(progress_bar)
         // num_frames: int = 161,
         // frame_rate: int = 25,
     );
