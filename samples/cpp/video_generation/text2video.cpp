@@ -20,13 +20,14 @@ int main(int32_t argc, char* argv[]) {
     // Compare with https://github.com/Lightricks/LTX-Video
     // TODO: Test GPU, NPU, HETERO, MULTI, AUTO, different steps on different devices
     // TODO: describe algo to generate a video
+    // TODO: explain in docstrings available metrics
     // scheduler needs extra dim?
     // Mention that will update validation tools later
     // Video instead of images because of video generation confing
     // new classes LTXVideoTransformer3DModel AutoencoderKLLTXVideo
     // private copy constructors
     // const VideoGenerationConfig& may outlive VideoGenerationConfig?
-    // hide negative prompt to Property
+    // hide negative_prompt to Property
     // Allow selecting different models to export from optimum-intel, for example ltxv-2b-0.9.8-distilled.safetensors
     // LoRA later: https://huggingface.co/Lightricks/LTX-Video-ICLoRA-depth-13b-0.9.7, https://huggingface.co/Lightricks/LTX-Video-ICLoRA-pose-13b-0.9.7, https://huggingface.co/Lightricks/LTXV-LoRAs Check https://github.com/Lightricks/LTX-Video for updates
     // How is video inpainting mask specified

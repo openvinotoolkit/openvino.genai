@@ -2,12 +2,47 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
+#include "image_generation/numpy_utils.hpp"
 
 using namespace ov::genai;
 
+namespace {
+ov::Tensor pack_latents(ov::Tensor& latents, size_t patch_size, size_t patch_size_t) {
+    // Unpacked latents of shape are [B, C, F, H, W] are patched into tokens of shape [B, C, F // p_t, p_t, H // p, p, W // p, p].
+    // The patch dimensions are then permuted and collapsed into the channel dimension of shape:
+    // [B, F // p_t * H // p * W // p, C * p_t * p * p] (an ndim=3 tensor).
+    // dim=0 is the batch size, dim=1 is the effective video sequence length, dim=2 is the effective number of input features
+    ov::Shape latents_shape = latents.get_shape();
+    size_t batch_size = latents_shape.at(0), num_channels = latents_shape.at(1), num_frames = latents_shape.at(2), height = latents_shape.at(3), width = latents_shape.at(4);
+    size_t post_patch_num_frames = num_frames / patch_size_t;
+    size_t post_patch_height = height / patch_size;
+    size_t post_patch_width = width / patch_size;
+    latents.set_shape({batch_size, num_channels, post_patch_num_frames, patch_size_t, post_patch_height, patch_size, post_patch_width, patch_size});
+    // latents = latents.permute(0, 2, 4, 6, 1, 3, 5, 7)
+    std::vector<int64_t> order = {0, 2, 4, 6, 1, 3, 5, 7};  // Permutation order
+    std::vector<ov::Tensor> outputs{ov::Tensor(ov::element::f32, {})};
+    ov::op::v1::Transpose{}.evaluate(outputs, {latents, ov::Tensor(ov::element::i64, ov::Shape{order.size()}, order.data())});
+    ov::Shape permuted_shape = outputs.at(0).get_shape();
+    outputs.at(0).set_shape({permuted_shape.at(0), permuted_shape.at(1) * permuted_shape.at(2) * permuted_shape.at(3), permuted_shape.at(4) * permuted_shape.at(5) * permuted_shape.at(6)});
+    return outputs.at(0);
+}
+
+ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config, size_t num_channels_latents, size_t spatial_compression_ratio, size_t temporal_compression_ratio, size_t transformer_spatial_patch_size, size_t transformer_temporal_patch_size) {
+    size_t height = generation_config.height / spatial_compression_ratio;
+    size_t width = generation_config.width / spatial_compression_ratio;
+    size_t num_frames = (generation_config.num_frames - 1) / temporal_compression_ratio + 1;
+    ov::Shape shape{generation_config.num_images_per_prompt, num_channels_latents, num_frames, height, width};
+    ov::Tensor noise = generation_config.generator->randn_tensor(shape);
+    ov::Tensor ref_noise = from_npy("noise.npy");
+    OPENVINO_ASSERT(noise.get_shape() == ref_noise.get_shape());
+    noise = ref_noise;
+    return pack_latents(noise, transformer_spatial_patch_size, transformer_temporal_patch_size);
+}
+}  // anonymous namespace
+
 class Text2VideoPipeline::LTXPipeline {
 public:
-    std::chrono::steady_clock::duration m_load_time_ms{0};
+    std::chrono::steady_clock::duration m_load_time{0};
     std::shared_ptr<IScheduler> m_scheduler;
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<LTXVideoTransformer3DModel> m_transformer;
@@ -16,6 +51,7 @@ public:
     ImageGenerationPerfMetrics m_perf_metrics;  // TODO: can it be resused for video?
     double m_latent_timestep = -1.0;  // TODO: float?
     LTXPipeline(const std::filesystem::path& models_dir, const std::string& device, const ov::AnyMap& properties) {
+        auto start_time = std::chrono::steady_clock::now();
         // TODO: move to common
         const std::filesystem::path model_index_path = models_dir / "model_index.json";
         std::ifstream file(model_index_path);
@@ -43,6 +79,7 @@ public:
         m_vae = std::make_shared<AutoencoderKLLTXVideo>(models_dir / "vae_decoder", device, properties);
 
         initialize_generation_config(class_name);
+        m_load_time = std::chrono::steady_clock::now() - start_time;
     }
     void check_image_size(const int height, const int width) const {
         // TODO:
@@ -76,15 +113,15 @@ public:
             do_classifier_free_guidance,
             generation_config.max_sequence_length, {
                 ov::genai::pad_to_max_length(true),
-                ov::genai::max_length(generation_config.max_sequence_length),  // TODO: should infer() do that for everyone?
+                ov::genai::max_length(generation_config.max_sequence_length),
                 ov::genai::add_special_tokens(true)
             }
         );
         auto infer_end = std::chrono::steady_clock::now();
         using Ms = std::chrono::duration<double, std::ratio<1, 1000>>;
-        m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();  // TODO: explain in docstrings available metrics
+        m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();
 
-        prompt_embeds = ::numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
+        prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
         ov::Tensor ref_prompt_embeds = from_npy("prompt_embeds.npy");
         OPENVINO_ASSERT(max_diff(prompt_embeds, ref_prompt_embeds) == 0.0f);
 
@@ -242,46 +279,27 @@ public:
         m_generation_config.strength = 1.0f;
         m_generation_config.max_sequence_length = 128;
     }
-    void save_load_time(std::chrono::steady_clock::time_point start_time) {
-        // TODO: move to common
-        auto stop_time = std::chrono::steady_clock::now();
-        m_load_time_ms += stop_time - start_time;
-    }
+
     void set_scheduler(std::shared_ptr<Scheduler> scheduler) {
-        // TODO: move to common
         auto casted = std::dynamic_pointer_cast<IScheduler>(scheduler);
         OPENVINO_ASSERT(casted != nullptr, "Passed incorrect scheduler type");
         m_scheduler = casted;
     }
 };
-namespace {
-std::unique_ptr<ov::genai::Text2VideoPipeline::LTXPipeline> create_LTXPipeline(
-    const std::filesystem::path& models_dir,
-    const std::string& device,
-    const ov::AnyMap& properties
-) {
-    // TODO: move to common
-    const std::string class_name = get_class_name(models_dir);
-    auto start_time = std::chrono::steady_clock::now();
-    OPENVINO_ASSERT("LTXPipeline" == class_name);
-    std::unique_ptr<ov::genai::Text2VideoPipeline::LTXPipeline> impl = std::make_unique<ov::genai::Text2VideoPipeline::LTXPipeline>(models_dir, device, properties);
-    impl->save_load_time(start_time);
-    return impl;
-}
-}  // anonymous namespace
 
 Text2VideoPipeline::Text2VideoPipeline(
     const std::filesystem::path& models_dir,
     const std::string& device,
     const AnyMap& properties
-) : m_impl{create_LTXPipeline(models_dir, device, properties)} {}
+) : m_impl{std::make_unique<ov::genai::Text2VideoPipeline::LTXPipeline>(
+    models_dir, device, properties
+)} {}
 
 ov::Tensor Text2VideoPipeline::generate(
     const std::string& positive_prompt,
     const std::string& negative_prompt,
     const ov::AnyMap& properties
 ) {
-    // TODO: explicit negative_prompt arg instead of Property? What other args can be exposed that way?
     return m_impl->generate(positive_prompt, negative_prompt, properties);
 }
 
