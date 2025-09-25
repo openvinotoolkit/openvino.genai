@@ -78,8 +78,8 @@ private:
             uint lsz_1 = get_local_size(1);
 
             // Step 1: Get max idx of di2s in all workgroups
-            float local_max = -FLT_MAX;
-            uint local_max_id = 0;
+            float local_max = -INFINITY;
+            int local_max_id = -1;
 
             __global float *di2s_data = di2s + batch_idx * token_num;
 
@@ -138,6 +138,7 @@ private:
             }
             else {
                 di2s_data[j] -= eis_j * eis_j;
+                di2s_data[j] = di2s_data[j] != di2s_data[j] ? -FLT_MAX : di2s_data[j];
             }
         }
         )CLC";

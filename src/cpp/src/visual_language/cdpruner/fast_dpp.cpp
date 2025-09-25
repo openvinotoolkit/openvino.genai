@@ -121,6 +121,14 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel,
     }
 
 #ifdef ENABLE_OPENCL_DPP
+    if (total_tokens < 16) {
+        if (m_config.pruning_debug_mode) {
+            std::cout << "[FastGreedyDPP] Kernel too small for OpenCL DPP (N=" << total_tokens
+                      << "), using CPU implementation" << std::endl;
+        }
+        return select_cpu_internal(kernel, num_tokens);
+    }
+
     // Try OpenCL GPU acceleration if enabled and available
     if (m_config.use_cl_kernel) {
         // Initialize OpenCL DPP if not already done
@@ -815,8 +823,6 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     size_t batch_size = shape[0];
     size_t total_tokens_num = shape[1];
 
-    bool need_adjustment = selected_token_num % 2 != 0;
-    selected_token_num += need_adjustment;
     selected_token_num = selected_token_num / batch_size;
 
     std::vector<int> output_ids(selected_token_num * batch_size, -1);
@@ -915,15 +921,6 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
         std::cout << "]" << std::endl;
     }
 
-    // Adjust the result if we had to make token count even for OpenCL
-    if (need_adjustment) {
-        // Remove the last one token from the last batch to match original request
-        output_ids.erase(output_ids.begin() + selected_token_num - need_adjustment);
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[OpenCLDPP] Adjusted result: removed 1 token from last batch to match original request of "
-                      << selected_token_num * batch_size - 1 << " total tokens" << std::endl;
-        }
-    }
     std::vector<size_t> results;
     for (auto id : output_ids)
         results.push_back(id);

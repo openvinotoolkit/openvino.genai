@@ -430,15 +430,15 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
 
     for (size_t frame_idx = 0; frame_idx < visual_features_list.size(); ++frame_idx) {
         const auto& visual_feature = visual_features_list[frame_idx];
-        ov::Tensor pruned_feature = apply_pruning(visual_feature, text_features, true);  // silent = true
-        pruned_features_list.push_back(std::move(pruned_feature));
-
+        ov::Tensor pruned_feature =
+            apply_pruning(visual_feature, text_features, true && !m_config.pruning_debug_mode);  // silent = true
         if (m_config.pruning_debug_mode) {
             auto shape = visual_feature.get_shape();
             auto pruned_shape = pruned_feature.get_shape();
             std::cout << "[CDPruner] Frame " << frame_idx << ": [" << shape[1] << " → " << pruned_shape[1] << " tokens]"
                       << std::endl;
         }
+        pruned_features_list.push_back(std::move(pruned_feature));
     }
 
     const auto& first_pruned_feature = pruned_features_list[0];

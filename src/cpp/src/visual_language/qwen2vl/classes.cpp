@@ -873,7 +873,8 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                                             text_embeds,
                                                             merged_image_embeddings_tensor,
                                                             image_pad_token_id,
-                                                            original_visual_tokens);
+                                                            original_visual_tokens,
+                                                            images.size());
     } else {
         // No pruning or no images, use original function
         return qwen2_vl_utils::merge_text_and_image_embeddings(input_ids,
@@ -1309,7 +1310,8 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_with_pruning(c
                                                                                const ov::Tensor& text_embeds,
                                                                                const ov::Tensor& pruned_vision_embeds,
                                                                                int64_t image_pad_token_id,
-                                                                               size_t original_visual_tokens) {
+                                                                               size_t original_visual_tokens,
+                                                                               size_t num_images) {
     auto text_embeds_shape = text_embeds.get_shape();
     size_t batch_size = text_embeds_shape.at(0);
     size_t original_seq_length = text_embeds_shape.at(1);  // original sequence length (text + original visual)
@@ -1319,7 +1321,8 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_with_pruning(c
     size_t pruned_visual_tokens = pruned_vision_embeds.get_shape()[0];  // dynamic pruned count
     size_t tokens_removed = original_visual_tokens - pruned_visual_tokens;
     size_t new_seq_length = original_seq_length - tokens_removed;
-
+    size_t original_visual_tokens_per_image = original_visual_tokens / num_images;
+    size_t pruned_visual_tokens_per_image = pruned_visual_tokens / num_images;
     // Create new merged embeddings tensor with correct dimensions
     ov::Tensor merged_embeds(text_embeds.get_element_type(), {batch_size, new_seq_length, hidden_size});
 
@@ -1332,25 +1335,26 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_with_pruning(c
     size_t output_idx = 0;
 
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-        for (size_t seq_idx = 0; seq_idx < original_seq_length; ++seq_idx) {
+        size_t image_idx = 0;
+        for (size_t seq_idx = 0; seq_idx < original_seq_length;) {
             size_t input_flat_idx = batch_idx * original_seq_length + seq_idx;
-
             if (input_ids_data[input_flat_idx] == image_pad_token_id) {
                 // This is a visual token position
-                if (vision_embed_idx < pruned_visual_tokens) {
-                    // Copy from pruned visual embeddings
-                    std::copy_n(vision_embeds_data + vision_embed_idx * hidden_size,
-                                hidden_size,
-                                merged_embeds_data + output_idx * hidden_size);
-                    output_idx++;
-                }
-                vision_embed_idx++;
+                // Copy from pruned visual embeddings
+                std::copy_n(vision_embeds_data + vision_embed_idx * hidden_size,
+                            pruned_visual_tokens_per_image * hidden_size,
+                            merged_embeds_data + output_idx * hidden_size);
+                seq_idx += original_visual_tokens_per_image;  // Skip original visual tokens
+                vision_embed_idx += pruned_visual_tokens_per_image;
+                output_idx += pruned_visual_tokens_per_image;
+                image_idx++;
             } else {
                 // This is a text token, copy from text_embeds
                 std::copy_n(text_embeds_data + input_flat_idx * hidden_size,
                             hidden_size,
                             merged_embeds_data + output_idx * hidden_size);
                 output_idx++;
+                seq_idx++;
             }
         }
     }

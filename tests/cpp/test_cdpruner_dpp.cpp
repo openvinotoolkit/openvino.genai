@@ -476,7 +476,7 @@ TEST_P(CDPrunerIntegrationTest, MultiFramePruningEdgeCases) {
 
     // Test case 3: Many small frames
     {
-        std::vector<ov::Tensor> many_frames;
+        ov::TensorVector many_frames;
         size_t num_small_frames = 10;
         size_t small_sequence_length = 10;
 
