@@ -1,14 +1,22 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-from pathlib import Path
-import torch
-from llm_bench_utils.config_class import PT_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES, TEXT_TO_SPEECH_VOCODER_CLS
 import os
 import time
-import logging as log
-import llm_bench_utils.hook_common as hook_common
+import torch
 import json
+import logging as log
+from pathlib import Path
+
+from llm_bench_utils.memory_monitor import MemMonitorWrapper
+from llm_bench_utils.config_class import (
+    PT_MODEL_CLASSES_MAPPING,
+    TOKENIZE_CLASSES_MAPPING,
+    DEFAULT_MODEL_CLASSES,
+    TEXT_TO_SPEECH_VOCODER_CLS,
+    TEXT_RERANK_PT_GEN_CLS
+)
+import llm_bench_utils.hook_common as hook_common
 
 
 def set_bf16(model, device, **kwargs):
@@ -268,3 +276,45 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
         compiled_model = run_torch_compile(pipe, backend, memory_data_collector if kwargs.get("mem_consumption") else None)
         pipe = compiled_model
     return pipe, from_pretrain_time
+
+
+def create_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, **kwargs):
+    if not model_path.exists():
+        raise RuntimeError(f'==Failure ==: model path:{model_path} is not exist')
+    if not device:
+        raise RuntimeError('==Failure ==: no device to load')
+    if not model_path.is_dir() or len(os.listdir(model_path)) == 0:
+        raise RuntimeError(f'==Failure ==: model path:{model_path} is not directory or directory is empty')
+
+    log.info(f'Load text reranker model from model path:{model_path}')
+    default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
+    model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
+    token_class = TOKENIZE_CLASSES_MAPPING.get(model_type, TOKENIZE_CLASSES_MAPPING[default_model_type])
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
+    start = time.perf_counter()
+    pipe = TEXT_RERANK_PT_GEN_CLS.from_pretrained(model_path)
+    pipe = set_bf16(pipe, device, **kwargs)
+    end = time.perf_counter()
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('from_pretrained_phase')
+        memory_monitor.log_data('for from pretrained phase')
+    from_pretrain_time = end - start
+    processor = token_class.from_pretrained(model_path)
+    log.info(f'Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s')
+
+    # If the device is set to GPU there's a need to substitute it with 'cuda' so it will be accepted by PyTorch
+    if device.upper() == 'GPU':
+        device = torch.device('cuda') if torch.cuda.is_available() else log.info('CUDA device is unavailable')
+    else:
+        device = torch.device(device.lower())
+    log.info(f'Torch device was set to: {device}')
+
+    pipe.to(device)
+
+    if kwargs['torch_compile_backend']:
+        backend = kwargs['torch_compile_backend']
+        compiled_model = run_torch_compile(pipe, backend, memory_monitor if kwargs.get("mem_consumption") else None)
+        pipe = compiled_model
+
+    return pipe, processor, from_pretrain_time, None, False

@@ -11,6 +11,7 @@ import json
 import copy
 import types
 from llm_bench_utils.hook_common import get_bench_hook
+from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.model_utils import get_version_in_format_to_pars
 from llm_bench_utils.config_class import (
@@ -21,6 +22,7 @@ from llm_bench_utils.config_class import (
     INPAINTING_IMAGE_GEN_CLS,
     IMAGE_TO_IMAGE_GEN_CLS,
     TEXT_TO_SPEECH_VOCODER_CLS,
+    TEXT_RERANK_GEN_CLS,
     PA_ATTENTION_BACKEND
 )
 from transformers import pipeline
@@ -764,7 +766,7 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data('compilation_phase')
         memory_data_collector.log_data(compilation_phase=True)
-    bench_hook = get_bench_hook(1, ov_model, embed=True)
+    bench_hook = get_bench_hook(1, ov_model, rag=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
@@ -1144,3 +1146,77 @@ class OptimumChunkStreamer(BaseStreamer):
         ):  #
             return True
         return False
+
+
+def create_genai_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, tokenizer: AutoTokenizer, **kwargs):
+    import openvino_genai
+
+    config = openvino_genai.TextRerankPipeline.Config()
+    if kwargs.get("rerank_top_n") is not None:
+        config.top_n = kwargs.get("rerank_top_n")
+    if kwargs.get("rerank_max_length") is not None:
+        config.max_length = kwargs.get("rerank_max_length")
+
+    ov_config = kwargs['config']
+
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
+    start = time.perf_counter()
+    pipe = openvino_genai.TextRerankPipeline(model_path, device.upper(), config, **ov_config)
+    end = time.perf_counter()
+
+    log.info("Selected OpenVINO GenAI for benchmarking")
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for compilation phase')
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    return pipe, tokenizer, end - start, None, True
+
+
+def create_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, **kwargs):
+    if model_path.name.endswith('xml'):
+        model_path = model_path.parents[2]
+
+    ov_config = kwargs['config']
+
+    model_path_existed = Path(model_path).exists()
+    # load model
+    if not model_path_existed:
+        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+
+    trust_remote_code = False
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+    except Exception:
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        trust_remote_code = True
+    if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+        try:
+            return create_genai_text_reranker_model(model_path, device, memory_monitor, tokenizer, **kwargs)
+        except Exception as exp:
+            log.warning(
+                f"Model is not supported by OpenVINO GenAI. "
+                f"GenAI pipeline loading failed with following error: {exp}"
+                "Benchmark will be switched to Optimum Intel pipeline realization"
+            )
+
+        log.info("Selected Optimum Intel for benchmarking")
+    if kwargs.get("mem_consumption"):
+        memory_monitor.start()
+    start = time.perf_counter()
+    ov_model = TEXT_RERANK_GEN_CLS.from_pretrained(
+        model_path,
+        device=device,
+        ov_config=ov_config,
+        trust_remote_code=trust_remote_code,
+        use_cache=False
+    )
+    end = time.perf_counter()
+
+    if kwargs.get("mem_consumption"):
+        memory_monitor.stop_and_collect_data('compilation_phase')
+        memory_monitor.log_data('for compilation phase')
+    bench_hook = get_bench_hook(1, ov_model, rag=True)
+    from_pretrained_time = end - start
+    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    return ov_model, tokenizer, from_pretrained_time, bench_hook, False
