@@ -42,6 +42,8 @@ def get_param_from_file(args, input_key):
             if args[input_key] is None:
                 if args['use_case'] in ['text_gen', 'text_embed', 'text2speech']:
                     data_list.append('What is OpenVINO?')
+                elif args['use_case'] in ['text_rerank']:
+                    data_list.append("What are the main features of Intel Core Ultra processors?")
                 elif args['use_case'] == 'code_gen':
                     data_list.append('def print_hello_world():')
                 elif args['use_case'] == 'image_gen':
@@ -137,6 +139,11 @@ def analyze_args(args):
     model_args['emb_pooling_type'] = args.embedding_pooling
     model_args['emb_normalize'] = args.embedding_normalize
     model_args["emb_max_length"] = args.embedding_max_length
+    model_args['rerank_max_length'] = args.reranking_max_length
+    model_args["rerank_top_n"] = args.reranking_top_n
+    model_args["rerank_texts"] = args.texts
+    model_args["rerank_texts_file"] = args.texts_file
+    model_args["rerank"] = args.rerank
     model_args["apply_chat_template"] = args.apply_chat_template
 
     optimum = args.optimum
@@ -177,6 +184,8 @@ def analyze_args(args):
         raise RuntimeError(f'==Failure FOUND==: Incorrect model path:{model_path}')
     if model_framework in ('ov', 'pt'):
         use_case, model_name = get_use_case(args.model)
+        if use_case == 'rag':
+            use_case = 'text_rerank' if args.rerank else 'text_embed'
     model_args['use_case'] = use_case
     if use_case == 'code_gen' and not model_args['prompt'] and not model_args['prompt_file']:
         model_args['prompt'] = 'def print_hello_world():'
