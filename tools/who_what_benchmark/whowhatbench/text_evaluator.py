@@ -34,7 +34,8 @@ class TextEvaluator(BaseEvaluator):
         generation_config_base=None,
         seqs_per_request=None,
         use_chat_template=None,
-        long_prompt=False
+        long_prompt=False,
+        empty_adapters=False
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -53,6 +54,7 @@ class TextEvaluator(BaseEvaluator):
         self.use_chat_template = use_chat_template
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
+        self.empty_adapters = empty_adapters
 
         # Take language from the base model if provided
         self.language = language
@@ -132,7 +134,7 @@ class TextEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False):
+        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False, empty_adapters=False):
             is_awq = getattr(model, "is_awq", None) is not None
             device = "cpu"
             if hasattr(model, "device"):
@@ -189,7 +191,8 @@ class TextEvaluator(BaseEvaluator):
                         p,
                         self.max_new_tokens,
                         self._crop_question,
-                        self.use_chat_template
+                        self.use_chat_template,
+                        empty_adapters=self.empty_adapters
                     )
                 )
         else:
