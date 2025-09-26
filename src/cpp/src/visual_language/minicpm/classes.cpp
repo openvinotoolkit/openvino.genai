@@ -383,7 +383,9 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
             }
         }
     }
-    encoder.set_tensor("patch_attention_mask", patch_attention_mask);
+    ov::Tensor patch_attention_mask_bool{ov::element::boolean, {pixel_values.get_shape().at(0), 1, max_h / patch_size * max_w / patch_size}};
+    std::copy_n(patch_attention_mask.data<float>(), patch_attention_mask.get_size(), patch_attention_mask_bool.data<bool>());
+    encoder.set_tensor("patch_attention_mask", patch_attention_mask_bool);
 
     ImageSize resized_source_size{resized_preprocessed.ny / patch_size, resized_preprocessed.nx / patch_size};
     std::vector<ImageSize> tgt_sizes{resized_source_size};
@@ -737,9 +739,11 @@ ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image, const
     }
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_resampler.get());
     ov::InferRequest& resampler = infer_request_guard.get();
-    resampler.set_tensor("image_feature", encoded_image);  // [N, H*W, old_hidden_size]
+    resampler.set_tensor("x", encoded_image);  // [N, H*W, old_hidden_size]
     resampler.set_tensor("pos_embed", pos_embed);  // [H*W, N, new_hidden_size]
-    resampler.set_tensor("key_padding_mask", key_padding_mask);  // [N, H*W]
+    ov::Tensor key_padding_mask_bool(ov::element::boolean, {bs, max_patch_len});
+    std::copy_n(mask_data, key_padding_mask.get_size(), key_padding_mask_bool.data<bool>());
+    resampler.set_tensor("key_padding_mask", key_padding_mask_bool);  // [N, H*W]
     resampler.infer();
     auto resampler_out = resampler.get_output_tensor();
     // resampler_out is bound to infer request and the data may become corrupted after next resampler inference 
