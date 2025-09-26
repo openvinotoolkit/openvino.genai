@@ -129,7 +129,7 @@ py::object call_vlm_generate(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    auto updated_config = *pyutils::update_config_from_kwargs(generation_config, kwargs);
+    auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     ov::genai::VLMDecodedResults res;
     {
