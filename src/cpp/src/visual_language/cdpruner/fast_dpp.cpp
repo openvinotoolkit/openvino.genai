@@ -382,7 +382,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
         std::vector<size_t> merged_selection;
 
         // convert splited selected_batches to merged_selection
-        for (int idx = 0; idx < selected_tokens.size(); ++idx) {
+        for (size_t idx = 0; idx < selected_tokens.size(); ++idx) {
             if (idx < num_tokens_to_keep / 2) {
                 merged_selection.push_back(selected_tokens[idx]);
             } else {
@@ -824,8 +824,7 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     size_t total_tokens_num = shape[1];
 
     std::vector<int> output_ids(selected_token_num, -1);
-    selected_token_num = selected_token_num / batch_size;
-
+    auto selected_token_num_per_batch = selected_token_num / batch_size;
 
     // Prepare initial diagonal values from ov::Tensor
     std::vector<float> vec_di2s(total_tokens_num * batch_size);
@@ -845,8 +844,10 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     cl::Buffer buffer_di2s(m_state->context, CL_MEM_READ_WRITE, sizeof(float) * total_tokens_num * batch_size);
     cl::Buffer buffer_cis(m_state->context,
                           CL_MEM_READ_WRITE,
-                          sizeof(float) * selected_token_num * total_tokens_num * batch_size);
-    cl::Buffer buffer_output_ids(m_state->context, CL_MEM_READ_WRITE, sizeof(int) * selected_token_num * batch_size);
+                          sizeof(float) * selected_token_num_per_batch * total_tokens_num * batch_size);
+    cl::Buffer buffer_output_ids(m_state->context,
+                                 CL_MEM_READ_WRITE,
+                                 sizeof(int) * selected_token_num_per_batch * batch_size);
 
     // Use merged kernel approach (ENABLE_KERNEL_MERGE = 1)
     auto merged_kernel = m_state->get_kernel("dpp_impl");
@@ -860,7 +861,7 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     merged_kernel.setArg(3, buffer_cis);
     merged_kernel.setArg(4, buffer_di2s);
     merged_kernel.setArg(5, numerical_threshold);
-    merged_kernel.setArg(6, static_cast<int>(selected_token_num));
+    merged_kernel.setArg(6, static_cast<int>(selected_token_num_per_batch));
     merged_kernel.setArg(7, buffer_output_ids);
     merged_kernel.setArg(8, sizeof(float) * lws[1], nullptr);  // local memory for reduction
     merged_kernel.setArg(9, sizeof(int) * lws[1], nullptr);    // local memory for argmax
@@ -869,7 +870,7 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
         std::cout << "[OpenCLDPP] Global work size: [" << gws[0] << ", " << gws[1] << ", " << gws[2] << "]"
                   << std::endl;
         std::cout << "[OpenCLDPP] Local work size: [" << lws[0] << ", " << lws[1] << ", " << lws[2] << "]" << std::endl;
-        std::cout << "[OpenCLDPP] Selected tokens per batch: " << selected_token_num << std::endl;
+        std::cout << "[OpenCLDPP] Selected tokens per batch: " << selected_token_num_per_batch << std::endl;
     }
 
     // Initialize buffers
@@ -882,7 +883,7 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
 
     // Main DPP algorithm loop using OpenCL kernels
     std::vector<cl::Event> eventList;
-    for (size_t t = 0; t < selected_token_num; ++t) {
+    for (size_t t = 0; t < selected_token_num_per_batch; ++t) {
         cl::Event event;
 
         // Set current iteration
@@ -900,23 +901,23 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     m_state->queue.enqueueReadBuffer(buffer_output_ids,
                                      CL_TRUE,
                                      0,
-                                     sizeof(int) * selected_token_num * batch_size,
+                                     sizeof(int) * selected_token_num_per_batch * batch_size,
                                      output_ids.data());
 
     if (m_config.pruning_debug_mode) {
-        std::cout << "[OpenCLDPP] DPP selection completed with " << selected_token_num * batch_size << " tokens"
-                  << std::endl;
+        std::cout << "[OpenCLDPP] DPP selection completed with " << selected_token_num_per_batch * batch_size
+                  << " tokens" << std::endl;
 
         // Print first few selected token IDs for debugging
         std::cout << "[OpenCLDPP] Selected tokens (first batch): [";
-        size_t print_count = std::min(selected_token_num * batch_size, static_cast<size_t>(10));
+        size_t print_count = std::min(selected_token_num_per_batch * batch_size, static_cast<size_t>(10));
         for (size_t i = 0; i < print_count; ++i) {
             if (i > 0)
                 std::cout << ", ";
             std::cout << output_ids[i];
         }
-        if (selected_token_num * batch_size > 10) {
-            std::cout << ", ... (" << (selected_token_num * batch_size - 10) << " more)";
+        if (selected_token_num_per_batch * batch_size > 10) {
+            std::cout << ", ... (" << (selected_token_num_per_batch * batch_size - 10) << " more)";
         }
         std::cout << "]" << std::endl;
     }

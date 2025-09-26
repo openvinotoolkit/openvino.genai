@@ -78,7 +78,6 @@ def main():
             print(f'[CDPruner] Setting relevance weight to {config.relevance_weight}')
     else:
         config.pruning_ratio = 0
-        print(f'[CDPruner] Disabled')
 
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)

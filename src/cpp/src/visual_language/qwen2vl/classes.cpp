@@ -806,7 +806,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     size_t pruned_visual_tokens = 0;
 
     auto current_config = m_vision_encoder->get_pruning_config();
-    bool pruner_enabled = !current_config.has_value() ? false : current_config->pruning_ratio > 0;
+    bool pruner_enabled = current_config.has_value() && current_config->pruning_ratio > 0;
 
     if (m_vision_encoder->is_pruning_available() && pruner_enabled && !images.empty()) {
         // Store original visual token count for position adjustment
