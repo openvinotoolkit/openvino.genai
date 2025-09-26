@@ -10,6 +10,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <openvino/core/except.hpp>
+#include <openvino/core/any.hpp>
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -61,6 +64,56 @@ void read_json_param(const nlohmann::json& data, const std::string& name, std::o
         param = value;
     }
 }
+
+inline nlohmann::ordered_json any_map_to_json(const ov::AnyMap& any_map);
+
+inline nlohmann::ordered_json any_to_json(const ov::Any& value) {
+    if (value.is<std::string>()) {
+        return value.as<std::string>();
+    } else if (value.is<int64_t>()) {
+        return value.as<int64_t>();
+    } else if (value.is<float>()) {
+        return value.as<float>();
+    } else if (value.is<double>()) {
+        return value.as<double>();
+    } else if (value.is<bool>()) {
+        return value.as<bool>();
+    } else if (value.is<ov::AnyMap>()) {
+        return any_map_to_json(value.as<ov::AnyMap>());
+    } else if (value.is<std::vector<std::string>>()) {
+        return value.as<std::vector<std::string>>();
+    } else if (value.is<std::vector<int64_t>>()) {
+        return value.as<std::vector<int64_t>>();
+    } else if (value.is<std::vector<float>>()) {
+        return value.as<std::vector<float>>();
+    } else if (value.is<std::vector<double>>()) {
+        return value.as<std::vector<double>>();
+    } else if (value.is<std::vector<bool>>()) {
+        return value.as<std::vector<bool>>();
+    } else if (value.is<std::vector<ov::AnyMap>>()) {
+        nlohmann::ordered_json array_json = nlohmann::ordered_json::array();
+        for (const auto& map : value.as<std::vector<ov::AnyMap>>()) {
+            array_json.push_back(any_map_to_json(map));
+        }
+        return array_json;
+    } else {
+        OPENVINO_THROW("Failed to convert Any to JSON, unsupported type: ", value.type_info().name());
+    }
+}
+
+inline nlohmann::ordered_json any_map_to_json(const ov::AnyMap& any_map) {
+    nlohmann::ordered_json object_json = nlohmann::ordered_json::object();
+    for (const auto& [key, value] : any_map) {
+        try {
+            object_json[key] = any_to_json(value);
+        } catch (const std::exception& e) {
+            OPENVINO_THROW("Failed to convert AnyMap to JSON for key: ", key, "\n", e.what());
+        }
+    }
+    return object_json;
+}
+
+
 
 }  // namespace utils
 }  // namespace genai

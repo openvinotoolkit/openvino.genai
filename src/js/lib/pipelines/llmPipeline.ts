@@ -9,7 +9,15 @@ export type Options = {
 };
 
 interface Tokenizer {
-  /** Embeds input prompts with special tags for a chat scenario. */
+  /** Applies a chat template to format chat history into a prompt string. */
+  // TODO Update bindings for new ChatHistory type, tools and extra context
+  // applyChatTemplate(
+  //   chatHistory: Record<string, any>[],
+  //   addGenerationPrompt: boolean,
+  //   chatTemplate?: string,
+  //   tools?: Record<string, any>[],
+  //   extraContext?: Record<string, any>,
+  // ): string;
   applyChatTemplate(
     chatHistory: { role: string; content: string }[],
     addGenerationPrompt: boolean,

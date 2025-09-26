@@ -74,7 +74,9 @@ public:
 
     std::string apply_chat_template(ChatHistory history,
                                     bool add_generation_prompt,
-                                    const std::string& chat_template) const;
+                                    const std::string& chat_template,
+                                    const ToolDefinitions& tools,
+                                    const ov::AnyMap& extra_context) const;
 
     void set_chat_template(const std::string& chat_template);
     std::string get_chat_template();

@@ -3193,9 +3193,9 @@ class Tokenizer:
     @typing.overload
     def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
-    def apply_chat_template(self, history: collections.abc.Sequence[collections.abc.Mapping[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
+    def apply_chat_template(self, history: collections.abc.Sequence[typing.Any], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[typing.Any] = [], extra_context: typing.Any = {}) -> str:
         """
-        Embeds input prompts with special tags for a chat scenario.
+        Applies a chat template to format chat history into a prompt string.
         """
     @typing.overload
     def decode(self, tokens: collections.abc.Sequence[typing.SupportsInt], skip_special_tokens: bool = True) -> str:
