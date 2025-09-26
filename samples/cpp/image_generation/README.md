@@ -11,6 +11,7 @@ There are several sample files:
  - [`image2image_concurrency.cpp.cpp`](./image2image_concurrency.cpp) demonstrates concurrent usage of the image to image pipeline to create multiple images with different prompts
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.cpp`](./benchmark_image_gen.cpp) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
+ - [`stable_diffusion_export_import.cpp`](./stable_diffusion_export_import.cpp) demonstrates how to export and import compiled models from/to the text to image pipeline. Only the Stable Diffusion XL model is supported.
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -292,4 +293,17 @@ if (image_path.empty()) {
       ov::genai::strength(0.8f),
       ov::genai::callback(progress_bar));
 }
+```
+
+## Export and import compiled models
+
+`ov::genai::Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Only the Stable Diffusion XL model is supported.
+
+```cpp
+// export models
+ov::genai::Text2ImagePipeline pipeline(models_path, device);
+pipeline.export_model(models_path / "blobs");
+
+// import models
+ov::genai::Text2ImagePipeline imported_pipeline(models_path, device, ov::genai::blob_path(models_path / "blobs"));
 ```
