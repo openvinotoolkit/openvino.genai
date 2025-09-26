@@ -34,6 +34,8 @@ import requests
 import sys
 import os
 import transformers
+import numpy as np
+import cv2
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import (
     VLMPipeline,
@@ -923,6 +925,32 @@ def cat_image_336x336(cat_image):
 def cat_image_32x32(cat_image):
     return cat_image.resize((32, 32))
 
+# Return video with shape: [num_frames, height, width, 3]
+def create_countdown_frames():
+    frames_count = 5
+    height = 240
+    width = 360
+    frame_list = []
+    for count in range(frames_count, 0, -1):
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        text = str(count)
+        (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 3, 4)
+
+        text_x = (width - text_width) // 2
+        text_y = (height + text_height) // 2
+
+        cv2.putText(frame, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
+            3, (255, 255, 255), 4, cv2.LINE_AA
+        )
+
+        frame_list.append(frame)
+    ov_tensor = openvino.Tensor(np.stack(frame_list))
+    return ov_tensor
+
+@pytest.fixture(scope="module")
+def countdown_video():
+    return create_countdown_frames()
+
 
 @pytest.mark.precommit
 @pytest.mark.parametrize(
@@ -978,19 +1006,18 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
 
 @pytest.mark.precommit
 @pytest.mark.parametrize(
-    "model_id, image_name, backend",
+    "model_id, video_name, backend",
     [
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "PA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "countdown_video", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "countdown_video", "PA"),
     ],
 )
-def test_vlm_pipeline_video_input(request, model_id, image_name, backend):
-    resized_image = request.getfixturevalue(image_name)
-
+def test_vlm_pipeline_video_input(request, model_id, video_name, backend):
+    video_tensor = request.getfixturevalue(video_name)
     prompt = "Describe this video."
     max_new_tokens = 10
 
     model_path = get_ov_model(model_id)
 
     vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-    genai_output = vlm.generate(prompt, video=[openvino.Tensor(resized_image)]*3, max_new_tokens=max_new_tokens)
+    genai_output = vlm.generate(prompt, video=[video_tensor], max_new_tokens=max_new_tokens)
