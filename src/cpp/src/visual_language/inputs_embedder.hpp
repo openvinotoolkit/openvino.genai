@@ -26,13 +26,15 @@ class InputsEmbedder {
 public:
     InputsEmbedder(const std::filesystem::path& model_dir,
                    const std::string& device,
-                   const ov::AnyMap device_config);
+                   const ov::AnyMap device_config,
+                   const bool prompt_lookup = false);
 
     InputsEmbedder(const ModelsMap& models_map,
                    const Tokenizer& tokenizer,
                    const std::filesystem::path& config_dir_path,
                    const std::string& device,
-                   const ov::AnyMap device_config);
+                   const ov::AnyMap device_config,
+                   const bool prompt_lookup = false);
 
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence);
@@ -40,9 +42,11 @@ public:
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
     // compute input embedding and token_type_ids
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::Tensor>& images, VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence = {});
+    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_prompt_ids(const std::string& prompt, const std::vector<ov::Tensor>& images, VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence = {});
     
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_prompt_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+
+    ov::Tensor get_inputs_token_type_ids(const ov::Tensor& prompt_ids, VLMPerfMetrics& metrics);
 
     bool has_token_type_ids() const;
     
@@ -103,6 +107,8 @@ private:
         utils::KVCacheState m_kv_cache_state;
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
+        // When enable prompt lookup, prompt token ids are required to generate condidate.
+        bool m_prompt_lookup = false;
         virtual ~IInputsEmbedder() = default;
 
     public:
@@ -110,9 +116,11 @@ private:
 
         ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence);
 
-        std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence = {});
+        std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_prompt_ids(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence = {});
 
-        virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+        virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_prompt_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
+
+        virtual ov::Tensor get_inputs_token_type_ids(const ov::Tensor& prompt_ids, VLMPerfMetrics& metrics);
 
         virtual bool has_token_type_ids() const;
 
@@ -135,7 +143,11 @@ private:
         void set_apply_chat_template_status(bool apply_chat_template) {
             m_apply_chat_template = apply_chat_template;
         }
-    
+
+        void set_prompt_lookup(const bool& prompt_lookup) {
+            m_prompt_lookup = prompt_lookup;
+        }
+
         virtual void start_chat(const std::string& system_message);
     
         virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
