@@ -234,11 +234,7 @@ def analyze_args(args):
     return model_path, model_framework, model_args, model_name
 
 
-def get_use_case(model_name_or_path):
-    config_file = Path(model_name_or_path) / "config.json"
-    config = None
-    if config_file.exists():
-        config = json.loads(config_file.read_text())
+def get_use_case(model_name_or_path: str | Path):
     if (Path(model_name_or_path) / "model_index.json").exists():
         diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
         pipe_type = diffusers_config.get("_class_name")
@@ -246,14 +242,27 @@ def get_use_case(model_name_or_path):
                          "StableDiffusionXLInpaintPipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
             return "image_gen", pipe_type.replace("Pipeline", "")
 
-    if config is not None:
-        case, model_name = resolve_complex_model_types(config)
-        if case is not None:
-            log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_name}')
-            return case, model_name
+    model_type = None
+    config_file = Path(model_name_or_path) / "config.json"
+    if config_file.exists():
+        config = json.loads(config_file.read_text())
+        if config is not None:
+            case, model_name = resolve_complex_model_types(config)
+            if case is not None:
+                log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_name}')
+                return case, model_name
+            model_type = config.get("model_type").lower().replace('_', '-')
+    elif Path(model_name_or_path).suffix in '.gguf':
+        import gguf_parser
+        parser = gguf_parser.GGUFParser(model_name_or_path)
+        parser.parse()
+        if parser.metadata and parser.metadata.get('general.architecture'):
+            model_type = parser.metadata.get('general.architecture').lower()
+
+    if model_type is not None:
         for case, model_ids in USE_CASES.items():
             for idx, model_id in enumerate(normalize_model_ids(model_ids)):
-                if config.get("model_type").lower().replace('_', '-').startswith(model_id):
+                if model_type.startswith(model_id):
                     log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_id}')
                     return case, model_ids[idx]
 
