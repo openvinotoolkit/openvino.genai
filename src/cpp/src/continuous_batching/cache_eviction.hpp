@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdlib>
 #include <cmath>
+#include <deque>
 
 #include "openvino/openvino.hpp"
 #include "continuous_batching/attention_output.hpp"
@@ -14,6 +15,7 @@
 #include "continuous_batching/kvcrush.hpp"
 
 namespace ov::genai {
+
 
 /**
  * @brief Keeps track of the accumulated token scores across model inferences and their lifetime.
@@ -39,8 +41,10 @@ public:
      * where `S` is equal to `snapkv_window_size`. In contrast, if this is set to 0, then the initial counter state would be
      * `| L | L - 1 | ... | 2 | 1 |`,
      * where L is the prompt size of the sequence in tokens.
+     * @param adaptive_rkv_window_size AggregationMode::ADAPTIVE_RKV only - Number of last token scores that will be aggregated (using mean)
+     * for purposes of determining blocks in the evictable area that comprise the most attention mass.
      */
-    explicit EvictionScoreManager(size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size, AggregationMode aggregation_mode, size_t ignore_first_n_blocks = 0, size_t snapkv_window_size = 0) : m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), m_scores(num_decoder_layers), m_cache_counter(num_decoder_layers), m_max_pool_window_size(max_pool_window_size), m_aggregation_mode(aggregation_mode), m_ignore_first_n_blocks(ignore_first_n_blocks), m_snapkv_window_size(snapkv_window_size), m_num_registered_snapkv_aggregated_scores(0) {}
+    explicit EvictionScoreManager(size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size, AggregationMode aggregation_mode, size_t ignore_first_n_blocks = 0, size_t snapkv_window_size = 0, size_t adaptive_rkv_window_size = 8) : m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), m_scores(num_decoder_layers), m_cache_counter(num_decoder_layers), m_max_pool_window_size(max_pool_window_size), m_aggregation_mode(aggregation_mode), m_ignore_first_n_blocks(ignore_first_n_blocks), m_snapkv_window_size(snapkv_window_size), m_num_registered_snapkv_aggregated_scores(0), m_adaptive_rkv_window_size(adaptive_rkv_window_size), m_previous_scores_queues(num_decoder_layers) {}
 
     /**
      * Registers new token scores and aggregates them internally as necessary. The token scores provided may be corresponding not to all
@@ -100,6 +104,22 @@ private:
     std::size_t m_ignore_first_n_blocks;
     std::size_t m_snapkv_window_size;
     std::size_t m_num_registered_snapkv_aggregated_scores;
+    size_t m_adaptive_rkv_window_size = 8;
+
+    struct EvictionScoreRecord {
+        EvictionScoreRecord(const std::vector<double>& score_, const std::set<size_t>& skips_) : score(score_), skips(skips_) {};
+        std::vector<double> score;
+        std::set<size_t> skips;
+    };
+
+    std::vector<std::deque<EvictionScoreRecord>> m_previous_scores_queues;
+
+    void _initialize_score_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t> skipped_logical_block_ids);
+    void _accumulate_initial_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids);
+
+    void _accumulate_layer_scores_to(size_t decoder_layer_idx, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids, std::vector<double>& dst);
+    void _accumulate_with_existing_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids);
+    void _adjust_norm_sum_counters(size_t decoder_layer_idx, size_t old_size_in_tokens, size_t new_size_in_tokens);
 };
 
 class SnapKVScoreAggregationCalculator {
@@ -201,6 +221,8 @@ public:
      */
     std::vector<std::set<std::size_t>> evict_logical_blocks();
 
+    void register_token_similarity(const TokenSimilarityForEachDecoderLayer& token_similarity_for_all_decoder_layers);
+
 
 private:
     std::size_t get_num_blocks(std::size_t num_tokens) const;
@@ -221,6 +243,10 @@ private:
     std::size_t m_num_evicted_tokens = 0;
     std::size_t m_num_decoder_layers;
     EvictionScoreManager m_score_manager;
+
+    std::vector<std::vector<double>> m_last_token_similarity;
+    std::pair<std::set<size_t>, size_t> get_adaptive_rkv_similarity_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
+    std::set<size_t> get_adaptive_rkv_diverse_blocks(size_t num_blocks_left_to_fill, std::set<size_t> similarity_set, const std::vector<double> token_similarity);
 };
 
 

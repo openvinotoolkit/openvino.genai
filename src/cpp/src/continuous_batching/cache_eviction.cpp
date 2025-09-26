@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "continuous_batching/cache_eviction.hpp"
+#include <queue>
 
 namespace ov::genai {
 
@@ -72,7 +73,6 @@ namespace ov::genai {
                 return;
             }
 
-            std::set<size_t> skip_set_adjusted;
             size_t num_skipped_blocks_in_ignore_area = 0;
             for (size_t i = 0; i < m_ignore_first_n_blocks; i++) {
                 if (skipped_logical_block_ids.find(i) != skipped_logical_block_ids.end()) {
@@ -81,13 +81,8 @@ namespace ov::genai {
             }
 
             OPENVINO_ASSERT(num_skipped_blocks_in_ignore_area <= m_ignore_first_n_blocks);
-            size_t start_token_offset_in_scores = (m_ignore_first_n_blocks - num_skipped_blocks_in_ignore_area) * m_block_size;
 
-            for (size_t skipped_block_id : skipped_logical_block_ids) {
-                if (skipped_block_id >= m_ignore_first_n_blocks) {
-                    skip_set_adjusted.insert(skipped_block_id - m_ignore_first_n_blocks);
-                } // else do not include this block in the adjusted skip set since it is in the start area already
-            }
+            size_t start_token_offset_in_scores = (m_ignore_first_n_blocks - num_skipped_blocks_in_ignore_area) * m_block_size;
 
             auto hh_score = ov::Tensor(
                     attention_scores,
@@ -116,77 +111,135 @@ namespace ov::genai {
             auto& accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
 
             if (accumulated_scores_for_current_decoder_layer.empty()) {
-                if (m_snapkv_window_size != 0 && num_snapkv_scores == 0) {
-                    // SnapKV window not yet reached, no meaningful scores to accumulate
+                _accumulate_initial_scores(max_pooled_hh_scores, decoder_layer_idx, num_snapkv_scores, skipped_logical_block_ids);
+            } else {
+                _accumulate_with_existing_scores(max_pooled_hh_scores, decoder_layer_idx, num_snapkv_scores, skipped_logical_block_ids);
+            }
+        }
+    }
+
+    void EvictionScoreManager::_accumulate_initial_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids) {
+        if (m_snapkv_window_size != 0 && num_snapkv_scores == 0) {
+            // SnapKV window not yet reached, no meaningful scores to accumulate
+            return;
+        }
+
+
+        OPENVINO_ASSERT(m_previous_scores_queues[decoder_layer_idx].empty());
+        m_previous_scores_queues[decoder_layer_idx].emplace_back(max_pooled_hh_scores, skipped_logical_block_ids);
+        auto& accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
+        _initialize_score_with_skips(accumulated_scores_for_current_decoder_layer, max_pooled_hh_scores, skipped_logical_block_ids);
+
+        if (m_aggregation_mode == AggregationMode::NORM_SUM) {
+            std::size_t new_scores_size = max_pooled_hh_scores.size();
+            std::vector<std::size_t> counter(new_scores_size);
+            if (m_snapkv_window_size == 0) {
+                // Will simulate that the tokens comprising the sequence were added one-by-one
+                // from the standpoint of the occurrence tracker
+                std::generate(counter.begin(), counter.begin() + new_scores_size,
+                              [&new_scores_size] { return new_scores_size--; });
+            }
+            else {
+                OPENVINO_ASSERT(num_snapkv_scores > 0);
+                OPENVINO_ASSERT(new_scores_size >= num_snapkv_scores);
+                std::fill(counter.begin(), counter.end() - num_snapkv_scores, num_snapkv_scores);
+                std::iota(counter.rbegin(), counter.rbegin() + num_snapkv_scores, 1);
+            }
+            m_cache_counter[decoder_layer_idx] = counter;
+        }
+    }
+
+    void EvictionScoreManager::_accumulate_with_existing_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids) {
+        if (m_aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
+            if (m_previous_scores_queues[decoder_layer_idx].size() >= m_adaptive_rkv_window_size) {
+                m_previous_scores_queues[decoder_layer_idx].pop_front();
+            }
+            m_previous_scores_queues[decoder_layer_idx].emplace_back(max_pooled_hh_scores, skipped_logical_block_ids);
+        }
+
+        if (m_aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
+            OPENVINO_ASSERT(!m_previous_scores_queues[decoder_layer_idx].empty());
+            auto start_it = m_previous_scores_queues[decoder_layer_idx].begin();
+            auto& dst = m_scores[decoder_layer_idx];
+            _initialize_score_with_skips(dst, start_it->score, start_it->skips);
+            for (auto it = start_it + 1; it != m_previous_scores_queues[decoder_layer_idx].end(); it++) {
+                _accumulate_layer_scores_to(decoder_layer_idx, it->score, it->skips, dst);
+            }
+            // mean
+            size_t queue_size = m_previous_scores_queues[decoder_layer_idx].size();
+            for (size_t i = 0; i < dst.size(); i++) {
+                dst[i] /= queue_size;
+            }
+        } else {
+            auto& accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
+            size_t old_size_in_tokens = accumulated_scores_for_current_decoder_layer.size();
+            _accumulate_layer_scores_to(decoder_layer_idx, max_pooled_hh_scores, skipped_logical_block_ids, accumulated_scores_for_current_decoder_layer);
+            size_t new_size_in_tokens = accumulated_scores_for_current_decoder_layer.size();
+
+            if (m_aggregation_mode == AggregationMode::NORM_SUM) {
+                _adjust_norm_sum_counters(decoder_layer_idx, old_size_in_tokens, new_size_in_tokens);
+            }
+        }
+    }
+
+    void EvictionScoreManager::_accumulate_layer_scores_to(size_t decoder_layer_idx, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids, std::vector<double>& dst) {
+        std::set<size_t> skip_set_adjusted;
+
+        for (size_t skipped_block_id : skipped_logical_block_ids) {
+            if (skipped_block_id >= m_ignore_first_n_blocks) {
+                skip_set_adjusted.insert(skipped_block_id - m_ignore_first_n_blocks);
+            } // else do not include this block in the adjusted skip set since it is in the start area already
+        }
+        size_t old_size_in_tokens = dst.size();
+        size_t new_size_in_tokens = src.size() + m_block_size * skipped_logical_block_ids.size();
+
+        OPENVINO_ASSERT(new_size_in_tokens >= old_size_in_tokens);
+        dst.resize(new_size_in_tokens);
+        add_with_skips(dst, src, skip_set_adjusted);
+    }
+
+    void EvictionScoreManager::_adjust_norm_sum_counters(size_t decoder_layer_idx, size_t old_size_in_tokens, size_t new_size_in_tokens) {
+        OPENVINO_ASSERT(new_size_in_tokens >= old_size_in_tokens);
+        size_t num_new_tokens = new_size_in_tokens - old_size_in_tokens;
+        auto &counter_for_current_decoder_layer = m_cache_counter[decoder_layer_idx];
+        counter_for_current_decoder_layer.resize(new_size_in_tokens);
+        if (m_snapkv_window_size == 0 || m_num_registered_snapkv_aggregated_scores == m_snapkv_window_size) {
+            // Increment occurrence counts of all currently tracked cache blocks
+            for (auto it = counter_for_current_decoder_layer.begin();
+                 it != counter_for_current_decoder_layer.end(); it++) {
+                *it += num_new_tokens;
+            }
+            // Add occurrence counts for new tokens like above
+            for (size_t i = 0; i < num_new_tokens; i++) {
+                auto idx = old_size_in_tokens + i;
+                counter_for_current_decoder_layer[idx] = num_new_tokens - i;
+            }
+        }
+        else {
+            OPENVINO_ASSERT(new_size_in_tokens >= m_num_registered_snapkv_aggregated_scores);
+            std::fill(counter_for_current_decoder_layer.begin(), counter_for_current_decoder_layer.end() - m_num_registered_snapkv_aggregated_scores, m_num_registered_snapkv_aggregated_scores);
+            std::iota(counter_for_current_decoder_layer.rbegin(), counter_for_current_decoder_layer.rbegin() + m_num_registered_snapkv_aggregated_scores, 1);
+        }
+    }
+
+    void EvictionScoreManager::_initialize_score_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t> skipped_logical_block_ids) {
+        // New sequence to track
+        if (skipped_logical_block_ids.empty()) {
+            dst = src;
+        }
+        else {
+            dst.resize(src.size() + m_block_size * skipped_logical_block_ids.size(), 0.0);
+            size_t src_idx = 0;
+            for (size_t dst_idx = 0; dst_idx < dst.size(); dst_idx++) {
+                size_t curr_logical_block_idx = dst_idx / m_block_size;
+                if (skipped_logical_block_ids.find(curr_logical_block_idx) != skipped_logical_block_ids.end()) {
+                    dst_idx += m_block_size;
                     continue;
                 }
-                // New sequence to track
-                if (skipped_logical_block_ids.empty()) {
-                    accumulated_scores_for_current_decoder_layer = max_pooled_hh_scores;
-                }
-                else {
-                    accumulated_scores_for_current_decoder_layer.resize(max_pooled_hh_scores.size() + m_block_size * skipped_logical_block_ids.size(), 0.0);
-                    size_t src_idx = 0;
-                    for (size_t dst_idx = 0; dst_idx < accumulated_scores_for_current_decoder_layer.size(); dst_idx++) {
-                        size_t curr_logical_block_idx = dst_idx / m_block_size;
-                        if (skipped_logical_block_ids.find(curr_logical_block_idx) != skipped_logical_block_ids.end()) {
-                            dst_idx += m_block_size;
-                            continue;
-                        }
-                        accumulated_scores_for_current_decoder_layer[dst_idx] = accumulated_scores_for_current_decoder_layer[src_idx];
-                        src_idx++;
-                    }
-                    OPENVINO_ASSERT(src_idx == max_pooled_hh_scores.size());
-                }
-
-                if (m_aggregation_mode == AggregationMode::NORM_SUM) {
-                    std::size_t new_scores_size = num_hh_scores;
-                    std::vector<std::size_t> counter(new_scores_size);
-                    if (m_snapkv_window_size == 0) {
-                        // Will simulate that the tokens comprising the sequence were added one-by-one
-                        // from the standpoint of the occurrence tracker
-                        std::generate(counter.begin(), counter.begin() + new_scores_size,
-                                      [&new_scores_size] { return new_scores_size--; });
-                    }
-                    else {
-                        OPENVINO_ASSERT(num_snapkv_scores > 0);
-                        OPENVINO_ASSERT(new_scores_size >= num_snapkv_scores);
-                        std::fill(counter.begin(), counter.end() - num_snapkv_scores, num_snapkv_scores);
-                        std::iota(counter.rbegin(), counter.rbegin() + num_snapkv_scores, 1);
-                    }
-                    m_cache_counter[decoder_layer_idx] = counter;
-                }
-            } else {
-                size_t old_size_in_tokens = accumulated_scores_for_current_decoder_layer.size();
-                size_t new_size_in_tokens = max_pooled_hh_scores.size() + m_block_size * skipped_logical_block_ids.size();
-
-                OPENVINO_ASSERT(new_size_in_tokens >= old_size_in_tokens);
-                size_t num_new_tokens = new_size_in_tokens - old_size_in_tokens;
-                if (m_aggregation_mode == AggregationMode::NORM_SUM) {
-                    auto &counter_for_current_decoder_layer = m_cache_counter[decoder_layer_idx];
-                    counter_for_current_decoder_layer.resize(new_size_in_tokens);
-                    if (m_snapkv_window_size == 0 || m_num_registered_snapkv_aggregated_scores == m_snapkv_window_size) {
-                        // Increment occurrence counts of all currently tracked cache blocks
-                        for (auto it = counter_for_current_decoder_layer.begin();
-                             it != counter_for_current_decoder_layer.end(); it++) {
-                            *it += num_new_tokens;
-                        }
-                        // Add occurrence counts for new tokens like above
-                        for (size_t i = 0; i < num_new_tokens; i++) {
-                            auto idx = old_size_in_tokens + i;
-                            counter_for_current_decoder_layer[idx] = num_new_tokens - i;
-                        }
-                    }
-                    else {
-                        OPENVINO_ASSERT(new_size_in_tokens >= m_num_registered_snapkv_aggregated_scores);
-                        std::fill(counter_for_current_decoder_layer.begin(), counter_for_current_decoder_layer.end() - m_num_registered_snapkv_aggregated_scores, m_num_registered_snapkv_aggregated_scores);
-                        std::iota(counter_for_current_decoder_layer.rbegin(), counter_for_current_decoder_layer.rbegin() + m_num_registered_snapkv_aggregated_scores, 1);
-                    }
-
-                }
-                accumulated_scores_for_current_decoder_layer.resize(new_size_in_tokens);
-                add_with_skips(accumulated_scores_for_current_decoder_layer, max_pooled_hh_scores, skip_set_adjusted);
+                dst[dst_idx] = src[src_idx];
+                src_idx++;
             }
+            OPENVINO_ASSERT(src_idx == src.size());
         }
     }
 
@@ -220,7 +273,7 @@ namespace ov::genai {
     CacheEvictionAlgorithm::CacheEvictionAlgorithm(const CacheEvictionConfig &eviction_config, size_t block_size,
                                                    size_t num_decoder_layers, size_t max_pool_window_size) :
             m_eviction_config(eviction_config), m_block_size(block_size), m_num_decoder_layers(num_decoder_layers),
-            m_score_manager(block_size, num_decoder_layers, max_pool_window_size, eviction_config.aggregation_mode, eviction_config.get_start_size() / block_size, eviction_config.snapkv_window_size), m_kvcrush_algo(eviction_config.kvcrush_config, block_size)
+            m_score_manager(block_size, num_decoder_layers, max_pool_window_size, eviction_config.aggregation_mode, eviction_config.get_start_size() / block_size, eviction_config.snapkv_window_size, eviction_config.adaptive_rkv_config.window_size), m_kvcrush_algo(eviction_config.kvcrush_config, block_size)
     {
             OPENVINO_ASSERT(!(m_eviction_config.get_start_size() % m_block_size),
                             "CacheEvictionConfig.start_size in tokens must be a multiple of block size ", m_block_size);
@@ -260,42 +313,62 @@ namespace ov::genai {
                 continue;
             }
 
-            // Only the blocks in the "intermediate" part of the logical KV cache will be considered for eviction
+
             auto scores_for_all_evictable_blocks = get_scores_for_all_evictable_blocks(decoder_layer_idx);
-            size_t num_blocks_to_evict = get_num_blocks_to_evict(decoder_layer_idx);
-            auto evicted_block_indices = get_indices_of_blocks_to_evict(scores_for_all_evictable_blocks, num_blocks_to_evict);
+            std::vector<size_t> evicted_block_indices;
+            if (m_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
+                size_t num_evictable_blocks = get_num_evictable_blocks(decoder_layer_idx);
+                auto similarity_set_and_num_blocks_kept = get_adaptive_rkv_similarity_set(num_evictable_blocks, scores_for_all_evictable_blocks);
 
-            // KVCrush: start
-            bool should_apply_kvcrush = (m_eviction_config.kvcrush_config.budget > 0) &&
-                                        (evicted_block_indices.size() >= m_eviction_config.kvcrush_config.budget);
-            if (should_apply_kvcrush) {
-                size_t num_tokens_in_evictable_blocks = scores_for_all_evictable_blocks.size() * m_block_size;
+                const auto& similarity_set = similarity_set_and_num_blocks_kept.first;
+                size_t num_blocks_kept = similarity_set_and_num_blocks_kept.second;
 
-                auto kvcrush_retained_block_indices = m_kvcrush_algo.get_indices_of_blocks_to_retain_using_kvcrush(
-                    num_tokens_in_evictable_blocks,
-                    evicted_block_indices,
-                    m_score_manager.get_scores()[decoder_layer_idx]);
+                OPENVINO_ASSERT(num_blocks_kept <= num_evictable_blocks);
+                size_t num_blocks_left_to_fill =  num_evictable_blocks - num_blocks_kept;
+                auto diverse_set = get_adaptive_rkv_diverse_blocks(num_blocks_left_to_fill, similarity_set, m_last_token_similarity[decoder_layer_idx]);
 
-                // Remove the indices in kvcrush_retained_block_indices from evicted_block_indices
-                if (!kvcrush_retained_block_indices.empty()) {
-                    // Convert both vectors to sets for efficient operations
-                    std::unordered_set<std::size_t> retained_set(kvcrush_retained_block_indices.begin(),
-                                                                 kvcrush_retained_block_indices.end());
-
-                    // Create a new vector containing only elements not in retained_set
-                    std::vector<std::size_t> filtered_evicted_indices;
-                    filtered_evicted_indices.reserve(evicted_block_indices.size());
-
-                    for (const auto& idx : evicted_block_indices) {
-                        if (retained_set.find(idx) == retained_set.end()) {
-                            filtered_evicted_indices.push_back(idx);
-                        }
+                for (size_t potentially_evicted_idx : similarity_set) {
+                    if (diverse_set.find(potentially_evicted_idx) == diverse_set.end()) {
+                        evicted_block_indices.push_back(potentially_evicted_idx);
                     }
-                    // Replace the original vector with the filtered one
-                    evicted_block_indices = std::move(filtered_evicted_indices);
                 }
+
+            } else {
+                // Only the blocks in the "intermediate" part of the logical KV cache will be considered for eviction
+                size_t num_blocks_to_evict = get_num_blocks_to_evict(decoder_layer_idx);
+                evicted_block_indices = get_indices_of_blocks_to_evict(scores_for_all_evictable_blocks, num_blocks_to_evict);
+                // KVCrush: start
+                bool should_apply_kvcrush = (m_eviction_config.kvcrush_config.budget > 0) &&
+                                            (evicted_block_indices.size() >= m_eviction_config.kvcrush_config.budget);
+                if (should_apply_kvcrush) {
+                    size_t num_tokens_in_evictable_blocks = scores_for_all_evictable_blocks.size() * m_block_size;
+
+                    auto kvcrush_retained_block_indices = m_kvcrush_algo.get_indices_of_blocks_to_retain_using_kvcrush(
+                        num_tokens_in_evictable_blocks,
+                        evicted_block_indices,
+                        m_score_manager.get_scores()[decoder_layer_idx]);
+
+                    // Remove the indices in kvcrush_retained_block_indices from evicted_block_indices
+                    if (!kvcrush_retained_block_indices.empty()) {
+                        // Convert both vectors to sets for efficient operations
+                        std::unordered_set<std::size_t> retained_set(kvcrush_retained_block_indices.begin(),
+                                                                     kvcrush_retained_block_indices.end());
+
+                        // Create a new vector containing only elements not in retained_set
+                        std::vector<std::size_t> filtered_evicted_indices;
+                        filtered_evicted_indices.reserve(evicted_block_indices.size());
+
+                        for (const auto& idx : evicted_block_indices) {
+                            if (retained_set.find(idx) == retained_set.end()) {
+                                filtered_evicted_indices.push_back(idx);
+                            }
+                        }
+                        // Replace the original vector with the filtered one
+                        evicted_block_indices = std::move(filtered_evicted_indices);
+                    }
+                }
+                // KVCrush: end
             }
-            // KVCrush: end
 
             m_num_evicted_tokens += evicted_block_indices.size() * m_block_size;
 
@@ -305,6 +378,77 @@ namespace ov::genai {
             // Adjust indices to account for start area
             for (auto &idx: evicted_block_indices) idx += get_num_blocks(m_eviction_config.get_start_size());
             for (auto &idx: evicted_block_indices) retval[decoder_layer_idx].insert(idx);
+        }
+
+        m_last_token_similarity.clear();
+        return retval;
+    }
+
+    std::pair<std::set<size_t>, size_t> CacheEvictionAlgorithm::get_adaptive_rkv_similarity_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores) {
+        struct ScoreAndBlockIdx {
+            double score;
+            size_t block_idx;
+            bool operator<(const ScoreAndBlockIdx& rhs) const { return score < rhs.score; }
+        };
+        std::priority_queue<ScoreAndBlockIdx> score_block_queue;
+        double total_sum = 0.0;
+        double block_score = 0.0;
+        OPENVINO_ASSERT(evictable_area_token_scores.size() % m_block_size == 0);
+        for (size_t i = 0; i < evictable_area_token_scores.size(); i++) {
+            block_score += evictable_area_token_scores[i];
+            if (i % m_block_size == 0) {
+                score_block_queue.push({block_score, i / m_block_size});
+                block_score = 0.0;
+            }
+        }
+
+        double expected_sum = total_sum * m_eviction_config.adaptive_rkv_config.attention_mass;
+        std::set<size_t> retval;
+
+        double sum = 0.0;
+        size_t num_blocks_kept = 0;
+        while (sum < expected_sum && !score_block_queue.empty() && num_blocks_kept <= max_num_blocks_kept) {
+            // Blocks with most attention mass are kept
+            auto score_and_idx = score_block_queue.top();
+            sum += score_and_idx.score;
+            score_block_queue.pop();
+            num_blocks_kept += 1;
+        }
+
+        // The rest will be further filtered according to their cosine similarity separately
+        while (!score_block_queue.empty()) {
+            auto score_and_idx = score_block_queue.top();
+            retval.insert(score_and_idx.block_idx);
+            score_block_queue.pop();
+        }
+        return {retval, num_blocks_kept};
+    }
+
+    std::set<size_t> CacheEvictionAlgorithm::get_adaptive_rkv_diverse_blocks(size_t num_blocks_left_to_fill, std::set<size_t> similarity_set, const std::vector<double> token_similarity) {
+        OPENVINO_ASSERT(num_blocks_left_to_fill <= similarity_set.size());
+        struct ScoreAndBlockIdx {
+            double score;
+            size_t block_idx;
+            bool operator<(const ScoreAndBlockIdx& rhs) const { return score < rhs.score; } // sic!
+        };
+        std::priority_queue<ScoreAndBlockIdx> score_block_queue;
+        OPENVINO_ASSERT(token_similarity.size() % m_block_size == 0);
+        for (size_t block_idx : similarity_set) {
+            OPENVINO_ASSERT(block_idx * m_block_size <= token_similarity.size());
+            double block_diversity_score = 0.0;
+            for (size_t tok_idx = 0; tok_idx < m_block_size; tok_idx++) {
+                block_diversity_score -= token_similarity[tok_idx];
+            }
+            score_block_queue.push({block_diversity_score, block_idx});
+            block_diversity_score = 0.0;
+        }
+
+        std::set<size_t> retval;
+
+        while (retval.size() < num_blocks_left_to_fill && !score_block_queue.empty()) {
+            auto score_and_idx = score_block_queue.top();
+            retval.insert(score_and_idx.block_idx);
+            score_block_queue.pop();
         }
         return retval;
     }
@@ -423,6 +567,21 @@ namespace ov::genai {
         m_score_manager.remove_scores(evicted_block_indices, decoder_layer_idx);
     }
 
+    void CacheEvictionAlgorithm::register_token_similarity(const TokenSimilarityForEachDecoderLayer& token_similarity_for_all_decoder_layers) {
+        OPENVINO_ASSERT(m_last_token_similarity.empty(), "CacheEvictionAlgorithm already has token similarity, must evict before new similarity is registered");
+        OPENVINO_ASSERT(token_similarity_for_all_decoder_layers.size() == m_num_decoder_layers);
+        m_last_token_similarity.resize(m_num_decoder_layers);
+        for (size_t layer_idx = 0; layer_idx < m_num_decoder_layers; layer_idx++)
+        {
+            const auto& layer_similarity = token_similarity_for_all_decoder_layers[layer_idx];
+            const float* data = layer_similarity.data<float>();
+            size_t num_tokens = layer_similarity.get_size();
+            m_last_token_similarity[layer_idx].resize(num_tokens);
+            for (size_t tok_idx = 0; tok_idx < layer_similarity.get_size(); tok_idx++) {
+                m_last_token_similarity[layer_idx][tok_idx] = data[tok_idx];
+            }
+        }
+    }
 
     CacheRotationCalculator::CacheRotationCalculator(size_t block_size,
                                                      size_t max_context_length_in_blocks,
