@@ -376,8 +376,72 @@ TEST_P(EvictionScoreManagerRegisterScoresParameterizedTest, ScoresAndCountersAft
     }
 }
 
+
+
+
 INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerRegisterScoresParameterizedTest, ::testing::ValuesIn(REGISTER_SCORES_TEST_CASES),
                          [](const testing::TestParamInfo<EvictionScoreManagerRegisterScoresParameterizedTest::ParamType>& info) {
+                             return info.param.test_id;
+                         });
+
+
+struct EvictionScoreManagerAdaptiveRKVRegisterScoresTestStruct {
+    std::string test_id;
+    size_t block_size;
+    size_t max_pool_window_size;
+    size_t adaptive_rkv_window_size;
+
+    std::vector<std::pair<std::vector<std::vector<float>>, std::set<size_t>>> scores_and_skips;
+    std::vector<std::vector<float>> ref_scores;
+};
+
+using EvictionScoreManagerAdaptiveRKVRegisterScoresParameterizedTest = ::testing::TestWithParam<EvictionScoreManagerAdaptiveRKVRegisterScoresTestStruct>;
+
+const std::vector<EvictionScoreManagerAdaptiveRKVRegisterScoresTestStruct> ADAPTIVE_RKV_REGISTER_SCORES_TEST_CASES = {
+    // TODO(vshampor): fix
+    { "within_adaptive_rkv_window",
+      /* block_size =*/ 2, /* max_pool_window_size = */ 3, /* adaptive_rkv_window_size = */ 8,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9},
+             {-3.1, -8.2, 5.9}}, {1, 2} }
+      },
+
+      { {7.7, 7.7, 3.6, -7.4, 8.9},
+        {8.1, 8.1, 8.1, 2.6, 5.9} },
+    },
+    { "exceeding_adaptive_rkv_window",
+      /* block_size =*/ 2, /* max_pool_window_size = */ 3, /* adaptive_rkv_window_size = */ 3,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9},
+             {-3.1, -8.2, 5.9}}, {1, 2} }
+      },
+
+      { {7.7, 7.7, 3.6, -7.4, 8.9},
+        {8.1, 8.1, 8.1, 2.6, 5.9} },
+    },
+};
+
+TEST_P(EvictionScoreManagerAdaptiveRKVRegisterScoresParameterizedTest, ScoresAfterRegistrationAreCorrect) {
+    const auto& test_struct = GetParam();
+    ov::genai::EvictionScoreManager mgr(test_struct.block_size, DEFAULT_NUM_DECODER_LAYERS, test_struct.max_pool_window_size, ov::genai::AggregationMode::ADAPTIVE_RKV,/* ignore_first_n_blocks = */ 0, /* snapkv_window_size = */ 0, test_struct.adaptive_rkv_window_size);
+    for (const auto& score_and_skip : test_struct.scores_and_skips) {
+        mgr.register_new_token_scores(get_layer_scores_from_2d_vector(score_and_skip.first), score_and_skip.second);
+    }
+    const auto& test_scores = mgr.get_scores();
+    ASSERT_EQ(test_scores.size(), DEFAULT_NUM_DECODER_LAYERS);
+
+    float abs_tol = 1e-6;
+    for (size_t layer_idx = 0; layer_idx < DEFAULT_NUM_DECODER_LAYERS; layer_idx++) {
+        EXPECT_THAT(test_scores[layer_idx], ::testing::Pointwise(::testing::DoubleNear(abs_tol), test_struct.ref_scores[layer_idx]));
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerAdaptiveRKVRegisterScoresParameterizedTest, ::testing::ValuesIn(ADAPTIVE_RKV_REGISTER_SCORES_TEST_CASES),
+                         [](const testing::TestParamInfo<EvictionScoreManagerAdaptiveRKVRegisterScoresParameterizedTest::ParamType>& info) {
                              return info.param.test_id;
                          });
 
