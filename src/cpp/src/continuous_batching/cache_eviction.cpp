@@ -49,6 +49,24 @@ namespace ov::genai {
         m_cache_counter[decoder_layer_idx] = new_counter;
     }
 
+    template<class T>
+    void _max_pool(std::vector<double>& dst, const T* src_data, size_t size, size_t max_pool_window_size) {
+        OPENVINO_ASSERT(size == dst.size());
+        for (size_t idx = 0; idx < size; idx++) {
+            size_t effective_window_size = max_pool_window_size;
+            size_t elements_left = size - idx;
+            if (elements_left < effective_window_size) {
+                effective_window_size = elements_left;
+            }
+            auto max_val = src_data[idx];
+            for (size_t window_idx = 1; window_idx < effective_window_size; window_idx++) {
+                auto val = src_data[idx + window_idx];
+                max_val = std::max(val, max_val);
+            }
+            dst[idx] = max_val;
+        }
+    }
+
     void EvictionScoreManager::register_new_token_scores(
             const AttentionScoresForEachDecoderLayer &attention_scores_for_all_decoder_layers,
             const std::set<size_t>& skipped_logical_block_ids, size_t num_snapkv_scores) {
@@ -90,33 +108,24 @@ namespace ov::genai {
                     ov::Coordinate{scores_size_in_tokens}
             );
 
-            std::vector<double> max_pooled_hh_scores(hh_score.get_size());
-            auto hh_score_data = hh_score.data<float>();
-            size_t num_hh_scores = hh_score.get_size();
+            std::vector<double> processed_hh_scores(hh_score.get_size());
 
-            for (size_t idx = 0; idx < num_hh_scores; idx++) {
-                size_t effective_window_size = m_max_pool_window_size;
-                size_t elements_left = num_hh_scores - idx;
-                if (elements_left < effective_window_size) {
-                    effective_window_size = elements_left;
-                }
-                auto max_val = hh_score_data[idx];
-                for (size_t window_idx = 1; window_idx < effective_window_size; window_idx++) {
-                    auto val = hh_score_data[idx + window_idx];
-                    max_val = std::max(val, max_val);
-                }
-                max_pooled_hh_scores[idx] = max_val;
+            if (m_aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
+                _max_pool(processed_hh_scores, hh_score.data<float>(), hh_score.get_size(), 1);
+            } else {
+                _max_pool(processed_hh_scores, hh_score.data<float>(), hh_score.get_size(), m_max_pool_window_size);
             }
 
             auto& accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
 
             if (accumulated_scores_for_current_decoder_layer.empty()) {
-                _accumulate_initial_scores(max_pooled_hh_scores, decoder_layer_idx, num_snapkv_scores, skipped_logical_block_ids);
+                _accumulate_initial_scores(processed_hh_scores, decoder_layer_idx, num_snapkv_scores, skipped_logical_block_ids);
             } else {
-                _accumulate_with_existing_scores(max_pooled_hh_scores, decoder_layer_idx, num_snapkv_scores, skipped_logical_block_ids);
+                _accumulate_with_existing_scores(processed_hh_scores, decoder_layer_idx, num_snapkv_scores, skipped_logical_block_ids);
             }
         }
     }
+
 
     void EvictionScoreManager::_accumulate_initial_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids) {
         if (m_snapkv_window_size != 0 && num_snapkv_scores == 0) {
@@ -170,6 +179,8 @@ namespace ov::genai {
             for (size_t i = 0; i < dst.size(); i++) {
                 dst[i] /= queue_size;
             }
+            auto score_copy = dst;
+            _max_pool(dst, score_copy.data(), score_copy.size(), m_max_pool_window_size);
         } else {
             auto& accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
             size_t old_size_in_tokens = accumulated_scores_for_current_decoder_layer.size();
@@ -228,12 +239,13 @@ namespace ov::genai {
             dst = src;
         }
         else {
+            dst.clear();
             dst.resize(src.size() + m_block_size * skipped_logical_block_ids.size(), 0.0);
             size_t src_idx = 0;
             for (size_t dst_idx = 0; dst_idx < dst.size(); dst_idx++) {
                 size_t curr_logical_block_idx = dst_idx / m_block_size;
                 if (skipped_logical_block_ids.find(curr_logical_block_idx) != skipped_logical_block_ids.end()) {
-                    dst_idx += m_block_size;
+                    dst_idx = curr_logical_block_idx * m_block_size + m_block_size - 1;
                     continue;
                 }
                 dst[dst_idx] = src[src_idx];
@@ -317,6 +329,7 @@ namespace ov::genai {
             auto scores_for_all_evictable_blocks = get_scores_for_all_evictable_blocks(decoder_layer_idx);
             std::vector<size_t> evicted_block_indices;
             if (m_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
+                OPENVINO_ASSERT(!m_last_token_similarity.empty(), "Token similarity must be registered before each eviction in the Adaptive R-KV scenario");
                 size_t num_evictable_blocks = get_num_evictable_blocks(decoder_layer_idx);
                 auto similarity_set_and_num_blocks_kept = get_adaptive_rkv_similarity_set(num_evictable_blocks, scores_for_all_evictable_blocks);
 
@@ -384,7 +397,7 @@ namespace ov::genai {
         return retval;
     }
 
-    std::pair<std::set<size_t>, size_t> CacheEvictionAlgorithm::get_adaptive_rkv_similarity_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores) {
+    std::pair<std::set<size_t>, size_t> CacheEvictionAlgorithm::get_adaptive_rkv_similarity_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_block_scores) {
         struct ScoreAndBlockIdx {
             double score;
             size_t block_idx;
@@ -392,14 +405,8 @@ namespace ov::genai {
         };
         std::priority_queue<ScoreAndBlockIdx> score_block_queue;
         double total_sum = 0.0;
-        double block_score = 0.0;
-        OPENVINO_ASSERT(evictable_area_token_scores.size() % m_block_size == 0);
-        for (size_t i = 0; i < evictable_area_token_scores.size(); i++) {
-            block_score += evictable_area_token_scores[i];
-            if (i % m_block_size == 0) {
-                score_block_queue.push({block_score, i / m_block_size});
-                block_score = 0.0;
-            }
+        for (size_t i = 0; i < evictable_area_block_scores.size(); i++) {
+            score_block_queue.push({evictable_area_block_scores[i], i});
         }
 
         double expected_sum = total_sum * m_eviction_config.adaptive_rkv_config.attention_mass;

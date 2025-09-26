@@ -25,6 +25,12 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
     return ss.str();
 }
 
+inline std::string get_adaptive_rkv_similarity_score_output_for_decoder_layer(size_t decoder_layer_id) {
+    std::stringstream ss;
+    ss << "adaptive_rkv_similarity." << decoder_layer_id;
+    return ss.str();
+}
+
 /**
  * @brief Bitwise flags for hidden state handling in ModelRunner, used in certain speculative decoding, e.g eagle series.
  *
@@ -96,6 +102,7 @@ struct HiddenStateRange {
 class ModelRunner {
     ov::InferRequest m_request;
     AttentionScoresForEachSubsequence m_last_attention_scores;
+    TokenSimilarityForEachSubsequence m_last_token_similarities;
     size_t m_block_size;
     size_t m_num_decoder_layers;
     bool m_collect_attention_scores;
@@ -110,7 +117,7 @@ class ModelRunner {
 
     bool m_is_use_xattention_inputs;
 
-    bool m_is_use_adaptive_rkv_inputs;
+    bool m_is_use_adaptive_rkv;
 
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
@@ -169,7 +176,7 @@ public:
           m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers),
           m_is_aggregate_attention_scores(is_aggregate_attention_scores),
           m_is_use_xattention_inputs(is_use_xattention_inputs),
-          m_is_use_adaptive_rkv_inputs(m_is_use_adaptive_rkv_inputs) {
+          m_is_use_adaptive_rkv(m_is_use_adaptive_rkv_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
     }
@@ -199,6 +206,9 @@ public:
         return m_last_attention_scores;
     }
 
+    const TokenSimilarityForEachSubsequence& get_last_token_similarities() const {
+        return m_last_token_similarities;
+    }
 
     void set_cache_rotation_trig_lut(ov::Tensor&& rotation_trig_lut) {
         m_cache_rotation_trig_lut = std::move(rotation_trig_lut);
@@ -538,7 +548,7 @@ public:
             _set_xattention_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
-        if (m_is_use_adaptive_rkv_inputs) {
+        if (m_is_use_adaptive_rkv) {
             _set_adaptive_rkv_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
@@ -562,6 +572,10 @@ public:
 
         if (m_collect_attention_scores) {
             _collect_attention_scores(sequence_groups, scheduler_output);
+        }
+
+        if (m_is_use_adaptive_rkv) {
+            _collect_token_similarities(sequence_groups, scheduler_output);
         }
 
         _reset_cache_rotation_coefficients();
@@ -1031,6 +1045,51 @@ private:
                 attention_scores_across_decoder_layers_for_current_sequence[decoder_layer_id] = scores_for_cache_of_current_sequence_group;
             }
             m_last_attention_scores[global_sequence_id] = attention_scores_across_decoder_layers_for_current_sequence;
+        }
+    }
+
+    void _collect_token_similarities(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+        m_last_token_similarities.clear();
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+        using IndexSpan = std::pair<size_t, size_t>;
+        std::list<std::pair<size_t, IndexSpan>> running_seq_ids_and_kvcache_spans;
+        size_t offset = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+
+            for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                Sequence::CPtr sequence = running_sequences[seq_idx];
+                size_t global_sequence_id = sequence->get_id();
+                auto it = scheduler_output.m_adaptive_rkv_evictable_sizes.find(global_sequence_id);
+                if (it == scheduler_output.m_adaptive_rkv_evictable_sizes.end()) {
+                    // Adaptive R-KV similarity calculation was not scheduled for this sequence
+                    continue;
+                }
+                size_t num_similarity_tokens_calculated = it->second * m_block_size;
+                // As we only evict during generation phase, so will the similarity calculation will only be
+                // scheduled after prefill is finished
+                OPENVINO_ASSERT(sequence_group->can_generate_tokens());
+
+                IndexSpan span = {offset, offset + num_similarity_tokens_calculated};
+                offset += num_similarity_tokens_calculated;
+                running_seq_ids_and_kvcache_spans.emplace_back(global_sequence_id, span);
+            }
+        }
+
+        for (const auto& seq_id_and_score_span : running_seq_ids_and_kvcache_spans) {
+            auto token_similarities_across_decoder_layers_for_current_sequence = TokenSimilarityForEachDecoderLayer(m_num_decoder_layers);
+            size_t global_sequence_id = seq_id_and_score_span.first;
+            IndexSpan span = seq_id_and_score_span.second;
+            for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; decoder_layer_id++) {
+                auto attention_score = m_request.get_tensor(get_adaptive_rkv_similarity_score_output_for_decoder_layer(decoder_layer_id));
+                auto scores_for_cache_of_current_sequence_group = ov::Tensor(attention_score, ov::Coordinate{span.first}, ov::Coordinate{span.second});
+                auto copied_tensor = ov::Tensor(scores_for_cache_of_current_sequence_group.get_element_type(), ov::Shape{span.second - span.first});
+                scores_for_cache_of_current_sequence_group.copy_to(copied_tensor);
+                token_similarities_across_decoder_layers_for_current_sequence[decoder_layer_id] = scores_for_cache_of_current_sequence_group;
+            }
+            m_last_token_similarities[global_sequence_id] = token_similarities_across_decoder_layers_for_current_sequence;
         }
     }
 
