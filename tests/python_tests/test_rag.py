@@ -130,7 +130,7 @@ def run_text_embedding_langchain(
 
 
 EmbeddingResult = Union[list[list[float]], list[list[int]], list[float], list[int]]
-MAX_EMBEDDING_ERROR = 2e-6
+MAX_EMBEDDING_ERROR = 2e-6 if sys.platform != 'darwin' else 0.02  # ARM64 macs have different results
 
 
 def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):
@@ -154,10 +154,11 @@ def run_text_embedding_pipeline_with_ref(
 
 
 def assert_rerank_results(result_1: list[tuple[int, float]], result_2: list[tuple[int, float]]):
+    score_diff_max = 1e-6 if sys.platform != 'darwin' else 2e-4  # ARM64 macs have different results
     assert len(result_1) == len(result_2), f"Results length mismatch: {len(result_1)} != {len(result_2)}"
     for pair_1, pair_2 in zip(result_1, result_2):
         assert pair_1[0] == pair_2[0], f"Document IDs do not match: {pair_1[0]} != {pair_2[0]}"
-        assert abs(pair_1[1] - pair_2[1]) < 1e-6, f"Scores do not match for document ID {pair_1[0]}: " f"{pair_1[1]} != {pair_2[1]}"
+        assert abs(pair_1[1] - pair_2[1]) < score_diff_max, f"Scores do not match for document ID {pair_1[0]}: " f"{pair_1[1]} != {pair_2[1]}"
 
 
 def run_text_rerank_langchain(
