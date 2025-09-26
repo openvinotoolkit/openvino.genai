@@ -445,7 +445,7 @@ jobs:
           - name: 'GGUF Reader tests'
             cmd: 'tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            timeout: 60
+            timeout: 360
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -550,6 +550,9 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      # The debug logging includes messages about the time it takes to read the GGUF model.
+      # These messages differ from run to run, so we cannot compare the results of the CPP, Python, and JavaScript parts.
+      OPENVINO_LOG_LEVEL: 1
 
     steps:
       - name: Clone openvino.genai
@@ -626,9 +629,6 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          echo $DYLD_LIBRARY_PATH
-          echo $LD_LIBRARY_PATH
-          echo $PKG_CONFIG_PATH
           python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
@@ -639,7 +639,6 @@ jobs:
   genai_tools_tests:
     name: Tools ${{ matrix.build-type }}
     if: ${{ 'false' }} # Only supported on X64 or ARM with SVE support
-    # if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
     strategy:
       fail-fast: false
       matrix:

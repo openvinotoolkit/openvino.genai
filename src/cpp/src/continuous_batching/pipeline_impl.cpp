@@ -21,17 +21,6 @@
 
 namespace {
 
-ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model) {
-    const std::vector<std::string> kv_cache_precision_path = { "runtime_options", ov::hint::kv_cache_precision.name() };
-    ov::element::Type ir_kv_cache_precision = ov::element::dynamic;
-
-    if (model->has_rt_info(kv_cache_precision_path)) {
-        ir_kv_cache_precision = model->get_rt_info<ov::element::Type>(kv_cache_precision_path);
-    }
-
-    return ir_kv_cache_precision;
-}
-
 // Returns available RAM memory on system if possible, otherwise returns std::numeric_limits<std::streamsize>::max()
 size_t get_available_cpu_memory() {
 #ifdef __APPLE__ 

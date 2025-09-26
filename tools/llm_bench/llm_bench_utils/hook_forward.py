@@ -108,7 +108,7 @@ class StableDiffusionHook:
         pipe.vae_decoder.request = my_vae_decoder
 
 
-class EmbedForwardHook:
+class RAGForwardHook:
     def __init__(self):
         self.tm_list = []
         self.tm_infer_list = []
