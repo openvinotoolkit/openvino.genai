@@ -120,8 +120,23 @@ DecodedResults StatefulLLMPipeline::generate(
     TokenizedInputs encoded_input;
 
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
-        OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
-        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+        if (is_chat_conversation) {
+            if (input_vector->size() == 1) {
+                m_history.push_back({{"role", "user"}, {"content", (*input_vector)[0]}});
+                constexpr bool add_generation_prompt = true;
+                auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
+
+                if (m_use_full_chat_history) {
+                    encoded_input = new_chat_tokens;
+                } else {
+                    ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_kv_cache_state);
+                    encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_kv_cache_state);
+                }
+            } else {
+                OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
+            }
+        } else if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
             std::vector<std::string> templated_input_vector;
             for (auto& input : *input_vector) {
                 ChatHistory history({{{"role", "user"}, {"content", input}}});
