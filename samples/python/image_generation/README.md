@@ -9,6 +9,7 @@ There are several sample files:
  - [`image2image.py`](./image2image.py) demonstrates basic usage of the image to image pipeline
  - [`inpainting.py`](./inpainting.py) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.py`](./benchmark_image_gen.py) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
+ - [`stable_diffusion_export_import.py`](./stable_diffusion_export_import.py) demonstrates how to export and import compiled models in the text to image pipeline
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -264,7 +265,7 @@ else:
 
 ## Export and import compiled models
 
-`openvino_genai.Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet.
+`openvino_genai.Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Only the Stable Diffusion XL model is supported.
 
 ```python
 # export models
@@ -274,5 +275,3 @@ pipeline.export_model(models_path / "blobs")
 # import models
 imported_pipeline = openvino_genai.Text2ImagePipeline(models_path, device, blob_path=models_path / "blobs")
 ```
-
-For the NPU device, the `cache_mode = openvino.CacheMode.OPTIMIZE_SPEED` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.

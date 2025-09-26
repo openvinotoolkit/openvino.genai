@@ -66,7 +66,7 @@ int32_t main(int32_t argc, char* argv[]) try {
                                                    device,
                                                    ov::genai::blob_path(blob_path / "text_encoder_2")),
             ov::genai::UNet2DConditionModel(root_dir / "unet", device, ov::genai::blob_path(blob_path / "unet")),
-            ov::genai::AutoencoderKL(root_dir / "vae_decoder", "CPU", ov::genai::blob_path(blob_path)));
+            ov::genai::AutoencoderKL(root_dir / "vae_decoder", device, ov::genai::blob_path(blob_path)));
     }
 
     // export/import with reshaped pipeline
@@ -84,7 +84,7 @@ int32_t main(int32_t argc, char* argv[]) try {
         pipe.compile(device);
         pipe.export_model(root_dir / "exported");
 
-        ov::genai::Text2ImagePipeline imported_pipe(root_dir, "CPU", ov::genai::blob_path(root_dir / "exported"));
+        ov::genai::Text2ImagePipeline imported_pipe(root_dir, device, ov::genai::blob_path(root_dir / "exported"));
 
         // update generation config according to the new shape parameters
         auto config = imported_pipe.get_generation_config();
