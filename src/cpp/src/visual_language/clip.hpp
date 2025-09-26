@@ -62,3 +62,5 @@ std::vector<clip_image_u8> get_image_patches(
 );
 
 std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_size, const std::vector<std::pair<int, int>> & possible_resolutions);
+
+clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution, uint8_t pad_value = 0);

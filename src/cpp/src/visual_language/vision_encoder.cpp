@@ -11,6 +11,7 @@
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
 #include "visual_language/llava/classes.hpp"
+#include "visual_language/nanollava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
@@ -54,6 +55,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderMiniCPM>(model_dir, device, properties);
     } else if (model_type == VLMModelType::LLAVA) {
         return std::make_shared<VisionEncoderLLaVA>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::NANOLLAVA) {
+        return std::make_shared<VisionEncoderNanoLLaVA>(model_dir, device, properties);
     } else if (model_type == VLMModelType::LLAVA_NEXT) {
         return std::make_shared<VisionEncoderLLaVANext>(model_dir, device, properties);
     } else if (model_type == VLMModelType::INTERNVL_CHAT) {
@@ -83,6 +86,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderMiniCPM>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::LLAVA) {
         return std::make_shared<VisionEncoderLLaVA>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::NANOLLAVA) {
+        return std::make_shared<VisionEncoderNanoLLaVA>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::LLAVA_NEXT) {
         return std::make_shared<VisionEncoderLLaVANext>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::INTERNVL_CHAT) {
