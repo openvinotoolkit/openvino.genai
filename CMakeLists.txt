@@ -39,32 +39,28 @@ if(NOT DEFINED Python3_FIND_VIRTUALENV)
     set(Python3_FIND_VIRTUALENV FIRST)
 endif()
 
-
-function(load_openvino)
-    # Looking for OpenVINO in the python distribution. It doesn't work for cross-compiling build
-    if(NOT CMAKE_CROSSCOMPILING)
-        find_package(Python3 QUIET COMPONENTS Interpreter)
-        if(Python3_Interpreter_FOUND)
-            execute_process(
-                COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
-                OUTPUT_VARIABLE OpenVINO_DIR_PY
-                ERROR_QUIET
-            )
-        endif()
+# Looking for OpenVINO in the python distribution. It doesn't work for cross-compiling build
+if(NOT CMAKE_CROSSCOMPILING)
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        execute_process(
+            COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
+            OUTPUT_VARIABLE OpenVINO_DIR_PY
+            ERROR_QUIET
+        )
     endif()
+endif()
 
-    # Find OpenVINODeveloperPackage first to compile with SDL flags
-    set(OV_COMPATIBILITY_VERSION ${OpenVINOGenAI_VERSION_MAJOR}.${OpenVINOGenAI_VERSION_MINOR}.${OpenVINOGenAI_VERSION_PATCH})
-    find_package(OpenVINODeveloperPackage ${OV_COMPATIBILITY_VERSION} QUIET
+# Find OpenVINODeveloperPackage first to compile with SDL flags
+set(OV_COMPATIBILITY_VERSION ${OpenVINOGenAI_VERSION_MAJOR}.${OpenVINOGenAI_VERSION_MINOR}.${OpenVINOGenAI_VERSION_PATCH})
+find_package(OpenVINODeveloperPackage ${OV_COMPATIBILITY_VERSION} QUIET
+            COMPONENTS Runtime Threading
+            PATHS "${OpenVINO_DIR}")
+if(NOT OpenVINODeveloperPackage_FOUND)
+    find_package(OpenVINO ${OV_COMPATIBILITY_VERSION} REQUIRED
                 COMPONENTS Runtime Threading
-                PATHS "${OpenVINO_DIR}")
-    if(NOT OpenVINODeveloperPackage_FOUND)
-        find_package(OpenVINO ${OV_COMPATIBILITY_VERSION} REQUIRED
-                    COMPONENTS Runtime Threading
-                    PATHS "${OpenVINO_DIR_PY}")
-    endif()
-endfunction()
-load_openvino()
+                PATHS "${OpenVINO_DIR_PY}")
+endif()
 
 include(cmake/features.cmake)
 include(cmake/version.cmake)
