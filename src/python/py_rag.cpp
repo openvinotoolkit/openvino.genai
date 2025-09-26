@@ -42,6 +42,8 @@ Attributes:
         Instruction to use for embedding a query.
     embed_instruction (str, optional):
         Instruction to use for embedding a document.
+    padding_side (str, optional):
+        Side to use for padding "left" or "right"
 )";
 
 const auto text_reranking_config_docstring = R"(
@@ -128,7 +130,8 @@ void init_rag_pipelines(py::module_& m) {
 
     py::enum_<TextEmbeddingPipeline::PoolingType>(text_embedding_pipeline, "PoolingType")
         .value("CLS", TextEmbeddingPipeline::PoolingType::CLS, "First token embeddings")
-        .value("MEAN", TextEmbeddingPipeline::PoolingType::MEAN, "The average of all token embeddings");
+        .value("MEAN", TextEmbeddingPipeline::PoolingType::MEAN, "The average of all token embeddings")
+        .value("LAST_TOKEN", TextEmbeddingPipeline::PoolingType::LAST_TOKEN, "Last token embeddings");
 
     py::class_<TextEmbeddingPipeline::Config>(text_embedding_pipeline, "Config", text_embedding_config_docstring)
         .def(py::init<>())
@@ -144,7 +147,8 @@ void init_rag_pipelines(py::module_& m) {
         .def_readwrite("pooling_type", &TextEmbeddingPipeline::Config::pooling_type)
         .def_readwrite("normalize", &TextEmbeddingPipeline::Config::normalize)
         .def_readwrite("query_instruction", &TextEmbeddingPipeline::Config::query_instruction)
-        .def_readwrite("embed_instruction", &TextEmbeddingPipeline::Config::embed_instruction);
+        .def_readwrite("embed_instruction", &TextEmbeddingPipeline::Config::embed_instruction)
+        .def_readwrite("padding_side", &TextEmbeddingPipeline::Config::padding_side);
 
     text_embedding_pipeline.def(
         py::init([](const std::filesystem::path& models_path,
