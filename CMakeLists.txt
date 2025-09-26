@@ -54,17 +54,18 @@ endif()
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 set(OV_COMPATIBILITY_VERSION ${OpenVINOGenAI_VERSION_MAJOR}.${OpenVINOGenAI_VERSION_MINOR}.${OpenVINOGenAI_VERSION_PATCH})
 find_package(OpenVINODeveloperPackage ${OV_COMPATIBILITY_VERSION} QUIET
-             COMPONENTS Runtime Threading
-             PATHS "${OpenVINO_DIR}")
+            COMPONENTS Runtime Threading
+            PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
     find_package(OpenVINO ${OV_COMPATIBILITY_VERSION} REQUIRED
-                 COMPONENTS Runtime Threading
-                 PATHS "${OpenVINO_DIR_PY}")
+                COMPONENTS Runtime Threading
+                PATHS "${OpenVINO_DIR_PY}")
 endif()
 
 include(cmake/features.cmake)
 include(cmake/version.cmake)
 include(cmake/vs_version.cmake)
+include(cmake/add_target_helpers.cmake)
 
 if(ENABLE_PYTHON)
     # the following two calls are required for cross-compilation
@@ -89,6 +90,8 @@ endif()
 if(MSVC AND MSVC_VERSION GREATER_EQUAL 1930 AND MSVC_VERSION LESS 1941)
     add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
+
+include(cmake/global_properties.cmake)
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
