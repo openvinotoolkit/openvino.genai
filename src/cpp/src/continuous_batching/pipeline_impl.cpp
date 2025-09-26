@@ -338,9 +338,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
                 m_model_runner->set_cache_rotation_data(std::move(m_current_step_rotated_block_indices_per_sequence),
                                                         std::move(m_current_step_rotation_deltas));
            }
-           if (sched_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
-               _set_adaptive_rkv_diversity_blocks(sched_config, scheduler_output);
-           }
         }
 
     }
@@ -706,7 +703,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output) {
     std::unordered_map<SequenceGroup::Ptr, size_t> seq_group_to_num_blocks_evicted_map;
-    auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
+    const auto& sequence_attention_scores = m_model_runner->get_last_attention_scores();
 
     OPENVINO_ASSERT(!sequence_attention_scores.empty());
     size_t num_decoder_layers = sequence_attention_scores.begin()->second.size();
@@ -745,6 +742,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
              continue;
          }
 
+        if (sched_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
+            const auto& token_similarities = m_model_runner->get_last_attention_scores();
+            auto it = token_similarities.find(seq_id);
+            if (it != token_similarities.end()) {
+                cache_eviction_algo.register_token_similarity(it->second);
+            }
+        }
+
         m_previous_num_blocks_before_eviction_per_sequence[seq_id] = seq_group_ptr->get_num_logical_blocks();
 
         auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
@@ -771,7 +776,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_set_adaptive_rkv_diversity_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output) {
-
+    // TODO(vshampor): implement
 }
 
 
