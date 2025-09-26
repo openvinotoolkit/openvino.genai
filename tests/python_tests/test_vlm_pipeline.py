@@ -98,14 +98,14 @@ TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "katuni4ka/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
-ATTENTION_BACKEND: list[str] = ["PA", "SDPA"]
-
 
 RESOLUTION_BY_MODEL: dict[str, int] = {
     "katuni4ka/tiny-random-gemma3": 32,
 }
-
 DEFAULT_RESOLUTION = 336
+
+
+ATTENTION_BACKEND: list[str] = ["PA", "SDPA"]
 
 
 DEFAULT_MAX_NEW_TOKENS = 30
@@ -187,6 +187,10 @@ def _get_ov_model(model_id: str) -> str:
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
     return model_dir
+
+
+# On macOS, transformers<4.52 is required, but this causes gemma3 to fail
+GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
 
 
 @pytest.fixture(scope="session")
@@ -296,18 +300,6 @@ def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
 @pytest.fixture(scope="module")
 def handwritten_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['handwritten'], "handwritten.png"))
-
-# On macOS, transformers<4.52 is required, but this causes gemma3 to fail
-GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
-
-if sys.platform == "darwin":
-    MODEL_IDS = [
-        pytest.param(
-            model_id,
-            marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)
-        ) if "gemma3" in model_id else model_id
-        for model_id in MODEL_IDS
-    ]
 
 
 @pytest.mark.precommit
@@ -1033,6 +1025,7 @@ def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tens
     ov_pipe.generate("", images=[car_tensor])
     with pytest.raises(RuntimeError):
         ov_pipe.generate("<ov_genai_image_0>", images=[car_tensor])
+    ov_pipe.finish_chat()
         
         
 @pytest.mark.precommit
