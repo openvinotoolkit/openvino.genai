@@ -823,9 +823,9 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     size_t batch_size = shape[0];
     size_t total_tokens_num = shape[1];
 
+    std::vector<int> output_ids(selected_token_num, -1);
     selected_token_num = selected_token_num / batch_size;
 
-    std::vector<int> output_ids(selected_token_num * batch_size, -1);
 
     // Prepare initial diagonal values from ov::Tensor
     std::vector<float> vec_di2s(total_tokens_num * batch_size);

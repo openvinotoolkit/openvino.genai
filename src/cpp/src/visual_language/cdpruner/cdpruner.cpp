@@ -44,7 +44,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 
     size_t total_tokens = visual_shape[1];
     size_t raw_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * (1.0 - m_config.pruning_ratio / 100.0)));
-    // Ensure the number of tokens to keep is the nearest even number
+    // Round up to the next even number of tokens to keep
     size_t num_tokens_to_keep = (raw_tokens_to_keep % 2 == 0) ? raw_tokens_to_keep : raw_tokens_to_keep + 1;
 
     if (m_config.pruning_ratio == 0 || num_tokens_to_keep >= total_tokens) {
