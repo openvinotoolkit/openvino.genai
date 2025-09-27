@@ -165,8 +165,15 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
     return single_image_tensors;
 }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
+std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& video) {
     std::vector<EncodedImage> embeds;
+
+    for (const ov::Tensor& single_video : video) {
+        std::vector<ov::Tensor> single_frames = to_single_image_tensors({single_video});
+        auto embeds_video = m_vision_encoder->encode_video(single_frames);
+        embeds.insert(embeds.end(), embeds_video.begin(), embeds_video.end());
+    }
+
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
     for (const ov::Tensor& image : single_images) {
         embeds.emplace_back(m_vision_encoder->encode(image));
@@ -174,16 +181,17 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_ima
     return embeds;
 }
 
-ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds(prompt, encode_images(images), metrics, true, image_sequence);
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& video, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence) {
+    return get_inputs_embeds(prompt, encode_images(images, video), metrics, true, image_sequence);
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& video,
     ov::genai::VLMPerfMetrics& metrics,
     const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds_with_token_type_ids(prompt, encode_images(images), metrics, true, image_sequence);
+    return get_inputs_embeds_with_token_type_ids(prompt, encode_images(images, video), metrics, true, image_sequence);
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
@@ -261,8 +269,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
     }
 }
 
-ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence) {
-    return m_impl->get_inputs_embeds(prompt, images, metrics, image_sequence);
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& video, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence) {
+    return m_impl->get_inputs_embeds(prompt, images, video, metrics, image_sequence);
 }
 
 ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
@@ -272,10 +280,10 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& video,
     VLMPerfMetrics& metrics,
     const std::vector<size_t>& image_sequence) {
-    return m_impl->get_inputs_embeds_with_token_type_ids(
-        prompt, images, metrics, image_sequence);
+    return m_impl->get_inputs_embeds_with_token_type_ids(prompt, images, video, metrics, image_sequence);
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
@@ -292,8 +300,8 @@ bool InputsEmbedder::has_token_type_ids() const {
     return m_impl->has_token_type_ids();
 }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
-    return m_impl->encode_images(images);
+std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& video) {
+    return m_impl->encode_images(images, video);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
