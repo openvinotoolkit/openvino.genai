@@ -333,9 +333,9 @@ ov::Tensor pack_image_features_llava_next(
 
 } // namespace
 
-std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(const std::vector<ov::Tensor>& images, const bool& is_video) {
-    if (is_video) {
-        Logger::warn("LLaVANext doesn't support video preprocess currently. Input images are processed as separate images.");
+std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& video) {
+    if (video.size() > 0) {
+        OPENVINO_THROW("LLaVANext doesn't support video preprocess currently. Input images are processed as separate images.");
     }
 
     std::vector<EncodedImage> embeds;

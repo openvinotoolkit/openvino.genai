@@ -71,20 +71,16 @@ bool InputsEmbedderGemma3::has_token_type_ids() const {
     return true;
 }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedderGemma3::encode_images(const std::vector<ov::Tensor>& images, const bool& is_video) {
+std::vector<ov::genai::EncodedImage> InputsEmbedderGemma3::encode_images(const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& video) {
+    if (video.size() > 0) {
+        OPENVINO_THROW("Gemma3 doesn't support video preprocess currently. Input images are processed as separate images.");
+    }
+
     std::vector<EncodedImage> embeds;
 
     ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
 
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
-    if (is_video) {
-        embeds = m_vision_encoder->encode_video(single_images, vision_config);
-        if (!embeds.empty()) {
-            return embeds;
-        }
-        // Fallback to image process.
-    }
-
     embeds.reserve(single_images.size());
     for (const ov::Tensor& image : single_images) {
         embeds.emplace_back(m_vision_encoder->encode(image, vision_config));

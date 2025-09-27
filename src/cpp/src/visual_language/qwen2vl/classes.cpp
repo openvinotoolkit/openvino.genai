@@ -768,21 +768,21 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     return encode_with_imagepreprocess_ov({image}, config_map);
 }
 
-std::vector<EncodedImage> VisionEncoderQwen2VL::encode_video(const std::vector<ov::Tensor>& images,
+std::vector<EncodedImage> VisionEncoderQwen2VL::encode_video(const std::vector<ov::Tensor>& frames,
                                                              const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
     std::vector<EncodedImage> encoded_imgs;
-    int i = 0;
-    int image_num = static_cast<int>(images.size());
-    for (; i < image_num - static_cast<int>(config.temporal_patch_size); i += config.temporal_patch_size) {
+    size_t i = 0;
+    size_t image_num = frames.size();
+    for (; i + config.temporal_patch_size <= image_num; i += config.temporal_patch_size) {
         EncodedImage encoded_img;
         if (use_ov_image_preprocess == false) {
             encoded_img = encode_with_imagepreprocess_cpp(
-                std::vector<ov::Tensor>(images.begin() + i, images.begin() + i + config.temporal_patch_size),
+                std::vector<ov::Tensor>(frames.begin() + i, frames.begin() + i + config.temporal_patch_size),
                 config_map);
         } else {
             encoded_img = encode_with_imagepreprocess_ov(
-                std::vector<ov::Tensor>(images.begin() + i, images.begin() + i + config.temporal_patch_size),
+                std::vector<ov::Tensor>(frames.begin() + i, frames.begin() + i + config.temporal_patch_size),
                 config_map);
         }
 
@@ -791,9 +791,9 @@ std::vector<EncodedImage> VisionEncoderQwen2VL::encode_video(const std::vector<o
     for (; i < image_num; i++) {
         EncodedImage encoded_img;
         if (use_ov_image_preprocess == false) {
-            encoded_img = encode_with_imagepreprocess_cpp({images[i]}, config_map);
+            encoded_img = encode_with_imagepreprocess_cpp({frames[i]}, config_map);
         } else {
-            encoded_img = encode_with_imagepreprocess_ov({images[i]}, config_map);
+            encoded_img = encode_with_imagepreprocess_ov({frames[i]}, config_map);
         }
         encoded_imgs.push_back(encoded_img);
     }
@@ -856,7 +856,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
 
 std::pair<std::string, std::vector<size_t>> InputsEmbedderQwen2VL::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
-        std::vector<std::array<size_t, 3>> images_grid_thw;
+    std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
     
     for (const auto& encoded_image : images) {
