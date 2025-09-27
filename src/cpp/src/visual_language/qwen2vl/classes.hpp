@@ -18,7 +18,7 @@ public:
     explicit VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir_path, const std::string& device, const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
-    std::vector<EncodedImage> encode_video(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map) override;
+    std::vector<EncodedImage> encode_video(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
 
 private:
     EncodedImage encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map);

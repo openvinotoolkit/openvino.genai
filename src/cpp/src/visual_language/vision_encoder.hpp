@@ -101,8 +101,10 @@ public:
     /// @return Resulting embeddings for the resized source image and
     /// its slices.
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
-    virtual std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map = {}) {
-        // Video encode not implemented, return empty and fallback to image encode.
+
+    /// @brief Compute embeddings of a or mulitple video given
+    virtual std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
+        OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
         return {};
     }
 

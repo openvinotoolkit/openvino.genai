@@ -42,47 +42,39 @@ public:
         auto image = config_map.find(ov::genai::image.name());
         auto images = config_map.find(ov::genai::images.name());
         auto video = config_map.find(ov::genai::video.name());
-        bool is_video = config_map.end() != video;
-        int num_set = (config_map.end() != image) + (config_map.end() != images) + (is_video);
-        OPENVINO_ASSERT(num_set <= 1, "Only one property can be set: image, images, or video.");
 
         ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
         config.update_generation_config(config_map);
 
-        std::vector<ov::Tensor> image_rgbs;
+        std::vector<ov::Tensor> image_rgbs = {};
+        std::vector<ov::Tensor> video_rgbs = {};
         if (config_map.end() != image) {
             image_rgbs = {image->second.as<ov::Tensor>()};
-            return generate(prompt, image_rgbs, config, utils::get_streamer_from_map(config_map));
-        } 
+        }
 
         if (config_map.end() != images) {
             if (images->second.is<std::vector<ov::Tensor>>()) {
-                image_rgbs = images->second.as<std::vector<ov::Tensor>>();
-            }
-            else if (images->second.is<ov::Tensor>()){
-                image_rgbs = {images->second.as<ov::Tensor>()};
-            }
-            else {
+                auto imgs = images->second.as<std::vector<ov::Tensor>>();
+                image_rgbs.insert(image_rgbs.end(), imgs.begin(), imgs.end());
+            } else if (images->second.is<ov::Tensor>()) {
+                image_rgbs.push_back(std::move(images->second.as<ov::Tensor>()));
+            } else {
                 OPENVINO_THROW("Unknown images type.");
             }
-            return generate(prompt, image_rgbs, config, utils::get_streamer_from_map(config_map));
         }
 
-        if (is_video) {
+        if (config_map.end() != video) {
             if (video->second.is<std::vector<ov::Tensor>>()) {
-                image_rgbs = video->second.as<std::vector<ov::Tensor>>();
-            }
-            else if (video->second.is<ov::Tensor>()){
-                image_rgbs = {video->second.as<ov::Tensor>()};
-            }
-            else {
+                video_rgbs = video->second.as<std::vector<ov::Tensor>>();
+            } else if (video->second.is<ov::Tensor>()) {
+                video_rgbs = {video->second.as<ov::Tensor>()};
+            } else {
                 OPENVINO_THROW("Unknown video type.");
             }
-            return generate(prompt, {}, image_rgbs, config, utils::get_streamer_from_map(config_map));
         }
 
-        return generate(prompt, image_rgbs, {}, config, utils::get_streamer_from_map(config_map));
+        return generate(prompt, image_rgbs, video_rgbs, config, utils::get_streamer_from_map(config_map));
     }
 
     virtual void start_chat(const std::string& system_message) = 0;
