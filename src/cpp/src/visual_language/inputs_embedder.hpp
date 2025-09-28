@@ -36,6 +36,13 @@ public:
 
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<std::vector<ov::genai::EncodedImage>>& videos,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings = true,
+                                 const std::vector<size_t>& image_sequence = {},
+                                 const std::vector<size_t>& videos_sequence = {});
 
     // compute input embedding and token_type_ids
     std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
@@ -44,7 +51,7 @@ public:
     
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-    std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& video);
+    std::vector<ov::genai::EncodedImage> encode_videos(const std::vector<ov::Tensor>& videos);
 
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
@@ -76,6 +83,12 @@ public:
         const std::vector<EncodedImage>& images
     ) const;
 
+    virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
+        const std::string& prompt,
+        size_t base_id,
+        const std::vector<EncodedImage>& images,
+        const std::vector<std::vector<EncodedImage>>& videos) const;
+
 private:
     class IInputsEmbedder {
     protected:
@@ -105,6 +118,13 @@ private:
 
     public:
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
+        virtual ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                             const std::vector<ov::genai::EncodedImage>& images,
+                                             const std::vector<std::vector<ov::genai::EncodedImage>>& videos,
+                                             ov::genai::VLMPerfMetrics& metrics,
+                                             bool recalculate_merged_embeddings = true,
+                                             const std::vector<size_t>& image_sequence = {},
+                                             const std::vector<size_t>& videos_sequence = {});
 
         virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
@@ -112,7 +132,7 @@ private:
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-        virtual std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& video);
+        virtual std::vector<ov::genai::EncodedImage> encode_videos(const std::vector<ov::Tensor>& videos);
     
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
     
@@ -143,7 +163,12 @@ private:
             size_t base_id,
             const std::vector<EncodedImage>& images
         ) const = 0;
-    
+        virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
+            const std::string& prompt,
+            size_t base_id,
+            const std::vector<EncodedImage>& images,
+            const std::vector<std::vector<EncodedImage>>& videos) const;
+
     protected:
         IInputsEmbedder(
             const VLMConfig& vlm_config,

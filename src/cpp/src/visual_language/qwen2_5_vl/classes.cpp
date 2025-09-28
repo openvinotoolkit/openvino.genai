@@ -109,7 +109,9 @@ InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(
 
 ov::Tensor InputsEmbedderQwen2_5_VL::run_image_embeddings_merger(
     const std::vector<EncodedImage>& images, 
-    const std::vector<size_t>& images_sequence
+    const std::vector<size_t>& images_sequence,
+    const std::vector<std::vector<EncodedImage>>& videos,
+    const std::vector<size_t>& videos_sequence
 ) {
     auto [reordered_image_embeds, reordered_images_grid_thw] = qwen2_vl_utils::reorder_image_embeds_and_grid_thw(images, images_sequence);
 

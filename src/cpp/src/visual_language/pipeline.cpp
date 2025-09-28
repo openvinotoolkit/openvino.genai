@@ -193,8 +193,13 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        auto encoded_images = m_inputs_embedder->encode_images(images, video);
-        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
+        auto encoded_images = m_inputs_embedder->encode_images(images);
+        std::vector<std::vector<ov::genai::EncodedImage>> encoded_videos;
+        for (auto& vd : video) {
+            auto encoded_vd = m_inputs_embedder->encode_videos({vd});
+            encoded_videos.push_back(encoded_vd);
+        }
+        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images, encoded_videos);
 
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});

@@ -71,12 +71,6 @@ bool InputsEmbedderGemma3::has_token_type_ids() const {
     return true;
 }
 
-// std::vector<ov::genai::EncodedImage> InputsEmbedderGemma3::encode_images(const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& video) {
-//     if (video.size() > 0) {
-//         OPENVINO_THROW("Gemma3 doesn't support video preprocess currently. Input images are processed as separate images.");
-//     }
-// }
-
 std::vector<ov::genai::EncodedImage> InputsEmbedderGemma3::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> embeds;
 

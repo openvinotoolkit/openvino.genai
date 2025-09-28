@@ -43,6 +43,15 @@ public:
         const ov::AnyMap device_config);
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<std::vector<ov::genai::EncodedImage>>& videos,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings = true,
+                                 const std::vector<size_t>& image_sequence = {},
+                                 const std::vector<size_t>& videos_sequence = {}) override;
+
+    std::vector<ov::genai::EncodedImage> encode_videos(const std::vector<ov::Tensor>& videos) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 
@@ -53,8 +62,15 @@ public:
     std::pair<std::string, std::vector<size_t>> normalize_prompt(
         const std::string& prompt,
         size_t base_id,
-        const std::vector<EncodedImage>& images
-    ) const override;
+        const std::vector<EncodedImage>& images) const override {
+        return normalize_prompt(prompt, base_id, images, {});
+    }
+
+    std::pair<std::string, std::vector<size_t>> normalize_prompt(
+        const std::string& prompt,
+        size_t base_id,
+        const std::vector<EncodedImage>& images,
+        const std::vector<std::vector<EncodedImage>>& videos) const override;
 
 protected:
     // A model for merging image embeddings (hidden states), rotary_pos_emb and attension_mask.
@@ -73,7 +89,9 @@ protected:
 
     virtual ov::Tensor run_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
-        const std::vector<size_t>& images_sequence);
+        const std::vector<size_t>& images_sequence,
+        const std::vector<std::vector<EncodedImage>>& videos,
+        const std::vector<size_t>& videos_sequence);
 
     ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw);
 

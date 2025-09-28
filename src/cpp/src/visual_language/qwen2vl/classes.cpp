@@ -29,6 +29,7 @@ namespace {
 
 // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
 const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
+const std::string NATIVE_VIDEO_TAG = "<|vision_start|><|video_pad|><|vision_end|>";
 
 std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {
     auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(input, ov::element::f32);
@@ -854,7 +855,12 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         });
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderQwen2VL::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+std::pair<std::string, std::vector<size_t>> InputsEmbedderQwen2VL::normalize_prompt(
+    const std::string& prompt,
+    size_t base_id,
+    const std::vector<EncodedImage>& images,
+    const std::vector<std::vector<EncodedImage>>& videos) const {
+    // Images
     auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
     std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
@@ -878,10 +884,52 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderQwen2VL::normalize_pro
         expanded_tag += m_vlm_config.vision_end_token;
         unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
     }
-    return {std::move(unified_prompt), std::move(images_sequence)};
+
+    // Video
+    std::vector<size_t> videos_sequence;
+    std::tie(unified_prompt, videos_sequence) =
+        normalize(unified_prompt, NATIVE_VIDEO_TAG, NATIVE_VIDEO_TAG, base_id, videos.size());
+    std::vector<std::array<size_t, 3>> video_grid_thw;
+    video_grid_thw.reserve(videos.size());
+
+    for (const auto& encoded_vd : videos) {
+        size_t grid_t = encoded_vd.size();
+        OPENVINO_ASSERT(grid_t > 0, "Input at least one frame for video.");
+        size_t grid_h = encoded_vd[0].resized_source_size.height;
+        size_t grid_w = encoded_vd[0].resized_source_size.width;
+        video_grid_thw.push_back({grid_t, grid_h, grid_w});
+    }
+
+    for (size_t new_image_id : videos_sequence) {
+        auto [grid_t, grid_h, grid_w] = video_grid_thw.at(new_image_id - base_id);
+        size_t merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
+        size_t num_video_pad_tokens = grid_t * grid_h * grid_w / merge_length;
+
+        std::string expanded_tag = m_vlm_config.vision_start_token;
+        for (int i = 0; i < num_video_pad_tokens; i++) {
+            expanded_tag += m_vlm_config.video_pad_token;
+        }
+        expanded_tag += m_vlm_config.vision_end_token;
+        unified_prompt.replace(unified_prompt.find(NATIVE_VIDEO_TAG), NATIVE_VIDEO_TAG.length(), expanded_tag);
+    }
+
+    std::vector<size_t> vision_sequence;
+    vision_sequence.insert(vision_sequence.end(), videos_sequence.begin(), videos_sequence.end());
+    vision_sequence.insert(vision_sequence.end(), images_sequence.begin(), images_sequence.end());
+    return {std::move(unified_prompt), std::move(vision_sequence)};
 }
 
 ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    return get_inputs_embeds(unified_prompt, images, {}, metrics, recalculate_merged_embeddings, images_sequence, {});
+}
+
+ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_prompt,
+                                                    const std::vector<ov::genai::EncodedImage>& images,
+                                                    const std::vector<std::vector<ov::genai::EncodedImage>>& videos,
+                                                    ov::genai::VLMPerfMetrics& metrics,
+                                                    bool recalculate_merged_embeddings,
+                                                    const std::vector<size_t>& images_sequence,
+                                                    const std::vector<size_t>& videos_sequence) {
     std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
     for (const auto& encoded_image : images) {
@@ -917,11 +965,21 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     }
     ov::Tensor merged_image_embeddings_tensor;
     if (recalculate_merged_embeddings) {
-        m_merged_image_embeddings = run_image_embeddings_merger(images, images_sequence);
+        m_merged_image_embeddings = run_image_embeddings_merger(images, images_sequence, videos, videos_sequence);
     }
     merged_image_embeddings_tensor = m_merged_image_embeddings;
 
     return qwen2_vl_utils::merge_text_and_image_embeddings(input_ids, text_embeds, merged_image_embeddings_tensor, image_pad_token_id);
+}
+
+std::vector<ov::genai::EncodedImage> InputsEmbedderQwen2VL::encode_videos(const std::vector<ov::Tensor>& video) {
+    std::vector<EncodedImage> embeds;
+    for (const ov::Tensor& single_video : video) {
+        std::vector<ov::Tensor> single_frames = to_single_image_tensors({single_video});
+        auto embeds_video = m_vision_encoder->encode_video(single_frames);
+        embeds.insert(embeds.end(), embeds_video.begin(), embeds_video.end());
+    }
+    return embeds;
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
@@ -952,7 +1010,9 @@ void InputsEmbedderQwen2VL::finish_chat() {
 
 ov::Tensor InputsEmbedderQwen2VL::run_image_embeddings_merger(
     const std::vector<EncodedImage>& images,
-    const std::vector<size_t>& images_sequence
+    const std::vector<size_t>& images_sequence,
+    const std::vector<std::vector<EncodedImage>>& videos,
+    const std::vector<size_t>& videos_sequence
 ) {
     auto [reordered_image_embeds, reordered_images_grid_thw] = qwen2_vl_utils::reorder_image_embeds_and_grid_thw(images, images_sequence);
 

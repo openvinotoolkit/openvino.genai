@@ -105,7 +105,6 @@ public:
     /// @brief Compute embeddings of a or mulitple video given
     virtual std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
         OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
-        return {};
     }
 
     /// @brief Gets processor config
