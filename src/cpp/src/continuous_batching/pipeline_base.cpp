@@ -181,7 +181,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         auto image_rgbs = rgbs_vector.size() > 0 ? rgbs_vector[0] : std::vector<ov::Tensor>{};
         auto video_rgbs = video_vector.size() > 0 ? video_vector[0] : std::vector<ov::Tensor>{};
-        encoded_images = m_inputs_embedder->encode_images(image_rgbs, video_rgbs);
+        encoded_images = m_inputs_embedder->encode_images(image_rgbs);
+        encoded_images = m_inputs_embedder->encode_video(video_rgbs);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
