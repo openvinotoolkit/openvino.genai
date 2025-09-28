@@ -290,7 +290,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
 
-        auto encoded_images = m_inputs_embedder->encode_images(rgbs, std::vector<ov::Tensor>{});
+        auto encoded_images = m_inputs_embedder->encode_images(rgbs);
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
@@ -312,7 +312,8 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
 
-        auto encoded_images =m_inputs_embedder->encode_images(images, video);
+        auto encoded_images = m_inputs_embedder->encode_images(images);
+        auto encoded_video = m_inputs_embedder->encode_images(video);
 
         const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);

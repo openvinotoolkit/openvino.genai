@@ -41,7 +41,7 @@ public:
 
     bool has_token_type_ids() const override;
 
-    std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& video) override;
+    std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
     std::pair<std::string, std::vector<size_t>> normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const override;
 

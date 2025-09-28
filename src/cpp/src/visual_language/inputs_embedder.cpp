@@ -175,6 +175,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_ima
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_video(const std::vector<ov::Tensor>& video) {
+    // encode_images
     std::vector<EncodedImage> embeds;
     for (const ov::Tensor& single_video : video) {
         std::vector<ov::Tensor> single_frames = to_single_image_tensors({single_video});
@@ -182,19 +183,6 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_vid
         embeds.insert(embeds.end(), embeds_video.begin(), embeds_video.end());
     }
     return embeds;
-}
-
-ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& video, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds(prompt, encode_images(images, video), metrics, true, image_sequence);
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<ov::Tensor>& images,
-    const std::vector<ov::Tensor>& video,
-    ov::genai::VLMPerfMetrics& metrics,
-    const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds_with_token_type_ids(prompt, encode_images(images, video), metrics, true, image_sequence);
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
@@ -270,10 +258,6 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
-}
-
-ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& video, ov::genai::VLMPerfMetrics& metrics, const std::vector<size_t>& image_sequence) {
-    return m_impl->get_inputs_embeds(prompt, images, video, metrics, image_sequence);
 }
 
 ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
