@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) try {
     // NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses `num_assistant_tokens`'s copy as initial
     // value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is not set, it defaults to `5` for both
     // backends.
-    // config.num_assistant_tokens = 5;
+    config.num_assistant_tokens = 4;
     // Add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than
     // `assistant_confidence_threshold`.
     // NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend.
