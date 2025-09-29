@@ -43,8 +43,8 @@ class GenerateEncoderDecoderOutput(ModelOutput):
 GenerateNonBeamOutput = Union[GenerateDecoderOnlyOutput, GenerateEncoderDecoderOutput]
 
 
-# Transformers version: v4.52-release 51f94ea06d19a6308c61bbb4dc97c40aabd12bad
-# Copied from https://github.com/huggingface/transformers/blob/51f94ea06d19a6308c61bbb4dc97c40aabd12bad/src/transformers/generation/utils.py#L3464
+# Transformers version: v4.55-release 1f6847edb09dc124023ec2eb8267838388dfa593
+# Copied from https://github.com/huggingface/transformers/blob/1f6847edb09dc124023ec2eb8267838388dfa593/src/transformers/generation/utils.py#L3492
 # Add the function of collecting latency
 def new_sample(
         self,
