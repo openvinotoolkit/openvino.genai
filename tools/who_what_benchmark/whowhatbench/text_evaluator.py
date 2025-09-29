@@ -180,16 +180,14 @@ class TextEvaluator(BaseEvaluator):
             else prompt_data.values[: self.num_samples]
         )
 
-        if generation_config is None:
+        if self.seqs_per_request == 1:
             for p in tqdm(prompts, desc="Evaluate pipeline"):
                 answers.append(
                     gen_answer_fn(
                         model,
-                        self.tokenizer,
                         p,
-                        self.max_new_tokens,
-                        self._crop_question,
-                        self.use_chat_template
+                        generation_config,
+                        self._crop_question
                     )
                 )
         else:
