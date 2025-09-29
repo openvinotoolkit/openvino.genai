@@ -978,6 +978,61 @@ INSTANTIATE_TEST_SUITE_P(VariousSetsOfLowScoreBlocks, CacheEvictionLowScoreBlock
                              return info.param.test_id;
                          });
 
+struct CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct {
+    std::string test_id;
+    size_t tokens_over_max_cache_size;
+    ov::genai::AdaptiveRKVConfig adaptive_rkv_config;
+    std::vector<float> evictable_area_token_scores;
+    std::vector<float> evictable_area_token_similarity;
+    std::set<size_t> ref_evicted_blocks;
+};
+
+using CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest = ::testing::TestWithParam<CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct>;
+
+// clang-format off
+const std::vector<CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct> ADAPTIVE_RKV_LOW_SCORE_AND_SIMILARITY_EVICTION_TEST_CASES = {
+    // Expecting `max_cache_size - start_area - evictable_area equal` to 3 blocks, block size of 2
+        // same, but with multiple blocks in evictable area
+        {
+                "three_blocks",
+                2 * 4 + 2,  // 2 blocks worth of overflow + 2 tokens, amounting to 3 blocks to be evicted
+                ov::genai::AdaptiveRKVConfig(0.9, 1),
+                {999.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                {10.0, 11.0, 0.5, 0.1, 18.0, 19.0, 0.2, 0.4, 23.1, 24.2, 19.8, 18.7},
+                {2, 4}
+        }
+};
+// clang-format on
+
+TEST_P(CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest, EvictsLowestScoredBlocksAndKeepsDiverse) {
+    auto test_struct = GetParam();
+    size_t num_decoder_layers = DEFAULT_NUM_DECODER_LAYERS;
+    auto algo = ov::genai::CacheEvictionAlgorithm(ov::genai::CacheEvictionConfig(2, 2, 6, ov::genai::AggregationMode::ADAPTIVE_RKV, /* apply_rotation = */ false, /* snapkv_window_size = */ 0), 2, num_decoder_layers, /* max_pool_window_size = */ 1);
+
+    auto scores = get_mock_scores(num_decoder_layers, algo.get_max_cache_size_after_eviction() + test_struct.tokens_over_max_cache_size);
+    for (size_t layer_idx = 0; layer_idx < num_decoder_layers; layer_idx++) {
+        auto& scores_per_layer = scores[layer_idx];
+        fill_scores(scores_per_layer, 0, scores_per_layer.get_size(), 1.0);
+        for (size_t evictable_area_tok_idx = 0; evictable_area_tok_idx < test_struct.evictable_area_token_scores.size(); evictable_area_tok_idx++) {
+            scores_per_layer.data<float>()[2 + evictable_area_tok_idx] = test_struct.evictable_area_token_scores[evictable_area_tok_idx];
+        }
+    }
+    algo.register_new_token_scores(scores);
+    auto similarity = std::vector<std::vector<float>>(DEFAULT_NUM_DECODER_LAYERS, test_struct.evictable_area_token_similarity);
+    algo.register_token_similarity(get_layer_scores_from_2d_vector(similarity));
+
+    auto test_evicted_blocks = algo.evict_logical_blocks();
+    auto ref_evicted_blocks = test_struct.ref_evicted_blocks;
+    for (size_t layer_idx = 0; layer_idx < num_decoder_layers; layer_idx++) {
+        EXPECT_EQ(test_evicted_blocks[layer_idx], ref_evicted_blocks);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousSetsOfLowScoreAndDiverseBlocks, CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest,
+                         ::testing::ValuesIn(ADAPTIVE_RKV_LOW_SCORE_AND_SIMILARITY_EVICTION_TEST_CASES),
+                         [](const testing::TestParamInfo<CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest::ParamType>& info) {
+                             return info.param.test_id;
+                         });
 
 static constexpr size_t BLOCKS_TO_EVICT = 3;  // 3 blocks to evict
 struct NormalizationSettingTestStruct {
