@@ -705,7 +705,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
         auto& main_perf_generated_tokens = m_main_request->raw_perf_metrics.m_batch_sizes.back();
         main_perf_generated_tokens -= mismatched_candidates;
         m_sd_metrics.update_draft_generated_len(0 /* request_id */, candidates_to_generate);
-        m_sd_metrics.update_acceptance_rate(0 /* request_id */, (accepted_tokens_number /  candidates_to_generate) * 100);
+        m_sd_metrics.update_acceptance_rate(0 /* request_id */, (accepted_tokens_number * 100.f) / candidates_to_generate);
         m_sd_metrics.update_draft_accepted_tokens(0 /* request_id */, accepted_tokens_number);
         m_sd_metrics.update_generated_len(validated_tokens.size());
         if (utils::env_setup_for_print_debug_info()) {
