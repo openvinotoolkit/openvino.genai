@@ -11,16 +11,7 @@ from pathlib import Path
 from PIL import Image
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("model_dir")
-    parser.add_argument("prompt")
-
-    args = parser.parse_args()
-
-    root_dir = Path(args.model_dir)
-
-    # Option 1: export/import with a pipeline.export_model() method
+def pipeline_export_import(root_dir: Path):
     pipe = openvino_genai.Text2ImagePipeline(root_dir, "CPU")
     pipe.export_model(root_dir / "exported")
     # pipeline models are exported to dedicated subfolders
@@ -38,7 +29,8 @@ def main():
     # during import, specify blob_path property to point to the exported model location
     imported_pipe = openvino_genai.Text2ImagePipeline(root_dir, "CPU", blob_path=root_dir / "exported")
 
-    # Option 2: export/import with dedicated model components
+
+def dedicated_models_export_import(root_dir: Path):
     blob_path = root_dir / "blobs"
     device = "CPU"
 
@@ -69,7 +61,10 @@ def main():
         vae=openvino_genai.AutoencoderKL(root_dir / "vae_decoder", device, blob_path=blob_path),
     )
 
-    # Option 3: export/import with reshaped pipeline
+
+def export_import_with_reshape(root_dir: Path, prompt: str):
+    device = "CPU"
+
     width = 512
     height = 512
     number_of_images_to_generate = 1
@@ -91,12 +86,26 @@ def main():
 
     for imagei in range(0, number_of_images_to_generate):
         image_tensor = imported_pipe.generate(
-            args.prompt,
+            prompt,
             num_inference_steps=number_of_inference_steps_per_image,
         )
 
         image = Image.fromarray(image_tensor.data[0])
         image.save("image_" + str(imagei) + ".bmp")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("model_dir")
+    parser.add_argument("prompt")
+
+    args = parser.parse_args()
+
+    root_dir = Path(args.model_dir)
+
+    pipeline_export_import(root_dir)
+    dedicated_models_export_import(root_dir)
+    export_import_with_reshape(root_dir, args.prompt)
 
 
 if "__main__" == __name__:
