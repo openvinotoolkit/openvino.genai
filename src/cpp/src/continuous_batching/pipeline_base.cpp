@@ -194,10 +194,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
             const auto& rgbs = rgbs_vector[i];
+            auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
             auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
-            auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
             if (m_inputs_embedder->has_token_type_ids()) {

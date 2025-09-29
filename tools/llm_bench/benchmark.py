@@ -19,6 +19,7 @@ import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
 import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
+import task.text_reranker as bench_text_rerank
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 
@@ -196,6 +197,16 @@ def get_argprser():
     parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
     parser.add_argument("--embedding_max_length", type=int, default=None,
                         help="Max length for text embeddings. Input text will be padded or truncated to specified value")
+    parser.add_argument("--reranking_max_length", type=int, default=None,
+                        help="Max length for text reranking. Input text will be padded or truncated to specified value")
+    parser.add_argument("--reranking_top_n", type=int, default=None,
+                        help="Number of top results to return for text reranking")
+    parser.add_argument("--texts", nargs='+', default=None,
+                        help="List of candidates for reranking based on their relevance to a prompt(query). Applicable for Text Rerank pipeline.")
+    parser.add_argument('--texts_file', nargs='+', default=None,
+                        help='Texts file(s) in jsonl format with candidates for reranking based on relevance to a prompt(query). '
+                        'Multiple files should be separated with space(s). Applicable for Text Rerank pipeline.')
+    parser.add_argument('--rerank', action='store_true', help='Benchmark reranking pipeline.')
     parser.add_argument("--apply_chat_template", action="store_true",
                         help="Apply chat template for LLM. By default chat template is not applied. It's better to use with --disable_prompt_permutation,"
                              " otherwise the prompt will be modified after applying the chat template, so the structure of chat template will not be kept.")
@@ -214,7 +225,8 @@ CASE_TO_BENCH = {
     'speech2text': bench_speech.run_speech_2_txt_benchmark,
     "vlm": bench_vlm.run_visual_language_generation_benchmark,
     "text_embed": bench_text_embed.run_text_embddings_benchmark,
-    "text2speech": bench_text_to_speech.run_text_2_speech_benchmark
+    "text2speech": bench_text_to_speech.run_text_2_speech_benchmark,
+    "text_rerank": bench_text_rerank.run_text_reranker_benchmark
 }
 
 

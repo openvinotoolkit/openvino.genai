@@ -3186,9 +3186,9 @@ class TextStreamer(StreamerBase):
     
     tokenizer: Tokenizer object to decode tokens into text.
     callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
-    
+    detokenization_params: AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
     """
-    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus]) -> None:
+    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus], detokenization_params: collections.abc.Mapping[str, typing.Any] = {}) -> None:
         ...
     def end(self) -> None:
         ...
@@ -3492,6 +3492,8 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
@@ -3531,6 +3533,8 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
@@ -3569,6 +3573,8 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
