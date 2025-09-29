@@ -51,7 +51,7 @@ class TextParserStreamer : public TextStreamer {
 public:
     TextParserStreamer(const Tokenizer& tokenizer, std::vector<ParserVariant> parsers = {});
 
-    virtual StreamingStatus write(ParsedMessage& message);
+    virtual StreamingStatus write(ParsedMessage& message) = 0;
 
     CallbackTypeVariant write(std::string message);
     

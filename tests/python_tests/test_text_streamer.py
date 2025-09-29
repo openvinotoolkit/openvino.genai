@@ -72,6 +72,20 @@ def test_text_prompts(tmp_path, prompt, model_id):
         streamer.write(token)
     streamer.end()
 
+    class CurrentStremaer(BaseStreamer):
+        def write(self, token_chunk):
+            pass
+
+    class CurrentParsingStreamer(TextParserStreamer):
+        def write(self, word: str):
+            msg: ParsedMessage = get_current_message()
+            
+            
+    streamer = lambda x: print(x)
+
+    streamer = TextStreamer(ov_tokenizer, lambda x: print(x))
+
+    
     assert ''.join(accumulated) == ov_tokenizer.decode(tokens)
 
     for chunk_size in [1,2,3,4,5]:
