@@ -406,6 +406,7 @@ namespace ov::genai {
         std::priority_queue<ScoreAndBlockIdx> score_block_queue;
         double total_sum = 0.0;
         for (size_t i = 0; i < evictable_area_block_scores.size(); i++) {
+            total_sum += evictable_area_block_scores[i];
             score_block_queue.push({evictable_area_block_scores[i], i});
         }
 
