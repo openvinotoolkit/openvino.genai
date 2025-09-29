@@ -14,7 +14,6 @@ import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
 import llm_bench_utils.parse_json_data as parse_json_data
-from llm_bench_utils.config_class import TASK
 from transformers.image_utils import load_image
 import openvino as ov
 import numpy as np
@@ -287,9 +286,9 @@ def get_image_prompt(args):
     input_image_list = []
 
     input_key = ['prompt']
-    if args.get("task") == TASK["inpainting"] or ((args.get("media") or args.get("images")) and args.get("mask_image")):
+    if args.get("task") == args["use_case"].TASK["inpainting"]["name"] or ((args.get("media") or args.get("images")) and args.get("mask_image")):
         input_key = ['media', "mask_image", "prompt"]
-    elif args.get("task") == TASK["img2img"] or args.get("media") or args.get("images"):
+    elif args.get("task") == args["use_case"].TASK["img2img"]["name"] or args.get("media") or args.get("images"):
         input_key = ['media', "prompt"]
 
     output_data_list, is_json_data = model_utils.get_param_from_file(args, input_key)
