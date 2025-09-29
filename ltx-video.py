@@ -30,7 +30,7 @@ def main():
     frame_rate = 25
 
     ov_pipe = OVLTXPipeline.from_pretrained(
-        '/home/vzlobin/z/g/i/LTX-Video/',
+        '/home/alikh/projects/openvino.genai/video_models/Lightricks/LTX-Video',
         device='CPU',
         load_in_8bit=False,
         ov_config={openvino.properties.hint.inference_precision: openvino.Type.f32},

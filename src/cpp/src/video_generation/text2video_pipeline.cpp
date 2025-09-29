@@ -173,6 +173,7 @@ public:
         size_t temporal_compression_ratio = m_vae->get_config().patch_size_t * std::pow(2, std::reduce(m_vae->get_config().spatio_temporal_scaling.begin(), m_vae->get_config().spatio_temporal_scaling.end(), 0));
         size_t transformer_spatial_patch_size = m_transformer->get_config().patch_size;
         size_t transformer_temporal_patch_size = m_transformer->get_config().patch_size_t;
+
         ov::Tensor latents = prepare_latents(
             merged_generation_config,
             num_channels_latents,
