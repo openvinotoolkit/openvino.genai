@@ -13,14 +13,14 @@ using json = nlohmann::json;
 
 namespace ov::genai {
 
-bool DeepSeekR1ReasoningParser::is_active() const {
+bool ReasoningParser::is_active() const {
     return !m_deactivated;
 }
 
-ParsedMessage DeepSeekR1ReasoningParser::parse(
+std::string ReasoningParser::parse(
     ParsedMessage& msg,
     const std::string& previous_text, 
-    const std::string& delta_text,
+    std::string& delta_text,
     const std::optional<std::vector<int64_t>>& previous_tokens, 
     const std::optional<std::vector<int64_t>>& delta_tokens
 ) {
@@ -31,10 +31,6 @@ ParsedMessage DeepSeekR1ReasoningParser::parse(
         msg["content"] = "";
     }
     
-    if (m_deactivated) {
-        msg["content"] += delta_text;
-        return msg;
-    }
     bool think_tag_closed = delta_text.find(m_close_tag) != std::string::npos;
 
     if (!m_think_tag_opened && delta_text.find(m_open_tag) != std::string::npos && !m_starts_with_thinking) {
@@ -42,21 +38,30 @@ ParsedMessage DeepSeekR1ReasoningParser::parse(
         auto think_idx = delta_text.find(m_open_tag);
         msg["reasoning_content"] += delta_text.substr(think_idx + std::string(m_open_tag).size(), delta_text.size() - (think_idx + std::string(m_open_tag).size()));
         m_think_tag_opened = true;
+        if (!m_keep_original_content) {
+            delta_text = "";
+        }
     } else if ((m_think_tag_opened || m_starts_with_thinking) && delta_text.find(m_close_tag) != std::string::npos) {
         auto think_idx = delta_text.find(m_close_tag);
         msg["reasoning_content"] += delta_text.substr(0, think_idx);
         msg["content"] += delta_text.substr(think_idx + std::string(m_close_tag).size(), delta_text.size() - (think_idx + std::string(m_close_tag).size()));
         m_think_tag_opened = false;
         m_deactivated = true;
+        if (!m_keep_original_content) {
+            delta_text = delta_text.substr(think_idx + std::string(m_close_tag).size(), delta_text.size() - (think_idx + std::string(m_close_tag).size()));
+        }
     } else if (m_think_tag_opened) {
         msg["reasoning_content"] += delta_text;
-    } 
+        if (!m_keep_original_content) {
+            delta_text = "";
+        }
+    } // TODO: add case when <think> and </think> are in the same delta_text
     
-    return msg;
+    return delta_text;
 }
 
 
-ParsedMessage Llama32PythonicParser::parse(ParsedMessage& input) {
+ParsedMessage Llama32PythonicToolParser::parse(ParsedMessage& input) {
     // Input example
     // string input = "[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>";
 
@@ -116,29 +121,51 @@ ParsedMessage BaseReasoningParser::parse(ParsedMessage& input) {
     return res;
 }
 
-std::map<std::string, std::shared_ptr<IncrementalParserBase>> IncrementalParserBase::registered_parsers;
-std::map<std::string, std::shared_ptr<ParserBase>> ParserBase::registered_parsers;
+std::map<std::string, std::function<std::shared_ptr<IncrementalParserBase>()>> registered_incremental_parsers;
+std::map<std::string, std::function<std::shared_ptr<ParserBase>()>> registered_base_parsers;
 
 // static initializer to register available buildin parsers
 static bool register_backends() {
-    IncrementalParserBase::registered_parsers[DeepSeekR1ReasoningParser::name()] = std::make_shared<DeepSeekR1ReasoningParser>();
-    IncrementalParserBase::registered_parsers[DeepSeekR1ReasoningParser::name()] = std::make_shared<DeepSeekR1ReasoningParser>();
-    IncrementalParserBase::registered_parsers["Phi-4-reasoning"] = std::make_shared<DeepSeekR1ReasoningParser>(/*starts_with_thinking*/ false);
+    registered_incremental_parsers[DeepSeekR1ReasoningParser::name()] = []() { return std::make_shared<DeepSeekR1ReasoningParser>(/*starts_with_thinking*/ true); };
+    registered_incremental_parsers[Phi4ReasoningParser::name()] = []() { return std::make_shared<Phi4ReasoningParser>(/*starts_with_thinking*/ false); };
+    
+    registered_base_parsers[Llama32PythonicToolParser::name()] = []() { return std::make_shared<Llama32PythonicToolParser>(); };
 
-    ParserBase::registered_parsers[Llama32PythonicParser::name()] = std::make_shared<Llama32PythonicParser>();
+    // TODO: Add more parsers and register them here.
     return true;
 }
 
 // Ensure the backends are registered before main
 static bool are_backends_registered = register_backends();
 
-static std::vector<std::string> get_parsers_names() {
+std::shared_ptr<IncrementalParserBase> IncrementalParserBase::get_parser(std::string name) {
     if (!are_backends_registered) {
         register_backends();
     }
 
+    if (registered_incremental_parsers.find(name) != registered_incremental_parsers.end()) {
+        return registered_incremental_parsers[name]();
+    }
+    return nullptr;
+}
+
+std::shared_ptr<ParserBase> ParserBase::get_parser(std::string name) {
+    if (!are_backends_registered) {
+        register_backends();
+    }
+
+    if (registered_base_parsers.find(name) != registered_base_parsers.end()) {
+        return registered_base_parsers[name]();
+    }
+    return nullptr;
+}
+
+static std::vector<std::string> get_parsers_names() {
     std::vector<std::string> names;
-    for (const auto& [name, _] : IncrementalParserBase::registered_parsers) {
+    for (const auto& [name, _] : registered_incremental_parsers) {
+        names.push_back(name);
+    }
+    for (const auto& [name, _] : registered_base_parsers) {
         names.push_back(name);
     }
     return names;

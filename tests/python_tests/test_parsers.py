@@ -116,3 +116,5 @@ def test_parsers_2(hf_ov_genai_models):
     
     assert msg['reasoning_content'] == think_content
     assert msg['content'] == content
+
+# TODO: add tests when streamer is called directly instead of manual subsequent calling of parsers.

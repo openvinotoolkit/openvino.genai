@@ -5,29 +5,14 @@
 #include "openvino/genai/parsers.hpp"
 #include "openvino/genai/text_streamer.hpp"
 
-using ov::genai::ParsingState;
 
 class CurrentStreamer : public ov::genai::TextParserStreamer {
 private:
-    ParsingState m_previous_state = ParsingState::UNDEFINED;
 public:
     CurrentStreamer(const ov::genai::Tokenizer& tokenizer)
         : ov::genai::TextParserStreamer(tokenizer) {}
-    ov::genai::StreamingStatus write(const ov::genai::ParsedMessage& message) {
-
-        // if (m_previous_state == ParsingState::UNDEFINED && message["state"] == ParsingState::REASONING) {
-        //     std::cout << "Reasoning: " << std::endl;
-        //     std::cout << message["reasoning_content"].value();
-        // } else if (m_previous_state == ParsingState::REASONING && message["state"] == ParsingState::CONTENT) {
-        //     std::cout << std::endl << "Content: " << std::endl;
-        //     std::cout << message["content"].value();
-        // } else if (m_previous_state == ParsingState::REASONING && message["state"] == ParsingState::REASONING) {
-        //     std::cout << message["reasoning_content"].value();
-        // } else if (m_previous_state == ParsingState::CONTENT && message["state"] == ParsingState::CONTENT) {
-        //     std::cout << message["content"].value();
-        // }
+    ov::genai::StreamingStatus write(ov::genai::ParsedMessage& message) {
        std::cout << message.at("content");
-
         return ov::genai::StreamingStatus::RUNNING;
     }
 };

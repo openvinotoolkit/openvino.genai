@@ -207,16 +207,15 @@ DecodedResults LLMPipeline::generate(
         StreamerVariant streamer) {
     auto res = m_pimpl->generate(inputs, generation_config, streamer);
     
-    std::vector<std::shared_ptr<IncrementalParserBase>> incremental_parsers;
     // If streamer is of StreamerBase type, and it is TextParserStreamer, get parsed message
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
         if (auto parser_streamer = std::dynamic_pointer_cast<TextParserStreamer>(*streamer_obj)) {
-            incremental_parsers = parser_streamer->get_parsers();
+            res.parsed.resize(res.texts.size());
+            res.parsed[0] = parser_streamer->get_parsed_message();
         }
     }
     
-    
-    if (incremental_parsers.empty() && (!generation_config.has_value() || (*generation_config).parsers.empty())) {
+    if (!generation_config.has_value() || (*generation_config).parsers.empty()) {
         return res;
     }
 
@@ -225,10 +224,11 @@ DecodedResults LLMPipeline::generate(
         for (auto& parser_variant : (*generation_config).parsers) {
             if (std::holds_alternative<std::string>(parser_variant)) {
                 auto parser_name = std::get<std::string>(parser_variant);
-                if (ParserBase::registered_parsers.find(parser_name) == ParserBase::registered_parsers.end()) {
+                auto parser = ParserBase::get_parser(parser_name);
+                if (!parser) {
                     OPENVINO_THROW("Parser with name ", parser_name, " is not registered");
                 }
-                parsers.push_back(ParserBase::registered_parsers[parser_name]);
+                parsers.push_back(parser);
             } else if (std::holds_alternative<std::shared_ptr<ParserBase>>(parser_variant)) {
                 auto parser = std::get<std::shared_ptr<ParserBase>>(parser_variant);
                 parsers.push_back(parser);
@@ -238,28 +238,18 @@ DecodedResults LLMPipeline::generate(
     
     res.parsed.resize(res.texts.size());
 
-    // BaseParsers have priority over IncrementalParsers
+    // Apply Base parsers sequentially even if IncrementalParser has run.
     if (!parsers.empty()) {
         for (size_t i = 0; i < res.texts.size(); ++i) {
             auto& message = res.texts[i];
-            ParsedMessage msg;
+            ParsedMessage& msg = res.parsed[i];
             for (auto& parser: parsers) {
+                // TODO: check if is_active() is needed here
+                // TODO: Check the state of incremental parser and reset if necessary
                 msg = parser->parse(msg);
             }
             res.parsed[i] = msg;
         }
-        return res;
-    }
-
-    // At this place we have only IncrementalParsers
-    for (size_t i = 0; i < res.texts.size(); ++i) {
-        auto& message = res.texts[i];
-        ParsedMessage msg;
-        for (auto& parser: incremental_parsers) {
-            // Previous is and empty message because we populate message with the full generated text.
-            msg = parser->parse(msg, "", message);
-        }
-        res.parsed[i] = msg;
     }
 
     return res;

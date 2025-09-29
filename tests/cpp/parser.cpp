@@ -44,7 +44,7 @@ TEST(ParserTest, test_llama32_parser_1) {
             }}
         }
     });
-    std::shared_ptr<Llama32PythonicParser> parser = std::make_shared<Llama32PythonicParser>();
+    std::shared_ptr<Llama32PythonicToolParser> parser = std::make_shared<Llama32PythonicToolParser>();
     
     nlohmann::json res = run_parser_test(parser, prompt, expected);
     
@@ -67,7 +67,7 @@ TEST(ParserTest, test_llama32_parser_2) {
             }}
         }
     });
-    auto parser = std::make_shared<Llama32PythonicParser>(/*keep_original_content*/ false);
+    auto parser = std::make_shared<Llama32PythonicToolParser>(/*keep_original_content*/ false);
 
     nlohmann::json res = run_parser_test(parser, prompt, expected);
 
@@ -112,7 +112,7 @@ TEST(ParserTest, test_reasoning_parser_2) {
 
 class DeepSeekR1ReasoningParserTest : public ::testing::Test {
 protected:
-    ov::genai::DeepSeekR1ReasoningParser parser;
+    ov::genai::ReasoningParser parser;
     ParsedMessage msg;
 };
 
@@ -131,10 +131,14 @@ TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
     std::string ref_res = "First, I recognize that the question is asking for the sum of 2 and 1.\n\nI know that addition involves combining two numbers to find their total.\n\nStarting with 2, I add 1 to it.\n\n2 plus 1 equals 3.\n";
     
     ParsedMessage msg;
+    
+    
     for (int i = 1; i < input_stream.size(); i++) {
         std::string previous_text = input_stream[i - 1];
         std::string delta_text = input_stream[i];
-        msg = parser.parse(msg, previous_text, delta_text);
+        delta_text = parser.parse(msg, previous_text, delta_text);
     }
     ASSERT_EQ(msg["reasoning_content"], ref_res);
 }
+
+// TODO: add tests when streamer is called directly instead of manual subsequent calling of parsers.

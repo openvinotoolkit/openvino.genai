@@ -26,15 +26,15 @@ namespace {
 
 class ConstructableIncrementalParserBase: public IncrementalParserBase {
 public:
-    ParsedMessage parse(
+    std::string parse(
         ParsedMessage& msg,
         const std::string& previous_text, 
-        const std::string& delta_text, 
+        std::string& delta_text, 
         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) override {
         PYBIND11_OVERRIDE_PURE(
-            ParsedMessage,  // Return type
+            std::string,  // Return type
             IncrementalParserBase,  // Parent class
             parse,  // Name of function in C++ (must match Python name)
             msg,
@@ -68,6 +68,7 @@ public:
 
 } // namespace
 
+// TODO: double check/add more relevant docstrings for parsers.
 void init_parsers(py::module_& m) {
     py::class_<IncrementalParserBase, ConstructableIncrementalParserBase, std::shared_ptr<IncrementalParserBase>>(m, "IncrementalParserBase")
         .def(py::init<>())
@@ -87,5 +88,4 @@ void init_parsers(py::module_& m) {
             &ParserBase::parse,
             "Parse is called with the full text. Returns a ParsedMessage with parsed content.",
             py::arg("text"));
-            
 }
