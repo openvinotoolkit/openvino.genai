@@ -51,7 +51,7 @@ public:
     
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-    std::vector<ov::genai::EncodedImage> encode_videos(const std::vector<ov::Tensor>& videos);
+    std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& videos);
 
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
@@ -83,7 +83,7 @@ public:
         const std::vector<EncodedImage>& images
     ) const;
 
-    virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
+    virtual NormlizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images,
@@ -132,7 +132,7 @@ private:
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-        virtual std::vector<ov::genai::EncodedImage> encode_videos(const std::vector<ov::Tensor>& videos);
+        virtual std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& videos);
     
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
     
@@ -163,7 +163,8 @@ private:
             size_t base_id,
             const std::vector<EncodedImage>& images
         ) const = 0;
-        virtual std::pair<std::string, std::vector<size_t>> normalize_prompt(
+
+        virtual NormlizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_id,
             const std::vector<EncodedImage>& images,

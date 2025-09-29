@@ -18,7 +18,7 @@ public:
     explicit VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir_path, const std::string& device, const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
-    std::vector<EncodedImage> encode_video(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
+    std::vector<EncodedImage> encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
 
 private:
     EncodedImage encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map);
@@ -51,7 +51,7 @@ public:
                                  const std::vector<size_t>& image_sequence = {},
                                  const std::vector<size_t>& videos_sequence = {}) override;
 
-    std::vector<ov::genai::EncodedImage> encode_videos(const std::vector<ov::Tensor>& videos) override;
+    std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& videos) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 
@@ -63,10 +63,11 @@ public:
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images) const override {
-        return normalize_prompt(prompt, base_id, images, {});
+        auto norm_prompt = normalize_prompt(prompt, base_id, images, {});
+        return {norm_prompt.unified_prompt, norm_prompt.images_sequence};
     }
 
-    std::pair<std::string, std::vector<size_t>> normalize_prompt(
+    NormlizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images,
@@ -99,6 +100,8 @@ protected:
         const ov::Tensor& input_ids_tensor,
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
         const std::vector<size_t>& images_sequence,
+        const std::vector<std::array<size_t, 3>>& videos_grid_thw,
+        const std::vector<size_t>& videos_sequence,
         const size_t image_id,
         const int64_t vision_start_token_id
     );
@@ -106,9 +109,11 @@ protected:
 
 namespace qwen2_vl_utils {
 
-std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_embeds_and_grid_thw(
+std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_video_embeds_and_grid_thw(
     const std::vector<EncodedImage>& encoded_images,
-    const std::vector<size_t>& images_sequence
+    const std::vector<size_t>& images_sequence,
+    const std::vector<std::vector<EncodedImage>>& videos,
+    const std::vector<size_t>& videos_sequence
 );
 
 ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw);

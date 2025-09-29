@@ -59,6 +59,12 @@ struct EncodedImage {
     ResampledImage resampled_image;
 };
 
+struct NormlizedPrompt {
+    std::string unified_prompt;
+    std::vector<size_t> images_sequence;
+    std::vector<size_t> videos_sequence;
+};
+
 /// @brief A class used to infer embeddings of an image using
 /// ov::InferRequest and configured by ProcessorConfig.
 class VisionEncoder {
@@ -103,7 +109,7 @@ public:
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
 
     /// @brief Compute embeddings of a or mulitple video given
-    virtual std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
+    virtual std::vector<ov::genai::EncodedImage> encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
         OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
     }
 

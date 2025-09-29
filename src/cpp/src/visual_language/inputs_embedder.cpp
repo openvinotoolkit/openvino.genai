@@ -185,11 +185,11 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
 }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
+std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_video(const std::vector<ov::Tensor>& videos) {
     OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::normalize_prompt(
+NormlizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
     const std::string& prompt,
     size_t base_id,
     const std::vector<EncodedImage>& images,
@@ -310,8 +310,8 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::ve
     return m_impl->encode_images(images);
 }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
-    return m_impl->encode_videos(videos);
+std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_video(const std::vector<ov::Tensor>& videos) {
+    return m_impl->encode_video(videos);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
@@ -351,10 +351,11 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(
     size_t base_id,
     const std::vector<EncodedImage>& images
 ) const {
-     return m_impl->normalize_prompt(prompt, base_id, images, {});
+    auto norm_prompt = m_impl->normalize_prompt(prompt, base_id, images, {});
+    return {norm_prompt.unified_prompt, norm_prompt.images_sequence};
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(
+NormlizedPrompt InputsEmbedder::normalize_prompt(
     const std::string& prompt,
     size_t base_id,
     const std::vector<EncodedImage>& images,

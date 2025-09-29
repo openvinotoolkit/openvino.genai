@@ -166,7 +166,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
 
     OPENVINO_ASSERT(prompts.size() == sampling_params.size(), "Number of prompts should be equal to the number of generation configs.");
-    OPENVINO_ASSERT(prompts.size() == rgbs_vector.size() || prompts.size() == video_vector.size(), "Number of prompts should be equal to the number of images/video vectors.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
@@ -180,11 +179,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         const auto& prompt = prompts[0];
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        std::vector<size_t> vision_sequence;
         auto video_rgbs = video_vector.size() > 0 ? video_vector[0] : std::vector<ov::Tensor>{};
         for (auto& vd : video_rgbs) {
-            auto encoded_vd = m_inputs_embedder->encode_videos({vd});
-            m_history_images.insert(m_history_images.end(), encoded_vd.begin(), encoded_vd.end());
+            auto encoded_vd = m_inputs_embedder->encode_video({vd});
+            m_history_videos.push_back(encoded_vd);
             encoded_videos.push_back(encoded_vd);
         }
 
@@ -192,15 +190,17 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         encoded_images = m_inputs_embedder->encode_images(image_rgbs);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
-        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images, encoded_videos);
-        m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
-        m_history_image_ids.insert(m_history_image_ids.end(), image_sequence.begin(), image_sequence.end());
+        auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images, encoded_videos);
+        m_history.push_back({{"role", "user"}, {"content", norm_prompt.unified_prompt}});
+        m_history_image_ids.insert(m_history_image_ids.end(), norm_prompt.images_sequence.begin(), norm_prompt.images_sequence.end());
+        m_history_video_ids.insert(m_history_video_ids.end(), norm_prompt.videos_sequence.begin(), norm_prompt.videos_sequence.end());
 
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
         if (m_inputs_embedder->has_token_type_ids()) {
+            // Todo: support video
             auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history,
                                                                                              m_history_images,
                                                                                              vlm_perf_metrics[0],
@@ -211,9 +211,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         } else {
             input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(templated_history,
                                                                                 m_history_images,
+                                                                                m_history_videos,
                                                                                 vlm_perf_metrics[0],
                                                                                 true,
-                                                                                m_history_image_ids));
+                                                                                m_history_image_ids,
+                                                                                m_history_video_ids));
         }
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
@@ -230,20 +232,20 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             const auto encoded_images = m_inputs_embedder->encode_images(image_rgbs);
             std::vector<std::vector<ov::genai::EncodedImage>> encoded_videos;
             for (auto& vd : video_rgbs) {
-                auto encoded_vd = m_inputs_embedder->encode_videos({vd});
+                auto encoded_vd = m_inputs_embedder->encode_video({vd});
                 encoded_videos.push_back(encoded_vd);
             }
 
-            auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images, encoded_videos);
+            auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images, encoded_videos);
 
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
             if (m_inputs_embedder->has_token_type_ids()) {
-                auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence);
+                auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(norm_prompt.unified_prompt, encoded_images, vlm_perf_metrics[i], true, norm_prompt.images_sequence);
                 input_embeds_list.push_back(std::move(embeds));
                 token_type_ids_list.push_back(std::move(tt_ids));
             } else {
-                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, vlm_perf_metrics[i], true, image_sequence));
+                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(norm_prompt.unified_prompt, encoded_images, vlm_perf_metrics[i], true, norm_prompt.images_sequence));
             }
         
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
@@ -328,12 +330,12 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
         auto encoded_images = m_inputs_embedder->encode_images(images);
         std::vector<std::vector<ov::genai::EncodedImage>> encoded_videos;
         for (auto& vd : video) {
-            auto encoded_vd = m_inputs_embedder->encode_videos({vd});
+            auto encoded_vd = m_inputs_embedder->encode_video({vd});
             encoded_videos.push_back(encoded_vd);
         }
 
-        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images, encoded_videos);
-        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
+        auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images, encoded_videos);
+        inputs = m_inputs_embedder->get_inputs_embeds(norm_prompt.unified_prompt, encoded_images, metrics, true, norm_prompt.images_sequence);
     }
     return add_request(request_id, inputs, sampling_params);
 }

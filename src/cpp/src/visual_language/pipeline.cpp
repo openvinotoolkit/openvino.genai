@@ -196,17 +196,17 @@ public:
         auto encoded_images = m_inputs_embedder->encode_images(images);
         std::vector<std::vector<ov::genai::EncodedImage>> encoded_videos;
         for (auto& vd : video) {
-            auto encoded_vd = m_inputs_embedder->encode_videos({vd});
+            auto encoded_vd = m_inputs_embedder->encode_video({vd});
             encoded_videos.push_back(encoded_vd);
         }
-        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images, encoded_videos);
+        auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images, encoded_videos);
 
         if (m_is_chat_conversation) {
-            m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
-            unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
+            m_history.push_back({{"role", "user"}, {"content", norm_prompt.unified_prompt}});
+            norm_prompt.unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
 
-            for (size_t idx = 0; idx < image_sequence.size(); idx++) {
-                image_sequence[idx] -= m_image_id;
+            for (size_t idx = 0; idx < norm_prompt.images_sequence.size(); idx++) {
+                norm_prompt.images_sequence[idx] -= m_image_id;
             }
         }
         else {
@@ -217,9 +217,9 @@ public:
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+            std::tie(inputs_embeds, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(norm_prompt.unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, norm_prompt.images_sequence);
         } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+            inputs_embeds = m_inputs_embedder->get_inputs_embeds(norm_prompt.unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, norm_prompt.images_sequence);
         }
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
