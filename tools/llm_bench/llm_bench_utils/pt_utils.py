@@ -9,13 +9,6 @@ import logging as log
 from pathlib import Path
 
 from llm_bench_utils.memory_monitor import MemMonitorWrapper
-from llm_bench_utils.config_class import (
-    PT_MODEL_CLASSES_MAPPING,
-    TOKENIZE_CLASSES_MAPPING,
-    DEFAULT_MODEL_CLASSES,
-    TEXT_TO_SPEECH_VOCODER_CLS,
-    TEXT_RERANK_PT_GEN_CLS
-)
 import llm_bench_utils.hook_common as hook_common
 
 
@@ -70,10 +63,8 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     if model_path.exists():
         if model_path.is_dir() and len(os.listdir(model_path)) != 0:
             log.info(f'Load text model from model path:{model_path}')
-            default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
-            model_type = kwargs.get('model_type', default_model_type)
-            model_class = PT_MODEL_CLASSES_MAPPING.get(model_type, PT_MODEL_CLASSES_MAPPING[default_model_type])
-            token_class = TOKENIZE_CLASSES_MAPPING.get(model_type, TOKENIZE_CLASSES_MAPPING[default_model_type])
+            model_class = kwargs['use_case'].pt_cls
+            token_class = kwargs['use_case'].tokenizer_cls
             if kwargs.get("mem_consumption"):
                 memory_data_collector.start()
             start = time.perf_counter()
@@ -148,8 +139,7 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
     if model_path.exists():
         if model_path.is_dir() and len(os.listdir(model_path)) != 0:
             log.info(f'Load image model from model path:{model_path}')
-            model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
-            model_class = PT_MODEL_CLASSES_MAPPING[model_type]
+            model_class = kwargs['use_case'].pt_cls
             if kwargs.get("mem_consumption"):
                 memory_data_collector.start()
             start = time.perf_counter()
@@ -192,17 +182,15 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
     if model_path.exists():
         if model_path.is_dir() and len(os.listdir(model_path)) != 0:
             log.info(f'Load text to speech model from model path:{model_path}')
-            default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
-            model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
-            model_class = PT_MODEL_CLASSES_MAPPING.get(model_type, PT_MODEL_CLASSES_MAPPING[default_model_type])
-            token_class = TOKENIZE_CLASSES_MAPPING.get(model_type, TOKENIZE_CLASSES_MAPPING[default_model_type])
+            model_class = kwargs['use_case'].pt_cls
+            token_class = kwargs['use_case'].tokenizer_cls
             if kwargs.get("mem_consumption"):
                 memory_data_collector.start()
             start = time.perf_counter()
             pipe = model_class.from_pretrained(model_path)
             vocoder = None
             if kwargs.get('vocoder_path'):
-                vocoder = TEXT_TO_SPEECH_VOCODER_CLS.from_pretrained(kwargs.get('vocoder_path'))
+                vocoder = kwargs['use_case'].vocoder_cls
             pipe = set_bf16(pipe, device, **kwargs)
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
@@ -243,8 +231,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
     if model_path.exists():
         if model_path.is_dir() and len(os.listdir(model_path)) != 0:
             log.info(f'Load image model from model path:{model_path}')
-            model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
-            model_class = PT_MODEL_CLASSES_MAPPING[model_type]
+            model_class = kwargs['use_case'].pt_cls
             start = time.perf_counter()
             pipe = model_class.from_pretrained(model_path)
             end = time.perf_counter()
@@ -287,13 +274,12 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
         raise RuntimeError(f'==Failure ==: model path:{model_path} is not directory or directory is empty')
 
     log.info(f'Load text reranker model from model path:{model_path}')
-    default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
-    model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
-    token_class = TOKENIZE_CLASSES_MAPPING.get(model_type, TOKENIZE_CLASSES_MAPPING[default_model_type])
+    model_class = kwargs['use_case'].pt_cls
+    token_class = kwargs['use_case'].tokenizer_cls
     if kwargs.get("mem_consumption"):
         memory_monitor.start()
     start = time.perf_counter()
-    pipe = TEXT_RERANK_PT_GEN_CLS.from_pretrained(model_path)
+    pipe = model_class.from_pretrained(model_path)
     pipe = set_bf16(pipe, device, **kwargs)
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
