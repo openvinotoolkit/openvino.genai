@@ -23,7 +23,11 @@ describe("LLMPipeline construction", async () => {
     });
   });
 
-  await it("test SchedulerConfig", async () => {
+  await it("test SchedulerConfig", async (t) => {
+    if (os.platform() === "darwin") {
+      t.skip("only support x64 platform or ARM with SVE support");
+      return;
+    }
     const schedulerConfig = {
       max_num_batched_tokens: 32,
     };

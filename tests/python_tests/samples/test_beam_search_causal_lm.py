@@ -21,6 +21,8 @@ class TestBeamSearchCausalLM:
         indirect=["convert_model"],
     )
     def test_sample_beam_search_causal_lm(self, convert_model, sample_args):
+        if sys.platform == 'darwin':
+            pytest.xfail("Ticket 173586")
         # C++ test
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'beam_search_causal_lm')
         cpp_command = [cpp_sample, convert_model, f'"{sample_args}"']
