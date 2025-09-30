@@ -84,6 +84,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     auto model = utils::read_model(models_path, properties);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(models_path);
 
@@ -143,6 +144,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto eagle_rt_info = extract_eagle_mode_from_config(draft_model_desr.properties);
     auto model = utils::read_model(models_path, properties_without_draft_model);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
 
     auto generation_config = utils::from_config_json_if_exists(models_path);
     std::shared_ptr<InputsEmbedder> embedder;

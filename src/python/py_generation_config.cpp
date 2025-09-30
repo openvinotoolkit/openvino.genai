@@ -250,7 +250,7 @@ void init_generation_config(py::module_& m) {
     // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
-        .def(py::init([](py::kwargs kwargs) { return *pyutils::update_config_from_kwargs(GenerationConfig(), kwargs); }))
+        .def(py::init([](py::kwargs kwargs) { return pyutils::update_config_from_kwargs(GenerationConfig(), kwargs); }))
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)

@@ -234,3 +234,21 @@ class TestBenchmarkLLM:
             "-m", convert_model, 
         ] + sample_args
         run_sample(benchmark_py_command)
+        
+        
+    @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["ms-marco-TinyBERT-L2-v2"], indirect=True)
+    @pytest.mark.parametrize("sample_args", [
+        ["-d", "cpu", "-n", "2", "--rerank"], 
+        ["-d", "cpu", "-n", "2", "--reranking_max_length", "10", "--reranking_top_n", "1", "--rerank"],
+        ["-d", "cpu", "-n", "2", "--optimum", "--rerank"], 
+        ["-d", "cpu", "-n", "1", "--reranking_max_length", "10", "--reranking_top_n", "1", "--optimum", "--rerank"]
+    ])
+    def test_python_tool_llm_benchmark_text_reranking(self, convert_model, sample_args):
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_py_command = [
+            sys.executable, 
+            benchmark_script, 
+            "-m", convert_model, 
+        ] + sample_args
+        run_sample(benchmark_py_command)
