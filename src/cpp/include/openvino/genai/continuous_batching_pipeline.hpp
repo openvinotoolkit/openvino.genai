@@ -192,7 +192,7 @@ public:
     std::vector<VLMDecodedResults> generate(
             const std::vector<std::string>& prompts,
             const std::vector<std::vector<ov::Tensor>>& images,
-            const std::vector<std::vector<ov::Tensor>>& video,
+            const std::vector<std::vector<ov::Tensor>>& videos,
             const std::vector<GenerationConfig>& sampling_params,
             const StreamerVariant& streamer=std::monostate{});
 
