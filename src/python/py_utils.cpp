@@ -437,19 +437,9 @@ StructuredOutputConfig::CompoundGrammar py_obj_to_compound_grammar(const py::obj
     }
 }
 
-ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs) {
-    if (!config.has_value() && kwargs.empty())
-        return std::nullopt;
-
-    ov::genai::GenerationConfig res_config;
-    if (config.has_value())
-        res_config = *config;
-
-    if (!kwargs.empty())
-        res_config.update_generation_config(kwargs_to_any_map(kwargs));
-
-    return res_config;
+ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfig config, const py::kwargs& kwargs) {
+    config.update_generation_config(kwargs_to_any_map(kwargs));
+    return config;
 }
-
 
 }  // namespace ov::genai::pybind::utils
