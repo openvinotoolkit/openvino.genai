@@ -192,6 +192,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_vid
 NormlizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
     const std::string& prompt,
     size_t base_id,
+    size_t video_base_id,
     const std::vector<EncodedImage>& images,
     const std::vector<std::vector<EncodedImage>>& videos) const {
     OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
@@ -351,17 +352,18 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(
     size_t base_id,
     const std::vector<EncodedImage>& images
 ) const {
-    auto norm_prompt = m_impl->normalize_prompt(prompt, base_id, images, {});
+    auto norm_prompt = m_impl->normalize_prompt(prompt, base_id, 0, images, {});
     return {norm_prompt.unified_prompt, norm_prompt.images_sequence};
 }
 
 NormlizedPrompt InputsEmbedder::normalize_prompt(
     const std::string& prompt,
     size_t base_id,
+    size_t video_base_id,
     const std::vector<EncodedImage>& images,
     const std::vector<std::vector<EncodedImage>>& videos
 ) const {
-     return m_impl->normalize_prompt(prompt, base_id, images, videos);
+     return m_impl->normalize_prompt(prompt, base_id, video_base_id, images, videos);
 }
 
 void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images) {

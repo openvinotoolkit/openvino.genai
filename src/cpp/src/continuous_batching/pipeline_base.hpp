@@ -56,6 +56,7 @@ protected:
     std::vector<size_t> m_history_image_ids;
     std::vector<size_t> m_history_video_ids;
     size_t m_image_id = 0;
+    size_t m_video_id = 0;
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms

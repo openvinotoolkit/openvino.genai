@@ -63,13 +63,14 @@ public:
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images) const override {
-        auto norm_prompt = normalize_prompt(prompt, base_id, images, {});
+        auto norm_prompt = normalize_prompt(prompt, base_id, 0, images, {});
         return {norm_prompt.unified_prompt, norm_prompt.images_sequence};
     }
 
     NormlizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
+        size_t video_base_id,
         const std::vector<EncodedImage>& images,
         const std::vector<std::vector<EncodedImage>>& videos) const override;
 
@@ -100,9 +101,10 @@ protected:
         const ov::Tensor& input_ids_tensor,
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
         const std::vector<size_t>& images_sequence,
+        const size_t image_id,
         const std::vector<std::array<size_t, 3>>& videos_grid_thw,
         const std::vector<size_t>& videos_sequence,
-        const size_t image_id,
+        const size_t video_id,
         const int64_t vision_start_token_id
     );
 };

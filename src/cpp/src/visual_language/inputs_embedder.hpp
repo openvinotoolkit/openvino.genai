@@ -86,6 +86,7 @@ public:
     virtual NormlizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
+        size_t video_base_id,
         const std::vector<EncodedImage>& images,
         const std::vector<std::vector<EncodedImage>>& videos) const;
 
@@ -167,6 +168,7 @@ private:
         virtual NormlizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_id,
+            size_t video_base_id,
             const std::vector<EncodedImage>& images,
             const std::vector<std::vector<EncodedImage>>& videos) const;
 

@@ -35,11 +35,14 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
     m_history_images.clear();
+    m_history_videos.clear();
     m_history_image_ids.clear();
+    m_history_video_ids.clear();
     if (m_inputs_embedder) {
         m_inputs_embedder->finish_chat();
     }
     m_image_id = 0;
+    m_video_id = 0;
 };
 
 std::vector<GenerationResult>
@@ -190,7 +193,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         encoded_images = m_inputs_embedder->encode_images(image_rgbs);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
-        auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images, encoded_videos);
+        auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
         m_history.push_back({{"role", "user"}, {"content", norm_prompt.unified_prompt}});
         m_history_image_ids.insert(m_history_image_ids.end(), norm_prompt.images_sequence.begin(), norm_prompt.images_sequence.end());
         m_history_video_ids.insert(m_history_video_ids.end(), norm_prompt.videos_sequence.begin(), norm_prompt.videos_sequence.end());
@@ -236,7 +239,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                 encoded_videos.push_back(encoded_vd);
             }
 
-            auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images, encoded_videos);
+            auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
@@ -280,6 +283,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_inputs_embedder->update_chat_history(results[0].texts[0], encoded_results[0].m_status);
         if (encoded_results[0].m_status != ov::genai::GenerationStatus::CANCEL) {
             m_image_id += encoded_images.size();
+            m_video_id += encoded_videos.size();
             m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
         }
         else {
@@ -287,6 +291,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             for (size_t idx = 0; idx < encoded_images.size(); idx++) {
                 m_history_image_ids.pop_back();
                 m_history_images.pop_back();
+                m_history_video_ids.pop_back();
+                m_history_videos.pop_back();
             }
         }
     }
@@ -334,7 +340,7 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
             encoded_videos.push_back(encoded_vd);
         }
 
-        auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images, encoded_videos);
+        auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
         inputs = m_inputs_embedder->get_inputs_embeds(norm_prompt.unified_prompt, encoded_images, metrics, true, norm_prompt.images_sequence);
     }
     return add_request(request_id, inputs, sampling_params);
