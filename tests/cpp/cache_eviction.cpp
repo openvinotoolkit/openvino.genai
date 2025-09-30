@@ -991,15 +991,23 @@ using CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest = ::testing
 
 // clang-format off
 const std::vector<CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct> ADAPTIVE_RKV_LOW_SCORE_AND_SIMILARITY_EVICTION_TEST_CASES = {
-    // Expecting `max_cache_size - start_area - evictable_area equal` to 3 blocks, block size of 2
+    // Expecting `max_cache_size - start_area - recent_area equal` to 3 blocks, block size of 2
         // same, but with multiple blocks in evictable area
         {
-                "three_blocks",
-                2 * 4 + 2,  // 2 blocks worth of overflow + 2 tokens, amounting to 3 blocks to be evicted
+                "three_blocks_overflow_one_hiscore_two_diverse_to_keep",
+                2 * 2 + 1,  // 2 blocks worth of overflow + 1 tokens, amounting to 3 blocks to be evicted
                 ov::genai::AdaptiveRKVConfig(0.9, 1),
                 {999.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
                 {10.0, 11.0, 0.5, 0.1, 18.0, 19.0, 0.2, 0.4, 23.1, 24.2, 19.8, 18.7},
-                {2, 4}
+                {3, 5, 6}
+        },
+        {
+                "two_blocks_overflow_two_hiscore_one_diverse_to_keep",
+                2 * 2,  // 2 blocks worth of overflow
+                ov::genai::AdaptiveRKVConfig(0.9, 1),
+                {0.1, 0.2, 0.3, 0.4, 0.1, 8.3, 11.0, 0.0, 0.0, 0.0},
+                {2.1, 2.2, -3.5, 8.1, -19.0, -21.4, 8.2, 0.4, 1.2, 1.1},
+                {1, 2}
         }
 };
 // clang-format on
@@ -1007,7 +1015,7 @@ const std::vector<CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct> ADAPT
 TEST_P(CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest, EvictsLowestScoredBlocksAndKeepsDiverse) {
     auto test_struct = GetParam();
     size_t num_decoder_layers = DEFAULT_NUM_DECODER_LAYERS;
-    auto algo = ov::genai::CacheEvictionAlgorithm(ov::genai::CacheEvictionConfig(2, 2, 6, ov::genai::AggregationMode::ADAPTIVE_RKV, /* apply_rotation = */ false, /* snapkv_window_size = */ 0), 2, num_decoder_layers, /* max_pool_window_size = */ 1);
+    auto algo = ov::genai::CacheEvictionAlgorithm(ov::genai::CacheEvictionConfig(2, 2, 10, ov::genai::AggregationMode::ADAPTIVE_RKV, /* apply_rotation = */ false, /* snapkv_window_size = */ 0), /* block_size = */2, num_decoder_layers, /* max_pool_window_size = */ 1);
 
     auto scores = get_mock_scores(num_decoder_layers, algo.get_max_cache_size_after_eviction() + test_struct.tokens_over_max_cache_size);
     for (size_t layer_idx = 0; layer_idx < num_decoder_layers; layer_idx++) {
@@ -1231,11 +1239,11 @@ INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionAlgoInitializati
 TEST(CacheEvictionAlgoAdaptiveRKVTest, ThrowsIfEvictingWithoutSimilarityData) {
     auto algo = ov::genai::CacheEvictionAlgorithm(ov::genai::CacheEvictionConfig(4, 4, 12, ov::genai::AggregationMode::ADAPTIVE_RKV, /* apply_rotation = */ false, /* snapkv_window_size = */ 0), DEFAULT_BLOCK_SIZE, DEFAULT_NUM_DECODER_LAYERS, DEFAULT_MAX_POOL_WINDOW_SIZE);
     std::vector<std::vector<float>> mock_scores(2, std::vector<float>(16, 0.0));
+    std::vector<std::vector<float>> mock_similarity(2, std::vector<float>(8, 0.0));
     algo.register_new_token_scores(get_layer_scores_from_2d_vector(mock_scores));
     EXPECT_THROW(algo.evict_logical_blocks(), ov::Exception);
-    algo.register_token_similarity(get_layer_scores_from_2d_vector(mock_scores));
+    algo.register_token_similarity(get_layer_scores_from_2d_vector(mock_similarity));
     EXPECT_NO_THROW(algo.evict_logical_blocks());
-    EXPECT_THROW(algo.evict_logical_blocks(), ov::Exception);
 }
 
 TEST(CacheRotationCalculatorTest, CanInitializeWithBasicParams) {

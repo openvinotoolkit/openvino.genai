@@ -331,13 +331,16 @@ namespace ov::genai {
             if (m_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
                 OPENVINO_ASSERT(!m_last_token_similarity.empty(), "Token similarity must be registered before each eviction in the Adaptive R-KV scenario");
                 size_t num_evictable_blocks = get_num_evictable_blocks(decoder_layer_idx);
+                size_t num_similarity_tokens_registered = m_last_token_similarity[0].size();
+                OPENVINO_ASSERT(num_similarity_tokens_registered / m_block_size == num_evictable_blocks, "Similarity score size mismatch - registered ", num_similarity_tokens_registered / m_block_size, " blocks worth of similarity scores, but have ", num_evictable_blocks, " evictable blocks");
                 auto similarity_set_and_num_blocks_kept = get_adaptive_rkv_similarity_set(num_evictable_blocks, scores_for_all_evictable_blocks);
 
                 const auto& similarity_set = similarity_set_and_num_blocks_kept.first;
                 size_t num_blocks_kept = similarity_set_and_num_blocks_kept.second;
 
-                OPENVINO_ASSERT(num_blocks_kept <= num_evictable_blocks);
-                size_t num_blocks_left_to_fill =  num_evictable_blocks - num_blocks_kept;
+                size_t num_evictable_blocks_to_keep_after_eviction = m_eviction_config.get_evictable_size() / m_block_size;
+                OPENVINO_ASSERT(num_blocks_kept <= num_evictable_blocks_to_keep_after_eviction);
+                size_t num_blocks_left_to_fill =  num_evictable_blocks_to_keep_after_eviction - num_blocks_kept;
                 auto diverse_set = get_adaptive_rkv_diverse_blocks(num_blocks_left_to_fill, similarity_set, m_last_token_similarity[decoder_layer_idx]);
 
                 for (size_t potentially_evicted_idx : similarity_set) {
@@ -432,7 +435,7 @@ namespace ov::genai {
         return {retval, num_blocks_kept};
     }
 
-    std::set<size_t> CacheEvictionAlgorithm::get_adaptive_rkv_diverse_blocks(size_t num_blocks_left_to_fill, std::set<size_t> similarity_set, const std::vector<double> token_similarity) {
+    std::set<size_t> CacheEvictionAlgorithm::get_adaptive_rkv_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& similarity_set, const std::vector<double>& token_similarity) {
         OPENVINO_ASSERT(num_blocks_left_to_fill <= similarity_set.size());
         struct ScoreAndBlockIdx {
             double score;
@@ -445,7 +448,7 @@ namespace ov::genai {
             OPENVINO_ASSERT(block_idx * m_block_size <= token_similarity.size());
             double block_diversity_score = 0.0;
             for (size_t tok_idx = 0; tok_idx < m_block_size; tok_idx++) {
-                block_diversity_score -= token_similarity[tok_idx];
+                block_diversity_score -= token_similarity[block_idx * m_block_size + tok_idx];
             }
             score_block_queue.push({block_diversity_score, block_idx});
             block_diversity_score = 0.0;
@@ -583,8 +586,9 @@ namespace ov::genai {
         {
             const auto& layer_similarity = token_similarity_for_all_decoder_layers[layer_idx];
             const float* data = layer_similarity.data<float>();
-            size_t num_tokens = layer_similarity.get_size();
-            m_last_token_similarity[layer_idx].resize(num_tokens);
+            size_t num_similarity_tokens = layer_similarity.get_size();
+            OPENVINO_ASSERT(num_similarity_tokens % m_block_size == 0);
+            m_last_token_similarity[layer_idx].resize(num_similarity_tokens);
             for (size_t tok_idx = 0; tok_idx < layer_similarity.get_size(); tok_idx++) {
                 m_last_token_similarity[layer_idx][tok_idx] = data[tok_idx];
             }
