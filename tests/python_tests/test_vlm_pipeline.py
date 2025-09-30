@@ -27,6 +27,7 @@ model_and_tag
 
 import openvino_tokenizers
 import openvino
+import gc
 import PIL
 import pytest
 import platform
@@ -68,8 +69,21 @@ def get_ov_model(model_id):
             **align_with_optimum_cli,
         )
     )
+    model = retry_request(
+        lambda: OVModelForVisualCausalLM.from_pretrained(
+            model_id,
+            compile=False,
+            device="CPU",
+            export=True,
+            load_in_8bit=False,
+            trust_remote_code=True,
+            ov_config=get_default_llm_properties(),
+        )
+    )
+    if model.config.model_type == "llava-qwen2":
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     # For tiny-random-internvl2 processor is actually tokenizer
-    if isinstance(processor, transformers.Qwen2TokenizerFast):
+    elif isinstance(processor, transformers.Qwen2TokenizerFast):
         tokenizer = processor
         processor = transformers.AutoImageProcessor.from_pretrained(
             model_id, trust_remote_code=True
@@ -84,17 +98,6 @@ def get_ov_model(model_id):
     )
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    model = retry_request(
-        lambda: OVModelForVisualCausalLM.from_pretrained(
-            model_id,
-            compile=False,
-            device="CPU",
-            export=True,
-            load_in_8bit=False,
-            trust_remote_code=True,
-            ov_config=get_default_llm_properties(),
-        )
-    )
     if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
         processor.chat_template = tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.audio_tokenizer = None
@@ -162,6 +165,7 @@ model_ids = [
     "katuni4ka/tiny-random-qwen2vl",
     "katuni4ka/tiny-random-qwen2.5-vl",
     "katuni4ka/tiny-random-gemma3",
+    "qnguyen3/nanoLLaVA"
 ]
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
@@ -203,6 +207,8 @@ def test_vlm_pipeline(model_id, backend, cat_tensor, handwritten_tensor, car_ten
             streamer=streamer,
         )
         assert res.texts[0] == "".join(result_from_streamer)
+
+    gc.collect()
 
 
 configs = [
@@ -355,6 +361,7 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
         assert res.texts[0] == "".join(result_from_streamer)
 
     ov_pipe.finish_chat()
+    gc.collect()
 
 
 @pytest.mark.precommit
@@ -540,6 +547,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
     generation_config.ignore_eos = True
+    generation_config.do_sample = False
 
     results_with_cancel = ""
     ov_pipe.start_chat()
@@ -581,6 +589,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
     ov_pipe.finish_chat()
 
     assert results_with_cancel == results
+    gc.collect()
 
 
 @pytest.mark.precommit
@@ -663,6 +672,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, image_sequen
     generation_config.max_new_tokens = 30
     generation_config.ignore_eos = True
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+    generation_config.do_sample = False
 
     ov_pipe.start_chat()
     _ = ov_pipe.generate(
@@ -701,7 +711,7 @@ def generate(vlm, requests):
     generation_config.max_new_tokens = 30
     vlm.set_generation_config(generation_config)
     vlm.start_chat()
-    answers = [vlm.generate(prompt, images=images) for (prompt, images) in requests]
+    answers = [vlm.generate(prompt, images=images, do_sample=False) for (prompt, images) in requests]
     vlm.finish_chat()
     return answers
 
@@ -720,6 +730,7 @@ tag_inserted_by_template = [
     ("katuni4ka/tiny-random-qwen2vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
     ("katuni4ka/tiny-random-qwen2.5-vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
     ("katuni4ka/tiny-random-gemma3", lambda idx: "<start_of_image>"),
+    ("qnguyen3/nanoLLaVA", lambda idx: "<image>\n"),
 ]
 
 image_id_ignorant =  tag_inserted_by_template + [
@@ -766,29 +777,40 @@ class TestImageTags:
         prompt = "Describe"
 
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-        processor = retry_request(
-            lambda: transformers.AutoProcessor.from_pretrained(
-                model_id,
-                trust_remote_code=True,
-                **align_with_optimum_cli,
+        if model_id == "qnguyen3/nanoLLaVA":
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            messages = [
+                {"role": "user", "content": f'<image>\n{prompt}'}
+            ]
+            templated_prompt = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
             )
-        )
-        templated_prompt = processor.apply_chat_template(
-            [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image"},
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-            add_generation_prompt=True,
-        )
+        else:
+            processor = retry_request(
+                lambda: transformers.AutoProcessor.from_pretrained(
+                    model_id,
+                    trust_remote_code=True,
+                    **align_with_optimum_cli,
+                )
+            )
+            templated_prompt = processor.apply_chat_template(
+                [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image"},
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+                add_generation_prompt=True,
+            )
         def workaround_inconsistent_inference():
-            automatic_tags = vlm.generate(prompt, images=[cat_tensor])
+            automatic_tags = vlm.generate(prompt, images=[cat_tensor], do_sample=False)
             reference_tags = vlm.generate(
-                templated_prompt, images=[cat_tensor], apply_chat_template=False
+                templated_prompt, images=[cat_tensor], apply_chat_template=False, do_sample=False
             )
             assert automatic_tags.texts == reference_tags.texts
             assert automatic_tags.scores == reference_tags.scores
@@ -804,12 +826,12 @@ class TestImageTags:
 
             vlm.start_chat()
             native_tag0 = vlm.generate(
-                tag(0) + conversation_requests[0][0], images=conversation_requests[0][1]
+                tag(0) + conversation_requests[0][0], images=conversation_requests[0][1], do_sample=False
             )
             assert native_tag0.texts == answers[0].texts
             assert native_tag0.scores == answers[0].scores
             native_tags1 = vlm.generate(
-                tag(1) + tag(2) + conversation_requests[1][0], images=conversation_requests[1][1]
+                tag(1) + tag(2) + conversation_requests[1][0], images=conversation_requests[1][1], do_sample=False
             )
             assert native_tags1.texts == answers[1].texts
             assert native_tags1.scores == answers[1].scores
@@ -826,13 +848,14 @@ class TestImageTags:
 
             vlm.start_chat()
             universal_tag0 = vlm.generate(
-                "<ov_genai_image_0>" + conversation_requests[0][0], images=conversation_requests[0][1]
+                "<ov_genai_image_0>" + conversation_requests[0][0], images=conversation_requests[0][1], do_sample=False
             )
             assert universal_tag0.texts == answers[0].texts
             assert universal_tag0.scores == answers[0].scores
             universal_tags1 = vlm.generate(
                 "<ov_genai_image_1><ov_genai_image_2>" + conversation_requests[1][0],
                 images=conversation_requests[1][1],
+                do_sample=False
             )
             assert universal_tags1.texts == answers[1].texts
             assert universal_tags1.scores == answers[1].scores
@@ -850,22 +873,23 @@ class TestImageTags:
         def workaround_inconsistent_inference():
             vlm.start_chat()
             native_tag0 = vlm.generate(
-                conversation_requests[0][0] + tag(0), images=conversation_requests[0][1]
+                conversation_requests[0][0] + tag(0), images=conversation_requests[0][1], do_sample=False
             )
             native_tags1 = vlm.generate(
-                conversation_requests[1][0] + tag(1) + tag(2), images=conversation_requests[1][1]
+                conversation_requests[1][0] + tag(1) + tag(2), images=conversation_requests[1][1], do_sample=False
             )
             vlm.finish_chat()
 
             vlm.start_chat()
             universal_tag0 = vlm.generate(
-                conversation_requests[0][0] + "<ov_genai_image_0>", images=conversation_requests[0][1]
+                conversation_requests[0][0] + "<ov_genai_image_0>", images=conversation_requests[0][1], do_sample=False
             )
             assert universal_tag0.texts == native_tag0.texts
             assert universal_tag0.scores == native_tag0.scores
             universal_tags1 = vlm.generate(
                 conversation_requests[1][0] + "<ov_genai_image_1><ov_genai_image_2>",
                 images=conversation_requests[1][1],
+                do_sample=False
             )
             assert universal_tags1.texts == native_tags1.texts
             assert universal_tags1.scores == native_tags1.scores
@@ -881,9 +905,9 @@ class TestImageTags:
         vlm.set_generation_config(generation_config)
 
         def workaround_inconsistent_inference():
-            one_image = vlm.generate("<ov_genai_image_0>" * 2, images=[cat_tensor])
+            one_image = vlm.generate("<ov_genai_image_0>" * 2, images=[cat_tensor], do_sample=False)
             two_images = vlm.generate(
-                "<ov_genai_image_0><ov_genai_image_1>", images=[cat_tensor, cat_tensor]
+                "<ov_genai_image_0><ov_genai_image_1>", images=[cat_tensor, cat_tensor], do_sample=False
             )
             assert one_image.texts == two_images.texts
             assert one_image.scores == two_images.scores
@@ -918,6 +942,9 @@ class TestImageTags:
 def cat_image_336x336(cat_image):
     return cat_image.resize((336, 336))
 
+@pytest.fixture(scope="module")
+def cat_image_384x384(cat_image):
+    return cat_image.resize((384, 384))
 
 @pytest.fixture(scope="module")
 def cat_image_32x32(cat_image):
@@ -934,9 +961,28 @@ def cat_image_32x32(cat_image):
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
         pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "SDPA"),
         pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
+        pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", "SDPA"),
+        pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", "PA"),
     ],
 )
 def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, backend):
+    class NanollavaProcessorWrapper:
+        def __init__(self, processor, config, model_dtype):
+            self.processor = processor
+            self.config = config
+            self.model_dtype = model_dtype
+
+        def __call__(self, images, return_tensors):
+            return {"pixel_values": self.processor(images, self.config).to(dtype=self.model_dtype)}
+
+    def get_nanollava_processor():
+        hf_model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_id,
+            device_map='auto',
+            trust_remote_code=True)
+        return NanollavaProcessorWrapper(hf_model.process_images, hf_model.config, hf_model.dtype)
+
+
     resized_image = request.getfixturevalue(image_name)
 
     prompt = "Describe this image."
@@ -946,7 +992,6 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
 
     # Run the model with optimum-intel
     model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
-    processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     conversation = [
         {
             "role": "user",
@@ -956,21 +1001,39 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
             ],
         }
     ]
+    tokenizer = None
+    if model.config.model_type == "llava-qwen2":
+        processor = get_nanollava_processor()
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
-    # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
-    if model.config.model_type == "gemma3":
-        processor.tokenizer.add_bos_token = False
+        from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
+        preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type].preprocess_inputs
+        inputs = preprocess_inputs(prompt, resized_image, processor, tokenizer, config=model.config)
 
-    templated_prompt = processor.apply_chat_template(conversation,add_generation_prompt=True)
-    inputs = processor(text=[templated_prompt], images=[resized_image], padding=True, return_tensors="pt")
-    output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens)
-    generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(inputs.input_ids, output_ids)]
-    optimum_output = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-    optimum_text = optimum_output[0]
+    else:
+        processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
+        if model.config.model_type == "gemma3":
+            processor.tokenizer.add_bos_token = False
+        templated_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
+        inputs = processor(text=[templated_prompt], images=[resized_image], padding=True, return_tensors="pt")
+
+
+    output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
+    generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(input_ids, output_ids)]
+
+    if model.config.model_type == "llava-qwen2":
+        assert tokenizer is not None, "Tokenizer should be set for llava-qwen2 models."
+        optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
+    else:
+        optimum_output = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        optimum_text = optimum_output[0]
 
     # Run the model with GenAI
     vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-    genai_output = vlm.generate(prompt, images=[openvino.Tensor(resized_image)], max_new_tokens=max_new_tokens)
+    genai_output = vlm.generate(prompt, images=[openvino.Tensor(resized_image)], max_new_tokens=max_new_tokens, do_sample=False)
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
+    gc.collect()

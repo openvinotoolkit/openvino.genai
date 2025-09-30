@@ -12,8 +12,10 @@ tm_list = []
 tm_infer_list = []
 tm_mm_embeddings = []
 
-
-if version.parse(transformers.__version__) >= version.parse("4.52.0"):
+if version.parse(transformers.__version__) >= version.parse("4.55.0"):
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v55 as hook_beam_search_v55
+    new_beam_search = hook_beam_search_v55.new_beam_search_v55
+elif version.parse(transformers.__version__) >= version.parse("4.52.0"):
     import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v52 as hook_beam_search_v52
     new_beam_search = hook_beam_search_v52.new_beam_search_v52
 elif version.parse(transformers.__version__) >= version.parse("4.51.0"):

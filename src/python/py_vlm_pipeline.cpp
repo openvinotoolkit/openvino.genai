@@ -34,6 +34,8 @@ auto vlm_generate_docstring = R"(
     InternVL2: <image>\n
     llava-1.5-7b-hf: <image>
     LLaVA-NeXT: <image>
+    nanoLLaVA: <image>\n
+    nanoLLaVA-1.5: <image>\n
     MiniCPM-V-2_6: (<image>./</image>)\n
     Phi-3-vision: <|image_i|>\n - the index starts with one
     Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
@@ -71,6 +73,8 @@ auto vlm_generate_kwargs_docstring = R"(
     InternVL2: <image>\n
     llava-1.5-7b-hf: <image>
     LLaVA-NeXT: <image>
+    nanoLLaVA: <image>\n
+    nanoLLaVA-1.5: <image>\n
     MiniCPM-V-2_6: (<image>./</image>)\n
     Phi-3-vision: <|image_i|>\n - the index starts with one
     Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
@@ -129,7 +133,7 @@ py::object call_vlm_generate(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    auto updated_config = *pyutils::update_config_from_kwargs(generation_config, kwargs);
+    auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     ov::genai::VLMDecodedResults res;
     {

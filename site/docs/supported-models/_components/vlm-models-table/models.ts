@@ -45,6 +45,21 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'nanoLLaVA',
+    models: [
+      {
+        name: 'nanoLLaVA',
+        loraSupport: false,
+        links: ['https://huggingface.co/qnguyen3/nanoLLaVA'],
+      },
+      {
+        name: 'nanoLLaVA-1.5',
+        loraSupport: false,
+        links: ['https://huggingface.co/qnguyen3/nanoLLaVA-1.5'],
+      },
+    ],
+  },
+  {
     architecture: 'LLaVA-NeXT',
     models: [
       {

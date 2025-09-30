@@ -131,8 +131,8 @@ void bicubic_resize(const clip_image_u8 &img, clip_image_u8 &dst, int target_wid
     }
 }
 
-// llava-1.6 type of resize_and_pad (black)
-static clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution) {
+// llava-1.6 type of resize_and_pad (black by default)
+clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution, uint8_t pad_value) {
     int target_width = target_resolution.first;
     int target_height = target_resolution.second;
 
@@ -155,7 +155,7 @@ static clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std:
     clip_image_u8 padded_image;
     padded_image.nx = target_width;
     padded_image.ny = target_height;
-    padded_image.buf.resize(3 * target_width * target_height, 0); // Initialize with black
+    padded_image.buf.resize(3 * target_width * target_height, pad_value); // Initialize with pad value
 
     // Calculate padding offsets
     int pad_x = (target_width - new_width) / 2;

@@ -379,7 +379,10 @@ class GreedySearchHook:
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
         trans_version = version.parse(transformers.__version__)
-        if trans_version >= version.parse('4.52.0'):
+        if trans_version >= version.parse('4.55.0'):
+            import llm_bench_utils.llm_hook_sample.hook_sample_v55 as hook_sample_v55
+            model._sample = hook_sample_v55.new_sample.__get__(model, model.__class__)
+        elif trans_version >= version.parse('4.52.0'):
             import llm_bench_utils.llm_hook_sample.hook_sample_v52 as hook_sample_v52
             model._sample = hook_sample_v52.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.51.0'):
