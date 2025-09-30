@@ -323,7 +323,7 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
     uint64_t request_id,
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
-    const std::vector<ov::Tensor>& video,
+    const std::vector<ov::Tensor>& videos,
     GenerationConfig sampling_params) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
 
@@ -335,7 +335,7 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
 
         auto encoded_images = m_inputs_embedder->encode_images(images);
         std::vector<std::vector<ov::genai::EncodedImage>> encoded_videos;
-        for (auto& vd : video) {
+        for (auto& vd : videos) {
             auto encoded_vd = m_inputs_embedder->encode_video({vd});
             encoded_videos.push_back(encoded_vd);
         }

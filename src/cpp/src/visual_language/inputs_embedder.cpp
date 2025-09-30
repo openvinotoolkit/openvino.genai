@@ -186,7 +186,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_video(const std::vector<ov::Tensor>& videos) {
-    OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
+    OPENVINO_THROW("Current model doesn't support videos preprocess currently. Input images are processed as separate images.");
 }
 
 NormlizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(

@@ -1006,9 +1006,9 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     return qwen2_vl_utils::merge_text_and_image_embeddings(input_ids, text_embeds, merged_image_embeddings_tensor, image_pad_token_id, video_pad_token_id);
 }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedderQwen2VL::encode_video(const std::vector<ov::Tensor>& video) {
+std::vector<ov::genai::EncodedImage> InputsEmbedderQwen2VL::encode_video(const std::vector<ov::Tensor>& videos) {
     std::vector<EncodedImage> embeds;
-    for (const ov::Tensor& single_video : video) {
+    for (const ov::Tensor& single_video : videos) {
         std::vector<ov::Tensor> single_frames = to_single_image_tensors({single_video});
         auto embeds_video = m_vision_encoder->encode_frames(single_frames);
         embeds.insert(embeds.end(), embeds_video.begin(), embeds_video.end());

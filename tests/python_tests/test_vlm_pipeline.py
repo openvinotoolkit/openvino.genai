@@ -1083,4 +1083,4 @@ def test_vlm_pipeline_video_input(request, model_id, video_name, backend):
     model_path = get_ov_model(model_id)
 
     vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-    genai_output = vlm.generate(prompt, video=[video_tensor], max_new_tokens=max_new_tokens)
+    genai_output = vlm.generate(prompt, videos=[video_tensor], max_new_tokens=max_new_tokens)

@@ -163,7 +163,7 @@ public:
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& video,
+        const std::vector<ov::Tensor>& videos,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
@@ -196,7 +196,7 @@ public:
 
         auto encoded_images = m_inputs_embedder->encode_images(images);
         std::vector<std::vector<ov::genai::EncodedImage>> encoded_videos;
-        for (auto& vd : video) {
+        for (auto& vd : videos) {
             auto encoded_vd = m_inputs_embedder->encode_video({vd});
             encoded_videos.push_back(encoded_vd);
         }
@@ -470,11 +470,11 @@ VLMPipeline::~VLMPipeline() = default;
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
-    const std::vector<ov::Tensor>& video,
+    const std::vector<ov::Tensor>& videos,
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, images, video, generation_config, streamer);
+    return m_pimpl->generate(prompt, images, videos, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(

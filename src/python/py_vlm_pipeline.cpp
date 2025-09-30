@@ -132,7 +132,7 @@ py::object call_vlm_generate(
     ov::genai::VLMPipeline& pipe,
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
-    const std::vector<ov::Tensor>& video,
+    const std::vector<ov::Tensor>& videos,
     const ov::genai::GenerationConfig& generation_config,
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
@@ -142,7 +142,7 @@ py::object call_vlm_generate(
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res= pipe.generate(prompt, images, video, updated_config, streamer);
+        res= pipe.generate(prompt, images, videos, updated_config, streamer);
     }
     return py::cast(res);
 }
@@ -247,15 +247,15 @@ void init_vlm_pipeline(py::module_& m) {
             "generate",
             [](ov::genai::VLMPipeline& pipe,
                 const std::string& prompt,
-                const std::vector<ov::Tensor>& video,
+                const std::vector<ov::Tensor>& videos,
                 const ov::genai::GenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate(pipe, prompt, {}, video, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, prompt, {}, videos, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
-            py::arg("video"), "Input video",
+            py::arg("videos"), "Input videos, each providing multiple frames",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
             (vlm_generate_docstring + std::string(" \n ")).c_str()

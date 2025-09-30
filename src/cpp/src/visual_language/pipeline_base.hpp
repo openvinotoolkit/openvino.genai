@@ -30,7 +30,7 @@ public:
     virtual VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& video,
+        const std::vector<ov::Tensor>& videos,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) = 0;
@@ -41,7 +41,7 @@ public:
     ) {
         auto image = config_map.find(ov::genai::image.name());
         auto images = config_map.find(ov::genai::images.name());
-        auto video = config_map.find(ov::genai::video.name());
+        auto videos = config_map.find(ov::genai::videos.name());
 
         ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
@@ -64,13 +64,13 @@ public:
             }
         }
 
-        if (config_map.end() != video) {
-            if (video->second.is<std::vector<ov::Tensor>>()) {
-                video_rgbs = video->second.as<std::vector<ov::Tensor>>();
-            } else if (video->second.is<ov::Tensor>()) {
-                video_rgbs = {video->second.as<ov::Tensor>()};
+        if (config_map.end() != videos) {
+            if (videos->second.is<std::vector<ov::Tensor>>()) {
+                video_rgbs = videos->second.as<std::vector<ov::Tensor>>();
+            } else if (videos->second.is<ov::Tensor>()) {
+                video_rgbs = {videos->second.as<ov::Tensor>()};
             } else {
-                OPENVINO_THROW("Unknown video type.");
+                OPENVINO_THROW("Unknown videos type.");
             }
         }
 

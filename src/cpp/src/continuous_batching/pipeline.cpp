@@ -249,9 +249,9 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
                                                          const std::string& prompt,
                                                          const std::vector<ov::Tensor>& images,
-                                                         const std::vector<ov::Tensor>& video,
+                                                         const std::vector<ov::Tensor>& videos,
                                                          const ov::genai::GenerationConfig& sampling_params) {
-    return m_impl->add_request(request_id, prompt, images, video, sampling_params);
+    return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
 }
 
 void ContinuousBatchingPipeline::step() {

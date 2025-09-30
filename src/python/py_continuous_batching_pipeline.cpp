@@ -455,7 +455,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
              py::arg("request_id"),
              py::arg("prompt"),
              py::arg("images"),
-             py::arg("video"),
+             py::arg("videos"),
              py::arg("generation_config"))
 
         .def("step", &ContinuousBatchingPipeline::step)
