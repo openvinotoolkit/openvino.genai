@@ -9,7 +9,7 @@ There are several sample files:
  - [`image2image.py`](./image2image.py) demonstrates basic usage of the image to image pipeline
  - [`inpainting.py`](./inpainting.py) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.py`](./benchmark_image_gen.py) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
- - [`stable_diffusion_export_import.py`](./stable_diffusion_export_import.py) demonstrates how to export and import compiled models in the text to image pipeline
+ - [`stable_diffusion_export_import.py`](./stable_diffusion_export_import.py) demonstrates how to export and import compiled models in the text to image pipeline. Only the Stable Diffusion XL model is supported.
 
 Users can change the sample code and play with the following generation parameters:
 
