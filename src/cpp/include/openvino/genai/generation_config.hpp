@@ -319,6 +319,7 @@ public:
     float top_p = 1.0f;
     size_t top_k = std::numeric_limits<size_t>::max();
     bool do_sample = false;
+    bool eagle_sample_mode = false;
     size_t rng_seed = 0;
 
     // Assisting generation parameters

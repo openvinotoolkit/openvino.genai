@@ -766,7 +766,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
         auto new_input_ids = input_ids[request_id];
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         auto main_sampling_params = sampling_params[request_id];
-
+        if (main_sampling_params.do_sample)
+            main_sampling_params.eagle_sample_mode = true;
         main_generations.push_back(
             m_main_pipeline->add_request(request_id, new_input_ids, main_sampling_params));
 
@@ -774,7 +775,9 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
         draft_sampling_params.stop_strings = {};
-
+        if (draft_sampling_params.is_multinomial()) {
+            draft_sampling_params.do_sample = false; // always greedy for draft, according to paper
+        }
         // remove first token from input_ids to create draft_input_ids
         ov::Tensor draft_input_ids = create_draft_input_ids(new_input_ids);
 
