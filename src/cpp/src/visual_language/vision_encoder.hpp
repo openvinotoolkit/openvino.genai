@@ -5,7 +5,6 @@
 #include <memory>
 #include "openvino/runtime/infer_request.hpp"
 
-#include "logger.hpp"
 #include "openvino/genai/common_types.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
