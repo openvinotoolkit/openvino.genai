@@ -3468,6 +3468,8 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
@@ -3507,6 +3509,8 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
@@ -3545,6 +3549,8 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
