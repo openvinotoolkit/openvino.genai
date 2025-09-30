@@ -9,7 +9,7 @@ from test_utils import run_sample
 
 class TestStableDiffusionExportImport:
     @pytest.mark.samples
-    @pytest.mark.LCM_Dreamshaper_v7_int8_ov
+    @pytest.mark.stabilityai_sdxl_turbo
     @pytest.mark.parametrize("executable", [
         [SAMPLES_CPP_DIR / "stable_diffusion_export_import"],
         [sys.executable, SAMPLES_PY_DIR / "image_generation/stable_diffusion_export_import.py"],
@@ -17,7 +17,7 @@ class TestStableDiffusionExportImport:
     @pytest.mark.parametrize(
         "download_model, prompt",
         [
-            pytest.param("LCM_Dreamshaper_v7-int8-ov", "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"),
+            pytest.param("stabilityai_sdxl_turbo", "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"),
         ],
         indirect=["download_model"],
     )
