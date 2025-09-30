@@ -620,7 +620,10 @@ private:
             return 0;
         }
 
-        return m_config.cache_eviction_config.get_evictable_size();
+        size_t non_evictable_size = m_config.cache_eviction_config.get_max_cache_size() - m_config.cache_eviction_config.get_evictable_size();
+        OPENVINO_ASSERT(sequence_group->get_num_logical_blocks() * get_block_size() >= non_evictable_size);
+
+        return sequence_group->get_num_logical_blocks() * get_block_size() - non_evictable_size;
     }
 };
 
