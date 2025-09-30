@@ -387,7 +387,6 @@ bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) 
         
         if (!m_new_results.empty()) {
             model->add_results(m_new_results);
-            std::cout << "EagleModelTransform - Added last hidden output " << std::endl;
         }
         // input transform for draft
         // here we apply a trick for the fc layer in draft model
@@ -399,7 +398,6 @@ bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) 
             manager.run_passes(model);
 
             model->add_parameters({m_new_parameters.back()});
-            std::cout << "EagleModelTransform - trick on draft model inputs " << std::endl;
         }
         return true;
     } else {
@@ -409,7 +407,6 @@ bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) 
         manager.run_passes(model);
         
         if (!m_hidden_layer_outputs.empty()) {
-            std::cout << "EagleModelTransform - extracted intermediate hidden state outputs " << std::endl;
             auto concat = std::make_shared<v0::Concat>(m_hidden_layer_outputs, -1);
             concat->set_friendly_name("eagle3_hidden_states_concat");
             
@@ -418,8 +415,6 @@ bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) 
             result->output(0).set_names({output_name});
             result->set_friendly_name(output_name);
             model->add_results({result});
-            
-            std::cout << "EagleModelTransform - Added concated eagle3 hidden state output" << std::endl;
             return true;
         }
     }
@@ -461,7 +456,6 @@ bool EagleInputTransform::apply(NodePtr node, std::vector<std::shared_ptr<v0::Pa
         auto new_eltwise = std::make_shared<v1::Add>(internal_hidden_state, matmul_node->output(0));
         ov::replace_node(matmul_node, new_eltwise);
         params.push_back(internal_hidden_state);
-        std::cout << "EagleInputTransform - Added internal hidden state input parameter" << std::endl;
         return true;
     }
 }

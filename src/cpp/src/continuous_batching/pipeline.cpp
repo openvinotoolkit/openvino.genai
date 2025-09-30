@@ -103,7 +103,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         // to be implemented future
         SchedulerConfig scheduler_config_copy = scheduler_config;
         if (scheduler_config.dynamic_split_fuse) {
-            std::cout << "WARNING: disable dynamic split fuse for eagle3 speculative decoding" << std::endl;
+            std::cout << "Note: disable dynamic split fuse for eagle3 speculative decoding" << std::endl;
             scheduler_config_copy.dynamic_split_fuse = false;
             // Use scheduler_config_copy in subsequent code if modification is needed
         }
@@ -161,7 +161,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         // to be implemented future
         SchedulerConfig scheduler_config_copy = scheduler_config;
         if (scheduler_config.dynamic_split_fuse) {
-            std::cout << "WARNING: disable dynamic split fuse for eagle3 speculative decoding" << std::endl;
+            std::cout << "Note: disable dynamic split fuse for eagle3 speculative decoding" << std::endl;
             scheduler_config_copy.dynamic_split_fuse = false;
             // Use scheduler_config_copy in subsequent code if modification is needed
         }
@@ -225,7 +225,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         // to be implemented future
         SchedulerConfig scheduler_config_copy = scheduler_config;
         if (scheduler_config.dynamic_split_fuse) {
-            std::cout << "WARNING: disable dynamic split fuse for eagle3 speculative decoding" << std::endl;
+            std::cout << "Note: disable dynamic split fuse for eagle3 speculative decoding" << std::endl;
             scheduler_config_copy.dynamic_split_fuse = false;
             // Use scheduler_config_copy in subsequent code if modification is needed
         }

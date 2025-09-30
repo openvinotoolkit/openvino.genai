@@ -180,8 +180,6 @@ public:
     }
 
     void set_initial_hidden_state(size_t request_id, const ov::Tensor& hidden_state) {
-        // m_initial_hidden_states.clear();
-        //auto key = std::make_pair(request_id, seq_grouped_id);
         m_initial_hidden_states[request_id] = hidden_state;
     }
 
@@ -481,7 +479,7 @@ public:
                 try {
                     m_request.set_tensor("target_hidden_state_input", hidden_state_input);
                     auto shape = hidden_state_input.get_shape();
-                    shape[shape.size() - 1] = shape [shape.size() - 1] / m_adjust_factor;
+                    shape[shape.size() - 1] = shape[shape.size() - 1] / m_adjust_factor;
                     ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
                     auto fake_data = fake_tensor.data<float>();
                     std::memset(fake_data, 0, fake_tensor.get_byte_size());
@@ -492,7 +490,7 @@ public:
                 try {
                     m_request.set_tensor("internal_hidden_state_input", hidden_state_input);
                     auto shape = hidden_state_input.get_shape();
-                    shape[shape.size() - 1] = shape [shape.size() - 1] * m_adjust_factor;
+                    shape[shape.size() - 1] = shape[shape.size() - 1] * m_adjust_factor;
                     ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
                     auto fake_data = fake_tensor.data<float>();
                     std::memset(fake_data, 0, fake_tensor.get_byte_size());
