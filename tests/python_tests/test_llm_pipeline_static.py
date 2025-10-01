@@ -1,7 +1,7 @@
 # Copyright (C) 2024-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline, StreamerBase
+from openvino_genai import Tokenizer, LLMPipeline, StreamerBase
 import os
 
 import pytest
@@ -10,32 +10,33 @@ import sys
 
 from utils.constants import get_default_llm_properties
 from utils.tokenizers import model_tmp_path
-from utils.hugging_face import download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline
+from utils.hugging_face import download_and_convert_model, OVConvertedModelSchema
 from utils.generation_config import                     \
     get_greedy,                                         \
     get_greedy_with_penalties,                          \
     get_multinomial_all_parameters,                     \
     get_multinomial_temperature_and_presence_penalty,   \
     get_beam_search
-from data.models import get_models_list, get_chat_models_list
+from data.models import get_models_list
 
 
 if sys.platform == 'darwin' or platform.machine() in ["aarch64", "arm64", "ARM64"]:
     pytest.skip("NPU plugin is available only on Linux and Windows x86_64", allow_module_level=True)
 
 
-default_config = {
-                     'NPUW_DEVICES': 'CPU',
-                     'NPUW_ONLINE_PIPELINE': 'NONE'
-                 } | get_default_llm_properties()
+DEFAULT_CONFIG: dict = {
+    'NPUW_DEVICES': 'CPU',
+    'NPUW_ONLINE_PIPELINE': 'NONE'
+} | get_default_llm_properties()
 
-static_config = { **default_config, 'STATIC_PIPELINE': 'STATEFUL' }
+STATIC_CONFIG: dict  = { **DEFAULT_CONFIG, 'STATIC_PIPELINE': 'STATEFUL' }
 
 # Test both, static and generic pipelines
-pipeline_configs = [default_config, static_config]
+PIPELINE_CONFIGS: list[dict] = [DEFAULT_CONFIG, STATIC_CONFIG]
 
-blob_with_weights = [True, False]
+BLOB_WITH_WEIGHTS: list[bool] = [True, False]
+
+MODELS_LIST = get_models_list()
 
 def generate_chat_history(model_path, device, pipeline_config, questions):
     pipe = LLMPipeline(model_path, device, **pipeline_config)
@@ -45,18 +46,25 @@ def generate_chat_history(model_path, device, pipeline_config, questions):
     return chat_history
 
 
-generation_configs = [
-    get_greedy(),
-    get_greedy_with_penalties()
-]
+@pytest.fixture(scope="module")
+def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
+    return download_and_convert_model(request.param)
+
+
 @pytest.mark.precommit
-@pytest.mark.parametrize("generation_config", generation_configs)
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.parametrize(
+    "generation_config", 
+    [
+        pytest.param(get_greedy(), id="greedy"),
+        pytest.param(get_greedy_with_penalties(), id="greedy_with_penalties"),
+    ]
+)
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
 @pytest.mark.xfail(reason="Generation result mismatch. Ticket 171117", raises=AssertionError)
-def test_generation_compare_with_stateful(generation_config, config, model_id):
+def test_generation_compare_with_stateful(llm_model: OVConvertedModelSchema, generation_config, config):
     prompt = 'What is OpenVINO?'
-    model_path = download_and_convert_model(model_id).models_path
+    model_path = llm_model.models_path
 
     stateful_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
     ref_out = stateful_pipe.generate(prompt, generation_config)
@@ -68,12 +76,12 @@ def test_generation_compare_with_stateful(generation_config, config, model_id):
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("with_weights", blob_with_weights)
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id):
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("with_weights", BLOB_WITH_WEIGHTS)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
+def test_pipeline_from_blob(llm_model: OVConvertedModelSchema, model_tmp_path, config, with_weights):
     prompt = 'What is OpenVINO?'
-    model_path = download_and_convert_model(model_id).models_path
+    model_path = llm_model.models_path
     _, temp_path = model_tmp_path
 
     blob_path = os.path.join(temp_path, "compiled_model.blob")
@@ -103,12 +111,12 @@ def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id):
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("with_weights", blob_with_weights)
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_pipeline_cache_dir(model_tmp_path, config, with_weights, model_id):
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("with_weights", BLOB_WITH_WEIGHTS)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
+def test_pipeline_cache_dir(llm_model: OVConvertedModelSchema, model_tmp_path, config, with_weights):
     prompt = 'What is OpenVINO?'
-    model_path = download_and_convert_model(model_id).models_path
+    model_path = llm_model.models_path
     _, temp_path = model_tmp_path
 
     cpu_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
@@ -143,14 +151,16 @@ def test_pipeline_cache_dir(model_tmp_path, config, with_weights, model_id):
     assert ref_out == actual_out
 
 
-generation_configs = [
-    get_multinomial_temperature_and_presence_penalty()
-]
 @pytest.mark.precommit
-@pytest.mark.parametrize("generation_config", generation_configs)
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_multinomial_sampling(generation_config, config, model_id):
+@pytest.mark.parametrize(
+    "generation_config", 
+    [
+        pytest.param(get_multinomial_temperature_and_presence_penalty(), id="temp+presence"),
+    ]
+)
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
+def test_multinomial_sampling(llm_model: OVConvertedModelSchema, generation_config, config):
     # Multinomial sampling is highly sensitive to raw logits values. For fair comparison,
     # a reference implementation producing identical logits (e.g., from StaticLLMPipeline)
     # would be necessary. However, the CPU in StatefulPipeline and StaticLLMPipeline may apply
@@ -158,56 +168,59 @@ def test_multinomial_sampling(generation_config, config, model_id):
     # variations in raw logits. Therefore, there is no reliable reference for validation,
     # so only ensure that no exceptions are raised.
     prompt = 'What is OpenVINO?'
-    model_path = download_and_convert_model(model_id).models_path
+    model_path = llm_model.models_path
     static_pipe = LLMPipeline(model_path, "NPU", **config)
     actual_out = static_pipe.generate(prompt, generation_config)
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_length_properties_set_no_exception(config, model_id):
-    model_path = download_and_convert_model(model_id).models_path
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
+def test_length_properties_set_no_exception(llm_model: OVConvertedModelSchema, config):
+    model_path = llm_model.models_path
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= config
     pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
 
 
-length_configs = [
-    { "MAX_PROMPT_LEN":   -1  },
-    { "MAX_PROMPT_LEN":   "1" },
-    { "MIN_RESPONSE_LEN": -1  },
-    { "MIN_RESPONSE_LEN": "1" }
-]
-@pytest.mark.parametrize("length_config", length_configs)
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.parametrize(
+    "length_config",
+    [
+        { "MAX_PROMPT_LEN":   -1  },
+        { "MAX_PROMPT_LEN":   "1" },
+        { "MIN_RESPONSE_LEN": -1  },
+        { "MIN_RESPONSE_LEN": "1" },
+    ]
+)
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
 @pytest.mark.precommit
-def test_invalid_length_properties_raise_error(length_config, config, model_id):
-    model_path = download_and_convert_model(model_id).models_path
+def test_invalid_length_properties_raise_error(llm_model: OVConvertedModelSchema, length_config, config):
+    model_path = llm_model.models_path
     length_config |= config
     with pytest.raises(RuntimeError):
-        pipe = LLMPipeline(model_path, "NPU", **length_config)
+        LLMPipeline(model_path, "NPU", **length_config)
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_batch_one_no_exception(config, model_id):
-    model_path = download_and_convert_model(model_id).models_path
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
+@pytest.mark.precommit
+def test_batch_one_no_exception(llm_model: OVConvertedModelSchema, config):
+    model_path = llm_model.models_path
     prompt = 'The Sun is yellow because'
     static_pipe = LLMPipeline(model_path, "NPU", **config)
     # Check it doesn't throw any exception when batch of size 1 is provided
-    actual_out = static_pipe.generate([prompt], max_new_tokens=20)
+    static_pipe.generate([prompt], max_new_tokens=20)
 
 
 # TODO: For the further batch support
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
 @pytest.mark.precommit
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_batch_raise_error(config, model_id):
-    model_path = download_and_convert_model(model_id).models_path
+def test_batch_raise_error(llm_model: OVConvertedModelSchema, config):
+    model_path = llm_model.models_path
     prompt = 'The Sun is yellow because'
     pipe = LLMPipeline(model_path, "NPU", **config)
     with pytest.raises(RuntimeError):
@@ -215,17 +228,19 @@ def test_batch_raise_error(config, model_id):
 
 
 # TODO: For the further sampling support
-generation_configs = [
-    get_beam_search(),
-    # NB: Only num_return_sequences=1 is supported!
-    get_multinomial_all_parameters()
-]
-@pytest.mark.parametrize("generation_config", generation_configs)
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.parametrize(
+    "generation_config", 
+    [
+        pytest.param(get_beam_search(), id="beam_search"),
+        # NB: Only num_return_sequences=1 is supported!
+        pytest.param(get_multinomial_all_parameters(), id="multinomial")
+    ]
+)
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
 @pytest.mark.precommit
-def test_unsupported_sampling_raise_error(generation_config, config, model_id):
-    model_path = download_and_convert_model(model_id).models_path
+def test_unsupported_sampling_raise_error(llm_model: OVConvertedModelSchema, generation_config, config):
+    model_path = llm_model.models_path
     prompt = 'What is OpenVINO?'
 
     pipe = LLMPipeline(model_path, "NPU", **config)
@@ -233,11 +248,11 @@ def test_unsupported_sampling_raise_error(generation_config, config, model_id):
         pipe.generate(prompt, generation_config)
 
 
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
 @pytest.mark.precommit
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_max_number_of_tokens(config, model_id):
-    model_path = download_and_convert_model(model_id).models_path
+def test_terminate_by_max_number_of_tokens(llm_model: OVConvertedModelSchema, config):
+    model_path = llm_model.models_path
     prompt = 'The Sun is yellow because'
     num_tokens = 128
 
@@ -249,11 +264,11 @@ def test_terminate_by_max_number_of_tokens(config, model_id):
     assert len(encoded_results.tokens[0]) == num_tokens
 
 
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
 @pytest.mark.precommit
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_out_of_memory(config, model_id):
-    model_path = download_and_convert_model(model_id).models_path
+def test_terminate_by_out_of_memory(llm_model: OVConvertedModelSchema, config):
+    model_path = llm_model.models_path
     prompt = 'The Sun is yellow because'
     pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= config
@@ -269,11 +284,11 @@ def test_terminate_by_out_of_memory(config, model_id):
     assert len(encoded_results.tokens[0]) == (kv_cache_size - input_len + 1)
 
 
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
 @pytest.mark.precommit
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_sampler(config, model_id):
-    model_path = download_and_convert_model(model_id).models_path
+def test_terminate_by_sampler(llm_model: OVConvertedModelSchema, config):
+    model_path = llm_model.models_path
     prompt = 'The Sun is yellow because'
 
     current_iter = 0
@@ -299,11 +314,10 @@ def test_terminate_by_sampler(config, model_id):
 
 
 # FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
-@pytest.mark.skip(reason="JIRA-144780: Output differs from stateful pipeline")
-@pytest.mark.parametrize("config", pipeline_configs)
-@pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("config", PIPELINE_CONFIGS)
 @pytest.mark.precommit
-def test_chat_generation(config, model_id):
+def test_chat_generation(llm_model: OVConvertedModelSchema, config):
     questions = [
         '1+1=',
         'What is the previous answer?',
@@ -311,7 +325,7 @@ def test_chat_generation(config, model_id):
         'What was my first question?'
     ]
 
-    model_path = download_and_convert_model(model_id).models_path
+    model_path = llm_model.models_path
 
     chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
     chat_history_static   = generate_chat_history(model_path, "NPU", config, questions)
