@@ -6,12 +6,13 @@ import pytest
 import logging
 import tempfile
 import re
+from constants import WWB_CACHE_PATH, SHOULD_CLEANUP
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MODEL_CACHE = tempfile.mkdtemp()
+MODEL_CACHE = WWB_CACHE_PATH
 OV_IMAGE_MODELS = ["echarlaix/tiny-random-stable-diffusion-xl",
                    "yujiepan/stable-diffusion-3-tiny-random",
                    "katuni4ka/tiny-random-flux",
@@ -42,8 +43,9 @@ def setup_module():
 
 
 def teardown_module():
-    logger.info("Remove models")
-    shutil.rmtree(MODEL_CACHE)
+    if SHOULD_CLEANUP:
+        logger.info("Removing models")
+        shutil.rmtree(MODEL_CACHE)
 
 
 def get_similarity(output: str) -> float:

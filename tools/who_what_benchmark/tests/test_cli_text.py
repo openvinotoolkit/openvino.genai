@@ -7,6 +7,8 @@ import logging
 import json
 import sys
 
+from constants import WWB_CACHE_PATH, SHOULD_CLEANUP
+
 from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
 
@@ -18,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 model_id = "facebook/opt-125m"
-tmp_dir = tempfile.mkdtemp()
-base_model_path = os.path.join(tmp_dir, "opt125m")
-target_model_path = os.path.join(tmp_dir, "opt125m_int8")
+cache_dir = WWB_CACHE_PATH
+base_model_path = os.path.join(cache_dir, "opt125m")
+target_model_path = os.path.join(cache_dir, "opt125m_int8")
 
 gptq_model_id = "ybelkada/opt-125m-gptq-4bit"
 awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
@@ -30,23 +32,26 @@ def setup_module():
     from optimum.exporters.openvino.convert import export_tokenizer
 
     logger.info("Create models")
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    base_model = OVModelForCausalLM.from_pretrained(model_id)
-    base_model.save_pretrained(base_model_path)
-    tokenizer.save_pretrained(base_model_path)
-    export_tokenizer(tokenizer, base_model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=WWB_CACHE_PATH)
+    base_model = OVModelForCausalLM.from_pretrained(model_id, cache_dir=WWB_CACHE_PATH)
+    if not os.path.exists(base_model_path):
+        base_model.save_pretrained(base_model_path)
+        tokenizer.save_pretrained(base_model_path)
+        export_tokenizer(tokenizer, base_model_path)
 
     target_model = OVModelForCausalLM.from_pretrained(
-        model_id, quantization_config=OVWeightQuantizationConfig(bits=8)
+        model_id, quantization_config=OVWeightQuantizationConfig(bits=8), cache_dir=WWB_CACHE_PATH
     )
-    target_model.save_pretrained(target_model_path)
-    tokenizer.save_pretrained(target_model_path)
-    export_tokenizer(tokenizer, target_model_path)
+    if not os.path.exists(target_model_path):
+        target_model.save_pretrained(target_model_path)
+        tokenizer.save_pretrained(target_model_path)
+        export_tokenizer(tokenizer, target_model_path)
 
 
 def teardown_module():
-    logger.info("Remove models")
-    shutil.rmtree(tmp_dir)
+    if SHOULD_CLEANUP:
+        logger.info("Removing models")
+        shutil.rmtree(cache_dir)
 
 
 def test_text_target_model():
