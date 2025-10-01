@@ -62,7 +62,7 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting"],
+        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting", "text-embedding"],
         default="text",
         help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
         "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt",
@@ -203,6 +203,20 @@ def parse_args():
         action="store_true",
         help="Inference with empty adapters. Applicable for GenAI only.",
     )
+    parser.add_argument(
+        "--embeds_pooling",
+        choices=["cls", "mean", "last_token"],
+        default=None,
+        help="Pooling type CLS or MEAN. Applicable only for text embeddings")
+    parser.add_argument(
+        "--embeds_normalize",
+        action="store_true",
+        help="Normalize embeddings. Applicable only for text embeddings")
+    parser.add_argument(
+        "--embeds_padding_side",
+        choices=["left", "right"],
+        default=None,
+        help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
 
     return parser.parse_args()
 
@@ -414,6 +428,11 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
     return out.texts[0]
 
 
+def genai_gen_embedding(model, tokenizer, passages, **kwargs):
+    embeddings = model.embed_documents(passages)
+    return embeddings
+
+
 def is_model_with_automatic_crop(config):
     return "internvl" in config.model_type or "minicpmv" in config.model_type
 
@@ -506,9 +525,20 @@ def create_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
             )
+        elif task == "text-embedding":
+            return EvaluatorCLS(
+                base_model=base_model,
+                tokenizer=load_tokenizer(args),
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                gen_embeds_fn=genai_gen_embedding if args.genai else None,
+                pooling_type=args.embeds_pooling,
+                normalize=args.embeds_normalize,
+                padding_side=args.embeds_padding_side,
+            )
         else:
             raise ValueError(f"Unsupported task: {task}")
-
     except KeyError as e:
         raise ValueError(
             f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! "
@@ -557,6 +587,19 @@ def print_image_results(evaluator):
         logger.info(e)
 
 
+def print_embeds_results(evaluator):
+    metric_of_interest = "similarity"
+    worst_examples = evaluator.worst_examples(
+        top_k=5, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        logger.info(
+            "======================================================================================================="
+        )
+        logger.info(f"Top-{i+1} example:")
+        logger.info("## Passages num:\n%s\n", len(e["passages"]))
+        logger.info("## Similarity:\n%s\n", e["similarity"])
+
+
 def read_cb_config(path):
     import json
 
@@ -600,6 +643,9 @@ def main():
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
     kwargs["empty_adapters"] = args.empty_adapters
+    kwargs["embeds_pooling"] = args.embeds_pooling
+    kwargs["embeds_normalize"] = args.embeds_normalize
+    kwargs["embeds_padding_side"] = args.embeds_padding_side
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
@@ -659,6 +705,8 @@ def main():
             print_text_results(evaluator)
         elif "text-to-image" in args.model_type or "image-to-image" in args.model_type:
             print_image_results(evaluator)
+        elif args.model_type in ['text-embedding']:
+            print_embeds_results(evaluator)
 
 
 if __name__ == "__main__":
