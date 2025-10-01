@@ -16,7 +16,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     m_generation_config = generation_config;
     if (m_generation_config.assistant_confidence_threshold == 0.f) {
         if (m_generation_config.num_assistant_tokens == 0) {
-            m_generation_config.num_assistant_tokens = 5;
+            m_generation_config.num_assistant_tokens = default_num_assistant_tokens;
         }
     }
     m_is_validation_mode_enabled = is_validation_mode_enabled;

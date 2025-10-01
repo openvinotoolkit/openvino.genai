@@ -34,7 +34,7 @@ public:
 
     int64_t infer_next(int64_t out_token, bool append_perf_stat = false);
 
-    std::vector<int64_t> infer_next_return_all(const std::vector<int64_t> tokens);
+    std::vector<int64_t> infer_next_return_all(const std::vector<int64_t>& tokens);
 
     ov::Tensor get_logits();
 
