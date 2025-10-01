@@ -142,9 +142,10 @@ def test_text_verbose():
 
 def test_text_language(tmp_path):
     temp_file_name = tmp_path / "gt.csv"
+    MODEL_PATH = os.path.join(WWB_CACHE_PATH, 'Qwen/Qwen2-0.5B')
     run_wwb([
         "--base-model",
-        "Qwen/Qwen2-0.5B",
+        MODEL_PATH,
         "--gt-data",
         temp_file_name,
         "--num-samples",
@@ -174,9 +175,10 @@ if sys.platform != 'darwin' and sys.platform != 'win32':
 )
 def test_text_hf_model(model_id, tmp_path):
     temp_file_name = tmp_path / "gt.csv"
+    MODEL_PATH = os.path.join(WWB_CACHE_PATH, model_id.replace("/", "--"))
     run_wwb([
         "--base-model",
-        model_id,
+        MODEL_PATH,
         "--gt-data",
         temp_file_name,
         "--num-samples",

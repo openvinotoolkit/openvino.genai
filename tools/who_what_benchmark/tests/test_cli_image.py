@@ -69,11 +69,12 @@ def get_similarity(output: str) -> float:
     ],
 )
 def test_image_model_types(model_id, model_type, backend, tmp_path):
+    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
     wwb_args = [
         "--base-model",
-        model_id,
+        MODEL_PATH,
         "--target-model",
-        model_id,
+        MODEL_PATH,
         "--num-samples",
         "1",
         "--gt-data",
@@ -197,9 +198,10 @@ def test_image_model_genai(model_id, model_type, tmp_path):
 )
 def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
     GT_FILE = tmp_path / "test_sd.csv"
+    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
     wwb_args = [
         "--base-model",
-        model_id,
+        MODEL_PATH,
         "--num-samples",
         "1",
         "--gt-data",
