@@ -60,7 +60,9 @@ prompts = [
 
 @pytest.fixture(scope="module")
 def ov_hf_tokenizers(request):
-    _, hf_tokenizer, models_path = download_and_convert_model(request.param)
+    model_schema = download_and_convert_model(request.param)
+    hf_tokenizer = model_schema.hf_tokenizer
+    models_path = model_schema.models_path
     ov_tokenizer = Tokenizer(models_path)
     return ov_tokenizer, hf_tokenizer
 

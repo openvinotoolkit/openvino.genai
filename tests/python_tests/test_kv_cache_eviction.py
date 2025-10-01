@@ -123,7 +123,9 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
         scheduler_config_opt.sparse_attention_config.num_last_dense_tokens_in_prefill = 10
 
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    _, tokenizer, models_path = download_and_convert_model(model_id)
+    model_schema = download_and_convert_model(model_id)
+    tokenizer = model_schema.hf_tokenizer
+    models_path = model_schema.models_path
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
 
@@ -216,7 +218,7 @@ def test_optimized_generation_longbench(test_struct):
     device = "CPU"
     num_kv_blocks = 1000 if device == "CPU" else 500
     model_id = "Qwen/Qwen2-0.5B-Instruct"
-    _, _, models_path = download_and_convert_model(model_id)
+    models_path = download_and_convert_model(model_id).models_path
     scheduler_config = get_scheduler_config(num_kv_blocks)
 
     scheduler_config_opt = get_scheduler_config(num_kv_blocks)
@@ -292,7 +294,7 @@ def test_kvcrush_vs_snapkv_baseline(subset):
     seqs_per_request = 32
     num_kv_blocks = 1000 if device == "CPU" else 500
     model_id = "Qwen/Qwen2-0.5B-Instruct"
-    _, _, models_path = download_and_convert_model(model_id)
+    models_path = download_and_convert_model(model_id).models_path
 
     # Setup baseline and KVCrush configurations
     scheduler_config_baseline = get_scheduler_config(num_kv_blocks)

@@ -332,7 +332,7 @@ def test_multinomial_sampling_against_reference(test_struct: RandomSamplingTestS
     generation_config.rng_seed = 0
 
     model_id : str = "facebook/opt-125m"
-    _, _, models_path = download_and_convert_model(model_id)
+    models_path = download_and_convert_model(model_id).models_path
 
     # Run multinomial without comparison with HF reference.
     _ = run_ov_pipeline(models_path=models_path,

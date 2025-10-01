@@ -77,7 +77,8 @@ batched_prompts = [
 @pytest.mark.skip(reason="CVS-162891: Fix test_continuous_batching_vs_stateful tests after we started to compare cb vs sdpa")
 def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id = "facebook/opt-125m"
-    _, _, models_path = download_and_convert_model(model_id, padding_side="left")
+    model_schema = download_and_convert_model(model_id, padding_side="left")
+    models_path = model_schema.models_path
     cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
 
@@ -96,7 +97,7 @@ prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is 
 @pytest.mark.precommit
 def test_cb_streamer_vs_return_vs_stateful(prompt):
     model_id = "facebook/opt-125m"
-    _, _, models_path = download_and_convert_model(model_id)
+    models_path = download_and_convert_model(model_id).models_path
 
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
     cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
@@ -123,7 +124,7 @@ questions = [
 @pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING] )
 @pytest.mark.precommit
 def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: dict, pipeline_type):
-    _, _, models_path = download_and_convert_model(model_id)
+    models_path = download_and_convert_model(model_id).models_path
 
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
     cb_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
@@ -163,7 +164,7 @@ questions = [
 @pytest.mark.parametrize("pipeline_type", [PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING,])
 @pytest.mark.precommit
 def test_continuous_batching_add_request_health_check(model_id, generation_config_kwargs: dict, pipeline_type):
-    _, _, models_path = download_and_convert_model(model_id)
+    models_path = download_and_convert_model(model_id).models_path
 
     cb_pipe = create_ov_cb_pipeline(models_path, pipeline_type=pipeline_type)
 
@@ -194,7 +195,7 @@ invalid_generation_configs = [
 @pytest.mark.parametrize("pipeline_type", [PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING,])
 @pytest.mark.precommit
 def test_continuous_batching_add_request_fails(model_id, generation_config_kwargs: dict, pipeline_type):
-    _, _, models_path = download_and_convert_model(model_id)
+    models_path = download_and_convert_model(model_id).models_path
 
     cb_pipe = create_ov_cb_pipeline(models_path, pipeline_type=pipeline_type)
 
@@ -226,7 +227,8 @@ def test_post_oom_health(sampling_config):
     scheduler_config.num_kv_blocks = 10 # Low cache size to trigger OOM quickly
 
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+    model_schema = download_and_convert_model(model_id)
+    models_path = model_schema.models_path
 
     cb_pipe = create_ov_pipeline(models_path,
                                  pipeline_type=PipelineType.CONTINUOUS_BATCHING,
@@ -335,7 +337,10 @@ def test_preemption_with_multinomial(dynamic_split_fuse):
     for config in generation_configs:
         config.max_new_tokens = 30
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+    model_schema = download_and_convert_model(model_id)
+    model = model_schema.opt_model
+    hf_tokenizer = model_schema.hf_tokenizer
+    models_path = model_schema.models_path
 
     scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare(model=models_path,
@@ -415,7 +420,10 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
 def test_preemption_with_multinomial_n_seq(dynamic_split_fuse):
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+    model_schema = download_and_convert_model(model_id)
+    opt_model = model_schema.opt_model
+    hf_tokenizer = model_schema.hf_tokenizer
+    models_path = model_schema.models_path
 
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
     scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
@@ -431,7 +439,7 @@ def test_preemption_with_multinomial_n_seq(dynamic_split_fuse):
 @pytest.mark.precommit
 def test_dynamic_split_fuse_doesnt_affect_generated_text(pipeline_type):
     model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    _, _, models_path = download_and_convert_model(model_id)
+    models_path = download_and_convert_model(model_id).models_path
 
     scheduler_config_ref = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
     cb_pipe_ref = create_ov_pipeline(models_path, scheduler_config=scheduler_config_ref, pipeline_type=pipeline_type)
@@ -476,7 +484,7 @@ def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_c
 
 
 def run_extended_perf_metrics_collection(model_id, generation_config: GenerationConfig, prompt: str, pipeline_type: PipelineType):
-    _, _, model_path = download_and_convert_model(model_id)
+    model_path = download_and_convert_model(model_id).models_path
     ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type)
     return ov_pipe.generate([prompt], generation_config).extended_perf_metrics
 

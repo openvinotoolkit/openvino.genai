@@ -250,7 +250,7 @@ def run_text_rerank_pipeline_with_ref(
 @pytest.mark.parametrize("download_and_convert_embeddings_models", ["BAAI/bge-small-en-v1.5"], indirect=True)
 @pytest.mark.precommit
 def test_embedding_constructors(download_and_convert_embeddings_models):
-    _, _, models_path = download_and_convert_embeddings_models
+    models_path = download_and_convert_embeddings_models.models_path
 
     TextEmbeddingPipeline(models_path, "CPU")
     TextEmbeddingPipeline(models_path, "CPU", TextEmbeddingPipeline.Config())
@@ -321,7 +321,7 @@ def test_embed_documents(download_and_convert_embeddings_models, dataset_documen
         and config.pooling_type == TextEmbeddingPipeline.PoolingType.CLS
     ):
         pytest.xfail("Random segmentation fault. Ticket 172306")
-    _, _, models_path = download_and_convert_embeddings_models
+    models_path = download_and_convert_embeddings_models.models_path
     run_text_embedding_pipeline_with_ref(models_path, dataset_documents, config, "embed_documents")
 
 
@@ -348,13 +348,13 @@ def test_embed_documents(download_and_convert_embeddings_models, dataset_documen
 )
 @pytest.mark.precommit
 def test_embed_query(download_and_convert_embeddings_models, dataset_documents, config):
-    _, _, models_path = download_and_convert_embeddings_models
+    models_path = download_and_convert_embeddings_models.models_path
     run_text_embedding_pipeline_with_ref(models_path, dataset_documents[:1], config, "embed_query")
 
 
 @pytest.fixture(scope="module")
 def dataset_embeddings_genai_default_config_refs(download_and_convert_embeddings_models, dataset_documents):
-    _, _, models_path = download_and_convert_embeddings_models
+    models_path = download_and_convert_embeddings_models.models_path
     return run_text_embedding_genai(models_path, dataset_documents, None, "embed_documents")
 
 
@@ -373,7 +373,7 @@ def dataset_embeddings_genai_default_config_refs(download_and_convert_embeddings
 )
 @pytest.mark.precommit
 def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
-    _, _, models_path = download_and_convert_embeddings_models
+    models_path = download_and_convert_embeddings_models.models_path
 
     docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
     result = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
@@ -397,7 +397,7 @@ def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_do
 @pytest.mark.xfail()
 @pytest.mark.precommit
 def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
-    _, _, models_path = download_and_convert_embeddings_models
+    models_path = download_and_convert_embeddings_models.models_path
 
     docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
     result = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
@@ -420,7 +420,7 @@ def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, data
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
-    _, _, models_path = download_and_convert_embeddings_models
+    models_path = download_and_convert_embeddings_models.models_path
 
     NPU_FALLBACK_PROPERTIES = {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
 
@@ -435,7 +435,7 @@ def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents,
 @pytest.mark.parametrize("download_and_convert_rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
 @pytest.mark.precommit
 def test_rerank_constructors(download_and_convert_rerank_model):
-    _, _, models_path = download_and_convert_rerank_model
+    models_path = download_and_convert_rerank_model.models_path
 
     TextRerankPipeline(models_path, "CPU")
     TextRerankPipeline(models_path, "CPU", TextRerankPipeline.Config())
@@ -473,5 +473,5 @@ def test_rerank_constructors(download_and_convert_rerank_model):
 )
 @pytest.mark.precommit
 def test_rerank_documents(download_and_convert_rerank_model, dataset_documents, query, config):
-    _, _, models_path = download_and_convert_rerank_model
+    models_path = download_and_convert_rerank_model.models_path
     run_text_rerank_pipeline_with_ref(models_path, query, dataset_documents, config)

@@ -1,11 +1,13 @@
 # Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from dataclasses import dataclass
 from os.path import sep
 from pathlib import Path
 from typing import Type
 from functools import lru_cache
 
+from optimum.modeling_base import OptimizedModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 
@@ -22,9 +24,20 @@ from utils.constants import get_default_llm_properties, extra_generate_kwargs, g
 from utils.network import retry_request
 import pytest
 
+from utils.constants import OV_MODEL_FILENAME
+
+
+@dataclass(frozen=True)
+class OVConvertedModelSchema:
+    model_id: str
+    opt_model: OptimizedModel
+    hf_tokenizer: AutoTokenizer
+    models_path: Path
+
+
 def generation_config_to_hf(
     default_generation_config : HFGenerationConfig,
-    generation_config : GenerationConfig
+    generation_config : GenerationConfig | None,
 ) -> HFGenerationConfig:
     if generation_config is None:
         return
@@ -95,12 +108,12 @@ def generation_config_to_hf(
     return hf_generation_config
 
 def run_hugging_face(
-    opt_model,
-    hf_tokenizer,
+    opt_model: OptimizedModel,
+    hf_tokenizer: AutoTokenizer,
     prompts: list[str],
     generation_configs: list[GenerationConfig] | GenerationConfig,
 ) -> list[GenerationResult]:
-    generation_results = []
+    generation_results: list[GenerationResult] = []
 
     if type(generation_configs) is list:
         # process prompt by promp as we have multiple generation configs
@@ -165,26 +178,48 @@ def run_hugging_face(
 
 
 # download HF model or read converted model
-def get_huggingface_models(model_id: str | Path, model_class: Type[OVModel], local_files_only=False):
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, local_files_only=local_files_only))
-    opt_model = retry_request(lambda: model_class.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=isinstance(model_id, str), ov_config=get_default_llm_properties(), local_files_only=local_files_only))
-    return opt_model, hf_tokenizer
+def get_huggingface_models(
+    model_id: str | Path,
+    model_class: Type[OVModel],
+    local_files_only=False,
+) -> tuple[OptimizedModel, AutoTokenizer]:
+    def auto_tokenizer_from_pretrained() -> AutoTokenizer:
+        return AutoTokenizer.from_pretrained(
+            model_id, 
+            trust_remote_code=True, 
+            local_files_only=local_files_only,
+        )
+
+    def auto_model_from_pretrained() -> OptimizedModel:
+        return model_class.from_pretrained(
+            model_id, 
+            export=isinstance(model_id, str), 
+            compile=False, 
+            load_in_8bit=False, 
+            trust_remote_code=isinstance(model_id, str), 
+            ov_config=get_default_llm_properties(), 
+            local_files_only=local_files_only,
+        )
+
+    return retry_request(auto_model_from_pretrained), retry_request(auto_tokenizer_from_pretrained)
 
 
-def convert_and_save_tokenizer(hf_tokenizer : AutoTokenizer,
-                               models_path: Path,
-                               **tokenizer_kwargs):
-    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True, **tokenizer_kwargs)
+def convert_and_save_tokenizer(
+    hf_tokenizer : AutoTokenizer,
+    models_path: Path,
+):
+    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
 
     from utils.constants import OV_DETOKENIZER_FILENAME, OV_TOKENIZER_FILENAME
     save_model(tokenizer, models_path / OV_TOKENIZER_FILENAME)
     save_model(detokenizer, models_path / OV_DETOKENIZER_FILENAME)
 
 
-def convert_models(opt_model : OVModelForCausalLM,
-                   hf_tokenizer : AutoTokenizer,
-                   models_path: Path,
-                   **tokenizer_kwargs):
+def convert_models(
+    opt_model : OVModelForCausalLM,
+    hf_tokenizer : AutoTokenizer,
+    models_path: Path,
+) -> None:
     opt_model.save_pretrained(models_path)
     # save generation config
     if opt_model.generation_config:
@@ -197,37 +232,47 @@ def convert_models(opt_model : OVModelForCausalLM,
     convert_and_save_tokenizer(hf_tokenizer, models_path)
 
 
-def download_and_convert_model(model_id: str, **tokenizer_kwargs):
-    return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
-
 @pytest.fixture(scope="module")
-def download_and_convert_embeddings_models(request):
+def download_and_convert_embeddings_models(request) -> OVConvertedModelSchema:
     model_id = request.param
     return _download_and_convert_model(model_id, OVModelForFeatureExtraction)
 
 
 @pytest.fixture()
-def download_and_convert_rerank_model(request):
+def download_and_convert_rerank_model(request) -> OVConvertedModelSchema:
     model_id = request.param
     return _download_and_convert_model(model_id, OVModelForSequenceClassification)
 
 
-def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):
+def download_and_convert_model(model_id: str, **tokenizer_kwargs) -> OVConvertedModelSchema:
+    return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
+
+
+def _download_and_convert_model(
+    model_id: str, 
+    model_class: Type[OVModel], 
+    **tokenizer_kwargs,
+) -> OVConvertedModelSchema:
     dir_name = str(model_id).replace(sep, "_")
     ov_cache_models_dir = get_ov_cache_models_dir()
     models_path = ov_cache_models_dir / dir_name
 
-    from utils.constants import OV_MODEL_FILENAME
     if (models_path / OV_MODEL_FILENAME).exists():
         opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True)
     else:
         opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
         convert_models(opt_model, hf_tokenizer, models_path)
 
+    # TODO: why kwargs are passed here if we're only using padding_side?
     if "padding_side" in tokenizer_kwargs:
         hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
-    return opt_model, hf_tokenizer, models_path
+    return OVConvertedModelSchema(
+        model_id, 
+        opt_model, 
+        hf_tokenizer, 
+        models_path,
+    )
 
 
 def download_gguf_model(gguf_model_id: str,
