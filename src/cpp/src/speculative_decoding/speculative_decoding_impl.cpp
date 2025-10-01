@@ -265,7 +265,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         auto main_sampling_params = sampling_params[request_id];
         if (main_sampling_params.assistant_confidence_threshold == 0.f) {
             if (main_sampling_params.num_assistant_tokens == 0) {
-                main_sampling_params.num_assistant_tokens = 5;
+                main_sampling_params.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
             }
         }
         main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], main_sampling_params));

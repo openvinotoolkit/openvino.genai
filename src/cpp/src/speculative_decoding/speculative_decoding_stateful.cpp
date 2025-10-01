@@ -49,8 +49,9 @@ void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& generation_
         "as parameter in GenerationConfig and doesn't work with `assistant_confidence_threshold`.\nPlease "
         "remove its specification or set it to 0.f.");
 
+    constexpr std::size_t default_num_assistant_tokens = 5;
     if (generation_config.num_assistant_tokens == 0) {
-        generation_config.num_assistant_tokens = 5;
+        generation_config.num_assistant_tokens = default_num_assistant_tokens;
     }
 }
 }// anonymous namespace
@@ -219,7 +220,7 @@ int64_t LLMInferWrapper::infer_next(int64_t token, bool append_perf_stat) {
     return last_token;
 }
 
-std::vector<int64_t> LLMInferWrapper::infer_next_return_all(const std::vector<int64_t> tokens) {
+std::vector<int64_t> LLMInferWrapper::infer_next_return_all(const std::vector<int64_t>& tokens) {
     OPENVINO_ASSERT(m_num_processed_tokens > 0, "infer_next_return_all() can be called only after infer_first()!");
 
     ManualTimer infer_next_return_all_timer("infer_next_return_all()");
@@ -389,6 +390,8 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
     // Specifying number candidates to generate
     ensure_num_assistant_tokens_is_set(m_generation_config);
     m_candidates_num = m_generation_config.num_assistant_tokens;
+    // We set the upper limit for candidates number as two times the number requested
+    // by user.
     m_max_candidates_num = m_candidates_num * 2;
 
     // Main model (which is bigger, more accurate but slower)
@@ -426,6 +429,8 @@ DecodedResults StatefulSpeculativeLLMPipeline::generate(
         config = *generation_config;
         ensure_num_assistant_tokens_is_set(config);
         m_candidates_num = config.num_assistant_tokens;
+        // We set the upper limit for candidates number as two times the number
+        // requested by user.
         m_max_candidates_num = m_candidates_num * 2;
     }
 
@@ -506,6 +511,8 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
         config = *generation_config;
         ensure_num_assistant_tokens_is_set(config);
         m_candidates_num = config.num_assistant_tokens;
+        // We set the upper limit for candidates number as two times the number
+        // requested by user.
         m_max_candidates_num = m_candidates_num * 2;
     }
     // If stop_token_ids were not provided, take value from default m_generation_config
@@ -516,8 +523,8 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
         config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
 
-    OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
-        "Currently only greedy and multinomial decoding are supported");
+    OPENVINO_ASSERT(config.is_greedy_decoding(),
+        "Currently only greedy decoding are supported");
 
     OPENVINO_ASSERT(config.num_return_sequences == 1u,
         "Currently only \"num_return_sequences\" equal to 1 is supported!");
@@ -528,7 +535,6 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     ov::genai::GenerationConfig draft_config = m_draft_request->get_generation_config();
     draft_config.ignore_eos = true;
     draft_config.stop_strings = {};
-    draft_config.max_new_tokens = config.get_max_new_tokens();
     draft_config.validate();
     m_draft_request->set_generation_config(draft_config);
 
@@ -577,21 +583,21 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     ManualTimer candidates_timer("Draft model: candidates generation");
     ManualTimer main_timer("Main model");
 
-    /* Speculative decoding works the following way. The draft model predicts the next K
-       tokens one by one in an autoregressive manner, while the main model validates these
-       predictions and corrects them if necessary. We go through each predicted token, and
-       if a difference is detected between the draft and main model, we stop and keep the
-       last token predicted by the main model. Then the draft model gets the latest main
-       prediction and again tries to predict the next K tokens, repeating the cycle.
+    // Speculative decoding works the following way. The draft model predicts the next K
+    // tokens one by one in an autoregressive manner, while the main model validates these
+    // predictions and corrects them if necessary. We go through each predicted token, and
+    // if a difference is detected between the draft and main model, we stop and keep the
+    // last token predicted by the main model. Then the draft model gets the latest main
+    // prediction and again tries to predict the next K tokens, repeating the cycle.
 
-       This approach reduces the need for multiple infer requests to the main model,
-       enhancing performance. For instance, in more predictable parts of text generation,
-       the draft model can, in best-case scenarios, generate the next K tokens that exactly
-       match the target. In that case they are validated in a single inference call to
-       the main model instead of running K subsequent requests.
-    */
-    // Last generated token by draft model needs to be prepended before next run if it is accepted by the main model!
-    // So it will get into the context too.
+    // This approach reduces the need for multiple infer requests to the main model,
+    // enhancing performance. For instance, in more predictable parts of text generation,
+    // the draft model can, in best-case scenarios, generate the next K tokens that exactly
+    // match the target. In that case they are validated in a single inference call to
+    // the main model instead of running K subsequent requests.
+
+    // Last generated token by draft model needs to be prepended before next run if it is accepted
+    // by the main model! So it will get into the kvcache of the draft model.
     int64_t draft_prefix_token = -1;
     while (m_main_request->can_infer() && (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
         iteration_timer.start();
@@ -601,13 +607,25 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
 
         std::vector<int64_t> candidates;
         int64_t kvcache_room_for_candidates = std::min(
+            // Take into the account the draft prefix token, described above
+            // (before the while loop). If it is needed to be prepended to kvcache,
+            // then we can generate candidates as number of left kvcache space of
+            // draft model but minus 1:
             m_draft_request->get_kvcache_capacity() - ((draft_prefix_token == -1) ? 1 : 0),
-            // Take into the account reference token that is prefixed to candidates:
+            // Take into the account reference token that is prefixed to candidates.
+            // We can generate candidates as number of left kvcache space of main
+            // model, but as main model will consume candidates + its previous output
+            // then we need to preserve this one spot in main kvcache for previous
+            // output.
             m_main_request->get_kvcache_capacity() - 1);
-        int64_t generation_room_for_candidates = std::min(
-            m_draft_request->get_generation_capacity(),
-            // Take into the account output token, generated on candidates:
-            m_main_request->get_generation_capacity() - 1);
+        int64_t generation_room_for_candidates = 
+            // Take into the account output token, generated on candidates.
+            // If we accept all candidates by the main model, then we will generate
+            // output of length equal to number of candidates + one output token from
+            // the main model.
+            // As output token number is limited we can generate candidates of only
+            // remained output tokens number - 1 (for output token).
+            m_main_request->get_generation_capacity() - 1;
         int64_t candidates_can_be_generated = std::min(
             kvcache_room_for_candidates, generation_room_for_candidates);
         if (candidates_can_be_generated <= 0) {
