@@ -3,6 +3,9 @@
 
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 
+#include <fstream>
+
+#include "json_utils.hpp"
 #include "openvino/core/except.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/opsets/opset.hpp"
@@ -21,6 +24,25 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(max_length.name());
 
     return properties_copy;
+}
+
+std::optional<std::string> read_model_type(const std::filesystem::path& models_path) {
+    // config.json not found. Skip parameters initialization from file, use defaults.
+    const std::filesystem::path& json_path = models_path / "config.json";
+    if (!std::filesystem::exists(json_path)) {
+        return std::nullopt;
+    }
+
+    using ov::genai::utils::read_json_param;
+
+    std::ifstream f(json_path);
+    OPENVINO_ASSERT(f.is_open(), "Failed to open '", json_path);
+
+    nlohmann::json data = nlohmann::json::parse(f);
+
+    std::optional<std::string> model_type;
+    read_json_param(data, "model_type", model_type);
+    return model_type;
 }
 
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model) {
@@ -68,7 +90,7 @@ public:
                            const Config& config,
                            const ov::AnyMap& properties = {})
         : m_config{config},
-          m_tokenizer{models_path, ov::AnyMap{ov::genai::add_second_input(true)}} {
+          model_type{read_model_type(models_path)} {
         ov::Core core = utils::singleton_core();
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
@@ -78,6 +100,10 @@ public:
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
         }
+
+        // qwen3 tokenizer fails with add_second_input(true)
+        const auto add_second_input = !model_type.has_value() || model_type.value() != "qwen3";
+        m_tokenizer = Tokenizer(models_path, ov::genai::add_second_input(add_second_input));
 
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
 
@@ -91,7 +117,7 @@ public:
     }
 
     void start_rerank_async(const std::string& query, const std::vector<std::string>& texts) {
-        const auto encoded = m_tokenizer.encode({query}, texts, m_tokenization_params);
+        const TokenizedInputs& encoded = tokenize(query, texts);
 
         m_request.set_tensor("input_ids", encoded.input_ids);
         m_request.set_tensor("attention_mask", encoded.attention_mask);
@@ -142,6 +168,22 @@ private:
     InferRequest m_request;
     Config m_config;
     AnyMap m_tokenization_params;
+    std::optional<std::string> model_type;
+
+    TokenizedInputs tokenize(const std::string& query, const std::vector<std::string>& texts) {
+        if (m_tokenizer.supports_paired_input()) {
+            return m_tokenizer.encode({query}, texts, m_tokenization_params);
+        }
+
+        std::vector<std::string> concatenated;
+        concatenated.reserve(texts.size());
+
+        for (auto& text : texts) {
+            concatenated.push_back(query + text);
+        }
+
+        return m_tokenizer.encode(concatenated, m_tokenization_params);
+    }
 };
 
 TextRerankPipeline::TextRerankPipeline(const std::filesystem::path& models_path,
