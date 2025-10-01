@@ -2,6 +2,7 @@ import subprocess  # nosec B404
 import pytest
 import logging
 from test_cli_image import run_wwb
+from constants import WWB_CACHE_PATH
 
 
 logging.basicConfig(level=logging.INFO)
@@ -14,9 +15,9 @@ logger = logging.getLogger(__name__)
         ("katuni4ka/tiny-random-llava", "visual-text"),
     ],
 )
-def test_vlm_basic(model_id, model_type, tmp_path):
-    GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = tmp_path / model_id.replace("/", "--")
+def test_vlm_basic(model_id, model_type):
+    GT_FILE = WWB_CACHE_PATH / "gt.csv"
+    MODEL_PATH = WWB_CACHE_PATH / model_id.replace("/", "--")
 
     result = subprocess.run(["optimum-cli", "export",
                              "openvino", "-m", model_id,
@@ -71,13 +72,13 @@ def test_vlm_basic(model_id, model_type, tmp_path):
         model_type,
         "--genai",
         "--output",
-        tmp_path,
+        WWB_CACHE_PATH,
     ])
 
     # test w/o models
     run_wwb([
         "--target-data",
-        tmp_path / "target.csv",
+        WWB_CACHE_PATH / "target.csv",
         "--num-samples",
         "1",
         "--gt-data",
