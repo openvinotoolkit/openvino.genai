@@ -204,10 +204,11 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 
 @pytest.fixture(scope="session")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
+    ov_model, ov_backend = request.param
+    
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
-        
-    ov_model, ov_backend = request.param
+
     models_path = _get_ov_model(ov_model)
     
     pipeline = VLMPipeline(
