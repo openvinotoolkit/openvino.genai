@@ -202,7 +202,7 @@ def _get_ov_model(model_id: str) -> str:
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     ov_model, ov_backend = request.param
     
@@ -317,10 +317,21 @@ def handwritten_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['handwritten'], "handwritten.png"))
 
 
+@pytest.fixture(scope="function", params=[
+    pytest.param([], id="no_images"),
+    pytest.param(["cat_tensor"], id="single_image"),
+    pytest.param(["cat_tensor", "handwritten_tensor", "car_tensor"], id="multiple_images"),
+])
+def test_images(request: pytest.FixtureRequest):
+    return [request.getfixturevalue(image) for image in request.param]
+
+
 @pytest.mark.precommit
 @parametrize_all_models
-def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, cat_tensor, handwritten_tensor, car_tensor):
+def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
     ov_pipe = ov_pipe_model.pipeline
+    result_from_streamer = []
+    
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -328,25 +339,23 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, cat_tensor, handwritten_tenso
 
     generation_config = _setup_generation_config(ov_pipe)
 
-    for images in [], [cat_tensor], [cat_tensor, handwritten_tensor, car_tensor]:
-        result_from_streamer = []
-        res = ov_pipe.generate(
-            PROMPTS[0],
-            images=images,
-            generation_config=generation_config,
-            streamer=streamer,
-        )
-        assert res.texts[0] == "".join(result_from_streamer)
-
-
-configs = [
-    pytest.param(get_greedy(), id="greedy"),
-    pytest.param(get_beam_search(), id="beam_search"),
-]
+    res = ov_pipe.generate(
+        PROMPTS[0],
+        images=test_images,
+        generation_config=generation_config,
+        streamer=streamer,
+    )
+    assert res.texts[0] == "".join(result_from_streamer)
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("config", configs)
+@pytest.mark.parametrize(
+    "config", 
+    [
+        pytest.param(get_greedy(), id="greedy"),
+        pytest.param(get_beam_search(), id="beam_search"),
+    ]
+)
 @parametrize_one_model_pa
 def test_vlm_continuous_batching_generate_vs_add_request(
     ov_pipe_model: VlmModelInfo,
@@ -385,7 +394,13 @@ def test_vlm_continuous_batching_generate_vs_add_request(
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("config", configs)
+@pytest.mark.parametrize(
+    "config", 
+    [
+        pytest.param(get_greedy(), id="greedy"),
+        pytest.param(get_beam_search(), id="beam_search"),
+    ]
+)
 @parametrize_one_model_sdpa
 def test_vlm_continuous_batching_vs_stateful(
     ov_pipe_model: VlmModelInfo,
@@ -812,6 +827,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
 
 
 def retry(func, exception_type=AssertionError):
+    __tracebackhide__ = True
     max_retries = 20
     for idx in range(max_retries):
         try:
@@ -921,6 +937,7 @@ def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: open
             add_generation_prompt=True,
         )
     def workaround_inconsistent_inference():
+        __tracebackhide__ = True
         automatic_tags = ov_pipe.generate(prompt, images=[cat_tensor], do_sample=False)
         reference_tags = ov_pipe.generate(
             templated_prompt, images=[cat_tensor], apply_chat_template=False, do_sample=False
@@ -941,6 +958,7 @@ def test_model_tags_prepend_native(
     tag = ov_pipe_model.image_tag
     
     def workaround_inconsistent_inference():
+        __tracebackhide__ = True
         answers = generate(ov_pipe, conversation_requests)
 
         ov_pipe.start_chat()
@@ -968,6 +986,7 @@ def test_model_tags_prepend_universal(
     ov_pipe = ov_pipe_model.pipeline
     
     def workaround_inconsistent_inference():
+        __tracebackhide__ = True
         answers = generate(ov_pipe, conversation_requests)
 
         ov_pipe.start_chat()
@@ -1004,6 +1023,7 @@ def test_model_tags_append(
     ov_pipe.set_generation_config(generation_config)
 
     def workaround_inconsistent_inference():
+        __tracebackhide__ = True
         ov_pipe.start_chat()
         native_tag0 = ov_pipe.generate(
             conversation_requests[0][0] + tag(0), images=conversation_requests[0][1], do_sample=False
@@ -1040,6 +1060,7 @@ def test_model_tags_same_reference(ov_pipe_model: VlmModelInfo, cat_tensor: open
     ov_pipe.set_generation_config(generation_config)
     
     def workaround_inconsistent_inference():
+        __tracebackhide__ = True
         one_image = ov_pipe.generate("<ov_genai_image_0>" * 2, images=[cat_tensor], do_sample=False)
         two_images = ov_pipe.generate(
             "<ov_genai_image_0><ov_genai_image_1>", images=[cat_tensor, cat_tensor], do_sample=False
