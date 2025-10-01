@@ -535,6 +535,10 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     ov::genai::GenerationConfig draft_config = m_draft_request->get_generation_config();
     draft_config.ignore_eos = true;
     draft_config.stop_strings = {};
+    // Need to set `max_new_tokens` as GenerationConfig requires it if `ignore_eos` is true.
+    // However, this parameter won't be utilized in pipeline, only main's `max_new_tokens`
+    // will be utilized.
+    draft_config.max_new_tokens = config.get_max_new_tokens();
     draft_config.validate();
     m_draft_request->set_generation_config(draft_config);
 
