@@ -29,19 +29,19 @@ awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
 
 def setup_module():
     from optimum.exporters.openvino.convert import export_tokenizer
-
-    logger.info("Create models")
-    tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=WWB_CACHE_PATH)
-    base_model = OVModelForCausalLM.from_pretrained(model_id, cache_dir=WWB_CACHE_PATH)
+    
     if not os.path.exists(base_model_path):
+        logger.info("Create models")
+        tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=WWB_CACHE_PATH)
+        base_model = OVModelForCausalLM.from_pretrained(model_id, cache_dir=WWB_CACHE_PATH)
         base_model.save_pretrained(base_model_path)
         tokenizer.save_pretrained(base_model_path)
         export_tokenizer(tokenizer, base_model_path)
 
-    target_model = OVModelForCausalLM.from_pretrained(
-        model_id, quantization_config=OVWeightQuantizationConfig(bits=8), cache_dir=WWB_CACHE_PATH
-    )
     if not os.path.exists(target_model_path):
+        target_model = OVModelForCausalLM.from_pretrained(
+            model_id, quantization_config=OVWeightQuantizationConfig(bits=8), cache_dir=WWB_CACHE_PATH
+        )
         target_model.save_pretrained(target_model_path)
         tokenizer.save_pretrained(target_model_path)
         export_tokenizer(tokenizer, target_model_path)
@@ -142,7 +142,8 @@ def test_text_verbose():
 
 def test_text_language(tmp_path):
     temp_file_name = tmp_path / "gt.csv"
-    MODEL_PATH = os.path.join(WWB_CACHE_PATH, 'Qwen/Qwen2-0.5B')
+    MODEL_PATH = WWB_CACHE_PATH.joinpath('Qwen/Qwen2-0.5B'.replace("/", "--"))
+    MODEL_PATH = MODEL_PATH if MODEL_PATH.exists() else 'Qwen/Qwen2-0.5B'
     run_wwb([
         "--base-model",
         MODEL_PATH,
@@ -175,7 +176,8 @@ if sys.platform != 'darwin' and sys.platform != 'win32':
 )
 def test_text_hf_model(model_id, tmp_path):
     temp_file_name = tmp_path / "gt.csv"
-    MODEL_PATH = os.path.join(WWB_CACHE_PATH, model_id.replace("/", "--"))
+    MODEL_PATH = WWB_CACHE_PATH.joinpath(model_id.replace("/", "--"))
+    MODEL_PATH = MODEL_PATH if MODEL_PATH.exists() else model_id
     run_wwb([
         "--base-model",
         MODEL_PATH,

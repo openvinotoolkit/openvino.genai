@@ -2,9 +2,9 @@ import itertools
 import subprocess  # nosec B404
 import os
 import shutil
+from pathlib import Path
 import pytest
 import logging
-import tempfile
 import re
 from constants import WWB_CACHE_PATH, SHOULD_CLEANUP
 
@@ -38,7 +38,7 @@ def run_wwb(args):
 
 def setup_module():
     for model_id in OV_IMAGE_MODELS:
-        MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+        MODEL_PATH = MODEL_CACHE.joinpath(model_id.replace("/", "--"))
         subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH], capture_output=True, text=True)
 
 
@@ -69,7 +69,8 @@ def get_similarity(output: str) -> float:
     ],
 )
 def test_image_model_types(model_id, model_type, backend, tmp_path):
-    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+    MODEL_PATH = MODEL_CACHE.joinpath(model_id.replace("/", "--"))
+    MODEL_PATH = MODEL_PATH if MODEL_PATH.exists() else model_id
     wwb_args = [
         "--base-model",
         MODEL_PATH,
@@ -113,11 +114,12 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.xfail("Segfault. Ticket 170877")
 
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+    MODEL_PATH = MODEL_CACHE.joinpath(model_id.replace("/", "--"))
+    MODEL_PATH = MODEL_PATH if MODEL_PATH.exists() else model_id
 
     run_wwb([
         "--base-model",
-        model_id,
+        MODEL_PATH,
         "--num-samples",
         "1",
         "--gt-data",
@@ -198,7 +200,8 @@ def test_image_model_genai(model_id, model_type, tmp_path):
 )
 def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
     GT_FILE = tmp_path / "test_sd.csv"
-    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+    MODEL_PATH = MODEL_CACHE.joinpath(model_id.replace("/", "--"))
+    MODEL_PATH = MODEL_PATH if MODEL_PATH.exists() else model_id
     wwb_args = [
         "--base-model",
         MODEL_PATH,
