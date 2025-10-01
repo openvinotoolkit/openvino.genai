@@ -294,8 +294,7 @@ def hf_ov_genai_models(request, tmp_path_factory):
     model_dir.mkdir(exist_ok=True, parents=True)
 
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_args)
-    convert_args = {"number_of_inputs": hf_args.pop("number_of_inputs")} if "number_of_inputs" in hf_args else {}
-    convert_and_save_tokenizer(hf_tokenizer, model_dir, **convert_args)
+    convert_and_save_tokenizer(hf_tokenizer, model_dir)
 
     genai_tokenizer = Tokenizer(model_dir, tok_load_properties)
     return hf_tokenizer, genai_tokenizer

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from openvino_genai import Tokenizer, LLMPipeline, StreamerBase
-import os
+from pathlib import Path
 
 import pytest
 import platform
@@ -37,13 +37,6 @@ PIPELINE_CONFIGS: list[dict] = [DEFAULT_CONFIG, STATIC_CONFIG]
 BLOB_WITH_WEIGHTS: list[bool] = [True, False]
 
 MODELS_LIST = get_models_list()
-
-def generate_chat_history(model_path, device, pipeline_config, questions):
-    pipe = LLMPipeline(model_path, device, **pipeline_config)
-    pipe.start_chat()
-    chat_history = [ pipe.generate(question, max_new_tokens=50, do_sample=False) for question in questions ]
-    pipe.finish_chat()
-    return chat_history
 
 
 @pytest.fixture(scope="module")
@@ -84,7 +77,7 @@ def test_pipeline_from_blob(llm_model: OVConvertedModelSchema, model_tmp_path, c
     model_path = llm_model.models_path
     _, temp_path = model_tmp_path
 
-    blob_path = os.path.join(temp_path, "compiled_model.blob")
+    blob_path = temp_path / "compiled_model.blob"
 
     cpu_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
     ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
@@ -100,7 +93,7 @@ def test_pipeline_from_blob(llm_model: OVConvertedModelSchema, model_tmp_path, c
     del npu_pipe
 
     # Import blob and check accuracy
-    import_cfg = {"BLOB_PATH": blob_path, "WEIGHTS_PATH": os.path.join(model_path, "openvino_model.bin") }
+    import_cfg = {"BLOB_PATH": blob_path, "WEIGHTS_PATH": model_path / "openvino_model.bin" }
     import_cfg |= config
     if with_weights:
         import_cfg.pop("WEIGHTS_PATH")
@@ -118,6 +111,7 @@ def test_pipeline_cache_dir(llm_model: OVConvertedModelSchema, model_tmp_path, c
     prompt = 'What is OpenVINO?'
     model_path = llm_model.models_path
     _, temp_path = model_tmp_path
+    temp_path = Path(temp_path)
 
     cpu_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
     ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
@@ -133,7 +127,7 @@ def test_pipeline_cache_dir(llm_model: OVConvertedModelSchema, model_tmp_path, c
     del npu_pipe
 
     # Check that blob was cached
-    blobs = [file for file in os.listdir(temp_path) if file.endswith(".blob")]
+    blobs = [file for file in temp_path.iterdir() if file.suffix == ".blob"]
     if len(blobs) == 0:
         print(f"Couldn't cache the blob")
     assert len(blobs) > 0
@@ -143,7 +137,7 @@ def test_pipeline_cache_dir(llm_model: OVConvertedModelSchema, model_tmp_path, c
     actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
 
     # Check that blob was used from cache
-    blobs = [file for file in os.listdir(temp_path) if file.endswith(".blob")]
+    blobs = [file for file in temp_path.iterdir() if file.suffix == ".blob"]
     if len(blobs) == 0:
         print(f"Couldn't cache the blob")
     assert len(blobs) > 0
@@ -170,7 +164,7 @@ def test_multinomial_sampling(llm_model: OVConvertedModelSchema, generation_conf
     prompt = 'What is OpenVINO?'
     model_path = llm_model.models_path
     static_pipe = LLMPipeline(model_path, "NPU", **config)
-    actual_out = static_pipe.generate(prompt, generation_config)
+    static_pipe.generate(prompt, generation_config)
 
 
 @pytest.mark.precommit
@@ -181,9 +175,10 @@ def test_length_properties_set_no_exception(llm_model: OVConvertedModelSchema, c
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= config
-    pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
+    LLMPipeline(model_path, "NPU", **pipeline_config)
 
 
+@pytest.mark.precommit
 @pytest.mark.parametrize(
     "length_config",
     [
@@ -195,7 +190,6 @@ def test_length_properties_set_no_exception(llm_model: OVConvertedModelSchema, c
 )
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("config", PIPELINE_CONFIGS)
-@pytest.mark.precommit
 def test_invalid_length_properties_raise_error(llm_model: OVConvertedModelSchema, length_config, config):
     model_path = llm_model.models_path
     length_config |= config
@@ -216,9 +210,9 @@ def test_batch_one_no_exception(llm_model: OVConvertedModelSchema, config):
 
 
 # TODO: For the further batch support
+@pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("config", PIPELINE_CONFIGS)
-@pytest.mark.precommit
 def test_batch_raise_error(llm_model: OVConvertedModelSchema, config):
     model_path = llm_model.models_path
     prompt = 'The Sun is yellow because'
@@ -228,6 +222,7 @@ def test_batch_raise_error(llm_model: OVConvertedModelSchema, config):
 
 
 # TODO: For the further sampling support
+@pytest.mark.precommit
 @pytest.mark.parametrize(
     "generation_config", 
     [
@@ -238,7 +233,6 @@ def test_batch_raise_error(llm_model: OVConvertedModelSchema, config):
 )
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("config", PIPELINE_CONFIGS)
-@pytest.mark.precommit
 def test_unsupported_sampling_raise_error(llm_model: OVConvertedModelSchema, generation_config, config):
     model_path = llm_model.models_path
     prompt = 'What is OpenVINO?'
@@ -248,9 +242,9 @@ def test_unsupported_sampling_raise_error(llm_model: OVConvertedModelSchema, gen
         pipe.generate(prompt, generation_config)
 
 
+@pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("config", PIPELINE_CONFIGS)
-@pytest.mark.precommit
 def test_terminate_by_max_number_of_tokens(llm_model: OVConvertedModelSchema, config):
     model_path = llm_model.models_path
     prompt = 'The Sun is yellow because'
@@ -264,9 +258,9 @@ def test_terminate_by_max_number_of_tokens(llm_model: OVConvertedModelSchema, co
     assert len(encoded_results.tokens[0]) == num_tokens
 
 
+@pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("config", PIPELINE_CONFIGS)
-@pytest.mark.precommit
 def test_terminate_by_out_of_memory(llm_model: OVConvertedModelSchema, config):
     model_path = llm_model.models_path
     prompt = 'The Sun is yellow because'
@@ -284,9 +278,9 @@ def test_terminate_by_out_of_memory(llm_model: OVConvertedModelSchema, config):
     assert len(encoded_results.tokens[0]) == (kv_cache_size - input_len + 1)
 
 
+@pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("config", PIPELINE_CONFIGS)
-@pytest.mark.precommit
 def test_terminate_by_sampler(llm_model: OVConvertedModelSchema, config):
     model_path = llm_model.models_path
     prompt = 'The Sun is yellow because'
@@ -314,10 +308,19 @@ def test_terminate_by_sampler(llm_model: OVConvertedModelSchema, config):
 
 
 # FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
+@pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("config", PIPELINE_CONFIGS)
-@pytest.mark.precommit
 def test_chat_generation(llm_model: OVConvertedModelSchema, config):
+    model_path = llm_model.models_path
+
+    def generate_chat_history(device, pipeline_config, questions):
+        pipe = LLMPipeline(model_path, device, **pipeline_config)
+        pipe.start_chat()
+        chat_history = [ pipe.generate(question, max_new_tokens=50, do_sample=False) for question in questions ]
+        pipe.finish_chat()
+        return chat_history
+    
     questions = [
         '1+1=',
         'What is the previous answer?',
@@ -325,10 +328,8 @@ def test_chat_generation(llm_model: OVConvertedModelSchema, config):
         'What was my first question?'
     ]
 
-    model_path = llm_model.models_path
-
-    chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
-    chat_history_static   = generate_chat_history(model_path, "NPU", config, questions)
+    chat_history_stateful = generate_chat_history("CPU", get_default_llm_properties(), questions)
+    chat_history_static   = generate_chat_history("NPU", config, questions)
 
     print('npu chat: \n{chat_history_static}\n')
     print('cpu chat: \n{chat_history_stateful}')

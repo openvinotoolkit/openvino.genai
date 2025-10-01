@@ -2,6 +2,7 @@ import os
 import pytest
 import shutil
 import logging
+from pathlib import Path
 from utils.constants import get_ov_cache_models_dir
 
 # Configure logging
@@ -13,15 +14,15 @@ logger = logging.getLogger(__name__)
 def setup_and_teardown():
     """Fixture to set up and tear down the temporary directories."""
 
-    ov_cache_models_dir = get_ov_cache_models_dir()
+    ov_cache_models_dir = Path(get_ov_cache_models_dir())
 
     logger.info(f"Creating directory: {ov_cache_models_dir}")
-    os.makedirs(ov_cache_models_dir, exist_ok=True)
+    ov_cache_models_dir.mkdir(exist_ok=True)
 
     yield
 
     if os.environ.get("CLEANUP_CACHE", "false").lower() != "false":
-        if os.path.exists(ov_cache_models_dir):
+        if ov_cache_models_dir.exists():
             logger.info(f"Removing temporary directory: {ov_cache_models_dir}")
             shutil.rmtree(ov_cache_models_dir)
         else:
