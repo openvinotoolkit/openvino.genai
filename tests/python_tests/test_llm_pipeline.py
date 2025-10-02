@@ -13,6 +13,7 @@ import numpy as np
 from pathlib import Path
 from typing import Literal, Callable, Optional
 from pydantic import BaseModel, Field
+from unittest.mock import MagicMock
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -104,6 +105,16 @@ CALLBACK_QUESTIONS = [
     'What is the previous answer?',
     'What was my first question?'
 ]
+
+
+def user_defined_callback(subword):
+    logging.info(subword)
+
+
+def user_defined_status_callback(subword):
+    logging.info(subword)
+    return ov_genai.StreamingStatus.RUNNING
+
 
 CALLBACK_FUNCTIONS = [
     logging.info, 
@@ -368,14 +379,6 @@ def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline
 # Streaming with callback
 #
 
-def user_defined_callback(subword):
-    logging.info(subword)
-
-
-def user_defined_status_callback(subword):
-    logging.info(subword)
-    return ov_genai.StreamingStatus.RUNNING
-
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("callback", CALLBACK_FUNCTIONS)
@@ -460,13 +463,17 @@ def test_callback_terminate_by_bool(ov_pipe: ov_genai.LLMPipeline) -> None:
 @pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 def test_callback_terminate_by_status(ov_pipe: ov_genai.LLMPipeline) -> None:
-
     current_iter = 0
     num_iters = 10
+
     def callback(subword):
         nonlocal current_iter
         current_iter += 1
-        return ov_genai.StreamingStatus.STOP if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
+        return (
+            ov_genai.StreamingStatus.STOP 
+            if current_iter == num_iters 
+            else ov_genai.StreamingStatus.RUNNING
+        )
 
     max_new_tokens = 100
     ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
@@ -653,7 +660,6 @@ def test_operator_with_streamer_kwargs_batch_throws(ov_pipe: ov_genai.LLMPipelin
 # Tests on generation configs handling
 #
 
-
 def load_genai_pipe_with_configs(configs: list[tuple], temp_path):
     # Load LLMPipeline where all configs are cleared.
     # remove existing jsons from previous tests
@@ -818,7 +824,10 @@ def test_perf_metrics_with_structured_output(
     raw_metrics = perf_metrics.raw_metrics
 
     assert len(perf_metrics.get_grammar_compiler_init_times()) > 0
-    assert 'xgrammar' in perf_metrics.get_grammar_compiler_init_times() and perf_metrics.get_grammar_compiler_init_times()['xgrammar'] > 0.0
+    assert (
+        'xgrammar' in perf_metrics.get_grammar_compiler_init_times() 
+        and perf_metrics.get_grammar_compiler_init_times()['xgrammar'] > 0.0
+    )
     
     assert len(raw_metrics.grammar_compile_times) > 0
 
@@ -844,11 +853,7 @@ def test_pipelines_generate_with_streaming(
     pipeline_type: PipelineType,
     stop_str: bool,
 ) -> None:
-    it_cnt = 0
-    def py_streamer(py_str: str):
-        nonlocal it_cnt
-        it_cnt += 1
-        return False
+    mock_streamer = MagicMock(return_value=False)
     
     prompt = "Prompt example is"
 
@@ -858,15 +863,15 @@ def test_pipelines_generate_with_streaming(
         generation_config.stop_strings = {" the", "Prom"}
         generation_config.include_stop_str_in_output = False
 
-    _ = generate_and_compare(
+    generate_and_compare(
         model_schema=llm_model,
         prompts=prompt,
         generation_config=generation_config,
         pipeline_type=pipeline_type,
-        streamer=py_streamer,
+        streamer=mock_streamer,
     )
     if stop_str:
-        assert it_cnt == 0
+        mock_streamer.assert_not_called()
     else:
-        assert it_cnt > 0
+        mock_streamer.assert_called()
 
