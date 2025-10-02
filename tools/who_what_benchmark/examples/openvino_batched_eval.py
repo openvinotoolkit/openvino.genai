@@ -55,7 +55,7 @@ generation_config = GenerationConfig()
 generation_config.num_return_sequences = 1
 generation_config.max_new_tokens = MAX_NEW_TOKENS
 
-data = load_dataset(path="squad", name=None, split="validation")["context"]
+data = load_dataset(path="squad", name=None, split="validation", cache_dir=os.path.join(os.environ.get('OV_CACHE', tempfile.TemporaryDirectory().name), 'datasets'))["context"]
 data_dict = {"prompts": list(dict({k: None for k in data}).keys())[:MAX_SEQUENCES]}
 
 model_cb_noopt = ContinuousBatchingPipeline(
