@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import json
+import torch
 import scipy
 import datetime
 import logging as log
@@ -17,7 +18,13 @@ from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from pathlib import Path
 from typing import Any
 
+
 FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
+
+
+def format_instruction(instruction, query, doc):
+    output = "<Instruct>: {instruction}\n<Query>: {query}\n<Document>: {doc}".format(instruction=instruction, query=query, doc=doc)
+    return output
 
 
 class TextRerankerOptimum(CommonPipeline):
@@ -29,6 +36,27 @@ class TextRerankerOptimum(CommonPipeline):
 
         self.top_n = args.get("rerank_top_n")
         self.max_length = args.get("rerank_max_length")
+
+    @execution_time_in_sec
+    def tokenize_qwen(self, input_text):
+        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the'\
+                 + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+        task = "Given a web search query, retrieve relevant passages that answer the query"
+        prefix_tokens = self.tokenizer.encode(prefix, add_special_tokens=False)
+        suffix_tokens = self.tokenizer.encode(suffix, add_special_tokens=False)
+        pairs = [format_instruction(task, input_text, doc) for doc in self.texts]
+        max_length = self.max_length or 8192
+        inputs = self.tokenizer(
+            pairs, padding=False, truncation="longest_first", return_attention_mask=False,
+            max_length=max_length - len(prefix_tokens) - len(suffix_tokens)
+        )
+        for i, ele in enumerate(inputs["input_ids"]):
+            inputs["input_ids"][i] = prefix_tokens + ele + suffix_tokens
+        inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt", max_length=max_length)
+        for key in inputs:
+            inputs[key] = inputs[key].to(self.model.device)
+        return inputs
 
     @execution_time_in_sec
     def tokenize(self, input_text: str, **kwargs):
@@ -48,17 +76,33 @@ class TextRerankerOptimum(CommonPipeline):
     @execution_time_in_sec
     def generate(self, input_data: Any, **kwargs):
         outputs = self.model(**input_data).logits
-        if outputs.shape[1] > 1:
-            scores = outputs[:, 1]
+        if self.model.config.model_type == "qwen3":
+            batch_scores = outputs[:, -1, :]
+
+            token_false_id = self.tokenizer.convert_tokens_to_ids("no")
+            token_true_id = self.tokenizer.convert_tokens_to_ids("yes")
+            true_vector = batch_scores[:, token_true_id]
+            false_vector = batch_scores[:, token_false_id]
+            batch_scores = torch.stack([false_vector, true_vector], dim=1)
+            batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
+            scores = batch_scores[:, 1].exp().tolist()
+
+            generation_result = []
+            for index, (score, _) in enumerate(zip(scores, self.texts)):
+                generation_result.append((index, score))
+            generation_result.sort(key=lambda x: x[1], reverse=True)
         else:
-            scores = outputs.flatten()
+            if outputs.shape[1] > 1:
+                scores = outputs[:, 1]
+            else:
+                scores = outputs.flatten()
 
-        scores = scipy.special.expit(scores)
-        generation_result = []
-        for index, (score, _) in enumerate(zip(scores, self.texts)):
-            generation_result.append((index, score))
+            scores = scipy.special.expit(scores)
+            generation_result = []
+            for index, (score, _) in enumerate(zip(scores, self.texts)):
+                generation_result.append((index, score))
 
-        generation_result.sort(key=lambda x: x[1], reverse=True)
+            generation_result.sort(key=lambda x: x[1], reverse=True)
         return generation_result[: self.top_n]
 
     def gen_iterate_data(
@@ -145,7 +189,10 @@ class TextRerankerOptimum(CommonPipeline):
         return iter_data, []
 
     def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
-        tokenized_input, tokenization_time = self.tokenize(input_text)
+        if self.model.config.model_type == "qwen3":
+            tokenized_input, tokenization_time = self.tokenize_qwen(input_text)
+        else:
+            tokenized_input, tokenization_time = self.tokenize(input_text)
         input_tokens = tokenized_input["input_ids"] if "input_ids" in tokenized_input else tokenized_input
         input_token_size = input_tokens[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)

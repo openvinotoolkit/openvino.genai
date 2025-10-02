@@ -204,7 +204,7 @@ def get_argprser():
                         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
     parser.add_argument("--reranking_max_length", type=int, default=None,
                         help="Max length for text reranking. Input text will be padded or truncated to specified value")
-    parser.add_argument("--reranking_top_n", type=int, default=None,
+    parser.add_argument("--reranking_top_n", type=int, default=3,
                         help="Number of top results to return for text reranking")
     parser.add_argument("--texts", nargs='+', default=None,
                         help="List of candidates for reranking based on their relevance to a prompt(query). Applicable for Text Rerank pipeline.")

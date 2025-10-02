@@ -240,8 +240,8 @@ class TestBenchmarkLLM:
     @pytest.mark.samples
     @pytest.mark.parametrize("download_and_convert_embeddings_models", ["Qwen/Qwen3-Embedding-0.6B"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
-        ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_max_length", "left", "--embedding_pooling", "last_token"],
-        ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_max_length", "left", "--embedding_pooling", "last_token", "--optimum"],
+        ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token"],
+        ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token", "--optimum"],
     ])
     def test_python_tool_llm_benchmark_text_embeddings_qwen3(self, convert_model, sample_args):
         benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')

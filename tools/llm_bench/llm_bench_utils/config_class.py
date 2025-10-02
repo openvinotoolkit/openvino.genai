@@ -60,7 +60,7 @@ class UseCase:
         self.model_types = model_types
         self.ov_cls = ov_cls if ov_cls else self.ov_cls
         self.pt_cls = pt_cls if pt_cls else self.pt_cls
-        self.def_tokenizer = tokenizer_cls if tokenizer_cls else self.tokenizer_cls
+        self.tokenizer_cls = tokenizer_cls if tokenizer_cls else self.tokenizer_cls
 
     def eq_use_case(self, user_model_id, user_task=None):
         return ((user_task is None or user_task == self.task) and user_model_id in self.model_types)
@@ -157,7 +157,8 @@ USE_CASES = {
                  UseCaseTextGen(["phi", "phi-"], ov_cls=OVModelForSeq2SeqLM)],
     'ldm_super_resolution': [UseCaseLDMSuperResolution(['ldm-super-resolution'])],
     'text_embed': [UseCaseTextEmbeddings(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
-    'text_rerank': [UseCaseTextReranker(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
+    'text_rerank': [UseCaseTextReranker(["bge", "bert", "albert", "roberta", "xlm-roberta"]),
+                    UseCaseTextReranker("qwen3", OVModelForCausalLM, AutoModelForCausalLM)],
     'text_to_speech': [UseCaseTextToSpeech(['speecht5'])],
 }
 

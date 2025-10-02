@@ -20,7 +20,7 @@ def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_da
     tokenizer_kwargs = {'padding': True, 'truncation': True, 'padding_side': args.get('emb_padding_side', 'right')}
     max_lenght = args.get('emb_max_length')
     if max_lenght is not None:
-        tokenizer_kwargs = {'padding': 'max_length', 'max_length': max_lenght}
+        tokenizer_kwargs.update({'padding': 'max_length', 'max_length': max_lenght})
     tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt', **tokenizer_kwargs)
     tok_encode_end = time.perf_counter()
