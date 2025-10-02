@@ -3,7 +3,7 @@
 
 from enum import Enum
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from openvino_genai import (
     SchedulerConfig, 
@@ -99,32 +99,46 @@ def create_ov_pipeline(
     models_path: Path,
     pipeline_type: PipelineType = PipelineType.AUTO,
     device: str = "CPU",
-    ov_config: dict = get_default_llm_properties(),
-    scheduler_config: SchedulerConfig = SchedulerConfig(),
-    draft_model_path: Path | None = None,
-    enable_save_ov_model: bool | None = None,
-    dynamic_quantization_group_size: str | None = None,
+    ov_config: Optional[dict] = None,
+    scheduler_config: Optional[SchedulerConfig] = None,
+    draft_model_path: Optional[Path] = None,
+    enable_save_ov_model: Optional[bool] = None,
+    dynamic_quantization_group_size: Optional[str] = None,
 ) -> LLMPipeline:
-    local_ov_config = ov_config.copy()
+    if ov_config is None:
+        ov_config = get_default_llm_properties()
+
+    if scheduler_config is None:
+        scheduler_config = SchedulerConfig()
+
     if pipeline_type == PipelineType.AUTO:
         return LLMPipeline(models_path, device, ov_config)
     elif pipeline_type == PipelineType.STATEFUL:
-        if enable_save_ov_model is not None: local_ov_config["enable_save_ov_model"] = enable_save_ov_model
-        if dynamic_quantization_group_size is not None: local_ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
-        return LLMPipeline(models_path, device, local_ov_config, ATTENTION_BACKEND="SDPA")
+        if enable_save_ov_model is not None: 
+            ov_config["enable_save_ov_model"] = enable_save_ov_model
+        if dynamic_quantization_group_size is not None: 
+            ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
+        return LLMPipeline(models_path, device, ov_config, ATTENTION_BACKEND="SDPA")
     elif pipeline_type == PipelineType.PAGED_ATTENTION:
-        if enable_save_ov_model is not None: local_ov_config["enable_save_ov_model"] = enable_save_ov_model
-        if dynamic_quantization_group_size is not None: local_ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
-        return LLMPipeline(models_path, device, local_ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
+        if enable_save_ov_model is not None: 
+            ov_config["enable_save_ov_model"] = enable_save_ov_model
+        if dynamic_quantization_group_size is not None: 
+            ov_config["DYNAMIC_QUANTIZATION_GROUP_SIZE"] = dynamic_quantization_group_size
+        return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
     elif pipeline_type == PipelineType.CONTINUOUS_BATCHING:
         return ContinuousBatchingPipeline(models_path, scheduler_config, device, ov_config)
     elif pipeline_type == PipelineType.SPECULATIVE_DECODING:
-        ov_draft_model = draft_model(models_path) if draft_model_path is None else draft_model(draft_model_path)
+        ov_draft_model = (
+            draft_model(models_path) 
+            if draft_model_path is None 
+            else draft_model(draft_model_path)
+        )
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, draft_model=ov_draft_model)
     elif pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING:
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, prompt_lookup=True)
     else:
         raise Exception(f"Unsupported pipeline type: {pipeline_type}")
+
 
 def create_ov_cb_pipeline(
     models_path: Path,
@@ -132,7 +146,7 @@ def create_ov_cb_pipeline(
     device: str = "CPU",
     ov_config: dict = get_default_llm_properties(),
     scheduler_config: SchedulerConfig = SchedulerConfig(),
-    draft_model_path: Path | None = None,
+    draft_model_path: Optional[Path] = None,
 ) -> ContinuousBatchingPipeline:
     local_ov_config = ov_config.copy()
     if pipeline_type == PipelineType.CONTINUOUS_BATCHING:
@@ -195,9 +209,9 @@ def run_ov_pipeline(
     prompt : str | list[str],
     generation_config : GenerationConfig | list[GenerationConfig],
     pipeline_type : PipelineType = PipelineType.AUTO,
-    streamer: StreamerWithResults | Callable | StreamerBase = None,
+    streamer: Optional[StreamerWithResults | Callable | StreamerBase] = None,
     scheduler_config: SchedulerConfig = SchedulerConfig(),
-    draft_model_path: Path | None = None,
+    draft_model_path: Optional[Path] = None,
     ov_config: dict = {},
     device: str = "CPU",
 ) -> list[GenerationResult]:
@@ -239,7 +253,12 @@ def run_ov_pipeline(
     if isinstance(generation_results, DecodedResults):
         assert isinstance(generation_config, GenerationConfig)
         num_prompts = 1 if isinstance(prompt, str) else len(prompt)
-        generation_results = convert_decoded_results_to_generation_result(generation_results, num_prompts, generation_config.num_return_sequences, generation_config.is_beam_search())
+        generation_results = convert_decoded_results_to_generation_result(
+            generation_results, 
+            num_prompts, 
+            generation_config.num_return_sequences, 
+            generation_config.is_beam_search(),
+        )
     
     # cleanup test artifacts
     del ov_pipe
@@ -247,7 +266,12 @@ def run_ov_pipeline(
     # compare streaming results with generated results
     if isinstance(streamer, StreamerWithResults):
         prompts = [ prompt ] if isinstance(prompt, str) else prompt
-        compare_generation_results(prompts, generation_results, streamer.get_results(), generation_config)
+        compare_generation_results(
+            prompts, 
+            generation_results, 
+            streamer.get_results(), 
+            generation_config,
+        )
 
     return generation_results
 
@@ -273,8 +297,8 @@ def generate_and_compare(
     generation_config: list[GenerationConfig] | GenerationConfig | dict,
     pipeline_type: PipelineType = PipelineType.AUTO,
     scheduler_config: SchedulerConfig | dict = SchedulerConfig(),
-    ref : list[list[str]] | None = None,
-    streamer: StreamerWithResults | Callable | StreamerBase | None = None
+    ref : Optional[list[list[str]]] = None,
+    streamer: Optional[StreamerWithResults | Callable | StreamerBase] = None
 ) -> None:
     ov_prompts = prompts if type(prompts) is list else [prompts]
 

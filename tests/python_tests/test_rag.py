@@ -10,7 +10,7 @@ from utils.hugging_face import download_and_convert_embeddings_models, download_
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
-from typing import Literal, Union
+from typing import Literal, Union, Optional
 import sys
 import platform
 from optimum.intel import OVModelForFeatureExtraction
@@ -80,7 +80,7 @@ def dataset_documents(chunk_size=200):
 def run_text_embedding_genai(
     models_path: Path,
     documents: list[str],
-    config: TextEmbeddingPipeline.Config | None = None,
+    config: Optional[TextEmbeddingPipeline.Config] = None,
     task: Literal["embed_documents", "embed_query"] = "embed_documents",
 ):
     if not config:
@@ -100,7 +100,7 @@ def run_text_embedding_genai(
 def run_text_embedding_langchain(
     models_path: Path,
     documents: list[str],
-    config: TextEmbeddingPipeline.Config | None = None,
+    config: Optional[TextEmbeddingPipeline.Config] = None,
     task: Literal["embed_documents", "embed_query"] = "embed_documents",
 ):
     if not config:
@@ -178,7 +178,7 @@ def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingRes
 def run_text_embedding_pipeline_with_ref(
     models_path: Path,
     documents: list[str],
-    config: TextEmbeddingPipeline.Config | None = None,
+    config: Optional[TextEmbeddingPipeline.Config] = None,
     task: Literal["embed_documents", "embed_query"] = "embed_documents",
 ):
     genai_result = run_text_embedding_genai(models_path, documents, config, task)
@@ -198,7 +198,7 @@ def run_text_rerank_langchain(
     models_path: Path,
     query: str,
     documents: list[str],
-    config: TextRerankPipeline.Config | None = None,
+    config: Optional[TextRerankPipeline.Config] = None,
 ):
     if not config:
         config = TextRerankPipeline.Config()
@@ -216,7 +216,7 @@ def run_text_rerank_genai(
     models_path: Path,
     query: str,
     documents: list[str],
-    config: TextRerankPipeline.Config | None = None,
+    config: Optional[TextRerankPipeline.Config] = None,
 ):
     if not config:
         config = TextRerankPipeline.Config()
@@ -239,7 +239,7 @@ def run_text_rerank_pipeline_with_ref(
     models_path: Path,
     query: str,
     documents: list[str],
-    config: TextRerankPipeline.Config | None = None,
+    config: Optional[TextRerankPipeline.Config] = None,
 ):
     genai_result = run_text_rerank_genai(models_path, query, documents, config)
     langchain_result = run_text_rerank_langchain(models_path, query, documents, config)
@@ -279,8 +279,15 @@ def test_embedding_constructors(download_and_convert_embeddings_models):
 @pytest.mark.parametrize(
     "config",
     [
-        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, padding_side="left"),
-        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN),
+        TextEmbeddingPipeline.Config(
+            normalize=False, 
+            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, 
+            padding_side="left"
+        ),
+        TextEmbeddingPipeline.Config(
+            normalize=False, 
+            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN
+        ),
     ],
 )
 @pytest.mark.precommit

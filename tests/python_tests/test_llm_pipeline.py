@@ -8,9 +8,10 @@ import gc
 import sys
 import os
 import json
+import logging
 import numpy as np
 from pathlib import Path
-from typing import Literal, Callable
+from typing import Literal, Callable, Optional
 from pydantic import BaseModel, Field
 
 import openvino as ov
@@ -28,16 +29,28 @@ from data.models import get_models_list, get_chat_models_list
 #
 
 INPUTS_TEST_CASES = [
-    (dict(max_new_tokens=20), '你好！ 你好嗎？'),
-    (dict(max_new_tokens=30, num_beams=15, num_beam_groups=3, num_return_sequences=15, diversity_penalty=1.0), 'Why is the Sun yellow?'),
+    (
+        {'max_new_tokens': 20}, 
+        '你好！ 你好嗎？',
+    ),
+    (
+        {
+            'max_new_tokens': 30, 
+            'num_beams': 15, 
+            'num_beam_groups': 3, 
+            'num_return_sequences': 15, 
+            'diversity_penalty': 1.0,
+        }, 
+        'Why is the Sun yellow?'
+    ),
 ]
 
 PERF_TEST_CASES = [
-    (dict(max_new_tokens=20), 'table is made of'),
+    ({'max_new_tokens': 20}, 'table is made of'),
 ]
 
 PERF_METRICS_TEST_CASES = [
-    (dict(max_new_tokens=20), 'Generate json of a person'),
+    ({'max_new_tokens': 20}, 'Generate json of a person'),
 ]
 
 INPUT_TENSORS_LIST = [
@@ -47,8 +60,8 @@ INPUT_TENSORS_LIST = [
 ]
 
 TEST_CONFIGS = [
-    dict(max_new_tokens=20),
-    dict(max_new_tokens=20, num_beam_groups=2, num_beams=6, diversity_penalty=1.0)
+    {'max_new_tokens': 20},
+    {'max_new_tokens': 20, 'num_beam_groups': 2, 'num_beams': 6, 'diversity_penalty': 1.0}
 ]
 
 BATCHED_PROMPTS = [
@@ -59,9 +72,18 @@ BATCHED_PROMPTS = [
 ]
 
 CHAT_INPUTS = [
-    (dict(max_new_tokens=20), ""),
-    (dict(max_new_tokens=20), "Pretend that 1+1=1"),
-    (dict(max_new_tokens=10, num_beam_groups=3, num_beams=15, num_return_sequences=1, diversity_penalty=1.0), "")
+    ({'max_new_tokens': 20}, ""),
+    ({'max_new_tokens': 20}, "Pretend that 1+1=1"),
+    (
+        {
+            'max_new_tokens': 10, 
+            'num_beam_groups': 3, 
+            'num_beams': 15, 
+            'num_return_sequences': 1, 
+            'diversity_penalty': 1.0,
+        }, 
+        ""
+    )
 ]
 
 MODELS_LIST = get_models_list()
@@ -81,6 +103,13 @@ CALLBACK_QUESTIONS = [
     'Why is the Sun yellow?',
     'What is the previous answer?',
     'What was my first question?'
+]
+
+CALLBACK_FUNCTIONS = [
+    logging.info, 
+    user_defined_callback, 
+    user_defined_status_callback, 
+    lambda subword: logging.info(subword),
 ]
 
 
@@ -118,7 +147,7 @@ def test_string_inputs(
 def test_encoded_inputs(
     llm_model: OVConvertedModelSchema,
     ov_pipe: ov_genai.LLMPipeline,
-    inputs: tuple[np.ndarray, np.ndarray | None],
+    inputs: tuple[np.ndarray, Optional[np.ndarray]],
 ) -> None:
     ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
     hf_generation_config = generation_config_to_hf(llm_model.opt_model.generation_config, ov_generation_config)
@@ -128,9 +157,9 @@ def test_encoded_inputs(
 
     if attention_mask is not None:
         inputs_ov = ov_genai.TokenizedInputs(ov.Tensor(input_ids), ov.Tensor(attention_mask))
-        inputs_hf = dict(inputs=torch.tensor(input_ids), attention_mask=torch.tensor(attention_mask))
+        inputs_hf = {'inputs': torch.tensor(input_ids), 'attention_mask': torch.tensor(attention_mask)}
     else:
-        inputs_hf = dict(inputs=torch.tensor(input_ids))
+        inputs_hf = {'inputs': torch.tensor(input_ids)}
         inputs_ov = ov.Tensor(input_ids)
 
     hf_output = llm_model.opt_model.generate(**inputs_hf, generation_config=hf_generation_config, **extra_generate_kwargs()).sequences[0]
@@ -163,7 +192,6 @@ def test_batch_string_inputs(
 @pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", ['katuni4ka/tiny-random-phi3'], indirect=True)
 def test_batch_size_switch(ov_pipe: ov_genai.LLMPipeline) -> None:
-
     ov_pipe.generate(["a"], max_new_tokens=2)
     ov_pipe.generate(["1", "2"], max_new_tokens=2)
     ov_pipe.generate(["a"], max_new_tokens=2)
@@ -260,8 +288,8 @@ def test_chat_scenario(
     ov_pipe.finish_chat()
 
     if chat_history_ov != chat_history_hf:
-        print(f'hf_output: {chat_history_hf}')
-        print(f'ov_output: {chat_history_ov}')
+        logging.info(f'hf_output: {chat_history_hf}')
+        logging.info(f'ov_output: {chat_history_ov}')
 
     assert chat_history_ov == chat_history_hf
 
@@ -299,8 +327,8 @@ def test_chat_scenario_several_chats_in_series(
         ov_pipe.finish_chat()
 
         if chat_history_ov != chat_history_hf:
-            print(f'hf_output: {chat_history_hf}')
-            print(f'ov_output: {chat_history_ov}')
+            logging.info(f'hf_output: {chat_history_hf}')
+            logging.info(f'ov_output: {chat_history_ov}')
 
         assert chat_history_ov == chat_history_hf
 
@@ -341,16 +369,16 @@ def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline
 #
 
 def user_defined_callback(subword):
-    print(subword)
+    logging.info(subword)
 
 
 def user_defined_status_callback(subword):
-    print(subword)
+    logging.info(subword)
     return ov_genai.StreamingStatus.RUNNING
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", CALLBACK_FUNCTIONS)
 @pytest.mark.precommit
 def test_callback_one_string(
     ov_pipe: ov_genai.LLMPipeline,
@@ -362,7 +390,7 @@ def test_callback_one_string(
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", CALLBACK_FUNCTIONS)
 @pytest.mark.precommit
 def test_callback_batch_throws(
     ov_pipe: ov_genai.LLMPipeline,
@@ -373,7 +401,7 @@ def test_callback_batch_throws(
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", CALLBACK_FUNCTIONS)
 @pytest.mark.precommit
 def test_callback_kwargs_one_string(
     ov_pipe: ov_genai.LLMPipeline,
@@ -383,7 +411,7 @@ def test_callback_kwargs_one_string(
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", CALLBACK_FUNCTIONS)
 @pytest.mark.precommit
 def test_callback_decoding_metallama(
     llm_model: OVConvertedModelSchema,
@@ -397,7 +425,7 @@ def test_callback_decoding_metallama(
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", CALLBACK_FUNCTIONS)
 @pytest.mark.precommit
 def test_callback_kwargs_batch_throws(
     ov_pipe: ov_genai.LLMPipeline,
@@ -457,7 +485,7 @@ def test_chat_scenario_callback_cancel(
     llm_model: OVConvertedModelSchema,
     ov_pipe: ov_genai.LLMPipeline,
 ) -> None:
-    generation_config_kwargs = dict(max_new_tokens=20)
+    generation_config_kwargs = {'max_new_tokens': 20}
 
     chat_history_hf = []
     chat_history_ov = []
@@ -494,8 +522,8 @@ def test_chat_scenario_callback_cancel(
     ov_pipe.finish_chat()
 
     if chat_history_ov != chat_history_hf:
-        print(f'hf_output: {chat_history_hf}')
-        print(f'ov_output: {chat_history_ov}')
+        logging.info(f'hf_output: {chat_history_hf}')
+        logging.info(f'ov_output: {chat_history_ov}')
 
     assert chat_history_ov == chat_history_hf
 
@@ -582,7 +610,7 @@ def test_streamer_kwargs_batch_throws(ov_pipe: ov_genai.LLMPipeline) -> None:
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", CALLBACK_FUNCTIONS)
 def test_operator_with_callback_one_string(
     ov_pipe: ov_genai.LLMPipeline,
     callback: Callable,
@@ -594,7 +622,7 @@ def test_operator_with_callback_one_string(
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", CALLBACK_FUNCTIONS)
 def test_operator_with_callback_batch_throws(
     ov_pipe: ov_genai.LLMPipeline,
     callback: Callable,
@@ -637,7 +665,7 @@ def load_genai_pipe_with_configs(configs: list[tuple], temp_path):
         with (temp_path / config_name).open('w', encoding="utf-8") as f:
             json.dump(config_json, f)
 
-    ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU', **get_default_llm_properties())
+    ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU')
 
     for _, config_name in configs:
         os.remove(temp_path / config_name)
@@ -660,7 +688,7 @@ def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
 @pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 def test_pipeline_validates_generation_config(ov_pipe: ov_genai.LLMPipeline) -> None:
-    invalid_generation_config = dict(num_beam_groups=3, num_beams=15, do_sample=True) # beam sample is not supported
+    invalid_generation_config = {'num_beam_groups': 3, 'num_beams': 15, 'do_sample': True} # beam sample is not supported
     with pytest.raises(RuntimeError):
         ov_pipe.generate("dummy prompt", **invalid_generation_config)
 
@@ -785,7 +813,7 @@ def test_perf_metrics_with_structured_output(
         surname: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
         age: int
         city: Literal["Dublin", "Dubai", "Munich"]
-    generation_config.update(dict(structured_output_config=ov_genai.StructuredOutputConfig(json_schema=json.dumps(Person.model_json_schema()))))
+    generation_config.update({'structured_output_config': ov_genai.StructuredOutputConfig(json_schema=json.dumps(Person.model_json_schema()))})
     perf_metrics = ov_pipe.generate([prompt], **generation_config).perf_metrics
     raw_metrics = perf_metrics.raw_metrics
 
