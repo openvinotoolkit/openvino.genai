@@ -4,14 +4,14 @@ import os
 import shutil
 import pytest
 import logging
-import tempfile
 import re
+from constants import WWB_CACHE_PATH, SHOULD_CLEANUP
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MODEL_CACHE = tempfile.mkdtemp()
+MODEL_CACHE = WWB_CACHE_PATH
 OV_IMAGE_MODELS = ["echarlaix/tiny-random-stable-diffusion-xl",
                    "yujiepan/stable-diffusion-3-tiny-random",
                    "katuni4ka/tiny-random-flux",
@@ -37,13 +37,14 @@ def run_wwb(args):
 
 def setup_module():
     for model_id in OV_IMAGE_MODELS:
-        MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+        MODEL_PATH = MODEL_CACHE.joinpath(model_id.replace("/", "--"))
         subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH], capture_output=True, text=True)
 
 
 def teardown_module():
-    logger.info("Remove models")
-    shutil.rmtree(MODEL_CACHE)
+    if SHOULD_CLEANUP:
+        logger.info("Removing models")
+        shutil.rmtree(MODEL_CACHE)
 
 
 def get_similarity(output: str) -> float:
@@ -110,11 +111,12 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.xfail("Segfault. Ticket 170877")
 
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+    MODEL_PATH = MODEL_CACHE.joinpath(model_id.replace("/", "--"))
+    MODEL_PATH = MODEL_PATH if MODEL_PATH.exists() else model_id
 
     run_wwb([
         "--base-model",
-        model_id,
+        MODEL_PATH,
         "--num-samples",
         "1",
         "--gt-data",
