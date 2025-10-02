@@ -20,15 +20,16 @@ def test_vlm_basic(model_id, model_type):
     MODEL_PATH = WWB_CACHE_PATH.joinpath(model_id.replace("/", "--"))
     MODEL_PATH = MODEL_PATH if MODEL_PATH.exists() else model_id
 
-    result = subprocess.run(["optimum-cli", "export",
-                             "openvino", "-m", model_id,
-                             MODEL_PATH, "--task",
-                             "image-text-to-text",
-                             "--trust-remote-code"],
-                            capture_output=True,
-                            text=True,
-                            )
-    assert result.returncode == 0
+    if not MODEL_PATH.exists():
+        result = subprocess.run(["optimum-cli", "export",
+                                "openvino", "-m", model_id,
+                                MODEL_PATH, "--task",
+                                "image-text-to-text",
+                                "--trust-remote-code"],
+                                capture_output=True,
+                                text=True,
+                                )
+        assert result.returncode == 0
 
     # Collect reference with HF model
     run_wwb([
