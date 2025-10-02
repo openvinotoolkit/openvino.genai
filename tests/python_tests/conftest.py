@@ -17,7 +17,7 @@ def setup_and_teardown():
     ov_cache_models_dir = Path(get_ov_cache_models_dir())
 
     logger.info(f"Creating directory: {ov_cache_models_dir}")
-    ov_cache_models_dir.mkdir(exist_ok=True)
+    ov_cache_models_dir.mkdir(exist_ok=True, parents=True)
 
     yield
 

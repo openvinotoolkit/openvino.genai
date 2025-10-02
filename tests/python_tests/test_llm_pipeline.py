@@ -204,8 +204,6 @@ def test_different_input_types_works_same_and_change_nothing(
 #
 # Chat scenario
 #
-
-
 @pytest.mark.precommit
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", CHAT_INPUTS)

@@ -205,7 +205,10 @@ def run_ov_pipeline(
     updated_generation_config = None
     if isinstance(generation_config, list):
         if pipeline_type != PipelineType.CONTINUOUS_BATCHING:
-            raise Exception(f"\'generation_config\' is \'list[GenerationConfig]\'. This type is supported only for \'PipelineType.CONTINIOUS_BATCHING\'! Please change pipeline_type or generation_config type!")
+            raise Exception(
+                "\'generation_config\' is \'list[GenerationConfig]\'. This type is supported only for "
+                "\'PipelineType.CONTINUOUS_BATCHING\'! Please change pipeline_type or generation_config type!"
+            )
         assert isinstance(prompt, list)
         assert len(generation_config) == len(prompt)
         updated_generation_config = prepare_generation_configs_by_pipe_type(generation_config, pipeline_type)
@@ -222,12 +225,14 @@ def run_ov_pipeline(
             streamer.reset()
 
     # create pipeline and generate results
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=pipeline_type,
-                                 device=device,
-                                 ov_config=ov_config,
-                                 scheduler_config=scheduler_config,
-                                 draft_model_path=draft_model_path)
+    ov_pipe = create_ov_pipeline(
+        models_path=models_path,
+        pipeline_type=pipeline_type,
+        device=device,
+        ov_config=ov_config,
+        scheduler_config=scheduler_config,
+        draft_model_path=draft_model_path,
+    )
     generation_results = ov_pipe.generate(prompt, updated_generation_config, streamer)
 
     # convert results to `list[GenerationResult]`

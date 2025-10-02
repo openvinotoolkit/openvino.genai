@@ -539,11 +539,11 @@ def test_dynamic_split_fuse_doesnt_affect_generated_text():
         PipelineType.SPECULATIVE_DECODING,
     ]
 )
-def test_speculative_decoding_extended_perf_metrics(pipeline_type):
+def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType):
     def run_extended_perf_metrics_collection(
-            model_id, 
-            generation_config: GenerationConfig, 
-            prompt: str, 
+            model_id: str,
+            generation_config: GenerationConfig,
+            prompt: str,
             pipeline_type: PipelineType
     ):
         model_path = download_and_convert_model(model_id).models_path

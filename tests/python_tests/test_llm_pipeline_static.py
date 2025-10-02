@@ -83,7 +83,7 @@ def test_pipeline_from_blob(llm_model: OVConvertedModelSchema, model_tmp_path, c
     ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
 
     # NB: Generate the blob
-    cfg = { "EXPORT_BLOB": "YES", "BLOB_PATH": blob_path }
+    cfg = { "EXPORT_BLOB": "YES", "BLOB_PATH": str(blob_path) }
     cfg |= config
     if with_weights:
         cfg |= {"CACHE_MODE": "OPTIMIZE_SPEED"}
@@ -93,7 +93,7 @@ def test_pipeline_from_blob(llm_model: OVConvertedModelSchema, model_tmp_path, c
     del npu_pipe
 
     # Import blob and check accuracy
-    import_cfg = {"BLOB_PATH": blob_path, "WEIGHTS_PATH": model_path / "openvino_model.bin" }
+    import_cfg = {"BLOB_PATH": str(blob_path), "WEIGHTS_PATH": str(model_path / "openvino_model.bin") }
     import_cfg |= config
     if with_weights:
         import_cfg.pop("WEIGHTS_PATH")
