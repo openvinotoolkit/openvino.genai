@@ -29,7 +29,7 @@ awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
 
 def setup_module():
     from optimum.exporters.openvino.convert import export_tokenizer
-    
+
     if not os.path.exists(base_model_path):
         logger.info("Create models")
         tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=WWB_CACHE_PATH)

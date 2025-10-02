@@ -2,7 +2,6 @@ import itertools
 import subprocess  # nosec B404
 import os
 import shutil
-from pathlib import Path
 import pytest
 import logging
 import re
