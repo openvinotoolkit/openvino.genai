@@ -74,6 +74,7 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::ChatHistory;
+using ov::genai::ToolDefinitions;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
 
@@ -250,15 +251,30 @@ void init_tokenizer(py::module_& m) {
             R"(Decode a batch of tokens into a list of string prompt.)")
 
         .def("apply_chat_template", [](Tokenizer& tok,
-                                        ChatHistory history,
+                                        const std::vector<py::object>& history,
                                         bool add_generation_prompt,
-                                        const std::string& chat_template) {
-            return tok.apply_chat_template(history, add_generation_prompt, chat_template);
+                                        const std::string& chat_template,
+                                        const std::vector<py::object>& tools,
+                                        const py::object& extra_context) {
+            auto history_anymap = ChatHistory{};
+            for (const auto& message : history) {
+                ov::AnyMap message_anymap = pyutils::py_object_to_any_map(message);
+                history_anymap.push_back(message_anymap);
+            }
+            auto tools_anymap = ToolDefinitions{};
+            for (const auto& tool : tools) {
+                ov::AnyMap tool_anymap = pyutils::py_object_to_any_map(tool);
+                tools_anymap.push_back(tool_anymap);
+            }
+            ov::AnyMap extra_context_anymap = pyutils::py_object_to_any_map(extra_context);
+            return tok.apply_chat_template(history_anymap, add_generation_prompt, chat_template, tools_anymap, extra_context_anymap);
         },
             py::arg("history"),
             py::arg("add_generation_prompt"),
             py::arg("chat_template") = "",
-            R"(Embeds input prompts with special tags for a chat scenario.)")
+            py::arg("tools") = std::vector<ov::AnyMap>(),
+            py::arg("extra_context") = ov::AnyMap({}),
+            R"(Applies a chat template to format chat history into a prompt string.)")
 
         .def(
             "set_chat_template", &Tokenizer::set_chat_template,
