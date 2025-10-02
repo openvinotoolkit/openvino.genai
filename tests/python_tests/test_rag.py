@@ -13,6 +13,10 @@ from langchain_community.document_compressors.openvino_rerank import OpenVINORer
 from typing import Literal, Union
 import sys
 import platform
+from optimum.intel import OVModelForFeatureExtraction
+import openvino as ov
+from torch import Tensor
+import torch
 
 EMBEDDINGS_TEST_MODELS = [
     "BAAI/bge-small-en-v1.5",
@@ -129,6 +133,36 @@ def run_text_embedding_langchain(
         return ov_embeddings.embed_query(documents[0])
 
 
+def last_token_pool(last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
+    left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
+    if left_padding:
+        return last_hidden_states[:, -1]
+    else:
+        sequence_lengths = attention_mask.sum(dim=1) - 1
+        batch_size = last_hidden_states.shape[0]
+        batch_dim = torch.arange(batch_size, device=last_hidden_states.device)
+        result = last_hidden_states[batch_dim, sequence_lengths]
+        return result
+
+
+# from transformers Qwen3-Embedding-0.6B model card: https://huggingface.co/Qwen/Qwen3-Embedding-0.6B#transformers-usage
+def run_qwen3_embedding_optimum(
+    model: OVModelForFeatureExtraction,
+    tokenizer,
+    documents: list[str],
+    padding_side: Literal["left", "right"] = "left",
+):
+    encoded = tokenizer(
+        documents,
+        padding=True,
+        truncation=True,
+        padding_side=padding_side,
+        return_tensors="pt",
+    )
+    outputs = model(**encoded)
+    return last_token_pool(outputs.last_hidden_state, encoded["attention_mask"])
+
+
 EmbeddingResult = Union[list[list[float]], list[list[int]], list[float], list[int]]
 MAX_EMBEDDING_ERROR = 2e-6
 
@@ -241,6 +275,22 @@ def test_embedding_constructors(download_and_convert_embeddings_models):
     )
 
 
+@pytest.mark.parametrize("download_and_convert_embeddings_models", ["Qwen/Qwen3-Embedding-0.6B"], indirect=True)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, padding_side="left"),
+        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN),
+    ],
+)
+@pytest.mark.precommit
+def test_qwen3_embedding(download_and_convert_embeddings_models, dataset_documents, config):
+    opt_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
+    embeddings_opt = run_qwen3_embedding_optimum(opt_model, hf_tokenizer, dataset_documents, config.padding_side)
+    embeddings_genai = run_text_embedding_genai(models_path, dataset_documents, config, "embed_documents")
+    validate_embedding_results(embeddings_genai, embeddings_opt.tolist())
+
+
 @pytest.mark.parametrize("download_and_convert_embeddings_models", EMBEDDINGS_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize(
     "config",
@@ -264,10 +314,12 @@ def test_embedding_constructors(download_and_convert_embeddings_models):
 )
 @pytest.mark.precommit
 def test_embed_documents(download_and_convert_embeddings_models, dataset_documents, config):
-    if (sys.platform == "linux"
-            and "bge-small-en-v1.5" in str(download_and_convert_embeddings_models)
-            and config.normalize
-            and config.pooling_type == TextEmbeddingPipeline.PoolingType.CLS):
+    if (
+        sys.platform == "linux"
+        and "bge-small-en-v1.5" in str(download_and_convert_embeddings_models)
+        and config.normalize
+        and config.pooling_type == TextEmbeddingPipeline.PoolingType.CLS
+    ):
         pytest.xfail("Random segmentation fault. Ticket 172306")
     _, _, models_path = download_and_convert_embeddings_models
     run_text_embedding_pipeline_with_ref(models_path, dataset_documents, config, "embed_documents")
