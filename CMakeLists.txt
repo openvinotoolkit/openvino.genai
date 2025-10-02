@@ -63,6 +63,8 @@ function(load_openvino)
                     COMPONENTS Runtime Threading
                     PATHS "${OpenVINO_DIR_PY}")
     endif()
+
+    option(ENABLE_PYTHON "Enable Python API build" ON)
 endfunction()
 load_openvino()
 
