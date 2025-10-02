@@ -14,29 +14,21 @@ from utils.hugging_face import generation_config_to_hf, download_and_convert_mod
 from utils.comparation import compare_generation_results
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType, convert_decoded_results_to_generation_result
 
-test_cases = [
+models_and_input = [
+    ("HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-135M", "Alan Turing was a")]
+devices = [
     ('CPU', 'CPU'),
     ('CPU', 'NPUW:CPU'),
     ('NPUW:CPU', 'CPU'),
     ('NPUW:CPU', 'NPUW:CPU')
 ]
-@pytest.mark.parametrize("main_device,draft_device", test_cases)
+@pytest.mark.parametrize("main_model,draft_model,prompt", models_and_input)
+@pytest.mark.parametrize("main_device,draft_device", devices)
 @pytest.mark.precommit
-def test_string_inputs(main_device, draft_device):
-    # FIXME: For now SmolLM2-135M is used as a main and a draft model in the test.
-    #        However, it is more desirable to use SmolLM2-360M as a main one to simulate the real case
-    #        for speculative decoding.
-    #        It seems like temporary directory from model downloading stage isn't removed after test
-    #        launch for SmolLM2-360M model, that is why it is not used now.
-    MODEL_UNDER_TEST = {
-        "name": "HuggingFaceTB/SmolLM2-135M",
-        "convert_args": ['--trust-remote-code']
-    }
-    prompt = "Alan Turing was a"
-
+def test_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
     # Download and convert model:
-    main_opt_model, main_hf_tokenizer, main_model_path = download_and_convert_model(MODEL_UNDER_TEST["name"])
-    draft_model_path = main_model_path
+    main_opt_model, main_hf_tokenizer, main_model_path = download_and_convert_model(main_model)
+    __, __, draft_model_path = download_and_convert_model(draft_model)
 
     # Create OpenVINO GenAI pipeline:
     draft_config = get_default_llm_properties()
@@ -44,22 +36,13 @@ def test_string_inputs(main_device, draft_device):
         draft_device = "NPU"
         draft_config["NPUW_DEVICES"] = "CPU"
         draft_config["GENERATE_HINT"] = "BEST_PERF"
-        # FIXME: Currently, the same draft and main model fails to work in NPUW_WEIGHTS_BANK: shared mode.
-        #        To workaround this, we name banks differently for draft and main.
-        draft_config["NPUW_WEIGHTS_BANK"] = "draft"
     ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
 
     main_config = get_default_llm_properties()
     if main_device == "NPUW:CPU":
         main_device = "NPU"
         main_config["NPUW_DEVICES"] = "CPU"
-        # FIXME: SmolLM-135M with GENERATE_HINT: FAST_COMPILE will output garbage on NPUW:CPU if used with configuration
-        #        NPUW_LLM_MAX_GENERATION_TOKEN_LEN > 1.
-        #        Setting GENERATE_HINT: BEST_PERF to workaround an issue currently.
         main_config["GENERATE_HINT"] = "BEST_PERF"
-        # FIXME: Currently, the same draft and main model fails to work in NPUW_WEIGHTS_BANK: shared mode.
-        #        To workaround this, we name banks differently for draft and main.
-        main_config["NPUW_WEIGHTS_BANK"] = "main"
     main_config["ATTENTION_BACKEND"] = "SDPA"
     ov_pipe = ov_genai.LLMPipeline(main_model_path, main_device, main_config, draft_model=ov_draft_model)
 
