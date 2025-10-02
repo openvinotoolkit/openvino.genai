@@ -1,8 +1,6 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import os
-import tempfile
 import openvino_genai as ov_genai
 import functools
 import pytest
@@ -191,7 +189,6 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             split="test",
             streaming=True,
             trust_remote_code=True,
-            cache_dir=os.path.join(os.environ.get('OV_CACHE', tempfile.TemporaryDirectory().name), 'datasets')
         )
     else:
         ds = datasets.load_dataset(
@@ -199,7 +196,6 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             split="test",
             streaming=True,
             trust_remote_code=True,
-            cache_dir=os.path.join(os.environ.get('OV_CACHE', tempfile.TemporaryDirectory().name), 'datasets')
         )
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
@@ -541,8 +537,7 @@ def test_longform_audio_with_past(model_descr, sample_from_dataset):
 def test_shortform(model_descr):
     samples = []
     ds = datasets.load_dataset(
-        "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation",
-        cache_dir=os.path.join(os.environ.get('OV_CACHE', tempfile.TemporaryDirectory().name), 'datasets')
+        "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation"
     )
 
     for ds_row in ds:

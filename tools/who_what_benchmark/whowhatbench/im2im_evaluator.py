@@ -1,5 +1,4 @@
 import os
-import tempfile
 from typing import Any, Union
 
 import datasets
@@ -27,7 +26,7 @@ def prepare_default_data(num_samples=None):
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
     default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True, cache_dir=os.path.join(os.environ.get('OV_CACHE', tempfile.TemporaryDirectory().name), 'datasets')
+        DATASET_NAME, split="test", streaming=True
     ).filter(lambda example: example["Instruction_VLM-LLM"] != "").take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names

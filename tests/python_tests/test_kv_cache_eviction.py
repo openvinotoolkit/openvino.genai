@@ -1,9 +1,7 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import sys
-import tempfile
 import datasets
 import pytest
 from dataclasses import dataclass
@@ -238,7 +236,7 @@ def test_optimized_generation_longbench(test_struct):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]', trust_remote_code=True, cache_dir=os.path.join(os.environ.get('OV_CACHE', tempfile.TemporaryDirectory().name), 'datasets'))
+    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]', trust_remote_code=True)
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []
@@ -326,7 +324,7 @@ def test_kvcrush_vs_snapkv_baseline(subset):
     generation_config.max_new_tokens = max_new_tokens
     generation_config.apply_chat_template = False
 
-    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]', cache_dir=os.path.join(os.environ.get('OV_CACHE', tempfile.TemporaryDirectory().name), 'datasets'))
+    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]')
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         baseline_answers = []

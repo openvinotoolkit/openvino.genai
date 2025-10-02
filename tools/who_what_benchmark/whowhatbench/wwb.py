@@ -1,6 +1,5 @@
 import argparse
 import difflib
-import tempfile
 import numpy as np
 import logging
 import os
@@ -235,7 +234,7 @@ def load_prompts(args):
     else:
         path = args.dataset
         name = None
-    data = load_dataset(path=path, name=name, split=split, cache_dir=os.path.join(os.environ.get('OV_CACHE', tempfile.TemporaryDirectory().name), 'datasets'))
+    data = load_dataset(path=path, name=name, split=split)
 
     res = data[args.dataset_field]
     res = {"prompts": list(res)}
